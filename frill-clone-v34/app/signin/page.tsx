@@ -2,11 +2,14 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
 function SignInForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const nextUrl = searchParams?.get('next') || '/'
+  
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -14,43 +17,43 @@ function SignInForm() {
   const [showPassword, setShowPassword] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }: any) => {
-      if (data?.session?.user) {
-        router.replace('/admin')
+    supabase.auth.getSession().then((data: any) => {
+      if (data.data?.session) {
+        router.push(nextUrl)
       }
     })
-  }, [router])
+  }, [router, nextUrl])
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
+    
     try {
-      const { data, error: err } = await supabase.auth.signInWithPassword({ email, password })
+      const { error: err } = await supabase.auth.signInWithPassword({ email, password })
       if (err) {
         setError(err.message)
-        setLoading(false)
-      } else if (data.session) {
-        window.location.href = '/admin'
+      } else {
+        router.push(nextUrl)
       }
     } catch (err: any) {
       setError(err.message || 'Sign in failed')
-      setLoading(false)
     }
+    setLoading(false)
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12" style={{ background: 'var(--peach)' }}>
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--canvas)' }}>
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <Link href="/landing" className="inline-block mb-6 text-2xl font-bold" style={{ color: 'var(--coral)' }}>
-            frill
-          </Link>
-          <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Welcome back</h1>
-          <p style={{ color: 'var(--slate)' }}>Sign in to your feedback board</p>
-        </div>
+        <Link href="/landing" className="inline-flex items-center gap-2 mb-8 text-2xl font-bold">
+          <span className="text-3xl">💭</span>
+          <span style={{ color: 'var(--coral)' }}>Frill</span>
+        </Link>
 
-        <div className="bg-white rounded-2xl shadow-lg p-8" style={{ border: '1px solid var(--border)' }}>
+        <div className="bg-white rounded-2xl border p-8" style={{ borderColor: 'var(--border)' }}>
+          <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Welcome back</h2>
+          <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Sign in to your feedback board</p>
+
           {error && (
             <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#fee2e2', color: '#dc2626' }}>
               {error}
@@ -66,9 +69,8 @@ function SignInForm() {
                 onChange={e => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 required
-                autoFocus
-                className="w-full px-4 py-2.5 rounded-lg focus:outline-none"
-                style={{ border: '1px solid var(--border)', fontSize: '16px' }}
+                className="w-full px-4 py-2.5 rounded-lg border focus:outline-none"
+                style={{ borderColor: 'var(--border)', fontSize: '16px' }}
               />
             </div>
 
@@ -79,18 +81,17 @@ function SignInForm() {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="Your password"
                   required
-                  className="w-full px-4 py-2.5 rounded-lg focus:outline-none"
-                  style={{ border: '1px solid var(--border)', fontSize: '16px' }}
+                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none"
+                  style={{ borderColor: 'var(--border)', fontSize: '16px' }}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-sm cursor-pointer"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
                   style={{ color: 'var(--slate)' }}
                 >
-                  {showPassword ? 'Hide' : 'Show'}
+                  {showPassword ? '👁️' : '👁️‍🗨️'}
                 </button>
               </div>
             </div>
@@ -98,17 +99,17 @@ function SignInForm() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-lg font-semibold text-white cursor-pointer disabled:opacity-50 transition-all"
+              className="w-full py-2.5 rounded-lg text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
               style={{ background: 'var(--coral)' }}
             >
-              {loading ? 'Signing in…' : 'Sign in'}
+              {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
 
           <p className="text-center text-sm mt-6" style={{ color: 'var(--slate)' }}>
             Don't have an account?{' '}
             <Link href="/signup" className="font-semibold hover:underline" style={{ color: 'var(--coral)' }}>
-              Sign up free
+              Sign up
             </Link>
           </p>
         </div>
@@ -119,7 +120,7 @@ function SignInForm() {
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--peach)' }}>Loading...</div>}>
+    <Suspense fallback={<div style={{ background: 'var(--canvas)' }} className="min-h-screen flex items-center justify-center">Loading...</div>}>
       <SignInForm />
     </Suspense>
   )

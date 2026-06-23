@@ -1,0 +1,499 @@
+-- ============================================
+-- FRILL CLONE - COMPLETE DATABASE SETUP
+-- Copy ALL of this into Supabase SQL Editor and click RUN
+-- Works on a fresh database AND on existing setups
+-- ============================================
+
+-- Ideas/Feedback table
+CREATE TABLE IF NOT EXISTS ideas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'new',
+  votes INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  user_id UUID REFERENCES auth.users(id),
+  created_by_name TEXT
+);
+
+-- Add new columns for advanced features
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS topics TEXT[] DEFAULT '{}';
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS cover_image_url TEXT;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT false;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT false;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT false;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS priority TEXT;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS show_on_roadmap BOOLEAN DEFAULT true;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS vote_score INT DEFAULT 100;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS reward INT DEFAULT 100;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS effort INT DEFAULT 1;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS cover_image TEXT;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS poll_id UUID;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS survey_id UUID;
+
+-- Votes table (one vote per user per idea)
+CREATE TABLE IF NOT EXISTS votes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  idea_id UUID REFERENCES ideas(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id),
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(idea_id, user_id)
+);
+
+-- Comments table
+CREATE TABLE IF NOT EXISTS comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  idea_id UUID REFERENCES ideas(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id),
+  content TEXT NOT NULL,
+  is_private BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES comments(id) ON DELETE CASCADE;
+
+-- Activity Log table
+CREATE TABLE IF NOT EXISTS activity (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  idea_id UUID NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id),
+  action TEXT NOT NULL,
+  old_value TEXT,
+  new_value TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Team Members table
+CREATE TABLE IF NOT EXISTS team_members (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  user_id UUID REFERENCES auth.users(id),
+  role TEXT DEFAULT 'editor',
+  status TEXT DEFAULT 'invited',
+  invited_by UUID REFERENCES auth.users(id),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Site Settings (singleton key-value store)
+CREATE TABLE IF NOT EXISTS site_settings (
+  key TEXT PRIMARY KEY,
+  value JSONB,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS order_index INT DEFAULT 0;
+
+-- Announcements/Changelog table
+CREATE TABLE IF NOT EXISTS announcements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT,
+  tag TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Custom statuses table
+CREATE TABLE IF NOT EXISTS statuses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  key TEXT UNIQUE NOT NULL,
+  label TEXT NOT NULL,
+  color TEXT DEFAULT '#94a3b8',
+  bg TEXT DEFAULT '#f3f4f6',
+  order_index INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Surveys table
+CREATE TABLE IF NOT EXISTS surveys (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  type TEXT DEFAULT 'nps',
+  question TEXT,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Survey responses
+CREATE TABLE IF NOT EXISTS survey_responses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  survey_id UUID REFERENCES surveys(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id),
+  score INT,
+  response_text TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Polls table
+CREATE TABLE IF NOT EXISTS polls (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  question TEXT NOT NULL,
+  options JSONB DEFAULT '[]',
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Poll votes
+CREATE TABLE IF NOT EXISTS poll_votes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  poll_id UUID REFERENCES polls(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id),
+  option_index INT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(poll_id, user_id)
+);
+
+-- Segments table
+CREATE TABLE IF NOT EXISTS segments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  conditions JSONB DEFAULT '[]',
+  match_type TEXT DEFAULT 'all',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Add stats columns
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS views INT DEFAULT 0;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS impressions INT DEFAULT 0;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS poll_id UUID;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS survey_id UUID;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS reactions JSONB DEFAULT '{}';
+
+-- Terminology/Localization table
+CREATE TABLE IF NOT EXISTS terminology (
+  key TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  description TEXT,
+  category TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Insert default English terminology
+INSERT INTO terminology (key, label, category, description) VALUES
+-- Main sections
+('ideas', 'Ideas', 'main', 'Title for the ideas/feedback section'),
+('announcements', 'Announcements', 'main', 'Title for announcements section'),
+('roadmap', 'Roadmap', 'main', 'Title for the roadmap section'),
+('surveys', 'Surveys', 'main', 'Title for surveys section'),
+
+-- Ideas related
+('idea', 'Idea', 'ideas', 'Singular form of idea'),
+('submit_idea', 'Submit Idea', 'ideas', 'Button to create new idea'),
+('create_idea', 'Create Idea', 'ideas', 'Form title for creating idea'),
+('vote', 'Vote', 'ideas', 'Action to vote on idea'),
+('votes', 'Votes', 'ideas', 'Plural votes'),
+('topics', 'Topics', 'ideas', 'Tags/categories for ideas'),
+('status', 'Status', 'ideas', 'Current status of idea'),
+('priority', 'Priority', 'ideas', 'Priority level'),
+('comment', 'Comment', 'ideas', 'Singular comment'),
+('comments', 'Comments', 'ideas', 'Plural comments'),
+
+-- Admin
+('manage', 'Manage', 'admin', 'Verb for managing settings'),
+('settings', 'Settings', 'admin', 'Settings page title'),
+('admin', 'Admin', 'admin', 'Administration section'),
+
+-- General
+('trending', 'Trending', 'general', 'Trending/popular sorting'),
+('latest', 'Latest', 'general', 'Newest items'),
+('most_votes', 'Most Votes', 'general', 'Sort by most voted'),
+('search', 'Search', 'general', 'Search action'),
+('filter', 'Filter', 'general', 'Filter action'),
+('sort', 'Sort', 'general', 'Sort action'),
+('delete', 'Delete', 'general', 'Delete action'),
+('edit', 'Edit', 'general', 'Edit action'),
+('save', 'Save', 'general', 'Save action'),
+('cancel', 'Cancel', 'general', 'Cancel action'),
+('loading', 'Loading', 'general', 'Loading state'),
+('no_results', 'No results', 'general', 'Empty state message')
+ON CONFLICT DO NOTHING;
+
+-- Enable Row Level Security
+ALTER TABLE ideas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE votes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE statuses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE surveys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE survey_responses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE polls ENABLE ROW LEVEL SECURITY;
+ALTER TABLE poll_votes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE segments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE team_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE site_settings ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist (so we can re-run safely)
+DROP POLICY IF EXISTS "Ideas are viewable by everyone" ON ideas;
+DROP POLICY IF EXISTS "Anyone can insert ideas" ON ideas;
+DROP POLICY IF EXISTS "Authenticated users can update ideas" ON ideas;
+DROP POLICY IF EXISTS "Authenticated users can delete ideas" ON ideas;
+DROP POLICY IF EXISTS "Anyone can update ideas" ON ideas;
+DROP POLICY IF EXISTS "Anyone can delete ideas" ON ideas;
+
+DROP POLICY IF EXISTS "Votes are viewable by everyone" ON votes;
+DROP POLICY IF EXISTS "Users can insert their own votes" ON votes;
+DROP POLICY IF EXISTS "Users can delete their own votes" ON votes;
+
+DROP POLICY IF EXISTS "Announcements are viewable by everyone" ON announcements;
+DROP POLICY IF EXISTS "Authenticated users can insert announcements" ON announcements;
+DROP POLICY IF EXISTS "Authenticated users can delete announcements" ON announcements;
+DROP POLICY IF EXISTS "Anyone can insert announcements" ON announcements;
+DROP POLICY IF EXISTS "Anyone can update announcements" ON announcements;
+DROP POLICY IF EXISTS "Anyone can delete announcements" ON announcements;
+
+DROP POLICY IF EXISTS "Comments are viewable by everyone" ON comments;
+DROP POLICY IF EXISTS "Users can insert comments" ON comments;
+DROP POLICY IF EXISTS "Users can delete their own comments" ON comments;
+
+-- IDEAS policies
+CREATE POLICY "Ideas are viewable by everyone" ON ideas FOR SELECT USING (true);
+CREATE POLICY "Anyone can insert ideas" ON ideas FOR INSERT WITH CHECK (true);
+CREATE POLICY "Anyone can update ideas" ON ideas FOR UPDATE USING (true);
+CREATE POLICY "Anyone can delete ideas" ON ideas FOR DELETE USING (true);
+
+-- VOTES policies
+CREATE POLICY "Votes are viewable by everyone" ON votes FOR SELECT USING (true);
+CREATE POLICY "Users can insert their own votes" ON votes FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can delete their own votes" ON votes FOR DELETE USING (auth.uid() = user_id);
+
+-- ANNOUNCEMENTS policies
+CREATE POLICY "Announcements are viewable by everyone" ON announcements FOR SELECT USING (true);
+CREATE POLICY "Anyone can insert announcements" ON announcements FOR INSERT WITH CHECK (true);
+CREATE POLICY "Anyone can update announcements" ON announcements FOR UPDATE USING (true);
+CREATE POLICY "Anyone can delete announcements" ON announcements FOR DELETE USING (true);
+
+-- COMMENTS policies
+CREATE POLICY "Comments are viewable by everyone" ON comments FOR SELECT USING (true);
+CREATE POLICY "Users can insert comments" ON comments FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can delete their own comments" ON comments FOR DELETE USING (auth.uid() = user_id);
+
+-- STATUSES policies
+DROP POLICY IF EXISTS "Statuses are viewable by everyone" ON statuses;
+DROP POLICY IF EXISTS "Anyone can manage statuses" ON statuses;
+CREATE POLICY "Statuses are viewable by everyone" ON statuses FOR SELECT USING (true);
+CREATE POLICY "Anyone can manage statuses" ON statuses FOR ALL USING (true);
+
+-- SURVEYS policies
+DROP POLICY IF EXISTS "Surveys are viewable by everyone" ON surveys;
+DROP POLICY IF EXISTS "Anyone can manage surveys" ON surveys;
+CREATE POLICY "Surveys are viewable by everyone" ON surveys FOR SELECT USING (true);
+CREATE POLICY "Anyone can manage surveys" ON surveys FOR ALL USING (true);
+
+-- SURVEY RESPONSES policies
+DROP POLICY IF EXISTS "Survey responses are viewable by everyone" ON survey_responses;
+DROP POLICY IF EXISTS "Anyone can submit responses" ON survey_responses;
+CREATE POLICY "Survey responses are viewable by everyone" ON survey_responses FOR SELECT USING (true);
+CREATE POLICY "Anyone can submit responses" ON survey_responses FOR INSERT WITH CHECK (true);
+
+-- POLLS policies
+DROP POLICY IF EXISTS "Polls are viewable by everyone" ON polls;
+DROP POLICY IF EXISTS "Anyone can manage polls" ON polls;
+CREATE POLICY "Polls are viewable by everyone" ON polls FOR SELECT USING (true);
+CREATE POLICY "Anyone can manage polls" ON polls FOR ALL USING (true);
+
+-- POLL VOTES policies
+DROP POLICY IF EXISTS "Poll votes are viewable by everyone" ON poll_votes;
+DROP POLICY IF EXISTS "Anyone can vote in polls" ON poll_votes;
+CREATE POLICY "Poll votes are viewable by everyone" ON poll_votes FOR SELECT USING (true);
+CREATE POLICY "Anyone can vote in polls" ON poll_votes FOR INSERT WITH CHECK (true);
+
+-- SEGMENTS policies
+DROP POLICY IF EXISTS "Segments are viewable by everyone" ON segments;
+DROP POLICY IF EXISTS "Anyone can manage segments" ON segments;
+CREATE POLICY "Segments are viewable by everyone" ON segments FOR SELECT USING (true);
+CREATE POLICY "Anyone can manage segments" ON segments FOR ALL USING (true);
+
+-- ACTIVITY policies
+DROP POLICY IF EXISTS "Activity is viewable by everyone" ON activity;
+DROP POLICY IF EXISTS "Anyone can log activity" ON activity;
+CREATE POLICY "Activity is viewable by everyone" ON activity FOR SELECT USING (true);
+CREATE POLICY "Anyone can log activity" ON activity FOR ALL USING (true);
+
+-- REACTIONS policies
+DROP POLICY IF EXISTS "Reactions are viewable by everyone" ON reactions;
+DROP POLICY IF EXISTS "Anyone can manage reactions" ON reactions;
+CREATE POLICY "Reactions are viewable by everyone" ON reactions FOR SELECT USING (true);
+CREATE POLICY "Anyone can manage reactions" ON reactions FOR ALL USING (true);
+
+-- TEAM_MEMBERS policies
+DROP POLICY IF EXISTS "Team members are viewable by everyone" ON team_members;
+DROP POLICY IF EXISTS "Anyone can manage team members" ON team_members;
+CREATE POLICY "Team members are viewable by everyone" ON team_members FOR SELECT USING (true);
+CREATE POLICY "Anyone can manage team members" ON team_members FOR ALL USING (true);
+
+-- SITE_SETTINGS policies
+DROP POLICY IF EXISTS "Settings are viewable by everyone" ON site_settings;
+DROP POLICY IF EXISTS "Anyone can manage settings" ON site_settings;
+CREATE POLICY "Settings are viewable by everyone" ON site_settings FOR SELECT USING (true);
+CREATE POLICY "Anyone can manage settings" ON site_settings FOR ALL USING (true);
+
+-- ============================================
+-- AUTO-UPDATE VOTE COUNTS
+-- ============================================
+CREATE OR REPLACE FUNCTION update_idea_votes()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    UPDATE ideas SET votes = votes + 1 WHERE id = NEW.idea_id;
+  ELSIF TG_OP = 'DELETE' THEN
+    UPDATE ideas SET votes = GREATEST(votes - 1, 0) WHERE id = OLD.idea_id;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS vote_count_trigger ON votes;
+CREATE TRIGGER vote_count_trigger
+AFTER INSERT OR DELETE ON votes
+FOR EACH ROW EXECUTE FUNCTION update_idea_votes();
+
+-- ============================================
+-- STORAGE BUCKET FOR IDEA IMAGES
+-- ============================================
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('idea-images', 'idea-images', true) 
+ON CONFLICT (id) DO NOTHING;
+
+-- Allow anyone to upload images
+DROP POLICY IF EXISTS "Anyone can upload idea images" ON storage.objects;
+CREATE POLICY "Anyone can upload idea images" ON storage.objects 
+  FOR INSERT WITH CHECK (bucket_id = 'idea-images');
+
+DROP POLICY IF EXISTS "Anyone can view idea images" ON storage.objects;
+CREATE POLICY "Anyone can view idea images" ON storage.objects 
+  FOR SELECT USING (bucket_id = 'idea-images');
+
+-- ============================================
+-- STORAGE BUCKET FOR SETTINGS
+-- ============================================
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('settings', 'settings', true) 
+ON CONFLICT (id) DO NOTHING;
+
+-- Allow admin to upload settings files
+DROP POLICY IF EXISTS "Anyone can upload settings" ON storage.objects;
+CREATE POLICY "Anyone can upload settings" ON storage.objects 
+  FOR INSERT WITH CHECK (bucket_id = 'settings');
+
+DROP POLICY IF EXISTS "Anyone can view settings" ON storage.objects;
+CREATE POLICY "Anyone can view settings" ON storage.objects 
+  FOR SELECT USING (bucket_id = 'settings');
+
+-- ============================================
+-- ENABLE REALTIME SUBSCRIPTIONS
+-- This makes ideas, votes, comments, announcements update live across all clients
+-- ============================================
+DO $$
+BEGIN
+  -- Add tables to realtime publication (ignore if already added)
+  BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE ideas; EXCEPTION WHEN duplicate_object THEN NULL; END;
+  BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE votes; EXCEPTION WHEN duplicate_object THEN NULL; END;
+  BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE comments; EXCEPTION WHEN duplicate_object THEN NULL; END;
+  BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE announcements; EXCEPTION WHEN duplicate_object THEN NULL; END;
+END $$;
+
+-- ============================================
+-- DONE! Tables, policies, storage, and realtime configured
+-- ============================================
+
+-- ============================================
+-- v23: LIKES, SUBSCRIPTIONS, ATOMIC STATS
+-- (idempotent — safe to re-run)
+-- ============================================
+
+-- Idea stats columns
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS views INT DEFAULT 0;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS impressions INT DEFAULT 0;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS likes INT DEFAULT 0;
+
+-- Likes table (auth users via user_id, guests via guest_id)
+CREATE TABLE IF NOT EXISTS idea_likes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  idea_id UUID REFERENCES ideas(id) ON DELETE CASCADE,
+  user_id UUID,
+  guest_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idea_likes_user_unique ON idea_likes (idea_id, user_id) WHERE user_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idea_likes_guest_unique ON idea_likes (idea_id, guest_id) WHERE guest_id IS NOT NULL;
+
+-- Subscriptions table
+CREATE TABLE IF NOT EXISTS idea_subscriptions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  idea_id UUID REFERENCES ideas(id) ON DELETE CASCADE,
+  user_id UUID,
+  guest_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idea_subs_user_unique ON idea_subscriptions (idea_id, user_id) WHERE user_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idea_subs_guest_unique ON idea_subscriptions (idea_id, guest_id) WHERE guest_id IS NOT NULL;
+
+ALTER TABLE idea_likes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE idea_subscriptions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Likes viewable by everyone" ON idea_likes;
+DROP POLICY IF EXISTS "Anyone can like" ON idea_likes;
+DROP POLICY IF EXISTS "Anyone can unlike" ON idea_likes;
+CREATE POLICY "Likes viewable by everyone" ON idea_likes FOR SELECT USING (true);
+CREATE POLICY "Anyone can like" ON idea_likes FOR INSERT WITH CHECK (true);
+CREATE POLICY "Anyone can unlike" ON idea_likes FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Subs viewable by everyone" ON idea_subscriptions;
+DROP POLICY IF EXISTS "Anyone can subscribe" ON idea_subscriptions;
+DROP POLICY IF EXISTS "Anyone can unsubscribe" ON idea_subscriptions;
+CREATE POLICY "Subs viewable by everyone" ON idea_subscriptions FOR SELECT USING (true);
+CREATE POLICY "Anyone can subscribe" ON idea_subscriptions FOR INSERT WITH CHECK (true);
+CREATE POLICY "Anyone can unsubscribe" ON idea_subscriptions FOR DELETE USING (true);
+
+-- Keep ideas.likes in sync (mirrors vote_count_trigger)
+CREATE OR REPLACE FUNCTION update_idea_likes()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF (TG_OP = 'INSERT') THEN
+    UPDATE ideas SET likes = likes + 1 WHERE id = NEW.idea_id;
+  ELSIF (TG_OP = 'DELETE') THEN
+    UPDATE ideas SET likes = GREATEST(likes - 1, 0) WHERE id = OLD.idea_id;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS like_count_trigger ON idea_likes;
+CREATE TRIGGER like_count_trigger
+AFTER INSERT OR DELETE ON idea_likes
+FOR EACH ROW EXECUTE FUNCTION update_idea_likes();
+
+-- Atomic stat increments (no read-modify-write race)
+CREATE OR REPLACE FUNCTION increment_idea_stats(p_idea_id UUID, p_views INT DEFAULT 0, p_impressions INT DEFAULT 0)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE ideas
+  SET views = COALESCE(views, 0) + p_views,
+      impressions = COALESCE(impressions, 0) + p_impressions
+  WHERE id = p_idea_id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION increment_announcement_stats(p_id UUID, p_views INT DEFAULT 0, p_impressions INT DEFAULT 0)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE announcements
+  SET views = COALESCE(views, 0) + p_views,
+      impressions = COALESCE(impressions, 0) + p_impressions
+  WHERE id = p_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Realtime for new tables
+DO $$
+BEGIN
+  BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE idea_likes; EXCEPTION WHEN duplicate_object THEN NULL; END;
+  BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE idea_subscriptions; EXCEPTION WHEN duplicate_object THEN NULL; END;
+END $$;

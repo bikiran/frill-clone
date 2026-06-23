@@ -73,22 +73,35 @@ export default function TeamPage() {
     if (!createEmail.trim() || !createPassword) return
     setWorking(true)
     try {
-      // Add to team_members table
-      const { error: dbErr } = await supabase.from('team_members').insert({
+      // Create actual Supabase auth user via signUp
+      const { data: authData, error: authErr } = await supabase.auth.signUp({
+        email: createEmail.trim().toLowerCase(),
+        password: createPassword,
+        options: {
+          data: { display_name: createName.trim() || createEmail.split('@')[0] },
+        },
+      })
+      if (authErr) throw authErr
+
+      // Also add to team_members table
+      const { error: dbErr } = await (supabase as any).from('team_members').insert({
         email: createEmail.trim().toLowerCase(),
         role: createRole,
         status: 'active',
         invited_by: user?.id,
       })
-      if (dbErr && !dbErr.message.includes('duplicate')) throw dbErr
-      showMsg(`User ${createEmail} created and added to team!`)
+      if (dbErr && !dbErr.message.includes('duplicate')) {
+        console.warn('team_members insert:', dbErr.message)
+      }
+
+      showMsg(`✅ User ${createEmail} created successfully!`)
       setCreateEmail('')
       setCreatePassword('')
       setCreateName('')
       setShowCreate(false)
       fetchMembers()
     } catch (err: any) {
-      alert('Failed: ' + err.message)
+      alert('Failed to create user: ' + err.message)
     }
     setWorking(false)
   }
