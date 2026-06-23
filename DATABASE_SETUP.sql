@@ -105,9 +105,39 @@ CREATE TABLE IF NOT EXISTS announcements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
   description TEXT,
-  tag TEXT,
+  tag TEXT DEFAULT 'Update',
+  status TEXT DEFAULT 'draft',
+  language TEXT DEFAULT 'English',
+  views INT DEFAULT 0,
+  impressions INT DEFAULT 0,
+  is_pinned BOOLEAN DEFAULT false,
+  boost_enabled BOOLEAN DEFAULT false,
+  boost_type TEXT DEFAULT 'banner',
+  segmentation TEXT DEFAULT 'all',
+  notify_subscribers BOOLEAN DEFAULT false,
+  poll_id UUID,
+  survey_id UUID,
+  reactions JSONB DEFAULT '{}',
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Announcement likes table
+CREATE TABLE IF NOT EXISTS announcement_likes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  announcement_id UUID REFERENCES announcements(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id),
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(announcement_id, user_id)
+);
+
+-- Announcement subscribers table
+CREATE TABLE IF NOT EXISTS announcement_subscribers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  announcement_id UUID REFERENCES announcements(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id),
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(announcement_id, user_id)
 );
 
 -- Custom statuses table

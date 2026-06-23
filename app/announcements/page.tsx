@@ -6,10 +6,11 @@ import Link from 'next/link'
 import { BellIcon, HeartIcon } from '@/components/Icons'
 
 const TAG_COLORS: Record<string, { bg: string; color: string; label: string }> = {
-  new_feature: { bg: '#dbeafe', color: '#0284c7', label: '✨ New Feature' },
-  improvement: { bg: '#fef3c7', color: '#ca8a04', label: '⬆️ Improvement' },
-  bug_fix: { bg: '#fee2e2', color: '#dc2626', label: '🐛 Bug Fix' },
-  announcement: { bg: '#f3e8ff', color: '#7c3aed', label: '📢 Announcement' },
+  Feature: { bg: '#dbeafe', color: '#0284c7', label: '✨ Feature' },
+  'Bug Fix': { bg: '#fee2e2', color: '#dc2626', label: '🐛 Bug Fix' },
+  Update: { bg: '#fef3c7', color: '#ca8a04', label: '📝 Update' },
+  Improvement: { bg: '#dcfce7', color: '#16a34a', label: '⬆️ Improvement' },
+  News: { bg: '#f3e8ff', color: '#7c3aed', label: '📢 News' },
 }
 
 export default function AnnouncementsPage() {
@@ -23,6 +24,7 @@ export default function AnnouncementsPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [localReactions, setLocalReactions] = useState<Record<string, Record<string, number>>>({})
   const articleRefs = useRef<Record<string, HTMLElement>>({})
+  const isAdmin = user?.email === 'bishalstha76@gmail.com'
 
   useEffect(() => {
     supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null))
@@ -35,22 +37,27 @@ export default function AnnouncementsPage() {
       const { data } = await supabase
         .from('announcements')
         .select('*')
+        .eq('status', 'published')
         .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: false })
 
       if (data && data.length === 0) {
         const samples = [
-          { title: "🚀 Welcome to Updates!", description: "<p>This is where you'll find all our latest news, feature releases, and product improvements. We're committed to keeping you in the loop.</p><p>You can <strong>subscribe</strong> to get notified whenever we publish something new.</p>", tag: 'announcement', views: 1, impressions: 1, is_pinned: true },
-          { title: "New Dashboard Released", description: "<p>We've completely redesigned the dashboard with a focus on user experience.</p>", tag: 'new_feature', views: 45, impressions: 312, is_pinned: false },
-          { title: "Critical Bug Fixed", description: "<p>Fixed an issue where some users couldn't vote on ideas.</p>", tag: 'bug_fix', views: 28, impressions: 156, is_pinned: false },
+          { title: "🚀 Welcome to Updates!", description: "This is where you'll find all our latest news, feature releases, and product improvements. We're committed to keeping you in the loop.", tag: 'News', views: 1, impressions: 1, is_pinned: true, status: 'published' },
+          { title: "New Dashboard Released", description: "We've completely redesigned the dashboard with a focus on user experience and performance.", tag: 'Feature', views: 45, impressions: 312, is_pinned: false, status: 'published' },
+          { title: "Critical Bug Fixed", description: "Fixed an issue where some users couldn't vote on ideas. All users are now able to participate.", tag: 'Bug Fix', views: 28, impressions: 156, is_pinned: false, status: 'published' },
         ]
         for (const s of samples) await supabase.from('announcements').insert(s)
-        const { data: nd } = await supabase.from('announcements').select('*').order('created_at', { ascending: false })
+        const { data: nd } = await supabase.from('announcements').select('*').eq('status', 'published').order('created_at', { ascending: false })
         setAnnouncements(nd || [])
         if (nd?.[0]) setSelectedId(nd[0].id)
       } else {
         setAnnouncements(data || [])
         if (data?.[0] && !selectedId) setSelectedId(data[0].id)
+        // Load user's likes and subscriptions
+        if (user) {
+          await loadUserPreferences(data || [])
+        }
       }
     } catch (err) {
       console.error(err)
@@ -58,93 +65,128 @@ export default function AnnouncementsPage() {
     setLoading(false)
   }
 
+  const loadUserPreferences = async (anns: any[]) => {
+    if (!user) return
+    try {
+      const annIds = anns.map(a => a.id)
+      const { data: likes } = await supabase
+        .from('announcement_likes')
+        .select('announcement_id')
+        .eq('user_id', user.id)
+        .in('announcement_id', annIds)
+      
+      const { data: subs } = await supabase
+        .from('announcement_subscribers')
+        .select('announcement_id')
+        .eq('user_id', user.id)
+        .in('announcement_id', annIds)
+
+      setLikedIds(new Set(likes?.map(l => l.announcement_id) || []))
+      setSubscribedIds(new Set(subs?.map(s => s.announcement_id) || []))
+    } catch (err) {
+      console.error('Error loading preferences:', err)
+    }
+  }
+
   const handleSelect = async (ann: any) => {
     setSelectedId(ann.id)
-    // Scroll to article
     setTimeout(() => {
       articleRefs.current[ann.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 50)
-    // Track impression
+    // Track view
     await supabase.from('announcements').update({
-      impressions: (ann.impressions || 0) + 1,
+      views: (ann.views || 0) + 1,
     }).eq('id', ann.id)
   }
 
-  const toggleLike = (id: string) => {
-    setLikedIds(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
+  const toggleLike = async (id: string) => {
+    if (!user) {
+      alert('Please sign in to like')
+      return
+    }
+    
+    const isLiked = likedIds.has(id)
+    try {
+      if (isLiked) {
+        await supabase.from('announcement_likes').delete().eq('announcement_id', id).eq('user_id', user.id)
+        setLikedIds(prev => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+      } else {
+        await supabase.from('announcement_likes').insert({ announcement_id: id, user_id: user.id })
+        setLikedIds(prev => new Set(prev).add(id))
+      }
+    } catch (err) {
+      console.error('Like error:', err)
+    }
   }
 
-  const toggleSubscribe = (id: string) => {
-    setSubscribedIds(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
+  const toggleSubscribe = async (id: string) => {
+    if (!user) {
+      alert('Please sign in to subscribe')
+      return
+    }
+
+    const isSubscribed = subscribedIds.has(id)
+    try {
+      if (isSubscribed) {
+        await supabase.from('announcement_subscribers').delete().eq('announcement_id', id).eq('user_id', user.id)
+        setSubscribedIds(prev => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+      } else {
+        await supabase.from('announcement_subscribers').insert({ announcement_id: id, user_id: user.id })
+        setSubscribedIds(prev => new Set(prev).add(id))
+      }
+    } catch (err) {
+      console.error('Subscribe error:', err)
+    }
   }
 
   const copyLink = (id: string) => {
     navigator.clipboard.writeText(`${window.location.origin}/announcements?id=${id}`)
-    alert('Link copied!')
   }
 
   const addReaction = async (ann: any, emoji: string) => {
     const current = (ann.reactions as Record<string, number>) || {}
     const updated = { ...current, [emoji]: (current[emoji] || 0) + 1 }
-    // Optimistic local update
     setLocalReactions(prev => ({ ...prev, [ann.id]: updated }))
     await supabase.from('announcements').update({ reactions: updated }).eq('id', ann.id)
   }
 
-  const filtered = announcements.filter(a =>
-    !search || a.title.toLowerCase().includes(search.toLowerCase())
-  )
+  const grouped = announcements.reduce((acc, ann) => {
+    const month = new Date(ann.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    if (!acc[month]) acc[month] = []
+    acc[month].push(ann)
+    return acc
+  }, {} as Record<string, any[]>)
 
-  // Group sidebar items by month
-  const grouped: Record<string, any[]> = {}
-  filtered.forEach(ann => {
-    const key = new Date(ann.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-    if (!grouped[key]) grouped[key] = []
-    grouped[key].push(ann)
-  })
-
-  const isAdmin = user?.email === 'bishalstha76@gmail.com'
+  const filtered = announcements.filter(a => a.title.toLowerCase().includes(search.toLowerCase()) || a.description?.toLowerCase().includes(search.toLowerCase()))
 
   return (
-    <div className="flex h-[calc(100vh-56px)] overflow-hidden" style={{ background: 'var(--canvas)' }}>
-      {/* ─── LEFT SIDEBAR ─── */}
-      <aside className="hidden lg:flex flex-col w-72 xl:w-80 shrink-0 bg-white border-r" style={{ borderColor: 'var(--border)' }}>
-        {/* Search */}
+    <div className="h-screen flex bg-white">
+      {/* ─── SIDEBAR ─── */}
+      <aside className="w-80 border-r flex flex-col overflow-hidden" style={{ borderColor: 'var(--border)' }}>
         <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
           <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--slate)' }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--slate)' }}>
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search updates…"
-              className="w-full pl-9 pr-3 py-2 rounded-lg border text-sm focus:outline-none transition-smooth"
-              style={{ borderColor: 'var(--border)', fontSize: '16px', background: 'var(--canvas)' }}
+              placeholder="Search announcements..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg border bg-white focus:outline-none text-sm"
+              style={{ borderColor: 'var(--border)' }}
             />
           </div>
         </div>
 
-        {isAdmin && (
-          <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-            <Link
-              href="/admin/announcements/new"
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-smooth press-effect"
-              style={{ background: 'linear-gradient(135deg, var(--coral), #ff8f7f)' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              New Announcement
-            </Link>
-          </div>
-        )}
-
-        {/* Timeline list */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="p-4 space-y-3">
@@ -156,26 +198,21 @@ export default function AnnouncementsPage() {
             </div>
           ) : (
             <div className="relative py-2">
-              {/* Vertical timeline line */}
               <div className="absolute left-[22px] top-0 bottom-0 w-px" style={{ background: 'var(--border)' }} />
-
               {Object.entries(grouped).map(([month, items]) => (
                 <div key={month}>
-                  {/* Month label */}
                   <div className="pl-12 pr-4 py-1.5 sticky top-0 z-10 bg-white">
                     <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: 'var(--slate)' }}>{month}</p>
                   </div>
-
                   {items.map(ann => {
                     const isActive = selectedId === ann.id
-                    const tagCfg = TAG_COLORS[ann.tag] || TAG_COLORS.announcement
+                    const tagCfg = TAG_COLORS[ann.tag] || TAG_COLORS.Update
                     return (
                       <button
                         key={ann.id}
                         onClick={() => handleSelect(ann)}
                         className="w-full text-left flex items-start gap-3 px-4 py-3 transition-smooth hover:bg-gray-50 relative"
                         style={{ background: isActive ? 'var(--peach)' : 'transparent' }}>
-                        {/* Timeline dot */}
                         <div className="relative shrink-0 mt-1 z-10">
                           <div
                             className="w-4 h-4 rounded-full border-2 border-white flex items-center justify-center transition-all"
@@ -186,8 +223,6 @@ export default function AnnouncementsPage() {
                             }}
                           />
                         </div>
-
-                        {/* Content */}
                         <div className="flex-1 min-w-0">
                           {ann.is_pinned && (
                             <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: 'var(--coral)' }}>
@@ -234,7 +269,7 @@ export default function AnnouncementsPage() {
               <p className="mb-6" style={{ color: 'var(--slate)' }}>Check back soon for updates!</p>
               {isAdmin && (
                 <Link href="/admin/announcements/new"
-                  className="inline-block px-6 py-3 rounded-xl font-semibold text-white"
+                  className="inline-block px-6 py-3 rounded-xl font-semibold text-white transition-smooth hover:shadow-lg"
                   style={{ background: 'var(--coral)' }}>
                   Create First Announcement
                 </Link>
@@ -243,8 +278,8 @@ export default function AnnouncementsPage() {
           </div>
         ) : (
           <div className="max-w-3xl mx-auto px-6 md:px-12 py-8 md:py-12">
-            {filtered.map((ann, idx) => {
-              const tagCfg = TAG_COLORS[ann.tag] || TAG_COLORS.announcement
+            {filtered.map(ann => {
+              const tagCfg = TAG_COLORS[ann.tag] || TAG_COLORS.Update
               const liked = likedIds.has(ann.id)
               const subscribed = subscribedIds.has(ann.id)
               return (
@@ -257,11 +292,11 @@ export default function AnnouncementsPage() {
 
                   {/* Meta row */}
                   <div className="flex items-center gap-2 mb-4 flex-wrap">
-                    <span className="text-xs px-2.5 py-1 rounded-full font-semibold" style={{ background: tagCfg.bg, color: tagCfg.color }}>
+                    <span className="text-xs px-2.5 py-1 rounded-full font-semibold transition-smooth" style={{ background: tagCfg.bg, color: tagCfg.color }}>
                       {tagCfg.label}
                     </span>
                     {ann.is_pinned && (
-                      <span className="text-xs px-2.5 py-1 rounded-full font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
+                      <span className="text-xs px-2.5 py-1 rounded-full font-semibold transition-smooth" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
                         📌 Pinned
                       </span>
                     )}
@@ -279,7 +314,7 @@ export default function AnnouncementsPage() {
                   <div className="flex items-center gap-2 mb-8 flex-wrap">
                     <button
                       onClick={() => toggleSubscribe(ann.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all cursor-pointer hover:shadow-sm active:scale-95"
                       style={{
                         borderColor: subscribed ? 'var(--coral)' : 'var(--border)',
                         color: subscribed ? 'var(--coral)' : 'var(--ink)',
@@ -290,7 +325,7 @@ export default function AnnouncementsPage() {
                     </button>
                     <button
                       onClick={() => toggleLike(ann.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all cursor-pointer hover:shadow-sm active:scale-95"
                       style={{
                         borderColor: liked ? 'var(--coral)' : 'var(--border)',
                         color: liked ? 'var(--coral)' : 'var(--ink)',
@@ -301,7 +336,7 @@ export default function AnnouncementsPage() {
                     </button>
 
                     {/* Quick emoji reactions */}
-                    <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-xl border"
+                    <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-xl border transition-smooth"
                       style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
                       {['👍', '❤️', '😂', '🔥'].map(emoji => {
                         const count = (localReactions[ann.id] || ann.reactions || {})[emoji] || 0
@@ -309,7 +344,7 @@ export default function AnnouncementsPage() {
                           <button
                             key={emoji}
                             onClick={() => addReaction(ann, emoji)}
-                            className="flex items-center gap-0.5 w-8 h-7 rounded-lg justify-center hover:bg-white hover:shadow-sm transition-all hover:scale-125 cursor-pointer text-sm"
+                            className="flex items-center gap-0.5 w-8 h-7 rounded-lg justify-center hover:bg-white hover:shadow-sm transition-all hover:scale-110 cursor-pointer text-sm active:scale-95"
                             title={`React with ${emoji}`}>
                             {emoji}
                             {count > 0 && (
@@ -325,7 +360,7 @@ export default function AnnouncementsPage() {
                       <div className="relative ml-auto">
                         <button
                           onClick={() => setOpenMenuId(openMenuId === ann.id ? null : ann.id)}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center border cursor-pointer transition-smooth hover:bg-gray-50"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center border cursor-pointer transition-all hover:bg-gray-50 active:scale-95"
                           style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
@@ -334,8 +369,7 @@ export default function AnnouncementsPage() {
                         {openMenuId === ann.id && (
                           <>
                             <div className="fixed inset-0 z-30" onClick={() => setOpenMenuId(null)} />
-                            <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-xl border z-40 overflow-hidden animate-fade-in-up"
-                              style={{ borderColor: 'var(--border)' }}>
+                            <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-xl border z-40 overflow-hidden animate-fade-in-up" style={{ borderColor: 'var(--border)' }}>
                               <Link
                                 href={`/admin/announcements/new?edit=${ann.id}`}
                                 onClick={() => setOpenMenuId(null)}
@@ -372,14 +406,22 @@ export default function AnnouncementsPage() {
                   </div>
 
                   {/* Stats */}
-                  <div className="flex gap-6 mb-8 pb-6 border-b" style={{ borderColor: 'var(--border)' }}>
+                  <div className="flex gap-6 md:gap-12 mb-8 pb-6 border-b flex-wrap" style={{ borderColor: 'var(--border)' }}>
                     <div>
                       <p className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--slate)' }}>Views</p>
-                      <p className="text-xl font-bold" style={{ color: 'var(--coral)' }}>{ann.views || 0}</p>
+                      <p className="text-2xl font-bold" style={{ color: 'var(--coral)' }}>{ann.views || 0}</p>
                     </div>
                     <div>
-                      <p className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--slate)' }}>Impressions</p>
-                      <p className="text-xl font-bold" style={{ color: 'var(--coral)' }}>{ann.impressions || 0}</p>
+                      <p className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--slate)' }}>Likes</p>
+                      <p className="text-2xl font-bold" style={{ color: 'var(--coral)' }}>
+                        {announcements.find(a => a.id === ann.id) ? 'Tracked' : '0'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--slate)' }}>Subscribers</p>
+                      <p className="text-2xl font-bold" style={{ color: 'var(--coral)' }}>
+                        {announcements.find(a => a.id === ann.id) ? 'Tracked' : '0'}
+                      </p>
                     </div>
                   </div>
 
@@ -393,12 +435,12 @@ export default function AnnouncementsPage() {
                     )}
                   </div>
 
-                  {/* Quick reactions */}
+                  {/* Quick reactions display */}
                   {ann.reactions && Object.keys(ann.reactions).length > 0 && (
-                    <div className="flex items-center gap-2 mb-4 flex-wrap">
+                    <div className="flex items-center gap-2 mb-6 flex-wrap">
                       {Object.entries(ann.reactions as Record<string, number>).map(([emoji, count]) =>
                         count > 0 ? (
-                          <span key={emoji} className="flex items-center gap-1 text-sm px-3 py-1 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
+                          <span key={emoji} className="flex items-center gap-1 text-sm px-3 py-1 rounded-full transition-smooth" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
                             {emoji} <span className="font-semibold">{count}</span>
                           </span>
                         ) : null
@@ -408,20 +450,20 @@ export default function AnnouncementsPage() {
 
                   {/* Attached Poll/Survey */}
                   {(ann.poll_id || ann.survey_id) && (
-                    <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+                    <div className="p-4 rounded-xl border mb-6 transition-smooth" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
                       <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Attached</p>
                       <div className="flex gap-2 flex-wrap">
                         {ann.poll_id && (
                           <a href={`/polls/${ann.poll_id}`}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-smooth hover:shadow-md"
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all hover:shadow-md active:scale-95"
                             style={{ background: '#dbeafe', color: '#0369a1' }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12h2v5H7z"/><path d="M11 8h2v9h-2z"/></svg>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12h2v5H7z"/><path d="M11 8h2v9h-2z"/><path d="M15 10h2v7h-2z"/></svg>
                             Vote in Poll
                           </a>
                         )}
                         {ann.survey_id && (
                           <a href={`/surveys/${ann.survey_id}`}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-smooth hover:shadow-md"
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all hover:shadow-md active:scale-95"
                             style={{ background: '#dcfce7', color: '#16a34a' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                             Take Survey
