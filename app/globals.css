@@ -1,0 +1,720 @@
+@import "tailwindcss";
+
+:root {
+  --coral: #ff7a6b;
+  --coral-hover: #f56354;
+  --peach: #fff4f1;
+  --ink: #1a1a1a;
+  --slate: #6b6b70;
+  --border: #f0f0f0;
+  --canvas: #fafafa;
+  --card: #ffffff;
+  --white: #ffffff;
+  --radius: 16px;
+}
+
+/* Dark theme — applied via JS by setting data-theme="dark" on <html> */
+[data-theme="dark"] {
+  --ink: #f0f0f0;
+  --slate: #9ca3af;
+  --border: #2d2d2d;
+  --canvas: #111111;
+  --card: #1e1e1e;
+  --white: #1e1e1e;
+  --peach: rgba(255, 122, 107, 0.12);
+}
+
+[data-theme="dark"] body { background: var(--canvas); color: var(--ink); }
+[data-theme="dark"] .bg-white { background: var(--card) !important; }
+[data-theme="dark"] header { background: rgba(17,17,17,0.85) !important; border-color: var(--border) !important; }
+[data-theme="dark"] aside { background: #141414 !important; border-color: var(--border) !important; }
+[data-theme="dark"] input, [data-theme="dark"] textarea, [data-theme="dark"] select {
+  background: #1e1e1e !important;
+  color: var(--ink) !important;
+  border-color: var(--border) !important;
+}
+[data-theme="dark"] .hover\:bg-gray-50:hover { background: #2a2a2a !important; }
+[data-theme="dark"] .bg-gray-100 { background: #2d2d2d !important; }
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* ── APPLE-STYLE TRANSITIONS ── */
+.transition-smooth {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── HOVER EFFECTS ── */
+.hover-lift {
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
+}
+
+.hover-shadow {
+  transition: box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.hover-shadow:hover {
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+}
+
+.hover-glow {
+  transition: box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.hover-glow:hover {
+  box-shadow: 0 0 20px rgba(255, 122, 107, 0.3);
+}
+
+/* ── PRESS EFFECT ── */
+.press-effect {
+  transition: transform 0.1s ease, opacity 0.1s ease;
+}
+.press-effect:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+
+/* ── BUTTON HOVER ── */
+button {
+  position: relative;
+}
+button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+button:hover::before {
+  opacity: 0.05;
+}
+
+/* ── FADE IN ANIMATION ── */
+@keyframes fadeInUp {
+  from { 
+    opacity: 0; 
+    transform: translateY(12px); 
+  }
+  to   { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* ── STAGGER CHILDREN ── */
+.stagger-children > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.10s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.15s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.20s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.25s; }
+.stagger-children > *:nth-child(6) { animation-delay: 0.30s; }
+.stagger-children > *:nth-child(7) { animation-delay: 0.35s; }
+.stagger-children > *:nth-child(8) { animation-delay: 0.40s; }
+
+/* ── MODAL ANIMATIONS ── */
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes modalIn {
+  from { 
+    opacity: 0; 
+    transform: translateY(24px) scale(0.97); 
+  }
+  to   { 
+    opacity: 1; 
+    transform: translateY(0) scale(1); 
+  }
+}
+.animate-backdrop { 
+  animation: backdropIn 0.2s ease both; 
+}
+.animate-modal    { 
+  animation: modalIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both; 
+}
+
+/* ── SHIMMER SKELETON ── */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 8px;
+}
+
+/* ── DRAWER ANIMATIONS ── */
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+@keyframes slideOut {
+  from { transform: translateX(0); }
+  to   { transform: translateX(100%); }
+}
+.drawer-open  { animation: slideIn  0.3s cubic-bezier(0.4, 0, 0.2, 1) both; }
+.drawer-close { animation: slideOut 0.25s cubic-bezier(0.4, 0, 0.2, 1) both; }
+
+/* ── INPUT FOCUS GLOW ── */
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--coral) !important;
+  box-shadow: 0 0 0 3px rgba(255, 122, 107, 0.1);
+}
+
+/* ── SMOOTH SCROLL ── */
+html {
+  scroll-behavior: smooth;
+}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { 
+  width: 6px; 
+}
+::-webkit-scrollbar-track { 
+  background: transparent; 
+}
+::-webkit-scrollbar-thumb { 
+  background: #e0e0e0; 
+  border-radius: 3px; 
+}
+::-webkit-scrollbar-thumb:hover { 
+  background: #d0d0d0; 
+}
+
+/* ── LINK ANIMATION ── */
+a {
+  position: relative;
+  text-decoration: none;
+}
+
+/* ── CARD HOVER ── */
+.card-hover {
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+}
+
+/* ── CHECKBOX/RADIO STYLING ── */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--coral);
+  cursor: pointer;
+}
+
+/* ── SELECT STYLING ── */
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b6b70' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 28px;
+  appearance: none;
+  cursor: pointer;
+}
+
+/* ── TABLE/LIST HOVER ── */
+tr:hover,
+li:hover {
+  background-color: rgba(255, 122, 107, 0.03);
+  transition: background-color 0.15s ease;
+}
+
+/* ── BADGE ANIMATION ── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+.badge:hover {
+  transform: scale(1.05);
+}
+
+/* ── SMOOTH COLOR TRANSITIONS ── */
+* {
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+*:focus {
+  transition: none;
+}
+
+/* ── FUTURISTIC BUTTON WITH ANIMATED BACKGROUND ── */
+.futuristic-submit-btn {
+  position: relative;
+  background: linear-gradient(135deg, var(--coral) 0%, #ff8f7f 100%);
+  box-shadow: 0 0 20px rgba(255, 122, 107, 0.4);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.futuristic-submit-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.2) 50%, transparent 70%);
+  animation: shimmer-slide 3s infinite;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.futuristic-submit-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 30px rgba(255, 122, 107, 0.6), 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.futuristic-submit-btn:active {
+  transform: scale(0.98);
+}
+
+@keyframes shimmer-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ── FUTURISTIC BUTTON STYLE ── */
+.futuristic-btn {
+  position: relative;
+  background: linear-gradient(135deg, var(--coral) 0%, #ff8f7f 100%);
+  box-shadow: 0 0 15px rgba(255, 122, 107, 0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.futuristic-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.15) 50%, transparent 70%);
+  animation: shimmer-slide 3s infinite;
+  pointer-events: none;
+}
+
+.futuristic-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 0 25px rgba(255, 122, 107, 0.5), 0 8px 16px rgba(0, 0, 0, 0.1);
+}
+
+/* ── ENHANCED DRAG & DROP ANIMATIONS ── */
+.drag-active {
+  opacity: 0.5;
+  transform: scale(0.95) rotate(-2deg);
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.drag-over {
+  background: linear-gradient(135deg, rgba(255, 122, 107, 0.08), rgba(255, 122, 107, 0.12)) !important;
+  box-shadow: inset 0 0 20px rgba(255, 122, 107, 0.15) !important;
+  transform: scaleY(1.02);
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── POINTY ARROWS ── */
+.arrow-right::after {
+  content: '→';
+  margin-left: 4px;
+  display: inline-block;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 600;
+}
+
+.arrow-right:hover::after {
+  transform: translateX(4px);
+}
+
+/* ── ENHANCED HOVER LIFT ── */
+.hover-lift {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* ── RICH TEXT EDITOR ── */
+.rich-editor[contenteditable]:empty::before {
+  content: attr(data-placeholder);
+  color: #d1d5db;
+  pointer-events: none;
+}
+
+.rich-editor img {
+  max-width: 100%;
+  height: auto;
+  margin: 0.5rem 0;
+  border-radius: 8px;
+}
+
+.rich-editor a {
+  color: var(--coral);
+  text-decoration: underline;
+}
+
+.rich-editor strong, .rich-editor b {
+  font-weight: 700;
+}
+
+/* ── SMOOTH VOTE BUTTON ── */
+@keyframes voteBounce {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.3) translateY(-4px); }
+  70% { transform: scale(0.95); }
+  100% { transform: scale(1); }
+}
+
+.vote-animate {
+  animation: voteBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes voteRipple {
+  0% { box-shadow: 0 0 0 0 rgba(255, 122, 107, 0.4); }
+  100% { box-shadow: 0 0 0 20px rgba(255, 122, 107, 0); }
+}
+
+.vote-ripple {
+  animation: voteRipple 0.6s ease-out;
+}
+
+/* ── DRAG & DROP FANCY ── */
+.dragging-card {
+  transform: scale(1.06) rotate(2deg);
+  box-shadow: 
+    0 30px 60px rgba(255, 122, 107, 0.4), 
+    0 12px 24px rgba(0, 0, 0, 0.15),
+    0 0 0 2px rgba(255, 122, 107, 0.3);
+  opacity: 0.92;
+  z-index: 1000;
+  cursor: grabbing !important;
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;
+  filter: brightness(1.02);
+}
+
+.drop-zone-active {
+  background: linear-gradient(135deg, 
+    rgba(255, 122, 107, 0.06), 
+    rgba(255, 122, 107, 0.14),
+    rgba(255, 184, 77, 0.08)
+  ) !important;
+  border: 2px dashed var(--coral) !important;
+  box-shadow: 
+    inset 0 0 60px rgba(255, 122, 107, 0.15), 
+    0 0 0 4px rgba(255, 122, 107, 0.08),
+    0 0 30px rgba(255, 122, 107, 0.2);
+  transform: scale(1.015);
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Animated gradient sweep on drop zone */
+.drop-zone-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, 
+    transparent 30%, 
+    rgba(255, 122, 107, 0.12) 50%, 
+    transparent 70%
+  );
+  animation: sweep 2s linear infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.drop-zone-active::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 70px;
+  height: 70px;
+  margin-left: -35px;
+  margin-top: -35px;
+  background: linear-gradient(135deg, var(--coral), #ffb84d);
+  border-radius: 50%;
+  box-shadow: 
+    0 0 0 8px rgba(255, 122, 107, 0.15),
+    0 0 0 16px rgba(255, 122, 107, 0.08),
+    0 12px 32px rgba(255, 122, 107, 0.4);
+  animation: dropPulse 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Arrow icon inside the pulse circle */
+.drop-zone-active .kanban-column-content::before {
+  content: '↓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin-left: -8px;
+  margin-top: -16px;
+  font-size: 28px;
+  color: white;
+  font-weight: bold;
+  z-index: 3;
+  pointer-events: none;
+  animation: arrowBounce 1.2s ease-in-out infinite;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes dropPulse {
+  0%, 100% { 
+    transform: scale(1);
+    box-shadow: 
+      0 0 0 8px rgba(255, 122, 107, 0.15),
+      0 0 0 16px rgba(255, 122, 107, 0.08),
+      0 12px 32px rgba(255, 122, 107, 0.4);
+  }
+  50% { 
+    transform: scale(1.15);
+    box-shadow: 
+      0 0 0 14px rgba(255, 122, 107, 0.1),
+      0 0 0 28px rgba(255, 122, 107, 0.04),
+      0 16px 40px rgba(255, 122, 107, 0.5);
+  }
+}
+
+@keyframes arrowBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(6px); }
+}
+
+/* Drop indicator line between cards - now with glow trail */
+@keyframes indicatorGlow {
+  0%, 100% { 
+    box-shadow: 0 0 12px rgba(255, 122, 107, 0.6), 0 0 20px rgba(255, 122, 107, 0.3);
+    opacity: 0.9;
+  }
+  50% { 
+    box-shadow: 0 0 24px rgba(255, 122, 107, 0.9), 0 0 36px rgba(255, 122, 107, 0.5);
+    opacity: 1;
+  }
+}
+
+/* ── ENSURE BUTTONS SHOW POINTER ── */
+button:not(:disabled), 
+a:not([disabled]),
+[role="button"]:not(:disabled),
+[onclick]:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled, 
+button[disabled] {
+  cursor: not-allowed;
+}
+
+/* Labels with onclick handlers */
+label[onclick],
+label.cursor-pointer {
+  cursor: pointer;
+}
+
+/* Range slider thumb */
+input[type="range"] {
+  cursor: pointer;
+}
+
+/* Toggle switches */
+.toggle-switch {
+  cursor: pointer;
+}
+
+/* ── ACTION BUTTON TOOLTIPS ── */
+.action-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f2937;
+  color: white;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s, transform 0.15s;
+  z-index: 100;
+}
+
+.action-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: #1f2937;
+}
+
+.group:hover > .action-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-2px);
+}
+
+/* ── TRELLO-STYLE HORIZONTAL SCROLL KANBAN ── */
+.kanban-scroll {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 1rem;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.kanban-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.kanban-scroll::-webkit-scrollbar-track {
+  background: var(--canvas);
+  border-radius: 5px;
+}
+
+.kanban-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+}
+
+.kanban-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--coral);
+}
+
+.kanban-column {
+  flex: 0 0 320px;
+  max-width: 320px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+@media (min-width: 768px) {
+  .kanban-column {
+    flex: 0 0 360px;
+    max-width: 360px;
+  }
+}
+
+/* ── ACTION TOOLTIPS ── */
+.action-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f2937;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.action-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: #1f2937;
+}
+
+button:hover .action-tooltip,
+.group:hover .action-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-2px);
+}
+
+/* ── HORIZONTAL SCROLLABLE STATUSES (Trello-style) ── */
+.kanban-row {
+  display: flex;
+  gap: 1.25rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 1rem;
+  scroll-snap-type: x mandatory;
+}
+
+.kanban-row > * {
+  flex: 0 0 320px;
+  scroll-snap-align: start;
+}
+
+.kanban-row::-webkit-scrollbar {
+  height: 8px;
+}
+
+.kanban-row::-webkit-scrollbar-track {
+  background: var(--canvas);
+  border-radius: 4px;
+}
+
+.kanban-row::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.kanban-row::-webkit-scrollbar-thumb:hover {
+  background: var(--slate);
+}
+
+/* ── PROSE RENDERED HTML ── */
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  margin: 1rem 0;
+}
+
+.prose a {
+  color: var(--coral);
+  text-decoration: underline;
+}
+
+.prose b, .prose strong {
+  font-weight: 700;
+}
+
+.prose i, .prose em {
+  font-style: italic;
+}
