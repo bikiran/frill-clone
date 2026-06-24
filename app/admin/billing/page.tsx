@@ -242,7 +242,7 @@ export default function BillingPage() {
       <div className="p-5 rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
         <p className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Enterprise — Starting from $349 per month</p>
         <p className="text-sm mb-3" style={{ color: 'var(--slate)' }}>Dedicated account manager, custom feature development, audit logs, IP address whitelisting, SOC2 compliance, Dedicated hosted instances and more!</p>
-        <a href="mailto:support@frill.co" className="text-sm font-semibold" style={{ color: 'var(--coral)' }}>Get in contact →</a>
+        <a href="mailto:support@colvy.com" className="text-sm font-semibold" style={{ color: 'var(--coral)' }}>Get in contact →</a>
       </div>
 
       {/* Payment Details */}

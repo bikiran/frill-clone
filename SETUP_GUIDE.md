@@ -38,7 +38,7 @@ STEP 2: RUN LOCALLY (5 minutes)
 ───────────────────────────────
 
 1. Navigate to the project directory:
-   cd frill-clone
+   cd colvy
 
 2. Install dependencies:
    npm install
@@ -72,7 +72,7 @@ DEPLOY TO VERCEL:
    git init
    git add .
    git commit -m "Initial commit"
-   git remote add origin https://github.com/YOUR_USERNAME/frill-clone.git
+   git remote add origin https://github.com/YOUR_USERNAME/colvy.git
    git push -u origin main
 
 2. Go to https://vercel.com → Sign in with GitHub
@@ -181,7 +181,7 @@ TROUBLESHOOTING
 PROJECT STRUCTURE
 ──────────────────
 
-frill-clone/
+colvy/
 ├── app/
 │   ├── layout.tsx           (main navigation)
 │   ├── page.tsx             (ideas board)

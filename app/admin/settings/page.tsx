@@ -837,7 +837,7 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          {/* Add Script - Frill Style */}
+          {/* Add Script - Colvy Style */}
           <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Add Script</h2>

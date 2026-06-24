@@ -69,7 +69,7 @@ function SignInForm() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/landing" className="inline-block mb-6 text-2xl font-bold" style={{ color: 'var(--coral)' }}>
-            frill
+            Colvy
           </Link>
           <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Welcome back</h1>
           <p style={{ color: 'var(--slate)' }}>Sign in to your feedback board</p>

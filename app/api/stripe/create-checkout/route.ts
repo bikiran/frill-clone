@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Price ID not configured for ' + tier, setup: true }, { status: 200 })
     }
 
-    const origin = req.headers.get('origin') || 'https://frill-clone.vercel.app'
+    const origin = req.headers.get('origin') || 'https://colvy.com'
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',

@@ -50,7 +50,7 @@ export default function LandingPage() {
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-sm border-b" style={{ background: 'rgba(255,255,255,0.95)', borderColor: 'var(--border)' }}>
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="text-2xl font-bold" style={{ color: 'var(--coral)' }}>frill</div>
+          <div className="text-2xl font-bold" style={{ color: 'var(--coral)' }}>Colvy</div>
           <div className="hidden md:flex items-center gap-8 text-sm font-medium" style={{ color: 'var(--slate)' }}>
             <a href="#features" className="hover:opacity-70 cursor-pointer">Features</a>
             <a href="#integrations" className="hover:opacity-70 cursor-pointer">Integrations</a>
@@ -119,7 +119,7 @@ export default function LandingPage() {
               { icon: '🔐', title: 'SSO Authentication', desc: 'Integrate directly with your platform for a seamless user experience' },
               { icon: '🧩', title: 'Unlimited Widgets', desc: 'Create as many widgets as you like on all plans.' },
               { icon: '🌍', title: 'Full Translations', desc: 'Every word is translatable into your own language' },
-              { icon: '🎨', title: 'Themes', desc: 'Update Frill with your own brand colours.' },
+              { icon: '🎨', title: 'Themes', desc: 'Update Colvy with your own brand colours.' },
               { icon: '📧', title: 'Automatic Status Updates', desc: 'Keep customers updated with automated emails.' },
             ].map((f, i) => (
               <div key={i} className="p-6 rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
@@ -202,17 +202,17 @@ export default function LandingPage() {
       <section id="integrations" className="py-20 px-6" style={{ background: 'var(--canvas)' }}>
         <div className="max-w-6xl mx-auto">
           <h2 className="text-4xl font-black text-center mb-4" style={{ color: 'var(--ink)' }}>Integrations</h2>
-          <p className="text-center mb-12" style={{ color: 'var(--slate)' }}>Connect Frill to the tools that you already use.</p>
+          <p className="text-center mb-12" style={{ color: 'var(--slate)' }}>Connect Colvy to the tools that you already use.</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { name: 'Slack', icon: 'S', desc: 'Message Slack when new Ideas are created.' },
-              { name: 'Jira', icon: 'J', desc: 'Send new Ideas from Frill straight to Jira.' },
-              { name: 'Trello', icon: 'T', desc: 'Send new Ideas from Frill straight to Trello.' },
+              { name: 'Jira', icon: 'J', desc: 'Send new Ideas straight to Jira.' },
+              { name: 'Trello', icon: 'T', desc: 'Send new Ideas straight to Trello.' },
               { name: 'Zendesk', icon: 'Z', desc: 'Create & manage Ideas inside of Zendesk.' },
               { name: 'Intercom', icon: 'I', desc: 'Create & manage Ideas inside of Intercom.' },
               { name: 'Help Scout', icon: 'H', desc: 'Create & manage Ideas inside of Help Scout.' },
-              { name: 'Zapier', icon: 'Z', desc: 'Automate your Frill workflows with Zapier.' },
-              { name: 'Linear', icon: 'L', desc: 'Send new Ideas from Frill straight to Linear.' },
+              { name: 'Zapier', icon: 'Z', desc: 'Automate your workflows with Zapier.' },
+              { name: 'Linear', icon: 'L', desc: 'Send new Ideas straight to Linear.' },
             ].map((intg, i) => (
               <div key={i} className="p-5 bg-white rounded-2xl border text-center hover:shadow-md transition-all cursor-pointer" style={{ borderColor: 'var(--border)' }}>
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold mx-auto mb-3 text-sm" style={{ background: 'var(--coral)' }}>
@@ -269,7 +269,7 @@ export default function LandingPage() {
       <section className="py-20 px-6">
         <div className="max-w-3xl mx-auto text-center rounded-3xl p-12" style={{ background: 'var(--peach)' }}>
           <h2 className="text-3xl font-black mb-4" style={{ color: 'var(--ink)' }}>
-            Frill for startups, charities and entrepreneurs.
+            Colvy for startups, charities and entrepreneurs.
           </h2>
           <p className="mb-8" style={{ color: 'var(--slate)' }}>
             Are you part of an early stage startup, educational facility, charity or open source project?
@@ -286,7 +286,7 @@ export default function LandingPage() {
       <footer className="border-t py-12 px-6" style={{ borderColor: 'var(--border)' }}>
         <div className="max-w-6xl mx-auto grid md:grid-cols-5 gap-8 mb-8">
           <div className="md:col-span-1">
-            <p className="text-xl font-bold mb-3" style={{ color: 'var(--coral)' }}>frill</p>
+            <p className="text-xl font-bold mb-3" style={{ color: 'var(--coral)' }}>Colvy</p>
             <p className="text-sm" style={{ color: 'var(--slate)' }}>A better way to collect customer feedback.</p>
           </div>
           {[
@@ -306,7 +306,7 @@ export default function LandingPage() {
           ))}
         </div>
         <div className="border-t pt-8 text-center text-sm" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-          © 2026 Frill. All rights reserved.
+          © 2026 Colvy. All rights reserved.
         </div>
       </footer>
     </div>

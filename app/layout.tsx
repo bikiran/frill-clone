@@ -128,13 +128,18 @@ export default function RootLayout({
 
   return (
     <html lang="en">
+      <head>
+        <title>Colvy — Customer Feedback Made Beautiful</title>
+        <meta name="description" content="Colvy helps you capture, organize and announce product feedback in one place." />
+        <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>" />
+      </head>
       <body style={{ background: 'var(--canvas)' }}>
         {/* Header */}
         <header className="sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)' }}>
           <nav className="h-14 px-6 flex items-center justify-between">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
-              <span style={{ color: 'var(--coral)' }}>YourApp</span>
+              <span style={{ color: 'var(--coral)' }}>Colvy</span>
             </Link>
 
             {/* Desktop Nav */}

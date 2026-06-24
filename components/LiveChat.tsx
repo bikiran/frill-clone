@@ -59,7 +59,7 @@ export default function LiveChat() {
             session_id: sessionId,
             from_type: 'agent',
             from_name: 'Support',
-            from_email: 'support@frill.co',
+            from_email: 'support@colvy.com',
             message: `Hi ${name || 'there'}! 👋 I'm here to help. What can I assist you with today?`,
             created_at: new Date().toISOString(),
           }

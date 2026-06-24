@@ -25,7 +25,7 @@ const INTEGRATIONS = [
   {
     id: 'jira',
     name: 'Jira',
-    desc: 'Automatically create Jira issues from Frill ideas.',
+    desc: 'Automatically create Jira issues from Colvy ideas.',
     icon: '🔵',
     color: '#0052CC',
     bg: '#e6f0ff',
@@ -41,7 +41,7 @@ const INTEGRATIONS = [
   {
     id: 'linear',
     name: 'Linear',
-    desc: 'Send ideas from Frill straight to Linear as issues.',
+    desc: 'Send ideas from Colvy straight to Linear as issues.',
     icon: '⚫',
     color: '#5E6AD2',
     bg: '#f0f0ff',
@@ -55,7 +55,7 @@ const INTEGRATIONS = [
   {
     id: 'trello',
     name: 'Trello',
-    desc: 'Add new Frill ideas as Trello cards automatically.',
+    desc: 'Add new Colvy ideas as Trello cards automatically.',
     icon: '🟩',
     color: '#0079BF',
     bg: '#e8f4ff',
@@ -70,7 +70,7 @@ const INTEGRATIONS = [
   {
     id: 'zapier',
     name: 'Zapier',
-    desc: 'Connect Frill to 5000+ apps with Zapier automations.',
+    desc: 'Connect Colvy to 5000+ apps with Zapier automations.',
     icon: '🟠',
     color: '#FF4A00',
     bg: '#fff4f0',
@@ -83,7 +83,7 @@ const INTEGRATIONS = [
   {
     id: 'github',
     name: 'GitHub',
-    desc: 'Create GitHub issues from Frill ideas.',
+    desc: 'Create GitHub issues from Colvy ideas.',
     icon: '⚫',
     color: '#24292F',
     bg: '#f6f8fa',
@@ -97,7 +97,7 @@ const INTEGRATIONS = [
   {
     id: 'intercom',
     name: 'Intercom',
-    desc: 'Create and manage Frill ideas inside of Intercom.',
+    desc: 'Create and manage Colvy ideas inside of Intercom.',
     icon: '🟣',
     color: '#286EFA',
     bg: '#e8f0ff',
@@ -110,7 +110,7 @@ const INTEGRATIONS = [
   {
     id: 'zendesk',
     name: 'Zendesk',
-    desc: 'Create and manage Frill ideas inside of Zendesk.',
+    desc: 'Create and manage Colvy ideas inside of Zendesk.',
     icon: '🟢',
     color: '#03363D',
     bg: '#e8f5f5',
@@ -125,7 +125,7 @@ const INTEGRATIONS = [
   {
     id: 'webhook',
     name: 'Custom Webhook',
-    desc: 'Send Frill events to any URL with a custom HTTP webhook.',
+    desc: 'Send Colvy events to any URL with a custom HTTP webhook.',
     icon: '🔗',
     color: '#374151',
     bg: '#f9fafb',
@@ -166,7 +166,7 @@ export default function IntegrationsPage() {
 
   const handleOAuthConnect = (intId: string) => {
     const OAUTH_URLS: Record<string, string> = {
-      trello: `https://trello.com/1/authorize?expiration=never&scope=read,write&response_type=token&name=Frill&return_url=${encodeURIComponent(window.location.origin + '/admin/integrations?connected=trello')}`,
+      trello: `https://trello.com/1/authorize?expiration=never&scope=read,write&response_type=token&name=Colvy&return_url=${encodeURIComponent(window.location.origin + '/admin/integrations?connected=trello')}`,
       github: `https://github.com/login/oauth/authorize?client_id=YOUR_GITHUB_CLIENT_ID&scope=repo&redirect_uri=${encodeURIComponent(window.location.origin + '/admin/integrations?connected=github')}`,
       slack: `https://slack.com/oauth/v2/authorize?client_id=YOUR_SLACK_CLIENT_ID&scope=incoming-webhook&redirect_uri=${encodeURIComponent(window.location.origin + '/admin/integrations?connected=slack')}`,
     }
@@ -271,7 +271,7 @@ export default function IntegrationsPage() {
           <div className="px-6 py-8">
             <div className="mb-8">
               <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Integrations</h1>
-              <p style={{ color: 'var(--slate)' }}>Connect Frill to the tools your team already uses</p>
+              <p style={{ color: 'var(--slate)' }}>Connect Colvy to the tools your team already uses</p>
             </div>
 
             {/* Category filter */}
@@ -388,7 +388,7 @@ export default function IntegrationsPage() {
             {/* Events */}
             <div className="bg-white rounded-2xl border p-6 mb-4" style={{ borderColor: 'var(--border)' }}>
               <h3 className="font-bold mb-2" style={{ color: 'var(--ink)' }}>Trigger on these events</h3>
-              <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Choose which Frill events trigger this integration</p>
+              <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Choose which Colvy events trigger this integration</p>
               <div className="space-y-2">
                 {activeIntegration.events.map(event => (
                   <label key={event} className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-gray-50">

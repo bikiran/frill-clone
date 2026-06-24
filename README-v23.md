@@ -26,7 +26,7 @@ This release includes the following enhancements and fixes:
 
 ## Deployment
 
-1. Unzip the attached `frill-clone-v23.zip` 
+1. Unzip the attached `colvy-v23.zip` 
 2. Push the updated files to your GitHub repo
 3. Run the SQL commands in `v23_schema_updates.sql` in your Supabase SQL Editor to update the database schema
 4. Redeploy the app on Vercel
