@@ -854,3 +854,19 @@ ALTER TABLE ideas ADD COLUMN IF NOT EXISTS effort INTEGER DEFAULT 3;
 ALTER TABLE ideas ADD COLUMN IF NOT EXISTS confidence INTEGER DEFAULT 3;
 ALTER TABLE ideas ADD COLUMN IF NOT EXISTS reach INTEGER DEFAULT 1;
 ALTER TABLE ideas ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'medium';
+
+-- ============================================
+-- INTEGRATIONS
+-- ============================================
+CREATE TABLE IF NOT EXISTS integration_configs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  integration_id TEXT NOT NULL UNIQUE,
+  config JSONB DEFAULT '{}',
+  enabled BOOLEAN DEFAULT false,
+  events JSONB DEFAULT '[]',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+ALTER TABLE integration_configs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admin can manage integrations" ON integration_configs;
+CREATE POLICY "Admin can manage integrations" ON integration_configs FOR ALL USING (true);

@@ -171,14 +171,29 @@ export default function HomePage() {
   }
 
   const handleLike = async (ideaId: string) => {
+    const userId = user?.id || null
+    const guestId = !userId ? (localStorage.getItem('guest_id') || (() => { const id = Math.random().toString(36).slice(2); localStorage.setItem('guest_id', id); return id })()) : null
     try {
       const newLikes = new Set(userLikes)
-      if (newLikes.has(ideaId)) {
+      const isLiked = newLikes.has(ideaId)
+      if (isLiked) {
         newLikes.delete(ideaId)
-        await (supabase as any).from('announcement_likes').delete().eq('idea_id', ideaId).eq('user_id', user?.id || 'guest')
+        if (userId) {
+          await (supabase as any).from('idea_likes').delete().eq('idea_id', ideaId).eq('user_id', userId)
+        } else {
+          await (supabase as any).from('idea_likes').delete().eq('idea_id', ideaId).eq('guest_id', guestId)
+        }
+        // Decrement count on idea
+        const idea = ideas.find(i => i.id === ideaId)
+        if (idea) await (supabase as any).from('ideas').update({ likes: Math.max(0, (idea.likes || 0) - 1) }).eq('id', ideaId)
+        setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, likes: Math.max(0, (i.likes || 0) - 1) } : i))
       } else {
         newLikes.add(ideaId)
-        await (supabase as any).from('announcement_likes').insert({ idea_id: ideaId, user_id: user?.id || 'guest' })
+        await (supabase as any).from('idea_likes').insert({ idea_id: ideaId, user_id: userId, guest_id: guestId })
+        // Increment count on idea
+        const idea = ideas.find(i => i.id === ideaId)
+        if (idea) await (supabase as any).from('ideas').update({ likes: (idea.likes || 0) + 1 }).eq('id', ideaId)
+        setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, likes: (i.likes || 0) + 1 } : i))
       }
       setUserLikes(newLikes)
     } catch (err) { console.log('Like error:', err) }
