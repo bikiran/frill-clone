@@ -42,7 +42,7 @@ export default function RootLayout({
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [navVisibility, setNavVisibility] = useState({
-    Ideas: true, Roadmap: true, Updates: true,
+    Ideas: true, Roadmap: true, Updates: true, Help: true,
   })
 
   // Load nav visibility from settings (DB-first, localStorage fallback)
@@ -53,6 +53,7 @@ export default function RootLayout({
           Ideas: s.navIdeas !== false,
           Roadmap: s.navRoadmap !== false,
           Updates: s.navAnnouncements !== false,
+          Help: s.navHelp !== false,
         })
         if (typeof document !== 'undefined') {
           // Accent color

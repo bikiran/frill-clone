@@ -847,3 +847,10 @@ ALTER TABLE help_articles ADD COLUMN IF NOT EXISTS media JSONB DEFAULT '[]';
 -- Enable 'chat_messages' table for realtime updates
 
 -- Add SUPABASE_SERVICE_ROLE_KEY env var in Vercel for admin user creation
+
+-- Add prioritization columns to ideas
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS impact INTEGER DEFAULT 3;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS effort INTEGER DEFAULT 3;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS confidence INTEGER DEFAULT 3;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS reach INTEGER DEFAULT 1;
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'medium';
