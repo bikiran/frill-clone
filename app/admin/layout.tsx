@@ -93,6 +93,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           ))}
         </div>
+
+        {/* Upgrade CTA at bottom of sidebar */}
+        <div className="p-3 mt-auto border-t" style={{ borderColor: 'var(--border)' }}>
+          <Link href="/admin/upgrade"
+            className="block w-full rounded-xl p-3 text-center cursor-pointer hover:opacity-90 transition-all"
+            style={{ background: 'var(--peach)' }}>
+            <p className="text-xs font-bold" style={{ color: 'var(--coral)' }}>⭐ Upgrade to Pro</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Unlock all features</p>
+          </Link>
+        </div>
       </aside>
 
       {/* Content */}

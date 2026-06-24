@@ -129,10 +129,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-      <link rel="icon" href="/favicon.png" />
         <title>Colvy — Customer Feedback Made Beautiful</title>
         <meta name="description" content="Colvy helps you capture, organize and announce product feedback in one place." />
-        <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>" />
+        <link rel="icon" href="/favicon.png" />
+        <link rel="apple-touch-icon" href="/logo.png" />
       </head>
       <body style={{ background: 'var(--canvas)' }}>
         {/* Header */}
@@ -140,6 +140,7 @@ export default function RootLayout({
           <nav className="h-14 px-6 flex items-center justify-between">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
+              <img src="/logo.png" alt="Colvy" className="h-7 w-auto" onError={(e: any) => { e.target.style.display='none' }} />
               <span style={{ color: 'var(--coral)' }}>Colvy</span>
             </Link>
 

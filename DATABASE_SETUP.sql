@@ -870,3 +870,11 @@ CREATE TABLE IF NOT EXISTS integration_configs (
 ALTER TABLE integration_configs ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Admin can manage integrations" ON integration_configs;
 CREATE POLICY "Admin can manage integrations" ON integration_configs FOR ALL USING (true);
+
+-- Add boost fields to announcements
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS boost_until TEXT DEFAULT 'next';
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS boost_until_date TEXT;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS boost_button_label TEXT DEFAULT 'Learn More';
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS boost_title TEXT;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS boost_blurb TEXT;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS boost_image TEXT;

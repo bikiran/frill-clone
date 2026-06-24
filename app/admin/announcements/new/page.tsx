@@ -40,7 +40,13 @@ export default function NewAnnouncementPage() {
   const [status, setStatus] = useState('draft')
   const [language, setLanguage] = useState('English')
   const [boostEnabled, setBoostEnabled] = useState(false)
-  const [boostType, setBoostType] = useState('banner')
+  const [boostType, setBoostType] = useState('snippet')
+  const [boostUntil, setBoostUntil] = useState('next')
+  const [boostUntilDate, setBoostUntilDate] = useState('')
+  const [boostButtonLabel, setBoostButtonLabel] = useState('Learn More')
+  const [boostTitle, setBoostTitle] = useState('')
+  const [boostBlurb, setBoostBlurb] = useState('')
+  const [boostImage, setBoostImage] = useState('')
   const [segmentation, setSegmentation] = useState('all')
   const [notifySubscribers, setNotifySubscribers] = useState(false)
   const [images, setImages] = useState<string[]>([])
@@ -78,7 +84,9 @@ export default function NewAnnouncementPage() {
       const payload = {
         title: title.trim(), description: description.trim(),
         tag, status, language, boost_enabled: boostEnabled,
-        boost_type: boostType, segmentation, notify_subscribers: notifySubscribers,
+        boost_type: boostType, boost_until: boostUntil, boost_until_date: boostUntilDate,
+        boost_button_label: boostButtonLabel, boost_title: boostTitle, boost_blurb: boostBlurb,
+        boost_image: boostImage, segmentation, notify_subscribers: notifySubscribers,
       }
       if (editId) {
         await (supabase as any).from('announcements').update(payload).eq('id', editId)
@@ -257,22 +265,120 @@ export default function NewAnnouncementPage() {
               <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
                 <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Boost Announcement</p>
               </div>
-              <div className="p-4 space-y-3">
+              <div className="p-4 space-y-4">
                 <p className="text-xs" style={{ color: 'var(--slate)' }}>When enabled, choose how this Announcement will display in Widget</p>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Enabled</span>
                   <Toggle checked={boostEnabled} onChange={setBoostEnabled} />
                 </div>
+
                 {boostEnabled && (
-                  <div>
-                    <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--slate)' }}>Display as</label>
-                    <select value={boostType} onChange={e => setBoostType(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
-                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      <option value="banner">Banner</option>
-                      <option value="modal">Modal</option>
-                      <option value="toast">Toast</option>
-                    </select>
+                  <div className="space-y-4 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                    {/* Display as */}
+                    <div>
+                      <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--slate)' }}>Display as</label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {['Snippet', 'Banner', 'Modal'].map(type => (
+                          <button key={type} onClick={() => setBoostType(type.toLowerCase())}
+                            className="py-2 rounded-lg text-xs font-semibold border cursor-pointer transition-all"
+                            style={{
+                              background: boostType === type.toLowerCase() ? 'var(--peach)' : 'white',
+                              borderColor: boostType === type.toLowerCase() ? 'var(--coral)' : 'var(--border)',
+                              color: boostType === type.toLowerCase() ? 'var(--coral)' : 'var(--slate)',
+                            }}>
+                            {type}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Boost until */}
+                    <div>
+                      <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--slate)' }}>Boost until</label>
+                      <select value={boostUntil} onChange={e => setBoostUntil(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none mb-2"
+                        style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                        <option value="next">Next Announcement</option>
+                        <option value="next_boosted">Next Boosted Announcement</option>
+                        <option value="date">Date</option>
+                      </select>
+                      {boostUntil === 'date' && (
+                        <input type="date" value={boostUntilDate} onChange={e => setBoostUntilDate(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
+                          style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} />
+                      )}
+                    </div>
+
+                    {/* Button label */}
+                    <div>
+                      <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--slate)' }}>Button label</label>
+                      <input type="text" value={boostButtonLabel} onChange={e => setBoostButtonLabel(e.target.value)}
+                        placeholder="Learn More"
+                        className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
+                        style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                    </div>
+
+                    {/* Title */}
+                    <div>
+                      <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--slate)' }}>Title</label>
+                      <input type="text" value={boostTitle} onChange={e => setBoostTitle(e.target.value)}
+                        placeholder="Boost title (optional)"
+                        className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
+                        style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                    </div>
+
+                    {/* Blurb */}
+                    <div>
+                      <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--slate)' }}>Blurb</label>
+                      <textarea value={boostBlurb} onChange={e => setBoostBlurb(e.target.value)}
+                        placeholder="Short description for the boost..."
+                        rows={2}
+                        className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none resize-none"
+                        style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                    </div>
+
+                    {/* Image */}
+                    <div>
+                      <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--slate)' }}>Image</label>
+                      {boostImage ? (
+                        <div className="relative rounded-xl overflow-hidden border group" style={{ borderColor: 'var(--border)' }}>
+                          <img src={boostImage} alt="Boost" className="w-full h-24 object-cover" />
+                          <button onClick={() => setBoostImage('')}
+                            className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-white text-xs cursor-pointer opacity-0 group-hover:opacity-100 transition-all"
+                            style={{ background: '#ef4444' }}>✕</button>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center w-full h-20 rounded-xl border-2 border-dashed cursor-pointer hover:bg-gray-50 transition-all"
+                          style={{ borderColor: 'var(--border)' }}>
+                          <input type="file" accept="image/*" className="hidden" onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            const reader = new FileReader()
+                            reader.onload = ev => setBoostImage(ev.target?.result as string)
+                            reader.readAsDataURL(file)
+                          }} />
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--slate)' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                          <span className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Upload image</span>
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Preview */}
+                    {(boostTitle || boostBlurb || boostImage) && (
+                      <div className="rounded-xl border p-3" style={{ borderColor: 'var(--coral)', background: 'var(--peach)' }}>
+                        <p className="text-xs font-bold mb-1" style={{ color: 'var(--slate)' }}>Preview</p>
+                        {boostImage && <img src={boostImage} alt="" className="w-full h-16 object-cover rounded-lg mb-2" />}
+                        {boostTitle && <p className="text-sm font-bold" style={{ color: 'var(--ink)' }}>{boostTitle}</p>}
+                        {boostBlurb && <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{boostBlurb}</p>}
+                        {boostButtonLabel && (
+                          <div className="mt-2">
+                            <span className="px-3 py-1 rounded-lg text-xs font-semibold text-white inline-block" style={{ background: 'var(--coral)' }}>
+                              {boostButtonLabel}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
