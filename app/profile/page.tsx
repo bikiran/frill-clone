@@ -51,11 +51,32 @@ export default function ProfilePage() {
     if (!file || !user) return
     setSaving(true)
     try {
-      const fileName = `avatars/${user.id}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`
-      const { data, error } = await supabase.storage.from('idea-images').upload(fileName, file)
-      if (error) throw error
-      const { data: { publicUrl } } = supabase.storage.from('idea-images').getPublicUrl(data.path)
+      // Try storage upload first
+      let publicUrl = ''
+      const fileName = `avatars/${user.id}-${Date.now()}.${file.name.split('.').pop()}`
+      try {
+        const { data, error } = await supabase.storage.from('idea-images').upload(fileName, file, { upsert: true })
+        if (!error && data) {
+          const { data: { publicUrl: url } } = supabase.storage.from('idea-images').getPublicUrl(data.path)
+          publicUrl = url
+        }
+      } catch {}
+
+      // Fallback: use base64 data URL stored in user metadata
+      if (!publicUrl) {
+        await new Promise<void>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = async (ev) => {
+            publicUrl = ev.target?.result as string
+            resolve()
+          }
+          reader.onerror = reject
+          reader.readAsDataURL(file)
+        })
+      }
+
       setAvatarUrl(publicUrl)
+      await supabase.auth.refreshSession()
       await supabase.auth.updateUser({ data: { avatar_url: publicUrl } })
       setSavedMsg('Photo updated!')
       setTimeout(() => setSavedMsg(''), 2000)
@@ -78,6 +99,14 @@ export default function ProfilePage() {
   const handleSaveProfile = async () => {
     setSaving(true)
     try {
+      // Refresh session first to prevent "auth session missing" error
+      await supabase.auth.refreshSession()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        alert('Session expired. Please sign in again.')
+        window.location.href = '/signin'
+        return
+      }
       const updates: any = { data: { display_name: editName, bio, avatar_url: avatarUrl } }
       if (editEmail && editEmail !== user.email) updates.email = editEmail
       const { error } = await supabase.auth.updateUser(updates)

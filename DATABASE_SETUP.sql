@@ -878,3 +878,14 @@ ALTER TABLE announcements ADD COLUMN IF NOT EXISTS boost_button_label TEXT DEFAU
 ALTER TABLE announcements ADD COLUMN IF NOT EXISTS boost_title TEXT;
 ALTER TABLE announcements ADD COLUMN IF NOT EXISTS boost_blurb TEXT;
 ALTER TABLE announcements ADD COLUMN IF NOT EXISTS boost_image TEXT;
+
+-- ============================================
+-- STORAGE BUCKETS (run in Supabase Dashboard > Storage)
+-- ============================================
+-- Create bucket named 'idea-images' with Public access:
+-- 1. Go to Supabase Dashboard > Storage
+-- 2. Click "New bucket"
+-- 3. Name: idea-images
+-- 4. Toggle "Public bucket" ON
+-- 5. Click Save
+-- This enables avatar and image uploads to work.

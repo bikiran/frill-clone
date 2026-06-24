@@ -1,7 +1,8 @@
 import { supabase } from '@/lib/supabase'
 
+// Only publishable key is safe on client side
 const STRIPE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY
+// NEVER use STRIPE_SECRET_KEY here — only use it in API routes
 
 // Tier features mapping
 export const TIER_FEATURES = {
