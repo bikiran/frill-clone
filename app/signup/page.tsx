@@ -81,12 +81,19 @@ function SignUpForm() {
       if (authErr) throw authErr
       if (!data.user) throw new Error('User creation failed')
 
-      // 2. Create company via API route (bypasses RLS using service role key)
+      // 2. Sign in immediately so the user exists in auth.users
+      let userId = data.user.id
+      if (!data.session) {
+        const { data: signIn, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
+        if (!signInErr && signIn.user) userId = signIn.user.id
+      }
+
+      // 3. Create company via API route
       const res = await fetch('/api/companies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: data.user.id,
+          userId,
           slug: slug.toLowerCase(),
           name: companyName.trim(),
           industry,
@@ -96,7 +103,7 @@ function SignUpForm() {
       const result = await res.json()
       if (result.error && !result.error.includes('duplicate')) throw new Error(result.error)
 
-      // 3. Done — go to onboarding
+      // 4. Done
       router.push('/onboarding')
     } catch (err: any) {
       setError(err.message || 'Sign up failed')

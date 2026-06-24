@@ -895,7 +895,7 @@ ALTER TABLE announcements ADD COLUMN IF NOT EXISTS boost_image TEXT;
 -- ============================================
 CREATE TABLE IF NOT EXISTS companies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  owner_id UUID NOT NULL,
   slug TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   industry TEXT,
