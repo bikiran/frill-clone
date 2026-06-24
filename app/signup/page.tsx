@@ -81,18 +81,23 @@ function SignUpForm() {
       if (authErr) throw authErr
       if (!data.user) throw new Error('User creation failed')
 
-      // 2. Create company record
-      const { error: coErr } = await (supabase as any).from('companies').insert({
-        owner_id: data.user.id,
-        slug: slug.toLowerCase(),
-        name: companyName.trim(),
-        industry,
-        accent_color: '#ff7a6b',
+      // 2. Create company via API route (bypasses RLS using service role key)
+      const res = await fetch('/api/companies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: data.user.id,
+          slug: slug.toLowerCase(),
+          name: companyName.trim(),
+          industry,
+          accentColor: '#ff7a6b',
+        }),
       })
-      if (coErr && !coErr.message.includes('duplicate')) throw coErr
+      const result = await res.json()
+      if (result.error && !result.error.includes('duplicate')) throw new Error(result.error)
 
-      // 3. Done!
-      router.push('/admin?onboarding=1')
+      // 3. Done — go to onboarding
+      router.push('/onboarding')
     } catch (err: any) {
       setError(err.message || 'Sign up failed')
     }

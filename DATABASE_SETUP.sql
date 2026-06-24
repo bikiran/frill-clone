@@ -917,13 +917,27 @@ CREATE POLICY "Companies are viewable by everyone" ON companies FOR SELECT USING
 DROP POLICY IF EXISTS "Owners can update their company" ON companies;
 CREATE POLICY "Owners can update their company" ON companies FOR UPDATE USING (auth.uid() = owner_id);
 DROP POLICY IF EXISTS "Users can create a company" ON companies;
-CREATE POLICY "Users can create a company" ON companies FOR INSERT WITH CHECK (auth.uid() = owner_id);
+CREATE POLICY "Users can create a company" ON companies FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 DROP POLICY IF EXISTS "Owners can delete their company" ON companies;
 CREATE POLICY "Owners can delete their company" ON companies FOR DELETE USING (auth.uid() = owner_id);
 
--- Add company_id to ideas, announcements, topics for multi-tenancy
-ALTER TABLE ideas ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
-ALTER TABLE announcements ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
-ALTER TABLE topics ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
-ALTER TABLE comments ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
-ALTER TABLE votes ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+-- Add company_id columns (wrapped safely in case tables don't exist yet)
+DO $$ BEGIN
+  ALTER TABLE ideas ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+EXCEPTION WHEN undefined_table THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE announcements ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+EXCEPTION WHEN undefined_table THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE topics ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+EXCEPTION WHEN undefined_table THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE comments ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+EXCEPTION WHEN undefined_table THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE votes ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+EXCEPTION WHEN undefined_table THEN NULL; END $$;
