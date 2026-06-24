@@ -1,30 +1,34 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
-export default function ResetPassword() {
-  const [email, setEmail] = useState('')
+function ResetPasswordForm() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [done, setDone] = useState(false)
   const [error, setError] = useState('')
-  const [sent, setSent] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
-  const handleReset = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setError('')
+    if (password !== confirmPassword) { setError('Passwords do not match'); return }
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return }
+
+    setLoading(true)
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/update-password` : undefined,
-      })
-      if (error) {
-        setError(error.message)
-      } else {
-        setSent(true)
-      }
+      const { error: err } = await supabase.auth.updateUser({ password })
+      if (err) throw err
+      setDone(true)
+      setTimeout(() => router.push('/admin'), 2000)
     } catch (err: any) {
-      setError(err.message || 'Failed to send reset email')
+      setError(err.message)
     }
     setLoading(false)
   }
@@ -32,63 +36,65 @@ export default function ResetPassword() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12" style={{ background: 'var(--peach)' }}>
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-block mb-6 text-2xl font-bold" style={{ color: 'var(--coral)' }}>
-            YourApp
-          </Link>
-          <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Reset your password</h1>
-          <p style={{ color: 'var(--slate)' }}>We'll email you a link to set a new one</p>
-        </div>
+        <Link href="/landing" className="inline-block mb-8 text-2xl font-bold" style={{ color: 'var(--coral)' }}>
+          Colvy
+        </Link>
 
         <div className="bg-white rounded-2xl shadow-lg p-8" style={{ border: '1px solid var(--border)' }}>
-          {sent ? (
-            <div className="text-center py-4">
-              <div className="text-5xl mb-4">✉️</div>
-              <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--ink)' }}>Check your email</h2>
-              <p style={{ color: 'var(--slate)' }}>
-                If an account exists for <strong style={{ color: 'var(--ink)' }}>{email}</strong>, a reset link is on its way.
-              </p>
+          {done ? (
+            <div className="text-center">
+              <div className="text-5xl mb-4">✅</div>
+              <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Password updated!</h2>
+              <p style={{ color: 'var(--slate)' }}>Redirecting you to the dashboard...</p>
             </div>
           ) : (
-            <form onSubmit={handleReset} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full px-4 py-2.5 rounded-lg focus:outline-none transition-smooth"
-                  style={{ border: '1px solid var(--border)', fontSize: '16px' }}
-                  required
-                  autoFocus
-                />
-              </div>
+            <>
+              <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Set new password</h2>
+              <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Choose a strong password for your account.</p>
 
               {error && (
-                <div className="p-3 rounded-lg text-sm animate-fade-in-up" style={{ background: '#fee2e2', color: '#dc2626' }}>
-                  {error}
-                </div>
+                <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#fee2e2', color: '#dc2626' }}>{error}</div>
               )}
 
-              <button
-                type="submit"
-                disabled={loading || !email}
-                className="w-full py-3 rounded-lg font-semibold text-white transition-smooth press-effect futuristic-btn disabled:opacity-50"
-                style={{ background: 'var(--coral)' }}>
-                {loading ? 'Sending…' : '✉️ Send reset link'}
-              </button>
-            </form>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>New password</label>
+                  <div className="relative">
+                    <input type={showPassword ? 'text' : 'password'} value={password}
+                      onChange={e => setPassword(e.target.value)} placeholder="Min. 6 characters" required autoFocus
+                      className="w-full px-4 py-2.5 rounded-xl border focus:outline-none"
+                      style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-sm cursor-pointer" style={{ color: 'var(--slate)' }}>
+                      {showPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Confirm password</label>
+                  <input type={showPassword ? 'text' : 'password'} value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)} required
+                    className="w-full px-4 py-2.5 rounded-xl border focus:outline-none"
+                    style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                </div>
+                <button type="submit" disabled={loading || !password}
+                  className="w-full py-3 rounded-xl font-semibold text-white cursor-pointer disabled:opacity-50"
+                  style={{ background: 'var(--coral)' }}>
+                  {loading ? 'Updating...' : 'Update Password'}
+                </button>
+              </form>
+            </>
           )}
         </div>
-
-        <p className="text-center mt-6" style={{ color: 'var(--slate)' }}>
-          Remembered it?{' '}
-          <Link href="/signin" className="font-semibold transition-smooth hover:opacity-70" style={{ color: 'var(--coral)' }}>
-            Back to sign in
-          </Link>
-        </p>
       </div>
     </div>
+  )
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--peach)' }}>Loading...</div>}>
+      <ResetPasswordForm />
+    </Suspense>
   )
 }

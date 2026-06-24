@@ -1,29 +1,50 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
-export async function GET(request: NextRequest) {
-  const requestUrl = new URL(request.url)
-  const code = requestUrl.searchParams.get('code')
-  const next = requestUrl.searchParams.get('next') || '/'
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const code = searchParams.get('code')
+  const slug = searchParams.get('slug')
+  const name = searchParams.get('name')
+  const industry = searchParams.get('industry')
+  const type = searchParams.get('type') // 'recovery' for password reset
 
-  if (code) {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    
-    if (supabaseUrl && supabaseAnonKey) {
-      const supabase = createClient(supabaseUrl, supabaseAnonKey)
-      const { error } = await supabase.auth.exchangeCodeForSession(code)
-      
-      if (error) {
-        console.error('Auth callback error:', error)
-        return NextResponse.redirect(`${requestUrl.origin}/signin?error=auth_failed`, {
-          status: 302,
-        })
-      }
+  const origin = req.nextUrl.origin
+
+  if (!code) return NextResponse.redirect(`${origin}/signin?error=no_code`)
+
+  try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+
+    const { data, error } = await (supabase as any).auth.exchangeCodeForSession(code)
+    if (error) throw error
+
+    // Password reset — redirect to reset page
+    if (type === 'recovery') {
+      return NextResponse.redirect(`${origin}/reset-password?confirmed=1`)
     }
-  }
 
-  return NextResponse.redirect(`${requestUrl.origin}${next}`, {
-    status: 302,
-  })
+    // New signup with pending company
+    if (slug && name && data.user) {
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      })
+      await (adminClient as any).from('companies').insert({
+        owner_id: data.user.id,
+        slug: slug.toLowerCase(),
+        name: decodeURIComponent(name),
+        industry: decodeURIComponent(industry || ''),
+        accent_color: '#ff7a6b',
+      }).select().single()
+      return NextResponse.redirect(`${origin}/onboarding`)
+    }
+
+    return NextResponse.redirect(`${origin}/admin`)
+  } catch (err: any) {
+    return NextResponse.redirect(`${origin}/signin?error=${encodeURIComponent(err.message)}`)
+  }
 }

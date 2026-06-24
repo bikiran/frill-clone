@@ -25,11 +25,12 @@ function SignUpForm() {
   const [companyName, setCompanyName] = useState('')
   const [slug, setSlug] = useState('')
   const [industry, setIndustry] = useState('')
-  const [slugStatus, setSlugStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle')
+  const [slugStatus, setSlugStatus] = useState<'idle'|'checking'|'available'|'taken'|'invalid'>('idle')
 
   const [loading, setLoading] = useState(false)
   const [oauthLoading, setOAuthLoading] = useState('')
   const [error, setError] = useState('')
+  const [needsConfirmation, setNeedsConfirmation] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => {
@@ -40,8 +41,10 @@ function SignUpForm() {
   // Auto-generate slug from company name
   useEffect(() => {
     if (!companyName) { setSlug(''); setSlugStatus('idle'); return }
-    const auto = companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 30)
-    setSlug(auto)
+    const auto = companyName.toLowerCase()
+      .replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')
+      .replace(/^-|-$/g, '').slice(0, 30)
+    if (auto.length >= 3) setSlug(auto)
   }, [companyName])
 
   // Check slug availability
@@ -73,38 +76,39 @@ function SignUpForm() {
 
     setLoading(true)
     try {
-      // 1. Create auth user
+      // 1. Sign up
       const { data, error: authErr } = await supabase.auth.signUp({
         email, password,
-        options: { data: { display_name: companyName, company: companyName, industry } },
+        options: {
+          data: { display_name: companyName, company: companyName, industry },
+          // Store company info in metadata so we can create it after email confirm
+          emailRedirectTo: `${window.location.origin}/auth/callback?slug=${slug}&name=${encodeURIComponent(companyName)}&industry=${encodeURIComponent(industry)}`,
+        },
       })
       if (authErr) throw authErr
-      if (!data.user) throw new Error('User creation failed')
+      if (!data.user) throw new Error('Signup failed — please try again')
 
-      // 2. Sign in immediately so the user exists in auth.users
-      let userId = data.user.id
-      if (!data.session) {
-        const { data: signIn, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
-        if (!signInErr && signIn.user) userId = signIn.user.id
+      const userId = data.user.id
+
+      // 2. Create company now if we have a session (email confirm disabled)
+      //    OR save to pending if email confirm is required
+      if (data.session) {
+        // Email confirm is OFF — user is logged in immediately
+        const res = await fetch('/api/companies', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, slug: slug.toLowerCase(), name: companyName.trim(), industry, accentColor: '#ff7a6b' }),
+        })
+        const result = await res.json()
+        if (result.error && !result.error.includes('duplicate')) throw new Error(result.error)
+        router.push('/onboarding')
+      } else {
+        // Email confirm is ON — save pending company to localStorage, show confirm screen
+        localStorage.setItem('pending_company', JSON.stringify({
+          userId, slug: slug.toLowerCase(), name: companyName.trim(), industry
+        }))
+        setNeedsConfirmation(true)
       }
-
-      // 3. Create company via API route
-      const res = await fetch('/api/companies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          slug: slug.toLowerCase(),
-          name: companyName.trim(),
-          industry,
-          accentColor: '#ff7a6b',
-        }),
-      })
-      const result = await res.json()
-      if (result.error && !result.error.includes('duplicate')) throw new Error(result.error)
-
-      // 4. Done
-      router.push('/onboarding')
     } catch (err: any) {
       setError(err.message || 'Sign up failed')
     }
@@ -114,8 +118,42 @@ function SignUpForm() {
   const handleGoogle = async () => { setOAuthLoading('google'); await signInWithGoogle() }
   const handleGitHub = async () => { setOAuthLoading('github'); await signInWithGitHub() }
 
-  const slugStatusColor = { idle: 'var(--slate)', checking: '#f59e0b', available: '#10b981', taken: '#ef4444', invalid: '#ef4444' }[slugStatus]
-  const slugStatusMsg = { idle: '', checking: 'Checking...', available: '✓ Available', taken: '✗ Already taken', invalid: '✗ Only lowercase letters, numbers and hyphens (3–30 chars)' }[slugStatus]
+  const slugStatusColor: any = { idle: 'var(--slate)', checking: '#f59e0b', available: '#10b981', taken: '#ef4444', invalid: '#ef4444' }
+  const slugStatusMsg: any = { idle: '', checking: 'Checking...', available: '✓ Available', taken: '✗ Already taken', invalid: '✗ Use lowercase letters, numbers and hyphens (3–30 chars)' }
+
+  // Email confirmation screen
+  if (needsConfirmation) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-12" style={{ background: 'var(--peach)' }}>
+        <div className="max-w-md w-full text-center">
+          <div className="text-5xl mb-4">📧</div>
+          <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Check your email</h1>
+          <p className="mb-2" style={{ color: 'var(--slate)' }}>
+            We sent a confirmation link to <strong>{email}</strong>
+          </p>
+          <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>
+            Click the link in the email to activate your account and board.
+          </p>
+          <div className="bg-white rounded-2xl border p-5 mb-4" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--ink)' }}>Your board will be at:</p>
+            <p className="font-bold" style={{ color: 'var(--coral)' }}>{slug}.colvy.com</p>
+          </div>
+          <p className="text-xs" style={{ color: 'var(--slate)' }}>
+            Didn't receive it? Check your spam folder or{' '}
+            <button onClick={() => setNeedsConfirmation(false)} className="underline cursor-pointer" style={{ color: 'var(--coral)' }}>
+              try again
+            </button>
+          </p>
+
+          {/* Quick fix: disable email confirm option */}
+          <div className="mt-6 p-4 rounded-xl text-left text-xs" style={{ background: 'var(--canvas)', color: 'var(--slate)' }}>
+            <p className="font-semibold mb-1">💡 Tip for faster access:</p>
+            <p>In Supabase → Authentication → Providers → Email → disable "Confirm email" to let users in immediately.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12" style={{ background: 'var(--peach)' }}>
@@ -146,9 +184,8 @@ function SignUpForm() {
           {step === 1 ? (
             <>
               <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--ink)' }}>Create account</h2>
-              <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Join Colvy — free forever</p>
+              <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Free forever — no credit card needed</p>
 
-              {/* OAuth */}
               <div className="space-y-2 mb-5">
                 <button onClick={handleGoogle} disabled={!!oauthLoading}
                   className="w-full px-4 py-2.5 rounded-xl border flex items-center justify-center gap-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 cursor-pointer"
@@ -165,22 +202,26 @@ function SignUpForm() {
               </div>
 
               <div className="relative mb-5">
-                <div className="absolute inset-0 flex items-center"><div className="w-full border-t" style={{ borderColor: 'var(--border)' }}></div></div>
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t" style={{ borderColor: 'var(--border)' }} /></div>
                 <div className="relative flex justify-center text-xs"><span className="px-2 bg-white" style={{ color: 'var(--slate)' }}>or continue with email</span></div>
               </div>
 
               <form onSubmit={handleStep1} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Email</label>
-                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required
-                    className="w-full px-4 py-2.5 rounded-xl border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required autoFocus
+                    className="w-full px-4 py-2.5 rounded-xl border focus:outline-none"
+                    style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Password</label>
                   <div className="relative">
-                    <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Min. 6 characters" required
-                      className="w-full px-4 py-2.5 rounded-xl border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-sm cursor-pointer" style={{ color: 'var(--slate)' }}>
+                    <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                      placeholder="Min. 6 characters" required
+                      className="w-full px-4 py-2.5 rounded-xl border focus:outline-none"
+                      style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-sm cursor-pointer" style={{ color: 'var(--slate)' }}>
                       {showPassword ? 'Hide' : 'Show'}
                     </button>
                   </div>
@@ -188,9 +229,12 @@ function SignUpForm() {
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Confirm password</label>
                   <input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required
-                    className="w-full px-4 py-2.5 rounded-xl border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                    className="w-full px-4 py-2.5 rounded-xl border focus:outline-none"
+                    style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
                 </div>
-                <button type="submit" className="w-full py-3 rounded-xl font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)' }}>
+                <button type="submit"
+                  className="w-full py-3 rounded-xl font-semibold text-white cursor-pointer"
+                  style={{ background: 'var(--coral)' }}>
                   Continue →
                 </button>
               </form>
@@ -198,32 +242,33 @@ function SignUpForm() {
           ) : (
             <>
               <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--ink)' }}>Set up your board</h2>
-              <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Choose your company name and board URL</p>
+              <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Choose your company name and URL</p>
 
               <form onSubmit={handleSignUp} className="space-y-5">
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Company name</label>
-                  <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Acme Inc." required
-                    className="w-full px-4 py-2.5 rounded-xl border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                  <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)}
+                    placeholder="Acme Inc." required autoFocus
+                    className="w-full px-4 py-2.5 rounded-xl border focus:outline-none"
+                    style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Board URL</label>
-                  <div className="flex items-center rounded-xl border overflow-hidden focus-within:ring-1" style={{ borderColor: slugStatus === 'available' ? '#10b981' : slugStatus === 'taken' || slugStatus === 'invalid' ? '#ef4444' : 'var(--border)' }}>
-                    <input
-                      type="text"
-                      value={slug}
+                  <div className="flex items-center rounded-xl border overflow-hidden"
+                    style={{ borderColor: slugStatus === 'available' ? '#10b981' : slugStatus === 'taken' || slugStatus === 'invalid' ? '#ef4444' : 'var(--border)' }}>
+                    <input type="text" value={slug}
                       onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                       placeholder="acme"
-                      className="flex-1 px-4 py-2.5 focus:outline-none text-sm"
-                      style={{ fontSize: '16px' }}
-                    />
-                    <span className="px-3 text-sm font-medium shrink-0" style={{ background: 'var(--canvas)', color: 'var(--slate)', borderLeft: '1px solid var(--border)', lineHeight: '44px' }}>
+                      className="flex-1 px-4 py-2.5 focus:outline-none text-sm min-w-0"
+                      style={{ fontSize: '16px' }} />
+                    <span className="px-3 py-2.5 text-sm font-medium shrink-0 border-l"
+                      style={{ background: 'var(--canvas)', color: 'var(--slate)', borderColor: 'var(--border)' }}>
                       .colvy.com
                     </span>
                   </div>
-                  {slugStatusMsg && (
-                    <p className="text-xs mt-1" style={{ color: slugStatusColor }}>{slugStatusMsg}</p>
+                  {slugStatusMsg[slugStatus] && (
+                    <p className="text-xs mt-1" style={{ color: slugStatusColor[slugStatus] }}>{slugStatusMsg[slugStatus]}</p>
                   )}
                 </div>
 
@@ -237,11 +282,10 @@ function SignUpForm() {
                   </select>
                 </div>
 
-                {/* Preview */}
                 {slug && slugStatus === 'available' && (
-                  <div className="p-3 rounded-xl text-sm" style={{ background: 'var(--peach)' }}>
-                    <p className="font-medium" style={{ color: 'var(--ink)' }}>Your board will be at:</p>
-                    <p className="font-bold mt-0.5" style={{ color: 'var(--coral)' }}>https://{slug}.colvy.com</p>
+                  <div className="p-3 rounded-xl" style={{ background: 'var(--peach)' }}>
+                    <p className="text-xs" style={{ color: 'var(--slate)' }}>Your board will be live at:</p>
+                    <p className="font-bold" style={{ color: 'var(--coral)' }}>{slug}.colvy.com</p>
                   </div>
                 )}
 

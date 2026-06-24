@@ -128,7 +128,12 @@ function SignInForm() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Password</label>
+              <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm font-medium" style={{ color: 'var(--ink)' }}>Password</label>
+                  <Link href="/forgot-password" className="text-xs hover:underline" style={{ color: 'var(--coral)' }}>
+                    Forgot password?
+                  </Link>
+                </div>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}

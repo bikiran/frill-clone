@@ -911,7 +911,7 @@ CREATE TABLE IF NOT EXISTS companies (
 CREATE UNIQUE INDEX IF NOT EXISTS companies_slug_idx ON companies (slug);
 CREATE INDEX IF NOT EXISTS companies_owner_idx ON companies (owner_id);
 
-ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE companies DISABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Companies are viewable by everyone" ON companies;
 CREATE POLICY "Companies are viewable by everyone" ON companies FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Owners can update their company" ON companies;
