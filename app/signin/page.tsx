@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { redirectToUserAdmin } from '@/lib/redirect'
 
 function SignInForm() {
   const router = useRouter()
@@ -35,8 +36,8 @@ function SignInForm() {
       if (err) {
         setError(err.message)
         setLoading(false)
-      } else if (data.session) {
-        window.location.href = nextUrl
+      } else if (data.session?.user) {
+        await redirectToUserAdmin(data.session.user.id)
       }
     } catch (err: any) {
       setError(err.message || 'Sign in failed')

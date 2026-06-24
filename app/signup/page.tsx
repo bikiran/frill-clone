@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 import { isValidSlug, isSlugAvailable } from '@/lib/board'
+import { redirectToUserAdmin } from '@/lib/redirect'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -101,7 +102,14 @@ function SignUpForm() {
         })
         const result = await res.json()
         if (result.error && !result.error.includes('duplicate')) throw new Error(result.error)
-        router.push('/onboarding')
+        // Redirect to their subdomain onboarding
+        const hostname = window.location.hostname
+        const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
+        if (!isLocal) {
+          window.location.href = `https://${slug.toLowerCase()}.colvy.com/onboarding`
+        } else {
+          router.push('/onboarding')
+        }
       } else {
         // Email confirm is ON — save pending company to localStorage, show confirm screen
         localStorage.setItem('pending_company', JSON.stringify({

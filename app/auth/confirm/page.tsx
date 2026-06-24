@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { redirectToUserAdmin } from '@/lib/redirect'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 
@@ -42,7 +43,11 @@ function ConfirmHandler() {
           }
 
           setStatus('Signed in! Redirecting...')
-          router.push('/admin')
+          if (data?.user?.id) {
+            await redirectToUserAdmin(data.user.id)
+          } else {
+            router.push('/admin')
+          }
           return
         }
 
@@ -51,14 +56,15 @@ function ConfirmHandler() {
         if (code) {
           const { data, error: codeErr } = await (supabase as any).auth.exchangeCodeForSession(code)
           if (codeErr) throw codeErr
-          router.push('/admin')
+          if (data?.user?.id) await redirectToUserAdmin(data.user.id)
+          else router.push('/admin')
           return
         }
 
         // Check if already have session
         const { data: { session } } = await supabase.auth.getSession()
-        if (session) {
-          router.push('/admin')
+        if (session?.user?.id) {
+          await redirectToUserAdmin(session.user.id)
           return
         }
 

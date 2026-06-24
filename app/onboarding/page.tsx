@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getCompanyByOwner } from '@/lib/board'
+import { redirectToUserAdmin } from '@/lib/redirect'
 import Link from 'next/link'
 
 export default function OnboardingPage() {
@@ -76,9 +77,10 @@ export default function OnboardingPage() {
               className="px-8 py-2.5 rounded-xl font-semibold text-white cursor-pointer"
               style={{ background: 'var(--coral)' }}>Next →</button>
           ) : (
-            <Link href="/admin" className="px-8 py-2.5 rounded-xl font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)' }}>
+            <button onClick={async () => { if (user) await redirectToUserAdmin(user.id); else window.location.href = '/admin' }}
+              className="px-8 py-2.5 rounded-xl font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)' }}>
               Go to Dashboard →
-            </Link>
+            </button>
           )}
         </div>
 
@@ -90,9 +92,10 @@ export default function OnboardingPage() {
           ))}
         </div>
 
-        <Link href="/admin" className="block mt-6 text-sm hover:underline" style={{ color: 'var(--slate)' }}>
+        <button onClick={async () => { if (user) await redirectToUserAdmin(user.id); else window.location.href = '/admin' }}
+          className="block mt-6 text-sm hover:underline cursor-pointer" style={{ color: 'var(--slate)' }}>
           Skip to dashboard →
-        </Link>
+        </button>
       </div>
     </div>
   )
