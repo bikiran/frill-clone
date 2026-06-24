@@ -14,6 +14,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState({ ideas: 0, announcements: 0, surveys: 0, polls: 0 })
   const [loading, setLoading] = useState(true)
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set())
+  const [activity, setActivity] = useState<any[]>([])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -25,6 +26,7 @@ export default function AdminDashboard() {
       setUser(u)
     })
     fetchStats()
+    fetchActivity()
   }, [router])
 
   const fetchStats = async () => {
@@ -59,6 +61,24 @@ export default function AdminDashboard() {
       console.error('Failed to fetch stats:', error)
     }
     setLoading(false)
+  }
+
+  const fetchActivity = async () => {
+    try {
+      const [ideas, comments, votes, anns] = await Promise.all([
+        (supabase as any).from('ideas').select('id,title,created_at,created_by_name').order('created_at', { ascending: false }).limit(5),
+        (supabase as any).from('comments').select('id,content,created_at,author_name,idea_id').order('created_at', { ascending: false }).limit(5),
+        (supabase as any).from('votes').select('id,created_at,idea_id').order('created_at', { ascending: false }).limit(5),
+        (supabase as any).from('announcements').select('id,title,created_at').order('created_at', { ascending: false }).limit(3),
+      ])
+      const items: any[] = []
+      ;(ideas.data || []).forEach((i: any) => items.push({ type: 'idea', label: i.title, by: i.created_by_name || 'Someone', at: i.created_at, icon: '💡', color: 'var(--coral)' }))
+      ;(comments.data || []).forEach((c: any) => items.push({ type: 'comment', label: c.content?.slice(0, 60), by: c.author_name || 'Someone', at: c.created_at, icon: '💬', color: '#7c3aed' }))
+      ;(votes.data || []).forEach((v: any) => items.push({ type: 'vote', label: 'Upvoted an idea', by: 'A user', at: v.created_at, icon: '▲', color: '#2563eb' }))
+      ;(anns.data || []).forEach((a: any) => items.push({ type: 'announcement', label: a.title, by: 'Admin', at: a.created_at, icon: '📢', color: '#059669' }))
+      items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      setActivity(items.slice(0, 12))
+    } catch {}
   }
 
   const toggleStep = (step: string) => {
@@ -243,6 +263,47 @@ export default function AdminDashboard() {
                 </Link>
               ))}
             </div>
+          </div>
+
+          {/* Activity Feed */}
+          <div className="mt-8 bg-white rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+            <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
+              <h3 className="font-bold" style={{ color: 'var(--ink)' }}>Recent Activity</h3>
+              <span className="text-xs px-2 py-1 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>Live</span>
+            </div>
+            {activity.length === 0 ? (
+              <div className="px-6 py-10 text-center" style={{ color: 'var(--slate)' }}>
+                <p className="text-3xl mb-2">🌱</p>
+                <p className="text-sm">No activity yet — your feed will appear here as users interact</p>
+              </div>
+            ) : (
+              <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+                {activity.map((item, i) => (
+                  <div key={i} className="flex items-start gap-4 px-6 py-4 hover:bg-gray-50 transition-all">
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-base font-bold"
+                      style={{ background: item.color + '20', color: item.color }}>
+                      {item.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>
+                        <span style={{ color: item.color }}>{item.by}</span>
+                        {' '}
+                        {item.type === 'idea' && 'submitted'}
+                        {item.type === 'comment' && 'commented'}
+                        {item.type === 'vote' && 'upvoted'}
+                        {item.type === 'announcement' && 'published'}
+                      </p>
+                      {item.label && (
+                        <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--slate)' }}>"{item.label}"</p>
+                      )}
+                    </div>
+                    <span className="text-xs shrink-0 mt-0.5" style={{ color: 'var(--slate)' }}>
+                      {new Date(item.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Database Setup */}

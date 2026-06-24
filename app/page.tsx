@@ -43,6 +43,8 @@ export default function HomePage() {
   const [topics, setTopics] = useState<{ id: string; emoji: string; count: number }[]>([])
   const [userVotes, setUserVotes] = useState<Set<string>>(new Set())
   const [guestVotes, setGuestVotes] = useState<Set<string>>(new Set())
+  const [userLikes, setUserLikes] = useState<Set<string>>(new Set())
+  const [userSubscriptions, setUserSubscriptions] = useState<Set<string>>(new Set())
   const [showGuestModal, setShowGuestModal] = useState(false)
   const [pendingVoteId, setPendingVoteId] = useState<string | null>(null)
   const [guestName, setGuestName] = useState('')
@@ -166,6 +168,44 @@ export default function HomePage() {
   const fetchUserVotes = async (userId: string) => {
     const { data } = await supabase.from('votes').select('idea_id').eq('user_id', userId)
     if (data) setUserVotes(new Set(data.map((v: any) => v.idea_id)))
+  }
+
+  const handleLike = async (ideaId: string) => {
+    try {
+      const newLikes = new Set(userLikes)
+      if (newLikes.has(ideaId)) {
+        newLikes.delete(ideaId)
+        await (supabase as any).from('announcement_likes').delete().eq('idea_id', ideaId).eq('user_id', user?.id || 'guest')
+      } else {
+        newLikes.add(ideaId)
+        await (supabase as any).from('announcement_likes').insert({ idea_id: ideaId, user_id: user?.id || 'guest' })
+      }
+      setUserLikes(newLikes)
+    } catch (err) { console.log('Like error:', err) }
+  }
+
+  const handleSubscribe = async (ideaId: string) => {
+    try {
+      const newSubs = new Set(userSubscriptions)
+      if (newSubs.has(ideaId)) {
+        newSubs.delete(ideaId)
+        await (supabase as any).from('announcement_subscribers').delete().eq('idea_id', ideaId).eq('user_id', user?.id || 'guest')
+      } else {
+        newSubs.add(ideaId)
+        await (supabase as any).from('announcement_subscribers').insert({ idea_id: ideaId, user_id: user?.id || 'guest' })
+      }
+      setUserSubscriptions(newSubs)
+    } catch (err) { console.log('Subscribe error:', err) }
+  }
+
+  const handleViewIncrement = async (ideaId: string) => {
+    try {
+      const idea = ideas.find(i => i.id === ideaId)
+      if (idea) {
+        await (supabase as any).from('ideas').update({ views: (idea.views || 0) + 1 }).eq('id', ideaId)
+        setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, views: (i.views || 0) + 1 } : i))
+      }
+    } catch (err) { console.log('View error:', err) }
   }
 
   const handleVote = async (ideaId: string) => {
@@ -697,9 +737,14 @@ export default function HomePage() {
                   key={idea.id}
                   idea={idea}
                   hasVoted={userVotes.has(idea.id) || guestVotes.has(idea.id)}
+                  liked={userLikes.has(idea.id)}
+                  subscribed={userSubscriptions.has(idea.id)}
                   onVote={handleVote}
+                  onLike={handleLike}
+                  onSubscribe={handleSubscribe}
                   onStatusChange={handleStatusChange}
                   onClick={() => {
+                    handleViewIncrement(idea.id)
                     setSelectedIdea(idea)
                     setShowDetailModal(true)
                   }}

@@ -64,26 +64,49 @@ export default function AnnouncementsPage() {
     setTimeout(() => {
       articleRefs.current[ann.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 50)
-    // Track impression
-    await supabase.from('announcements').update({
+    // Track view + impression
+    await (supabase as any).from('announcements').update({
       impressions: (ann.impressions || 0) + 1,
+      views: (ann.views || 0) + 1,
     }).eq('id', ann.id)
+    // Update local state
+    setAnnouncements((prev: any[]) => prev.map((a: any) => a.id === ann.id ? { ...a, views: (a.views || 0) + 1, impressions: (a.impressions || 0) + 1 } : a))
   }
 
-  const toggleLike = (id: string) => {
+  const toggleLike = async (id: string) => {
+    const userId = user?.id || ('guest_' + (localStorage.getItem('guest_id') || Math.random().toString(36).slice(2)))
+    if (!localStorage.getItem('guest_id') && !user?.id) localStorage.setItem('guest_id', userId.replace('guest_', ''))
+    const isLiked = likedIds.has(id)
     setLikedIds(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      isLiked ? next.delete(id) : next.add(id)
       return next
     })
+    try {
+      if (isLiked) {
+        await (supabase as any).from('announcement_likes').delete().eq('announcement_id', id).eq('user_id', userId)
+      } else {
+        await (supabase as any).from('announcement_likes').insert({ announcement_id: id, user_id: userId })
+      }
+    } catch (err) { console.log('Like persist error:', err) }
   }
 
-  const toggleSubscribe = (id: string) => {
+  const toggleSubscribe = async (id: string) => {
+    const userId = user?.id || ('guest_' + (localStorage.getItem('guest_id') || Math.random().toString(36).slice(2)))
+    if (!localStorage.getItem('guest_id') && !user?.id) localStorage.setItem('guest_id', userId.replace('guest_', ''))
+    const isSub = subscribedIds.has(id)
     setSubscribedIds(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      isSub ? next.delete(id) : next.add(id)
       return next
     })
+    try {
+      if (isSub) {
+        await (supabase as any).from('announcement_subscribers').delete().eq('announcement_id', id).eq('user_id', userId)
+      } else {
+        await (supabase as any).from('announcement_subscribers').insert({ announcement_id: id, user_id: userId })
+      }
+    } catch (err) { console.log('Subscribe persist error:', err) }
   }
 
   const copyLink = (id: string) => {
@@ -252,8 +275,8 @@ export default function AnnouncementsPage() {
                   key={ann.id}
                   id={`ann-${ann.id}`}
                   ref={el => { if (el) articleRefs.current[ann.id] = el }}
-                  className="mb-16 pb-16 border-b last:border-b-0 last:mb-0 last:pb-0 scroll-mt-6 transition-all"
-                  style={{ borderColor: 'var(--border)' }}>
+                  className="mb-12 pb-12 scroll-mt-6 transition-all"
+                  style={{ borderBottom: '1px solid #e5e7eb', marginBottom: '3rem', paddingBottom: '3rem' }}>
 
                   {/* Meta row */}
                   <div className="flex items-center gap-2 mb-4 flex-wrap">
@@ -320,22 +343,22 @@ export default function AnnouncementsPage() {
                       })}
                     </div>
 
-                    {/* 3-dot menu (admin actions) */}
-                    {isAdmin && (
-                      <div className="relative ml-auto">
-                        <button
-                          onClick={() => setOpenMenuId(openMenuId === ann.id ? null : ann.id)}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center border cursor-pointer transition-smooth hover:bg-gray-50"
-                          style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
-                          </svg>
-                        </button>
-                        {openMenuId === ann.id && (
-                          <>
-                            <div className="fixed inset-0 z-30" onClick={() => setOpenMenuId(null)} />
-                            <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-xl border z-40 overflow-hidden animate-fade-in-up"
-                              style={{ borderColor: 'var(--border)' }}>
+                    {/* 3-dot menu — copy link for all, edit/delete for admin */}
+                    <div className="relative ml-auto">
+                      <button
+                        onClick={() => setOpenMenuId(openMenuId === ann.id ? null : ann.id)}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center border cursor-pointer transition-smooth hover:bg-gray-50"
+                        style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                          <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
+                        </svg>
+                      </button>
+                      {openMenuId === ann.id && (
+                        <>
+                          <div className="fixed inset-0 z-30" onClick={() => setOpenMenuId(null)} />
+                          <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-xl border z-40 overflow-hidden animate-fade-in-up"
+                            style={{ borderColor: 'var(--border)' }}>
+                            {isAdmin && (
                               <Link
                                 href={`/admin/announcements/new?edit=${ann.id}`}
                                 onClick={() => setOpenMenuId(null)}
@@ -344,31 +367,35 @@ export default function AnnouncementsPage() {
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                 Edit
                               </Link>
-                              <button
-                                onClick={() => { copyLink(ann.id); setOpenMenuId(null) }}
-                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 transition-smooth text-left cursor-pointer"
-                                style={{ color: 'var(--ink)' }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                                Copy link
-                              </button>
-                              <div className="border-t" style={{ borderColor: 'var(--border)' }} />
-                              <button
-                                onClick={async () => {
-                                  if (!confirm('Delete this announcement?')) return
-                                  await supabase.from('announcements').delete().eq('id', ann.id)
-                                  setOpenMenuId(null)
-                                  fetchAnnouncements()
-                                }}
-                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-red-50 transition-smooth text-left cursor-pointer"
+                            )}
+                            <button
+                              onClick={() => { copyLink(ann.id); setOpenMenuId(null) }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 transition-smooth text-left cursor-pointer"
+                              style={{ color: 'var(--ink)' }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                              Copy link
+                            </button>
+                            {isAdmin && (
+                              <>
+                                <div className="border-t" style={{ borderColor: 'var(--border)' }} />
+                                <button
+                                  onClick={async () => {
+                                    if (!confirm('Delete this announcement?')) return
+                                    await (supabase as any).from('announcements').delete().eq('id', ann.id)
+                                    setOpenMenuId(null)
+                                    fetchAnnouncements()
+                                  }}
+                                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-red-50 transition-smooth text-left cursor-pointer"
                                 style={{ color: '#dc2626' }}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                 Delete
                               </button>
+                              </>
+                            )}
                             </div>
                           </>
                         )}
                       </div>
-                    )}
                   </div>
 
                   {/* Stats */}

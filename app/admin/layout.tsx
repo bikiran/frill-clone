@@ -29,6 +29,8 @@ const SIDEBAR_GROUPS = [
     { label: 'Terminology', href: '/admin/terminology' },
     { label: 'Segments', href: '/admin/segments' },
     { label: 'Team Members', href: '/admin/team' },
+    { label: 'Help Centre', href: '/admin/help' },
+    { label: 'Support Tickets', href: '/admin/support' },
   ]},
 ]
 

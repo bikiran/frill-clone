@@ -5,12 +5,14 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TerminologyProvider } from '@/lib/terminologyContext'
+import LiveChat from '@/components/LiveChat'
 import './globals.css'
 
 const NAV_ITEMS = [
   { href: '/', label: 'Ideas', icon: 'ideas' },
   { href: '/roadmap', label: 'Roadmap', icon: 'roadmap' },
   { href: '/announcements', label: 'Updates', icon: 'updates' },
+  { href: '/help', label: 'Help', icon: 'help' },
   { href: '/features', label: 'Features', icon: 'features' },
   { href: '/pricing', label: 'Pricing', icon: 'pricing' },
 ]
@@ -21,6 +23,7 @@ const NavIcon = ({ type, size = 18 }: { type: string; size?: number }) => {
     case 'ideas': return <svg {...p}><path d="M9 18h6" /><path d="M10 22h4" /><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" /></svg>
     case 'roadmap': return <svg {...p}><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" /><line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" /></svg>
     case 'updates': return <svg {...p}><path d="m3 11 18-5v12L3 14v-3z" /><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" /></svg>
+    case 'help': return <svg {...p}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     case 'features': return <svg {...p}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
     case 'pricing': return <svg {...p}><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
     case 'admin': return <svg {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
@@ -352,6 +355,7 @@ export default function RootLayout({
             {children}
           </TerminologyProvider>
         </main>
+        <LiveChat />
       </body>
     </html>
   )

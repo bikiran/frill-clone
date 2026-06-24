@@ -108,7 +108,14 @@ export default function RoadmapPage() {
     if (!canDrag) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    if (dragOverColumn !== columnKey) setDragOverColumn(columnKey)
+    setDragOverColumn(columnKey)
+    // Only set dropIndicator to end-of-column if no card-level indicator is set
+    // or if we're in a different column (empty column drop)
+    setDropIndicator(prev => {
+      if (prev && prev.columnKey === columnKey) return prev // keep card-level indicator
+      const columnIdeas = sortIdeas(ideas.filter(i => i.status === columnKey))
+      return { columnKey, index: columnIdeas.length } // drop at end
+    })
   }
 
   const handleCardDragOver = (e: React.DragEvent, columnKey: string, cardIndex: number) => {
@@ -120,7 +127,9 @@ export default function RoadmapPage() {
     // Determine if hovering top or bottom half of card
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     const midY = rect.top + rect.height / 2
-    const insertIndex = e.clientY < midY ? cardIndex : cardIndex + 1
+    // Use a 20% bias toward the top to fix the "drops to bottom" issue
+    const threshold = rect.top + rect.height * 0.4
+    const insertIndex = e.clientY < threshold ? cardIndex : cardIndex + 1
     
     setDropIndicator({ columnKey, index: insertIndex })
     setDragOverColumn(columnKey)

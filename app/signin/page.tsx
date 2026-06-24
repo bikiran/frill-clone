@@ -46,12 +46,22 @@ function SignInForm() {
 
   const handleGoogle = async () => {
     setOAuthLoading('google')
-    await signInWithGoogle()
+    setError('')
+    const { error } = await signInWithGoogle()
+    if (error) {
+      setError('Google sign-in not enabled. Enable it in Supabase → Authentication → Providers → Google.')
+      setOAuthLoading('')
+    }
   }
 
   const handleGitHub = async () => {
     setOAuthLoading('github')
-    await signInWithGitHub()
+    setError('')
+    const { error } = await signInWithGitHub()
+    if (error) {
+      setError('GitHub sign-in not enabled. Enable it in Supabase → Authentication → Providers → GitHub.')
+      setOAuthLoading('')
+    }
   }
 
   return (

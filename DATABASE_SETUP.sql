@@ -771,3 +771,79 @@ DROP POLICY IF EXISTS "Admin can view stripe events" ON stripe_events;
 DROP POLICY IF EXISTS "Admin can view stripe events" ON stripe_events;
 CREATE POLICY "Admin can view stripe events" ON stripe_events FOR SELECT USING (auth.jwt() ->> 'email' = 'bishalstha76@gmail.com');
 
+
+-- ============================================
+-- HELP CENTRE / KNOWLEDGE BASE
+-- ============================================
+CREATE TABLE IF NOT EXISTS help_articles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  content TEXT,
+  category TEXT DEFAULT 'Getting Started',
+  status TEXT DEFAULT 'draft',
+  featured BOOLEAN DEFAULT false,
+  views INTEGER DEFAULT 0,
+  likes INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE help_articles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can view help articles" ON help_articles;
+CREATE POLICY "Anyone can view help articles" ON help_articles FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Admin can manage help articles" ON help_articles;
+CREATE POLICY "Admin can manage help articles" ON help_articles FOR ALL USING (true);
+
+-- ============================================
+-- SUPPORT TICKETS
+-- ============================================
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  message TEXT,
+  article_id TEXT,
+  status TEXT DEFAULT 'open',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+ALTER TABLE support_tickets ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can submit tickets" ON support_tickets;
+CREATE POLICY "Anyone can submit tickets" ON support_tickets FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Admin can view tickets" ON support_tickets;
+CREATE POLICY "Admin can view tickets" ON support_tickets FOR SELECT USING (true);
+
+-- ============================================
+-- CHAT MESSAGES (Live Chat)
+-- ============================================
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id TEXT NOT NULL,
+  from_email TEXT,
+  from_name TEXT,
+  message TEXT NOT NULL,
+  from_type TEXT DEFAULT 'user',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can send chat messages" ON chat_messages;
+CREATE POLICY "Anyone can send chat messages" ON chat_messages FOR ALL USING (true);
+
+-- Add replies column to support_tickets
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS replies JSONB DEFAULT '[]';
+
+-- Add replies column to support_tickets if not exists
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS replies JSONB DEFAULT '[]';
+
+-- Add media column to help_articles
+ALTER TABLE help_articles ADD COLUMN IF NOT EXISTS media JSONB DEFAULT '[]';
+
+-- Enable Realtime on chat_messages (run in Supabase dashboard > Database > Replication)
+-- ALTER TABLE chat_messages REPLICA IDENTITY FULL;
+-- Or add via Supabase dashboard: Database > Replication > Tables > chat_messages
+
+-- SUPABASE REALTIME NOTE:
+-- To enable realtime for live chat, go to:
+-- Supabase Dashboard > Database > Replication > Tables
+-- Enable 'chat_messages' table for realtime updates
+
+-- Add SUPABASE_SERVICE_ROLE_KEY env var in Vercel for admin user creation

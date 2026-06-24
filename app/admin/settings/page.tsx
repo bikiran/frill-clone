@@ -39,6 +39,7 @@ export default function SettingsPage() {
   const [navIdeas, setNavIdeas] = useState(true)
   const [navRoadmap, setNavRoadmap] = useState(true)
   const [navAnnouncements, setNavAnnouncements] = useState(true)
+  const [navHelp, setNavHelp] = useState(true)
   // Styling
   const [accentColor, setAccentColor] = useState('#ff7a6b')
   const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'auto'>('light')
@@ -123,7 +124,7 @@ export default function SettingsPage() {
     setSaving(true)
     const settingsData = {
       companyName, logoUrl, faviconUrl, ogImageUrl, logoLink, customScript,
-      navIdeas, navRoadmap, navAnnouncements,
+      navIdeas, navRoadmap, navAnnouncements, navHelp,
       accentColor, themeMode, borderRadius,
       emailFromName, emailReplyTo, emailSignature,
       hidePoweredBy, customDomain,
@@ -561,6 +562,7 @@ export default function SettingsPage() {
                 { label: 'Ideas', value: navIdeas, setter: setNavIdeas },
                 { label: 'Roadmap', value: navRoadmap, setter: setNavRoadmap },
                 { label: 'Announcements', value: navAnnouncements, setter: setNavAnnouncements },
+                { label: 'Help Centre', value: navHelp, setter: setNavHelp },
               ].map(nav => (
                 <div key={nav.label} className="flex items-center justify-between py-2">
                   <span className="text-sm" style={{ color: 'var(--ink)' }}>{nav.label}</span>

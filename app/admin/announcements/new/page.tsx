@@ -7,36 +7,50 @@ import Link from 'next/link'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
+const TAGS = ['Feature', 'Bug Fix', 'Update', 'Improvement', 'News']
+const LANGUAGES = ['English', 'Español', 'Français', 'Deutsch', 'Português', 'Japanese', 'Chinese']
+
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer focus:outline-none"
+      style={{ background: checked ? 'var(--coral)' : '#d1d5db' }}
+    >
+      <span
+        className="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow"
+        style={{ transform: checked ? 'translateX(24px)' : 'translateX(4px)' }}
+      />
+    </button>
+  )
+}
+
 export default function NewAnnouncementPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const editId = searchParams?.get('edit')
 
   const [user, setUser] = useState<any>(null)
-  const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  // Form state
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [tag, setTag] = useState('Update')
+  const [tag, setTag] = useState('Feature')
   const [status, setStatus] = useState('draft')
   const [language, setLanguage] = useState('English')
   const [boostEnabled, setBoostEnabled] = useState(false)
   const [boostType, setBoostType] = useState('banner')
   const [segmentation, setSegmentation] = useState('all')
   const [notifySubscribers, setNotifySubscribers] = useState(false)
+  const [images, setImages] = useState<string[]>([])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => {
       const u = data?.session?.user
-      if (u?.email !== ADMIN_EMAIL) {
-        router.push('/')
-        return
-      }
+      if (u?.email !== ADMIN_EMAIL) { router.push('/'); return }
       setUser(u)
       if (editId) loadAnnouncement(editId)
-      else setLoading(false)
     })
   }, [editId, router])
 
@@ -46,290 +60,255 @@ export default function NewAnnouncementPage() {
       if (data) {
         setTitle(data.title || '')
         setDescription(data.description || '')
-        setTag(data.tag || 'Update')
+        setTag(data.tag || 'Feature')
         setStatus(data.status || 'draft')
+        setLanguage(data.language || 'English')
+        setBoostEnabled(data.boost_enabled || false)
+        setBoostType(data.boost_type || 'banner')
+        setSegmentation(data.segmentation || 'all')
+        setNotifySubscribers(data.notify_subscribers || false)
       }
-    } catch (err) {
-      console.error('Load error:', err)
-    }
-    setLoading(false)
+    } catch (err) { console.error(err) }
   }
 
   const handlePublish = async () => {
-    if (!title.trim() || !description.trim()) {
-      alert('Title and content are required')
-      return
-    }
-
+    if (!title.trim()) { alert('Title is required'); return }
     setSaving(true)
     try {
+      const payload = {
+        title: title.trim(), description: description.trim(),
+        tag, status, language, boost_enabled: boostEnabled,
+        boost_type: boostType, segmentation, notify_subscribers: notifySubscribers,
+      }
       if (editId) {
-        await (supabase as any).from('announcements').update({
-          title: title.trim(),
-          description: description.trim(),
-          tag,
-          status,
-          language,
-          boost_enabled: boostEnabled,
-          boost_type: boostType,
-          segmentation,
-          notify_subscribers: notifySubscribers,
-        }).eq('id', editId)
+        await (supabase as any).from('announcements').update(payload).eq('id', editId)
       } else {
-        await (supabase as any).from('announcements').insert({
-          title: title.trim(),
-          description: description.trim(),
-          tag,
-          status,
-          language,
-          boost_enabled: boostEnabled,
-          boost_type: boostType,
-          segmentation,
-          notify_subscribers: notifySubscribers,
-          views: 0,
-          impressions: 0,
-        })
+        await (supabase as any).from('announcements').insert({ ...payload, views: 0, impressions: 0 })
       }
       router.push('/admin/announcements')
-    } catch (err: any) {
-      alert('Error: ' + err.message)
-    }
+    } catch (err: any) { alert('Error: ' + err.message) }
     setSaving(false)
   }
 
-  if (!user) return <div className="p-8">Loading...</div>
+  if (!user) return <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)' }}>Loading...</div>
 
   return (
-    <div style={{ background: 'var(--canvas)', minHeight: '100vh' }}>
-      {/* Top bar */}
-      <div className="sticky top-0 z-40 border-b bg-white" style={{ borderColor: 'var(--border)' }}>
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>
-              {editId ? 'Edit Announcement' : 'New Announcement'}
+    <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
+      {/* Top bar — matches Frill exactly */}
+      <div className="sticky top-0 z-40 bg-white border-b" style={{ borderColor: 'var(--border)' }}>
+        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href="/admin/announcements" className="p-1.5 rounded-lg hover:bg-gray-100 cursor-pointer" style={{ color: 'var(--slate)' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </Link>
+            <h1 className="text-base font-semibold" style={{ color: 'var(--ink)' }}>
+              {editId ? 'Edit Announcement' : 'Just now'}
             </h1>
           </div>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/admin/announcements"
-              className="px-4 py-2 rounded-lg text-sm font-medium border hover:bg-gray-50 cursor-pointer"
-              style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}
-            >
-              Cancel
-            </Link>
-            <button
-              onClick={handlePublish}
-              disabled={saving || !title.trim() || !description.trim()}
-              className="px-6 py-2.5 rounded-lg text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
-              style={{ background: 'var(--coral)' }}
-            >
-              {saving ? 'Saving...' : 'Publish'}
-            </button>
-          </div>
+          <button
+            onClick={handlePublish}
+            disabled={saving || !title.trim()}
+            className="px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
+            style={{ background: 'var(--coral)' }}
+          >
+            {saving ? 'Saving...' : 'Publish'}
+          </button>
         </div>
       </div>
 
-      {/* Main content */}
+      {/* Body */}
       <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-3 gap-8">
-          {/* Left: Editor */}
-          <div className="col-span-2 space-y-6">
-            {/* Title */}
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-              <label className="block text-sm font-semibold mb-3" style={{ color: 'var(--ink)' }}>
-                Title
+        <div className="flex gap-8">
+
+          {/* LEFT — Editor */}
+          <div className="flex-1 min-w-0 space-y-4">
+            {/* Title input */}
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="Title"
+              className="w-full text-3xl font-bold bg-transparent focus:outline-none placeholder:font-bold"
+              style={{ color: 'var(--ink)', caretColor: 'var(--coral)' }}
+            />
+
+            {/* Toolbar row */}
+            <div className="flex items-center gap-1 border-b pb-3" style={{ borderColor: 'var(--border)' }}>
+              {[
+                { label: 'B', style: 'font-bold', title: 'Bold' },
+                { label: 'I', style: 'italic', title: 'Italic' },
+                { label: 'U', style: 'underline', title: 'Underline' },
+              ].map(btn => (
+                <button key={btn.label} title={btn.title} className={`w-8 h-8 rounded flex items-center justify-center text-sm ${btn.style} hover:bg-gray-100 cursor-pointer`} style={{ color: 'var(--slate)' }}>
+                  {btn.label}
+                </button>
+              ))}
+              <div className="w-px h-5 mx-1" style={{ background: 'var(--border)' }} />
+              {['H1', 'H2', 'H3'].map(h => (
+                <button key={h} className="px-2 h-8 rounded text-xs font-bold hover:bg-gray-100 cursor-pointer" style={{ color: 'var(--slate)' }}>{h}</button>
+              ))}
+              <div className="w-px h-5 mx-1" style={{ background: 'var(--border)' }} />
+              <button className="w-8 h-8 rounded flex items-center justify-center hover:bg-gray-100 cursor-pointer" title="Link" style={{ color: 'var(--slate)' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              </button>
+              <label className="w-8 h-8 rounded flex items-center justify-center hover:bg-gray-100 cursor-pointer" title="Insert Image">
+                <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = (ev) => {
+                    const url = ev.target?.result as string
+                    setImages(prev => [...prev, url])
+                  }
+                  reader.readAsDataURL(file)
+                }} />
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--slate)' }}><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
               </label>
-              <input
-                type="text"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                placeholder="Announcement title"
-                className="w-full px-4 py-3 rounded-xl border focus:outline-none text-lg"
-                style={{ borderColor: 'var(--border)', fontSize: '16px' }}
-              />
             </div>
 
-            {/* Content */}
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-              <label className="block text-sm font-semibold mb-3" style={{ color: 'var(--ink)' }}>
-                Content
-              </label>
-              <textarea
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-                placeholder="Write your announcement..."
-                rows={10}
-                className="w-full px-4 py-3 rounded-xl border focus:outline-none"
-                style={{ borderColor: 'var(--border)', fontSize: '16px' }}
-              />
-              <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>
-                {description.length} characters
-              </p>
-            </div>
+            {/* Content area */}
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Write your announcement here..."
+              rows={18}
+              className="w-full bg-transparent focus:outline-none resize-none text-base leading-relaxed"
+              style={{ color: 'var(--ink)', caretColor: 'var(--coral)', fontSize: '16px' }}
+            />
+            {images.length > 0 && (
+              <div className="flex flex-wrap gap-3 mt-4">
+                {images.map((src, i) => (
+                  <div key={i} className="relative group rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                    <img src={src} alt="" className="w-32 h-24 object-cover" />
+                    <button
+                      onClick={() => setImages(prev => prev.filter((_, j) => j !== i))}
+                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black bg-opacity-60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer text-white text-xs"
+                    >✕</button>
+                  </div>
+                ))}
+                <label className="w-32 h-24 rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-gray-50 transition-all" style={{ borderColor: 'var(--border)' }}>
+                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    const reader = new FileReader()
+                    reader.onload = (ev) => {
+                      setImages(prev => [...prev, ev.target?.result as string])
+                    }
+                    reader.readAsDataURL(file)
+                  }} />
+                  <div className="text-center">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mx-auto mb-1" style={{ color: 'var(--slate)' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <span className="text-xs" style={{ color: 'var(--slate)' }}>Add image</span>
+                  </div>
+                </label>
+              </div>
+            )}
           </div>
 
-          {/* Right: Sidebar */}
-          <div className="col-span-1 space-y-4">
+          {/* RIGHT — Sidebar panels */}
+          <div className="w-72 shrink-0 space-y-4">
+
             {/* Overview */}
-            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--slate)' }}>
-                Overview
-              </p>
-
-              {/* Tag */}
-              <div className="mb-4">
-                <label className="block text-xs font-medium mb-2" style={{ color: 'var(--ink)' }}>
-                  Tag
-                </label>
-                <select
-                  value={tag}
-                  onChange={e => setTag(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
-                  style={{ borderColor: 'var(--border)' }}
-                >
-                  <option>Feature</option>
-                  <option>Bug Fix</option>
-                  <option>Update</option>
-                  <option>Improvement</option>
-                  <option>News</option>
-                </select>
+            <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+              <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Overview</p>
               </div>
-
-              {/* Language */}
-              <div>
-                <label className="block text-xs font-medium mb-2" style={{ color: 'var(--ink)' }}>
-                  Language
-                </label>
-                <select
-                  value={language}
-                  onChange={e => setLanguage(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
-                  style={{ borderColor: 'var(--border)' }}
-                >
-                  <option>English</option>
-                  <option>Spanish</option>
-                  <option>French</option>
-                  <option>German</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Status */}
-            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--slate)' }}>
-                Status
-              </p>
-              <div className="space-y-2">
-                <button
-                  onClick={() => setStatus('draft')}
-                  className="w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer"
-                  style={{
-                    background: status === 'draft' ? 'var(--peach)' : 'var(--canvas)',
-                    color: 'var(--ink)',
-                    borderLeft: status === 'draft' ? '3px solid var(--coral)' : '3px solid transparent',
-                  }}
-                >
-                  Draft
-                </button>
-                <button
-                  onClick={() => setStatus('published')}
-                  className="w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer"
-                  style={{
-                    background: status === 'published' ? 'var(--peach)' : 'var(--canvas)',
-                    color: 'var(--ink)',
-                    borderLeft: status === 'published' ? '3px solid var(--coral)' : '3px solid transparent',
-                  }}
-                >
-                  Published
-                </button>
+              <div className="p-4 space-y-4">
+                <div>
+                  <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--slate)' }}>Status</label>
+                  <div className="flex gap-2">
+                    {['draft', 'published'].map(s => (
+                      <button
+                        key={s}
+                        onClick={() => setStatus(s)}
+                        className="flex-1 py-1.5 rounded-lg text-xs font-semibold border capitalize cursor-pointer transition-all"
+                        style={{
+                          background: status === s ? 'var(--peach)' : 'white',
+                          borderColor: status === s ? 'var(--coral)' : 'var(--border)',
+                          color: status === s ? 'var(--coral)' : 'var(--slate)',
+                        }}
+                      >
+                        {s === 'draft' ? '● Draft' : '◉ Published'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--slate)' }}>Language</label>
+                  <select value={language} onChange={e => setLanguage(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
+                    style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                    {LANGUAGES.map(l => <option key={l}>{l}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--slate)' }}>Tag</label>
+                  <select value={tag} onChange={e => setTag(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
+                    style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                    {TAGS.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
 
             {/* Boost Announcement */}
-            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--slate)' }}>
-                Boost Announcement
-              </p>
-              <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>
-                When enabled, choose how this Announcement will display in Widget
-              </p>
-              <div className="flex items-center gap-2 mb-4">
-                <input
-                  type="checkbox"
-                  checked={boostEnabled}
-                  onChange={e => setBoostEnabled(e.target.checked)}
-                  className="w-4 h-4 rounded cursor-pointer"
-                  style={{ accentColor: 'var(--coral)' }}
-                />
-                <label className="text-sm font-medium cursor-pointer" style={{ color: 'var(--ink)' }}>
-                  Enabled
-                </label>
+            <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+              <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Boost Announcement</p>
               </div>
-
-              {boostEnabled && (
-                <div>
-                  <label className="block text-xs font-medium mb-2" style={{ color: 'var(--ink)' }}>
-                    Display as
-                  </label>
-                  <select
-                    value={boostType}
-                    onChange={e => setBoostType(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
-                    style={{ borderColor: 'var(--border)' }}
-                  >
-                    <option value="banner">Banner</option>
-                    <option value="modal">Modal</option>
-                    <option value="toast">Toast</option>
-                  </select>
+              <div className="p-4 space-y-3">
+                <p className="text-xs" style={{ color: 'var(--slate)' }}>When enabled, choose how this Announcement will display in Widget</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Enabled</span>
+                  <Toggle checked={boostEnabled} onChange={setBoostEnabled} />
                 </div>
-              )}
+                {boostEnabled && (
+                  <div>
+                    <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--slate)' }}>Display as</label>
+                    <select value={boostType} onChange={e => setBoostType(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
+                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                      <option value="banner">Banner</option>
+                      <option value="modal">Modal</option>
+                      <option value="toast">Toast</option>
+                    </select>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Segmentation */}
-            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--slate)' }}>
-                Segmentation
-              </p>
-              <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>
-                Who should see this Announcement?
-              </p>
-              <select
-                value={segmentation}
-                onChange={e => setSegmentation(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none mb-3"
-                style={{ borderColor: 'var(--border)' }}
-              >
-                <option value="all">All Users</option>
-                <option value="logged_in">Logged In Users</option>
-                <option value="new">New Users</option>
-              </select>
-              <a
-                href="#"
-                className="text-xs font-semibold"
-                style={{ color: 'var(--coral)' }}
-              >
-                Manage segments →
-              </a>
+            <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+              <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Segmentation</p>
+              </div>
+              <div className="p-4 space-y-3">
+                <p className="text-xs" style={{ color: 'var(--slate)' }}>Who should see this Announcement?</p>
+                <select value={segmentation} onChange={e => setSegmentation(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  <option value="all">All Users</option>
+                  <option value="logged_in">Logged In Users</option>
+                  <option value="new">New Users</option>
+                </select>
+                <a href="/admin/segments" className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>
+                  Manage segments →
+                </a>
+              </div>
             </div>
 
             {/* Notify Subscribers */}
-            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-semibold cursor-pointer" style={{ color: 'var(--ink)' }}>
-                  Notify subscribers
-                </label>
-                <input
-                  type="checkbox"
-                  checked={notifySubscribers}
-                  onChange={e => setNotifySubscribers(e.target.checked)}
-                  className="w-4 h-4 rounded cursor-pointer"
-                  style={{ accentColor: 'var(--coral)' }}
-                />
+            <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+              <div className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Notify subscribers</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Email notification on publish</p>
+                </div>
+                <Toggle checked={notifySubscribers} onChange={setNotifySubscribers} />
               </div>
-              <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>
-                Send email notification to subscribers
-              </p>
             </div>
+
           </div>
         </div>
       </div>
