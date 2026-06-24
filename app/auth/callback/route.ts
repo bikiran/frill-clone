@@ -7,11 +7,15 @@ export async function GET(req: NextRequest) {
   const slug = searchParams.get('slug')
   const name = searchParams.get('name')
   const industry = searchParams.get('industry')
-  const type = searchParams.get('type') // 'recovery' for password reset
+  const next = searchParams.get('next') || '/admin'
 
   const origin = req.nextUrl.origin
 
-  if (!code) return NextResponse.redirect(`${origin}/signin?error=no_code`)
+  // No code — could be a hash-based token (password reset)
+  // Redirect to client-side handler that can read the hash fragment
+  if (!code) {
+    return NextResponse.redirect(`${origin}/auth/confirm${req.nextUrl.search}`)
+  }
 
   try {
     const supabase = createClient(
@@ -21,11 +25,6 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await (supabase as any).auth.exchangeCodeForSession(code)
     if (error) throw error
-
-    // Password reset — redirect to reset page
-    if (type === 'recovery') {
-      return NextResponse.redirect(`${origin}/reset-password?confirmed=1`)
-    }
 
     // New signup with pending company
     if (slug && name && data.user) {
@@ -43,7 +42,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(`${origin}/onboarding`)
     }
 
-    return NextResponse.redirect(`${origin}/admin`)
+    return NextResponse.redirect(`${origin}${next}`)
   } catch (err: any) {
     return NextResponse.redirect(`${origin}/signin?error=${encodeURIComponent(err.message)}`)
   }
