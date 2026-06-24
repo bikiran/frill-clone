@@ -889,3 +889,41 @@ ALTER TABLE announcements ADD COLUMN IF NOT EXISTS boost_image TEXT;
 -- 4. Toggle "Public bucket" ON
 -- 5. Click Save
 -- This enables avatar and image uploads to work.
+
+-- ============================================
+-- COMPANIES (Multi-tenant)
+-- ============================================
+CREATE TABLE IF NOT EXISTS companies (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  slug TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  industry TEXT,
+  description TEXT,
+  logo_url TEXT,
+  accent_color TEXT DEFAULT '#ff7a6b',
+  is_private BOOLEAN DEFAULT false,
+  plan TEXT DEFAULT 'free',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS companies_slug_idx ON companies (slug);
+CREATE INDEX IF NOT EXISTS companies_owner_idx ON companies (owner_id);
+
+ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Companies are viewable by everyone" ON companies;
+CREATE POLICY "Companies are viewable by everyone" ON companies FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Owners can update their company" ON companies;
+CREATE POLICY "Owners can update their company" ON companies FOR UPDATE USING (auth.uid() = owner_id);
+DROP POLICY IF EXISTS "Users can create a company" ON companies;
+CREATE POLICY "Users can create a company" ON companies FOR INSERT WITH CHECK (auth.uid() = owner_id);
+DROP POLICY IF EXISTS "Owners can delete their company" ON companies;
+CREATE POLICY "Owners can delete their company" ON companies FOR DELETE USING (auth.uid() = owner_id);
+
+-- Add company_id to ideas, announcements, topics for multi-tenancy
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE topics ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;

@@ -1,288 +1,268 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
+import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
+import { isValidSlug, isSlugAvailable } from '@/lib/board'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { INDUSTRIES, getIndustryById } from '@/lib/industryPresets'
 
-export default function SignUp() {
+const INDUSTRIES = ['SaaS', 'E-commerce', 'Healthcare', 'Education', 'Finance',
+  'Logistics', 'Manufacturing', 'Media & Entertainment', 'Travel & Hospitality',
+  'Retail', 'Real Estate', 'Other']
+
+function SignUpForm() {
   const router = useRouter()
-  const [step, setStep] = useState<1 | 2>(1)
+  const [step, setStep] = useState(1)
+
+  // Step 1
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+
+  // Step 2
   const [companyName, setCompanyName] = useState('')
-  const [industry, setIndustry] = useState('saas')
+  const [slug, setSlug] = useState('')
+  const [industry, setIndustry] = useState('')
+  const [slugStatus, setSlugStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle')
+
   const [loading, setLoading] = useState(false)
+  const [oauthLoading, setOAuthLoading] = useState('')
   const [error, setError] = useState('')
-  const [sent, setSent] = useState(false)
 
   useEffect(() => {
-    // Don't redirect if coming from "add new account" — user was already signed out
-    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
-    const isAddAccount = params?.get('add') === '1'
-    if (!isAddAccount) {
-      supabase.auth.getSession().then(({ data }) => {
-        if (data.session) router.push('/')
-      })
-    }
+    supabase.auth.getSession().then(({ data }: any) => {
+      if (data?.session?.user) router.push('/admin')
+    })
   }, [router])
 
-  const seedIndustryData = async (industryId: string) => {
-    const preset = getIndustryById(industryId)
-    try {
-      // Save preferences
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('site_settings', JSON.stringify({
-          companyName: companyName || 'YourApp',
-          industry: industryId,
-        }))
-        localStorage.setItem('user_industry', industryId)
-      }
-      // Seed statuses
-      for (let i = 0; i < preset.statuses.length; i++) {
-        const s = preset.statuses[i]
-        await supabase.from('statuses').upsert({ key: s.key, label: s.label, color: s.color, bg: s.bg, order_index: i })
-      }
-      // Seed sample ideas
-      for (const idea of preset.sampleIdeas) {
-        await supabase.from('ideas').insert({
-          title: idea.title,
-          description: idea.description,
-          status: idea.status,
-          votes: idea.votes,
-          created_by_name: 'Sample',
-          topics: [preset.topics[0]],
-          show_on_roadmap: true,
-        })
-      }
-    } catch (e) {
-      console.error('Seed error:', e)
-    }
+  // Auto-generate slug from company name
+  useEffect(() => {
+    if (!companyName) { setSlug(''); setSlugStatus('idle'); return }
+    const auto = companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 30)
+    setSlug(auto)
+  }, [companyName])
+
+  // Check slug availability
+  useEffect(() => {
+    if (!slug) { setSlugStatus('idle'); return }
+    if (!isValidSlug(slug)) { setSlugStatus('invalid'); return }
+    setSlugStatus('checking')
+    const t = setTimeout(async () => {
+      const available = await isSlugAvailable(slug)
+      setSlugStatus(available ? 'available' : 'taken')
+    }, 500)
+    return () => clearTimeout(t)
+  }, [slug])
+
+  const handleStep1 = (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    if (password !== confirmPassword) { setError('Passwords do not match'); return }
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return }
+    setStep(2)
   }
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters')
-      return
-    }
-
-    if (password !== confirmPassword) {
-      setError('Passwords do not match')
-      return
-    }
+    if (!companyName.trim()) { setError('Company name is required'); return }
+    if (slugStatus !== 'available') { setError('Please choose a valid, available board URL'); return }
+    if (!industry) { setError('Please select an industry'); return }
 
     setLoading(true)
-
     try {
-      const redirectTo = typeof window !== 'undefined' 
-        ? `${window.location.origin}/auth/callback` 
-        : undefined
-
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { emailRedirectTo: redirectTo },
+      // 1. Create auth user
+      const { data, error: authErr } = await supabase.auth.signUp({
+        email, password,
+        options: { data: { display_name: companyName, company: companyName, industry } },
       })
+      if (authErr) throw authErr
+      if (!data.user) throw new Error('User creation failed')
 
-      if (error) {
-        setError(error.message)
-        setLoading(false)
-        return
-      }
+      // 2. Create company record
+      const { error: coErr } = await (supabase as any).from('companies').insert({
+        owner_id: data.user.id,
+        slug: slug.toLowerCase(),
+        name: companyName.trim(),
+        industry,
+        accent_color: '#ff7a6b',
+      })
+      if (coErr && !coErr.message.includes('duplicate')) throw coErr
 
-      // If session is returned, user is auto-signed in
-      if (data.session) {
-        await seedIndustryData(industry)
-        router.push('/')
-        router.refresh()
-      } else {
-        // Email confirmation required - save industry choice in localStorage for later seeding
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('pending_industry', industry)
-          localStorage.setItem('pending_company_name', companyName)
-        }
-        setSent(true)
-        setLoading(false)
-      }
+      // 3. Done!
+      router.push('/admin?onboarding=1')
     } catch (err: any) {
-      setError(err.message || 'Sign up failed. Please try again.')
-      setLoading(false)
+      setError(err.message || 'Sign up failed')
     }
+    setLoading(false)
   }
+
+  const handleGoogle = async () => { setOAuthLoading('google'); await signInWithGoogle() }
+  const handleGitHub = async () => { setOAuthLoading('github'); await signInWithGitHub() }
+
+  const slugStatusColor = { idle: 'var(--slate)', checking: '#f59e0b', available: '#10b981', taken: '#ef4444', invalid: '#ef4444' }[slugStatus]
+  const slugStatusMsg = { idle: '', checking: 'Checking...', available: '✓ Available', taken: '✗ Already taken', invalid: '✗ Only lowercase letters, numbers and hyphens (3–30 chars)' }[slugStatus]
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12" style={{ background: 'var(--peach)' }}>
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-block mb-6 text-2xl font-bold" style={{ color: 'var(--coral)' }}>
-            YourApp
-          </Link>
-          <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Create your account</h1>
-          <p style={{ color: 'var(--slate)' }}>Start collecting feedback in minutes</p>
-        </div>
+        <Link href="/landing" className="inline-block mb-8 text-2xl font-bold" style={{ color: 'var(--coral)' }}>
+          Colvy
+        </Link>
 
         <div className="bg-white rounded-2xl shadow-lg p-8" style={{ border: '1px solid var(--border)' }}>
-          {sent ? (
-            <div className="text-center py-4">
-              <div className="text-5xl mb-4">✉️</div>
-              <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--ink)' }}>Confirm your email</h2>
-              <p style={{ color: 'var(--slate)' }}>
-                We sent a confirmation link to <strong style={{ color: 'var(--ink)' }}>{email}</strong>. Click it to activate your account.
-              </p>
-              <Link
-                href="/signin"
-                className="inline-block mt-6 text-sm font-medium transition-smooth"
-                style={{ color: 'var(--coral)' }}>
-                ← Back to sign in
-              </Link>
-            </div>
-          ) : step === 1 ? (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>
-                  Company name
-                </label>
-                <input
-                  type="text"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="Acme Inc."
-                  className="w-full px-4 py-2.5 rounded-lg focus:outline-none transition-smooth"
-                  style={{ border: '1px solid var(--border)', fontSize: '16px' }}
-                />
+          {/* Step indicator */}
+          <div className="flex items-center gap-2 mb-6">
+            {[1, 2].map(s => (
+              <div key={s} className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all"
+                  style={{ background: step >= s ? 'var(--coral)' : 'var(--border)', color: step >= s ? 'white' : 'var(--slate)' }}>
+                  {step > s ? '✓' : s}
+                </div>
+                {s < 2 && <div className="h-0.5 w-8 rounded" style={{ background: step > s ? 'var(--coral)' : 'var(--border)' }} />}
+              </div>
+            ))}
+            <span className="ml-2 text-sm" style={{ color: 'var(--slate)' }}>
+              {step === 1 ? 'Account details' : 'Your board'}
+            </span>
+          </div>
+
+          {error && <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#fee2e2', color: '#dc2626' }}>{error}</div>}
+
+          {step === 1 ? (
+            <>
+              <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--ink)' }}>Create account</h2>
+              <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Join Colvy — free forever</p>
+
+              {/* OAuth */}
+              <div className="space-y-2 mb-5">
+                <button onClick={handleGoogle} disabled={!!oauthLoading}
+                  className="w-full px-4 py-2.5 rounded-xl border flex items-center justify-center gap-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 cursor-pointer"
+                  style={{ borderColor: 'var(--border)' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                  {oauthLoading === 'google' ? 'Redirecting...' : 'Continue with Google'}
+                </button>
+                <button onClick={handleGitHub} disabled={!!oauthLoading}
+                  className="w-full px-4 py-2.5 rounded-xl border flex items-center justify-center gap-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 cursor-pointer"
+                  style={{ borderColor: 'var(--border)' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                  {oauthLoading === 'github' ? 'Redirecting...' : 'Continue with GitHub'}
+                </button>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>
-                  What's your business?
-                </label>
-                <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>
-                  We'll customize topics, statuses, and sample data for you.
-                </p>
-                <div className="grid grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1">
-                  {INDUSTRIES.map(ind => (
-                    <button
-                      key={ind.id}
-                      type="button"
-                      onClick={() => setIndustry(ind.id)}
-                      className="text-left p-3 rounded-xl border-2 transition-smooth cursor-pointer hover:shadow-md"
-                      style={{
-                        borderColor: industry === ind.id ? 'var(--coral)' : 'var(--border)',
-                        background: industry === ind.id ? 'var(--peach)' : 'white',
-                      }}>
-                      <div className="text-2xl mb-1">{ind.icon}</div>
-                      <div className="text-xs font-semibold" style={{ color: 'var(--ink)' }}>{ind.label}</div>
+              <div className="relative mb-5">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t" style={{ borderColor: 'var(--border)' }}></div></div>
+                <div className="relative flex justify-center text-xs"><span className="px-2 bg-white" style={{ color: 'var(--slate)' }}>or continue with email</span></div>
+              </div>
+
+              <form onSubmit={handleStep1} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Email</label>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required
+                    className="w-full px-4 py-2.5 rounded-xl border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Password</label>
+                  <div className="relative">
+                    <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Min. 6 characters" required
+                      className="w-full px-4 py-2.5 rounded-xl border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-sm cursor-pointer" style={{ color: 'var(--slate)' }}>
+                      {showPassword ? 'Hide' : 'Show'}
                     </button>
-                  ))}
+                  </div>
                 </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setStep(2)}
-                disabled={!industry}
-                className="w-full py-2.5 rounded-lg font-semibold text-white text-sm transition-smooth press-effect disabled:opacity-50 cursor-pointer"
-                style={{ background: 'var(--coral)' }}>
-                Continue →
-              </button>
-            </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Confirm password</label>
+                  <input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required
+                    className="w-full px-4 py-2.5 rounded-xl border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                </div>
+                <button type="submit" className="w-full py-3 rounded-xl font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)' }}>
+                  Continue →
+                </button>
+              </form>
+            </>
           ) : (
-            <form onSubmit={handleSignUp} className="space-y-4">
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="text-xs font-medium cursor-pointer hover:opacity-70"
-                style={{ color: 'var(--coral)' }}>
-                ← Back
-              </button>
-              
-              <div className="p-3 rounded-lg" style={{ background: 'var(--peach)' }}>
-                <p className="text-xs" style={{ color: 'var(--coral)' }}>
-                  <strong>{getIndustryById(industry).icon} {getIndustryById(industry).label}</strong> selected
-                </p>
-              </div>
+            <>
+              <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--ink)' }}>Set up your board</h2>
+              <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Choose your company name and board URL</p>
 
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>
-                  Email
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full px-4 py-2.5 rounded-lg focus:outline-none transition-smooth"
-                  style={{ border: '1px solid var(--border)', fontSize: '16px' }}
-                  required
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>
-                  Password
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 6 characters"
-                  minLength={6}
-                  className="w-full px-4 py-2.5 rounded-lg focus:outline-none transition-smooth"
-                  style={{ border: '1px solid var(--border)', fontSize: '16px' }}
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>
-                  Confirm password
-                </label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter your password"
-                  minLength={6}
-                  className="w-full px-4 py-2.5 rounded-lg focus:outline-none transition-smooth"
-                  style={{ border: '1px solid var(--border)', fontSize: '16px' }}
-                  required
-                />
-              </div>
-
-              {error && (
-                <div className="p-3 rounded-lg text-sm animate-fade-in-up" style={{ background: '#fee2e2', color: '#dc2626' }}>
-                  {error}
+              <form onSubmit={handleSignUp} className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Company name</label>
+                  <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Acme Inc." required
+                    className="w-full px-4 py-2.5 rounded-xl border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
                 </div>
-              )}
 
-              <button
-                type="submit"
-                disabled={loading || !email || !password || !confirmPassword}
-                className="w-full py-3 rounded-lg font-semibold text-white transition-smooth press-effect futuristic-btn disabled:opacity-50"
-                style={{ background: 'var(--coral)' }}>
-                {loading ? 'Creating account…' : '✨ Create account'}
-              </button>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Board URL</label>
+                  <div className="flex items-center rounded-xl border overflow-hidden focus-within:ring-1" style={{ borderColor: slugStatus === 'available' ? '#10b981' : slugStatus === 'taken' || slugStatus === 'invalid' ? '#ef4444' : 'var(--border)' }}>
+                    <input
+                      type="text"
+                      value={slug}
+                      onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                      placeholder="acme"
+                      className="flex-1 px-4 py-2.5 focus:outline-none text-sm"
+                      style={{ fontSize: '16px' }}
+                    />
+                    <span className="px-3 text-sm font-medium shrink-0" style={{ background: 'var(--canvas)', color: 'var(--slate)', borderLeft: '1px solid var(--border)', lineHeight: '44px' }}>
+                      .colvy.com
+                    </span>
+                  </div>
+                  {slugStatusMsg && (
+                    <p className="text-xs mt-1" style={{ color: slugStatusColor }}>{slugStatusMsg}</p>
+                  )}
+                </div>
 
-              <p className="text-xs text-center" style={{ color: 'var(--slate)' }}>
-                By signing up, you agree to our Terms of Service and Privacy Policy.
-              </p>
-            </form>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Industry</label>
+                  <select value={industry} onChange={e => setIndustry(e.target.value)} required
+                    className="w-full px-4 py-2.5 rounded-xl border focus:outline-none text-sm"
+                    style={{ borderColor: 'var(--border)', color: industry ? 'var(--ink)' : 'var(--slate)', fontSize: '16px' }}>
+                    <option value="">Select an industry</option>
+                    {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
+                  </select>
+                </div>
+
+                {/* Preview */}
+                {slug && slugStatus === 'available' && (
+                  <div className="p-3 rounded-xl text-sm" style={{ background: 'var(--peach)' }}>
+                    <p className="font-medium" style={{ color: 'var(--ink)' }}>Your board will be at:</p>
+                    <p className="font-bold mt-0.5" style={{ color: 'var(--coral)' }}>https://{slug}.colvy.com</p>
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => setStep(1)}
+                    className="flex-1 py-3 rounded-xl font-semibold border cursor-pointer hover:bg-gray-50"
+                    style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                    ← Back
+                  </button>
+                  <button type="submit" disabled={loading || slugStatus !== 'available'}
+                    className="flex-1 py-3 rounded-xl font-semibold text-white cursor-pointer disabled:opacity-50"
+                    style={{ background: 'var(--coral)' }}>
+                    {loading ? 'Creating...' : 'Create Board 🎉'}
+                  </button>
+                </div>
+              </form>
+            </>
           )}
-        </div>
 
-        <p className="text-center mt-6" style={{ color: 'var(--slate)' }}>
-          Already have an account?{' '}
-          <Link href="/signin" className="font-semibold transition-smooth hover:opacity-70" style={{ color: 'var(--coral)' }}>
-            Sign in
-          </Link>
-        </p>
+          <p className="text-center text-sm mt-6" style={{ color: 'var(--slate)' }}>
+            Already have an account?{' '}
+            <Link href="/signin" className="font-semibold hover:underline" style={{ color: 'var(--coral)' }}>Sign in</Link>
+          </p>
+        </div>
       </div>
     </div>
+  )
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--peach)' }}>Loading...</div>}>
+      <SignUpForm />
+    </Suspense>
   )
 }
