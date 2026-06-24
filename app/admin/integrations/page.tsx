@@ -161,6 +161,24 @@ export default function IntegrationsPage() {
     })
   }, [router])
 
+  // OAuth-based integrations get a "Connect" button instead of manual fields
+  const OAUTH_INTEGRATIONS = ['trello', 'jira', 'github', 'slack', 'intercom', 'zendesk']
+
+  const handleOAuthConnect = (intId: string) => {
+    const OAUTH_URLS: Record<string, string> = {
+      trello: `https://trello.com/1/authorize?expiration=never&scope=read,write&response_type=token&name=Frill&return_url=${encodeURIComponent(window.location.origin + '/admin/integrations?connected=trello')}`,
+      github: `https://github.com/login/oauth/authorize?client_id=YOUR_GITHUB_CLIENT_ID&scope=repo&redirect_uri=${encodeURIComponent(window.location.origin + '/admin/integrations?connected=github')}`,
+      slack: `https://slack.com/oauth/v2/authorize?client_id=YOUR_SLACK_CLIENT_ID&scope=incoming-webhook&redirect_uri=${encodeURIComponent(window.location.origin + '/admin/integrations?connected=slack')}`,
+    }
+    if (OAUTH_URLS[intId]) {
+      window.open(OAUTH_URLS[intId], '_blank', 'width=600,height=700')
+    } else {
+      alert(`OAuth for ${intId} requires setting up OAuth credentials in your dashboard.`)
+    }
+  }
+
+  const isOAuth = (intId: string) => OAUTH_INTEGRATIONS.includes(intId)
+
   const loadIntegrations = async () => {
     try {
       const { data } = await (supabase as any).from('integration_configs').select('*')
@@ -325,6 +343,31 @@ export default function IntegrationsPage() {
             {/* Config fields */}
             <div className="bg-white rounded-2xl border p-6 mb-4" style={{ borderColor: 'var(--border)' }}>
               <h3 className="font-bold mb-4" style={{ color: 'var(--ink)' }}>Configuration</h3>
+
+              {/* OAuth Connect Button */}
+              {isOAuth(activeIntegration.id) && (
+                <div className="mb-5 pb-5 border-b" style={{ borderColor: 'var(--border)' }}>
+                  <p className="text-sm mb-3" style={{ color: 'var(--slate)' }}>
+                    Connect your {activeIntegration.name} account to get started:
+                  </p>
+                  <button onClick={() => handleOAuthConnect(activeIntegration.id)}
+                    className="flex items-center gap-3 px-5 py-3 rounded-xl border text-sm font-semibold cursor-pointer hover:shadow-md transition-all"
+                    style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: activeIntegration.bg }}>
+                    <span className="text-xl">{activeIntegration.icon}</span>
+                    {enabled[activeIntegration.id] ? `✅ Connected to ${activeIntegration.name}` : `Sign in with ${activeIntegration.name}`}
+                  </button>
+                  {enabled[activeIntegration.id] && (
+                    <button onClick={() => setEnabled(prev => ({ ...prev, [activeIntegration.id]: false }))}
+                      className="text-xs mt-2 cursor-pointer hover:underline" style={{ color: '#ef4444' }}>
+                      Disconnect
+                    </button>
+                  )}
+                  <div className="mt-3 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+                    <p className="text-xs" style={{ color: 'var(--slate)' }}>Or configure manually with API credentials:</p>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-4">
                 {activeIntegration.fields.map(field => (
                   <div key={field.key}>

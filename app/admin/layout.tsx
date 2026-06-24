@@ -32,6 +32,7 @@ const SIDEBAR_GROUPS = [
     { label: 'Help Centre', href: '/admin/help' },
     { label: 'Support Tickets', href: '/admin/support' },
     { label: 'Integrations', href: '/admin/integrations' },
+    { label: 'Billing', href: '/admin/billing' },
   ]},
 ]
 

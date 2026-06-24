@@ -9,21 +9,32 @@ const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const SIDEBAR_ITEMS = [
   { section: null, items: [
-    { label: 'General', href: '/admin/settings', active: true },
+    { label: 'General', tab: 'general' },
+    { label: 'Invite Team', href: '/admin/team' },
+    { label: 'Languages', tab: 'languages' },
+    { label: 'Statuses', href: '/admin/statuses' },
+    { label: 'Topics', href: '/admin/topics' },
+    { label: 'Priorities', href: '/admin/priorities' },
+    { label: 'Miscellaneous', tab: 'misc' },
   ]},
-  { section: 'Content', items: [
-    { label: 'Statuses', href: '/admin/statuses', active: false },
-    { label: 'Topics', href: '/admin/topics', active: false },
-    { label: 'Priorities', href: '/admin/priorities', active: false },
+  { section: 'Plan', items: [
+    { label: 'Upgrade', href: '/admin/upgrade' },
+    { label: 'Billing', href: '/admin/billing' },
   ]},
-  { section: 'Feedback', items: [
-    { label: 'Surveys', href: '/admin/surveys', active: false },
-    { label: 'Polls', href: '/admin/polls', active: false },
+  { section: 'Styling', items: [
+    { label: 'Theme', tab: 'theme' },
+    { label: 'Emails', tab: 'emails' },
+    { label: 'White Labeling', tab: 'whitelabel' },
   ]},
-  { section: 'Customization', items: [
-    { label: 'Terminology', href: '/admin/terminology', active: false },
-    { label: 'Segments', href: '/admin/segments', active: false },
-    { label: 'Team Members', href: '/admin/team', active: false },
+  { section: 'Authentication', items: [
+    { label: 'General', tab: 'auth' },
+    { label: 'Privacy', tab: 'privacy' },
+  ]},
+  { section: 'API & Integrations', items: [
+    { label: 'Integrations', href: '/admin/integrations' },
+  ]},
+  { section: 'Site Navigation', items: [
+    { label: 'Navigation', tab: 'nav' },
   ]},
 ]
 
@@ -56,6 +67,21 @@ export default function SettingsPage() {
   const [guestSubmitEnabled, setGuestSubmitEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  // Miscellaneous settings
+  const [allowAnnSubsc, setAllowAnnSubsc] = useState(true)
+  const [allowAnnComments, setAllowAnnComments] = useState(true)
+  const [showAnnComments, setShowAnnComments] = useState<'always' | 'admins'>('always')
+  const [disableAnnReactions, setDisableAnnReactions] = useState(false)
+  const [disableAnimGifs, setDisableAnimGifs] = useState(false)
+  const [disableCommentReactions, setDisableCommentReactions] = useState(false)
+  const [allowIdeaComments, setAllowIdeaComments] = useState(true)
+  const [showIdeaMRR, setShowIdeaMRR] = useState(false)
+  const [showIdeaNumber, setShowIdeaNumber] = useState(true)
+  const [showRoadmapDesc, setShowRoadmapDesc] = useState(true)
+  const [showIdeaDate, setShowIdeaDate] = useState<'always' | 'admins' | 'never'>('always')
+  const [showIdeaActivity, setShowIdeaActivity] = useState<'always' | 'admins'>('always')
+  const [requireIdeaTopic, setRequireIdeaTopic] = useState(false)
+  const [activeSettingsTab, setActiveSettingsTab] = useState('general')
   const logoFileRef = useRef<HTMLInputElement>(null)
   const faviconFileRef = useRef<HTMLInputElement>(null)
   const ogFileRef = useRef<HTMLInputElement>(null)
@@ -94,6 +120,19 @@ export default function SettingsPage() {
           if (s.customDomain) setCustomDomain(s.customDomain)
           if (s.guestVotingEnabled !== undefined) setGuestVotingEnabled(s.guestVotingEnabled)
           if (s.guestSubmitEnabled !== undefined) setGuestSubmitEnabled(s.guestSubmitEnabled)
+          if (s.allowAnnSubsc !== undefined) setAllowAnnSubsc(s.allowAnnSubsc)
+          if (s.allowAnnComments !== undefined) setAllowAnnComments(s.allowAnnComments)
+          if (s.showAnnComments) setShowAnnComments(s.showAnnComments)
+          if (s.disableAnnReactions !== undefined) setDisableAnnReactions(s.disableAnnReactions)
+          if (s.disableAnimGifs !== undefined) setDisableAnimGifs(s.disableAnimGifs)
+          if (s.disableCommentReactions !== undefined) setDisableCommentReactions(s.disableCommentReactions)
+          if (s.allowIdeaComments !== undefined) setAllowIdeaComments(s.allowIdeaComments)
+          if (s.showIdeaMRR !== undefined) setShowIdeaMRR(s.showIdeaMRR)
+          if (s.showIdeaNumber !== undefined) setShowIdeaNumber(s.showIdeaNumber)
+          if (s.showRoadmapDesc !== undefined) setShowRoadmapDesc(s.showRoadmapDesc)
+          if (s.showIdeaDate) setShowIdeaDate(s.showIdeaDate)
+          if (s.showIdeaActivity) setShowIdeaActivity(s.showIdeaActivity)
+          if (s.requireIdeaTopic !== undefined) setRequireIdeaTopic(s.requireIdeaTopic)
           // Also cache in localStorage for layout to use without DB call
           if (typeof window !== 'undefined') {
             localStorage.setItem('site_settings', JSON.stringify(s))
@@ -129,6 +168,9 @@ export default function SettingsPage() {
       emailFromName, emailReplyTo, emailSignature,
       hidePoweredBy, customDomain,
       guestVotingEnabled, guestSubmitEnabled,
+      allowAnnSubsc, allowAnnComments, showAnnComments, disableAnnReactions,
+      disableAnimGifs, disableCommentReactions, allowIdeaComments, showIdeaMRR,
+      showIdeaNumber, showRoadmapDesc, showIdeaDate, showIdeaActivity, requireIdeaTopic,
     }
     
     try {
@@ -204,8 +246,220 @@ export default function SettingsPage() {
   if (!user) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
 
   return (
-    <div className="px-4 md:px-8 py-6 md:py-8">
+    <div className="flex min-h-[calc(100vh-56px)]">
+      {/* Settings Sidebar */}
+      <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
+        <div className="py-4 px-3">
+          {SIDEBAR_ITEMS.map((group, gi) => (
+            <div key={gi} className="mb-4">
+              {group.section && (
+                <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--slate)' }}>{group.section}</p>
+              )}
+              {group.items.map((item: any) => (
+                item.href ? (
+                  <a key={item.label} href={item.href}
+                    className="flex items-center px-3 py-2 rounded-lg text-sm cursor-pointer hover:bg-gray-50 transition-all"
+                    style={{ color: 'var(--slate)' }}>
+                    {item.label}
+                  </a>
+                ) : (
+                  <button key={item.label} onClick={() => setActiveSettingsTab(item.tab)}
+                    className="flex items-center w-full text-left px-3 py-2 rounded-lg text-sm cursor-pointer hover:bg-gray-50 transition-all"
+                    style={{
+                      background: activeSettingsTab === item.tab ? 'var(--peach)' : 'transparent',
+                      color: activeSettingsTab === item.tab ? 'var(--coral)' : 'var(--slate)',
+                      fontWeight: activeSettingsTab === item.tab ? 600 : 400,
+                    }}>
+                    {item.label}
+                  </button>
+                )
+              ))}
+            </div>
+          ))}
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-8">
       <div className="max-w-3xl mx-auto">
+
+      {activeSettingsTab === 'misc' ? (
+        /* MISCELLANEOUS TAB */
+        <>
+          <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Miscellaneous</h1>
+          <p className="mb-8 text-sm" style={{ color: 'var(--slate)' }}>Other company settings.</p>
+
+          {/* Announcements */}
+          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+            <h2 className="text-base font-bold mb-5" style={{ color: 'var(--ink)' }}>Announcements</h2>
+            <div className="space-y-5">
+              {[
+                { label: 'Allow Announcement subscriptions', desc: 'Enable users to receive updates for Announcements', state: allowAnnSubsc, set: setAllowAnnSubsc },
+                { label: 'Allow Announcement comments', desc: 'Enable commenting on Announcements', state: allowAnnComments, set: setAllowAnnComments },
+                { label: 'Disable Announcements reactions', desc: 'Turn off reactions on Announcements', state: disableAnnReactions, set: setDisableAnnReactions },
+                { label: 'Disable animated GIFs', desc: 'Remove any animated GIFs from your company', state: disableAnimGifs, set: setDisableAnimGifs },
+                { label: 'Disable comment reactions', desc: 'Turn off reactions on comments', state: disableCommentReactions, set: setDisableCommentReactions },
+              ].map(item => (
+                <div key={item.label} className="flex items-center justify-between py-3 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{item.label}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{item.desc}</p>
+                  </div>
+                  <button onClick={() => item.set(!item.state)}
+                    className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4"
+                    style={{ background: item.state ? 'var(--coral)' : '#d1d5db' }}>
+                    <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                      style={{ transform: item.state ? 'translateX(24px)' : 'translateX(4px)' }} />
+                  </button>
+                </div>
+              ))}
+              {/* Show Announcement comments - with select */}
+              <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Show Announcement comments</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Display Announcement comments to selected users</p>
+                </div>
+                <select value={showAnnComments} onChange={e => setShowAnnComments(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-lg border text-sm focus:outline-none ml-4"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  <option value="always">Always</option>
+                  <option value="admins">Admins only</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Ideas */}
+          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+            <h2 className="text-base font-bold mb-5" style={{ color: 'var(--ink)' }}>Ideas</h2>
+            <div className="space-y-0">
+              {[
+                { label: 'Allow Idea comments', desc: 'Enable commenting and replies on Ideas and Idea activity', state: allowIdeaComments, set: setAllowIdeaComments },
+                { label: 'Show Idea MRR', desc: 'Display the total MRR for an Idea', state: showIdeaMRR, set: setShowIdeaMRR },
+                { label: 'Show Idea number', desc: 'Display the unique Idea number', state: showIdeaNumber, set: setShowIdeaNumber },
+                { label: 'Show Roadmap Idea descriptions', desc: 'Display the Idea description on your Roadmap', state: showRoadmapDesc, set: setShowRoadmapDesc },
+                { label: 'Require Idea topic', desc: 'At least one topic will be required for an Idea submission', state: requireIdeaTopic, set: setRequireIdeaTopic },
+              ].map(item => (
+                <div key={item.label} className="flex items-center justify-between py-3 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{item.label}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{item.desc}</p>
+                  </div>
+                  <button onClick={() => item.set(!item.state)}
+                    className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer shrink-0 ml-4"
+                    style={{ background: item.state ? 'var(--coral)' : '#d1d5db' }}>
+                    <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                      style={{ transform: item.state ? 'translateX(24px)' : 'translateX(4px)' }} />
+                  </button>
+                </div>
+              ))}
+              {/* Show Idea date */}
+              <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Show Idea date</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Display the Idea created date to selected users</p>
+                </div>
+                <select value={showIdeaDate} onChange={e => setShowIdeaDate(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-lg border text-sm focus:outline-none ml-4"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  <option value="always">Always</option>
+                  <option value="admins">Admins only</option>
+                  <option value="never">Never</option>
+                </select>
+              </div>
+              {/* Show Idea activity */}
+              <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Show Idea activity</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Display Idea activity to selected users</p>
+                </div>
+                <select value={showIdeaActivity} onChange={e => setShowIdeaActivity(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-lg border text-sm focus:outline-none ml-4"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  <option value="always">Always</option>
+                  <option value="admins">Admins only</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Data */}
+          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+            <h2 className="text-base font-bold mb-5" style={{ color: 'var(--ink)' }}>Data</h2>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Export data (CSV)</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Download all Ideas, Votes, Comments, Users, Announcements data.</p>
+                </div>
+                <button className="px-4 py-2 rounded-xl border text-sm font-semibold cursor-pointer hover:bg-gray-50"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  Export data
+                </button>
+              </div>
+              <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Import Ideas</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Kick-start your board by importing the Starter Template.</p>
+                </div>
+                <button className="px-4 py-2 rounded-xl border text-sm font-semibold cursor-pointer hover:bg-gray-50"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  Import template
+                </button>
+              </div>
+              <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Restart onboarding</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Missed something? Start the onboarding process from the beginning.</p>
+                </div>
+                <button className="px-4 py-2 rounded-xl border text-sm font-semibold cursor-pointer hover:bg-gray-50"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  Restart
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Danger Zone */}
+          <div className="bg-white rounded-2xl border p-6" style={{ borderColor: '#fca5a5' }}>
+            <h2 className="text-base font-bold mb-5" style={{ color: '#dc2626' }}>Danger Zone</h2>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Delete all Ideas</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Once you delete Ideas, there is no going back so please be certain.</p>
+                </div>
+                <button onClick={() => { if (confirm('Delete ALL ideas? This cannot be undone!')) alert('Contact support to delete all ideas.') }}
+                  className="px-4 py-2 rounded-xl border text-sm font-semibold cursor-pointer"
+                  style={{ borderColor: '#fca5a5', color: '#dc2626' }}>
+                  Delete all Ideas
+                </button>
+              </div>
+              <div className="flex items-center justify-between py-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Delete company</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Including all Ideas and Announcements, this cannot be undone.</p>
+                </div>
+                <button onClick={() => { if (confirm('Delete entire company? This CANNOT be undone!')) alert('Contact support to delete your company.') }}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer text-white"
+                  style={{ background: '#dc2626' }}>
+                  Delete company
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <button onClick={handleSave} disabled={saving}
+              className="px-8 py-3 rounded-xl font-semibold text-white cursor-pointer disabled:opacity-50"
+              style={{ background: 'var(--coral)' }}>
+              {saving ? 'Saving...' : saved ? '✅ Saved!' : 'Save Settings'}
+            </button>
+          </div>
+        </>
+      ) : (
+        /* ALL OTHER TABS — existing content */
+        <>
           <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--ink)' }}>General Settings</h1>
           <p className="mb-8" style={{ color: 'var(--slate)' }}>Manage your company settings.</p>
 
@@ -683,7 +937,10 @@ window.YourApp('container', {
               {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
-        </div>
+        </>
+      )}
+      </div>
+      </div>
     </div>
   )
 }
