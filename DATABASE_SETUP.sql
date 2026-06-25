@@ -941,3 +941,18 @@ EXCEPTION WHEN undefined_table THEN NULL; END $$;
 DO $$ BEGIN
   ALTER TABLE votes ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
 EXCEPTION WHEN undefined_table THEN NULL; END $$;
+
+-- Add guest_id to votes for anonymous voting
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS guest_id TEXT;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS company_id UUID;
+
+-- Allow anonymous votes (no user required)
+DROP POLICY IF EXISTS "Anyone can vote" ON votes;
+CREATE POLICY "Anyone can vote" ON votes FOR ALL USING (true);
+
+-- Add plan column to companies (used by platform admin)
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free';
+
+-- Platform admin can update plans
+DROP POLICY IF EXISTS "Platform admin can update companies" ON companies;
+CREATE POLICY "Platform admin can update companies" ON companies FOR UPDATE USING (true);

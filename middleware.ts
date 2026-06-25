@@ -1,66 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon|logo|public|api|.*\\..*$).*)',
-  ],
+  matcher: ['/((?!_next/static|_next/image|favicon\\.png|logo\\.png|.*\\..*).*)'],
 }
 
-// Subdomains that are NOT tenant boards
 const RESERVED = new Set([
-  'www', 'app', 'api', 'admin', 'mail', 'smtp',
-  'ftp', 'dev', 'staging', 'preview', 'static',
+  'www', 'app', 'api', 'mail', 'smtp', 'ftp',
+  'dev', 'staging', 'preview', 'static', 'cdn', 'assets',
 ])
 
 export function middleware(req: NextRequest) {
   const url = req.nextUrl.clone()
   const hostname = req.headers.get('host') || ''
-
-  // Extract subdomain
-  // Works for: arik.colvy.com → subdomain = 'arik'
-  // Works for: arik.localhost:3000 → subdomain = 'arik'
-  const parts = hostname.split('.')
-  
-  let subdomain: string | null = null
-  
-  if (hostname.includes('localhost')) {
-    // Local dev: arik.localhost:3000
-    if (parts.length >= 2 && parts[0] !== 'localhost') {
-      subdomain = parts[0]
-    }
-  } else if (hostname.includes('colvy.com')) {
-    // Production: arik.colvy.com
-    if (parts.length >= 3 && !RESERVED.has(parts[0])) {
-      subdomain = parts[0]
-    }
-  } else if (hostname.includes('vercel.app')) {
-    // Vercel preview: no subdomain routing
-    subdomain = null
-  }
-
-  // No subdomain → serve normal app
-  if (!subdomain) return NextResponse.next()
-
-  // Has subdomain → rewrite to /board/[slug]
   const path = url.pathname
 
-  // Pass through static assets and API routes
-  if (
-    path.startsWith('/api/') ||
-    path.startsWith('/_next/') ||
-    path.startsWith('/admin') ||
-    path.startsWith('/signin') ||
-    path.startsWith('/signup') ||
-    path.startsWith('/landing')
-  ) {
+  // Always pass through Next.js internals and API
+  if (path.startsWith('/_next') || path.startsWith('/api/')) {
     return NextResponse.next()
   }
 
-  // Rewrite root and sub-paths to board routes
-  url.pathname = `/board/${subdomain}${path === '/' ? '' : path}`
-  
-  const response = NextResponse.rewrite(url)
-  // Pass subdomain to pages via header
-  response.headers.set('x-subdomain', subdomain)
-  return response
+  const parts = hostname.split('.')
+  let subdomain: string | null = null
+
+  // Production: arik.colvy.com
+  if (hostname.endsWith('.colvy.com') && parts.length === 3) {
+    const sub = parts[0]
+
+    // admin.colvy.com → platform super admin
+    if (sub === 'admin') {
+      url.pathname = `/platform-admin${path === '/' ? '' : path}`
+      return NextResponse.rewrite(url)
+    }
+
+    if (!RESERVED.has(sub)) subdomain = sub
+  }
+
+  // Local dev: arik.localhost or arik.localhost:3000
+  if (hostname.includes('localhost') && parts.length >= 2 && parts[0] !== 'localhost') {
+    subdomain = parts[0]
+  }
+
+  // No subdomain → serve normal colvy.com app
+  if (!subdomain) return NextResponse.next()
+
+  // Subdomain → rewrite everything to /board/[slug]/...
+  // /admin → /board/[slug]/admin (board owner's admin)
+  // /      → /board/[slug]
+  // /roadmap → /board/[slug]/roadmap
+  const boardPath = path === '/' ? '' : path
+  url.pathname = `/board/${subdomain}${boardPath}`
+
+  const res = NextResponse.rewrite(url)
+  res.headers.set('x-subdomain', subdomain)
+  res.headers.set('x-hostname', hostname)
+  return res
 }

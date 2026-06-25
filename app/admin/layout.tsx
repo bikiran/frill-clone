@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { getCompanyByOwner } from '@/lib/board'
 import { useRouter } from 'next/navigation'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com' // Colvy's own admin
 
 const SIDEBAR_GROUPS = [
   { section: 'Overview', items: [
@@ -43,28 +43,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authed, setAuthed] = useState<boolean | null>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
+    supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user
-      if (!u) { router.push('/signin'); return }
-
-      // Check subdomain matches user's company
-      const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
-      const isLocal = hostname.includes('localhost')
-      const isVercel = hostname.includes('vercel.app')
-      const isMain = hostname === 'colvy.com' || hostname === 'www.colvy.com'
-
-      if (!isLocal && !isVercel && isMain) {
-        // On colvy.com/admin — redirect to their subdomain
-        const company = await getCompanyByOwner(u.id)
-        if (company?.slug) {
-          window.location.href = `https://${company.slug}.colvy.com/admin`
-          return
-        }
+      if (!u) {
+        router.push('/signin')
+        return
       }
-
       setAuthed(true)
     })
-  }, [router])
+  }, []) // run once only
 
   if (authed === null) {
     return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>

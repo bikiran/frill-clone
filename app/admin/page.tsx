@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { getUserPlan, isPro, PLAN_NAMES } from '@/lib/plan'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+
 import { LightbulbIcon, MapIcon, MegaphoneIcon, SurveyIcon, PollIcon, HomeIcon } from '@/components/Icons'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
@@ -11,6 +13,7 @@ const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 export default function AdminDashboard() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
+  const [plan, setPlan] = useState<any>('free')
   const [stats, setStats] = useState({ ideas: 0, announcements: 0, surveys: 0, polls: 0 })
   const [loading, setLoading] = useState(true)
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set())
