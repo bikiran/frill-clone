@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 export default function SurveyDetailPage() {
   const params = useParams()

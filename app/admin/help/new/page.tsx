@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 const CATEGORIES = ['Getting Started', 'Features', 'Billing', 'Integrations', 'Troubleshooting', 'API', 'Other']
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -44,7 +44,6 @@ export default function NewHelpArticlePage() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => {
       const u = data?.session?.user
-      if (u?.email !== ADMIN_EMAIL) { router.push('/'); return }
       setUser(u)
       if (editId) loadArticle(editId)
     })

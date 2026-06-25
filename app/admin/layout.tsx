@@ -43,15 +43,32 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authed, setAuthed] = useState<boolean | null>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       const u = data.session?.user
       if (!u) {
         router.push('/signin')
         return
       }
+
+      // On a subdomain — verify user owns this company
+      const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
+      const parts = hostname.split('.')
+      const isSubdomain = parts.length === 3 && hostname.endsWith('colvy.com')
+      const isVercelOrLocal = hostname.includes('vercel.app') || hostname.includes('localhost')
+
+      if (isSubdomain && !isVercelOrLocal) {
+        const subdomain = parts[0]
+        const company = await getCompanyByOwner(u.id)
+        if (!company || company.slug !== subdomain) {
+          // Not owner of this board — send to board homepage
+          window.location.href = '/'
+          return
+        }
+      }
+
       setAuthed(true)
     })
-  }, []) // run once only
+  }, [])
 
   if (authed === null) {
     return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>

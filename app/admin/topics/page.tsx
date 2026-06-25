@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const DEFAULT_TOPICS = [
   { id: 'welcome', label: 'Welcome', emoji: '👋' },
@@ -30,11 +30,6 @@ export default function TopicsPage() {
       if (!u) {
         // Not signed in - redirect to signin
         router.push('/signin?next=/admin/topics')
-        return
-      }
-      if (u.email !== ADMIN_EMAIL) {
-        // Signed in but not admin - redirect home
-        router.push('/')
         return
       }
       setUser(u)

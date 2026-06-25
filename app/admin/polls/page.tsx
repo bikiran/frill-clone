@@ -7,7 +7,7 @@ import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon, PollIcon } from '@/components/Icons'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 export default function PollsAdmin() {
   const router = useRouter()

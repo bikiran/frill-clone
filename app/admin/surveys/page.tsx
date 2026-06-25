@@ -7,7 +7,7 @@ import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon, SurveyIcon } from '@/components/Icons'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const SURVEY_TYPES = [
   { type: 'nps', title: 'NPS Survey', desc: 'Gather customer insights with an NPS survey.' },
@@ -30,10 +30,6 @@ export default function SurveysAdmin() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user
-      if (u?.email !== ADMIN_EMAIL) {
-        router.push('/')
-        return
-      }
       setUser(u)
     })
     fetchSurveys()

@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const TAGS = ['Feature', 'Bug Fix', 'Update', 'Improvement', 'News']
 const LANGUAGES = ['English', 'Español', 'Français', 'Deutsch', 'Português', 'Japanese', 'Chinese']
@@ -54,7 +54,6 @@ export default function NewAnnouncementPage() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => {
       const u = data?.session?.user
-      if (u?.email !== ADMIN_EMAIL) { router.push('/'); return }
       setUser(u)
       if (editId) loadAnnouncement(editId)
     })

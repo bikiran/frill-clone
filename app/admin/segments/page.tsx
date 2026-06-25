@@ -7,7 +7,7 @@ import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon, SearchIcon } from '@/components/Icons'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 type Segment = { id: string; name: string; conditions: any[]; match_type: string; created_at: string }
 
@@ -29,7 +29,6 @@ export default function SegmentsPage() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user
-      if (u?.email !== ADMIN_EMAIL) { router.push('/'); return }
       setUser(u)
     })
     fetchSegments()

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 function StatCard({ label, value, sub, color }: any) {
   return (
@@ -33,7 +33,6 @@ export default function AnalyticsPage() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => {
       const u = data?.session?.user
-      if (u?.email !== ADMIN_EMAIL) { router.push('/'); return }
       setUser(u)
       loadAll()
     })

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const STATUS_COLORS: Record<string, any> = {
   open:        { bg: '#fef9c3', color: '#ca8a04', label: 'Open' },
@@ -47,7 +47,6 @@ export default function SupportPage() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => {
       const u = data?.session?.user
-      if (u?.email !== ADMIN_EMAIL) { router.push('/'); return }
       setUser(u)
       fetchChatSessions()
       fetchTickets()

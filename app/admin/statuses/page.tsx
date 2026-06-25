@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon } from '@/components/Icons'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const COLORS = [
   '#f97316', '#ea580c', '#dc2626', '#ec4899', 
@@ -28,10 +28,6 @@ export default function StatusesPage() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user
-      if (u?.email !== ADMIN_EMAIL) {
-        router.push('/')
-        return
-      }
       setUser(u)
     })
     fetchStatuses()

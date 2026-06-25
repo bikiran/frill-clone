@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const SIDEBAR_ITEMS = [
   { section: null, items: [
@@ -89,10 +89,6 @@ export default function SettingsPage() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user
-      if (u?.email !== ADMIN_EMAIL) {
-        router.push('/')
-        return
-      }
       setUser(u)
     })
     // Load saved settings from DB

@@ -7,7 +7,7 @@ import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { PlusIcon, TrashIcon } from '@/components/Icons'
 
-const ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const TAG_COLORS: any = {
   'Feature': { bg: '#ecfdf5', color: '#059669' },
@@ -29,7 +29,6 @@ export default function AnnouncementsAdmin() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => {
       const u = data?.session?.user
-      if (u?.email !== ADMIN_EMAIL) { router.push('/'); return }
       setUser(u)
     })
     fetchAnnouncements()
