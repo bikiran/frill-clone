@@ -44,7 +44,6 @@ export default function BoardPage() {
   const [guestVotes, setGuestVotes] = useState<Set<string>>(new Set())
   const [userLikes, setUserLikes] = useState<Set<string>>(new Set())
   const [userSubscriptions, setUserSubscriptions] = useState<Set<string>>(new Set())
-  const [showUserMenu, setShowUserMenu] = useState(false)
 
   useEffect(() => {
     if (!slug) return
@@ -205,82 +204,7 @@ export default function BoardPage() {
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
-      {/* Reuse the same layout as colvy.com — header is handled by app/layout.tsx */}
-      {/* But we need a company-specific nav on subdomains */}
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur-md" style={{ borderColor: 'var(--border)' }}>
-        <nav className="h-14 px-6 flex items-center justify-between max-w-5xl mx-auto">
-          <Link href={`/board/${slug}`} className="flex items-center gap-2 font-bold text-lg">
-            {company?.logo_url
-              ? <img src={company.logo_url} alt={company?.name} className="h-7 w-auto" onError={(e: any) => e.target.style.display='none'} />
-              : null}
-            <span style={{ color: 'var(--coral)' }}>{company?.name}</span>
-          </Link>
-
-          <div className="hidden md:flex items-center gap-1">
-            {[
-              { label: 'Ideas', href: `/board/${slug}`, active: true },
-              { label: 'Roadmap', href: `/board/${slug}/roadmap` },
-              { label: 'Updates', href: `/board/${slug}/announcements` },
-              { label: 'Help', href: `/board/${slug}/help` },
-            ].map(n => (
-              <Link key={n.label} href={n.href}
-                className="px-3 py-1.5 rounded-lg text-sm font-medium transition-smooth"
-                style={{ color: n.active ? 'var(--coral)' : 'var(--slate)', background: n.active ? 'var(--peach)' : 'transparent' }}>
-                {n.label}
-              </Link>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {isOwner && (
-              <Link href="/admin"
-                className="px-3 py-1.5 rounded-lg text-sm font-medium border"
-                style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-                Admin
-              </Link>
-            )}
-            {user ? (
-              <div className="relative">
-                <button onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold cursor-pointer"
-                  style={{ background: 'var(--coral)' }}>
-                  {(user.user_metadata?.display_name || user.email || '?')[0].toUpperCase()}
-                </button>
-                {showUserMenu && (
-                  <>
-                    <div className="fixed inset-0 z-30" onClick={() => setShowUserMenu(false)} />
-                    <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border z-40 overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-                      <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-                        <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{user.email}</p>
-                      </div>
-                      <div className="py-1.5">
-                        <Link href="/account" onClick={() => setShowUserMenu(false)}
-                          className="flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer"
-                          style={{ color: 'var(--ink)' }}>
-                          👤 My Account
-                        </Link>
-                        <button onClick={async () => { await supabase.auth.signOut(); setUser(null); setShowUserMenu(false) }}
-                          className="flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer w-full text-left"
-                          style={{ color: '#ef4444' }}>
-                          Sign out
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            ) : (
-              <Link href="/signin"
-                className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
-                style={{ background: 'var(--coral)' }}>
-                Sign in
-              </Link>
-            )}
-          </div>
-        </nav>
-      </header>
-
-      {/* Main content — same layout as colvy.com */}
+      {/* Header handled by app/layout.tsx */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
         <div className="flex gap-6">
           {/* Left sidebar — statuses + topics */}
