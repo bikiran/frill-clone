@@ -1,10 +1,6 @@
 'use client'
 
-// Board page for a specific company subdomain
-// Reuses the same design as colvy.com but filtered by company_id
-// This page is served when visiting prexty.colvy.com, arik.colvy.com, etc.
-
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getCompanyBySlug } from '@/lib/board'
@@ -21,6 +17,15 @@ function getOrCreateGuestId(): string {
   return id
 }
 
+const SORT_OPTIONS = ['Trending', 'Latest', 'Most Votes']
+
+const DEFAULT_STATUSES = [
+  { name: 'Under consideration', color: '#f97316' },
+  { name: 'Planned',             color: '#3b82f6' },
+  { name: 'In Development',      color: '#ea580c' },
+  { name: 'Shipped',             color: '#10b981' },
+]
+
 export default function BoardPage() {
   const params = useParams()
   const slug = params?.slug as string
@@ -32,11 +37,11 @@ export default function BoardPage() {
   const [user, setUser] = useState<any>(null)
   const [isOwner, setIsOwner] = useState(false)
   const [topics, setTopics] = useState<any[]>([])
-  const [customStatuses, setCustomStatuses] = useState<any[]>([])
+  const [statuses, setStatuses] = useState<any[]>([])
   const [topicFilter, setTopicFilter] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [sortBy, setSortBy] = useState<'trending' | 'latest' | 'most_votes'>('trending')
+  const [sortBy, setSortBy] = useState('Trending')
   const [showModal, setShowModal] = useState(false)
   const [selectedIdea, setSelectedIdea] = useState<any>(null)
   const [showDetailModal, setShowDetailModal] = useState(false)
@@ -51,6 +56,7 @@ export default function BoardPage() {
   }, [slug])
 
   const loadBoard = async () => {
+    setLoading(true)
     try {
       const co = await getCompanyBySlug(slug)
       if (!co) { setNotFound(true); setLoading(false); return }
@@ -67,11 +73,7 @@ export default function BoardPage() {
       setUser(u)
       if (u) setIsOwner(u.id === co.owner_id)
 
-      await Promise.all([
-        fetchIdeas(co.id, u),
-        fetchTopics(co.id),
-        fetchStatuses(co.id),
-      ])
+      await Promise.all([fetchIdeas(co.id, u), fetchTopics(co.id), fetchStatuses(co.id)])
     } catch { setNotFound(true) }
     setLoading(false)
   }
@@ -79,7 +81,6 @@ export default function BoardPage() {
   const fetchIdeas = async (companyId: string, u: any) => {
     const { data } = await (supabase as any).from('ideas').select('*').eq('company_id', companyId).order('votes', { ascending: false })
     setIdeas(data || [])
-
     if (u) {
       const { data: votes } = await (supabase as any).from('votes').select('idea_id').eq('user_id', u.id)
       setUserVotes(new Set((votes || []).map((v: any) => v.idea_id)))
@@ -101,7 +102,7 @@ export default function BoardPage() {
 
   const fetchStatuses = async (companyId: string) => {
     const { data } = await (supabase as any).from('statuses').select('*').eq('company_id', companyId).order('order_index', { ascending: true })
-    setCustomStatuses(data || [])
+    setStatuses(data?.length ? data : DEFAULT_STATUSES)
   }
 
   const handleVote = async (ideaId: string) => {
@@ -109,17 +110,16 @@ export default function BoardPage() {
     const voted = user ? userVotes.has(ideaId) : guestVotes.has(ideaId)
     const delta = voted ? -1 : 1
     setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, votes: (i.votes || 0) + delta } : i))
-
     if (user) {
       const next = new Set(userVotes); voted ? next.delete(ideaId) : next.add(ideaId); setUserVotes(next)
       if (voted) await (supabase as any).from('votes').delete().eq('idea_id', ideaId).eq('user_id', user.id)
-      else await (supabase as any).from('votes').insert({ idea_id: ideaId, user_id: user.id, company_id: company.id })
+      else await (supabase as any).from('votes').insert({ idea_id: ideaId, user_id: user.id, company_id: company?.id })
     } else {
       const next = new Set(guestVotes); voted ? next.delete(ideaId) : next.add(ideaId); setGuestVotes(next)
       if (voted) await (supabase as any).from('votes').delete().eq('idea_id', ideaId).eq('guest_id', gid)
-      else await (supabase as any).from('votes').insert({ idea_id: ideaId, guest_id: gid, company_id: company.id })
+      else await (supabase as any).from('votes').insert({ idea_id: ideaId, guest_id: gid, company_id: company?.id })
     }
-    await (supabase as any).from('ideas').update({ votes: ideas.find(i => i.id === ideaId)?.votes + delta }).eq('id', ideaId)
+    await (supabase as any).from('ideas').update({ votes: (ideas.find(i => i.id === ideaId)?.votes || 0) + delta }).eq('id', ideaId)
   }
 
   const handleLike = async (ideaId: string) => {
@@ -138,29 +138,37 @@ export default function BoardPage() {
   }
 
   // Topic counts
-  const topicCounts = topics.map(t => ({
-    ...t,
-    count: ideas.filter(i => i.topic_id === t.id).length
-  })).filter(t => t.count > 0)
+  const topicCounts = topics.map(t => ({ ...t, count: ideas.filter(i => i.topic_id === t.id).length }))
 
-  // Status counts from custom statuses
-  const statusCounts = customStatuses.map(s => ({
+  // Status counts
+  const statusCounts = statuses.map(s => ({
     ...s,
-    count: ideas.filter(i => i.status === s.name.toLowerCase().replace(/\s+/g, '_') || i.status === s.name).length
+    count: ideas.filter(i => {
+      const st = (i.status || '').toLowerCase()
+      const sn = s.name.toLowerCase()
+      return st === sn || st === sn.replace(/ /g, '_') || st === sn.replace(/ /g, '')
+    }).length
   }))
 
   // Filter and sort
   const filtered = ideas
-    .filter(i => !topicFilter || i.topic_id === topicFilter)
-    .filter(i => !statusFilter || i.status === statusFilter)
-    .filter(i => !search || i.title?.toLowerCase().includes(search.toLowerCase()))
+    .filter(i => {
+      if (topicFilter && i.topic_id !== topicFilter) return false
+      if (statusFilter) {
+        const st = (i.status || '').toLowerCase()
+        const sf = statusFilter.toLowerCase()
+        if (st !== sf && st !== sf.replace(/ /g, '_') && st !== sf.replace(/ /g, '')) return false
+      }
+      if (search && !i.title?.toLowerCase().includes(search.toLowerCase())) return false
+      return true
+    })
     .sort((a, b) => {
-      if (sortBy === 'latest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      if (sortBy === 'most_votes') return (b.votes || 0) - (a.votes || 0)
-      // trending = votes / age
-      const ageA = (Date.now() - new Date(a.created_at).getTime()) / 3600000
-      const ageB = (Date.now() - new Date(b.created_at).getTime()) / 3600000
-      return ((b.votes || 0) / Math.max(ageB, 1)) - ((a.votes || 0) / Math.max(ageA, 1))
+      if (sortBy === 'Latest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      if (sortBy === 'Most Votes') return (b.votes || 0) - (a.votes || 0)
+      // Trending
+      const ageA = Math.max(1, (Date.now() - new Date(a.created_at).getTime()) / 3600000)
+      const ageB = Math.max(1, (Date.now() - new Date(b.created_at).getTime()) / 3600000)
+      return ((b.votes || 0) / ageB) - ((a.votes || 0) / ageA)
     })
 
   if (loading) return (
@@ -174,54 +182,56 @@ export default function BoardPage() {
       <div className="text-6xl mb-4">🔍</div>
       <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Board not found</h1>
       <p className="mb-6" style={{ color: 'var(--slate)' }}>No board exists at <strong>{slug}.colvy.com</strong></p>
-      <Link href="https://colvy.com/signup" className="px-6 py-3 rounded-xl font-semibold text-white" style={{ background: 'var(--coral)' }}>
+      <a href="https://colvy.com/signup" className="px-6 py-3 rounded-xl font-semibold text-white" style={{ background: 'var(--coral)' }}>
         Create your board →
-      </Link>
+      </a>
     </div>
   )
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
-      {/* No custom header — layout.tsx handles it */}
-      {/* Main content — same layout as colvy.com */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
         <div className="flex gap-6">
-          {/* Left sidebar — statuses + topics */}
-          <aside className="hidden lg:flex flex-col w-52 shrink-0">
+
+          {/* LEFT SIDEBAR — matches colvy.com exactly */}
+          <aside className="hidden lg:flex flex-col w-48 shrink-0">
+
             {/* Statuses */}
             {statusCounts.length > 0 && (
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>Statuses</p>
-                  <Link href={`/board/${slug}/roadmap`} className="text-xs hover:underline" style={{ color: 'var(--coral)' }}>View all</Link>
+                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>Statuses</p>
+                  <Link href={`/board/${slug}/roadmap`} className="text-xs hover:underline" style={{ color: 'var(--coral)' }}>
+                    View all
+                  </Link>
                 </div>
-                <div className="space-y-0.5">
-                  {statusCounts.map(s => (
-                    <button key={s.id} onClick={() => setStatusFilter(statusFilter === s.name ? null : s.name)}
-                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left cursor-pointer transition-smooth"
-                      style={{ background: statusFilter === s.name ? s.color + '20' : 'transparent', color: statusFilter === s.name ? s.color : 'var(--slate)' }}>
-                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color || 'var(--coral)' }} />
-                      {s.name}
-                    </button>
-                  ))}
-                </div>
+                {statusCounts.map(s => (
+                  <button key={s.name} onClick={() => setStatusFilter(statusFilter === s.name ? null : s.name)}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left cursor-pointer mb-0.5 transition-all"
+                    style={{ background: statusFilter === s.name ? (s.color + '20') : 'transparent', color: statusFilter === s.name ? s.color : 'var(--slate)' }}>
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color || 'var(--coral)' }} />
+                    {s.name}
+                  </button>
+                ))}
               </div>
             )}
 
             {/* Topics */}
-            {topicCounts.length > 0 && (
+            {topicCounts.filter(t => t.count > 0).length > 0 && (
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--slate)' }}>Topics</p>
+                <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--slate)' }}>Topics</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {topicCounts.map(t => (
+                  {topicCounts.filter(t => t.count > 0).map(t => (
                     <button key={t.id} onClick={() => setTopicFilter(topicFilter === t.id ? null : t.id)}
-                      className="px-2.5 py-1 rounded-full text-xs font-medium cursor-pointer transition-smooth"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium cursor-pointer transition-all"
                       style={{
                         background: topicFilter === t.id ? 'var(--coral)' : 'var(--canvas)',
                         color: topicFilter === t.id ? 'white' : 'var(--slate)',
                         border: `1px solid ${topicFilter === t.id ? 'var(--coral)' : 'var(--border)'}`,
                       }}>
-                      {t.emoji} {t.name}<span className="ml-1 opacity-60">{t.count}</span>
+                      {t.emoji && <span>{t.emoji}</span>}
+                      {t.name}
+                      <span className="opacity-60">{t.count}</span>
                     </button>
                   ))}
                 </div>
@@ -229,32 +239,51 @@ export default function BoardPage() {
             )}
           </aside>
 
-          {/* Ideas list */}
+          {/* RIGHT — MAIN CONTENT */}
           <div className="flex-1 min-w-0">
-            {/* Search + controls */}
-            <div className="flex items-center gap-3 mb-5">
+
+            {/* Search + controls bar — matches colvy.com */}
+            <div className="flex items-center gap-2 mb-5">
+              {/* Search */}
               <div className="relative flex-1">
-                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--slate)' }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="Search ideas..."
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm focus:outline-none"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px', background: 'white' }} />
+                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ color: 'var(--slate)' }}>
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search ideas..."
+                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border text-sm focus:outline-none bg-white"
+                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
               </div>
+
+              {/* Submit idea button */}
               <button onClick={() => setShowModal(true)}
-                className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer hover:opacity-90 transition-smooth shrink-0"
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer hover:opacity-90 transition-all shrink-0"
                 style={{ background: 'var(--coral)' }}>
-                + Submit Idea
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Submit Idea
               </button>
-              <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
-                className="px-3 py-2.5 rounded-xl border text-sm focus:outline-none cursor-pointer shrink-0"
-                style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: 'white' }}>
-                <option value="trending">Trending</option>
-                <option value="latest">Latest</option>
-                <option value="most_votes">Most Votes</option>
+
+              {/* Sort */}
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+                className="pl-3 pr-8 py-2.5 rounded-xl border text-sm focus:outline-none cursor-pointer shrink-0 bg-white"
+                style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                {SORT_OPTIONS.map(o => <option key={o}>{o}</option>)}
               </select>
             </div>
 
-            {/* Ideas */}
+            {/* Ideas count */}
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm" style={{ color: 'var(--slate)' }}>
+                <span className="font-semibold" style={{ color: 'var(--ink)' }}>{filtered.length}</span> idea{filtered.length !== 1 ? 's' : ''} total
+              </p>
+              {(topicFilter || statusFilter || search) && (
+                <button onClick={() => { setTopicFilter(null); setStatusFilter(null); setSearch('') }}
+                  className="text-xs cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            {/* Ideas list */}
             {filtered.length === 0 ? (
               <div className="text-center py-20">
                 <div className="text-5xl mb-4">💡</div>
@@ -262,7 +291,7 @@ export default function BoardPage() {
                   {search ? 'No ideas match your search' : 'No ideas yet'}
                 </p>
                 <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>
-                  {search ? 'Try a different search term' : 'Be the first to share an idea!'}
+                  {search ? 'Try different keywords' : 'Be the first to share an idea!'}
                 </p>
                 {!search && (
                   <button onClick={() => setShowModal(true)}
@@ -285,7 +314,7 @@ export default function BoardPage() {
                     onLike={handleLike}
                     onSubscribe={handleSubscribe}
                     onClick={() => { setSelectedIdea(idea); setShowDetailModal(true) }}
-                    onStatusChange={isOwner ? async (id, status) => {
+                    onStatusChange={isOwner ? async (id: string, status: string) => {
                       await (supabase as any).from('ideas').update({ status }).eq('id', id)
                       setIdeas(prev => prev.map(i => i.id === id ? { ...i, status } : i))
                     } : undefined}
@@ -295,13 +324,6 @@ export default function BoardPage() {
             )}
           </div>
         </div>
-      </div>
-
-      {/* Powered by — only if not hidden */}
-      <div className="text-center py-6 border-t mt-8" style={{ borderColor: 'var(--border)' }}>
-        <a href="https://colvy.com" className="text-xs" style={{ color: 'var(--slate)' }}>
-          Powered by <span style={{ color: 'var(--coral)' }}>Colvy</span>
-        </a>
       </div>
 
       {showModal && (

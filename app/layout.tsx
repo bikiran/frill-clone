@@ -182,7 +182,12 @@ export default function RootLayout({
 
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-1">
-              {NAV_ITEMS.filter(item => navVisibility[item.label as keyof typeof navVisibility] !== false).map(item => (
+              {NAV_ITEMS.filter(item => {
+                if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
+                // Hide Features and Pricing for logged-in users
+                if (user && (item.label === 'Features' || item.label === 'Pricing')) return false
+                return true
+              }).map(item => (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -307,7 +312,11 @@ export default function RootLayout({
             <div className="fixed inset-0 z-30 bg-black/20" onClick={() => setShowDrawer(false)} />
             <div className="fixed right-0 top-14 bottom-0 z-40 w-64 bg-white border-l drawer-open" style={{ borderColor: 'var(--border)' }}>
               <div className="p-4 space-y-2">
-                {NAV_ITEMS.filter(item => navVisibility[item.label as keyof typeof navVisibility] !== false).map(item => (
+                {NAV_ITEMS.filter(item => {
+                  if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
+                  if (user && (item.label === 'Features' || item.label === 'Pricing')) return false
+                  return true
+                }).map(item => (
                   <Link
                     key={item.href}
                     href={item.href}

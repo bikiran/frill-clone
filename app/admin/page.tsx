@@ -78,12 +78,13 @@ export default function AdminDashboard() {
         body: JSON.stringify({ companyId: co.id, companyName: co.name, clearFirst: true }),
       })
       const data = await res.json()
-      if (data.success) {
+      if (data.success || data.skipped) {
         setSeeded(true)
-        if (typeof fetchStats === 'function') fetchStats()
-        if (typeof fetchActivity === 'function') fetchActivity()
+        // Reload page to show new data
+        setTimeout(() => window.location.reload(), 800)
       } else {
-        alert('Seed failed: ' + (data.error || 'Unknown error'))
+        const errMsg = data.errors?.join(', ') || data.error || 'Unknown error'
+        alert('Seed issue: ' + errMsg)
       }
     } catch (err: any) { alert(err.message) }
     setSeeding(false)
