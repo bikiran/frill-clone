@@ -40,6 +40,7 @@ const SIDEBAR_ITEMS = [
 export default function SettingsPage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
+  const [company, setCompany] = useState<any>(null)
   const [companyName, setCompanyName] = useState('YourApp')
   const [logoUrl, setLogoUrl] = useState('')
   const [faviconUrl, setFaviconUrl] = useState('')
@@ -553,7 +554,7 @@ export default function SettingsPage() {
 
             <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Custom Domains</h2>
-              <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Use your own domain instead of yourslug.colvy.com</p>
+              <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Use your own domain instead of {company?.slug ? `${company.slug}.colvy.com` : 'yourslug.colvy.com'}</p>
               <div className="space-y-5">
                 {/* Always-on Colvy URL */}
                 <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
@@ -1138,16 +1139,7 @@ export default function SettingsPage() {
                   <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>● Active</span>
                 </div>
                 <p className="text-sm font-mono" style={{ color: 'var(--coral)' }}>
-                  {(() => {
-                    // Extract subdomain from current hostname only if on *.colvy.com
-                    if (typeof window === 'undefined') return 'yourslug.colvy.com'
-                    const h = window.location.hostname
-                    if (h.endsWith('.colvy.com')) {
-                      const sub = h.replace('.colvy.com', '')
-                      if (sub && sub !== 'www') return `${sub}.colvy.com`
-                    }
-                    return 'yourslug.colvy.com'
-                  })()}
+                  {company?.slug ? `${company.slug}.colvy.com` : 'yourslug.colvy.com'}
                 </p>
                 <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>This is your permanent Colvy URL — always active, no setup needed.</p>
               </div>

@@ -43,6 +43,7 @@ export default function RootLayout({
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [isCompanyOwner, setIsCompanyOwner] = useState(false)
+  const [company, setCompany] = useState<any>(null)
   const [navVisibility, setNavVisibility] = useState({
     Ideas: true, Roadmap: true, Updates: true, Help: true,
   })
@@ -109,8 +110,9 @@ export default function RootLayout({
       const SUPER_ADMIN = 'bishalstha76@gmail.com'
       setIsAdmin(u.email === SUPER_ADMIN)
       try {
-        const { data } = await (supabase as any).from('companies').select('id').eq('owner_id', u.id).single()
+        const { data } = await (supabase as any).from('companies').select('*').eq('owner_id', u.id).single()
         setIsCompanyOwner(!!data || u.email === SUPER_ADMIN)
+        if (data) setCompany(data)
       } catch {
         setIsCompanyOwner(u.email === SUPER_ADMIN)
       }
@@ -194,11 +196,39 @@ export default function RootLayout({
                     {showUserMenu && (
                       <>
                         <div className="fixed inset-0 z-30" onClick={() => setShowUserMenu(false)} />
-                        <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-lg shadow-2xl border z-40 animate-fade-in-up" style={{ borderColor: 'var(--border)' }}>
-                          <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-                            <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{user.email}</p>
+                        <div className="absolute top-full right-0 mt-2 w-60 bg-white rounded-xl shadow-2xl border z-40 overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                          <div className="p-4 border-b" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+                            <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{user?.user_metadata?.display_name || user.email}</p>
+                            <p className="text-xs truncate mt-0.5" style={{ color: 'var(--slate)' }}>{user.email}</p>
                           </div>
-                          <div className="py-2">
+                          <div className="py-1.5">
+                            <Link href="/profile" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer" style={{ color: 'var(--ink)' }}>
+                              👤 My Profile
+                            </Link>
+                            {isCompanyOwner && (
+                              <>
+                                <div className="border-t my-1" style={{ borderColor: 'var(--border)' }} />
+                                <div className="px-4 py-1.5">
+                                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>Board Owner</p>
+                                </div>
+                                <Link href="/admin" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer font-semibold" style={{ color: 'var(--coral)' }}>
+                                  ⚡ Admin Dashboard
+                                </Link>
+                                <Link href="/admin/settings" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer" style={{ color: 'var(--ink)' }}>
+                                  ⚙️ Settings
+                                </Link>
+                                <Link href="/admin/settings#whitelabel" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer" style={{ color: 'var(--ink)' }}>
+                                  🌐 Custom Domains
+                                </Link>
+                                <Link href="/admin/billing" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer" style={{ color: 'var(--ink)' }}>
+                                  💳 Billing
+                                </Link>
+                                <Link href="/admin/team" onClick={() => setShowUserMenu(false)} className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer" style={{ color: 'var(--ink)' }}>
+                                  👥 Team Members
+                                </Link>
+                              </>
+                            )}
+                            <div className="border-t my-1" style={{ borderColor: 'var(--border)' }} />
                             <Link href="/profile" onClick={() => setShowUserMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-smooth" style={{ color: 'var(--ink)' }}>
                               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                               Profile
