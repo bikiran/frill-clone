@@ -107,7 +107,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="flex min-h-[calc(100vh-56px)]">
       {/* Sidebar */}
-      <aside className="hidden md:flex flex-col w-56 lg:w-60 shrink-0 bg-white border-r sticky top-14 h-[calc(100vh-56px)] overflow-y-auto"
+      <aside className="hidden md:flex flex-col w-56 lg:w-60 shrink-0 bg-white border-r" style={{ position: "sticky", top: 56, height: "calc(100vh - 56px)", overflowY: "auto", flexShrink: 0 }}
         style={{ borderColor: 'var(--border)' }}>
 
         {/* Company info */}
@@ -180,7 +180,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1" style={{ overflowY: "auto", height: "calc(100vh - 56px)" }}>
         {children}
       </div>
     </div>

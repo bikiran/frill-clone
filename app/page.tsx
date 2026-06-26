@@ -1,17 +1,18 @@
 'use client'
-import { useEffect } from 'react'
-import { redirect } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
 
 export default function RootPage() {
   useEffect(() => {
     const h = window.location.hostname
-    // On a subdomain (prexty.colvy.com) — stay and let board load via /roadmap etc
-    // Actually redirect to the board index
-    if (h !== 'colvy.com' && h !== 'www.colvy.com' && h.endsWith('.colvy.com')) {
-      // Already on subdomain root — show board (handled by middleware rewrite or board page)
-      // Do nothing, board content loads inline
+    const isSubdomain = h !== 'colvy.com' && h !== 'www.colvy.com' && 
+                        !h.includes('localhost') && !h.includes('vercel.app') && 
+                        h.endsWith('.colvy.com')
+    if (isSubdomain) {
+      // Already on subdomain — redirect to the board
+      const slug = h.replace('.colvy.com', '')
+      window.location.href = `/board/${slug}`
     } else {
-      // colvy.com root → landing page
       window.location.href = '/landing'
     }
   }, [])

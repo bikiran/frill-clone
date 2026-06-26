@@ -3,181 +3,158 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
 
 export default function CustomDomainPage() {
   const params = useParams()
-  const encodedDomain = params?.domain as string
-  const hostname = encodedDomain?.replace(/__/g, '.')
+  const hostname = (params?.domain as string)?.replace(/__/g, '.')
   const [company, setCompany] = useState<any>(null)
+  const [isHelp, setIsHelp] = useState(false)
   const [articles, setArticles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [isHelpDomain, setIsHelpDomain] = useState(false)
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('All')
 
   useEffect(() => {
     if (!hostname) return
-    const resolve = async () => {
+    ;(async () => {
       let co: any = null
-      let isHelp = false
+      let help = false
 
-      // 1. Try help_domain
-      const { data: byHelp } = await (supabase as any)
-        .from('companies').select('*').eq('help_domain', hostname).maybeSingle()
-      if (byHelp) { co = byHelp; isHelp = true }
+      const { data: h } = await (supabase as any).from('companies').select('*').eq('help_domain', hostname).maybeSingle()
+      if (h) { co = h; help = true }
 
-      // 2. Try board_domain
       if (!co) {
-        const { data: byBoard } = await (supabase as any)
-          .from('companies').select('*').eq('board_domain', hostname).maybeSingle()
-        if (byBoard) { co = byBoard; isHelp = false }
+        const { data: b } = await (supabase as any).from('companies').select('*').eq('board_domain', hostname).maybeSingle()
+        if (b) { co = b; help = false }
       }
 
-      // 3. Fallback: extract slug from domain (help.prexty.com → prexty)
       if (!co) {
         const parts = hostname.split('.')
-        if (parts.length >= 2) {
-          const possibleSlug = parts[parts.length - 2]
-          const { data: bySlug } = await (supabase as any)
-            .from('companies').select('*').eq('slug', possibleSlug).maybeSingle()
-          if (bySlug) { co = bySlug; isHelp = hostname.startsWith('help.') }
-        }
+        const slug = parts[parts.length - 2]
+        const { data: s } = await (supabase as any).from('companies').select('*').eq('slug', slug).maybeSingle()
+        if (s) { co = s; help = hostname.startsWith('help.') }
       }
 
       if (!co) { setLoading(false); return }
 
-      setCompany(co)
-      setIsHelpDomain(isHelp)
-
-      // Apply company branding
-      if (co.accent_color && typeof document !== 'undefined') {
+      if (co.accent_color) {
         document.documentElement.style.setProperty('--coral', co.accent_color)
         document.documentElement.style.setProperty('--peach', co.accent_color + '15')
       }
 
-      // Load company content
-      if (isHelp) {
-        const { data: arts, error: artErr } = await (supabase as any)
-          .from('help_articles').select('*')
-          .eq('company_id', co.id)
+      setCompany(co)
+      setIsHelp(help)
+
+      if (help) {
+        const { data: arts } = await (supabase as any)
+          .from('help_articles').select('*').eq('company_id', co.id)
           .order('created_at', { ascending: false })
-        if (artErr) console.warn('Article load error:', artErr.message)
         setArticles(arts || [])
       }
-
       setLoading(false)
-    }
-    resolve()
+    })()
   }, [hostname])
 
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)' }}>
-      <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
-    </div>
-  )
-
-  if (!company) return (
-    <div className="min-h-screen flex flex-col items-center justify-center text-center px-6">
-      <div className="text-5xl mb-4">🔍</div>
-      <h1 className="text-xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Domain not configured</h1>
-      <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>No board found for <strong>{hostname}</strong></p>
-      <p className="text-xs" style={{ color: 'var(--slate)' }}>Go to Admin → Settings → White Labeling to configure your custom domain.</p>
-    </div>
-  )
-
-  const accent = company.accent_color || 'var(--coral)'
-  const boardUrl = `https://${company.slug}.colvy.com`
-  const categories = ['All', ...Array.from(new Set(articles.map((a: any) => a.category).filter(Boolean)))] as string[]
+  const accent = company?.accent_color || '#ff7a6b'
+  const boardUrl = company ? `https://${company.slug}.colvy.com` : '#'
+  const categories = ['All', ...Array.from(new Set(articles.map(a => a.category).filter(Boolean)))]
   const featured = articles.filter(a => a.featured).slice(0, 3)
   const filtered = articles
     .filter(a => catFilter === 'All' || a.category === catFilter)
     .filter(a => !search || a.title?.toLowerCase().includes(search.toLowerCase()))
 
-  // Board domain — show the board
-  if (!isHelpDomain) {
-    return (
-      <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
-        <header className="sticky top-0 z-40 border-b bg-white" style={{ borderColor: 'var(--border)' }}>
-          <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              {company.logo_url ? <img src={company.logo_url} alt={company.name} className="h-7 w-auto" />
-                : <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-sm font-bold" style={{ background: accent }}>{company.name?.[0]?.toUpperCase()}</div>}
-              <span className="font-bold" style={{ color: 'var(--ink)' }}>{company.name}</span>
-            </div>
-          </div>
-        </header>
-        <div className="max-w-3xl mx-auto px-6 py-16 text-center">
-          <h1 className="text-3xl font-black mb-3" style={{ color: 'var(--ink)' }}>{company.name} Feedback</h1>
-          <p className="mb-8" style={{ color: 'var(--slate)' }}>Share ideas and vote on what we should build next.</p>
-          <a href={boardUrl} className="inline-block px-8 py-3.5 rounded-xl font-semibold text-white" style={{ background: accent }}>
-            View Feedback Board →
-          </a>
-        </div>
-      </div>
-    )
-  }
+  if (loading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa' }}>
+      <div style={{ width: 32, height: 32, borderRadius: '50%', border: `2px solid ${accent}`, borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  )
 
-  // Help domain — show full help centre
-  return (
-    <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
-      <header className="sticky top-0 z-40 border-b bg-white" style={{ borderColor: 'var(--border)' }}>
-        <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            {company.logo_url ? <img src={company.logo_url} alt={company.name} className="h-7 w-auto" />
-              : <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-sm font-bold" style={{ background: accent }}>{company.name?.[0]?.toUpperCase()}</div>}
-            <span className="font-bold" style={{ color: 'var(--ink)' }}>{company.name}</span>
-          </div>
-          <nav className="hidden md:flex items-center gap-1">
-            <a href={boardUrl} className="px-3 py-1.5 rounded-lg text-sm" style={{ color: 'var(--slate)' }}>Ideas</a>
-            <a href={`${boardUrl}/roadmap`} className="px-3 py-1.5 rounded-lg text-sm" style={{ color: 'var(--slate)' }}>Roadmap</a>
-            <a href={`${boardUrl}/announcements`} className="px-3 py-1.5 rounded-lg text-sm" style={{ color: 'var(--slate)' }}>Updates</a>
-            <a href="#" className="px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: accent, background: accent + '15' }}>Help</a>
-          </nav>
+  if (!company) return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24, background: '#fafafa' }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
+      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8, color: '#0d0d0d' }}>Domain not configured</h1>
+      <p style={{ color: '#6b7280', marginBottom: 8 }}>No board found for <strong>{hostname}</strong></p>
+      <p style={{ fontSize: 13, color: '#9ca3af' }}>Go to Admin → Settings → White Labeling to set up your custom domain.</p>
+    </div>
+  )
+
+  const NavHeader = () => (
+    <header style={{ position: 'sticky', top: 0, zIndex: 40, background: '#fff', borderBottom: '1px solid #f0f0f0' }}>
+      <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {company.logo_url
+            ? <img src={company.logo_url} alt={company.name} style={{ height: 28 }} />
+            : <div style={{ width: 32, height: 32, borderRadius: 10, background: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700 }}>{company.name?.[0]?.toUpperCase()}</div>}
+          <span style={{ fontWeight: 700, fontSize: 16, color: '#0d0d0d' }}>{company.name}</span>
         </div>
-      </header>
+        <nav style={{ display: 'flex', gap: 4 }}>
+          {[
+            { label: 'Ideas', href: boardUrl },
+            { label: 'Roadmap', href: `${boardUrl}/roadmap` },
+            { label: 'Updates', href: `${boardUrl}/announcements` },
+            { label: 'Help', href: `${boardUrl}/help`, active: isHelp },
+          ].map(n => (
+            <a key={n.label} href={n.href}
+              style={{ padding: '6px 12px', borderRadius: 8, fontSize: 14, fontWeight: (n as any).active ? 600 : 400, color: (n as any).active ? accent : '#6b7280', background: (n as any).active ? accent + '15' : 'transparent', textDecoration: 'none' }}>
+              {n.label}
+            </a>
+          ))}
+        </nav>
+      </div>
+    </header>
+  )
+
+  if (!isHelp) return (
+    <div style={{ background: '#fafafa', minHeight: '100vh' }}>
+      <NavHeader />
+      <div style={{ maxWidth: 600, margin: '80px auto', padding: '0 24px', textAlign: 'center' }}>
+        <h1 style={{ fontSize: 36, fontWeight: 900, marginBottom: 12, color: '#0d0d0d' }}>{company.name} Feedback</h1>
+        <p style={{ color: '#6b7280', marginBottom: 32 }}>Share ideas and vote on what we should build next.</p>
+        <a href={boardUrl} style={{ display: 'inline-block', padding: '14px 36px', borderRadius: 14, background: accent, color: '#fff', fontWeight: 700, textDecoration: 'none' }}>View Board →</a>
+      </div>
+    </div>
+  )
+
+  return (
+    <div style={{ background: '#fafafa', minHeight: '100vh' }}>
+      <NavHeader />
 
       {/* Hero */}
-      <div className="py-12 px-6 text-center border-b" style={{ background: `linear-gradient(135deg, ${accent}12 0%, transparent 100%)`, borderColor: 'var(--border)' }}>
-        <div className="text-4xl mb-3">📚</div>
-        <h1 className="text-3xl font-black mb-2" style={{ color: 'var(--ink)' }}>{company.name} Help Centre</h1>
-        <p className="mb-6" style={{ color: 'var(--slate)' }}>Find answers, guides, and resources</p>
-        <div className="max-w-xl mx-auto relative">
-          <svg className="absolute left-4 top-1/2 -translate-y-1/2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--slate)' }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <div style={{ padding: '48px 24px', textAlign: 'center', borderBottom: '1px solid #f0f0f0', background: `linear-gradient(135deg,${accent}10,transparent)` }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>📚</div>
+        <h1 style={{ fontSize: 32, fontWeight: 900, marginBottom: 8, color: '#0d0d0d' }}>{company.name} Help Centre</h1>
+        <p style={{ color: '#6b7280', marginBottom: 24 }}>Find answers, guides, and resources</p>
+        <div style={{ maxWidth: 480, margin: '0 auto', position: 'relative' }}>
+          <svg style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search articles..."
-            className="w-full pl-11 pr-4 py-3 rounded-2xl border focus:outline-none bg-white text-sm"
-            style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+            style={{ width: '100%', padding: '12px 16px 12px 44px', borderRadius: 16, border: '1px solid #e5e7eb', fontSize: 15, outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
         </div>
-        <p className="text-xs mt-3" style={{ color: 'var(--slate)' }}>
-          {articles.length} articles · {categories.length - 1} categories · {articles.reduce((s, a) => s + (a.views || 0), 0)} total views
-        </p>
+        <p style={{ fontSize: 13, color: '#9ca3af', marginTop: 12 }}>{articles.length} articles · {categories.length - 1} categories · {articles.reduce((s, a) => s + (a.views || 0), 0)} total views</p>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-8">
+      <div style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 24px' }}>
         {/* Featured */}
         {featured.length > 0 && !search && catFilter === 'All' && (
-          <div className="mb-10">
-            <h2 className="text-lg font-bold mb-4" style={{ color: 'var(--ink)' }}>⭐ Featured Articles</h2>
-            <div className="grid md:grid-cols-3 gap-4">
+          <div style={{ marginBottom: 40 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: '#0d0d0d' }}>⭐ Featured Articles</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 16 }}>
               {featured.map(a => (
-                <a key={a.id} href={`/article/${a.id}`}
-                  className="bg-white rounded-2xl border p-5 hover:shadow-md transition-all cursor-pointer block"
-                  style={{ borderColor: 'var(--border)' }}>
-                  <span className="text-xs px-2 py-0.5 rounded-full font-medium mb-2 inline-block" style={{ background: accent + '15', color: accent }}>{a.category}</span>
-                  <h3 className="font-semibold text-sm mb-2" style={{ color: 'var(--ink)' }}>{a.title}</h3>
-                  <p className="text-xs" style={{ color: 'var(--slate)' }}>{a.views || 0} views · {a.likes || 0} helpful</p>
-                </a>
+                <div key={a.id} style={{ background: '#fff', borderRadius: 16, border: '1px solid #f0f0f0', padding: 20 }}>
+                  <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: accent + '15', color: accent, fontWeight: 600 }}>{a.category}</span>
+                  <h3 style={{ fontSize: 15, fontWeight: 600, margin: '10px 0 6px', color: '#0d0d0d' }}>{a.title}</h3>
+                  <p style={{ fontSize: 12, color: '#9ca3af' }}>{a.views || 0} views · {a.likes || 0} helpful</p>
+                </div>
               ))}
             </div>
           </div>
         )}
 
         {/* Category pills */}
-        <div className="flex flex-wrap gap-2 mb-6">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
           {categories.map(cat => (
             <button key={cat} onClick={() => setCatFilter(cat)}
-              className="px-3 py-1.5 rounded-full text-sm font-medium border cursor-pointer transition-all"
-              style={{ background: catFilter === cat ? accent : 'white', color: catFilter === cat ? 'white' : 'var(--slate)', borderColor: catFilter === cat ? accent : 'var(--border)' }}>
+              style={{ padding: '7px 16px', borderRadius: 999, border: `1px solid ${catFilter === cat ? accent : '#e5e7eb'}`, background: catFilter === cat ? accent : '#fff', color: catFilter === cat ? '#fff' : '#6b7280', fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'all 0.2s' }}>
               {cat}
             </button>
           ))}
@@ -185,51 +162,47 @@ export default function CustomDomainPage() {
 
         {/* Articles */}
         {filtered.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="text-4xl mb-3">🔍</div>
-            <p style={{ color: 'var(--slate)' }}>No articles found</p>
+          <div style={{ textAlign: 'center', padding: '60px 0', color: '#9ca3af' }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>🔍</div>
+            <p>{articles.length === 0 ? 'No help articles yet' : 'No articles match your search'}</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {filtered.map(a => (
-              <div key={a.id} className="bg-white rounded-2xl border p-5 flex items-center justify-between hover:shadow-sm transition-all cursor-pointer"
-                style={{ borderColor: 'var(--border)' }}>
+              <div key={a.id} style={{ background: '#fff', borderRadius: 16, border: '1px solid #f0f0f0', padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: accent + '15', color: accent }}>{a.category}</span>
-                    {a.featured && <span className="text-xs">⭐</span>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: accent + '15', color: accent, fontWeight: 600 }}>{a.category}</span>
+                    {a.featured && <span>⭐</span>}
                   </div>
-                  <h3 className="font-semibold" style={{ color: 'var(--ink)' }}>{a.title}</h3>
-                  <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>{a.views || 0} views · {a.likes || 0} helpful</p>
+                  <h3 style={{ fontSize: 15, fontWeight: 600, color: '#0d0d0d', marginBottom: 4 }}>{a.title}</h3>
+                  <p style={{ fontSize: 12, color: '#9ca3af' }}>{a.views || 0} views · {a.likes || 0} helpful</p>
                 </div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--slate)', flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
               </div>
             ))}
           </div>
         )}
 
         {/* Support options */}
-        <div className="grid md:grid-cols-3 gap-4 mt-12">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 16, marginTop: 48 }}>
           {[
-            { icon: '💬', title: 'Live Chat', desc: 'Chat with our support team in real time', action: 'Start Chat', href: '#' },
-            { icon: '🎫', title: 'Submit a Ticket', desc: 'Open a support ticket and we\'ll get back to you', action: 'Open Ticket', href: `${boardUrl}/help/ticket` },
-            { icon: '📧', title: 'Email Support', desc: 'Send us an email and we\'ll respond within 24h', action: 'Send Email', href: `mailto:support@${company.slug}.com` },
+            { icon: '💬', title: 'Live Chat', desc: 'Chat with our support team', action: 'Start Chat', href: '#' },
+            { icon: '🎫', title: 'Submit a Ticket', desc: 'Open a support ticket', action: 'Open Ticket', href: `${boardUrl}/help/ticket` },
+            { icon: '📧', title: 'Email Support', desc: 'We respond within 24h', action: 'Send Email', href: `mailto:support@${company.slug}.com` },
           ].map(s => (
-            <div key={s.title} className="bg-white rounded-2xl border p-5 text-center" style={{ borderColor: 'var(--border)' }}>
-              <div className="text-3xl mb-2">{s.icon}</div>
-              <h3 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>{s.title}</h3>
-              <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>{s.desc}</p>
-              <a href={s.href} className="inline-block px-4 py-2 rounded-xl text-sm font-semibold border cursor-pointer hover:bg-gray-50"
-                style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                {s.action}
-              </a>
+            <div key={s.title} style={{ background: '#fff', borderRadius: 16, border: '1px solid #f0f0f0', padding: 20, textAlign: 'center' }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>{s.icon}</div>
+              <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: '#0d0d0d' }}>{s.title}</h3>
+              <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 12 }}>{s.desc}</p>
+              <a href={s.href} style={{ display: 'inline-block', padding: '8px 20px', borderRadius: 10, border: '1px solid #e5e7eb', fontSize: 13, fontWeight: 600, color: '#0d0d0d', textDecoration: 'none' }}>{s.action}</a>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="text-center py-6 border-t" style={{ borderColor: 'var(--border)' }}>
-        <a href="https://colvy.com" className="text-xs" style={{ color: 'var(--slate)' }}>Powered by <span style={{ color: accent }}>Colvy</span></a>
+      <div style={{ textAlign: 'center', padding: 24, borderTop: '1px solid #f0f0f0', fontSize: 12, color: '#d1d5db' }}>
+        Powered by <a href="https://colvy.com" style={{ color: accent }}>Colvy</a>
       </div>
     </div>
   )

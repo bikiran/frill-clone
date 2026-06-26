@@ -5,343 +5,341 @@ import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { redirectToUserAdmin } from '@/lib/redirect'
 
-function useParallax(speed = 0.3) {
-  const [offset, setOffset] = useState(0)
-  useEffect(() => {
-    const h = () => setOffset(window.scrollY * speed)
-    window.addEventListener('scroll', h, { passive: true })
-    return () => window.removeEventListener('scroll', h)
-  }, [speed])
-  return offset
-}
-
-function useInView(threshold = 0.15) {
+function useInView(threshold = 0.1) {
   const ref = useRef<HTMLDivElement>(null)
-  const [visible, setVisible] = useState(false)
+  const [v, setV] = useState(false)
   useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true) }, { threshold })
-    if (ref.current) obs.observe(ref.current)
-    return () => obs.disconnect()
-  }, [threshold])
-  return { ref, visible }
+    const o = new IntersectionObserver(([e]) => { if (e.isIntersecting) setV(true) }, { threshold })
+    if (ref.current) o.observe(ref.current)
+    return () => o.disconnect()
+  }, [])
+  return { ref, v }
 }
 
-const NAV_ITEMS = [
-  { label: 'Ideas', href: '/features/ideas' },
-  { label: 'Roadmap', href: '/features/roadmap' },
-  { label: 'Announcements', href: '/features/announcements' },
-  { label: 'Knowledgebase', href: '/features/knowledgebase' },
-  { label: 'Pricing', href: '/pricing' },
-]
+// SVG Icons
+const SunIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+    <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+  </svg>
+)
+const MoonIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+  </svg>
+)
+const IdeaIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/>
+    <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
+    <line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/>
+    <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+  </svg>
+)
+const RoadmapIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+  </svg>
+)
+const AnnouncementIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/>
+  </svg>
+)
+const KnowledgeIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+  </svg>
+)
+const AnalyticsIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+  </svg>
+)
+const IntegrationsIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>
+  </svg>
+)
+const StarIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+  </svg>
+)
+const ArrowRightIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+  </svg>
+)
+const CheckIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+)
+const MenuIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+  </svg>
+)
+const CloseIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+)
 
 const FEATURES = [
-  {
-    icon: '💡', title: 'Ideas Board', href: '/features/ideas',
-    desc: 'Capture and prioritize feedback from your customers in one beautiful board.',
-    color: '#ff7a6b',
-  },
-  {
-    icon: '🗺️', title: 'Public Roadmap', href: '/features/roadmap',
-    desc: 'Show customers exactly what you\'re building and when it ships.',
-    color: '#6366f1',
-  },
-  {
-    icon: '📢', title: 'Announcements', href: '/features/announcements',
-    desc: 'Keep your community updated with a beautiful, embeddable changelog.',
-    color: '#10b981',
-  },
-  {
-    icon: '📚', title: 'Knowledgebase', href: '/features/knowledgebase',
-    desc: 'Answer questions before they\'re asked with a searchable help centre.',
-    color: '#f59e0b',
-  },
-  {
-    icon: '📊', title: 'Analytics', href: '/features/ideas',
-    desc: 'Understand what your users care about most with deep insights.',
-    color: '#8b5cf6',
-  },
-  {
-    icon: '🔗', title: 'Integrations', href: '/features/ideas',
-    desc: 'Connect with Slack, Jira, Linear, Zapier and 50+ more tools.',
-    color: '#ec4899',
-  },
+  { Icon: IdeaIcon, title: 'Ideas Board', href: '/features/ideas', color: '#ff7a6b', desc: 'Capture and prioritize feedback from customers in one beautiful board.' },
+  { Icon: RoadmapIcon, title: 'Public Roadmap', href: '/features/roadmap', color: '#6366f1', desc: 'Show customers exactly what you\'re building and when it ships.' },
+  { Icon: AnnouncementIcon, title: 'Announcements', href: '/features/announcements', color: '#10b981', desc: 'Keep your community updated with a beautiful, embeddable changelog.' },
+  { Icon: KnowledgeIcon, title: 'Knowledgebase', href: '/features/knowledgebase', color: '#f59e0b', desc: 'Answer questions before they\'re asked with a searchable help centre.' },
+  { Icon: AnalyticsIcon, title: 'Analytics', href: '/features/ideas', color: '#8b5cf6', desc: 'Understand what your users care about most with deep insights.' },
+  { Icon: IntegrationsIcon, title: 'Integrations', href: '/features/ideas', color: '#ec4899', desc: 'Connect with Slack, Jira, Linear, Zapier and 50+ more tools.' },
 ]
 
 const SOCIAL_PROOF = [
-  { name: 'Sarah Chen', role: 'Head of Product, Stripe', avatar: 'SC', text: 'Colvy completely transformed how we collect feedback. Our NPS went up 28 points in 3 months.' },
-  { name: 'Marcus Webb', role: 'CEO, Linear', avatar: 'MW', text: 'The roadmap feature alone is worth it. Our customers love seeing what we\'re working on.' },
-  { name: 'Priya Sharma', role: 'CPO, Notion', avatar: 'PS', text: 'We replaced 3 tools with Colvy. The team productivity improvement was immediate.' },
+  { name: 'Sarah Chen', role: 'Head of Product, Stripe', init: 'SC', text: 'Colvy completely transformed how we collect feedback. Our NPS went up 28 points in 3 months.' },
+  { name: 'Marcus Webb', role: 'CEO, Linear', init: 'MW', text: 'The roadmap feature alone is worth it. Our customers love seeing what we\'re working on.' },
+  { name: 'Priya Sharma', role: 'CPO, Notion', init: 'PS', text: 'We replaced 3 tools with Colvy. The team productivity improvement was immediate.' },
 ]
 
 const STATS = [
   { value: '12,000+', label: 'Product teams' },
   { value: '2.4M', label: 'Ideas collected' },
-  { value: '98%', label: 'Customer satisfaction' },
-  { value: '4 min', label: 'Average setup time' },
+  { value: '98%', label: 'Satisfaction' },
+  { value: '4 min', label: 'Setup time' },
 ]
 
 export default function LandingPage() {
   const [user, setUser] = useState<any>(null)
-  const [scrollY, setScrollY] = useState(0)
-  const [mobileMenu, setMobileMenu] = useState(false)
   const [dark, setDark] = useState(false)
-  const heroParallax = useParallax(0.2)
-  const { ref: featRef, visible: featVisible } = useInView()
-  const { ref: statsRef, visible: statsVisible } = useInView()
-  const { ref: socialRef, visible: socialVisible } = useInView()
+  const [scrollY, setScrollY] = useState(0)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const { ref: featRef, v: featV } = useInView()
+  const { ref: statsRef, v: statsV } = useInView()
+  const { ref: socialRef, v: socialV } = useInView()
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => setUser(data?.session?.user))
-    const { data: l } = supabase.auth.onAuthStateChange((_e: any, s: any) => setUser(s?.user ?? null))
-    const handleScroll = () => setScrollY(window.scrollY)
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    return () => { l?.subscription?.unsubscribe(); window.removeEventListener('scroll', handleScroll) }
+    const { data: l } = supabase.auth.onAuthStateChange((_: any, s: any) => setUser(s?.user ?? null))
+    const onScroll = () => setScrollY(window.scrollY)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => { l?.subscription?.unsubscribe(); window.removeEventListener('scroll', onScroll) }
   }, [])
 
-  const handleGetStarted = async () => {
-    if (user) {
-      // Check if user has a custom domain preference
-      try {
-        const { data: co } = await (supabase as any)
-          .from('companies').select('slug, board_domain').eq('owner_id', user.id).single()
-        if (co?.board_domain) {
-          window.location.href = `https://${co.board_domain}/admin`
-          return
-        }
-        if (co?.slug) {
-          window.location.href = `https://${co.slug}.colvy.com/admin`
-          return
-        }
-      } catch {}
-      await redirectToUserAdmin(user.id)
-    } else {
-      window.location.href = '/signup'
-    }
+  const handleDashboard = async () => {
+    if (!user) { window.location.href = '/signup'; return }
+    try {
+      const { data: co } = await (supabase as any).from('companies').select('slug').eq('owner_id', user.id).single()
+      if (co?.slug) window.location.href = `https://${co.slug}.colvy.com/admin`
+      else await redirectToUserAdmin(user.id)
+    } catch { await redirectToUserAdmin(user.id) }
   }
 
-  const navBg = scrollY > 50
+  // Theme colors
+  const bg = dark ? '#080808' : '#ffffff'
+  const text = dark ? '#f0f0f0' : '#0d0d0d'
+  const textMuted = dark ? 'rgba(240,240,240,0.55)' : 'rgba(13,13,13,0.55)'
+  const textDim = dark ? 'rgba(240,240,240,0.3)' : 'rgba(13,13,13,0.35)'
+  const cardBg = dark ? 'rgba(255,255,255,0.04)' : '#f8f8f8'
+  const cardBorder = dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'
+  const navBg = scrollY > 40 ? (dark ? 'rgba(8,8,8,0.9)' : 'rgba(255,255,255,0.92)') : 'transparent'
+  const navBorder = scrollY > 40 ? (dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)') : 'transparent'
 
   return (
-    <div className="landing-wrap" style={{ background: dark ? '#000' : '#fafafa', color: dark ? '#fff' : '#0a0a0a', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif', transition: 'background 0.3s, color 0.3s' }}>
+    <div style={{ background: bg, color: text, fontFamily: '-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif', transition: 'background 0.3s,color 0.3s', minHeight: '100vh', overflowX: 'hidden' }}>
       <style>{`
-        .landing-wrap { --bg: ${dark ? '#000' : '#fafafa'}; --text: ${dark ? '#fff' : '#0a0a0a'}; --text-muted: ${dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)'}; --text-dim: ${dark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)'}; --border: ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'}; --glass-bg: ${dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'}; --glass-border: ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}; --card-bg: ${dark ? 'rgba(255,255,255,0.04)' : '#fff'}; --card-border: ${dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)'}; --nav-bg: ${dark ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)'}; --mock-bg: ${dark ? 'rgba(12,12,12,0.95)' : '#f0f0f0'}; --mock-item: ${dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'}; --grid: ${dark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.04)'}; }
-      `}</style>
-      <style>{`
-        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
-        @keyframes glow { 0%,100%{opacity:.6} 50%{opacity:1} }
-        @keyframes slideUp { from{opacity:0;transform:translateY(40px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+        @keyframes slideUp { from{opacity:0;transform:translateY(30px)} to{opacity:1;transform:translateY(0)} }
         @keyframes shimmer { 0%{background-position:-200% center} 100%{background-position:200% center} }
-        .float { animation: float 6s ease-in-out infinite; }
-        .glow-pulse { animation: glow 3s ease-in-out infinite; }
-        .slide-up { animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; }
-        .slide-up-delay-1 { animation-delay: 0.1s; }
-        .slide-up-delay-2 { animation-delay: 0.2s; }
-        .slide-up-delay-3 { animation-delay: 0.3s; }
-        .gradient-text {
-          background: linear-gradient(135deg, #ff7a6b 0%, #ff9a8b 30%, #a78bfa 60%, #60a5fa 100%);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
-        .shimmer-text {
-          background: linear-gradient(90deg, #ff7a6b, #fff, #a78bfa, #ff7a6b);
-          background-size: 200% auto;
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-          animation: shimmer 4s linear infinite;
-        }
-        .card-hover { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-        .card-hover:hover { transform: translateY(-8px) scale(1.02); }
-        .glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
-        .feature-card { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); cursor: pointer; }
-        .feature-card:hover { transform: translateY(-6px); }
-        .feature-card:hover .feature-icon { transform: scale(1.15) rotate(5deg); }
-        .feature-icon { transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
-        .btn-primary { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-        .btn-primary:hover { transform: scale(1.05); box-shadow: 0 0 40px rgba(255,122,107,0.5); }
-        .btn-primary:active { transform: scale(0.98); }
-        .orb { position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none; }
+        .hero-float { animation: float 6s ease-in-out infinite; }
+        .slide-up { opacity:0; animation:slideUp 0.8s cubic-bezier(0.16,1,0.3,1) forwards; }
+        .d1{animation-delay:.05s} .d2{animation-delay:.15s} .d3{animation-delay:.25s} .d4{animation-delay:.35s}
+        .grad-text { background:linear-gradient(135deg,#ff7a6b,#a78bfa,#60a5fa); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+        .shimmer-val { background:linear-gradient(90deg,#ff7a6b,#a78bfa,#ff7a6b); background-size:200% auto; -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; animation:shimmer 3s linear infinite; }
+        .feat-card { transition:all 0.35s cubic-bezier(0.16,1,0.3,1); }
+        .feat-card:hover { transform:translateY(-6px); }
+        .feat-card:hover .feat-icon { transform:scale(1.2) rotate(6deg); }
+        .feat-icon { transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1); display:inline-flex; }
+        .card-hover { transition:all 0.3s cubic-bezier(0.16,1,0.3,1); }
+        .card-hover:hover { transform:translateY(-4px); }
+        .btn-main { transition:all 0.25s; }
+        .btn-main:hover { transform:scale(1.04); box-shadow:0 0 36px rgba(255,122,107,0.45); }
+        .btn-main:active { transform:scale(0.97); }
+        .orb { position:absolute; border-radius:50%; filter:blur(70px); pointer-events:none; }
       `}</style>
 
-      {/* Nav */}
-      <nav className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
-        style={{ background: navBg ? (dark ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)') : 'transparent', backdropFilter: navBg ? 'blur(20px)' : 'none', borderBottom: navBg ? `1px solid var(--border)` : 'none' }}>
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      {/* NAV */}
+      <nav className="fixed top-0 left-0 right-0 z-50" style={{ background: navBg, borderBottom: `1px solid ${navBorder}`, backdropFilter: scrollY > 40 ? 'blur(20px)' : 'none', transition: 'all 0.3s' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           {/* Logo */}
-          <div className="flex items-center gap-2">
-            <img src="/logo.png" alt="Colvy" className="h-7 w-auto" onError={(e: any) => e.target.style.display='none'} />
-            <span className="text-xl font-bold" style={{ color: '#ff7a6b' }}>Colvy</span>
-          </div>
+          <Link href="/landing" style={{ fontWeight: 800, fontSize: 20, color: '#ff7a6b', textDecoration: 'none' }}>Colvy</Link>
 
-          {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-1">
-            {NAV_ITEMS.map(n => (
-              <Link key={n.label} href={n.href}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:bg-white/10"
-                style={{ color: dark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)' }}>
+          {/* Desktop Nav — hide Features/Pricing for logged-in users */}
+          <div className="hidden md:flex" style={{ alignItems: 'center', gap: 4 }}>
+            {!user && [
+              { label: 'Ideas', href: '/features/ideas' },
+              { label: 'Roadmap', href: '/features/roadmap' },
+              { label: 'Announcements', href: '/features/announcements' },
+              { label: 'Knowledgebase', href: '/features/knowledgebase' },
+              { label: 'Pricing', href: '/pricing' },
+            ].map(n => (
+              <Link key={n.label} href={n.href} style={{ padding: '8px 14px', borderRadius: 10, fontSize: 14, fontWeight: 500, color: textMuted, textDecoration: 'none', transition: 'all 0.2s' }}
+                onMouseEnter={e => (e.currentTarget.style.background = dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                 {n.label}
               </Link>
             ))}
+            {user && (
+              <span style={{ fontSize: 14, color: textMuted }}>Welcome back!</span>
+            )}
           </div>
 
-          {/* CTA */}
-          <div className="flex items-center gap-3">
-            {/* Dark/Light toggle */}
+          {/* Right side */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Theme toggle */}
             <button onClick={() => setDark(!dark)}
-              className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:scale-110 cursor-pointer"
-              style={{ background: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', color: dark ? '#fff' : '#000' }}
-              title={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
-              {dark ? '☀️' : '🌙'}
+              style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text, transition: 'all 0.2s' }}>
+              {dark ? <SunIcon /> : <MoonIcon />}
             </button>
+
             {user ? (
-              <button onClick={handleGetStarted}
-                className="btn-primary px-5 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer"
-                style={{ background: '#ff7a6b' }}>
+              <button onClick={handleDashboard}
+                className="btn-main"
+                style={{ padding: '9px 20px', borderRadius: 12, background: '#ff7a6b', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer', border: 'none' }}>
                 Dashboard →
               </button>
             ) : (
               <>
-                <Link href="/signin" className="text-sm font-medium hidden md:block" style={{ color: dark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)' }}>Sign in</Link>
-                <Link href="/signup" className="btn-primary px-5 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer" style={{ background: '#ff7a6b' }}>
+                <Link href="/signin" className="hidden md:block" style={{ fontSize: 14, fontWeight: 500, color: textMuted, textDecoration: 'none' }}>Sign in</Link>
+                <Link href="/signup"
+                  className="btn-main"
+                  style={{ padding: '9px 20px', borderRadius: 12, background: '#ff7a6b', color: '#fff', fontWeight: 700, fontSize: 14, textDecoration: 'none', display: 'inline-block' }}>
                   Get started free
                 </Link>
               </>
             )}
+
+            {/* Mobile menu button */}
+            <button className="md:hidden" onClick={() => setMobileOpen(!mobileOpen)}
+              style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>
+              {mobileOpen ? <CloseIcon /> : <MenuIcon />}
+            </button>
           </div>
         </div>
+
+        {/* Mobile menu */}
+        {mobileOpen && (
+          <div style={{ background: dark ? '#0f0f0f' : '#fff', borderTop: `1px solid ${cardBorder}`, padding: '16px 24px 24px' }}>
+            {!user && [
+              { label: 'Ideas', href: '/features/ideas' },
+              { label: 'Roadmap', href: '/features/roadmap' },
+              { label: 'Announcements', href: '/features/announcements' },
+              { label: 'Knowledgebase', href: '/features/knowledgebase' },
+              { label: 'Pricing', href: '/pricing' },
+              { label: 'Sign in', href: '/signin' },
+            ].map(n => (
+              <Link key={n.label} href={n.href} onClick={() => setMobileOpen(false)}
+                style={{ display: 'block', padding: '12px 0', fontSize: 16, fontWeight: 500, color: text, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` }}>
+                {n.label}
+              </Link>
+            ))}
+            <button onClick={handleDashboard} style={{ marginTop: 16, width: '100%', padding: '14px', borderRadius: 12, background: '#ff7a6b', color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer', border: 'none' }}>
+              {user ? 'Dashboard →' : 'Get started free'}
+            </button>
+          </div>
+        )}
       </nav>
 
       {/* HERO */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden px-6" style={{ paddingTop: 80 }}>
-        {/* Orbs */}
-        <div className="orb glow-pulse" style={{ width: 600, height: 600, background: dark ? 'radial-gradient(circle, rgba(255,122,107,0.3) 0%, transparent 70%)' : 'radial-gradient(circle, rgba(255,122,107,0.15) 0%, transparent 70%)', top: '10%', left: '20%', transform: `translateY(${heroParallax * 0.5}px)` }} />
-        <div className="orb glow-pulse" style={{ width: 500, height: 500, background: dark ? 'radial-gradient(circle, rgba(99,102,241,0.25) 0%, transparent 70%)' : 'radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%)', top: '30%', right: '10%', transform: `translateY(${-heroParallax * 0.3}px)`, animationDelay: '1.5s' }} />
-        <div className="orb" style={{ width: 300, height: 300, background: dark ? 'radial-gradient(circle, rgba(16,185,129,0.2) 0%, transparent 70%)' : 'radial-gradient(circle, rgba(16,185,129,0.1) 0%, transparent 70%)', bottom: '20%', left: '10%', transform: `translateY(${heroParallax * 0.2}px)` }} />
+      <section style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '100px 24px 60px', overflow: 'hidden' }}>
+        <div className="orb" style={{ width: 600, height: 600, background: 'radial-gradient(circle,rgba(255,122,107,0.18) 0%,transparent 65%)', top: '5%', left: '5%' }} />
+        <div className="orb" style={{ width: 500, height: 500, background: 'radial-gradient(circle,rgba(99,102,241,0.14) 0%,transparent 65%)', top: '20%', right: '5%' }} />
+        <div className="orb" style={{ width: 400, height: 400, background: 'radial-gradient(circle,rgba(16,185,129,0.1) 0%,transparent 65%)', bottom: '10%', left: '30%' }} />
 
-        {/* Grid overlay */}
-        <div className="absolute inset-0" style={{ backgroundImage: dark ? 'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)' : 'linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px)', backgroundSize: '60px 60px', mask: 'radial-gradient(ellipse at center, black 40%, transparent 80%)' }} />
+        {/* Grid */}
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: `linear-gradient(${dark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.04)'} 1px,transparent 1px),linear-gradient(90deg,${dark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.04)'} 1px,transparent 1px)`, backgroundSize: '60px 60px', WebkitMaskImage: 'radial-gradient(ellipse at center,black 40%,transparent 75%)', maskImage: 'radial-gradient(ellipse at center,black 40%,transparent 75%)', pointerEvents: 'none' }} />
 
-        <div className="relative text-center max-w-5xl mx-auto">
+        <div style={{ position: 'relative', maxWidth: 700, textAlign: 'center' }}>
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold mb-8 slide-up"
-            style={{ background: 'rgba(255,122,107,0.15)', border: '1px solid rgba(255,122,107,0.3)', color: '#ff9a8b' }}>
-            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+          <div className="slide-up d1" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 999, marginBottom: 32, background: 'rgba(255,122,107,0.1)', border: '1px solid rgba(255,122,107,0.25)', color: '#ff7a6b', fontSize: 13, fontWeight: 600 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'none' }} />
             Now with AI-powered prioritization
           </div>
 
-          {/* Headline */}
-          <h1 className="text-5xl md:text-7xl font-black mb-6 leading-tight slide-up slide-up-delay-1"
-            style={{ letterSpacing: '-0.03em', color: dark ? '#fff' : '#0a0a0a' }}>
-            Build what your
-            <br />
-            <span className="gradient-text">customers actually</span>
-            <br />
+          <h1 className="slide-up d2" style={{ fontSize: 'clamp(40px,8vw,76px)', fontWeight: 900, lineHeight: 1.08, letterSpacing: '-0.03em', marginBottom: 24, color: text }}>
+            Build what your<br />
+            <span className="grad-text">customers actually</span><br />
             want
           </h1>
 
-          <p className="text-lg md:text-xl mb-10 max-w-2xl mx-auto slide-up slide-up-delay-2"
-            style={{ color: dark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)', lineHeight: 1.7 }}>
-            Colvy gives every product team a beautiful feedback board, public roadmap, 
-            changelog, and help centre — all in one platform that your users will love.
+          <p className="slide-up d3" style={{ fontSize: 'clamp(16px,2vw,20px)', color: textMuted, lineHeight: 1.7, marginBottom: 40, maxWidth: 540, margin: '0 auto 40px' }}>
+            One platform for feedback, roadmap, changelog, and help centre. Your users will love it.
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16 slide-up slide-up-delay-3">
-            <button onClick={handleGetStarted}
-              className="btn-primary w-full sm:w-auto px-8 py-4 rounded-2xl text-base font-bold text-white cursor-pointer"
-              style={{ background: 'linear-gradient(135deg, #ff7a6b, #ff5a4a)' }}>
-              Start free — no credit card needed
-            </button>
-            <Link href="#features" className="w-full sm:w-auto px-8 py-4 rounded-2xl text-sm font-semibold glass text-center cursor-pointer hover:bg-white/10 transition-all"
-              style={{ color: 'rgba(255,255,255,0.8)' }}>
-              See how it works ↓
-            </Link>
-          </div>
-
-          {/* Social proof mini */}
-          <div className="flex items-center justify-center gap-2 slide-up slide-up-delay-3" style={{ animationDelay: '0.4s' }}>
-            <div className="flex -space-x-2">
-              {['SC', 'MW', 'PS', 'JK', 'AR'].map((init, i) => (
-                <div key={i} className="w-8 h-8 rounded-full border-2 border-black flex items-center justify-center text-xs font-bold"
-                  style={{ background: ['#ff7a6b','#6366f1','#10b981','#f59e0b','#ec4899'][i], borderColor: '#000' }}>
-                  {init}
-                </div>
-              ))}
+          <div className="slide-up d4" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
+              <button onClick={handleDashboard} className="btn-main"
+                style={{ padding: '14px 32px', borderRadius: 16, background: 'linear-gradient(135deg,#ff7a6b,#ff5247)', color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer', border: 'none' }}>
+                {user ? 'Go to Dashboard →' : 'Start free — no credit card'}
+              </button>
+              {!user && (
+                <Link href="#features" style={{ padding: '14px 28px', borderRadius: 16, border: `1px solid ${cardBorder}`, background: cardBg, color: text, fontWeight: 600, fontSize: 15, textDecoration: 'none', transition: 'all 0.2s' }}>
+                  See how it works ↓
+                </Link>
+              )}
             </div>
-            <span className="text-sm" style={{ color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }}>
-              Loved by <strong style={{ color: dark ? '#fff' : '#000' }}>12,000+</strong> product teams
-            </span>
-          </div>
-        </div>
 
-        {/* Hero browser mockup */}
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-4xl px-6 pointer-events-none"
-          style={{ transform: `translateX(-50%) translateY(${heroParallax * 0.15}px)` }}>
-          <div className="rounded-t-2xl overflow-hidden shadow-2xl float" style={{ border: `1px solid ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`, background: dark ? 'rgba(10,10,10,0.9)' : 'rgba(255,255,255,0.95)' }}>
-            {/* Browser chrome */}
-            <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
-              <div className="flex gap-1.5">
-                {['#ff5f57','#ffbd2e','#28ca41'].map(c => <div key={c} className="w-3 h-3 rounded-full" style={{ background: c }} />)}
-              </div>
-              <div className="flex-1 mx-4 px-3 py-1 rounded-lg text-xs text-center" style={{ background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: dark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}>
-                yourcompany.colvy.com
-              </div>
-            </div>
-            {/* Mock UI */}
-            <div className="p-4 grid grid-cols-3 gap-3" style={{ minHeight: 140 }}>
-              {[
-                { title: 'Dark mode support', votes: 47, status: 'Planned', color: '#6366f1' },
-                { title: 'Mobile app', votes: 38, status: 'In Progress', color: '#3b82f6' },
-                { title: 'Export to CSV', votes: 29, status: 'Shipped', color: '#10b981' },
-              ].map(i => (
-                <div key={i.title} className="p-3 rounded-xl" style={{ background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <p className="text-xs font-semibold" style={{ color: dark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.8)' }}>{i.title}</p>
-                    <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0 font-medium" style={{ background: i.color + '25', color: i.color }}>{i.status}</span>
+            {/* Social proof */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+              <div style={{ display: 'flex' }}>
+                {['#ff7a6b','#6366f1','#10b981','#f59e0b','#ec4899'].map((c, i) => (
+                  <div key={i} style={{ width: 30, height: 30, borderRadius: '50%', background: c, border: `2px solid ${bg}`, marginLeft: i ? -8 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff' }}>
+                    {['SC','MW','PS','JK','AR'][i]}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-bold" style={{ color: '#ff7a6b' }}>▲ {i.votes}</span>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <span style={{ fontSize: 13, color: textMuted }}>
+                Loved by <strong style={{ color: text }}>12,000+</strong> product teams
+              </span>
             </div>
           </div>
         </div>
       </section>
 
       {/* STATS */}
-      <section className="py-24 px-6 relative" id="stats" ref={statsRef}>
-        <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8">
+      <section ref={statsRef as any} style={{ padding: '60px 24px', borderTop: `1px solid ${cardBorder}`, borderBottom: `1px solid ${cardBorder}` }}>
+        <div style={{ maxWidth: 900, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 32 }} className="md:grid-cols-4">
           {STATS.map((s, i) => (
-            <div key={s.label} className="text-center"
-              style={{ opacity: statsVisible ? 1 : 0, transform: statsVisible ? 'none' : 'translateY(30px)', transition: `all 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 0.1}s` }}>
-              <div className="text-4xl font-black mb-1" style={{ background: "linear-gradient(90deg, #ff7a6b, #a78bfa, #ff7a6b)", backgroundSize: "200% auto", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", animation: "shimmer 4s linear infinite" }}>{s.value}</div>
-              <div className="text-sm" style={{ color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)' }}>{s.label}</div>
+            <div key={s.label} style={{ textAlign: 'center', opacity: statsV ? 1 : 0, transform: statsV ? 'none' : 'translateY(20px)', transition: `all 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 0.1}s` }}>
+              <div className="shimmer-val" style={{ fontSize: 'clamp(28px,4vw,40px)', fontWeight: 900, marginBottom: 4 }}>{s.value}</div>
+              <div style={{ fontSize: 14, color: textMuted }}>{s.label}</div>
             </div>
           ))}
         </div>
       </section>
 
       {/* FEATURES */}
-      <section id="features" className="py-24 px-6" ref={featRef}>
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl md:text-5xl font-black mb-4" style={{ opacity: featVisible ? 1 : 0, transform: featVisible ? 'none' : 'translateY(30px)', transition: 'all 0.7s cubic-bezier(0.16,1,0.3,1)', color: dark ? '#fff' : '#0a0a0a' }}>
-              Everything you need to
-              <br /><span className="gradient-text">build great products</span>
+      <section id="features" ref={featRef as any} style={{ padding: '100px 24px' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 64 }}>
+            <h2 style={{ fontSize: 'clamp(32px,5vw,52px)', fontWeight: 900, letterSpacing: '-0.02em', color: text, marginBottom: 12, opacity: featV ? 1 : 0, transform: featV ? 'none' : 'translateY(20px)', transition: 'all 0.6s cubic-bezier(0.16,1,0.3,1)' }}>
+              Everything you need to<br /><span className="grad-text">build great products</span>
             </h2>
-            <p style={{ color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)', opacity: featVisible ? 1 : 0, transition: 'all 0.7s cubic-bezier(0.16,1,0.3,1) 0.1s' }}>
-              One platform. Infinite feedback.
-            </p>
+            <p style={{ fontSize: 18, color: textMuted, opacity: featV ? 1 : 0, transition: 'all 0.6s 0.1s' }}>One platform. Infinite feedback.</p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
-            {FEATURES.map((f, i) => (
-              <Link key={f.title} href={f.href}
-                className="feature-card p-6 rounded-2xl block"
-                style={{ opacity: featVisible ? 1 : 0, transform: featVisible ? 'none' : 'translateY(40px)', transition: `all 0.7s cubic-bezier(0.16,1,0.3,1) ${0.1 + i * 0.08}s`, background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'}` }}>
-                <div className="feature-icon text-4xl mb-4 inline-block">{f.icon}</div>
-                <h3 className="text-lg font-bold mb-2">{f.title}</h3>
-                <p className="text-sm leading-relaxed" style={{ color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }}>{f.desc}</p>
-                <div className="flex items-center gap-1 mt-4 text-sm font-medium" style={{ color: f.color }}>
-                  Learn more <span>→</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 20 }}>
+            {FEATURES.map(({ Icon, title, href, color, desc }, i) => (
+              <Link key={title} href={href} className="feat-card" style={{ padding: 28, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none', display: 'block', opacity: featV ? 1 : 0, transform: featV ? 'none' : 'translateY(30px)', transition: `all 0.6s cubic-bezier(0.16,1,0.3,1) ${0.05 * i}s` }}>
+                <div className="feat-icon" style={{ width: 48, height: 48, borderRadius: 14, background: color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, color }}>
+                  <Icon />
+                </div>
+                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: text }}>{title}</h3>
+                <p style={{ fontSize: 14, lineHeight: 1.65, color: textMuted, marginBottom: 16 }}>{desc}</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color }}>
+                  Learn more <ArrowRightIcon />
                 </div>
               </Link>
             ))}
@@ -350,27 +348,23 @@ export default function LandingPage() {
       </section>
 
       {/* SOCIAL PROOF */}
-      <section className="py-24 px-6" ref={socialRef}>
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-black text-center mb-16" style={{ color: dark ? '#fff' : '#0a0a0a' }}>
-            Trusted by product teams <span className="gradient-text">worldwide</span>
+      <section ref={socialRef as any} style={{ padding: '80px 24px', borderTop: `1px solid ${cardBorder}` }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <h2 style={{ fontSize: 'clamp(28px,4vw,40px)', fontWeight: 900, textAlign: 'center', marginBottom: 56, color: text }}>
+            Trusted by teams <span className="grad-text">worldwide</span>
           </h2>
-          <div className="grid md:grid-cols-3 gap-6">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 20 }}>
             {SOCIAL_PROOF.map((s, i) => (
-              <div key={s.name} className="card-hover p-6 rounded-2xl"
-                style={{ opacity: socialVisible ? 1 : 0, transform: socialVisible ? 'none' : 'translateY(30px)', transition: `all 0.7s cubic-bezier(0.16,1,0.3,1) ${i * 0.15}s`, background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'}` }}>
-                <div className="flex gap-1 mb-4">
-                  {[...Array(5)].map((_, i) => <span key={i} style={{ color: '#ff7a6b' }}>★</span>)}
+              <div key={s.name} className="card-hover" style={{ padding: 28, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, opacity: socialV ? 1 : 0, transform: socialV ? 'none' : 'translateY(20px)', transition: `all 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 0.12}s` }}>
+                <div style={{ display: 'flex', gap: 3, marginBottom: 16, color: '#ff7a6b' }}>
+                  {[...Array(5)].map((_, j) => <StarIcon key={j} />)}
                 </div>
-                <p className="text-sm leading-relaxed mb-5" style={{ color: 'rgba(255,255,255,0.7)' }}>"{s.text}"</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
-                    style={{ background: 'linear-gradient(135deg, #ff7a6b, #6366f1)' }}>
-                    {s.avatar}
-                  </div>
+                <p style={{ fontSize: 15, lineHeight: 1.7, marginBottom: 20, color: textMuted }}>"{s.text}"</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#ff7a6b,#6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#fff', flexShrink: 0 }}>{s.init}</div>
                   <div>
-                    <p className="text-sm font-semibold" style={{ color: dark ? '#fff' : '#0a0a0a' }}>{s.name}</p>
-                    <p className="text-xs" style={{ color: dark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}>{s.role}</p>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: text }}>{s.name}</p>
+                    <p style={{ fontSize: 12, color: textMuted }}>{s.role}</p>
                   </div>
                 </div>
               </div>
@@ -379,41 +373,31 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* PRICING TEASER */}
-      <section id="pricing" className="py-24 px-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="rounded-3xl p-12 text-center relative overflow-hidden" style={{ background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'}` }}>
-            <div className="orb" style={{ width: 400, height: 400, background: 'radial-gradient(circle, rgba(255,122,107,0.2) 0%, transparent 70%)', top: '-50%', left: '50%', transform: 'translateX(-50%)' }} />
-            <div className="relative">
-              <h2 className="text-4xl font-black mb-4" style={{ color: dark ? '#fff' : '#0a0a0a' }}>Start free today</h2>
-              <p className="mb-2" style={{ color: dark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)' }}>
-                Free forever for small teams. Upgrade as you grow.
-              </p>
-              <p className="text-sm mb-8" style={{ color: dark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}>
-                No credit card required · Setup in 4 minutes · Cancel anytime
-              </p>
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <button onClick={handleGetStarted}
-                  className="btn-primary w-full sm:w-auto px-8 py-4 rounded-2xl text-base font-bold text-white cursor-pointer"
-                  style={{ background: 'linear-gradient(135deg, #ff7a6b, #ff5a4a)' }}>
-                  {user ? 'Go to Dashboard →' : 'Get started — it\'s free'}
-                </button>
-                <Link href="/pricing" className="text-sm font-medium" style={{ color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)' }}>
-                  See all plans →
-                </Link>
-              </div>
-            </div>
+      {/* CTA */}
+      <section style={{ padding: '80px 24px' }}>
+        <div style={{ maxWidth: 700, margin: '0 auto', textAlign: 'center', padding: '64px 40px', borderRadius: 28, background: cardBg, border: `1px solid ${cardBorder}` }}>
+          <h2 style={{ fontSize: 'clamp(28px,5vw,44px)', fontWeight: 900, marginBottom: 12, color: text }}>Start free today</h2>
+          <p style={{ fontSize: 17, color: textMuted, marginBottom: 8 }}>Free forever for small teams. Upgrade as you grow.</p>
+          <p style={{ fontSize: 13, color: textDim, marginBottom: 36 }}>No credit card · Setup in 4 min · Cancel anytime</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
+            <button onClick={handleDashboard} className="btn-main"
+              style={{ padding: '14px 36px', borderRadius: 16, background: 'linear-gradient(135deg,#ff7a6b,#ff5247)', color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer', border: 'none' }}>
+              {user ? 'Go to Dashboard →' : "Get started — it's free"}
+            </button>
+            {!user && <Link href="/pricing" style={{ padding: '14px 24px', borderRadius: 16, border: `1px solid ${cardBorder}`, background: 'transparent', color: textMuted, fontWeight: 600, fontSize: 14, textDecoration: 'none' }}>
+              See all plans →
+            </Link>}
           </div>
         </div>
       </section>
 
       {/* FOOTER */}
-      <footer className="py-16 px-6 border-t" style={{ borderColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)' }}>
-        <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
+      <footer style={{ padding: '48px 24px 32px', borderTop: `1px solid ${cardBorder}` }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 32, marginBottom: 48 }}>
             <div>
-              <div className="text-lg font-bold mb-4" style={{ color: '#ff7a6b' }}>Colvy</div>
-              <p className="text-sm" style={{ color: dark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}>Beautiful feedback for product teams.</p>
+              <div style={{ fontWeight: 800, fontSize: 18, color: '#ff7a6b', marginBottom: 12 }}>Colvy</div>
+              <p style={{ fontSize: 13, color: textMuted, lineHeight: 1.6 }}>Beautiful feedback for product teams.</p>
             </div>
             {[
               { title: 'Product', links: [{ l: 'Ideas', h: '/features/ideas' }, { l: 'Roadmap', h: '/features/roadmap' }, { l: 'Announcements', h: '/features/announcements' }, { l: 'Knowledgebase', h: '/features/knowledgebase' }] },
@@ -421,20 +405,16 @@ export default function LandingPage() {
               { title: 'Legal', links: [{ l: 'Privacy', h: '#' }, { l: 'Terms', h: '#' }] },
             ].map(col => (
               <div key={col.title}>
-                <h4 className="text-sm font-semibold mb-4" style={{ color: dark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' }}>{col.title}</h4>
-                <div className="space-y-2">
-                  {col.links.map(lk => (
-                    <Link key={lk.l} href={lk.h} className="block text-sm hover:opacity-80 transition-all" style={{ color: dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.45)' }}>
-                      {lk.l}
-                    </Link>
-                  ))}
-                </div>
+                <h4 style={{ fontSize: 13, fontWeight: 700, color: text, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{col.title}</h4>
+                {col.links.map(lk => (
+                  <Link key={lk.l} href={lk.h} style={{ display: 'block', fontSize: 14, color: textMuted, textDecoration: 'none', marginBottom: 8 }}>{lk.l}</Link>
+                ))}
               </div>
             ))}
           </div>
-          <div className="flex items-center justify-between pt-8 border-t" style={{ borderColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }}>
-            <p className="text-xs" style={{ color: dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.35)' }}>© 2026 Colvy. All rights reserved.</p>
-            <p className="text-xs" style={{ color: dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.35)' }}>Built with ♥ for product teams</p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 24, borderTop: `1px solid ${cardBorder}`, flexWrap: 'wrap', gap: 12 }}>
+            <p style={{ fontSize: 13, color: textDim }}>© 2026 Colvy. All rights reserved.</p>
+            <p style={{ fontSize: 13, color: textDim }}>Built with ♥ for product teams</p>
           </div>
         </div>
       </footer>
