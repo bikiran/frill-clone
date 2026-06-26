@@ -102,6 +102,15 @@ export default function CreateCompanyPage() {
         await (supabase as any).from('companies').update({ plan, description: description.trim() }).eq('id', coResult.company.id)
       }
 
+      // 5. Auto-register subdomain in Vercel
+      try {
+        await fetch('/api/domains', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domain: `${slug.toLowerCase()}.colvy.com` }),
+        })
+      } catch {}
+
       setSuccess({
         ownerEmail,
         ownerPassword,

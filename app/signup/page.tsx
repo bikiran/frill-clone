@@ -102,6 +102,15 @@ function SignUpForm() {
         })
         const result = await res.json()
         if (result.error && !result.error.includes('duplicate')) throw new Error(result.error)
+
+        // Auto-register subdomain in Vercel so slug.colvy.com works immediately
+        try {
+          await fetch('/api/domains', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain: `${slug.toLowerCase()}.colvy.com` }),
+          })
+        } catch {} // Non-fatal — user can still use the app
         // Redirect to their subdomain onboarding
         const hostname = window.location.hostname
         const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
