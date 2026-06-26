@@ -4,12 +4,10 @@ export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon\\.png|logo\\.png|.*\\..*).*)',],
 }
 
-const PASSTHROUGH = [
-  '/admin', '/api/', '/_next', '/signin', '/signup',
-  '/landing', '/onboarding', '/upgrade', '/billing',
-  '/auth/', '/reset-password', '/forgot-password',
-  '/profile', '/platform-admin', '/account', '/pricing',
-  '/features',
+const ADMIN_PATHS = [
+  '/admin', '/api/', '/signin', '/signup', '/landing', '/onboarding',
+  '/upgrade', '/billing', '/auth/', '/reset-password', '/forgot-password',
+  '/profile', '/platform-admin', '/account', '/pricing', '/features',
 ]
 
 export function middleware(req: NextRequest) {
@@ -17,7 +15,7 @@ export function middleware(req: NextRequest) {
   const hostname = req.headers.get('host') || ''
   const path = url.pathname
 
-  // colvy.com root → serve normally (lands on /landing via page.tsx)
+  // colvy.com → serve normally (page.tsx → /landing)
   if (hostname === 'colvy.com' || hostname === 'www.colvy.com') {
     return NextResponse.next()
   }
@@ -28,22 +26,29 @@ export function middleware(req: NextRequest) {
     return NextResponse.rewrite(url)
   }
 
-  // *.colvy.com subdomains → rewrite to /board/[slug]/...
+  // *.colvy.com subdomains
   if (hostname.endsWith('.colvy.com')) {
     const parts = hostname.split('.')
     if (parts.length === 3) {
       const sub = parts[0]
       const reserved = new Set(['www', 'api', 'mail', 'smtp', 'cdn', 'assets', 'static', 'admin'])
       if (!reserved.has(sub)) {
-        if (PASSTHROUGH.some(p => path.startsWith(p))) {
+        // Admin/auth paths — pass through unchanged
+        if (ADMIN_PATHS.some(p => path.startsWith(p))) {
           const res = NextResponse.next()
           res.headers.set('x-subdomain', sub)
           return res
         }
-        // Rewrite ALL paths to /board/[slug]/path
-        const boardPath = path === '/' ? '' : path
-        url.pathname = `/board/${sub}${boardPath}`
-        const res = NextResponse.rewrite(url)
+        // Root / → go to board index
+        if (path === '/') {
+          url.pathname = `/board/${sub}`
+          const res = NextResponse.rewrite(url)
+          res.headers.set('x-subdomain', sub)
+          return res
+        }
+        // /roadmap, /announcements, /help, /help/* — serve the REAL colvy.com pages
+        // They detect hostname and filter by company automatically
+        const res = NextResponse.next()
         res.headers.set('x-subdomain', sub)
         return res
       }
