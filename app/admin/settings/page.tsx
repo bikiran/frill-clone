@@ -91,18 +91,31 @@ export default function SettingsPage() {
   const ogFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      const u = data.session?.user
+    const init = async () => {
+      const { data: authData } = await supabase.auth.getSession()
+      const u = authData.session?.user
+      if (!u) return
       setUser(u)
-    })
-    // Load saved settings from DB
-    const loadSettings = async () => {
+
+      // Load company first (source of truth for slug, domains, branding)
+      try {
+        const { data: co } = await (supabase as any)
+          .from('companies').select('*').eq('owner_id', u.id).single()
+        if (co) {
+          setCompany(co)
+          if (co.name) setCompanyName(co.name)
+          if (co.logo_url) setLogoUrl(co.logo_url)
+          if (co.accent_color) setAccentColor(co.accent_color)
+          if (co.board_domain) setBoardDomain(co.board_domain)
+          if (co.help_domain) setHelpDomain(co.help_domain)
+        }
+      } catch {}
+
+      // Load site_settings for additional settings
       try {
         const { data } = await supabase.from('site_settings').select('*').eq('key', 'general').single()
         if (data?.value) {
           const s = data.value
-          if (s.companyName) setCompanyName(s.companyName)
-          if (s.logoUrl) setLogoUrl(s.logoUrl)
           if (s.faviconUrl) setFaviconUrl(s.faviconUrl)
           if (s.ogImageUrl) setOgImageUrl(s.ogImageUrl)
           if (s.logoLink) setLogoLink(s.logoLink)
@@ -110,16 +123,13 @@ export default function SettingsPage() {
           if (s.navIdeas !== undefined) setNavIdeas(s.navIdeas)
           if (s.navRoadmap !== undefined) setNavRoadmap(s.navRoadmap)
           if (s.navAnnouncements !== undefined) setNavAnnouncements(s.navAnnouncements)
-          if (s.accentColor) setAccentColor(s.accentColor)
+          if (s.navHelp !== undefined) setNavHelp(s.navHelp)
           if (s.themeMode) setThemeMode(s.themeMode)
           if (s.borderRadius) setBorderRadius(s.borderRadius)
           if (s.emailFromName) setEmailFromName(s.emailFromName)
           if (s.emailReplyTo) setEmailReplyTo(s.emailReplyTo)
           if (s.emailSignature) setEmailSignature(s.emailSignature)
           if (s.hidePoweredBy !== undefined) setHidePoweredBy(s.hidePoweredBy)
-          if (s.customDomain) setCustomDomain(s.customDomain)
-          if (s.boardDomain) setBoardDomain(s.boardDomain)
-          if (s.helpDomain) setHelpDomain(s.helpDomain)
           if (s.domainStatus) setDomainStatus(s.domainStatus)
           if (s.guestVotingEnabled !== undefined) setGuestVotingEnabled(s.guestVotingEnabled)
           if (s.guestSubmitEnabled !== undefined) setGuestSubmitEnabled(s.guestSubmitEnabled)
@@ -136,31 +146,19 @@ export default function SettingsPage() {
           if (s.showIdeaDate) setShowIdeaDate(s.showIdeaDate)
           if (s.showIdeaActivity) setShowIdeaActivity(s.showIdeaActivity)
           if (s.requireIdeaTopic !== undefined) setRequireIdeaTopic(s.requireIdeaTopic)
-          // Also cache in localStorage for layout to use without DB call
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('site_settings', JSON.stringify(s))
-          }
+          if (typeof window !== 'undefined') localStorage.setItem('site_settings', JSON.stringify(s))
         }
       } catch {
-        // Table might not exist yet, fall back to localStorage
-        if (typeof window !== 'undefined') {
-          try {
-            const s = JSON.parse(localStorage.getItem('site_settings') || '{}')
-            if (s.companyName) setCompanyName(s.companyName)
-            if (s.logoUrl) setLogoUrl(s.logoUrl)
-            if (s.faviconUrl) setFaviconUrl(s.faviconUrl)
-            if (s.ogImageUrl) setOgImageUrl(s.ogImageUrl)
-            if (s.logoLink) setLogoLink(s.logoLink)
-            if (s.customScript) setCustomScript(s.customScript)
-            if (s.navIdeas !== undefined) setNavIdeas(s.navIdeas)
-            if (s.navRoadmap !== undefined) setNavRoadmap(s.navRoadmap)
-            if (s.navAnnouncements !== undefined) setNavAnnouncements(s.navAnnouncements)
-          } catch {}
-        }
+        try {
+          const s = JSON.parse(localStorage.getItem('site_settings') || '{}')
+          if (s.navIdeas !== undefined) setNavIdeas(s.navIdeas)
+          if (s.navRoadmap !== undefined) setNavRoadmap(s.navRoadmap)
+          if (s.navAnnouncements !== undefined) setNavAnnouncements(s.navAnnouncements)
+        } catch {}
       }
     }
-    loadSettings()
-  }, [router])
+    init()
+  }, [])
 
   const handleSave = async () => {
     setSaving(true)

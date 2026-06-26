@@ -968,3 +968,7 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS help_domain_verified BOOLEAN DEFA
 -- VERCEL_TOKEN=your_vercel_api_token (from vercel.com/account/tokens)
 -- VERCEL_PROJECT_ID=your_project_id (from Vercel project settings)
 -- VERCEL_TEAM_ID=your_team_id (optional, only if using a team)
+
+-- Manually set prexty company domains (run if needed)
+-- UPDATE companies SET help_domain = 'help.prexty.com' WHERE slug = 'prexty';
+-- UPDATE companies SET board_domain = 'feedback.prexty.com' WHERE slug = 'prexty';
