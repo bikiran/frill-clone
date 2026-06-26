@@ -152,16 +152,30 @@ export default function BoardPage() {
     count: ideas.filter(i => i.topic_id === t.id).length
   })).filter(t => t.count > 0)
 
-  // Status counts from custom statuses
+  // Status counts - statuses table uses 'key' and 'label' columns (not 'name')
   const statusCounts = customStatuses.map(s => ({
     ...s,
-    count: ideas.filter(i => i.status === s.name.toLowerCase().replace(/\s+/g, '_') || i.status === s.name).length
+    displayName: s.label || s.name || s.key,
+    count: ideas.filter(i => {
+      const st = (i.status || '').toLowerCase()
+      const k = (s.key || '').toLowerCase()
+      const l = (s.label || s.name || '').toLowerCase()
+      return st === k || st === l || st === l.replace(/\s+/g, '_')
+    }).length
   }))
 
   // Filter and sort
   const filtered = ideas
     .filter(i => !topicFilter || i.topic_id === topicFilter)
-    .filter(i => !statusFilter || i.status === statusFilter)
+    .filter(i => {
+      if (!statusFilter) return true
+      const s = statusCounts.find(s => s.displayName === statusFilter)
+      if (!s) return false
+      const st = (i.status || '').toLowerCase()
+      const k = (s.key || '').toLowerCase()
+      const l = (s.label || s.name || '').toLowerCase()
+      return st === k || st === l || st === l.replace(/\s+/g, '_')
+    })
     .filter(i => !search || i.title?.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       if (sortBy === 'latest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -196,10 +210,10 @@ export default function BoardPage() {
       <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur-md" style={{ borderColor: 'var(--border)' }}>
         <nav className="h-14 px-6 flex items-center justify-between max-w-5xl mx-auto">
           <Link href={`/board/${slug}`} className="flex items-center gap-2 font-bold text-lg">
-            {company.logo_url
-              ? <img src={company.logo_url} alt={company.name} className="h-7 w-auto" onError={(e: any) => e.target.style.display='none'} />
+            {company?.logo_url
+              ? <img src={company.logo_url} alt={company?.name} className="h-7 w-auto" onError={(e: any) => e.target.style.display='none'} />
               : null}
-            <span style={{ color: 'var(--coral)' }}>{company.name}</span>
+            <span style={{ color: 'var(--coral)' }}>{company?.name}</span>
           </Link>
 
           <div className="hidden md:flex items-center gap-1">
@@ -280,11 +294,11 @@ export default function BoardPage() {
                 </div>
                 <div className="space-y-0.5">
                   {statusCounts.map(s => (
-                    <button key={s.id} onClick={() => setStatusFilter(statusFilter === s.name ? null : s.name)}
+                    <button key={s.id} onClick={() => setStatusFilter(statusFilter === s.displayName ? null : s.displayName)}
                       className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left cursor-pointer transition-smooth"
-                      style={{ background: statusFilter === s.name ? s.color + '20' : 'transparent', color: statusFilter === s.name ? s.color : 'var(--slate)' }}>
+                      style={{ background: statusFilter === s.displayName ? s.color + '20' : 'transparent', color: statusFilter === s.displayName ? s.color : 'var(--slate)' }}>
                       <div className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color || 'var(--coral)' }} />
-                      {s.name}
+                      {s.displayName}
                     </button>
                   ))}
                 </div>
