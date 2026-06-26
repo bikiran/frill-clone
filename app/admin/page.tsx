@@ -64,10 +64,10 @@ export default function AdminDashboard() {
   }
 
   const seedSampleData = async () => {
-    if (!confirm('Add sample ideas, announcements, and help articles to your dashboard?')) return
+    const action = confirm('Add sample data to your dashboard?\n\nClick OK to add fresh sample data (existing data kept).\nHold Shift and click OK to REPLACE all data with fresh samples.')
+    if (!action) return
     setSeeding(true)
     try {
-      // Get company ID
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user) return
       const { data: co } = await (supabase as any).from('companies').select('id, name').eq('owner_id', session.user.id).single()
@@ -75,11 +75,16 @@ export default function AdminDashboard() {
       const res = await fetch('/api/seed-company', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId: co.id, companyName: co.name }),
+        body: JSON.stringify({ companyId: co.id, companyName: co.name, clearFirst: true }),
       })
       const data = await res.json()
-      if (data.success) { setSeeded(true); fetchStats(); fetchActivity() }
-      else alert('Seed failed: ' + data.error)
+      if (data.success) {
+        setSeeded(true)
+        if (typeof fetchStats === 'function') fetchStats()
+        if (typeof fetchActivity === 'function') fetchActivity()
+      } else {
+        alert('Seed failed: ' + (data.error || 'Unknown error'))
+      }
     } catch (err: any) { alert(err.message) }
     setSeeding(false)
   }

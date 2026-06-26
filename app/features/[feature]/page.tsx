@@ -118,20 +118,20 @@ const PAGES: Record<string, any> = {
   },
 }
 
-function IdeasMockup({ data, color }: any) {
+function IdeasMockup({ data, color, dark }: any) {
   return (
     <div className="space-y-2">
       {data.map((i: any, idx: number) => (
         <div key={idx} className="flex items-center gap-3 p-3 rounded-xl"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+          style={{ background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: `1px solid ${dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)'}` }}>
           <div className="w-10 h-10 rounded-xl flex flex-col items-center justify-center text-white text-xs font-bold shrink-0"
             style={{ background: color + '25', border: `1px solid ${color}40` }}>
             <span style={{ color }}>▲</span>
             <span style={{ color }}>{i.votes}</span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate" style={{ color: 'rgba(255,255,255,0.85)' }}>{i.title}</p>
-            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>#{i.tag}</p>
+            <p className="text-sm font-medium truncate" style={{ color: dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.8)' }}>{i.title}</p>
+            <p className="text-xs" style={{ color: dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)' }}>#{i.tag}</p>
           </div>
           <span className="text-xs px-2 py-1 rounded-full shrink-0 font-medium"
             style={{ background: color + '20', color }}>
@@ -143,15 +143,15 @@ function IdeasMockup({ data, color }: any) {
   )
 }
 
-function RoadmapMockup({ data, color }: any) {
+function RoadmapMockup({ data, color, dark }: any) {
   return (
     <div className="grid grid-cols-3 gap-2">
       {data.map((col: any) => (
-        <div key={col.col} className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div key={col.col} className="rounded-xl p-3" style={{ background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}` }}>
           <p className="text-xs font-bold mb-2" style={{ color }}>{col.col}</p>
           <div className="space-y-1.5">
             {col.items.map((item: string) => (
-              <div key={item} className="p-2 rounded-lg text-xs" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.7)' }}>{item}</div>
+              <div key={item} className="p-2 rounded-lg text-xs" style={{ background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', color: dark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)' }}>{item}</div>
             ))}
           </div>
         </div>
@@ -160,17 +160,17 @@ function RoadmapMockup({ data, color }: any) {
   )
 }
 
-function AnnouncementMockup({ data, color }: any) {
+function AnnouncementMockup({ data, color, dark }: any) {
   return (
     <div className="space-y-3">
       {data.map((a: any, i: number) => (
-        <div key={i} className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+        <div key={i} className="p-4 rounded-xl" style={{ background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: `1px solid ${dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)'}` }}>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: color + '20', color }}>{a.tag}</span>
             <span className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>{a.date}</span>
           </div>
-          <p className="text-sm font-semibold mb-2" style={{ color: 'rgba(255,255,255,0.85)' }}>{a.title}</p>
-          <div className="flex items-center gap-3 text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+          <p className="text-sm font-semibold mb-2" style={{ color: dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.8)' }}>{a.title}</p>
+          <div className="flex items-center gap-3 text-xs" style={{ color: dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)' }}>
             <span>{a.reactions}</span>
             <span>👁 {a.views} views</span>
           </div>
@@ -180,17 +180,17 @@ function AnnouncementMockup({ data, color }: any) {
   )
 }
 
-function KbMockup({ data, color }: any) {
+function KbMockup({ data, color, dark }: any) {
   return (
     <div className="space-y-2">
       {data.map((cat: any, i: number) => (
         <div key={i} className="flex items-center justify-between p-3 rounded-xl cursor-pointer group"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+          style={{ background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: `1px solid ${dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)'}` }}>
           <div className="flex items-center gap-3">
             <span className="text-xl">{cat.category}</span>
             <div>
-              <p className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.85)' }}>{cat.title}</p>
-              <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>{cat.articles} articles · {cat.views} views</p>
+              <p className="text-sm font-medium" style={{ color: dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.8)' }}>{cat.title}</p>
+              <p className="text-xs" style={{ color: dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)' }}>{cat.articles} articles · {cat.views} views</p>
             </div>
           </div>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: color, opacity: 0.6 }}><polyline points="9 18 15 12 9 6"/></svg>
@@ -205,12 +205,13 @@ export default function FeaturePage() {
   const feature = (params?.feature as string) || 'ideas'
   const page = PAGES[feature] || PAGES.ideas
   const parallax = useParallax(0.25)
+  const [dark, setDark] = useState(false)
   const { ref: f1, v: v1 } = useInView()
   const { ref: f2, v: v2 } = useInView()
   const { ref: f3, v: v3 } = useInView()
 
   return (
-    <div style={{ background: '#000', color: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif', minHeight: '100vh' }}>
+    <div style={{ background: dark ? '#000' : '#fafafa', color: dark ? '#fff' : '#0a0a0a', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif', minHeight: '100vh', transition: 'background 0.3s, color 0.3s' }}>
       <style>{`
         @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
         @keyframes slideUp { from{opacity:0;transform:translateY(30px)} to{opacity:1;transform:translateY(0)} }
@@ -228,7 +229,7 @@ export default function FeaturePage() {
 
       {/* Nav */}
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md border-b"
-        style={{ background: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.08)' }}>
+        style={{ background: dark ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)', borderColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)', backdropFilter: 'blur(20px)' }}>
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link href="/landing" className="text-xl font-bold" style={{ color: '#ff7a6b' }}>Colvy</Link>
           <div className="hidden md:flex items-center gap-1">
@@ -241,16 +242,23 @@ export default function FeaturePage() {
             ].map(n => (
               <Link key={n.label} href={n.href}
                 className="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:bg-white/10"
-                style={{ color: n.href.includes(feature) ? '#fff' : 'rgba(255,255,255,0.55)', fontWeight: n.href.includes(feature) ? 600 : 400 }}>
+                style={{ color: n.href.includes(feature) ? (dark ? '#fff' : '#0a0a0a') : (dark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.5)'), fontWeight: n.href.includes(feature) ? 600 : 400 }}>
                 {n.label}
               </Link>
             ))}
           </div>
-          <Link href="/signup"
-            className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:scale-105"
-            style={{ background: page.color }}>
-            Get started free
-          </Link>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setDark(!dark)}
+              className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:scale-110 cursor-pointer"
+              style={{ background: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
+              {dark ? '☀️' : '🌙'}
+            </button>
+            <Link href="/signup"
+              className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:scale-105"
+              style={{ background: page.color }}>
+              Get started free
+            </Link>
+          </div>
         </div>
       </nav>
 
@@ -274,10 +282,10 @@ export default function FeaturePage() {
                 style={{ background: page.color + '20', border: `1px solid ${page.color}40`, color: page.color }}>
                 <span className="text-lg">{page.emoji}</span> {page.subtitle}
               </div>
-              <h1 className="text-4xl md:text-6xl font-black mb-6 leading-tight slide-up slide-up-1" style={{ letterSpacing: '-0.03em' }}>
+              <h1 className="text-4xl md:text-6xl font-black mb-6 leading-tight slide-up slide-up-1" style={{ letterSpacing: '-0.03em', color: dark ? '#fff' : '#0a0a0a' }}>
                 {page.title}
               </h1>
-              <p className="text-lg mb-8 leading-relaxed slide-up slide-up-2" style={{ color: 'rgba(255,255,255,0.55)' }}>
+              <p className="text-lg mb-8 leading-relaxed slide-up slide-up-2" style={{ color: dark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)' }}>
                 {page.hero}
               </p>
               <div className="flex gap-4 slide-up slide-up-3">
@@ -296,22 +304,22 @@ export default function FeaturePage() {
 
             {/* Right — Mockup */}
             <div className="float">
-              <div className="rounded-2xl overflow-hidden shadow-2xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', padding: '1px' }}>
-                <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(12,12,12,0.95)' }}>
+              <div className="rounded-2xl overflow-hidden shadow-2xl" style={{ background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)', border: `1px solid ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`, padding: '1px' }}>
+                <div className="rounded-2xl overflow-hidden" style={{ background: dark ? 'rgba(12,12,12,0.95)' : '#fafafa' }}>
                   {/* Browser bar */}
-                  <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                  <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
                     <div className="flex gap-1.5">
                       {['#ff5f57','#ffbd2e','#28ca41'].map(c => <div key={c} className="w-2.5 h-2.5 rounded-full" style={{ background: c }} />)}
                     </div>
-                    <div className="flex-1 mx-3 px-3 py-1 rounded-md text-xs text-center" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.3)' }}>
+                    <div className="flex-1 mx-3 px-3 py-1 rounded-md text-xs text-center" style={{ background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', color: dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.35)' }}>
                       yourcompany.colvy.com/{feature === 'knowledgebase' ? 'help' : feature}
                     </div>
                   </div>
                   <div className="p-4">
-                    {feature === 'ideas' && <IdeasMockup data={page.mockup} color={page.color} />}
-                    {feature === 'roadmap' && <RoadmapMockup data={page.mockup} color={page.color} />}
-                    {feature === 'announcements' && <AnnouncementMockup data={page.mockup} color={page.color} />}
-                    {feature === 'knowledgebase' && <KbMockup data={page.mockup} color={page.color} />}
+                    {feature === 'ideas' && <IdeasMockup data={page.mockup} color={page.color} dark={dark} />}
+                    {feature === 'roadmap' && <RoadmapMockup data={page.mockup} color={page.color} dark={dark} />}
+                    {feature === 'announcements' && <AnnouncementMockup data={page.mockup} color={page.color} dark={dark} />}
+                    {feature === 'knowledgebase' && <KbMockup data={page.mockup} color={page.color} dark={dark} />}
                   </div>
                 </div>
               </div>
@@ -323,27 +331,27 @@ export default function FeaturePage() {
       {/* FEATURES GRID */}
       <section className="py-24 px-6" ref={f1 as any}>
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-4xl font-black text-center mb-4"
+          <h2 className="text-4xl font-black text-center mb-4" style={{ color: dark ? '#fff' : '#0a0a0a' }}
             style={{ opacity: v1 ? 1 : 0, transform: v1 ? 'none' : 'translateY(30px)', transition: 'all 0.7s cubic-bezier(0.16,1,0.3,1)' }}>
             Everything you need
           </h2>
           <p className="text-center mb-16 text-lg"
-            style={{ color: 'rgba(255,255,255,0.4)', opacity: v1 ? 1 : 0, transition: 'all 0.7s 0.1s' }}>
+            style={{ color: dark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.45)', opacity: v1 ? 1 : 0, transition: 'all 0.7s 0.1s' }}>
             No compromises. No cobbling tools together.
           </p>
           <div className="grid md:grid-cols-3 gap-5">
             {page.features.map((f: any, i: number) => (
               <div key={f.title} className="feat-card p-6 rounded-2xl"
                 style={{
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: dark ? 'rgba(255,255,255,0.04)' : '#fff',
+                  border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'}`,
                   opacity: v1 ? 1 : 0,
                   transform: v1 ? 'none' : 'translateY(40px)',
                   transition: `all 0.7s cubic-bezier(0.16,1,0.3,1) ${0.05 * i}s`,
                 }}>
                 <div className="feat-icon text-3xl mb-4">{f.icon}</div>
                 <h3 className="text-lg font-bold mb-2">{f.title}</h3>
-                <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>{f.desc}</p>
+                <p className="text-sm leading-relaxed" style={{ color: dark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.5)' }}>{f.desc}</p>
               </div>
             ))}
           </div>
@@ -355,8 +363,8 @@ export default function FeaturePage() {
         <div className="max-w-2xl mx-auto text-center"
           style={{ opacity: v2 ? 1 : 0, transform: v2 ? 'none' : 'translateY(30px)', transition: 'all 0.7s cubic-bezier(0.16,1,0.3,1)' }}>
           <div className="text-5xl mb-6">{page.emoji}</div>
-          <h2 className="text-4xl font-black mb-4">Ready to try {page.subtitle}?</h2>
-          <p className="mb-8" style={{ color: 'rgba(255,255,255,0.5)' }}>
+          <h2 className="text-4xl font-black mb-4" style={{ color: dark ? '#fff' : '#0a0a0a' }}>Ready to try {page.subtitle}?</h2>
+          <p className="mb-8" style={{ color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }}>
             Set up in 4 minutes. Free forever for small teams.
           </p>
           <Link href="/signup"
@@ -368,9 +376,9 @@ export default function FeaturePage() {
       </section>
 
       {/* Other features nav */}
-      <section className="py-16 px-6 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }} ref={f3 as any}>
+      <section className="py-16 px-6 border-t" style={{ borderColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }} ref={f3 as any}>
         <div className="max-w-4xl mx-auto">
-          <p className="text-center text-sm mb-8" style={{ color: 'rgba(255,255,255,0.3)' }}>Explore all features</p>
+          <p className="text-center text-sm mb-8" style={{ color: dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.35)' }}>Explore all features</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { label: 'Ideas Board', href: '/features/ideas', emoji: '💡', color: '#ff7a6b' },
@@ -381,7 +389,7 @@ export default function FeaturePage() {
               <Link key={f.label} href={f.href}
                 className="feat-card p-4 rounded-2xl text-center"
                 style={{
-                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
+                  background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)'}`,
                   opacity: v3 ? 1 : 0, transform: v3 ? 'none' : 'translateY(20px)',
                   transition: 'all 0.6s cubic-bezier(0.16,1,0.3,1)',
                 }}>

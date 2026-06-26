@@ -58,10 +58,11 @@ export default function CustomDomainPage() {
 
       // Load company content
       if (isHelp) {
-        const { data: arts } = await (supabase as any)
+        const { data: arts, error: artErr } = await (supabase as any)
           .from('help_articles').select('*')
-          .eq('company_id', co.id).eq('status', 'published')
+          .eq('company_id', co.id)
           .order('created_at', { ascending: false })
+        if (artErr) console.warn('Article load error:', artErr.message)
         setArticles(arts || [])
       }
 

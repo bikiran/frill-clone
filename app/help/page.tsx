@@ -67,8 +67,15 @@ export default function HelpCentrePage() {
 
   const fetchArticles = async () => {
     try {
-      const { data } = await (supabase as any).from('help_articles').select('*').eq('status', 'published').order('created_at', { ascending: false })
-      setArticles(data?.length ? data : DEMO_ARTICLES)
+      const companyId = await getCompanyId()
+      let q = (supabase as any).from('help_articles').select('*')
+      if (companyId) {
+        q = q.eq('company_id', companyId)
+      } else {
+        q = q.eq('status', 'published')
+      }
+      const { data } = await q.order('created_at', { ascending: false })
+      setArticles(data?.length ? data : (companyId ? [] : DEMO_ARTICLES))
     } catch { setArticles(DEMO_ARTICLES) }
     setLoading(false)
   }
