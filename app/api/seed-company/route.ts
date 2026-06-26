@@ -55,28 +55,59 @@ export async function POST(req: NextRequest) {
     // IDEAS
     const { error: ie } = await db.from('ideas').insert([
       {
-        company_id: companyId, votes: 14, likes: 3, status: 'In Development',
+        company_id: companyId, votes: 14, likes: 3, status: 'in_progress',
         topic_id: tIds['improvement'] || null, created_by_name: 'User',
         title: '[Example Idea] Priority scoring',
         description: 'Automatically calculate priority scores based on votes, effort, and impact to help prioritize the roadmap.',
       },
       {
-        company_id: companyId, votes: 6, likes: 2, status: 'Under consideration',
+        company_id: companyId, votes: 6, likes: 2, status: 'new',
         topic_id: tIds['improvement'] || null, created_by_name: 'User',
         title: '[Example Idea] Dark mode support',
         description: 'It would be great to have dark mode. Perhaps add an option to switch between light and dark themes. Maybe also add automatic dark mode based on system settings.',
       },
       {
-        company_id: companyId, votes: 4, likes: 1, status: 'Shipped',
+        company_id: companyId, votes: 4, likes: 1, status: 'shipped',
         topic_id: tIds['improvement'] || null, created_by_name: 'User',
         title: '[Example Idea] Mobile app',
         description: 'Build native iOS and Android apps so customers can vote and view ideas on the go.',
       },
       {
-        company_id: companyId, votes: 1, likes: 0, status: 'Planned',
+        company_id: companyId, votes: 1, likes: 0, status: 'planned',
         topic_id: tIds['welcome'] || null, created_by_name: 'Team',
         title: `Welcome to ${n}! 👋`,
         description: `We're excited to hear your ideas. Share your suggestions and vote on what matters most to you.`,
+      },
+      // Extra ideas to fill all roadmap columns
+      {
+        company_id: companyId, votes: 3, likes: 1, status: 'new',
+        topic_id: tIds['improvement'] || null, created_by_name: 'User',
+        title: 'Keyboard shortcuts',
+        description: 'Power users would love keyboard shortcuts for common actions like submitting ideas and navigating.',
+      },
+      {
+        company_id: companyId, votes: 2, likes: 0, status: 'new',
+        topic_id: tIds['bug'] || null, created_by_name: 'User',
+        title: 'Fix slow load on mobile',
+        description: 'The dashboard takes too long to load on mobile. Would love to see performance improvements.',
+      },
+      {
+        company_id: companyId, votes: 5, likes: 2, status: 'planned',
+        topic_id: tIds['integrations'] || null, created_by_name: 'User',
+        title: 'Zapier integration',
+        description: 'A Zapier integration would let us connect to hundreds of other tools automatically.',
+      },
+      {
+        company_id: companyId, votes: 8, likes: 2, status: 'shipped',
+        topic_id: tIds['improvement'] || null, created_by_name: 'User',
+        title: '[Example Idea] Slack notifications',
+        description: 'Get notified in Slack when new ideas are submitted or statuses change.',
+      },
+      {
+        company_id: companyId, votes: 2, likes: 0, status: 'shipped',
+        topic_id: tIds['improvement'] || null, created_by_name: 'User',
+        title: 'CSV data export',
+        description: 'Export all your ideas and votes to a CSV file for analysis.',
       },
     ])
     ie ? errors.push(`ideas: ${ie.message}`) : done.push('ideas')

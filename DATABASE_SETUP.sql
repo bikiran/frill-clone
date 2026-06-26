@@ -984,3 +984,9 @@ UPDATE help_articles SET
   title = REPLACE(title, 'Frill', 'Colvy'),
   content = REPLACE(REPLACE(content, 'Frill', 'Colvy'), 'frill', 'colvy')
 WHERE title LIKE '%Frill%' OR content LIKE '%Frill%';
+
+-- Fix idea status values to match roadmap column keys
+UPDATE ideas SET status = 'new' WHERE status = 'Under consideration' OR status = 'under_review' OR status = 'under review';
+UPDATE ideas SET status = 'planned' WHERE status = 'Planned';
+UPDATE ideas SET status = 'in_progress' WHERE status = 'In Development' OR status = 'in_development';
+UPDATE ideas SET status = 'shipped' WHERE status = 'Shipped';
