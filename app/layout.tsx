@@ -154,7 +154,8 @@ export default function RootLayout({
 
   // Pages that use their own full-page layout (no nav wrapper)
   const isFullPage = ['/landing', '/pricing'].some(p => pathname?.startsWith(p)) ||
-    pathname?.startsWith('/features/')
+    pathname?.startsWith('/features/') ||
+    pathname?.startsWith('/board/')
 
   if (isFullPage) {
     return (

@@ -141,7 +141,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {company && (
           <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: company.accent_color || 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
+              {company.logo_url ? (
+                <img src={company.logo_url} alt={company.name}
+                  style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
+                  onError={(e: any) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }} />
+              ) : null}
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: company.accent_color || 'var(--coral)', display: company.logo_url ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
                 {company.name?.[0]?.toUpperCase()}
               </div>
               <div style={{ minWidth: 0 }}>

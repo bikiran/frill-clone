@@ -284,6 +284,38 @@ export default function BillingPage() {
         })}
       </div>
 
+      {/* Remove Branding Add-on */}
+      <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <h2 className="font-bold" style={{ color: 'var(--ink)' }}>Remove "Powered by Colvy" branding</h2>
+              <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#fef3c7', color: '#ca8a04' }}>Add-on</span>
+            </div>
+            <p className="text-sm" style={{ color: 'var(--slate)' }}>
+              Available on any plan. Hide the Colvy footer from your public board.
+            </p>
+          </div>
+          <div className="text-right shrink-0 ml-6">
+            <div className="text-xl font-black mb-1" style={{ color: 'var(--ink)' }}>
+              {formatPrice(5)}<span className="text-sm font-normal" style={{ color: 'var(--slate)' }}>/mo</span>
+            </div>
+            <button
+              onClick={() => handleUpgrade('branding_removal')}
+              disabled={company?.remove_branding || loading === 'branding_removal'}
+              className="px-4 py-2 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-60 transition-all hover:opacity-90"
+              style={{ background: company?.remove_branding ? '#f3f4f6' : 'var(--coral)', color: company?.remove_branding ? 'var(--slate)' : '#fff' }}>
+              {loading === 'branding_removal' ? 'Redirecting...' : company?.remove_branding ? '✓ Active' : 'Add for +$5/mo'}
+            </button>
+          </div>
+        </div>
+        {(currentPlanId === 'business' || currentPlanId === 'growth' || currentPlanId === 'enterprise') && (
+          <div className="mt-3 p-3 rounded-xl text-sm" style={{ background: '#dcfce7', color: '#16a34a' }}>
+            ✓ Branding removal is included free on your {currentPlanId} plan.
+          </div>
+        )}
+      </div>
+
       {/* Payment Method */}
       <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
         <div className="flex items-center justify-between mb-4">

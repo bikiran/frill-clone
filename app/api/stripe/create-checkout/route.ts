@@ -15,6 +15,10 @@ const PRICE_IDS: Record<string, Record<string, string>> = {
     monthly: process.env.STRIPE_GROWTH_MONTHLY_PRICE_ID || '',
     annual:  process.env.STRIPE_GROWTH_ANNUAL_PRICE_ID  || '',
   },
+  branding_removal: {
+    monthly: process.env.STRIPE_BRANDING_REMOVAL_PRICE_ID || '',
+    annual:  process.env.STRIPE_BRANDING_REMOVAL_PRICE_ID || '',
+  },
   // Legacy aliases
   pro: {
     monthly: process.env.STRIPE_PRO_MONTHLY_PRICE_ID || process.env.STRIPE_GROWTH_MONTHLY_PRICE_ID || '',
