@@ -44,6 +44,7 @@ export default function RootLayout({
   const [isAdmin, setIsAdmin] = useState(false)
   const [isCompanyOwner, setIsCompanyOwner] = useState(false)
   const [company, setCompany] = useState<any>(null)
+  const [isSubdomain, setIsSubdomain] = useState(false)
   const [navVisibility, setNavVisibility] = useState({
     Ideas: true, Roadmap: true, Updates: true, Help: true,
   })
@@ -118,6 +119,15 @@ export default function RootLayout({
       }
     }
 
+    // Detect subdomain
+    if (typeof window !== 'undefined') {
+      const h = window.location.hostname
+      const sub = h !== 'colvy.com' && h !== 'www.colvy.com' &&
+        !h.includes('localhost') && !h.includes('vercel.app') &&
+        h.endsWith('.colvy.com')
+      setIsSubdomain(sub)
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user ?? null
       setUser(u)
@@ -176,8 +186,20 @@ export default function RootLayout({
           <nav className="h-14 px-6 flex items-center justify-between">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
-              <img src="/logo.png" alt="Colvy" className="h-7 w-auto" onError={(e: any) => { e.target.style.display='none' }} />
-              <span style={{ color: 'var(--coral)' }}>Colvy</span>
+              {isSubdomain && company ? (
+                <>
+                  {company.logo_url
+                    ? <img src={company.logo_url} alt={company.name} className="h-7 w-auto" onError={(e: any) => { e.target.style.display='none' }} />
+                    : <div style={{ width: 28, height: 28, borderRadius: 8, background: company.accent_color || 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{company.name?.[0]?.toUpperCase()}</div>
+                  }
+                  <span style={{ color: 'var(--coral)' }}>{company.name}</span>
+                </>
+              ) : (
+                <>
+                  <img src="/logo.png" alt="Colvy" className="h-7 w-auto" onError={(e: any) => { e.target.style.display='none' }} />
+                  <span style={{ color: 'var(--coral)' }}>Colvy</span>
+                </>
+              )}
             </Link>
 
             {/* Desktop Nav */}

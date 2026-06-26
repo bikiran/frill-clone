@@ -44,6 +44,7 @@ export default function BoardPage() {
   const [guestVotes, setGuestVotes] = useState<Set<string>>(new Set())
   const [userLikes, setUserLikes] = useState<Set<string>>(new Set())
   const [userSubscriptions, setUserSubscriptions] = useState<Set<string>>(new Set())
+  const [showUserMenu, setShowUserMenu] = useState(false)
 
   useEffect(() => {
     if (!slug) return
@@ -72,7 +73,7 @@ export default function BoardPage() {
         fetchTopics(co.id),
         fetchStatuses(co.id),
       ])
-    } catch (e) { console.error('Board load error:', e); setNotFound(true) }
+    } catch { setNotFound(true) }
     setLoading(false)
   }
 
@@ -120,12 +121,12 @@ export default function BoardPage() {
 
     if (user) {
       const next = new Set(userVotes); voted ? next.delete(ideaId) : next.add(ideaId); setUserVotes(next)
-      if (voted) await (supabase as any).from('votes').delete().eq('idea_id', ideaId).eq('user_id', user.id).catch(() => {})
-      else await (supabase as any).from('votes').insert({ idea_id: ideaId, user_id: user.id }).catch(() => {})
+      if (voted) await (supabase as any).from('votes').delete().eq('idea_id', ideaId).eq('user_id', user.id)
+      else await (supabase as any).from('votes').insert({ idea_id: ideaId, user_id: user.id, company_id: company.id })
     } else {
       const next = new Set(guestVotes); voted ? next.delete(ideaId) : next.add(ideaId); setGuestVotes(next)
-      if (voted) await (supabase as any).from('votes').delete().eq('idea_id', ideaId).eq('guest_id', gid).catch(() => {})
-      else await (supabase as any).from('votes').insert({ idea_id: ideaId, guest_id: gid }).catch(() => {})
+      if (voted) await (supabase as any).from('votes').delete().eq('idea_id', ideaId).eq('guest_id', gid)
+      else await (supabase as any).from('votes').insert({ idea_id: ideaId, guest_id: gid, company_id: company.id })
     }
     await (supabase as any).from('ideas').update({ votes: ideas.find(i => i.id === ideaId)?.votes + delta }).eq('id', ideaId)
   }
@@ -151,7 +152,7 @@ export default function BoardPage() {
     count: ideas.filter(i => i.topic_id === t.id).length
   })).filter(t => t.count > 0)
 
-  // Status counts - statuses table uses 'key' and 'label' columns (not 'name')
+  // Status counts from custom statuses
   const statusCounts = customStatuses.map(s => ({
     ...s,
     displayName: s.label || s.name || s.key,
