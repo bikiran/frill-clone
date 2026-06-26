@@ -956,3 +956,9 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free';
 -- Platform admin can update plans
 DROP POLICY IF EXISTS "Platform admin can update companies" ON companies;
 CREATE POLICY "Platform admin can update companies" ON companies FOR UPDATE USING (true);
+
+-- Custom domains for companies
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS board_domain TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS help_domain TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS board_domain_verified BOOLEAN DEFAULT false;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS help_domain_verified BOOLEAN DEFAULT false;

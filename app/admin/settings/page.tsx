@@ -61,6 +61,10 @@ export default function SettingsPage() {
   // White label
   const [hidePoweredBy, setHidePoweredBy] = useState(false)
   const [customDomain, setCustomDomain] = useState('')
+  const [boardDomain, setBoardDomain] = useState('')       // e.g. feedback.acme.com
+  const [helpDomain, setHelpDomain] = useState('')         // e.g. help.acme.com
+  const [domainVerifying, setDomainVerifying] = useState<string | null>(null)
+  const [domainStatus, setDomainStatus] = useState<Record<string, 'unverified'|'verifying'|'verified'|'error'>>({})
   // Guest access
   const [guestVotingEnabled, setGuestVotingEnabled] = useState(true)
   const [guestSubmitEnabled, setGuestSubmitEnabled] = useState(true)
@@ -113,6 +117,9 @@ export default function SettingsPage() {
           if (s.emailSignature) setEmailSignature(s.emailSignature)
           if (s.hidePoweredBy !== undefined) setHidePoweredBy(s.hidePoweredBy)
           if (s.customDomain) setCustomDomain(s.customDomain)
+          if (s.boardDomain) setBoardDomain(s.boardDomain)
+          if (s.helpDomain) setHelpDomain(s.helpDomain)
+          if (s.domainStatus) setDomainStatus(s.domainStatus)
           if (s.guestVotingEnabled !== undefined) setGuestVotingEnabled(s.guestVotingEnabled)
           if (s.guestSubmitEnabled !== undefined) setGuestSubmitEnabled(s.guestSubmitEnabled)
           if (s.allowAnnSubsc !== undefined) setAllowAnnSubsc(s.allowAnnSubsc)
@@ -161,7 +168,7 @@ export default function SettingsPage() {
       navIdeas, navRoadmap, navAnnouncements, navHelp,
       accentColor, themeMode, borderRadius,
       emailFromName, emailReplyTo, emailSignature,
-      hidePoweredBy, customDomain,
+      hidePoweredBy, customDomain, boardDomain, helpDomain, domainStatus,
       guestVotingEnabled, guestSubmitEnabled,
       allowAnnSubsc, allowAnnComments, showAnnComments, disableAnnReactions,
       disableAnimGifs, disableCommentReactions, allowIdeaComments, showIdeaMRR,
@@ -747,31 +754,155 @@ export default function SettingsPage() {
                 </button>
               </div>
 
+              {/* Colvy subdomain — always available */}
+              <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Your Colvy URL</p>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>Active</span>
+                </div>
+                <p className="text-sm font-mono" style={{ color: 'var(--coral)' }}>
+                  {typeof window !== 'undefined' ? window.location.hostname.replace(/^www\./, '').replace('colvy.com', '').replace(/\.$/, '') || 'yourslug' : 'yourslug'}.colvy.com
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>This is your permanent Colvy URL — always active, no setup needed.</p>
+              </div>
+
+              {/* Board custom domain */}
               <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Custom domain</label>
-                <input
-                  type="text"
-                  value={customDomain}
-                  onChange={(e) => setCustomDomain(e.target.value)}
-                  placeholder="feedback.yourcompany.com"
-                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }}
-                />
-                <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>
-                  Point a CNAME record from your domain to <code className="px-1 py-0.5 rounded" style={{ background: 'var(--canvas)', color: 'var(--coral)' }}>cname.yourapp.com</code>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                    Custom board domain
+                    <span className="ml-2 text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>Pro</span>
+                  </label>
+                  {domainStatus['board'] === 'verified' && (
+                    <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>✓ Verified</span>
+                  )}
+                  {domainStatus['board'] === 'error' && (
+                    <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#fee2e2', color: '#dc2626' }}>✗ Not found</span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={boardDomain}
+                    onChange={e => setBoardDomain(e.target.value.toLowerCase())}
+                    placeholder="feedback.yourcompany.com"
+                    className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm"
+                    style={{ borderColor: domainStatus['board'] === 'verified' ? '#10b981' : domainStatus['board'] === 'error' ? '#ef4444' : 'var(--border)', fontSize: '16px' }}
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!boardDomain) return
+                      setDomainStatus(p => ({ ...p, board: 'verifying' }))
+                      try {
+                        const res = await fetch(`/api/verify-domain?domain=${boardDomain}`)
+                        const data = await res.json()
+                        setDomainStatus(p => ({ ...p, board: data.verified ? 'verified' : 'error' }))
+                      } catch {
+                        setDomainStatus(p => ({ ...p, board: 'error' }))
+                      }
+                    }}
+                    disabled={!boardDomain || domainStatus['board'] === 'verifying'}
+                    className="px-4 py-2.5 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50 disabled:opacity-50 shrink-0"
+                    style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                    {domainStatus['board'] === 'verifying' ? 'Checking...' : 'Verify'}
+                  </button>
+                </div>
+                <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>
+                  Your feedback board will be accessible at this domain.
                 </p>
               </div>
 
-              <div className="p-4 rounded-lg" style={{ background: '#fef3c7' }}>
-                <p className="text-sm font-medium mb-1" style={{ color: '#92400e' }}>📚 How to set up:</p>
-                <ol className="text-xs space-y-1 ml-4 list-decimal" style={{ color: '#92400e' }}>
-                  <li>Enter your custom subdomain above</li>
-                  <li>Go to your DNS provider</li>
-                  <li>Add a CNAME record pointing to your app's CNAME</li>
-                  <li>Wait up to 24 hours for DNS to propagate</li>
-                  <li>Your feedback board is now on your own domain!</li>
-                </ol>
+              {/* Help centre custom domain */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                    Custom help centre domain
+                    <span className="ml-2 text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>Pro</span>
+                  </label>
+                  {domainStatus['help'] === 'verified' && (
+                    <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>✓ Verified</span>
+                  )}
+                  {domainStatus['help'] === 'error' && (
+                    <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#fee2e2', color: '#dc2626' }}>✗ Not found</span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={helpDomain}
+                    onChange={e => setHelpDomain(e.target.value.toLowerCase())}
+                    placeholder="help.yourcompany.com"
+                    className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm"
+                    style={{ borderColor: domainStatus['help'] === 'verified' ? '#10b981' : domainStatus['help'] === 'error' ? '#ef4444' : 'var(--border)', fontSize: '16px' }}
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!helpDomain) return
+                      setDomainStatus(p => ({ ...p, help: 'verifying' }))
+                      try {
+                        const res = await fetch(`/api/verify-domain?domain=${helpDomain}`)
+                        const data = await res.json()
+                        setDomainStatus(p => ({ ...p, help: data.verified ? 'verified' : 'error' }))
+                      } catch {
+                        setDomainStatus(p => ({ ...p, help: 'error' }))
+                      }
+                    }}
+                    disabled={!helpDomain || domainStatus['help'] === 'verifying'}
+                    className="px-4 py-2.5 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50 disabled:opacity-50 shrink-0"
+                    style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                    {domainStatus['help'] === 'verifying' ? 'Checking...' : 'Verify'}
+                  </button>
+                </div>
+                <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>
+                  Your help centre will be accessible at this domain.
+                </p>
               </div>
+
+              {/* DNS instructions */}
+              {(boardDomain || helpDomain) && (
+                <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                  <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+                    <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>📋 DNS Setup Instructions</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Add these records in your DNS provider (Cloudflare, GoDaddy, etc.)</p>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {boardDomain && (
+                      <div>
+                        <p className="text-xs font-semibold mb-2" style={{ color: 'var(--slate)' }}>For <span style={{ color: 'var(--coral)' }}>{boardDomain}</span>:</p>
+                        <div className="rounded-lg overflow-hidden border text-xs font-mono" style={{ borderColor: 'var(--border)' }}>
+                          <div className="grid grid-cols-3 px-3 py-2 border-b font-semibold" style={{ borderColor: 'var(--border)', background: 'var(--canvas)', color: 'var(--slate)' }}>
+                            <span>Type</span><span>Name</span><span>Value</span>
+                          </div>
+                          <div className="grid grid-cols-3 px-3 py-2" style={{ color: 'var(--ink)' }}>
+                            <span className="text-blue-600 font-bold">CNAME</span>
+                            <span>{boardDomain.split('.')[0]}</span>
+                            <span style={{ color: 'var(--coral)' }}>cns.vercel-dns.com</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {helpDomain && (
+                      <div>
+                        <p className="text-xs font-semibold mb-2" style={{ color: 'var(--slate)' }}>For <span style={{ color: 'var(--coral)' }}>{helpDomain}</span>:</p>
+                        <div className="rounded-lg overflow-hidden border text-xs font-mono" style={{ borderColor: 'var(--border)' }}>
+                          <div className="grid grid-cols-3 px-3 py-2 border-b font-semibold" style={{ borderColor: 'var(--border)', background: 'var(--canvas)', color: 'var(--slate)' }}>
+                            <span>Type</span><span>Name</span><span>Value</span>
+                          </div>
+                          <div className="grid grid-cols-3 px-3 py-2" style={{ color: 'var(--ink)' }}>
+                            <span className="text-blue-600 font-bold">CNAME</span>
+                            <span>{helpDomain.split('.')[0]}</span>
+                            <span style={{ color: 'var(--coral)' }}>cns.vercel-dns.com</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-start gap-2 pt-1">
+                      <span className="text-xs" style={{ color: 'var(--slate)' }}>⏱️</span>
+                      <p className="text-xs" style={{ color: 'var(--slate)' }}>DNS changes can take up to 24 hours to propagate. Once they do, click Verify above.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
