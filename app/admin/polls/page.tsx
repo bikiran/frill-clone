@@ -7,7 +7,6 @@ import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon, PollIcon } from '@/components/Icons'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 export default function PollsAdmin() {
   const router = useRouter()
@@ -21,10 +20,6 @@ export default function PollsAdmin() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session?.user.email !== ADMIN_EMAIL) {
-        router.push('/')
-        return
-      }
       setUser(data.session.user)
     })
     fetchPolls()

@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const DEFAULT_TOPICS = [
   { id: 'welcome', label: 'Welcome', emoji: '👋' },

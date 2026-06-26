@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ConfirmModal from '@/components/ConfirmModal'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 export default function TeamPage() {
   const router = useRouter()

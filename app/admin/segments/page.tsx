@@ -7,7 +7,6 @@ import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon, SearchIcon } from '@/components/Icons'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 type Segment = { id: string; name: string; conditions: any[]; match_type: string; created_at: string }
 

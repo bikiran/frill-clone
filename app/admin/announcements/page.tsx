@@ -7,7 +7,6 @@ import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { PlusIcon, TrashIcon } from '@/components/Icons'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const TAG_COLORS: any = {
   'Feature': { bg: '#ecfdf5', color: '#059669' },

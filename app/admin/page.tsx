@@ -8,7 +8,6 @@ import { useRouter } from 'next/navigation'
 
 import { LightbulbIcon, MapIcon, MegaphoneIcon, SurveyIcon, PollIcon, HomeIcon } from '@/components/Icons'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 export default function AdminDashboard() {
   const router = useRouter()

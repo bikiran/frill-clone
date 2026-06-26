@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 const CATEGORIES = ['Getting Started', 'Features', 'Billing', 'Integrations', 'Troubleshooting', 'API', 'Other']
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {

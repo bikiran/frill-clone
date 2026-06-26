@@ -7,7 +7,6 @@ import { supabase } from '@/lib/supabase'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon } from '@/components/Icons'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const COLORS = [
   '#f97316', '#ea580c', '#dc2626', '#ec4899', 

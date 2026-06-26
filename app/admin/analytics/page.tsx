@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 function StatCard({ label, value, sub, color }: any) {
   return (

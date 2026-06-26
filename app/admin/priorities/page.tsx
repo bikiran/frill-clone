@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 type Idea = {
   id: string

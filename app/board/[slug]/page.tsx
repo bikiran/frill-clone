@@ -161,10 +161,9 @@ function UserMenu({ user, guestId, company, onSignOut }: any) {
               </>
             ) : (
               <div className="p-2">
-                <button className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm cursor-pointer w-full hover:bg-gray-50 text-left"
-                  style={{ color: 'var(--ink)' }}>
+                <a href={`/account`} className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm cursor-pointer w-full hover:bg-gray-50 text-left" style={{ color: 'var(--ink)' }}>
                   👤 My profile
-                </button>
+                </a>
                 <button className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm cursor-pointer w-full hover:bg-gray-50 text-left"
                   style={{ color: 'var(--ink)' }}>
                   🔔 Notifications

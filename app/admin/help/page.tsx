@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const SEED_ARTICLES = [
   { title: 'Getting started with Colvy', content: `# Getting started with Colvy\n\nWelcome to Colvy! This guide will help you set up your feedback board in minutes.\n\n## Step 1: Create your board\n\nAfter signing up, your feedback board is automatically created. Customize it from the Admin panel.\n\n## Step 2: Invite your team\n\nGo to **Admin → Team Members** to invite colleagues.\n\n## Step 3: Collect feedback\n\nShare your board URL with customers and start collecting ideas.`, category: 'Getting Started', status: 'published', featured: true, views: 142, likes: 28 },

@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const STATUS_COLORS: Record<string, any> = {
   open:        { bg: '#fef9c3', color: '#ca8a04', label: 'Open' },
@@ -121,7 +120,7 @@ export default function SupportPage() {
       session_id: selectedSession,
       from_type: 'agent',
       from_name: 'Support Team',
-      from_email: ADMIN_EMAIL,
+      from_email: user?.email || '',
       message: text,
     })
     fetchChatThread(selectedSession)

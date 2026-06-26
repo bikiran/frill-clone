@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 const TAGS = ['Feature', 'Bug Fix', 'Update', 'Improvement', 'News']
 const LANGUAGES = ['English', 'Español', 'Français', 'Deutsch', 'Português', 'Japanese', 'Chinese']

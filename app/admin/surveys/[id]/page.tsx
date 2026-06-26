@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
-const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 export default function SurveyDetailPage() {
   const params = useParams()
@@ -17,10 +16,7 @@ export default function SurveyDetailPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session?.user.email !== ADMIN_EMAIL) {
-        router.push('/')
-      }
-    })
+      })
     fetchData()
   }, [surveyId, router])
 
