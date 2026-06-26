@@ -15,7 +15,7 @@ export function middleware(req: NextRequest) {
   const hostname = req.headers.get('host') || ''
   const path = url.pathname
 
-  // colvy.com → serve normally (page.tsx → /landing)
+  // colvy.com → serve normally
   if (hostname === 'colvy.com' || hostname === 'www.colvy.com') {
     return NextResponse.next()
   }
@@ -26,28 +26,20 @@ export function middleware(req: NextRequest) {
     return NextResponse.rewrite(url)
   }
 
-  // *.colvy.com subdomains
+  // *.colvy.com subdomains → serve the SAME app pages with subdomain header
+  // app/page.tsx reads hostname to filter by company
   if (hostname.endsWith('.colvy.com')) {
     const parts = hostname.split('.')
     if (parts.length === 3) {
       const sub = parts[0]
       const reserved = new Set(['www', 'api', 'mail', 'smtp', 'cdn', 'assets', 'static', 'admin'])
       if (!reserved.has(sub)) {
-        // Admin/auth paths — pass through unchanged
         if (ADMIN_PATHS.some(p => path.startsWith(p))) {
           const res = NextResponse.next()
           res.headers.set('x-subdomain', sub)
           return res
         }
-        // Root / → go to board index
-        if (path === '/') {
-          url.pathname = `/board/${sub}`
-          const res = NextResponse.rewrite(url)
-          res.headers.set('x-subdomain', sub)
-          return res
-        }
-        // /roadmap, /announcements, /help, /help/* — serve the REAL colvy.com pages
-        // They detect hostname and filter by company automatically
+        // All paths pass through — pages detect hostname and filter by company
         const res = NextResponse.next()
         res.headers.set('x-subdomain', sub)
         return res
