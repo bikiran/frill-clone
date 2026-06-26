@@ -13,10 +13,6 @@ export default function PricingPage() {
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
       const u = data.session?.user
-      if (!u) {
-        window.location.href = '/signin'
-        return
-      }
       setUser(u)
       const sub = await getUserSubscription(u.id)
       setSubscription(sub)

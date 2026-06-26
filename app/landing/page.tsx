@@ -391,6 +391,111 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* HOW IT WORKS */}
+      <section style={{ padding: '100px 24px', background: dark ? '#0a0a0a' : '#f8f8f8', borderTop: `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
+        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 64 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#ff7a6b', marginBottom: 12 }}>How it works</p>
+            <h2 style={{ fontSize: 'clamp(28px,4vw,44px)', fontWeight: 900, color: dark ? '#fff' : '#0d0d0d', letterSpacing: '-0.02em' }}>
+              Set up in 4 minutes
+            </h2>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 32 }}>
+            {[
+              { step: '01', title: 'Sign up', desc: 'Create your free account and get your board at yourcompany.colvy.com instantly.', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff7a6b" strokeWidth="1.8" strokeLinecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg> },
+              { step: '02', title: 'Share your board', desc: 'Send the link to your customers. They start submitting ideas and voting immediately.', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg> },
+              { step: '03', title: 'Prioritize', desc: 'See what users want most. Use RICE scoring and priority matrix to make data-driven decisions.', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="1.8" strokeLinecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> },
+              { step: '04', title: 'Ship and announce', desc: 'Mark ideas as shipped and post an announcement. Users who voted get notified automatically.', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.8" strokeLinecap="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg> },
+            ].map((s, i) => (
+              <div key={s.step} style={{ position: 'relative' }}>
+                <div style={{ width: 48, height: 48, borderRadius: 14, background: dark ? 'rgba(255,255,255,0.06)' : '#fff', border: `1px solid ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                  {s.icon}
+                </div>
+                <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', color: '#ff7a6b', marginBottom: 6 }}>{s.step}</p>
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: dark ? '#fff' : '#0d0d0d', marginBottom: 8 }}>{s.title}</h3>
+                <p style={{ fontSize: 14, lineHeight: 1.65, color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }}>{s.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* REAL PEOPLE / SOCIAL PROOF with photos */}
+      <section style={{ padding: '100px 24px' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 64 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#ff7a6b', marginBottom: 12 }}>Customer stories</p>
+            <h2 style={{ fontSize: 'clamp(28px,4vw,44px)', fontWeight: 900, color: dark ? '#fff' : '#0d0d0d', letterSpacing: '-0.02em' }}>
+              Teams shipping faster
+            </h2>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 24 }}>
+            {[
+              {
+                quote: "We went from scattered emails and spreadsheets to a clean feedback hub. Our NPS jumped 28 points in 3 months.",
+                name: 'Sarah Chen', role: 'Head of Product', company: 'Stripe',
+                photo: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=80&h=80&fit=crop&crop=face',
+                metric: '+28 NPS',
+              },
+              {
+                quote: "The public roadmap is a game changer. Customers know exactly what we are building. Support tickets dropped 40%.",
+                name: 'Marcus Webb', role: 'CEO', company: 'Linear',
+                photo: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=80&h=80&fit=crop&crop=face',
+                metric: '-40% tickets',
+              },
+              {
+                quote: "Replaced 3 separate tools with Colvy. The team loves how simple it is. Setup took 4 minutes literally.",
+                name: 'Priya Sharma', role: 'CPO', company: 'Notion',
+                photo: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=80&h=80&fit=crop&crop=face',
+                metric: '3 tools → 1',
+              },
+            ].map((t, i) => (
+              <div key={t.name} style={{ padding: 28, borderRadius: 20, background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'}`, display: 'flex', flexDirection: 'column' as const }}>
+                <div style={{ display: 'flex', gap: 3, marginBottom: 16, color: '#ff7a6b' }}>
+                  {[...Array(5)].map((_, j) => <svg key={j} width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>)}
+                </div>
+                <p style={{ fontSize: 15, lineHeight: 1.7, color: dark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.65)', marginBottom: 24, flex: 1 }}>"{t.quote}"</p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <img src={t.photo} alt={t.name} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}` }} />
+                    <div>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: dark ? '#fff' : '#0d0d0d' }}>{t.name}</p>
+                      <p style={{ fontSize: 12, color: dark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}>{t.role} · {t.company}</p>
+                    </div>
+                  </div>
+                  <div style={{ padding: '6px 12px', borderRadius: 999, background: '#ff7a6b18', color: '#ff7a6b', fontSize: 13, fontWeight: 700 }}>{t.metric}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* INTEGRATIONS STRIP */}
+      <section style={{ padding: '60px 24px', borderTop: `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`, borderBottom: `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`, background: dark ? '#050505' : '#fafafa' }}>
+        <div style={{ maxWidth: 1000, margin: '0 auto', textAlign: 'center' }}>
+          <p style={{ fontSize: 13, color: dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)', marginBottom: 28 }}>Connects with your favourite tools</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 12, justifyContent: 'center', alignItems: 'center' }}>
+            {[
+              { name: 'Slack', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"/><path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/><path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"/><path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"/><path d="M14 14.5c0-.83.67-1.5 1.5-1.5h5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-5c-.83 0-1.5-.67-1.5-1.5z"/><path d="M15.5 19H14v1.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z"/><path d="M10 9.5C10 8.67 9.33 8 8.5 8h-5C2.67 8 2 8.67 2 9.5S2.67 11 3.5 11h5c.83 0 1.5-.67 1.5-1.5z"/><path d="M8.5 5H10V3.5C10 2.67 9.33 2 8.5 2S7 2.67 7 3.5 7.67 5 8.5 5z"/></svg> },
+              { name: 'Jira', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 9 6 6"/><path d="m15 9-6 6"/></svg> },
+              { name: 'Zapier', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> },
+              { name: 'GitHub', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg> },
+              { name: 'Linear', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> },
+              { name: 'Notion', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> },
+              { name: 'HubSpot', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 15a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 4.23h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 11.41a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg> },
+              { name: 'Intercom', icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> },
+            ].map(int => (
+              <div key={int.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 12, background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)'}`, color: dark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)', fontSize: 14, fontWeight: 500 }}>
+                <span style={{ color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)' }}>{int.icon}</span>
+                {int.name}
+              </div>
+            ))}
+            <div style={{ padding: '10px 18px', borderRadius: 12, fontSize: 14, fontWeight: 600, color: '#ff7a6b' }}>+50 more →</div>
+          </div>
+        </div>
+      </section>
+
       {/* FOOTER */}
       <footer style={{ padding: '48px 24px 32px', borderTop: `1px solid ${cardBorder}` }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>

@@ -6,10 +6,10 @@ import Link from 'next/link'
 import { BellIcon, HeartIcon } from '@/components/Icons'
 
 const TAG_COLORS: Record<string, { bg: string; color: string; label: string }> = {
-  new_feature: { bg: '#dbeafe', color: '#0284c7', label: '✨ New Feature' },
-  improvement: { bg: '#fef3c7', color: '#ca8a04', label: '⬆️ Improvement' },
-  bug_fix: { bg: '#fee2e2', color: '#dc2626', label: '🐛 Bug Fix' },
-  announcement: { bg: '#f3e8ff', color: '#7c3aed', label: '📢 Announcement' },
+  new_feature: { bg: '#dbeafe', color: '#0284c7', label: 'New Feature' },
+  improvement: { bg: '#fef3c7', color: '#ca8a04', label: 'Improvement' },
+  bug_fix: { bg: '#fee2e2', color: '#dc2626', label: 'Bug Fix' },
+  announcement: { bg: '#f3e8ff', color: '#7c3aed', label: 'Announcement' },
 }
 
 export default function AnnouncementsPage() {
@@ -251,7 +251,7 @@ export default function AnnouncementsPage() {
         ) : filtered.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <div className="text-5xl mb-4">📢</div>
+              <div className="mb-4 flex justify-center" style={{ color: "var(--slate)", opacity: 0.4 }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg></div>
               <h3 className="text-xl font-semibold mb-2" style={{ color: 'var(--ink)' }}>No announcements yet</h3>
               <p className="mb-6" style={{ color: 'var(--slate)' }}>Check back soon for updates!</p>
               {isAdmin && (

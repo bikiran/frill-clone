@@ -6,14 +6,15 @@ import Link from 'next/link'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
-const CATEGORY_ICONS: Record<string, string> = {
-  'Getting Started': '🚀',
-  'Features': '✨',
-  'Billing': '💳',
-  'Integrations': '🔗',
-  'Troubleshooting': '🔧',
-  'API': '⚡',
-  'Other': '📁',
+function CategoryIcon({ cat }: { cat: string }) {
+  const p = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  if (cat === 'Getting Started') return <svg {...p}><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>
+  if (cat === 'Features') return <svg {...p}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+  if (cat === 'Billing') return <svg {...p}><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+  if (cat === 'Integrations') return <svg {...p}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+  if (cat === 'Troubleshooting') return <svg {...p}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+  if (cat === 'API') return <svg {...p}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+  return <svg {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
 }
 
 const DEMO_ARTICLES = [
@@ -99,7 +100,7 @@ export default function HelpCentrePage() {
     <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
       {/* Hero */}
       <div className="py-16 px-6 text-center" style={{ background: 'var(--peach)' }}>
-        <div className="text-4xl mb-3">📚</div>
+        <div className="mb-3 flex justify-center" style={{ color: "var(--coral)" }}><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
         <h1 className="text-4xl font-black mb-3" style={{ color: 'var(--ink)' }}>Help Centre</h1>
         <p className="mb-8 text-lg" style={{ color: 'var(--slate)' }}>Find answers, guides, and resources</p>
 
@@ -131,7 +132,7 @@ export default function HelpCentrePage() {
                   <Link key={a.id} href={`/help/${a.id}`} onClick={() => { setSearch(''); setShowSearchDropdown(false) }}
                     className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-all cursor-pointer text-left"
                     style={{ borderBottom: i < searchResults.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                    <span className="text-lg mt-0.5">{CATEGORY_ICONS[a.category] || '📄'}</span>
+                    <CategoryIcon cat={a.category || 'Other'} />
                     <div>
                       <p className="text-sm font-semibold text-left" style={{ color: 'var(--ink)' }}>{a.title}</p>
                       <p className="text-xs" style={{ color: 'var(--slate)' }}>{a.category}</p>
@@ -175,7 +176,7 @@ export default function HelpCentrePage() {
             <button key={cat} onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
               className="px-4 py-1.5 rounded-full text-sm font-medium border cursor-pointer transition-all flex items-center gap-1.5"
               style={{ background: categoryFilter === cat ? 'var(--coral)' : 'white', color: categoryFilter === cat ? 'white' : 'var(--slate)', borderColor: categoryFilter === cat ? 'var(--coral)' : 'var(--border)' }}>
-              {CATEGORY_ICONS[cat]} {cat}
+              <CategoryIcon cat={cat} /> {cat}
             </button>
           ))}
         </div>
@@ -186,7 +187,7 @@ export default function HelpCentrePage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20">
-            <div className="text-5xl mb-4">🔍</div>
+            <div className="mb-4 flex justify-center" style={{ color: "var(--slate)", opacity: 0.4 }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
             <p className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>No articles found</p>
             <p className="mt-1" style={{ color: 'var(--slate)' }}>Try a different search or browse by category</p>
           </div>
@@ -202,7 +203,7 @@ export default function HelpCentrePage() {
                       className="bg-white rounded-2xl border p-5 hover:shadow-md transition-all cursor-pointer group"
                       style={{ borderColor: 'var(--border)' }}>
                       <div className="flex items-center gap-2 mb-3">
-                        <span className="text-2xl">{CATEGORY_ICONS[a.category] || '📄'}</span>
+                        <span className="text-2xl"><CategoryIcon cat={a.category || 'Other'} /></span>
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{a.category}</span>
                       </div>
                       <h3 className="font-bold mb-2 group-hover:opacity-70 transition-all" style={{ color: 'var(--ink)' }}>{a.title}</h3>
@@ -220,7 +221,7 @@ export default function HelpCentrePage() {
             {byCat.map(({ cat, items }) => (
               <div key={cat} className="mb-10">
                 <h2 className="flex items-center gap-2 text-lg font-bold mb-4" style={{ color: 'var(--ink)' }}>
-                  <span>{CATEGORY_ICONS[cat]}</span> {cat}
+                  <span><CategoryIcon cat={cat} /></span> {cat}
                 </h2>
                 <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
                   {items.map((a, i) => (
