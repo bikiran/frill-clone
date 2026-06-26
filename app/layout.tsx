@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TerminologyProvider } from '@/lib/terminologyContext'
 import LiveChat from '@/components/LiveChat'
+import UpdateNotification from '@/components/UpdateNotification'
 import './globals.css'
 
 const NAV_ITEMS = [
@@ -364,6 +365,7 @@ export default function RootLayout({
           </TerminologyProvider>
         </main>
         <LiveChat />
+        <UpdateNotification />
       </body>
     </html>
   )

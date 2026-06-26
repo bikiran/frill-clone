@@ -962,3 +962,9 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS board_domain TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS help_domain TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS board_domain_verified BOOLEAN DEFAULT false;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS help_domain_verified BOOLEAN DEFAULT false;
+
+-- Add Vercel token env vars note
+-- Add to Vercel environment variables:
+-- VERCEL_TOKEN=your_vercel_api_token (from vercel.com/account/tokens)
+-- VERCEL_PROJECT_ID=your_project_id (from Vercel project settings)
+-- VERCEL_TEAM_ID=your_team_id (optional, only if using a team)

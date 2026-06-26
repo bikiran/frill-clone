@@ -562,14 +562,29 @@ export default function SettingsPage() {
                     <button onClick={async () => {
                         if (!boardDomain) return
                         setDomainStatus(p => ({ ...p, board: 'verifying' }))
-                        // Check DNS — just save and mark as pending, real verification happens via DNS lookup
-                        await new Promise(r => setTimeout(r, 1500))
-                        setDomainStatus(p => ({ ...p, board: 'verified' }))
+                        try {
+                          const res = await fetch('/api/domains', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ domain: boardDomain }),
+                          })
+                          const data = await res.json()
+                          if (data.manual) {
+                            // No Vercel token — show instructions and mark as pending
+                            setDomainStatus(p => ({ ...p, board: 'pending' }))
+                          } else if (data.success || data.error?.includes('already')) {
+                            setDomainStatus(p => ({ ...p, board: 'verified' }))
+                          } else {
+                            setDomainStatus(p => ({ ...p, board: 'error' }))
+                          }
+                        } catch {
+                          setDomainStatus(p => ({ ...p, board: 'error' }))
+                        }
                       }}
                       disabled={!boardDomain || domainStatus['board'] === 'verifying'}
                       className="px-4 py-2.5 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50 disabled:opacity-50 shrink-0"
                       style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      {domainStatus['board'] === 'verifying' ? '⏳' : domainStatus['board'] === 'verified' ? '✓ Verified' : 'Verify'}
+                      {domainStatus['board'] === 'verifying' ? '⏳ Adding...' : domainStatus['board'] === 'verified' ? '✓ Active' : domainStatus['board'] === 'pending' ? '⏱ Pending' : 'Add Domain'}
                     </button>
                   </div>
                   <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Your feedback board will be accessible at this domain.</p>
@@ -589,13 +604,28 @@ export default function SettingsPage() {
                     <button onClick={async () => {
                         if (!helpDomain) return
                         setDomainStatus(p => ({ ...p, help: 'verifying' }))
-                        await new Promise(r => setTimeout(r, 1500))
-                        setDomainStatus(p => ({ ...p, help: 'verified' }))
+                        try {
+                          const res = await fetch('/api/domains', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ domain: helpDomain }),
+                          })
+                          const data = await res.json()
+                          if (data.manual) {
+                            setDomainStatus(p => ({ ...p, help: 'pending' }))
+                          } else if (data.success || data.error?.includes('already')) {
+                            setDomainStatus(p => ({ ...p, help: 'verified' }))
+                          } else {
+                            setDomainStatus(p => ({ ...p, help: 'error' }))
+                          }
+                        } catch {
+                          setDomainStatus(p => ({ ...p, help: 'error' }))
+                        }
                       }}
                       disabled={!helpDomain || domainStatus['help'] === 'verifying'}
                       className="px-4 py-2.5 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50 disabled:opacity-50 shrink-0"
                       style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      {domainStatus['help'] === 'verifying' ? '⏳' : domainStatus['help'] === 'verified' ? '✓ Verified' : 'Verify'}
+                      {domainStatus['help'] === 'verifying' ? '⏳ Adding...' : domainStatus['help'] === 'verified' ? '✓ Active' : domainStatus['help'] === 'pending' ? '⏱ Pending' : 'Add Domain'}
                     </button>
                   </div>
                   <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Your help centre will be accessible at this domain.</p>
@@ -889,10 +919,41 @@ export default function SettingsPage() {
 
             {/* Accent Color */}
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Accent color</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium" style={{ color: 'var(--ink)' }}>Brand color</label>
+                {logoUrl && (
+                  <button onClick={() => {
+                    try {
+                      const img = new Image()
+                      img.crossOrigin = 'anonymous'
+                      img.onload = () => {
+                        const canvas = document.createElement('canvas')
+                        canvas.width = 50; canvas.height = 50
+                        const ctx = canvas.getContext('2d')
+                        if (!ctx) return
+                        ctx.drawImage(img, 0, 0, 50, 50)
+                        const d = ctx.getImageData(0, 0, 50, 50).data
+                        let r = 0, g = 0, b = 0, count = 0
+                        for (let i = 0; i < d.length; i += 4) {
+                          if (d[i+3] > 128) { r += d[i]; g += d[i+1]; b += d[i+2]; count++ }
+                        }
+                        if (count > 0) {
+                          const hex = '#' + [Math.round(r/count), Math.round(g/count), Math.round(b/count)].map(v => v.toString(16).padStart(2,'0')).join('')
+                          setAccentColor(hex)
+                        }
+                      }
+                      img.src = logoUrl
+                    } catch {}
+                  }}
+                  className="text-xs px-2.5 py-1 rounded-lg cursor-pointer hover:opacity-80"
+                  style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
+                    🎨 Extract from logo
+                  </button>
+                )}
+              </div>
               <div className="flex flex-wrap gap-2 mb-3">
                 {[
-                  '#ff7a6b', '#f97316', '#eab308', '#84cc16', 
+                  '#ff7a6b', '#f97316', '#eab308', '#84cc16',
                   '#10b981', '#06b6d4', '#3b82f6', '#7c3aed',
                   '#ec4899', '#ef4444', '#6366f1', '#14b8a6',
                 ].map(color => (
