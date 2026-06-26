@@ -978,3 +978,9 @@ ALTER TABLE help_articles ADD COLUMN IF NOT EXISTS company_id UUID;
 ALTER TABLE statuses ADD COLUMN IF NOT EXISTS company_id UUID;
 ALTER TABLE statuses ADD COLUMN IF NOT EXISTS emoji TEXT;
 ALTER TABLE statuses ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;
+
+-- Fix existing help articles that still say Frill
+UPDATE help_articles SET 
+  title = REPLACE(title, 'Frill', 'Colvy'),
+  content = REPLACE(REPLACE(content, 'Frill', 'Colvy'), 'frill', 'colvy')
+WHERE title LIKE '%Frill%' OR content LIKE '%Frill%';
