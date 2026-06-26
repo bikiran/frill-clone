@@ -78,22 +78,28 @@ export default function BoardPage() {
   }
 
   const fetchIdeas = async (companyId: string, u: any) => {
-    const { data } = await (supabase as any).from('ideas').select('*').eq('company_id', companyId).order('votes', { ascending: false })
-    setIdeas(data || [])
+    try {
+      const { data } = await (supabase as any).from('ideas').select('*').eq('company_id', companyId).order('votes', { ascending: false })
+      setIdeas(data || [])
+    } catch { setIdeas([]) }
 
     if (u) {
-      const { data: votes } = await (supabase as any).from('votes').select('idea_id').eq('user_id', u.id)
-      setUserVotes(new Set((votes || []).map((v: any) => v.idea_id)))
+      try {
+        const { data: votes } = await (supabase as any).from('votes').select('idea_id').eq('user_id', u.id)
+        setUserVotes(new Set((votes || []).map((v: any) => v.idea_id)))
+      } catch {}
       try {
         const likedIds = await fetchEngagedIdeaIds('idea_likes')
         const subIds = await fetchEngagedIdeaIds('idea_subscriptions')
         setUserLikes(likedIds)
         setUserSubscriptions(subIds)
-      } catch { /* idea_likes/idea_subscriptions tables may not exist yet */ }
+      } catch {}
     } else {
-      const gid = getOrCreateGuestId()
-      const { data: gvotes } = await (supabase as any).from('votes').select('idea_id').eq('guest_id', gid)
-      setGuestVotes(new Set((gvotes || []).map((v: any) => v.idea_id)))
+      try {
+        const gid = getOrCreateGuestId()
+        const { data: gvotes } = await (supabase as any).from('votes').select('idea_id').eq('guest_id', gid)
+        setGuestVotes(new Set((gvotes || []).map((v: any) => v.idea_id)))
+      } catch {}
     }
   }
 
@@ -115,12 +121,12 @@ export default function BoardPage() {
 
     if (user) {
       const next = new Set(userVotes); voted ? next.delete(ideaId) : next.add(ideaId); setUserVotes(next)
-      if (voted) await (supabase as any).from('votes').delete().eq('idea_id', ideaId).eq('user_id', user.id)
-      else await (supabase as any).from('votes').insert({ idea_id: ideaId, user_id: user.id, company_id: company.id })
+      if (voted) await (supabase as any).from('votes').delete().eq('idea_id', ideaId).eq('user_id', user.id).catch(() => {})
+      else await (supabase as any).from('votes').insert({ idea_id: ideaId, user_id: user.id }).catch(() => {})
     } else {
       const next = new Set(guestVotes); voted ? next.delete(ideaId) : next.add(ideaId); setGuestVotes(next)
-      if (voted) await (supabase as any).from('votes').delete().eq('idea_id', ideaId).eq('guest_id', gid)
-      else await (supabase as any).from('votes').insert({ idea_id: ideaId, guest_id: gid, company_id: company.id })
+      if (voted) await (supabase as any).from('votes').delete().eq('idea_id', ideaId).eq('guest_id', gid).catch(() => {})
+      else await (supabase as any).from('votes').insert({ idea_id: ideaId, guest_id: gid }).catch(() => {})
     }
     await (supabase as any).from('ideas').update({ votes: ideas.find(i => i.id === ideaId)?.votes + delta }).eq('id', ideaId)
   }
