@@ -8,7 +8,6 @@ import IdeaCard from '@/components/IdeaCard'
 import IdeaModal from '@/components/IdeaModal'
 import IdeaDetailModal from '@/components/IdeaDetailModal'
 import Link from 'next/link'
-import { toggleEngagement, fetchEngagedIdeaIds } from '@/lib/engagement'
 
 function getOrCreateGuestId(): string {
   if (typeof window === 'undefined') return ''
@@ -18,13 +17,6 @@ function getOrCreateGuestId(): string {
 }
 
 const SORT_OPTIONS = ['Trending', 'Latest', 'Most Votes']
-
-const DEFAULT_STATUSES = [
-  { name: 'Under consideration', color: '#f97316' },
-  { name: 'Planned',             color: '#3b82f6' },
-  { name: 'In Development',      color: '#ea580c' },
-  { name: 'Shipped',             color: '#10b981' },
-]
 
 export default function BoardPage() {
   const params = useParams()
@@ -47,13 +39,8 @@ export default function BoardPage() {
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [userVotes, setUserVotes] = useState<Set<string>>(new Set())
   const [guestVotes, setGuestVotes] = useState<Set<string>>(new Set())
-  const [userLikes, setUserLikes] = useState<Set<string>>(new Set())
-  const [userSubscriptions, setUserSubscriptions] = useState<Set<string>>(new Set())
 
-  useEffect(() => {
-    if (!slug) return
-    loadBoard()
-  }, [slug])
+  useEffect(() => { if (slug) loadBoard() }, [slug])
 
   const loadBoard = async () => {
     setLoading(true)
@@ -61,11 +48,8 @@ export default function BoardPage() {
       const co = await getCompanyBySlug(slug)
       if (!co) { setNotFound(true); setLoading(false); return }
       setCompany(co)
-      // Auto-seed sample data if board is empty
-      autoSeedIfEmpty(co).catch(() => {})
 
-      // Apply company accent color
-      if (co.accent_color && typeof document !== 'undefined') {
+      if (co.accent_color) {
         document.documentElement.style.setProperty('--coral', co.accent_color)
         document.documentElement.style.setProperty('--peach', co.accent_color + '15')
       }
@@ -75,53 +59,51 @@ export default function BoardPage() {
       setUser(u)
       if (u) setIsOwner(u.id === co.owner_id)
 
-      await Promise.all([fetchIdeas(co.id, u), fetchTopics(co.id), fetchStatuses(co.id)])
-    } catch { setNotFound(true) }
-    setLoading(false)
-  }
+      // Fetch ideas
+      const { data: ideaData } = await (supabase as any)
+        .from('ideas').select('*').eq('company_id', co.id).order('votes', { ascending: false })
+      setIdeas(ideaData || [])
 
-  const autoSeedIfEmpty = async (co: any) => {
-    try {
-      const { count } = await (supabase as any).from('ideas').select('*', { count: 'exact', head: true }).eq('company_id', co.id)
-      if ((count || 0) === 0) {
-        const res = await fetch('/api/seed-company', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId: co.id, companyName: co.name })
-        })
-        const data = await res.json()
-        if (data.success && !data.skipped) {
-          // Reload to show seeded data
-          await loadBoard()
-        }
+      // Fetch votes
+      if (u) {
+        const { data: votes } = await (supabase as any).from('votes').select('idea_id').eq('user_id', u.id)
+        setUserVotes(new Set((votes || []).map((v: any) => v.idea_id)))
+      } else {
+        const gid = getOrCreateGuestId()
+        const { data: gvotes } = await (supabase as any).from('votes').select('idea_id').eq('guest_id', gid)
+        setGuestVotes(new Set((gvotes || []).map((v: any) => v.idea_id)))
       }
-    } catch {}
-  }
 
-  const fetchIdeas = async (companyId: string, u: any) => {
-    const { data } = await (supabase as any).from('ideas').select('*').eq('company_id', companyId).order('votes', { ascending: false })
-    setIdeas(data || [])
-    if (u) {
-      const { data: votes } = await (supabase as any).from('votes').select('idea_id').eq('user_id', u.id)
-      setUserVotes(new Set((votes || []).map((v: any) => v.idea_id)))
-      const likedIds = await fetchEngagedIdeaIds('idea_likes')
-      const subIds = await fetchEngagedIdeaIds('idea_subscriptions')
-      setUserLikes(likedIds)
-      setUserSubscriptions(subIds)
-    } else {
-      const gid = getOrCreateGuestId()
-      const { data: gvotes } = await (supabase as any).from('votes').select('idea_id').eq('guest_id', gid)
-      setGuestVotes(new Set((gvotes || []).map((v: any) => v.idea_id)))
-    }
-  }
+      // Fetch topics
+      const { data: topicData } = await (supabase as any).from('topics').select('*').eq('company_id', co.id)
+      setTopics(topicData || [])
 
-  const fetchTopics = async (companyId: string) => {
-    const { data } = await (supabase as any).from('topics').select('*').eq('company_id', companyId)
-    setTopics(data || [])
-  }
+      // Fetch statuses
+      const { data: statusData } = await (supabase as any)
+        .from('statuses').select('*').eq('company_id', co.id).order('order_index', { ascending: true })
+      setStatuses(statusData || [])
 
-  const fetchStatuses = async (companyId: string) => {
-    const { data } = await (supabase as any).from('statuses').select('*').eq('company_id', companyId).order('order_index', { ascending: true })
-    setStatuses(data?.length ? data : DEFAULT_STATUSES)
+      // Auto-seed if empty
+      if (!ideaData?.length) {
+        try {
+          await fetch('/api/seed-company', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId: co.id, companyName: co.name })
+          })
+          // Reload ideas after seed
+          const { data: newIdeas } = await (supabase as any)
+            .from('ideas').select('*').eq('company_id', co.id).order('votes', { ascending: false })
+          setIdeas(newIdeas || [])
+          const { data: newStatuses } = await (supabase as any)
+            .from('statuses').select('*').eq('company_id', co.id).order('order_index', { ascending: true })
+          setStatuses(newStatuses || [])
+          const { data: newTopics } = await (supabase as any).from('topics').select('*').eq('company_id', co.id)
+          setTopics(newTopics || [])
+        } catch {}
+      }
+
+    } catch (e) { console.error(e); setNotFound(true) }
+    setLoading(false)
   }
 
   const handleVote = async (ideaId: string) => {
@@ -141,42 +123,33 @@ export default function BoardPage() {
     await (supabase as any).from('ideas').update({ votes: (ideas.find(i => i.id === ideaId)?.votes || 0) + delta }).eq('id', ideaId)
   }
 
-  const handleLike = async (ideaId: string) => {
-    if (!user) return
-    const liked = userLikes.has(ideaId)
-    const next = new Set(userLikes); liked ? next.delete(ideaId) : next.add(ideaId); setUserLikes(next)
-    setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, likes: (i.likes || 0) + (liked ? -1 : 1) } : i))
-    await toggleEngagement('idea_likes', ideaId, liked)
-  }
-
-  const handleSubscribe = async (ideaId: string) => {
-    if (!user) return
-    const subbed = userSubscriptions.has(ideaId)
-    const next = new Set(userSubscriptions); subbed ? next.delete(ideaId) : next.add(ideaId); setUserSubscriptions(next)
-    await toggleEngagement('idea_subscriptions', ideaId, subbed)
+  // Status key matching - handles both 'new' and 'Under consideration' formats
+  const matchesStatus = (ideaStatus: string, statusKey: string) => {
+    const s = (ideaStatus || '').toLowerCase().replace(/\s+/g, '_')
+    const k = (statusKey || '').toLowerCase().replace(/\s+/g, '_')
+    return s === k || s === k.replace(/_/g, '') || ideaStatus === statusKey
   }
 
   // Topic counts
-  const topicCounts = topics.map(t => ({ ...t, count: ideas.filter(i => i.topic_id === t.id).length }))
+  const topicCounts = topics.map(t => ({
+    ...t,
+    count: ideas.filter(i => i.topic_id === t.id).length
+  })).filter(t => t.count > 0)
 
-  // Status counts
+  // Status counts — use 'key' field (new, planned, in_progress, shipped)
   const statusCounts = statuses.map(s => ({
     ...s,
-    count: ideas.filter(i => {
-      const st = (i.status || '').toLowerCase()
-      const sn = s.name.toLowerCase()
-      return st === sn || st === sn.replace(/ /g, '_') || st === sn.replace(/ /g, '')
-    }).length
+    displayName: s.label || s.name || s.key,
+    count: ideas.filter(i => matchesStatus(i.status, s.key || s.name || s.label)).length
   }))
 
-  // Filter and sort
+  // Filter + sort
   const filtered = ideas
     .filter(i => {
       if (topicFilter && i.topic_id !== topicFilter) return false
       if (statusFilter) {
-        const st = (i.status || '').toLowerCase()
-        const sf = statusFilter.toLowerCase()
-        if (st !== sf && st !== sf.replace(/ /g, '_') && st !== sf.replace(/ /g, '')) return false
+        const st = statuses.find(s => (s.label || s.name || s.key) === statusFilter)
+        if (st && !matchesStatus(i.status, st.key || st.name || st.label)) return false
       }
       if (search && !i.title?.toLowerCase().includes(search.toLowerCase())) return false
       return true
@@ -184,7 +157,6 @@ export default function BoardPage() {
     .sort((a, b) => {
       if (sortBy === 'Latest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       if (sortBy === 'Most Votes') return (b.votes || 0) - (a.votes || 0)
-      // Trending
       const ageA = Math.max(1, (Date.now() - new Date(a.created_at).getTime()) / 3600000)
       const ageB = Math.max(1, (Date.now() - new Date(b.created_at).getTime()) / 3600000)
       return ((b.votes || 0) / ageB) - ((a.votes || 0) / ageA)
@@ -212,36 +184,33 @@ export default function BoardPage() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
         <div className="flex gap-6">
 
-          {/* LEFT SIDEBAR — matches colvy.com exactly */}
+          {/* LEFT SIDEBAR */}
           <aside className="hidden lg:flex flex-col w-48 shrink-0">
-
-            {/* Statuses */}
             {statusCounts.length > 0 && (
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>Statuses</p>
-                  <Link href={`/board/${slug}/roadmap`} className="text-xs hover:underline" style={{ color: 'var(--coral)' }}>
-                    View all
-                  </Link>
+                  <Link href="/roadmap" className="text-xs hover:underline" style={{ color: 'var(--coral)' }}>View all</Link>
                 </div>
                 {statusCounts.map(s => (
-                  <button key={s.name} onClick={() => setStatusFilter(statusFilter === s.name ? null : s.name)}
+                  <button key={s.key || s.id}
+                    onClick={() => setStatusFilter(statusFilter === s.displayName ? null : s.displayName)}
                     className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left cursor-pointer mb-0.5 transition-all"
-                    style={{ background: statusFilter === s.name ? (s.color + '20') : 'transparent', color: statusFilter === s.name ? s.color : 'var(--slate)' }}>
+                    style={{ background: statusFilter === s.displayName ? (s.color + '20') : 'transparent', color: statusFilter === s.displayName ? s.color : 'var(--slate)' }}>
                     <div className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color || 'var(--coral)' }} />
-                    {s.name}
+                    {s.displayName}
                   </button>
                 ))}
               </div>
             )}
 
-            {/* Topics */}
-            {topicCounts.filter(t => t.count > 0).length > 0 && (
+            {topicCounts.length > 0 && (
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--slate)' }}>Topics</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {topicCounts.filter(t => t.count > 0).map(t => (
-                    <button key={t.id} onClick={() => setTopicFilter(topicFilter === t.id ? null : t.id)}
+                  {topicCounts.map(t => (
+                    <button key={t.id}
+                      onClick={() => setTopicFilter(topicFilter === t.id ? null : t.id)}
                       className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium cursor-pointer transition-all"
                       style={{
                         background: topicFilter === t.id ? 'var(--coral)' : 'var(--canvas)',
@@ -249,8 +218,7 @@ export default function BoardPage() {
                         border: `1px solid ${topicFilter === t.id ? 'var(--coral)' : 'var(--border)'}`,
                       }}>
                       {t.emoji && <span>{t.emoji}</span>}
-                      {t.name}
-                      <span className="opacity-60">{t.count}</span>
+                      {t.name}<span className="opacity-60 ml-0.5">{t.count}</span>
                     </button>
                   ))}
                 </div>
@@ -258,12 +226,9 @@ export default function BoardPage() {
             )}
           </aside>
 
-          {/* RIGHT — MAIN CONTENT */}
+          {/* MAIN CONTENT */}
           <div className="flex-1 min-w-0">
-
-            {/* Search + controls bar — matches colvy.com */}
             <div className="flex items-center gap-2 mb-5">
-              {/* Search */}
               <div className="relative flex-1">
                 <svg className="absolute left-3.5 top-1/2 -translate-y-1/2" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ color: 'var(--slate)' }}>
                   <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -272,16 +237,12 @@ export default function BoardPage() {
                   className="w-full pl-9 pr-4 py-2.5 rounded-xl border text-sm focus:outline-none bg-white"
                   style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
               </div>
-
-              {/* Submit idea button */}
               <button onClick={() => setShowModal(true)}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer hover:opacity-90 transition-all shrink-0"
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer hover:opacity-90 shrink-0"
                 style={{ background: 'var(--coral)' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Submit Idea
               </button>
-
-              {/* Sort */}
               <select value={sortBy} onChange={e => setSortBy(e.target.value)}
                 className="pl-3 pr-8 py-2.5 rounded-xl border text-sm focus:outline-none cursor-pointer shrink-0 bg-white"
                 style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
@@ -289,7 +250,6 @@ export default function BoardPage() {
               </select>
             </div>
 
-            {/* Ideas count */}
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm" style={{ color: 'var(--slate)' }}>
                 <span className="font-semibold" style={{ color: 'var(--ink)' }}>{filtered.length}</span> idea{filtered.length !== 1 ? 's' : ''} total
@@ -302,7 +262,6 @@ export default function BoardPage() {
               )}
             </div>
 
-            {/* Ideas list */}
             {filtered.length === 0 ? (
               <div className="text-center py-20">
                 <div className="text-5xl mb-4">💡</div>
@@ -327,11 +286,7 @@ export default function BoardPage() {
                     key={idea.id}
                     idea={idea}
                     hasVoted={user ? userVotes.has(idea.id) : guestVotes.has(idea.id)}
-                    liked={userLikes.has(idea.id)}
-                    subscribed={userSubscriptions.has(idea.id)}
                     onVote={handleVote}
-                    onLike={handleLike}
-                    onSubscribe={handleSubscribe}
                     onClick={() => { setSelectedIdea(idea); setShowDetailModal(true) }}
                     onStatusChange={isOwner ? async (id: string, status: string) => {
                       await (supabase as any).from('ideas').update({ status }).eq('id', id)
@@ -355,9 +310,7 @@ export default function BoardPage() {
       {showDetailModal && selectedIdea && (
         <IdeaDetailModal
           idea={selectedIdea}
-          onClose={() => { setShowDetailModal(false); setSelectedIdea(null) }}
-          onUpdated={loadBoard}
-          isAdmin={isOwner}
+          onClose={() => { setShowDetailModal(false); setSelectedIdea(null); loadBoard() }}
         />
       )}
     </div>

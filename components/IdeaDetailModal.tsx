@@ -23,7 +23,7 @@ const PRIORITY_PRESETS: Record<string, { label: string; color: string; bg: strin
 
 type SubPanel = null | 'status' | 'priority' | 'visibility'
 
-export default function IdeaDetailModal({ idea, onClose }: { idea: any; onClose: () => void }) {
+export default function IdeaDetailModal({ idea, onClose, showActivity = true }: { idea: any; onClose: () => void; showActivity?: boolean }) {
   const [status, setStatus] = useState(idea.status || 'new')
   const [priority, setPriority] = useState(idea.priority || '')
   const [isPrivate, setIsPrivate] = useState(idea.is_private || false)
