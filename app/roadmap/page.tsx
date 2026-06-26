@@ -41,27 +41,36 @@ export default function RoadmapPage() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
+  const getCompanyId = async () => {
+    if (typeof window === 'undefined') return null
+    const h = window.location.hostname
+    if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+      const slug = h.replace('.colvy.com', '')
+      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).single()
+      return data?.id || null
+    }
+    return null
+  }
+
   const fetchIdeas = async () => {
-    const { data } = await supabase
-      .from('ideas')
-      .select('*')
-      .eq('show_on_roadmap', true)
-      .order('order_index', { ascending: true })
-      .order('created_at', { ascending: false })
+    const companyId = await getCompanyId()
+    let q = (supabase as any).from('ideas').select('*')
+    if (companyId) {
+      q = q.eq('company_id', companyId)
+    }
+    const { data } = await q.order('votes', { ascending: false })
     if (data) setIdeas(data)
     setLoading(false)
   }
 
   const fetchCustomStatuses = async () => {
-    // Try to fetch custom statuses; if table doesn't exist, use defaults
     try {
-      const { data, error } = await supabase.from('statuses').select('*').order('order_index', { ascending: true })
-      if (!error && data) {
-        setCustomStatuses(data)
-      }
-    } catch (err) {
-      // statuses table doesn't exist yet - use defaults
-    }
+      const companyId = await getCompanyId()
+      let q = (supabase as any).from('statuses').select('*').order('order_index', { ascending: true })
+      if (companyId) q = q.eq('company_id', companyId)
+      const { data, error } = await q
+      if (!error && data && data.length > 0) setCustomStatuses(data)
+    } catch {}
   }
 
   const allStatuses = (() => {

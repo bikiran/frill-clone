@@ -30,13 +30,23 @@ export default function AnnouncementsPage() {
     fetchAnnouncements()
   }, [])
 
+  const getCompanyId = async () => {
+    if (typeof window === 'undefined') return null
+    const h = window.location.hostname
+    if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
+      const slug = h.replace('.colvy.com', '')
+      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).single()
+      return data?.id || null
+    }
+    return null
+  }
+
   const fetchAnnouncements = async () => {
     try {
-      const { data } = await supabase
-        .from('announcements')
-        .select('*')
-        .order('is_pinned', { ascending: false })
-        .order('created_at', { ascending: false })
+      const companyId = await getCompanyId()
+      let q = (supabase as any).from('announcements').select('*').eq('status', 'published')
+      if (companyId) q = q.eq('company_id', companyId)
+      const { data } = await q.order('created_at', { ascending: false })
 
       if (data && data.length === 0) {
         const samples = [

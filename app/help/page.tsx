@@ -54,6 +54,17 @@ export default function HelpCentrePage() {
     setShowSearchDropdown(results.length > 0)
   }, [search, articles])
 
+  const getCompanyId = async () => {
+    if (typeof window === 'undefined') return null
+    const h = window.location.hostname
+    if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
+      const slug = h.replace('.colvy.com', '')
+      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).single()
+      return data?.id || null
+    }
+    return null
+  }
+
   const fetchArticles = async () => {
     try {
       const { data } = await (supabase as any).from('help_articles').select('*').eq('status', 'published').order('created_at', { ascending: false })
