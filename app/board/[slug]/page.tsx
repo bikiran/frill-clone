@@ -61,6 +61,8 @@ export default function BoardPage() {
       const co = await getCompanyBySlug(slug)
       if (!co) { setNotFound(true); setLoading(false); return }
       setCompany(co)
+      // Auto-seed sample data if board is empty
+      autoSeedIfEmpty(co).catch(() => {})
 
       // Apply company accent color
       if (co.accent_color && typeof document !== 'undefined') {
@@ -76,6 +78,23 @@ export default function BoardPage() {
       await Promise.all([fetchIdeas(co.id, u), fetchTopics(co.id), fetchStatuses(co.id)])
     } catch { setNotFound(true) }
     setLoading(false)
+  }
+
+  const autoSeedIfEmpty = async (co: any) => {
+    try {
+      const { count } = await (supabase as any).from('ideas').select('*', { count: 'exact', head: true }).eq('company_id', co.id)
+      if ((count || 0) === 0) {
+        const res = await fetch('/api/seed-company', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId: co.id, companyName: co.name })
+        })
+        const data = await res.json()
+        if (data.success && !data.skipped) {
+          // Reload to show seeded data
+          await loadBoard()
+        }
+      }
+    } catch {}
   }
 
   const fetchIdeas = async (companyId: string, u: any) => {
