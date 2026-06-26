@@ -176,7 +176,7 @@ export default function SettingsPage() {
     }
     
     try {
-      // Save to database (cross-device)
+      // Save to site_settings table (cross-device)
       await supabase.from('site_settings').upsert({
         key: 'general',
         value: settingsData,
@@ -185,8 +185,24 @@ export default function SettingsPage() {
     } catch (e) {
       console.error('DB save failed:', e)
     }
+
+    // Save domain + colour to companies table so custom domains work
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        await (supabase as any).from('companies').update({
+          name: companyName,
+          accent_color: accentColor,
+          board_domain: boardDomain || null,
+          help_domain: helpDomain || null,
+          logo_url: logoUrl || null,
+        }).eq('owner_id', session.user.id)
+      }
+    } catch (e) {
+      console.error('Company update failed:', e)
+    }
     
-    // Also cache in localStorage for immediate layout access
+    // Cache in localStorage for immediate layout access
     if (typeof window !== 'undefined') {
       localStorage.setItem('site_settings', JSON.stringify(settingsData))
     }
@@ -1119,10 +1135,19 @@ export default function SettingsPage() {
               <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Your Colvy URL</p>
-                  <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>Active</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>● Active</span>
                 </div>
                 <p className="text-sm font-mono" style={{ color: 'var(--coral)' }}>
-                  {typeof window !== 'undefined' ? window.location.hostname.replace(/^www\./, '').replace('colvy.com', '').replace(/\.$/, '') || 'yourslug' : 'yourslug'}.colvy.com
+                  {(() => {
+                    // Extract subdomain from current hostname only if on *.colvy.com
+                    if (typeof window === 'undefined') return 'yourslug.colvy.com'
+                    const h = window.location.hostname
+                    if (h.endsWith('.colvy.com')) {
+                      const sub = h.replace('.colvy.com', '')
+                      if (sub && sub !== 'www') return `${sub}.colvy.com`
+                    }
+                    return 'yourslug.colvy.com'
+                  })()}
                 </p>
                 <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>This is your permanent Colvy URL — always active, no setup needed.</p>
               </div>

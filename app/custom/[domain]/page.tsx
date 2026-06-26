@@ -17,24 +17,34 @@ export default function CustomDomainPage() {
     if (!hostname) return
     const resolve = async () => {
       try {
-        // Look up company by board_domain OR help_domain
+        // Try board_domain first
         const { data: byBoard } = await (supabase as any)
           .from('companies')
           .select('*')
           .eq('board_domain', hostname)
-          .single()
+          .maybeSingle()
 
+        if (byBoard) {
+          setCompany(byBoard)
+          setIsHelpDomain(false)
+          setLoading(false)
+          return
+        }
+
+        // Try help_domain
         const { data: byHelp } = await (supabase as any)
           .from('companies')
           .select('*')
           .eq('help_domain', hostname)
-          .single()
+          .maybeSingle()
 
-        const co = byBoard || byHelp
-        if (!co) { setLoading(false); return }
+        if (byHelp) {
+          setCompany(byHelp)
+          setIsHelpDomain(true)
+          setLoading(false)
+          return
+        }
 
-        setCompany(co)
-        setIsHelpDomain(!!byHelp)
         setLoading(false)
       } catch {
         setLoading(false)
