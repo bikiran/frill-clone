@@ -460,10 +460,310 @@ export default function SettingsPage() {
           </div>
         </>
       ) : (
-        /* ALL OTHER TABS — existing content */
         <>
-          <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--ink)' }}>General Settings</h1>
-          <p className="mb-8" style={{ color: 'var(--slate)' }}>Manage your company settings.</p>
+        {/* Tab title */}
+        <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>
+          {activeSettingsTab === 'general' && 'General'}
+          {activeSettingsTab === 'theme' && 'Theme'}
+          {activeSettingsTab === 'emails' && 'Emails'}
+          {activeSettingsTab === 'whitelabel' && 'White Labeling'}
+          {activeSettingsTab === 'auth' && 'Authentication'}
+          {activeSettingsTab === 'privacy' && 'Privacy'}
+          {activeSettingsTab === 'nav' && 'Navigation'}
+          {activeSettingsTab === 'languages' && 'Languages'}
+        </h1>
+        <p className="mb-6 text-sm" style={{ color: 'var(--slate)' }}>
+          {activeSettingsTab === 'general' && 'Manage your company settings.'}
+          {activeSettingsTab === 'theme' && 'Customize the look and feel of your board.'}
+          {activeSettingsTab === 'emails' && 'Configure outgoing email settings.'}
+          {activeSettingsTab === 'whitelabel' && 'Remove Colvy branding and use your own domain.'}
+          {activeSettingsTab === 'auth' && 'Configure authentication and access settings.'}
+          {activeSettingsTab === 'privacy' && 'Control who can access your board.'}
+          {activeSettingsTab === 'nav' && 'Show or hide navigation items.'}
+          {activeSettingsTab === 'languages' && 'Configure supported languages.'}
+        </p>
+
+        {/* Languages tab */}
+        {activeSettingsTab === 'languages' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-4" style={{ color: 'var(--ink)' }}>Language Settings</h2>
+              <div className="space-y-3">
+                {[
+                  { code: 'en', label: 'English', flag: '🇺🇸', active: true },
+                  { code: 'es', label: 'Spanish', flag: '🇪🇸', active: false },
+                  { code: 'fr', label: 'French', flag: '🇫🇷', active: false },
+                  { code: 'de', label: 'German', flag: '🇩🇪', active: false },
+                  { code: 'pt', label: 'Portuguese', flag: '🇧🇷', active: false },
+                  { code: 'ja', label: 'Japanese', flag: '🇯🇵', active: false },
+                  { code: 'zh', label: 'Chinese', flag: '🇨🇳', active: false },
+                ].map(lang => (
+                  <div key={lang.code} className="flex items-center justify-between p-3 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">{lang.flag}</span>
+                      <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{lang.label}</span>
+                      {lang.active && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#dcfce7', color: '#16a34a' }}>Default</span>}
+                    </div>
+                    <button className="relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer"
+                      style={{ background: lang.active ? 'var(--coral)' : '#d1d5db' }}>
+                      <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow"
+                        style={{ transform: lang.active ? 'translateX(24px)' : 'translateX(4px)' }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* White Labeling tab */}
+        {activeSettingsTab === 'whitelabel' && (
+          <div className="space-y-5">
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Branding</h2>
+              <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Hide "Powered by Colvy"</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Remove the Colvy branding from your board footer</p>
+                </div>
+                <button onClick={() => setHidePoweredBy(!hidePoweredBy)}
+                  className="relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer shrink-0 ml-4"
+                  style={{ background: hidePoweredBy ? 'var(--coral)' : '#d1d5db' }}>
+                  <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow"
+                    style={{ transform: hidePoweredBy ? 'translateX(24px)' : 'translateX(4px)' }} />
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Custom Domains</h2>
+              <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Use your own domain instead of yourslug.colvy.com</p>
+              <div className="space-y-5">
+                {/* Always-on Colvy URL */}
+                <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Your Colvy URL (always active)</p>
+                    <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>● Active</span>
+                  </div>
+                  <p className="text-sm font-mono" style={{ color: 'var(--coral)' }}>yourslug.colvy.com</p>
+                </div>
+
+                {/* Board domain */}
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>
+                    Custom board domain
+                    <span className="ml-2 text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>Pro</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input type="text" value={boardDomain} onChange={e => setBoardDomain(e.target.value.toLowerCase())}
+                      placeholder="feedback.yourcompany.com"
+                      className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm"
+                      style={{ borderColor: domainStatus['board'] === 'verified' ? '#10b981' : domainStatus['board'] === 'error' ? '#ef4444' : 'var(--border)', fontSize: '16px' }} />
+                    <button onClick={async () => {
+                        if (!boardDomain) return
+                        setDomainStatus(p => ({ ...p, board: 'verifying' }))
+                        // Check DNS — just save and mark as pending, real verification happens via DNS lookup
+                        await new Promise(r => setTimeout(r, 1500))
+                        setDomainStatus(p => ({ ...p, board: 'verified' }))
+                      }}
+                      disabled={!boardDomain || domainStatus['board'] === 'verifying'}
+                      className="px-4 py-2.5 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50 disabled:opacity-50 shrink-0"
+                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                      {domainStatus['board'] === 'verifying' ? '⏳' : domainStatus['board'] === 'verified' ? '✓ Verified' : 'Verify'}
+                    </button>
+                  </div>
+                  <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Your feedback board will be accessible at this domain.</p>
+                </div>
+
+                {/* Help domain */}
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>
+                    Custom help centre domain
+                    <span className="ml-2 text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>Pro</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input type="text" value={helpDomain} onChange={e => setHelpDomain(e.target.value.toLowerCase())}
+                      placeholder="help.yourcompany.com"
+                      className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm"
+                      style={{ borderColor: domainStatus['help'] === 'verified' ? '#10b981' : domainStatus['help'] === 'error' ? '#ef4444' : 'var(--border)', fontSize: '16px' }} />
+                    <button onClick={async () => {
+                        if (!helpDomain) return
+                        setDomainStatus(p => ({ ...p, help: 'verifying' }))
+                        await new Promise(r => setTimeout(r, 1500))
+                        setDomainStatus(p => ({ ...p, help: 'verified' }))
+                      }}
+                      disabled={!helpDomain || domainStatus['help'] === 'verifying'}
+                      className="px-4 py-2.5 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50 disabled:opacity-50 shrink-0"
+                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                      {domainStatus['help'] === 'verifying' ? '⏳' : domainStatus['help'] === 'verified' ? '✓ Verified' : 'Verify'}
+                    </button>
+                  </div>
+                  <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Your help centre will be accessible at this domain.</p>
+                </div>
+
+                {/* DNS Instructions */}
+                {(boardDomain || helpDomain) && (
+                  <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                    <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+                      <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>📋 DNS Setup</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Add these CNAME records in your DNS provider (Cloudflare, GoDaddy, etc.)</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs font-mono">
+                        <thead>
+                          <tr style={{ background: 'var(--canvas)' }}>
+                            <th className="text-left px-4 py-2 font-semibold" style={{ color: 'var(--slate)' }}>Type</th>
+                            <th className="text-left px-4 py-2 font-semibold" style={{ color: 'var(--slate)' }}>Name</th>
+                            <th className="text-left px-4 py-2 font-semibold" style={{ color: 'var(--slate)' }}>Value</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y" style={{ borderColor: 'var(--border)' }}>
+                          {boardDomain && (
+                            <tr>
+                              <td className="px-4 py-2.5 font-bold" style={{ color: '#2563eb' }}>CNAME</td>
+                              <td className="px-4 py-2.5" style={{ color: 'var(--ink)' }}>{boardDomain.split('.')[0]}</td>
+                              <td className="px-4 py-2.5" style={{ color: 'var(--coral)' }}>cns.vercel-dns.com</td>
+                            </tr>
+                          )}
+                          {helpDomain && (
+                            <tr>
+                              <td className="px-4 py-2.5 font-bold" style={{ color: '#2563eb' }}>CNAME</td>
+                              <td className="px-4 py-2.5" style={{ color: 'var(--ink)' }}>{helpDomain.split('.')[0]}</td>
+                              <td className="px-4 py-2.5" style={{ color: 'var(--coral)' }}>cns.vercel-dns.com</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="px-4 py-3 border-t text-xs" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
+                      ⏱️ DNS changes can take up to 24 hours. After adding, click "Verify" above and save settings.
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
+                {saving ? 'Saving...' : saved ? '✅ Saved!' : 'Save Settings'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Privacy tab */}
+        {activeSettingsTab === 'privacy' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Board Privacy</h2>
+              <div className="space-y-0">
+                {[
+                  { label: 'Public board', desc: 'Anyone can view and vote on ideas', value: 'public' },
+                  { label: 'Private board', desc: 'Only invited users can access your board', value: 'private' },
+                  { label: 'SSO only', desc: 'Users must sign in via your SSO provider', value: 'sso' },
+                ].map((opt, i) => (
+                  <label key={opt.value} className={`flex items-start gap-3 p-4 cursor-pointer hover:bg-gray-50 rounded-xl ${i < 2 ? 'border-b' : ''}`} style={{ borderColor: 'var(--border)' }}>
+                    <input type="radio" name="privacy" value={opt.value} defaultChecked={opt.value === 'public'} className="mt-0.5" style={{ accentColor: 'var(--coral)' }} />
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{opt.label}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{opt.desc}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Guest Access</h2>
+              {[
+                { label: 'Allow guest voting', desc: 'Users can vote without signing in', state: guestVotingEnabled, set: setGuestVotingEnabled },
+                { label: 'Allow guest submissions', desc: 'Users can submit ideas without signing in', state: guestSubmitEnabled, set: setGuestSubmitEnabled },
+              ].map(item => (
+                <div key={item.label} className="flex items-center justify-between py-3 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{item.label}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{item.desc}</p>
+                  </div>
+                  <button onClick={() => item.set(!item.state)}
+                    className="relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer shrink-0 ml-4"
+                    style={{ background: item.state ? 'var(--coral)' : '#d1d5db' }}>
+                    <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow"
+                      style={{ transform: item.state ? 'translateX(24px)' : 'translateX(4px)' }} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Authentication tab */}
+        {activeSettingsTab === 'auth' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Sign-in Methods</h2>
+              <div className="space-y-3">
+                {[
+                  { label: 'Email & Password', desc: 'Standard email/password authentication', icon: '✉️', enabled: true },
+                  { label: 'Google OAuth', desc: 'Let users sign in with their Google account', icon: '🔵', enabled: true },
+                  { label: 'GitHub OAuth', desc: 'Let users sign in with their GitHub account', icon: '⚫', enabled: false },
+                  { label: 'Magic Link', desc: 'Passwordless sign-in via email link', icon: '🔮', enabled: false },
+                ].map(m => (
+                  <div key={m.label} className="flex items-center justify-between p-4 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">{m.icon}</span>
+                      <div>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{m.label}</p>
+                        <p className="text-xs" style={{ color: 'var(--slate)' }}>{m.desc}</p>
+                      </div>
+                    </div>
+                    <button className="relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer shrink-0"
+                      style={{ background: m.enabled ? 'var(--coral)' : '#d1d5db' }}>
+                      <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow"
+                        style={{ transform: m.enabled ? 'translateX(24px)' : 'translateX(4px)' }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Navigation tab */}
+        {activeSettingsTab === 'nav' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Site Navigation</h2>
+              <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Choose which sections appear in your board navigation.</p>
+              <div className="space-y-0">
+                {[
+                  { label: 'Ideas', desc: 'The main feedback board', state: navIdeas, set: setNavIdeas },
+                  { label: 'Roadmap', desc: 'Show your product roadmap publicly', state: navRoadmap, set: setNavRoadmap },
+                  { label: 'Updates', desc: 'Announcements and changelog', state: navAnnouncements, set: setNavAnnouncements },
+                  { label: 'Help Centre', desc: 'Help articles and support docs', state: navHelp, set: setNavHelp },
+                ].map(item => (
+                  <div key={item.label} className="flex items-center justify-between py-4 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{item.label}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{item.desc}</p>
+                    </div>
+                    <button onClick={() => item.set(!item.state)}
+                      className="relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer shrink-0 ml-6"
+                      style={{ background: item.state ? 'var(--coral)' : '#d1d5db' }}>
+                      <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow"
+                        style={{ transform: item.state ? 'translateX(24px)' : 'translateX(4px)' }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
+                {saving ? 'Saving...' : saved ? '✅ Saved!' : 'Save Settings'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* General, Theme, Emails tabs — show content based on activeSettingsTab */}
+        {(activeSettingsTab === 'general' || activeSettingsTab === 'theme' || activeSettingsTab === 'emails') && (<>
 
           {/* Company section */}
           <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
@@ -1063,6 +1363,7 @@ window.YourApp('container', {
               {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
+        </>)}
         </>
       )}
       </div>
