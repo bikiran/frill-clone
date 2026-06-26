@@ -103,10 +103,10 @@ export default function BoardPage() {
     if (u) {
       const { data: votes } = await (supabase as any).from('votes').select('idea_id').eq('user_id', u.id)
       setUserVotes(new Set((votes || []).map((v: any) => v.idea_id)))
-      const { engagedIds: likedIds } = await fetchEngagedIdeaIds(u.id, 'like')
-      const { engagedIds: subIds } = await fetchEngagedIdeaIds(u.id, 'subscribe')
-      setUserLikes(new Set(likedIds))
-      setUserSubscriptions(new Set(subIds))
+      const likedIds = await fetchEngagedIdeaIds('idea_likes')
+      const subIds = await fetchEngagedIdeaIds('idea_subscriptions')
+      setUserLikes(likedIds)
+      setUserSubscriptions(subIds)
     } else {
       const gid = getOrCreateGuestId()
       const { data: gvotes } = await (supabase as any).from('votes').select('idea_id').eq('guest_id', gid)
@@ -146,14 +146,14 @@ export default function BoardPage() {
     const liked = userLikes.has(ideaId)
     const next = new Set(userLikes); liked ? next.delete(ideaId) : next.add(ideaId); setUserLikes(next)
     setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, likes: (i.likes || 0) + (liked ? -1 : 1) } : i))
-    await toggleEngagement(user.id, ideaId, 'like', liked)
+    await toggleEngagement('idea_likes', ideaId, liked)
   }
 
   const handleSubscribe = async (ideaId: string) => {
     if (!user) return
     const subbed = userSubscriptions.has(ideaId)
     const next = new Set(userSubscriptions); subbed ? next.delete(ideaId) : next.add(ideaId); setUserSubscriptions(next)
-    await toggleEngagement(user.id, ideaId, 'subscribe', subbed)
+    await toggleEngagement('idea_subscriptions', ideaId, subbed)
   }
 
   // Topic counts
