@@ -1137,7 +1137,7 @@ export default function IdeaDetailModal({ idea, onClose }: { idea: any; onClose:
             )}
 
             {/* Activity */}
-            <div className="ml-0 md:ml-16">
+            <div className="ml-0 md:ml-16" style={{ display: showActivity ? undefined : 'none' }}>
               <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--ink)' }}>Activity</h3>
               
               {/* Pin activity */}

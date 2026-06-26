@@ -44,24 +44,13 @@ export default function AnnouncementsPage() {
   const fetchAnnouncements = async () => {
     try {
       const companyId = await getCompanyId()
-      let q = (supabase as any).from('announcements').select('*').eq('status', 'published')
+      let q = (supabase as any).from('announcements').select('*')
       if (companyId) q = q.eq('company_id', companyId)
+      else q = q.eq('status', 'published')
       const { data } = await q.order('created_at', { ascending: false })
 
-      if (data && data.length === 0) {
-        const samples = [
-          { title: "🚀 Welcome to Updates!", description: "<p>This is where you'll find all our latest news, feature releases, and product improvements. We're committed to keeping you in the loop.</p><p>You can <strong>subscribe</strong> to get notified whenever we publish something new.</p>", tag: 'announcement', views: 1, impressions: 1, is_pinned: true },
-          { title: "New Dashboard Released", description: "<p>We've completely redesigned the dashboard with a focus on user experience.</p>", tag: 'new_feature', views: 45, impressions: 312, is_pinned: false },
-          { title: "Critical Bug Fixed", description: "<p>Fixed an issue where some users couldn't vote on ideas.</p>", tag: 'bug_fix', views: 28, impressions: 156, is_pinned: false },
-        ]
-        for (const s of samples) await supabase.from('announcements').insert(s)
-        const { data: nd } = await supabase.from('announcements').select('*').order('created_at', { ascending: false })
-        setAnnouncements(nd || [])
-        if (nd?.[0]) setSelectedId(nd[0].id)
-      } else {
-        setAnnouncements(data || [])
-        if (data?.[0] && !selectedId) setSelectedId(data[0].id)
-      }
+      setAnnouncements(data || [])
+      if (data?.[0] && !selectedId) setSelectedId(data[0].id)
     } catch (err) {
       console.error(err)
     }
