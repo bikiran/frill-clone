@@ -60,6 +60,10 @@ export default function CustomDomainPage() {
 
   const accent = company?.accent_color || '#ff7a6b'
   const boardUrl = company ? `https://${company.slug}.colvy.com` : '#'
+  // For nav links: stay on the custom domain if we're on one
+  const currentBase = typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.host}`
+    : boardUrl
 
   // Derived state
   const cats = ['All', ...Array.from(new Set(articles.map(a => a.category).filter(Boolean)))]
@@ -86,10 +90,10 @@ export default function CustomDomainPage() {
 
   // Shared nav header component
   const navLinks = [
-    { label: 'Ideas', href: boardUrl },
-    { label: 'Roadmap', href: `${boardUrl}/roadmap` },
-    { label: 'Updates', href: `${boardUrl}/announcements` },
-    { label: 'Help', href: `${boardUrl}/help`, active: isHelp },
+    { label: 'Ideas', href: `${currentBase}/` },
+    { label: 'Roadmap', href: `${currentBase}/roadmap` },
+    { label: 'Updates', href: `${currentBase}/announcements` },
+    { label: 'Help', href: `${currentBase}/help`, active: isHelp },
   ]
 
   const NavHeader = (

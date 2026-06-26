@@ -73,7 +73,7 @@ export default function BoardPage() {
         fetchTopics(co.id),
         fetchStatuses(co.id),
       ])
-    } catch { setNotFound(true) }
+    } catch (e) { console.error('Board load error:', e); setNotFound(true) }
     setLoading(false)
   }
 
@@ -84,10 +84,12 @@ export default function BoardPage() {
     if (u) {
       const { data: votes } = await (supabase as any).from('votes').select('idea_id').eq('user_id', u.id)
       setUserVotes(new Set((votes || []).map((v: any) => v.idea_id)))
-      const likedIds = await fetchEngagedIdeaIds('idea_likes')
-      const subIds = await fetchEngagedIdeaIds('idea_subscriptions')
-      setUserLikes(likedIds)
-      setUserSubscriptions(subIds)
+      try {
+        const likedIds = await fetchEngagedIdeaIds('idea_likes')
+        const subIds = await fetchEngagedIdeaIds('idea_subscriptions')
+        setUserLikes(likedIds)
+        setUserSubscriptions(subIds)
+      } catch { /* idea_likes/idea_subscriptions tables may not exist yet */ }
     } else {
       const gid = getOrCreateGuestId()
       const { data: gvotes } = await (supabase as any).from('votes').select('idea_id').eq('guest_id', gid)
