@@ -84,7 +84,6 @@ export default function BoardPage() {
     if (u) {
       const { data: votes } = await (supabase as any).from('votes').select('idea_id').eq('user_id', u.id)
       setUserVotes(new Set((votes || []).map((v: any) => v.idea_id)))
-      // Fixed: fetchEngagedIdeaIds takes only (table) — reads current user from session internally
       const likedIds = await fetchEngagedIdeaIds('idea_likes')
       const subIds = await fetchEngagedIdeaIds('idea_subscriptions')
       setUserLikes(likedIds)
@@ -129,7 +128,6 @@ export default function BoardPage() {
     const liked = userLikes.has(ideaId)
     const next = new Set(userLikes); liked ? next.delete(ideaId) : next.add(ideaId); setUserLikes(next)
     setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, likes: (i.likes || 0) + (liked ? -1 : 1) } : i))
-    // Fixed: toggleEngagement takes (table, ideaId, currentlyActive)
     await toggleEngagement('idea_likes', ideaId, liked)
   }
 
@@ -137,7 +135,6 @@ export default function BoardPage() {
     if (!user) return
     const subbed = userSubscriptions.has(ideaId)
     const next = new Set(userSubscriptions); subbed ? next.delete(ideaId) : next.add(ideaId); setUserSubscriptions(next)
-    // Fixed: toggleEngagement takes (table, ideaId, currentlyActive)
     await toggleEngagement('idea_subscriptions', ideaId, subbed)
   }
 
@@ -147,33 +144,21 @@ export default function BoardPage() {
     count: ideas.filter(i => i.topic_id === t.id).length
   })).filter(t => t.count > 0)
 
-  // Status counts — match by key OR label/name
+  // Status counts from custom statuses
   const statusCounts = customStatuses.map(s => ({
     ...s,
-    count: ideas.filter(i => {
-      const st = (i.status || '').toLowerCase()
-      const key = (s.key || '').toLowerCase()
-      const label = (s.label || s.name || '').toLowerCase()
-      return st === key || st === label || st === label.replace(/\s+/g, '_')
-    }).length
+    count: ideas.filter(i => i.status === s.name.toLowerCase().replace(/\s+/g, '_') || i.status === s.name).length
   }))
 
   // Filter and sort
   const filtered = ideas
     .filter(i => !topicFilter || i.topic_id === topicFilter)
-    .filter(i => {
-      if (!statusFilter) return true
-      const st = (i.status || '').toLowerCase()
-      const s = customStatuses.find(s => (s.label || s.name) === statusFilter)
-      if (!s) return false
-      const key = (s.key || '').toLowerCase()
-      const label = (s.label || s.name || '').toLowerCase()
-      return st === key || st === label || st === label.replace(/\s+/g, '_')
-    })
+    .filter(i => !statusFilter || i.status === statusFilter)
     .filter(i => !search || i.title?.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       if (sortBy === 'latest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       if (sortBy === 'most_votes') return (b.votes || 0) - (a.votes || 0)
+      // trending = votes / age
       const ageA = (Date.now() - new Date(a.created_at).getTime()) / 3600000
       const ageB = (Date.now() - new Date(b.created_at).getTime()) / 3600000
       return ((b.votes || 0) / Math.max(ageB, 1)) - ((a.votes || 0) / Math.max(ageA, 1))
@@ -198,7 +183,82 @@ export default function BoardPage() {
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
-      {/* Main content — header is handled by app/layout.tsx */}
+      {/* Reuse the same layout as colvy.com — header is handled by app/layout.tsx */}
+      {/* But we need a company-specific nav on subdomains */}
+      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur-md" style={{ borderColor: 'var(--border)' }}>
+        <nav className="h-14 px-6 flex items-center justify-between max-w-5xl mx-auto">
+          <Link href={`/board/${slug}`} className="flex items-center gap-2 font-bold text-lg">
+            {company.logo_url
+              ? <img src={company.logo_url} alt={company.name} className="h-7 w-auto" onError={(e: any) => e.target.style.display='none'} />
+              : null}
+            <span style={{ color: 'var(--coral)' }}>{company.name}</span>
+          </Link>
+
+          <div className="hidden md:flex items-center gap-1">
+            {[
+              { label: 'Ideas', href: `/board/${slug}`, active: true },
+              { label: 'Roadmap', href: `/board/${slug}/roadmap` },
+              { label: 'Updates', href: `/board/${slug}/announcements` },
+              { label: 'Help', href: `/board/${slug}/help` },
+            ].map(n => (
+              <Link key={n.label} href={n.href}
+                className="px-3 py-1.5 rounded-lg text-sm font-medium transition-smooth"
+                style={{ color: n.active ? 'var(--coral)' : 'var(--slate)', background: n.active ? 'var(--peach)' : 'transparent' }}>
+                {n.label}
+              </Link>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isOwner && (
+              <Link href="/admin"
+                className="px-3 py-1.5 rounded-lg text-sm font-medium border"
+                style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
+                Admin
+              </Link>
+            )}
+            {user ? (
+              <div className="relative">
+                <button onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold cursor-pointer"
+                  style={{ background: 'var(--coral)' }}>
+                  {(user.user_metadata?.display_name || user.email || '?')[0].toUpperCase()}
+                </button>
+                {showUserMenu && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setShowUserMenu(false)} />
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border z-40 overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                      <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                        <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{user.email}</p>
+                      </div>
+                      <div className="py-1.5">
+                        <Link href="/account" onClick={() => setShowUserMenu(false)}
+                          className="flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer"
+                          style={{ color: 'var(--ink)' }}>
+                          👤 My Account
+                        </Link>
+                        <button onClick={async () => { await supabase.auth.signOut(); setUser(null); setShowUserMenu(false) }}
+                          className="flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer w-full text-left"
+                          style={{ color: '#ef4444' }}>
+                          Sign out
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <Link href="/signin"
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
+                style={{ background: 'var(--coral)' }}>
+                Sign in
+              </Link>
+            )}
+          </div>
+        </nav>
+      </header>
+
+      {/* Main content — same layout as colvy.com */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
         <div className="flex gap-6">
           {/* Left sidebar — statuses + topics */}
@@ -208,15 +268,15 @@ export default function BoardPage() {
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>Statuses</p>
-                  <Link href="/roadmap" className="text-xs hover:underline" style={{ color: 'var(--coral)' }}>View all</Link>
+                  <Link href={`/board/${slug}/roadmap`} className="text-xs hover:underline" style={{ color: 'var(--coral)' }}>View all</Link>
                 </div>
                 <div className="space-y-0.5">
                   {statusCounts.map(s => (
-                    <button key={s.id} onClick={() => setStatusFilter(statusFilter === (s.label || s.name) ? null : (s.label || s.name))}
+                    <button key={s.id} onClick={() => setStatusFilter(statusFilter === s.name ? null : s.name)}
                       className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left cursor-pointer transition-smooth"
-                      style={{ background: statusFilter === (s.label || s.name) ? s.color + '20' : 'transparent', color: statusFilter === (s.label || s.name) ? s.color : 'var(--slate)' }}>
+                      style={{ background: statusFilter === s.name ? s.color + '20' : 'transparent', color: statusFilter === s.name ? s.color : 'var(--slate)' }}>
                       <div className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color || 'var(--coral)' }} />
-                      {s.label || s.name}
+                      {s.name}
                     </button>
                   ))}
                 </div>
@@ -269,11 +329,6 @@ export default function BoardPage() {
               </select>
             </div>
 
-            {/* Count */}
-            <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>
-              <span className="font-semibold" style={{ color: 'var(--ink)' }}>{filtered.length}</span> ideas total
-            </p>
-
             {/* Ideas */}
             {filtered.length === 0 ? (
               <div className="text-center py-20">
@@ -317,7 +372,7 @@ export default function BoardPage() {
         </div>
       </div>
 
-      {/* Powered by */}
+      {/* Powered by — only if not hidden */}
       <div className="text-center py-6 border-t mt-8" style={{ borderColor: 'var(--border)' }}>
         <a href="https://colvy.com" className="text-xs" style={{ color: 'var(--slate)' }}>
           Powered by <span style={{ color: 'var(--coral)' }}>Colvy</span>
