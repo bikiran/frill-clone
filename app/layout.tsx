@@ -48,6 +48,7 @@ export default function RootLayout({
   const [navVisibility, setNavVisibility] = useState({
     Ideas: true, Roadmap: true, Updates: true, Help: true,
   })
+  const [navOrder, setNavOrder] = useState(['Ideas', 'Roadmap', 'Updates', 'Help'])
 
   // Load nav visibility from settings (DB-first, localStorage fallback)
   useEffect(() => {
@@ -204,12 +205,20 @@ export default function RootLayout({
 
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-1">
-              {NAV_ITEMS.filter(item => {
-                if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
-                // Hide Features and Pricing for logged-in users
-                if (user && (item.label === 'Features' || item.label === 'Pricing')) return false
-                return true
-              }).map(item => (
+              {[...NAV_ITEMS]
+                .sort((a, b) => {
+                  const ai = navOrder.indexOf(a.label)
+                  const bi = navOrder.indexOf(b.label)
+                  if (ai === -1 && bi === -1) return 0
+                  if (ai === -1) return 1
+                  if (bi === -1) return -1
+                  return ai - bi
+                })
+                .filter(item => {
+                  if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
+                  if (user && (item.label === 'Features' || item.label === 'Pricing')) return false
+                  return true
+                }).map(item => (
                 <Link
                   key={item.href}
                   href={item.href}

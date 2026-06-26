@@ -52,6 +52,8 @@ export default function SettingsPage() {
   const [navRoadmap, setNavRoadmap] = useState(true)
   const [navAnnouncements, setNavAnnouncements] = useState(true)
   const [navHelp, setNavHelp] = useState(true)
+  const [navOrder, setNavOrder] = useState(['Ideas', 'Roadmap', 'Updates', 'Help Centre'])
+  const [dragNavItem, setDragNavItem] = useState<string | null>(null)
   // Styling
   const [accentColor, setAccentColor] = useState('#ff7a6b')
   const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'auto'>('light')
@@ -129,6 +131,7 @@ export default function SettingsPage() {
           if (s.navRoadmap !== undefined) setNavRoadmap(s.navRoadmap)
           if (s.navAnnouncements !== undefined) setNavAnnouncements(s.navAnnouncements)
           if (s.navHelp !== undefined) setNavHelp(s.navHelp)
+          if (s.navOrder) setNavOrder(s.navOrder)
           if (s.themeMode) setThemeMode(s.themeMode)
           if (s.borderRadius) setBorderRadius(s.borderRadius)
           if (s.emailFromName) setEmailFromName(s.emailFromName)
@@ -169,7 +172,7 @@ export default function SettingsPage() {
     setSaving(true)
     const settingsData = {
       companyName, logoUrl, faviconUrl, ogImageUrl, logoLink, customScript,
-      navIdeas, navRoadmap, navAnnouncements, navHelp,
+      navIdeas, navRoadmap, navAnnouncements, navHelp, navOrder,
       accentColor, themeMode, borderRadius,
       emailFromName, emailReplyTo, emailSignature,
       hidePoweredBy, customDomain, boardDomain, helpDomain, domainStatus,
@@ -785,40 +788,80 @@ export default function SettingsPage() {
         )}
 
         {/* Navigation tab */}
-        {activeSettingsTab === 'nav' && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Site Navigation</h2>
-              <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Choose which sections appear in your board navigation.</p>
-              <div className="space-y-0">
-                {[
-                  { label: 'Ideas', desc: 'The main feedback board', state: navIdeas, set: setNavIdeas },
-                  { label: 'Roadmap', desc: 'Show your product roadmap publicly', state: navRoadmap, set: setNavRoadmap },
-                  { label: 'Updates', desc: 'Announcements and changelog', state: navAnnouncements, set: setNavAnnouncements },
-                  { label: 'Help Centre', desc: 'Help articles and support docs', state: navHelp, set: setNavHelp },
-                ].map(item => (
-                  <div key={item.label} className="flex items-center justify-between py-4 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
-                    <div>
-                      <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{item.label}</p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{item.desc}</p>
-                    </div>
-                    <button onClick={() => item.set(!item.state)}
-                      className="relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer shrink-0 ml-6"
-                      style={{ background: item.state ? 'var(--coral)' : '#d1d5db' }}>
-                      <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow"
-                        style={{ transform: item.state ? 'translateX(24px)' : 'translateX(4px)' }} />
-                    </button>
-                  </div>
-                ))}
+        {activeSettingsTab === 'nav' && (() => {
+          const NAV_ITEMS_MAP: Record<string, { desc: string; state: boolean; set: (v: boolean) => void }> = {
+            'Ideas':      { desc: 'The main feedback board', state: navIdeas, set: setNavIdeas },
+            'Roadmap':    { desc: 'Show your product roadmap publicly', state: navRoadmap, set: setNavRoadmap },
+            'Updates':    { desc: 'Announcements and changelog', state: navAnnouncements, set: setNavAnnouncements },
+            'Help Centre':{ desc: 'Help articles and support docs', state: navHelp, set: setNavHelp },
+          }
+          return (
+            <div className="space-y-4">
+              <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+                <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Site Navigation</h2>
+                <p className="text-sm mb-1" style={{ color: 'var(--slate)' }}>Choose which sections appear and drag to reorder.</p>
+                <p className="text-xs mb-5 flex items-center gap-1" style={{ color: 'var(--slate)', opacity: 0.7 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                  Drag items to change order
+                </p>
+                <div className="space-y-0">
+                  {navOrder.map(label => {
+                    const item = NAV_ITEMS_MAP[label]
+                    if (!item) return null
+                    return (
+                      <div key={label}
+                        draggable
+                        onDragStart={() => setDragNavItem(label)}
+                        onDragOver={e => { e.preventDefault() }}
+                        onDrop={() => {
+                          if (!dragNavItem || dragNavItem === label) return
+                          const newOrder = [...navOrder]
+                          const from = newOrder.indexOf(dragNavItem)
+                          const to = newOrder.indexOf(label)
+                          newOrder.splice(from, 1)
+                          newOrder.splice(to, 0, dragNavItem)
+                          setNavOrder(newOrder)
+                          setDragNavItem(null)
+                        }}
+                        onDragEnd={() => setDragNavItem(null)}
+                        className="flex items-center justify-between py-4 border-b last:border-b-0 cursor-grab active:cursor-grabbing select-none"
+                        style={{
+                          borderColor: 'var(--border)',
+                          opacity: dragNavItem === label ? 0.4 : 1,
+                          background: dragNavItem === label ? 'var(--peach)' : 'transparent',
+                          borderRadius: 8, padding: '12px 8px',
+                          transition: 'opacity 0.15s',
+                        }}>
+                        <div className="flex items-center gap-3">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--slate)', opacity: 0.4, flexShrink: 0 }}>
+                            <circle cx="9" cy="6" r="1" fill="currentColor"/><circle cx="15" cy="6" r="1" fill="currentColor"/>
+                            <circle cx="9" cy="12" r="1" fill="currentColor"/><circle cx="15" cy="12" r="1" fill="currentColor"/>
+                            <circle cx="9" cy="18" r="1" fill="currentColor"/><circle cx="15" cy="18" r="1" fill="currentColor"/>
+                          </svg>
+                          <div>
+                            <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{label}</p>
+                            <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{item.desc}</p>
+                          </div>
+                        </div>
+                        <button onClick={() => item.set(!item.state)}
+                          className="relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer shrink-0 ml-6"
+                          style={{ background: item.state ? 'var(--coral)' : '#d1d5db' }}>
+                          <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow"
+                            style={{ transform: item.state ? 'translateX(24px)' : 'translateX(4px)', transition: 'transform 0.15s' }} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
+                  {saving ? 'Saving...' : saved ? '✅ Saved!' : 'Save Settings'}
+                </button>
               </div>
             </div>
-            <div className="flex justify-end">
-              <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
-                {saving ? 'Saving...' : saved ? '✅ Saved!' : 'Save Settings'}
-              </button>
-            </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* General, Theme, Emails tabs — show content based on activeSettingsTab */}
         {(activeSettingsTab === 'general' || activeSettingsTab === 'theme' || activeSettingsTab === 'emails') && (<>

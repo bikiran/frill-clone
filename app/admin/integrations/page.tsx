@@ -14,6 +14,7 @@ const INTEGRATIONS = [
     icon: '🟦',
     color: '#4A154B',
     bg: '#f9f0ff',
+    logo: '/logos/slack.svg',
     category: 'Notifications',
     fields: [
       { key: 'webhook_url', label: 'Slack Webhook URL', placeholder: 'https://hooks.slack.com/services/...', type: 'text' },
@@ -28,6 +29,7 @@ const INTEGRATIONS = [
     icon: '🔵',
     color: '#0052CC',
     bg: '#e6f0ff',
+    logo: '/logos/jira.svg',
     category: 'Project Management',
     fields: [
       { key: 'domain', label: 'Jira Domain', placeholder: 'yourcompany.atlassian.net', type: 'text' },
@@ -44,6 +46,7 @@ const INTEGRATIONS = [
     icon: '⚫',
     color: '#5E6AD2',
     bg: '#f0f0ff',
+    logo: '/logos/linear.svg',
     category: 'Project Management',
     fields: [
       { key: 'api_key', label: 'Linear API Key', placeholder: 'lin_api_...', type: 'password' },
@@ -58,6 +61,7 @@ const INTEGRATIONS = [
     icon: '🟩',
     color: '#0079BF',
     bg: '#e8f4ff',
+    logo: '/logos/trello.svg',
     category: 'Project Management',
     fields: [
       { key: 'api_key', label: 'Trello API Key', placeholder: 'Your Trello API key', type: 'password' },
@@ -73,6 +77,7 @@ const INTEGRATIONS = [
     icon: '🟠',
     color: '#FF4A00',
     bg: '#fff4f0',
+    logo: '/logos/zapier.svg',
     category: 'Automation',
     fields: [
       { key: 'webhook_url', label: 'Zapier Webhook URL', placeholder: 'https://hooks.zapier.com/hooks/catch/...', type: 'text' },
@@ -86,6 +91,7 @@ const INTEGRATIONS = [
     icon: '⚫',
     color: '#24292F',
     bg: '#f6f8fa',
+    logo: '/logos/github.svg',
     category: 'Development',
     fields: [
       { key: 'token', label: 'Personal Access Token', placeholder: 'ghp_...', type: 'password' },
@@ -100,6 +106,7 @@ const INTEGRATIONS = [
     icon: '🟣',
     color: '#286EFA',
     bg: '#e8f0ff',
+    logo: '/logos/intercom.svg',
     category: 'Customer Support',
     fields: [
       { key: 'access_token', label: 'Access Token', placeholder: 'Your Intercom access token', type: 'password' },
@@ -113,6 +120,7 @@ const INTEGRATIONS = [
     icon: '🟢',
     color: '#03363D',
     bg: '#e8f5f5',
+    logo: '/logos/zendesk.svg',
     category: 'Customer Support',
     fields: [
       { key: 'subdomain', label: 'Zendesk Subdomain', placeholder: 'yourcompany', type: 'text' },
@@ -128,6 +136,7 @@ const INTEGRATIONS = [
     icon: '🔗',
     color: '#374151',
     bg: '#f9fafb',
+    logo: '/logos/webhook.svg',
     category: 'Automation',
     fields: [
       { key: 'url', label: 'Webhook URL', placeholder: 'https://yourapp.com/webhook', type: 'text' },

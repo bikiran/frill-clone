@@ -244,7 +244,7 @@ export default function HelpCentrePage() {
         {/* Contact / Ticketing */}
         <div className="mt-12 grid md:grid-cols-3 gap-6">
           <div className="bg-white rounded-2xl border p-6 text-center" style={{ borderColor: 'var(--border)' }}>
-            <div className="text-3xl mb-3">💬</div>
+            <div className="mb-3 flex justify-center" style={{ color: "var(--coral)" }}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
             <h3 className="font-bold mb-2" style={{ color: 'var(--ink)' }}>Live Chat</h3>
             <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Chat with our support team in real time</p>
             <button className="px-4 py-2 rounded-lg text-sm font-semibold text-white cursor-pointer w-full" style={{ background: 'var(--coral)' }}>
@@ -252,7 +252,7 @@ export default function HelpCentrePage() {
             </button>
           </div>
           <div className="bg-white rounded-2xl border p-6 text-center" style={{ borderColor: 'var(--border)' }}>
-            <div className="text-3xl mb-3">🎫</div>
+            <div className="mb-3 flex justify-center" style={{ color: "var(--coral)" }}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
             <h3 className="font-bold mb-2" style={{ color: 'var(--ink)' }}>Submit a Ticket</h3>
             <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Open a support ticket and we'll get back to you</p>
             <Link href="/help/ticket" className="px-4 py-2 rounded-lg text-sm font-semibold border cursor-pointer w-full block" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
@@ -260,7 +260,7 @@ export default function HelpCentrePage() {
             </Link>
           </div>
           <div className="bg-white rounded-2xl border p-6 text-center" style={{ borderColor: 'var(--border)' }}>
-            <div className="text-3xl mb-3">📧</div>
+            <div className="mb-3 flex justify-center" style={{ color: "var(--coral)" }}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>
             <h3 className="font-bold mb-2" style={{ color: 'var(--ink)' }}>Email Support</h3>
             <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Send us an email and we'll respond within 24h</p>
             <a href="mailto:support@colvy.com" className="px-4 py-2 rounded-lg text-sm font-semibold border cursor-pointer w-full block" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
