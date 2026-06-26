@@ -42,6 +42,7 @@ export default function RootLayout({
   const pathname = usePathname()
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [isCompanyOwner, setIsCompanyOwner] = useState(false)
   const [navVisibility, setNavVisibility] = useState({
     Ideas: true, Roadmap: true, Updates: true, Help: true,
   })
@@ -103,16 +104,28 @@ export default function RootLayout({
   // Auth — real-time, no hard refresh needed
   useEffect(() => {
     // Initial session
+    const checkOwner = async (u: any) => {
+      if (!u) { setIsCompanyOwner(false); return }
+      const SUPER_ADMIN = 'bishalstha76@gmail.com'
+      setIsAdmin(u.email === SUPER_ADMIN)
+      try {
+        const { data } = await (supabase as any).from('companies').select('id').eq('owner_id', u.id).single()
+        setIsCompanyOwner(!!data || u.email === SUPER_ADMIN)
+      } catch {
+        setIsCompanyOwner(u.email === SUPER_ADMIN)
+      }
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user ?? null
       setUser(u)
-      setIsAdmin(u?.email === 'bishalstha76@gmail.com')
+      checkOwner(u)
     })
     // Subscribe to all auth changes (sign-in, sign-out, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const u = session?.user ?? null
       setUser(u)
-      setIsAdmin(u?.email === 'bishalstha76@gmail.com')
+      checkOwner(u)
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -212,7 +225,7 @@ export default function RootLayout({
                               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                               Billing & Plans
                             </Link>
-                            {isAdmin && (
+                            {isCompanyOwner && (
                               <Link href="/admin/settings" onClick={() => setShowUserMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-smooth" style={{ color: 'var(--ink)' }}>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
                                 Admin Settings
@@ -249,7 +262,7 @@ export default function RootLayout({
                       </>
                     )}
                   </div>
-                  {isAdmin && (
+                  {isCompanyOwner && (
                     <Link
                       href="/admin"
                       className="hidden md:flex px-4 py-2 rounded-lg text-sm font-medium transition-smooth"
