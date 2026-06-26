@@ -41,6 +41,7 @@ export default function SettingsPage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [company, setCompany] = useState<any>(null)
+  const [loadedCompany, setLoadedCompany] = useState(false)
   const [companyName, setCompanyName] = useState('YourApp')
   const [logoUrl, setLogoUrl] = useState('')
   const [faviconUrl, setFaviconUrl] = useState('')
@@ -99,7 +100,7 @@ export default function SettingsPage() {
 
       // Load company first (source of truth for slug, domains, branding)
       try {
-        const { data: co } = await (supabase as any)
+        const { data: co, error: coErr } = await (supabase as any)
           .from('companies').select('*').eq('owner_id', u.id).single()
         if (co) {
           setCompany(co)
@@ -109,7 +110,11 @@ export default function SettingsPage() {
           if (co.board_domain) setBoardDomain(co.board_domain)
           if (co.help_domain) setHelpDomain(co.help_domain)
         }
-      } catch {}
+        if (coErr) console.warn('Company load error:', coErr.message)
+      } catch (e: any) {
+        console.warn('Company fetch failed:', e.message)
+      }
+      setLoadedCompany(true)
 
       // Load site_settings for additional settings
       try {
@@ -560,7 +565,15 @@ export default function SettingsPage() {
                     <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Your Colvy URL (always active)</p>
                     <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>● Active</span>
                   </div>
-                  <p className="text-sm font-mono" style={{ color: 'var(--coral)' }}>yourslug.colvy.com</p>
+                  <p className="text-sm font-mono" style={{ color: 'var(--coral)' }}>
+                    {company?.slug ? `${company.slug}.colvy.com` : 'yourslug.colvy.com'}
+                  </p>
+                  {company?.slug && (
+                    <a href={`https://${company.slug}.colvy.com`} target="_blank"
+                      className="text-xs mt-1 inline-block hover:underline" style={{ color: 'var(--slate)' }}>
+                      Open board ↗
+                    </a>
+                  )}
                 </div>
 
                 {/* Board domain */}
