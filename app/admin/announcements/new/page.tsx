@@ -100,7 +100,7 @@ export default function NewAnnouncementPage() {
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
-      {/* Top bar — matches Frill exactly */}
+      {/* Top bar */}
       <div className="sticky top-0 z-40 bg-white border-b" style={{ borderColor: 'var(--border)' }}>
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">

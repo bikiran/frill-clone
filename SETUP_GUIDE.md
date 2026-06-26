@@ -1,7 +1,7 @@
 🚀 FRILL CLONE - WEEKEND LAUNCH GUIDE
 =====================================
 
-You now have a COMPLETE Frill.co clone MVP! Follow these steps to launch by Sunday.
+You now have a COMPLETE colvy.com clone MVP! Follow these steps to launch by Sunday.
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -96,16 +96,16 @@ CONNECT CUSTOM DOMAIN (if purchased):
 STEP 4: CUSTOMIZE FOR YOUR BRAND (Optional)
 ────────────────────────────────────────────
 
-Colors (Frill pink = #ff4b8a):
-- Edit app/layout.tsx: Change "Frill" text to your name
+Colors (Colvy pink = #ff4b8a):
+- Edit app/layout.tsx: Change "Colvy" text to your name
 - Edit Tailwind colors in components (bg-pink-600 → your color)
 
 Logo/Branding:
-- Replace "Frill" text in nav with your logo
+- Replace "Colvy" text in nav with your logo
 - Add your brand colors to components
 
 Company Name:
-- Update all "Frill" mentions to your brand name
+- Update all "Colvy" mentions to your brand name
 
 ═══════════════════════════════════════════════════════════════════════════════
 

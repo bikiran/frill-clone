@@ -1,5 +1,5 @@
 
-# Frill Clone v23
+# Colvy Clone v23
 
 ## What's New
 
@@ -16,7 +16,7 @@ This release includes the following enhancements and fixes:
    - Added Like and Subscribe action buttons to the IdeaCard and IdeaDetail components
    - Added "Liked Ideas" and "Subscribed Ideas" filter toggles to the ideas tab
 
-3. **Top-left Menu (Frill-style)**:
+3. **Top-left Menu (Colvy-style)**:
    - Moved the account menu to a left workspace switcher component
    - Added links to Admin Settings, Dashboard, Profile, View as Customer
 

@@ -1,4 +1,4 @@
-# Frill Clone MVP - Ready to Launch! 🚀
+# Colvy Clone MVP - Ready to Launch! 🚀
 
 A complete customer feedback platform built in Next.js + Supabase, ready to deploy this weekend.
 
