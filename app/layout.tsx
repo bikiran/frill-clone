@@ -142,6 +142,26 @@ export default function RootLayout({
 
   const userInitial = user?.email?.[0].toUpperCase() || 'A'
 
+  // Pages that use their own full-page layout (no nav wrapper)
+  const isFullPage = ['/landing', '/pricing'].some(p => pathname?.startsWith(p)) ||
+    pathname?.startsWith('/features/')
+
+  if (isFullPage) {
+    return (
+      <html lang="en">
+        <head>
+          <title>Colvy — Customer Feedback Made Beautiful</title>
+          <meta name="description" content="Colvy helps you capture, organize and announce product feedback in one place." />
+          <link rel="icon" href="/favicon.png" />
+        </head>
+        <body>
+          {children}
+          <UpdateNotification />
+        </body>
+      </html>
+    )
+  }
+
   return (
     <html lang="en">
       <head>

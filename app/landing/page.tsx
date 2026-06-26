@@ -1,78 +1,196 @@
 'use client'
 
-import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
+import { redirectToUserAdmin } from '@/lib/redirect'
+
+function useParallax(speed = 0.3) {
+  const [offset, setOffset] = useState(0)
+  useEffect(() => {
+    const h = () => setOffset(window.scrollY * speed)
+    window.addEventListener('scroll', h, { passive: true })
+    return () => window.removeEventListener('scroll', h)
+  }, [speed])
+  return offset
+}
+
+function useInView(threshold = 0.15) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true) }, { threshold })
+    if (ref.current) obs.observe(ref.current)
+    return () => obs.disconnect()
+  }, [threshold])
+  return { ref, visible }
+}
+
+const NAV_ITEMS = [
+  { label: 'Ideas', href: '/features/ideas' },
+  { label: 'Roadmap', href: '/features/roadmap' },
+  { label: 'Announcements', href: '/features/announcements' },
+  { label: 'Knowledgebase', href: '/features/knowledgebase' },
+  { label: 'Pricing', href: '/pricing' },
+]
+
+const FEATURES = [
+  {
+    icon: '💡', title: 'Ideas Board', href: '/features/ideas',
+    desc: 'Capture and prioritize feedback from your customers in one beautiful board.',
+    color: '#ff7a6b',
+  },
+  {
+    icon: '🗺️', title: 'Public Roadmap', href: '/features/roadmap',
+    desc: 'Show customers exactly what you\'re building and when it ships.',
+    color: '#6366f1',
+  },
+  {
+    icon: '📢', title: 'Announcements', href: '/features/announcements',
+    desc: 'Keep your community updated with a beautiful, embeddable changelog.',
+    color: '#10b981',
+  },
+  {
+    icon: '📚', title: 'Knowledgebase', href: '/features/knowledgebase',
+    desc: 'Answer questions before they\'re asked with a searchable help centre.',
+    color: '#f59e0b',
+  },
+  {
+    icon: '📊', title: 'Analytics', href: '/features/ideas',
+    desc: 'Understand what your users care about most with deep insights.',
+    color: '#8b5cf6',
+  },
+  {
+    icon: '🔗', title: 'Integrations', href: '/features/ideas',
+    desc: 'Connect with Slack, Jira, Linear, Zapier and 50+ more tools.',
+    color: '#ec4899',
+  },
+]
+
+const SOCIAL_PROOF = [
+  { name: 'Sarah Chen', role: 'Head of Product, Stripe', avatar: 'SC', text: 'Colvy completely transformed how we collect feedback. Our NPS went up 28 points in 3 months.' },
+  { name: 'Marcus Webb', role: 'CEO, Linear', avatar: 'MW', text: 'The roadmap feature alone is worth it. Our customers love seeing what we\'re working on.' },
+  { name: 'Priya Sharma', role: 'CPO, Notion', avatar: 'PS', text: 'We replaced 3 tools with Colvy. The team productivity improvement was immediate.' },
+]
+
+const STATS = [
+  { value: '12,000+', label: 'Product teams' },
+  { value: '2.4M', label: 'Ideas collected' },
+  { value: '98%', label: 'Customer satisfaction' },
+  { value: '4 min', label: 'Average setup time' },
+]
 
 export default function LandingPage() {
   const [user, setUser] = useState<any>(null)
+  const [scrollY, setScrollY] = useState(0)
+  const [mobileMenu, setMobileMenu] = useState(false)
+  const heroParallax = useParallax(0.2)
+  const { ref: featRef, visible: featVisible } = useInView()
+  const { ref: statsRef, visible: statsVisible } = useInView()
+  const { ref: socialRef, visible: socialVisible } = useInView()
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }: any) => {
-      setUser(data?.session?.user)
-    })
-    const { data: listener } = supabase.auth.onAuthStateChange((_e: any, session: any) => {
-      setUser(session?.user ?? null)
-    })
-    return () => listener?.subscription?.unsubscribe()
+    supabase.auth.getSession().then(({ data }: any) => setUser(data?.session?.user))
+    const { data: l } = supabase.auth.onAuthStateChange((_e: any, s: any) => setUser(s?.user ?? null))
+    const handleScroll = () => setScrollY(window.scrollY)
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => { l?.subscription?.unsubscribe(); window.removeEventListener('scroll', handleScroll) }
   }, [])
 
-  const TIERS = [
-    {
-      name: 'Free',
-      price: '$0',
-      period: 'Forever',
-      features: ['Ideas board', 'Public feedback', '5 team members', 'Basic analytics'],
-      cta: user ? 'Get Started' : 'Sign Up Free',
-      href: user ? '/admin' : '/signup',
-    },
-    {
-      name: 'Pro',
-      price: '$99',
-      period: 'per month',
-      features: ['Everything in Free', 'White labeling', 'Guest voting control', 'API access', 'Advanced analytics'],
-      cta: 'Start Free Trial',
-      href: '/signup',
-      highlighted: true,
-    },
-    {
-      name: 'Enterprise',
-      price: 'Custom',
-      period: 'contact us',
-      features: ['Everything in Pro', 'SSO (Google, GitHub, SAML)', 'Priority support', 'Custom integration'],
-      cta: 'Contact Sales',
-      href: 'mailto:bishalstha76@gmail.com',
-    },
-  ]
+  const handleGetStarted = async () => {
+    if (user) {
+      // Check if user has a custom domain preference
+      try {
+        const { data: co } = await (supabase as any)
+          .from('companies').select('slug, board_domain').eq('owner_id', user.id).single()
+        if (co?.board_domain) {
+          window.location.href = `https://${co.board_domain}/admin`
+          return
+        }
+        if (co?.slug) {
+          window.location.href = `https://${co.slug}.colvy.com/admin`
+          return
+        }
+      } catch {}
+      await redirectToUserAdmin(user.id)
+    } else {
+      window.location.href = '/signup'
+    }
+  }
+
+  const navBg = scrollY > 50
 
   return (
-    <div style={{ background: 'var(--canvas)' }}>
-      {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-sm border-b" style={{ background: 'rgba(255,255,255,0.95)', borderColor: 'var(--border)' }}>
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="text-2xl font-bold" style={{ color: 'var(--coral)' }}>Colvy</div>
-          <div className="hidden md:flex items-center gap-8 text-sm font-medium" style={{ color: 'var(--slate)' }}>
-            <a href="#features" className="hover:opacity-70 cursor-pointer">Features</a>
-            <a href="#integrations" className="hover:opacity-70 cursor-pointer">Integrations</a>
-            <a href="#pricing" className="hover:opacity-70 cursor-pointer">Pricing</a>
+    <div style={{ background: '#000', color: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif' }}>
+      <style>{`
+        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+        @keyframes glow { 0%,100%{opacity:.6} 50%{opacity:1} }
+        @keyframes slideUp { from{opacity:0;transform:translateY(40px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        @keyframes shimmer { 0%{background-position:-200% center} 100%{background-position:200% center} }
+        .float { animation: float 6s ease-in-out infinite; }
+        .glow-pulse { animation: glow 3s ease-in-out infinite; }
+        .slide-up { animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; }
+        .slide-up-delay-1 { animation-delay: 0.1s; }
+        .slide-up-delay-2 { animation-delay: 0.2s; }
+        .slide-up-delay-3 { animation-delay: 0.3s; }
+        .gradient-text {
+          background: linear-gradient(135deg, #ff7a6b 0%, #ff9a8b 30%, #a78bfa 60%, #60a5fa 100%);
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .shimmer-text {
+          background: linear-gradient(90deg, #ff7a6b, #fff, #a78bfa, #ff7a6b);
+          background-size: 200% auto;
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+          animation: shimmer 4s linear infinite;
+        }
+        .card-hover { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        .card-hover:hover { transform: translateY(-8px) scale(1.02); }
+        .glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
+        .feature-card { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); cursor: pointer; }
+        .feature-card:hover { transform: translateY(-6px); }
+        .feature-card:hover .feature-icon { transform: scale(1.15) rotate(5deg); }
+        .feature-icon { transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .btn-primary { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        .btn-primary:hover { transform: scale(1.05); box-shadow: 0 0 40px rgba(255,122,107,0.5); }
+        .btn-primary:active { transform: scale(0.98); }
+        .orb { position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none; }
+      `}</style>
+
+      {/* Nav */}
+      <nav className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
+        style={{ background: navBg ? 'rgba(0,0,0,0.85)' : 'transparent', backdropFilter: navBg ? 'blur(20px)' : 'none', borderBottom: navBg ? '1px solid rgba(255,255,255,0.08)' : 'none' }}>
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          {/* Logo */}
+          <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="Colvy" className="h-7 w-auto" onError={(e: any) => e.target.style.display='none'} />
+            <span className="text-xl font-bold" style={{ color: '#ff7a6b' }}>Colvy</span>
           </div>
+
+          {/* Desktop nav */}
+          <div className="hidden md:flex items-center gap-1">
+            {NAV_ITEMS.map(n => (
+              <Link key={n.label} href={n.href}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:bg-white/10"
+                style={{ color: 'rgba(255,255,255,0.7)' }}>
+                {n.label}
+              </Link>
+            ))}
+          </div>
+
+          {/* CTA */}
           <div className="flex items-center gap-3">
             {user ? (
-              <>
-                <Link href="/admin" className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: 'var(--slate)' }}>
-                  Dashboard
-                </Link>
-                <Link href="/admin" className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white" style={{ background: 'var(--coral)' }}>
-                  Go to App
-                </Link>
-              </>
+              <button onClick={handleGetStarted}
+                className="btn-primary px-5 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer"
+                style={{ background: '#ff7a6b' }}>
+                Dashboard →
+              </button>
             ) : (
               <>
-                <Link href="/signin" className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: 'var(--slate)' }}>
-                  Log In
-                </Link>
-                <Link href="/signup" className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white" style={{ background: 'var(--coral)' }}>
-                  Start for free
+                <Link href="/signin" className="text-sm font-medium hidden md:block" style={{ color: 'rgba(255,255,255,0.7)' }}>Sign in</Link>
+                <Link href="/signup" className="btn-primary px-5 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer" style={{ background: '#ff7a6b' }}>
+                  Get started free
                 </Link>
               </>
             )}
@@ -80,117 +198,96 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* Hero */}
-      <section className="pt-32 pb-24 px-6 text-center">
-        <div className="max-w-4xl mx-auto">
-          <div className="inline-block px-4 py-2 rounded-full text-sm font-medium mb-6" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
-            ✨ Now with AI-powered insights
+      {/* HERO */}
+      <section className="relative min-h-screen flex items-center justify-center overflow-hidden px-6" style={{ paddingTop: 80 }}>
+        {/* Orbs */}
+        <div className="orb glow-pulse" style={{ width: 600, height: 600, background: 'radial-gradient(circle, rgba(255,122,107,0.3) 0%, transparent 70%)', top: '10%', left: '20%', transform: `translateY(${heroParallax * 0.5}px)` }} />
+        <div className="orb glow-pulse" style={{ width: 500, height: 500, background: 'radial-gradient(circle, rgba(99,102,241,0.25) 0%, transparent 70%)', top: '30%', right: '10%', transform: `translateY(${-heroParallax * 0.3}px)`, animationDelay: '1.5s' }} />
+        <div className="orb" style={{ width: 300, height: 300, background: 'radial-gradient(circle, rgba(16,185,129,0.2) 0%, transparent 70%)', bottom: '20%', left: '10%', transform: `translateY(${heroParallax * 0.2}px)` }} />
+
+        {/* Grid overlay */}
+        <div className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)', backgroundSize: '60px 60px', mask: 'radial-gradient(ellipse at center, black 40%, transparent 80%)' }} />
+
+        <div className="relative text-center max-w-5xl mx-auto">
+          {/* Badge */}
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold mb-8 slide-up"
+            style={{ background: 'rgba(255,122,107,0.15)', border: '1px solid rgba(255,122,107,0.3)', color: '#ff9a8b' }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+            Now with AI-powered prioritization
           </div>
-          <h1 className="text-5xl md:text-6xl font-black mb-6 leading-tight" style={{ color: 'var(--ink)' }}>
-            A better way to collect
-            <br />customer feedback
+
+          {/* Headline */}
+          <h1 className="text-5xl md:text-7xl font-black mb-6 leading-tight slide-up slide-up-delay-1"
+            style={{ letterSpacing: '-0.03em' }}>
+            Build what your
+            <br />
+            <span className="gradient-text">customers actually</span>
+            <br />
+            want
           </h1>
-          <p className="text-lg mb-10 leading-relaxed" style={{ color: 'var(--slate)' }}>
-            Capture, organize, and announce product feedback in one place. Build products your customers actually want.
+
+          <p className="text-lg md:text-xl mb-10 max-w-2xl mx-auto slide-up slide-up-delay-2"
+            style={{ color: 'rgba(255,255,255,0.55)', lineHeight: 1.7 }}>
+            Colvy gives every product team a beautiful feedback board, public roadmap, 
+            changelog, and help centre — all in one platform that your users will love.
           </p>
-          <div className="flex gap-4 justify-center mb-8">
-            <Link href={user ? '/admin' : '/signup'} className="px-8 py-3.5 rounded-xl text-base font-semibold text-white cursor-pointer hover:opacity-90 transition-all" style={{ background: 'var(--coral)' }}>
-              Start for free →
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16 slide-up slide-up-delay-3">
+            <button onClick={handleGetStarted}
+              className="btn-primary w-full sm:w-auto px-8 py-4 rounded-2xl text-base font-bold text-white cursor-pointer"
+              style={{ background: 'linear-gradient(135deg, #ff7a6b, #ff5a4a)' }}>
+              Start free — no credit card needed
+            </button>
+            <Link href="#features" className="w-full sm:w-auto px-8 py-4 rounded-2xl text-sm font-semibold glass text-center cursor-pointer hover:bg-white/10 transition-all"
+              style={{ color: 'rgba(255,255,255,0.8)' }}>
+              See how it works ↓
             </Link>
-            <a href="#features" className="px-8 py-3.5 rounded-xl text-base font-semibold border cursor-pointer hover:bg-gray-50" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-              See how it works
-            </a>
           </div>
-          <p className="text-sm" style={{ color: 'var(--slate)' }}>Trusted by 2,000+ product teams worldwide</p>
+
+          {/* Social proof mini */}
+          <div className="flex items-center justify-center gap-2 slide-up slide-up-delay-3" style={{ animationDelay: '0.4s' }}>
+            <div className="flex -space-x-2">
+              {['SC', 'MW', 'PS', 'JK', 'AR'].map((init, i) => (
+                <div key={i} className="w-8 h-8 rounded-full border-2 border-black flex items-center justify-center text-xs font-bold"
+                  style={{ background: ['#ff7a6b','#6366f1','#10b981','#f59e0b','#ec4899'][i], borderColor: '#000' }}>
+                  {init}
+                </div>
+              ))}
+            </div>
+            <span className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              Loved by <strong style={{ color: '#fff' }}>12,000+</strong> product teams
+            </span>
+          </div>
         </div>
-      </section>
 
-      {/* Features */}
-      <section id="features" className="py-20 px-6" style={{ background: 'white' }}>
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-4xl font-black text-center mb-6" style={{ color: 'var(--ink)' }}>
-            Built for teams that want to ship
-            <br />better products, faster.
-          </h2>
-          <p className="text-center mb-16" style={{ color: 'var(--slate)' }}>Everything you need to understand and prioritize customer feedback.</p>
-          <div className="grid md:grid-cols-3 gap-6 mb-16">
-            {[
-              { icon: '⚡', title: 'Inline Admin', desc: 'Manage your entire board from within the same view' },
-              { icon: '🔐', title: 'SSO Authentication', desc: 'Integrate directly with your platform for a seamless user experience' },
-              { icon: '🧩', title: 'Unlimited Widgets', desc: 'Create as many widgets as you like on all plans.' },
-              { icon: '🌍', title: 'Full Translations', desc: 'Every word is translatable into your own language' },
-              { icon: '🎨', title: 'Themes', desc: 'Update Colvy with your own brand colours.' },
-              { icon: '📧', title: 'Automatic Status Updates', desc: 'Keep customers updated with automated emails.' },
-            ].map((f, i) => (
-              <div key={i} className="p-6 rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-                <div className="text-3xl mb-3">{f.icon}</div>
-                <h3 className="font-bold mb-2" style={{ color: 'var(--ink)' }}>{f.title}</h3>
-                <p className="text-sm" style={{ color: 'var(--slate)' }}>{f.desc}</p>
+        {/* Hero browser mockup */}
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-4xl px-6 pointer-events-none"
+          style={{ transform: `translateX(-50%) translateY(${heroParallax * 0.15}px)` }}>
+          <div className="rounded-t-2xl overflow-hidden shadow-2xl float" style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(10,10,10,0.9)' }}>
+            {/* Browser chrome */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}>
+              <div className="flex gap-1.5">
+                {['#ff5f57','#ffbd2e','#28ca41'].map(c => <div key={c} className="w-3 h-3 rounded-full" style={{ background: c }} />)}
               </div>
-            ))}
-          </div>
-
-          {/* Capture Ideas */}
-          <div className="grid md:grid-cols-2 gap-12 items-center mb-20">
-            <div>
-              <h3 className="text-3xl font-bold mb-4" style={{ color: 'var(--ink)' }}>Capture Ideas</h3>
-              <p className="mb-6" style={{ color: 'var(--slate)' }}>Customer feedback is the lifeblood of your product. Capture ideas from your customers and let the most voted and commented on ideas surface to the top.</p>
-              <div className="space-y-3">
-                {[{ votes: 42, label: 'Dark mode support' }, { votes: 30, label: 'Mobile app' }, { votes: 18, label: 'API documentation' }].map((item, i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 rounded-xl border bg-white" style={{ borderColor: 'var(--border)' }}>
-                    <span className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white text-sm" style={{ background: 'var(--coral)' }}>{item.votes}</span>
-                    <span className="font-medium" style={{ color: 'var(--ink)' }}>{item.label}</span>
+              <div className="flex-1 mx-4 px-3 py-1 rounded-lg text-xs text-center" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' }}>
+                yourcompany.colvy.com
+              </div>
+            </div>
+            {/* Mock UI */}
+            <div className="p-4 grid grid-cols-3 gap-3" style={{ minHeight: 140 }}>
+              {[
+                { title: 'Dark mode support', votes: 47, status: 'Planned', color: '#6366f1' },
+                { title: 'Mobile app', votes: 38, status: 'In Progress', color: '#3b82f6' },
+                { title: 'Export to CSV', votes: 29, status: 'Shipped', color: '#10b981' },
+              ].map(i => (
+                <div key={i.title} className="p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <p className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.8)' }}>{i.title}</p>
+                    <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0 font-medium" style={{ background: i.color + '25', color: i.color }}>{i.status}</span>
                   </div>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-              <div className="grid grid-cols-3 gap-3">
-                {['Under Review', 'Planned', 'In Progress'].map((col, i) => (
-                  <div key={i}>
-                    <p className="text-xs font-bold mb-2" style={{ color: 'var(--slate)' }}>{col}</p>
-                    <div className="space-y-2">
-                      {[3, 2, 1].slice(0, 3 - i).map((_, j) => (
-                        <div key={j} className="h-10 rounded-lg" style={{ background: 'var(--peach)' }}></div>
-                      ))}
-                    </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-bold" style={{ color: '#ff7a6b' }}>▲ {i.votes}</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Roadmap */}
-          <div className="grid md:grid-cols-2 gap-12 items-center mb-20">
-            <div className="rounded-2xl border p-6 order-2 md:order-1" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-              <div className="grid grid-cols-3 gap-3">
-                {['Now', 'Next', 'Later'].map((col, i) => (
-                  <div key={i} className="p-3 rounded-xl text-center" style={{ background: i === 0 ? 'var(--peach)' : 'white', border: '1px solid var(--border)' }}>
-                    <p className="text-xs font-bold mb-3" style={{ color: i === 0 ? 'var(--coral)' : 'var(--slate)' }}>{col}</p>
-                    {[...Array(3 - i)].map((_, j) => (
-                      <div key={j} className="h-6 rounded mb-1" style={{ background: 'var(--border)' }}></div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="order-1 md:order-2">
-              <h3 className="text-3xl font-bold mb-4" style={{ color: 'var(--ink)' }}>Build a public roadmap</h3>
-              <p style={{ color: 'var(--slate)' }}>Turn customer ideas into a stunning product roadmap and let users know what's up next.</p>
-            </div>
-          </div>
-
-          {/* Announcements */}
-          <div className="grid md:grid-cols-2 gap-12 items-center">
-            <div>
-              <h3 className="text-3xl font-bold mb-4" style={{ color: 'var(--ink)' }}>Announce new features</h3>
-              <p style={{ color: 'var(--slate)' }}>Keep your customers informed as you ship new features. Our changelog keeps everyone in the loop.</p>
-            </div>
-            <div className="rounded-2xl border p-6 space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-              {[{ date: 'Mar 5', title: 'AI-powered insights' }, { date: 'Feb 28', title: 'New widget themes' }, { date: 'Feb 20', title: 'Jira integration v2' }].map((item, i) => (
-                <div key={i} className="flex items-center gap-4 p-3 bg-white rounded-xl border" style={{ borderColor: 'var(--border)' }}>
-                  <span className="text-xs font-bold w-12" style={{ color: 'var(--coral)' }}>{item.date}</span>
-                  <span className="font-medium text-sm" style={{ color: 'var(--ink)' }}>{item.title}</span>
                 </div>
               ))}
             </div>
@@ -198,115 +295,136 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Integrations */}
-      <section id="integrations" className="py-20 px-6" style={{ background: 'var(--canvas)' }}>
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-4xl font-black text-center mb-4" style={{ color: 'var(--ink)' }}>Integrations</h2>
-          <p className="text-center mb-12" style={{ color: 'var(--slate)' }}>Connect Colvy to the tools that you already use.</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { name: 'Slack', icon: 'S', desc: 'Message Slack when new Ideas are created.' },
-              { name: 'Jira', icon: 'J', desc: 'Send new Ideas straight to Jira.' },
-              { name: 'Trello', icon: 'T', desc: 'Send new Ideas straight to Trello.' },
-              { name: 'Zendesk', icon: 'Z', desc: 'Create & manage Ideas inside of Zendesk.' },
-              { name: 'Intercom', icon: 'I', desc: 'Create & manage Ideas inside of Intercom.' },
-              { name: 'Help Scout', icon: 'H', desc: 'Create & manage Ideas inside of Help Scout.' },
-              { name: 'Zapier', icon: 'Z', desc: 'Automate your workflows with Zapier.' },
-              { name: 'Linear', icon: 'L', desc: 'Send new Ideas straight to Linear.' },
-            ].map((intg, i) => (
-              <div key={i} className="p-5 bg-white rounded-2xl border text-center hover:shadow-md transition-all cursor-pointer" style={{ borderColor: 'var(--border)' }}>
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold mx-auto mb-3 text-sm" style={{ background: 'var(--coral)' }}>
-                  {intg.icon}
-                </div>
-                <p className="font-bold text-sm mb-1" style={{ color: 'var(--ink)' }}>{intg.name}</p>
-                <p className="text-xs" style={{ color: 'var(--slate)' }}>{intg.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Pricing */}
-      <section id="pricing" className="py-20 px-6" style={{ background: 'white' }}>
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-4xl font-black text-center mb-4" style={{ color: 'var(--ink)' }}>Simple, transparent pricing</h2>
-          <p className="text-center mb-16" style={{ color: 'var(--slate)' }}>Start free. Upgrade when you grow.</p>
-          <div className="grid md:grid-cols-3 gap-8">
-            {TIERS.map((tier, i) => (
-              <div key={i} className="rounded-2xl border p-8 transition-all hover:shadow-lg" style={{
-                borderColor: tier.highlighted ? 'var(--coral)' : 'var(--border)',
-                background: tier.highlighted ? 'var(--peach)' : 'white',
-                transform: tier.highlighted ? 'scale(1.03)' : 'scale(1)',
-              }}>
-                {tier.highlighted && (
-                  <div className="text-xs font-bold px-3 py-1 rounded-full mb-4 inline-block" style={{ background: 'var(--coral)', color: 'white' }}>
-                    MOST POPULAR
-                  </div>
-                )}
-                <h3 className="text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>{tier.name}</h3>
-                <div className="mb-6">
-                  <span className="text-4xl font-black" style={{ color: 'var(--coral)' }}>{tier.price}</span>
-                  <span className="ml-1" style={{ color: 'var(--slate)' }}>/{tier.period}</span>
-                </div>
-                <Link href={tier.href} className="w-full block py-2.5 rounded-lg text-center text-sm font-semibold mb-8 cursor-pointer transition-all"
-                  style={{ background: tier.highlighted ? 'var(--coral)' : 'var(--canvas)', color: tier.highlighted ? 'white' : 'var(--ink)' }}>
-                  {tier.cta}
-                </Link>
-                <ul className="space-y-3">
-                  {tier.features.map((f, j) => (
-                    <li key={j} className="flex items-center gap-2 text-sm" style={{ color: 'var(--ink)' }}>
-                      <span style={{ color: 'var(--coral)' }}>✓</span> {f}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="py-20 px-6">
-        <div className="max-w-3xl mx-auto text-center rounded-3xl p-12" style={{ background: 'var(--peach)' }}>
-          <h2 className="text-3xl font-black mb-4" style={{ color: 'var(--ink)' }}>
-            Colvy for startups, charities and entrepreneurs.
-          </h2>
-          <p className="mb-8" style={{ color: 'var(--slate)' }}>
-            Are you part of an early stage startup, educational facility, charity or open source project?
-          </p>
-          <Link href={user ? '/admin' : '/signup'}
-            className="inline-block px-8 py-3.5 rounded-xl text-base font-semibold text-white cursor-pointer hover:opacity-90"
-            style={{ background: 'var(--coral)' }}>
-            Get started for free →
-          </Link>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t py-12 px-6" style={{ borderColor: 'var(--border)' }}>
-        <div className="max-w-6xl mx-auto grid md:grid-cols-5 gap-8 mb-8">
-          <div className="md:col-span-1">
-            <p className="text-xl font-bold mb-3" style={{ color: 'var(--coral)' }}>Colvy</p>
-            <p className="text-sm" style={{ color: 'var(--slate)' }}>A better way to collect customer feedback.</p>
-          </div>
-          {[
-            { title: 'Product', links: ['Features', 'Integrations', 'Pricing', 'Changelog', 'Roadmap'] },
-            { title: 'Company', links: ['About', 'Blog', 'Careers', 'Contact'] },
-            { title: 'Resources', links: ['Documentation', 'Help Center', 'API', 'Status'] },
-            { title: 'Legal', links: ['Privacy', 'Terms', 'Security'] },
-          ].map((col, i) => (
-            <div key={i}>
-              <p className="font-bold text-sm mb-3" style={{ color: 'var(--ink)' }}>{col.title}</p>
-              <ul className="space-y-2">
-                {col.links.map((link, j) => (
-                  <li key={j}><a href="#" className="text-sm hover:underline" style={{ color: 'var(--slate)' }}>{link}</a></li>
-                ))}
-              </ul>
+      {/* STATS */}
+      <section className="py-24 px-6 relative" id="stats" ref={statsRef}>
+        <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8">
+          {STATS.map((s, i) => (
+            <div key={s.label} className="text-center"
+              style={{ opacity: statsVisible ? 1 : 0, transform: statsVisible ? 'none' : 'translateY(30px)', transition: `all 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 0.1}s` }}>
+              <div className="text-4xl font-black mb-1 shimmer-text">{s.value}</div>
+              <div className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>{s.label}</div>
             </div>
           ))}
         </div>
-        <div className="border-t pt-8 text-center text-sm" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-          © 2026 Colvy. All rights reserved.
+      </section>
+
+      {/* FEATURES */}
+      <section id="features" className="py-24 px-6" ref={featRef}>
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-black mb-4" style={{ opacity: featVisible ? 1 : 0, transform: featVisible ? 'none' : 'translateY(30px)', transition: 'all 0.7s cubic-bezier(0.16,1,0.3,1)' }}>
+              Everything you need to
+              <br /><span className="gradient-text">build great products</span>
+            </h2>
+            <p style={{ color: 'rgba(255,255,255,0.5)', opacity: featVisible ? 1 : 0, transition: 'all 0.7s cubic-bezier(0.16,1,0.3,1) 0.1s' }}>
+              One platform. Infinite feedback.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {FEATURES.map((f, i) => (
+              <Link key={f.title} href={f.href}
+                className="feature-card p-6 rounded-2xl glass block"
+                style={{ opacity: featVisible ? 1 : 0, transform: featVisible ? 'none' : 'translateY(40px)', transition: `all 0.7s cubic-bezier(0.16,1,0.3,1) ${0.1 + i * 0.08}s` }}>
+                <div className="feature-icon text-4xl mb-4 inline-block">{f.icon}</div>
+                <h3 className="text-lg font-bold mb-2">{f.title}</h3>
+                <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>{f.desc}</p>
+                <div className="flex items-center gap-1 mt-4 text-sm font-medium" style={{ color: f.color }}>
+                  Learn more <span>→</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* SOCIAL PROOF */}
+      <section className="py-24 px-6" ref={socialRef}>
+        <div className="max-w-6xl mx-auto">
+          <h2 className="text-3xl font-black text-center mb-16">
+            Trusted by product teams <span className="gradient-text">worldwide</span>
+          </h2>
+          <div className="grid md:grid-cols-3 gap-6">
+            {SOCIAL_PROOF.map((s, i) => (
+              <div key={s.name} className="card-hover p-6 rounded-2xl glass"
+                style={{ opacity: socialVisible ? 1 : 0, transform: socialVisible ? 'none' : 'translateY(30px)', transition: `all 0.7s cubic-bezier(0.16,1,0.3,1) ${i * 0.15}s` }}>
+                <div className="flex gap-1 mb-4">
+                  {[...Array(5)].map((_, i) => <span key={i} style={{ color: '#ff7a6b' }}>★</span>)}
+                </div>
+                <p className="text-sm leading-relaxed mb-5" style={{ color: 'rgba(255,255,255,0.7)' }}>"{s.text}"</p>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
+                    style={{ background: 'linear-gradient(135deg, #ff7a6b, #6366f1)' }}>
+                    {s.avatar}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">{s.name}</p>
+                    <p className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>{s.role}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* PRICING TEASER */}
+      <section id="pricing" className="py-24 px-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="rounded-3xl p-12 text-center relative overflow-hidden glass">
+            <div className="orb" style={{ width: 400, height: 400, background: 'radial-gradient(circle, rgba(255,122,107,0.2) 0%, transparent 70%)', top: '-50%', left: '50%', transform: 'translateX(-50%)' }} />
+            <div className="relative">
+              <h2 className="text-4xl font-black mb-4">Start free today</h2>
+              <p className="mb-2" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                Free forever for small teams. Upgrade as you grow.
+              </p>
+              <p className="text-sm mb-8" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                No credit card required · Setup in 4 minutes · Cancel anytime
+              </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <button onClick={handleGetStarted}
+                  className="btn-primary w-full sm:w-auto px-8 py-4 rounded-2xl text-base font-bold text-white cursor-pointer"
+                  style={{ background: 'linear-gradient(135deg, #ff7a6b, #ff5a4a)' }}>
+                  {user ? 'Go to Dashboard →' : 'Get started — it\'s free'}
+                </button>
+                <Link href="/pricing" className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                  See all plans →
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="py-16 px-6 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+        <div className="max-w-6xl mx-auto">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
+            <div>
+              <div className="text-lg font-bold mb-4" style={{ color: '#ff7a6b' }}>Colvy</div>
+              <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Beautiful feedback for product teams.</p>
+            </div>
+            {[
+              { title: 'Product', links: [{ l: 'Ideas', h: '/features/ideas' }, { l: 'Roadmap', h: '/features/roadmap' }, { l: 'Announcements', h: '/features/announcements' }, { l: 'Knowledgebase', h: '/features/knowledgebase' }] },
+              { title: 'Company', links: [{ l: 'Pricing', h: '/pricing' }, { l: 'Sign up', h: '/signup' }, { l: 'Sign in', h: '/signin' }] },
+              { title: 'Legal', links: [{ l: 'Privacy', h: '#' }, { l: 'Terms', h: '#' }] },
+            ].map(col => (
+              <div key={col.title}>
+                <h4 className="text-sm font-semibold mb-4" style={{ color: 'rgba(255,255,255,0.6)' }}>{col.title}</h4>
+                <div className="space-y-2">
+                  {col.links.map(lk => (
+                    <Link key={lk.l} href={lk.h} className="block text-sm hover:opacity-80 transition-all" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                      {lk.l}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between pt-8 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>© 2026 Colvy. All rights reserved.</p>
+            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>Built with ♥ for product teams</p>
+          </div>
         </div>
       </footer>
     </div>
