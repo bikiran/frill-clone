@@ -21,6 +21,11 @@ export function middleware(req: NextRequest) {
   const hostname = req.headers.get('host') || ''
   const path = url.pathname
 
+  // ── colvy.com root domain → serve normal app ────────────────────
+  if (hostname === 'colvy.com' || hostname === 'www.colvy.com') {
+    return NextResponse.next()
+  }
+
   // ── admin.colvy.com → platform super admin ──────────────────────
   if (hostname === 'admin.colvy.com') {
     url.pathname = `/platform-admin${path === '/' ? '' : path}`
@@ -65,16 +70,14 @@ export function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
-  // ── Custom domains (feedback.acme.com, help.acme.com) ──────────
-  // These point to Vercel via CNAME and are looked up in companies table
-  // Route to /board-custom/[domain] which resolves the company
+  // ── Custom domains (help.prexty.com, feedback.acme.com) ─────────
+  // These are non-colvy.com domains registered via Settings → White Labeling
   if (PASSTHROUGH_PREFIXES.some(p => path.startsWith(p))) {
     const res = NextResponse.next()
     res.headers.set('x-custom-domain', hostname)
     return res
   }
 
-  // Encode hostname for URL-safe routing
   const encodedDomain = hostname.replace(/\./g, '__')
   url.pathname = `/custom/${encodedDomain}${path === '/' ? '' : path}`
   const res = NextResponse.rewrite(url)
