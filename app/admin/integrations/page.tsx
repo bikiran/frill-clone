@@ -262,7 +262,7 @@ export default function IntegrationsPage() {
               style={{ background: selected === intg.id ? 'var(--peach)' : 'transparent', borderLeft: selected === intg.id ? '2px solid var(--coral)' : '2px solid transparent' }}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-base">{intg.icon}</span>
+                  <div className="w-6 h-6 rounded flex items-center justify-center p-0.5 shrink-0" style={{ background: intg.bg }}><img src={intg.logo || '/logos/webhook.svg'} alt={intg.name} style={{ width: 16, height: 16, objectFit: 'contain' }} /></div>
                   <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{intg.name}</span>
                 </div>
                 {enabled[intg.id] && <div className="w-2 h-2 rounded-full" style={{ background: '#10b981' }} />}
@@ -303,9 +303,7 @@ export default function IntegrationsPage() {
                     </div>
                   )}
                   <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: intg.bg }}>
-                      {intg.icon}
-                    </div>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center p-2" style={{ background: intg.bg }}><img src={intg.logo || '/logos/webhook.svg'} alt={intg.name} style={{ width: 24, height: 24, objectFit: 'contain' }} /></div>
                     <div>
                       <p className="font-bold text-sm" style={{ color: 'var(--ink)' }}>{intg.name}</p>
                       <p className="text-xs" style={{ color: 'var(--slate)' }}>{intg.category}</p>
@@ -328,9 +326,7 @@ export default function IntegrationsPage() {
             </button>
 
             <div className="flex items-center gap-4 mb-6">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl" style={{ background: activeIntegration.bg }}>
-                {activeIntegration.icon}
-              </div>
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center p-3" style={{ background: activeIntegration.bg }}><img src={activeIntegration.logo || '/logos/webhook.svg'} alt={activeIntegration.name} style={{ width: 36, height: 36, objectFit: 'contain' }} /></div>
               <div className="flex-1">
                 <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>{activeIntegration.name}</h1>
                 <p style={{ color: 'var(--slate)' }}>{activeIntegration.desc}</p>
@@ -360,8 +356,8 @@ export default function IntegrationsPage() {
                   <button onClick={() => handleOAuthConnect(activeIntegration.id)}
                     className="flex items-center gap-3 px-5 py-3 rounded-xl border text-sm font-semibold cursor-pointer hover:shadow-md transition-all"
                     style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: activeIntegration.bg }}>
-                    <span className="text-xl">{activeIntegration.icon}</span>
-                    {enabled[activeIntegration.id] ? `✅ Connected to ${activeIntegration.name}` : `Sign in with ${activeIntegration.name}`}
+                    <img src={activeIntegration.logo || '/logos/webhook.svg'} alt={activeIntegration.name} style={{ width: 20, height: 20, objectFit: 'contain' }} />
+                    {enabled[activeIntegration.id] ? `✅ Connected to ${activeIntegration.name}` : `Connect ${activeIntegration.name}`}
                   </button>
                   {enabled[activeIntegration.id] && (
                     <button onClick={() => setEnabled(prev => ({ ...prev, [activeIntegration.id]: false }))}

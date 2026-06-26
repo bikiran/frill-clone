@@ -4,6 +4,18 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
+function CategorySVG({ cat, size = 15 }: { cat: string; size?: number }) {
+  const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  if (cat === 'Getting Started') return <svg {...p}><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>
+  if (cat === 'Features') return <svg {...p}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+  if (cat === 'Billing') return <svg {...p}><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+  if (cat === 'Integrations') return <svg {...p}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+  if (cat === 'Troubleshooting') return <svg {...p}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+  if (cat === 'API') return <svg {...p}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+  if (cat === 'All') return <svg {...p}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+  return <svg {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+}
+
 export default function CustomDomainPage() {
   const params = useParams()
   const hostname = (params?.domain as string)?.replace(/__/g, '.')
@@ -81,7 +93,7 @@ export default function CustomDomainPage() {
 
   if (!company) return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24, background: '#fafafa' }}>
-      <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
+      <div style={{ marginBottom: 16, display: "flex", justifyContent: "center", opacity: 0.3 }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--slate, #6b6b70)" strokeWidth="1.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
       <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8, color: '#0d0d0d' }}>Domain not configured</h1>
       <p style={{ color: '#6b7280', marginBottom: 8 }}>No board found for <strong>{hostname}</strong></p>
       <p style={{ fontSize: 13, color: '#9ca3af' }}>Go to Admin → Settings → White Labeling to set up your custom domain.</p>
@@ -135,7 +147,9 @@ export default function CustomDomainPage() {
 
       {/* Hero — matches colvy.com/help exactly */}
       <div style={{ padding: '64px 24px', textAlign: 'center', background: 'var(--peach, #fff4f1)' }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>📚</div>
+        <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center', color: 'var(--coral, #ff7a6b)' }}>
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        </div>
         <h1 style={{ fontSize: 36, fontWeight: 900, marginBottom: 8, color: 'var(--ink, #1a1a1a)' }}>{company.name} Help Centre</h1>
         <p style={{ color: 'var(--slate, #6b6b70)', marginBottom: 32, fontSize: 18 }}>Find answers, guides, and resources</p>
         <div style={{ maxWidth: 480, margin: '0 auto', position: 'relative' }}>
@@ -161,7 +175,8 @@ export default function CustomDomainPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 32 }}>
           {cats.map(cat => (
             <button key={cat} onClick={() => setCatFilter(cat)}
-              style={{ padding: '7px 16px', borderRadius: 999, border: `1px solid ${catFilter === cat ? accent : 'var(--border, #f0f0f0)'}`, background: catFilter === cat ? accent : '#fff', color: catFilter === cat ? '#fff' : 'var(--slate, #6b6b70)', fontSize: 14, fontWeight: 500, cursor: 'pointer', transition: 'all 0.2s' }}>
+              style={{ padding: '7px 16px', borderRadius: 999, border: `1px solid ${catFilter === cat ? accent : 'var(--border, #f0f0f0)'}`, background: catFilter === cat ? accent : '#fff', color: catFilter === cat ? '#fff' : 'var(--slate, #6b6b70)', fontSize: 14, fontWeight: 500, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <CategorySVG cat={cat} size={13} />
               {cat}
             </button>
           ))}
@@ -169,12 +184,12 @@ export default function CustomDomainPage() {
 
         {articles.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 0' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>📚</div>
+            <div style={{ marginBottom: 16, display: "flex", justifyContent: "center", opacity: 0.3 }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--slate, #6b6b70)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
             <p style={{ color: 'var(--slate, #6b6b70)' }}>No help articles yet. Check back soon!</p>
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 0' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
+            <div style={{ marginBottom: 16, display: "flex", justifyContent: "center", opacity: 0.3 }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--slate, #6b6b70)" strokeWidth="1.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
             <p style={{ color: 'var(--slate, #6b6b70)' }}>No articles match your search</p>
           </div>
         ) : (
@@ -226,12 +241,12 @@ export default function CustomDomainPage() {
         {/* Support options */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16, marginTop: 48 }}>
           {[
-            { icon: '💬', title: 'Live Chat', desc: 'Chat with our team in real time', action: 'Start Chat', href: '#' },
-            { icon: '🎫', title: 'Submit a Ticket', desc: 'We\'ll get back to you soon', action: 'Open Ticket', href: `${boardUrl}/help/ticket` },
-            { icon: '📧', title: 'Email Support', desc: 'Response within 24h', action: 'Send Email', href: `mailto:support@${company.slug}.com` },
+            { svgIcon: 'chat', title: 'Live Chat', desc: 'Chat with our team in real time', action: 'Start Chat', href: '#' },
+            { svgIcon: 'ticket', title: 'Submit a Ticket', desc: 'We\'ll get back to you soon', action: 'Open Ticket', href: `${boardUrl}/help/ticket` },
+            { svgIcon: 'email', title: 'Email Support', desc: 'Response within 24h', action: 'Send Email', href: `mailto:support@${company.slug}.com` },
           ].map(s => (
             <div key={s.title} style={{ background: '#fff', borderRadius: 16, border: '1px solid var(--border, #f0f0f0)', padding: 20, textAlign: 'center' }}>
-              <div style={{ fontSize: 28, marginBottom: 8 }}>{s.icon}</div>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>{s.svgIcon === 'chat' ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> : s.svgIcon === 'ticket' ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> : <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}</div>
               <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: 'var(--ink, #1a1a1a)' }}>{s.title}</h3>
               <p style={{ fontSize: 13, color: 'var(--slate, #6b6b70)', marginBottom: 14 }}>{s.desc}</p>
               <a href={s.href} style={{ display: 'inline-block', padding: '8px 20px', borderRadius: 10, border: '1px solid var(--border, #f0f0f0)', fontSize: 13, fontWeight: 600, color: 'var(--ink, #1a1a1a)', textDecoration: 'none' }}>{s.action}</a>

@@ -31,9 +31,12 @@ const SIDEBAR_ITEMS = [
   ]},
   { section: 'API & Integrations', items: [
     { label: 'Integrations', href: '/admin/integrations' },
+    { label: 'Webhooks', tab: 'webhooks' },
+    { label: 'API', tab: 'api' },
   ]},
   { section: 'Site Navigation', items: [
     { label: 'Navigation', tab: 'nav' },
+    { label: 'Terminology', tab: 'terminology' },
   ]},
 ]
 
@@ -53,6 +56,17 @@ export default function SettingsPage() {
   const [navAnnouncements, setNavAnnouncements] = useState(true)
   const [navHelp, setNavHelp] = useState(true)
   const [navOrder, setNavOrder] = useState(['Ideas', 'Roadmap', 'Updates', 'Help Centre'])
+  // Webhooks
+  const [webhooks, setWebhooks] = useState<any[]>([])
+  const [webhookSecret] = useState(() => typeof crypto !== 'undefined' ? crypto.randomUUID?.() || '20d12d0e-f851-4b1b-ac88-d31637988152' : '20d12d0e-f851-4b1b-ac88-d31637988152')
+  const [newWebhookEvent, setNewWebhookEvent] = useState('')
+  const [newWebhookUrl, setNewWebhookUrl] = useState('')
+  // API Keys
+  const [apiKeys, setApiKeys] = useState<any[]>([])
+  const [newKeyName, setNewKeyName] = useState('')
+  const [generatedKey, setGeneratedKey] = useState('')
+  // Terminology
+  const [termSearch, setTermSearch] = useState('')
   const [dragNavItem, setDragNavItem] = useState<string | null>(null)
   // Styling
   const [accentColor, setAccentColor] = useState('#ff7a6b')
@@ -493,6 +507,9 @@ export default function SettingsPage() {
           {activeSettingsTab === 'auth' && 'Authentication'}
           {activeSettingsTab === 'privacy' && 'Privacy'}
           {activeSettingsTab === 'nav' && 'Navigation'}
+          {activeSettingsTab === 'terminology' && 'Terminology'}
+          {activeSettingsTab === 'webhooks' && 'Webhooks'}
+          {activeSettingsTab === 'api' && 'API'}
           {activeSettingsTab === 'languages' && 'Languages'}
         </h1>
         <p className="mb-6 text-sm" style={{ color: 'var(--slate)' }}>
@@ -503,6 +520,9 @@ export default function SettingsPage() {
           {activeSettingsTab === 'auth' && 'Configure authentication and access settings.'}
           {activeSettingsTab === 'privacy' && 'Control who can access your board.'}
           {activeSettingsTab === 'nav' && 'Show or hide navigation items.'}
+          {activeSettingsTab === 'terminology' && 'Customise the labels used throughout your board.'}
+          {activeSettingsTab === 'webhooks' && 'Receive HTTP callbacks when events happen in your board.'}
+          {activeSettingsTab === 'api' && 'Manage API keys for programmatic access to your board.'}
           {activeSettingsTab === 'languages' && 'Configure supported languages.'}
         </p>
 
@@ -858,6 +878,188 @@ export default function SettingsPage() {
                 <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
                   {saving ? 'Saving...' : saved ? '✅ Saved!' : 'Save Settings'}
                 </button>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Webhooks tab */}
+        {activeSettingsTab === 'webhooks' && (
+          <div className="space-y-5">
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Webhook Secret</h2>
+              <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Use webhooks to receive notifications when events happen in your board. <a href="https://docs.colvy.com/webhooks" className="hover:underline" style={{ color: 'var(--coral)' }} target="_blank">View documentation →</a></p>
+              <div className="flex items-center gap-3 p-3 rounded-xl font-mono text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--border)' }}>
+                <span style={{ color: 'var(--ink)', fontSize: 13 }}>{webhookSecret}</span>
+                <button onClick={() => navigator.clipboard.writeText(webhookSecret)}
+                  className="ml-auto text-xs px-3 py-1 rounded-lg cursor-pointer" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
+                  Copy
+                </button>
+              </div>
+              <p className="text-xs mt-2" style={{ color: '#ca8a04' }}>⚠️ Keep your webhook secret private.</p>
+            </div>
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-4" style={{ color: 'var(--ink)' }}>Add Webhook</h2>
+              <p className="text-xs mb-4" style={{ color: 'var(--slate)' }}>Webhooks are auto-disabled after repeated delivery failures. Ensure your endpoint is reachable.</p>
+              <div className="flex gap-3 mb-3">
+                <select value={newWebhookEvent} onChange={e => setNewWebhookEvent(e.target.value)}
+                  className="flex-1 px-3 py-2.5 rounded-xl border text-sm focus:outline-none cursor-pointer"
+                  style={{ borderColor: 'var(--border)', color: newWebhookEvent ? 'var(--ink)' : 'var(--slate)' }}>
+                  <option value="">Select event...</option>
+                  <option value="all">All Events</option>
+                  <option value="Announcement Created">Announcement Created</option>
+                  <option value="Announcement Deleted">Announcement Deleted</option>
+                  <option value="Announcement Published">Announcement Published</option>
+                  <option value="Announcement Updated">Announcement Updated</option>
+                  <option value="Comment Created">Comment Created</option>
+                  <option value="Comment Deleted">Comment Deleted</option>
+                  <option value="Comment Updated">Comment Updated</option>
+                  <option value="Idea Approved">Idea Approved</option>
+                  <option value="Idea Archived">Idea Archived</option>
+                  <option value="Idea Created">Idea Created</option>
+                  <option value="Idea Deleted">Idea Deleted</option>
+                  <option value="Idea Marked As Bug">Idea Marked As Bug</option>
+                  <option value="Idea Merged">Idea Merged</option>
+                  <option value="Idea Roadmap Changed">Idea Roadmap Changed</option>
+                  <option value="Idea Status Changed">Idea Status Changed</option>
+                  <option value="Idea Unvoted">Idea Unvoted</option>
+                  <option value="Idea Updated">Idea Updated</option>
+                  <option value="Idea Voted">Idea Voted</option>
+                  <option value="Note Created">Note Created</option>
+                  <option value="Note Deleted">Note Deleted</option>
+                  <option value="Note Updated">Note Updated</option>
+                  <option value="Survey Submitted">Survey Submitted</option>
+                </select>
+              </div>
+              <div className="flex gap-3">
+                <input value={newWebhookUrl} onChange={e => setNewWebhookUrl(e.target.value)}
+                  placeholder="https://your-server.com/webhook"
+                  className="flex-1 px-3 py-2.5 rounded-xl border text-sm focus:outline-none"
+                  style={{ borderColor: 'var(--border)' }} />
+                <button onClick={() => {
+                    if (!newWebhookEvent || !newWebhookUrl) return
+                    setWebhooks(prev => [...prev, { id: Date.now(), event: newWebhookEvent, url: newWebhookUrl }])
+                    setNewWebhookUrl(''); setNewWebhookEvent('')
+                  }}
+                  className="px-5 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer"
+                  style={{ background: 'var(--coral)' }}>
+                  Add
+                </button>
+              </div>
+            </div>
+            {webhooks.length > 0 && (
+              <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                {webhooks.map(wh => (
+                  <div key={wh.id} className="flex items-center justify-between p-4 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{wh.event}</p>
+                      <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--slate)' }}>{wh.url}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#dcfce7', color: '#16a34a' }}>Active</span>
+                      <button onClick={() => setWebhooks(prev => prev.filter(w => w.id !== wh.id))}
+                        className="text-xs cursor-pointer hover:underline" style={{ color: '#ef4444' }}>Remove</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* API tab */}
+        {activeSettingsTab === 'api' && (
+          <div className="space-y-5">
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>API Keys</h2>
+              <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Build your own integration using the Colvy API. <a href="https://developers.colvy.com" target="_blank" className="hover:underline" style={{ color: 'var(--coral)' }}>View API documentation →</a></p>
+              <div className="flex gap-3 mb-5">
+                <input value={newKeyName} onChange={e => setNewKeyName(e.target.value)}
+                  placeholder="Key name (e.g. Production)"
+                  className="flex-1 px-3 py-2.5 rounded-xl border text-sm focus:outline-none"
+                  style={{ borderColor: 'var(--border)' }} />
+                <button onClick={() => {
+                    if (!newKeyName.trim()) return
+                    const bytes = new Uint8Array(24)
+                    crypto.getRandomValues(bytes)
+                    const key = 'ck_' + Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join('')
+                    setApiKeys(prev => [...prev, { id: Date.now(), name: newKeyName.trim(), key, created: new Date().toLocaleDateString() }])
+                    setGeneratedKey(key)
+                    setNewKeyName('')
+                  }}
+                  className="px-5 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer"
+                  style={{ background: 'var(--coral)' }}>
+                  Create API Key
+                </button>
+              </div>
+              {generatedKey && (
+                <div className="p-4 rounded-xl mb-4" style={{ background: '#dcfce7', border: '1px solid #86efac' }}>
+                  <p className="text-sm font-semibold mb-2" style={{ color: '#16a34a' }}>✓ New API key created — copy it now, it will not be shown again</p>
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs flex-1 font-mono break-all" style={{ color: '#166534' }}>{generatedKey}</code>
+                    <button onClick={() => { navigator.clipboard.writeText(generatedKey); setGeneratedKey('') }}
+                      className="text-xs px-3 py-1.5 rounded-lg cursor-pointer shrink-0" style={{ background: '#16a34a', color: '#fff' }}>
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              )}
+              {apiKeys.length === 0 ? (
+                <p className="text-sm text-center py-6" style={{ color: 'var(--slate)' }}>No API keys yet. Create one above.</p>
+              ) : (
+                <div className="border rounded-xl overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                  {apiKeys.map(k => (
+                    <div key={k.id} className="flex items-center justify-between p-4 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                      <div>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{k.name}</p>
+                        <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--slate)' }}>ck_••••••••••••••••••••••••••••••••••••••••••••••••</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Created {k.created}</p>
+                      </div>
+                      <button onClick={() => setApiKeys(prev => prev.filter(key => key.id !== k.id))}
+                        className="text-xs cursor-pointer hover:underline" style={{ color: '#ef4444' }}>Revoke</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Terminology tab */}
+        {activeSettingsTab === 'terminology' && (() => {
+          const ALL_TERMS = ['Idea', 'Ideas', 'Idea board title', 'Idea board subtitle', 'Idea not found', 'Idea failed to load', 'Ideas board no Ideas', 'Ideas board failed to load', 'Ideas board filter placeholder', 'Ideas board meta title', 'Ideas board meta description', 'Submit Idea button', 'Create Idea form submit', 'Update Idea form submit', 'Update Idea form cancel', 'Idea form name placeholder', 'Idea form name length error', 'Idea form description placeholder', 'Idea form topics label', 'Idea form topics length error', 'Create Idea title', 'Similar Ideas title', 'Similar Ideas no results', 'View Idea', 'Add new Idea', 'Create new Idea', 'Close Idea', 'Create Idea signup prompt', 'Vote for Idea signup prompt', 'Sort by trending', 'Sort by votes (Highest first)', 'Sort by votes (Lowest first)', 'Sort by priority (Highest first)', 'Sort by priority (Lowest first)', 'Sort by MRR (Descending)', 'Sort by latest', 'Sort by oldest', 'Sort by custom order', 'Create Idea success title', 'Create Idea success subtitle', 'Follow Idea', 'Unfollow Idea', 'Pin Idea', 'Unpin Idea', 'Edit Idea', 'Delete Idea', 'Delete Idea success', 'Delete Idea confirmation title', 'Idea archived', 'Idea removed', 'Idea was merged (winning)', 'Idea was merged (losing)', 'Add Idea comment', 'Add Idea note', 'Idea pending approval', 'Idea rejected', 'Bug', 'Bugs', 'Idea marked as bug', 'Private', 'Idea is private', 'Prioritized', 'Unprioritized', 'Vote', 'Votes', 'Vote Idea', 'Unvote Idea', 'Idea Activity title', 'Delete Idea Activity confirmation title']
+          const filtered = ALL_TERMS.filter(t => !termSearch || t.toLowerCase().includes(termSearch.toLowerCase()))
+          return (
+            <div className="space-y-5">
+              <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+                <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Terminology</h2>
+                <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Customise the labels shown to your users throughout the board.</p>
+                <div className="relative mb-5">
+                  <svg className="absolute left-3.5 top-1/2 -translate-y-1/2" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--slate)' }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input value={termSearch} onChange={e => setTermSearch(e.target.value)}
+                    placeholder="Search terms..."
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm focus:outline-none"
+                    style={{ borderColor: 'var(--border)' }} />
+                </div>
+                <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+                  {filtered.map(term => (
+                    <div key={term} className="flex items-center gap-4 py-2.5 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                      <span className="text-sm flex-1" style={{ color: 'var(--ink)' }}>{term}</span>
+                      <input
+                        className="text-sm px-3 py-1.5 rounded-lg border focus:outline-none"
+                        style={{ borderColor: 'var(--border)', width: 200, fontSize: 13 }}
+                        placeholder={term} />
+                    </div>
+                  ))}
+                  {filtered.length === 0 && (
+                    <p className="text-sm text-center py-8" style={{ color: 'var(--slate)' }}>No terms match your search</p>
+                  )}
+                </div>
+                <div className="flex justify-end mt-4">
+                  <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
+                    {saving ? 'Saving...' : saved ? '✅ Saved!' : 'Save Terminology'}
+                  </button>
+                </div>
               </div>
             </div>
           )

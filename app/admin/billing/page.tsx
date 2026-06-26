@@ -200,25 +200,53 @@ export default function BillingPage() {
         </div>
       </div>
 
-      {/* Current plan banner */}
-      {isPaid && (
-        <div className="mb-8 p-5 rounded-2xl border" style={{ background: 'var(--peach)', borderColor: 'var(--coral)' + '30' }}>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-bold" style={{ color: 'var(--coral)' }}>
-                ✓ You're on the <span className="capitalize">{currentPlanId}</span> plan
-              </p>
-              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
-                {subscription?.status === 'active' ? 'Your subscription is active.' : 'Manage your subscription below.'}
-                {subscription?.current_period_end && ` Renews ${new Date(subscription.current_period_end * 1000).toLocaleDateString()}.`}
-              </p>
+      {/* Trial / Current plan banner */}
+      {(isPaid || currentPlanId === 'free' || currentPlanId === 'trial') && (
+        <div className="mb-8 p-5 rounded-2xl border" style={{ background: 'var(--peach)', borderColor: 'var(--coral)30' }}>
+          {currentPlanId === 'trial' || currentPlanId === 'free' ? (
+            <>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="font-bold" style={{ color: 'var(--coral)' }}>14 Day Trial — 8 days remaining</p>
+                  <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
+                    Your trial includes Unlimited Surveys, White Labelling & Privacy Add-ons.
+                  </p>
+                </div>
+                <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ background: 'var(--coral)', color: '#fff' }}>Trial</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t" style={{ borderColor: 'var(--coral)20' }}>
+                {[
+                  { label: 'Ideas', value: '∞', sub: 'Unlimited' },
+                  { label: 'Surveys', value: '∞', sub: 'Unlimited' },
+                  { label: 'Polls', value: '∞', sub: 'Poll unlimited' },
+                  { label: 'Help Articles', value: '∞', sub: 'Unlimited' },
+                ].map(s => (
+                  <div key={s.label} className="text-center">
+                    <p className="text-2xl font-black" style={{ color: 'var(--coral)' }}>{s.value}</p>
+                    <p className="text-xs font-semibold mt-0.5" style={{ color: 'var(--ink)' }}>{s.label}</p>
+                    <p className="text-xs" style={{ color: 'var(--slate)' }}>{s.sub}</p>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-bold" style={{ color: 'var(--coral)' }}>
+                  ✓ You&apos;re on the <span className="capitalize">{currentPlanId}</span> plan
+                </p>
+                <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
+                  {subscription?.status === 'active' ? 'Your subscription is active.' : 'Manage your subscription below.'}
+                  {subscription?.current_period_end && ` Renews ${new Date(subscription.current_period_end * 1000).toLocaleDateString()}.`}
+                </p>
+              </div>
+              <button onClick={handleManageBilling} disabled={portalLoading || !subscription?.stripe_customer_id}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
+                style={{ background: 'var(--coral)' }}>
+                {portalLoading ? 'Loading...' : 'Manage →'}
+              </button>
             </div>
-            <button onClick={handleManageBilling} disabled={portalLoading || !subscription?.stripe_customer_id}
-              className="px-4 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
-              style={{ background: 'var(--coral)' }}>
-              {portalLoading ? 'Loading...' : 'Manage →'}
-            </button>
-          </div>
+          )}
         </div>
       )}
 
