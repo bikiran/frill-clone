@@ -270,7 +270,7 @@ export default function SettingsPage() {
   return (
     <div className="flex min-h-[calc(100vh-56px)]">
       {/* Settings Sidebar */}
-      <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
+      <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r" style={{ borderColor: 'var(--border)', position: 'sticky', top: 0, height: 'calc(100vh - 56px)', overflowY: 'auto', flexShrink: 0 }}>
         <div className="py-4 px-3">
           {SIDEBAR_ITEMS.map((group, gi) => (
             <div key={gi} className="mb-4">
