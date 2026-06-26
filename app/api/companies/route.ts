@@ -43,6 +43,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
+    // Seed sample data for new company (non-blocking)
+    if (data?.id) {
+      const { seedCompanyData } = await import('@/lib/seedCompany')
+      seedCompanyData(data.id, data.name).catch(console.error)
+    }
+
     return NextResponse.json({ company: data })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

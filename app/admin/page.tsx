@@ -17,6 +17,8 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set())
   const [activity, setActivity] = useState<any[]>([])
+  const [seeding, setSeeding] = useState(false)
+  const [seeded, setSeeded] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -59,6 +61,27 @@ export default function AdminDashboard() {
       console.error('Failed to fetch stats:', error)
     }
     setLoading(false)
+  }
+
+  const seedSampleData = async () => {
+    if (!confirm('Add sample ideas, announcements, and help articles to your dashboard?')) return
+    setSeeding(true)
+    try {
+      // Get company ID
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user) return
+      const { data: co } = await (supabase as any).from('companies').select('id, name').eq('owner_id', session.user.id).single()
+      if (!co) { alert('No company found'); return }
+      const res = await fetch('/api/seed-company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: co.id, companyName: co.name }),
+      })
+      const data = await res.json()
+      if (data.success) { setSeeded(true); fetchStats(); fetchActivity() }
+      else alert('Seed failed: ' + data.error)
+    } catch (err: any) { alert(err.message) }
+    setSeeding(false)
   }
 
   const fetchActivity = async () => {

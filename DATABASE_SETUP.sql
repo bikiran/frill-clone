@@ -972,3 +972,9 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS help_domain_verified BOOLEAN DEFA
 -- Manually set prexty company domains (run if needed)
 -- UPDATE companies SET help_domain = 'help.prexty.com' WHERE slug = 'prexty';
 -- UPDATE companies SET board_domain = 'feedback.prexty.com' WHERE slug = 'prexty';
+
+-- Add company_id to help_articles and statuses for multi-tenant seeding
+ALTER TABLE help_articles ADD COLUMN IF NOT EXISTS company_id UUID;
+ALTER TABLE statuses ADD COLUMN IF NOT EXISTS company_id UUID;
+ALTER TABLE statuses ADD COLUMN IF NOT EXISTS emoji TEXT;
+ALTER TABLE statuses ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;
