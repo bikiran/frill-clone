@@ -67,6 +67,8 @@ export default function SettingsPage() {
   const [generatedKey, setGeneratedKey] = useState('')
   // Terminology
   const [termSearch, setTermSearch] = useState('')
+  const [termValues, setTermValues] = useState<Record<string, string>>({})
+  const [privacyMode, setPrivacyMode] = useState('public')
   const [dragNavItem, setDragNavItem] = useState<string | null>(null)
   // Styling
   const [accentColor, setAccentColor] = useState('#ff7a6b')
@@ -155,9 +157,21 @@ export default function SettingsPage() {
       }
       setLoadedCompany(true)
 
-      // Load site_settings for additional settings
+      // Load site_settings scoped to THIS company
       try {
-        const { data } = await supabase.from('site_settings').select('*').eq('key', 'general').single()
+        let settingsData: any = null
+        if (co?.id) {
+          const { data: d } = await (supabase as any).from('site_settings').select('*')
+            .eq('key', 'general').eq('company_id', co.id).maybeSingle()
+          settingsData = d
+        }
+        // Fallback: unscoped (legacy)
+        if (!settingsData) {
+          const { data: d } = await (supabase as any).from('site_settings').select('*')
+            .eq('key', 'general').is('company_id', null).maybeSingle()
+          settingsData = d
+        }
+        const data = settingsData
         if (data?.value) {
           const s = data.value
           // Only set favicon if it belongs to THIS company's settings
@@ -193,7 +207,10 @@ export default function SettingsPage() {
           if (s.showIdeaDate) setShowIdeaDate(s.showIdeaDate)
           if (s.showIdeaActivity) setShowIdeaActivity(s.showIdeaActivity)
           if (s.requireIdeaTopic !== undefined) setRequireIdeaTopic(s.requireIdeaTopic)
-          if (typeof window !== 'undefined') localStorage.setItem('site_settings', JSON.stringify(s))
+          if (s.termValues) setTermValues(s.termValues)
+          if (s.privacyMode) setPrivacyMode(s.privacyMode)
+          const slugKey = typeof window !== 'undefined' ? (window.location.hostname.replace('.colvy.com','') || 'colvy') : 'colvy'
+          if (typeof window !== 'undefined') localStorage.setItem(`site_settings_${slugKey}`, JSON.stringify(s))
         }
       } catch {
         try {
@@ -215,7 +232,7 @@ export default function SettingsPage() {
       accentColor, themeMode, borderRadius,
       emailFromName, emailReplyTo, emailSignature,
       hidePoweredBy, customDomain, boardDomain, helpDomain, domainStatus,
-      guestVotingEnabled, guestSubmitEnabled,
+      guestVotingEnabled, guestSubmitEnabled, termValues, privacyMode,
       allowAnnSubsc, allowAnnComments, showAnnComments, disableAnnReactions,
       disableAnimGifs, disableCommentReactions, allowIdeaComments, showIdeaMRR,
       showIdeaNumber, showRoadmapDesc, showIdeaDate, showIdeaActivity, requireIdeaTopic,
@@ -271,7 +288,15 @@ export default function SettingsPage() {
         if (updateErr) console.error('Company update error:', updateErr.message)
         else {
           // Update local company state so UI reflects immediately
-          setCompany((prev: any) => prev ? { ...prev, name: companyName, logo_url: logoUrl, accent_color: accentColor } : prev)
+          const updated = companyToUpdate ? { ...companyToUpdate, name: companyName, logo_url: logoUrl, accent_color: accentColor } : null
+          setCompany(updated)
+          // Notify layout nav and other pages
+          window.dispatchEvent(new CustomEvent('colvy-company-update', { detail: { name: companyName, logo_url: logoUrl, accent_color: accentColor } }))
+          // Update cached company in localStorage
+          try {
+            const slug = updated?.slug || window.location.hostname.replace('.colvy.com','')
+            if (slug) localStorage.setItem(`company_${slug}`, JSON.stringify(updated || { name: companyName, logo_url: logoUrl, accent_color: accentColor }))
+          } catch {}
         }
       }
     } catch (e) {
@@ -322,9 +347,56 @@ export default function SettingsPage() {
     }
   }
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Extract dominant color from an image
+  const extractDominantColor = (imgUrl: string): Promise<string | null> => {
+    return new Promise(resolve => {
+      try {
+        const img = new Image()
+        img.crossOrigin = 'Anonymous'
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          canvas.width = 50; canvas.height = 50
+          const ctx = canvas.getContext('2d')
+          if (!ctx) { resolve(null); return }
+          ctx.drawImage(img, 0, 0, 50, 50)
+          const data = ctx.getImageData(0, 0, 50, 50).data
+          let r = 0, g = 0, b = 0, count = 0
+          for (let i = 0; i < data.length; i += 4) {
+            // Skip near-white, near-black, and transparent pixels
+            const alpha = data[i + 3]
+            const brightness = (data[i] + data[i+1] + data[i+2]) / 3
+            if (alpha > 128 && brightness > 30 && brightness < 220) {
+              r += data[i]; g += data[i+1]; b += data[i+2]; count++
+            }
+          }
+          if (count === 0) { resolve(null); return }
+          const hex = '#' + [r,g,b].map(v => Math.round(v/count).toString(16).padStart(2,'0')).join('')
+          resolve(hex)
+        }
+        img.onerror = () => resolve(null)
+        img.src = imgUrl
+      } catch { resolve(null) }
+    })
+  }
+
+  const [suggestedColor, setSuggestedColor] = useState<string | null>(null)
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) uploadFile(file, 'logo', setLogoUrl, 'logoUrl')
+    if (!file) return
+    // Upload file then extract color
+    await uploadFile(file, 'logo', setLogoUrl, 'logoUrl')
+    // Small delay to let URL state settle
+    setTimeout(async () => {
+      // Get the latest logoUrl from the input element (state may not have updated yet)
+      const input = e.target
+      if (input.files?.[0]) {
+        const objectUrl = URL.createObjectURL(input.files[0])
+        const color = await extractDominantColor(objectUrl)
+        if (color) setSuggestedColor(color)
+        URL.revokeObjectURL(objectUrl)
+      }
+    }, 500)
   }
 
   const handleFaviconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -635,7 +707,11 @@ export default function SettingsPage() {
 
             <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Custom Domains</h2>
-              <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Use your own domain instead of {company?.slug ? `${company.slug}.colvy.com` : 'yourslug.colvy.com'}</p>
+              <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Use your own domain instead of {company?.slug
+                    ? `${company.slug}.colvy.com`
+                    : typeof window !== 'undefined' && window.location.hostname.endsWith('.colvy.com')
+                    ? window.location.hostname
+                    : 'yourslug.colvy.com'}</p>
               <div className="space-y-5">
                 {/* Always-on Colvy URL */}
                 <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
@@ -644,7 +720,11 @@ export default function SettingsPage() {
                     <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>● Active</span>
                   </div>
                   <p className="text-sm font-mono" style={{ color: 'var(--coral)' }}>
-                    {company?.slug ? `${company.slug}.colvy.com` : 'yourslug.colvy.com'}
+                    {company?.slug
+                    ? `${company.slug}.colvy.com`
+                    : typeof window !== 'undefined' && window.location.hostname.endsWith('.colvy.com')
+                    ? window.location.hostname
+                    : 'yourslug.colvy.com'}
                   </p>
                   {company?.slug && (
                     <a href={`https://${company.slug}.colvy.com`} target="_blank"
@@ -798,7 +878,7 @@ export default function SettingsPage() {
                   { label: 'SSO only', desc: 'Users must sign in via your SSO provider', value: 'sso' },
                 ].map((opt, i) => (
                   <label key={opt.value} className={`flex items-start gap-3 p-4 cursor-pointer hover:bg-gray-50 rounded-xl ${i < 2 ? 'border-b' : ''}`} style={{ borderColor: 'var(--border)' }}>
-                    <input type="radio" name="privacy" value={opt.value} defaultChecked={opt.value === 'public'} className="mt-0.5" style={{ accentColor: 'var(--coral)' }} />
+                    <input type="radio" name="privacy" value={opt.value} checked={privacyMode === opt.value} onChange={() => setPrivacyMode(opt.value)} className="mt-0.5" style={{ accentColor: 'var(--coral)' }} />
                     <div>
                       <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{opt.label}</p>
                       <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{opt.desc}</p>
@@ -1152,6 +1232,21 @@ export default function SettingsPage() {
                 <div>
                   <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Light theme</p>
                   <p className="text-xs" style={{ color: 'var(--slate)' }}>Recommended size: 256 × 256px.</p>
+                {suggestedColor && (
+                  <div className="mt-2 flex items-center gap-2 p-2 rounded-lg border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+                    <div style={{ width: 20, height: 20, borderRadius: 5, background: suggestedColor, flexShrink: 0, border: '1px solid rgba(0,0,0,0.1)' }} />
+                    <span className="text-xs" style={{ color: 'var(--slate)' }}>Brand color detected: <strong style={{ color: suggestedColor }}>{suggestedColor}</strong></span>
+                    <button onClick={() => { setAccentColor(suggestedColor); setSuggestedColor(null) }}
+                      className="text-xs px-2 py-0.5 rounded-md font-semibold ml-auto cursor-pointer"
+                      style={{ background: suggestedColor, color: '#fff', border: 'none' }}>
+                      Use this
+                    </button>
+                    <button onClick={() => setSuggestedColor(null)}
+                      className="text-xs cursor-pointer" style={{ color: 'var(--slate)', background: 'none', border: 'none' }}>
+                      Dismiss
+                    </button>
+                  </div>
+                )}
                 </div>
               </div>
             </div>
@@ -1465,7 +1560,11 @@ export default function SettingsPage() {
                   <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>● Active</span>
                 </div>
                 <p className="text-sm font-mono" style={{ color: 'var(--coral)' }}>
-                  {company?.slug ? `${company.slug}.colvy.com` : 'yourslug.colvy.com'}
+                  {company?.slug
+                    ? `${company.slug}.colvy.com`
+                    : typeof window !== 'undefined' && window.location.hostname.endsWith('.colvy.com')
+                    ? window.location.hostname
+                    : 'yourslug.colvy.com'}
                 </p>
                 <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>This is your permanent Colvy URL — always active, no setup needed.</p>
               </div>

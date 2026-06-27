@@ -42,6 +42,30 @@ export default function AdminDashboard() {
     })
     fetchStats()
     fetchActivity()
+
+    // Live activity: subscribe to ideas table changes
+    const channel = (supabase as any)
+      .channel('admin-activity')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ideas' }, (payload: any) => {
+        setActivity(prev => [{
+          type: 'idea', typeLabel: 'New idea',
+          label: payload.new.title || 'New idea',
+          by: payload.new.created_by_name || 'Someone',
+          at: payload.new.created_at || new Date().toISOString(),
+          color: '#ff7a6b'
+        }, ...prev].slice(0, 12))
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'votes' }, () => {
+        setActivity(prev => [{
+          type: 'vote', typeLabel: 'Vote',
+          label: 'Upvoted an idea',
+          by: 'A user',
+          at: new Date().toISOString(),
+          color: '#2563eb'
+        }, ...prev].slice(0, 12))
+      })
+      .subscribe()
+    return () => { (supabase as any).removeChannel(channel) }
   }, [router])
 
   const fetchStats = async () => {
@@ -114,10 +138,10 @@ export default function AdminDashboard() {
         (supabase as any).from('announcements').select('id,title,created_at').order('created_at', { ascending: false }).limit(3),
       ])
       const items: any[] = []
-      ;(ideas.data || []).forEach((i: any) => items.push({ type: 'idea', label: i.title, by: i.created_by_name || 'Someone', at: i.created_at, icon: '💡', color: 'var(--coral)' }))
-      ;(comments.data || []).forEach((c: any) => items.push({ type: 'comment', label: c.content?.slice(0, 60), by: c.author_name || 'Someone', at: c.created_at, icon: '💬', color: '#7c3aed' }))
-      ;(votes.data || []).forEach((v: any) => items.push({ type: 'vote', label: 'Upvoted an idea', by: 'A user', at: v.created_at, icon: '▲', color: '#2563eb' }))
-      ;(anns.data || []).forEach((a: any) => items.push({ type: 'announcement', label: a.title, by: 'Admin', at: a.created_at, icon: '📢', color: '#059669' }))
+      ;(ideas.data || []).forEach((i: any) => items.push({ type: 'idea', label: i.title || 'New idea', by: i.created_by_name || 'Someone', at: i.created_at, color: '#ff7a6b', typeLabel: 'New idea' }))
+      ;(comments.data || []).forEach((c: any) => items.push({ type: 'comment', label: c.content?.slice(0, 60) || 'New comment', by: c.author_name || 'Someone', at: c.created_at, color: '#7c3aed', typeLabel: 'Comment' }))
+      ;(votes.data || []).forEach((v: any) => items.push({ type: 'vote', label: 'Upvoted an idea', by: 'A user', at: v.created_at, color: '#2563eb', typeLabel: 'Vote' }))
+      ;(anns.data || []).forEach((a: any) => items.push({ type: 'announcement', label: a.title || 'New announcement', by: 'Admin', at: a.created_at, color: '#059669', typeLabel: 'Announcement' }))
       items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
       setActivity(items.slice(0, 12))
     } catch {}
