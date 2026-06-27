@@ -15,8 +15,12 @@ export function middleware(req: NextRequest) {
   const hostname = req.headers.get('host') || ''
   const path = url.pathname
 
-  // colvy.com → serve normally
+  // colvy.com → landing page for root, normal for everything else
   if (hostname === 'colvy.com' || hostname === 'www.colvy.com') {
+    if (path === '/') {
+      url.pathname = '/landing'
+      return NextResponse.rewrite(url)
+    }
     return NextResponse.next()
   }
 
