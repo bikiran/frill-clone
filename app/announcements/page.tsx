@@ -54,7 +54,28 @@ export default function AnnouncementsPage() {
     } catch (err) {
       console.error(err)
     }
+
+    // Set page title with company name
+    if (typeof document !== 'undefined') {
+      const h = window.location.hostname
+      const slug = h.endsWith('.colvy.com') ? h.replace('.colvy.com','') : null
+      if (slug) {
+        const coName = document.querySelector('meta[name="company-name"]')?.getAttribute('content') || slug
+        document.title = `${coName}'s Announcements — Colvy`
+      }
+    }
     setLoading(false)
+      // Set page title from company name
+      if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+        const h = window.location.hostname
+        if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+          const slug = h.replace('.colvy.com', '')
+          const cached = localStorage.getItem(`company_${slug}`)
+          const co = cached ? JSON.parse(cached) : null
+          const name = co?.name || slug.charAt(0).toUpperCase() + slug.slice(1)
+          document.title = `${name}'s Updates — Colvy`
+        }
+      }
   }
 
   const handleSelect = async (ann: any) => {

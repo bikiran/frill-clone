@@ -60,7 +60,19 @@ export default function RoadmapPage() {
     }
     const { data } = await q.order('votes', { ascending: false })
     if (data) setIdeas(data)
+
     setLoading(false)
+      // Set page title from company name
+      if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+        const h = window.location.hostname
+        if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+          const slug = h.replace('.colvy.com', '')
+          const cached = localStorage.getItem(`company_${slug}`)
+          const co = cached ? JSON.parse(cached) : null
+          const name = co?.name || slug.charAt(0).toUpperCase() + slug.slice(1)
+          document.title = `${name}'s Roadmap — Colvy`
+        }
+      }
   }
 
   const fetchCustomStatuses = async () => {

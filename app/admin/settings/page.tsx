@@ -67,6 +67,7 @@ export default function SettingsPage() {
   const [generatedKey, setGeneratedKey] = useState('')
   // Terminology
   const [termSearch, setTermSearch] = useState('')
+  const [settingsSearch, setSettingsSearch] = useState('')
   const [termValues, setTermValues] = useState<Record<string, string>>({})
   const [privacyMode, setPrivacyMode] = useState('public')
   const [dragNavItem, setDragNavItem] = useState<string | null>(null)
@@ -104,7 +105,20 @@ export default function SettingsPage() {
   const [showIdeaDate, setShowIdeaDate] = useState<'always' | 'admins' | 'never'>('always')
   const [showIdeaActivity, setShowIdeaActivity] = useState<'always' | 'admins'>('always')
   const [requireIdeaTopic, setRequireIdeaTopic] = useState(false)
-  const [activeSettingsTab, setActiveSettingsTab] = useState('general')
+  const [activeSettingsTab, setActiveSettingsTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.replace('#', '')
+      const valid = ['general','theme','emails','whitelabel','auth','nav','terminology','webhooks','api','privacy','misc']
+      if (valid.includes(hash)) return hash
+    }
+    return 'general'
+  })
+
+  // Sync tab to URL hash for reload persistence
+  const switchTab = (tab: string) => {
+    setActiveSettingsTab(tab)
+    if (typeof window !== 'undefined') window.location.hash = tab
+  }
   const logoFileRef = useRef<HTMLInputElement>(null)
   const faviconFileRef = useRef<HTMLInputElement>(null)
   const ogFileRef = useRef<HTMLInputElement>(null)
@@ -303,9 +317,10 @@ export default function SettingsPage() {
       console.error('Company update failed:', e)
     }
     
-    // Cache in localStorage for immediate layout access
+    // Cache in localStorage scoped to this company slug
     if (typeof window !== 'undefined') {
-      localStorage.setItem('site_settings', JSON.stringify(settingsData))
+      const slugKey = window.location.hostname.replace('.colvy.com','') || 'colvy'
+      localStorage.setItem(`site_settings_${slugKey}`, JSON.stringify(settingsData))
     }
     
     setSaving(false)
@@ -331,17 +346,19 @@ export default function SettingsPage() {
       const { data: { publicUrl } } = supabase.storage.from(uploadBucket).getPublicUrl(data!.path)
       setter(publicUrl)
       
-      // Save the URL directly to DB immediately (don't rely on state update timing)
-      const currentSettings: any = {}
+      // Save URL to DB immediately, scoped to this company
       try {
-        const { data: s } = await supabase.from('site_settings').select('value').eq('key', 'general').single()
-        if (s?.value) Object.assign(currentSettings, s.value)
-      } catch {}
-      currentSettings[settingKey] = publicUrl
-      await supabase.from('site_settings').upsert({ key: 'general', value: currentSettings, updated_at: new Date().toISOString() })
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('site_settings', JSON.stringify({ ...currentSettings, [settingKey]: publicUrl }))
-      }
+        const cid = company?.id
+        const currentSettings: any = {}
+        if (cid) {
+          const { data: s } = await (supabase as any).from('site_settings').select('value').eq('key', 'general').eq('company_id', cid).maybeSingle()
+          if (s?.value) Object.assign(currentSettings, s.value)
+        }
+        currentSettings[settingKey] = publicUrl
+        await (supabase as any).from('site_settings').upsert({ key: 'general', company_id: company?.id || null, value: currentSettings, updated_at: new Date().toISOString() }, { onConflict: 'key,company_id' })
+        const slugKey = typeof window !== 'undefined' ? (window.location.hostname.replace('.colvy.com','') || 'colvy') : 'colvy'
+        if (typeof window !== 'undefined') localStorage.setItem(`site_settings_${slugKey}`, JSON.stringify({ ...currentSettings }))
+      } catch (saveErr: any) { console.warn('URL save error:', saveErr.message) }
     } catch (err: any) {
       alert('Upload failed: ' + err.message + '\n\nMake sure a "settings" or "idea-images" storage bucket exists in Supabase with public access.')
     }
@@ -429,7 +446,7 @@ export default function SettingsPage() {
                     {item.label}
                   </a>
                 ) : (
-                  <button key={item.label} onClick={() => setActiveSettingsTab(item.tab)}
+                  <button key={item.label} onClick={() => switchTab(item.tab)}
                     className="flex items-center w-full text-left px-3 py-2 rounded-lg text-sm cursor-pointer hover:bg-gray-50 transition-all"
                     style={{
                       background: activeSettingsTab === item.tab ? 'var(--peach)' : 'transparent',

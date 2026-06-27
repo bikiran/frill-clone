@@ -78,7 +78,19 @@ export default function HelpCentrePage() {
       const { data } = await q.order('created_at', { ascending: false })
       setArticles(data?.length ? data : (companyId ? [] : DEMO_ARTICLES))
     } catch { setArticles(DEMO_ARTICLES) }
+
     setLoading(false)
+      // Set page title from company name
+      if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+        const h = window.location.hostname
+        if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+          const slug = h.replace('.colvy.com', '')
+          const cached = localStorage.getItem(`company_${slug}`)
+          const co = cached ? JSON.parse(cached) : null
+          const name = co?.name || slug.charAt(0).toUpperCase() + slug.slice(1)
+          document.title = `${name}'s Help Centre — Colvy`
+        }
+      }
   }
 
   const isAdmin = user?.email === ADMIN_EMAIL

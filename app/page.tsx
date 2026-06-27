@@ -346,6 +346,19 @@ export default function HomePage() {
 
   const fetchIdeas = async () => {
     const companyId = await getCompanyId()
+
+    // Enforce board privacy - if company is private, require login
+    if (companyId) {
+      const { data: coData } = await (supabase as any).from('companies').select('id,name,is_private,slug').eq('id', companyId).maybeSingle()
+      if (coData?.is_private) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) {
+          window.location.href = '/signin?redirect=' + encodeURIComponent(window.location.href)
+          return
+        }
+      }
+    }
+
     let q = supabase.from('ideas').select('*') as any
     if (companyId) q = q.eq('company_id', companyId)
     const { data } = await q

@@ -55,13 +55,22 @@ export default function AdminDashboard() {
           color: '#ff7a6b'
         }, ...prev].slice(0, 12))
       })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'votes' }, () => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'votes' }, (payload: any) => {
         setActivity(prev => [{
           type: 'vote', typeLabel: 'Vote',
           label: 'Upvoted an idea',
-          by: 'A user',
-          at: new Date().toISOString(),
+          by: payload.new?.guest_id ? 'Guest visitor' : 'Registered user',
+          at: payload.new?.created_at || new Date().toISOString(),
           color: '#2563eb'
+        }, ...prev].slice(0, 12))
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, (payload: any) => {
+        setActivity(prev => [{
+          type: 'comment', typeLabel: 'Comment',
+          label: payload.new?.content?.slice(0, 60) || 'New comment',
+          by: payload.new?.author_name || 'Someone',
+          at: payload.new?.created_at || new Date().toISOString(),
+          color: '#7c3aed'
         }, ...prev].slice(0, 12))
       })
       .subscribe()
@@ -134,13 +143,13 @@ export default function AdminDashboard() {
       const [ideas, comments, votes, anns] = await Promise.all([
         (supabase as any).from('ideas').select('id,title,created_at,created_by_name').order('created_at', { ascending: false }).limit(5),
         (supabase as any).from('comments').select('id,content,created_at,author_name,idea_id').order('created_at', { ascending: false }).limit(5),
-        (supabase as any).from('votes').select('id,created_at,idea_id').order('created_at', { ascending: false }).limit(5),
+        (supabase as any).from('votes').select('id,created_at,idea_id,guest_id,user_id').order('created_at', { ascending: false }).limit(5),
         (supabase as any).from('announcements').select('id,title,created_at').order('created_at', { ascending: false }).limit(3),
       ])
       const items: any[] = []
       ;(ideas.data || []).forEach((i: any) => items.push({ type: 'idea', label: i.title || 'New idea', by: i.created_by_name || 'Someone', at: i.created_at, color: '#ff7a6b', typeLabel: 'New idea' }))
       ;(comments.data || []).forEach((c: any) => items.push({ type: 'comment', label: c.content?.slice(0, 60) || 'New comment', by: c.author_name || 'Someone', at: c.created_at, color: '#7c3aed', typeLabel: 'Comment' }))
-      ;(votes.data || []).forEach((v: any) => items.push({ type: 'vote', label: 'Upvoted an idea', by: 'A user', at: v.created_at, color: '#2563eb', typeLabel: 'Vote' }))
+      ;(votes.data || []).forEach((v: any) => items.push({ type: 'vote', label: 'Upvoted an idea', by: v.guest_id ? 'Guest visitor' : 'Registered user', at: v.created_at, color: '#2563eb', typeLabel: 'Vote' }))
       ;(anns.data || []).forEach((a: any) => items.push({ type: 'announcement', label: a.title || 'New announcement', by: 'Admin', at: a.created_at, color: '#059669', typeLabel: 'Announcement' }))
       items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
       setActivity(items.slice(0, 12))
