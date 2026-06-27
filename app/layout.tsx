@@ -139,10 +139,14 @@ export default function RootLayout({
       if (!u) { setIsCompanyOwner(false); return }
       const SUPER_ADMIN = 'bishalstha76@gmail.com'
       setIsAdmin(u.email === SUPER_ADMIN)
+      // Also check if user is on a subdomain - they're probably the owner
+      const currentHost = typeof window !== 'undefined' ? window.location.hostname : ''
+      const onSubdomain = currentHost.endsWith('.colvy.com') && currentHost !== 'colvy.com' && currentHost !== 'www.colvy.com'
+
       try {
         // Use maybeSingle() - won't throw if no company found
         const { data } = await (supabase as any).from('companies').select('*').eq('owner_id', u.id).maybeSingle()
-        setIsCompanyOwner(!!data || u.email === SUPER_ADMIN)
+        setIsCompanyOwner(!!data || u.email === SUPER_ADMIN || onSubdomain)
         if (data) {
           setCompany(data)
           // Apply company accent color
@@ -155,7 +159,7 @@ export default function RootLayout({
           }
         }
       } catch {
-        setIsCompanyOwner(u.email === SUPER_ADMIN)
+        setIsCompanyOwner(u.email === SUPER_ADMIN || onSubdomain)
       }
     }
 

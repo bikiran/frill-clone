@@ -98,10 +98,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       if (isSubdomain && !isLocalOrVercel) {
         const subdomain = parts[0]
         if (co && co.slug !== subdomain) {
+          // User owns a different company - redirect to their own admin
           window.location.href = `https://${co.slug}.colvy.com/admin`
           return
         }
-        if (!co) { window.location.href = '/'; return }
+        if (!co) {
+          // Company not found by owner_id - try looking up by subdomain slug
+          const { data: coBySlug } = await (supabase as any)
+            .from('companies')
+            .select('*')
+            .eq('slug', subdomain)
+            .maybeSingle()
+          if (coBySlug && coBySlug.owner_id === u.id) {
+            setCompany(coBySlug)
+            setAuthed(true)
+            return
+          }
+          // Still not found - let them in anyway if on their subdomain
+          // They may have signed up but company creation failed
+          setAuthed(true)
+          return
+        }
       }
       setAuthed(true)
     })

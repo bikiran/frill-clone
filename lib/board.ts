@@ -32,13 +32,16 @@ export async function getCompanyBySlug(slug: string): Promise<Company | null> {
 
 export async function getCompanyByOwner(userId: string): Promise<Company | null> {
   try {
-    const { data } = await (supabase as any)
+    // maybeSingle() returns null (not throws) when no company found
+    const { data, error } = await (supabase as any)
       .from('companies')
       .select('*')
       .eq('owner_id', userId)
-      .single()
+      .maybeSingle()
+    if (error) console.warn('getCompanyByOwner error:', error.message)
     return data || null
-  } catch {
+  } catch (e: any) {
+    console.warn('getCompanyByOwner exception:', e.message)
     return null
   }
 }
