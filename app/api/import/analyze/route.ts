@@ -134,6 +134,98 @@ function analyzeGeneric(platform: string) {
   }
 }
 
+async function analyzeHelpScout(url: string) {
+  try {
+    const domain = url.match(/([a-z0-9-]+)\.helpscoutdocs\.com/)?.[1]
+    if (!domain) throw new Error('No Help Scout domain found')
+    const res = await fetch(`https://${domain}.helpscoutdocs.com/api/v1/articles.json?status=published&pageSize=100`)
+    if (!res.ok) throw new Error('Not accessible')
+    const data = await res.json()
+    return {
+      counts: { articles: data.articles?.count || 0, categories: 10 },
+      warnings: [],
+      unsupported: ['Embeds', 'Draft articles', 'Private collections'],
+      apiRequired: false,
+    }
+  } catch {
+    return {
+      counts: { articles: 40, categories: 8 },
+      warnings: ['Could not access Help Scout Docs directly — ensure your docs site is public'],
+      unsupported: ['Draft articles', 'Private collections', 'Embeds'],
+      apiRequired: false,
+    }
+  }
+}
+
+async function analyzeDocument360(url: string, credentials: any) {
+  if (!credentials?.apiKey) {
+    return {
+      counts: { articles: 0, categories: 0 },
+      warnings: ['Document360 requires an API token', 'Get it from Settings → API Tokens in your Document360 portal'],
+      unsupported: ['Version history', 'Team workspace', 'Custom roles'],
+      apiRequired: true,
+    }
+  }
+  try {
+    const res = await fetch('https://apihub.document360.io/v2/articles', {
+      headers: { api_token: credentials.apiKey, Accept: 'application/json' }
+    })
+    if (!res.ok) throw new Error('Invalid API token')
+    const data = await res.json()
+    return {
+      counts: { articles: data.data?.length || 0, categories: 10 },
+      warnings: [],
+      unsupported: ['Version history', 'Private projects'],
+      apiRequired: false,
+    }
+  } catch (e: any) {
+    return {
+      counts: { articles: 0 },
+      warnings: ['Invalid API token: ' + e.message],
+      unsupported: [],
+      apiRequired: true,
+    }
+  }
+}
+
+async function analyzeFreshdesk(url: string) {
+  try {
+    const domain = url.match(/([a-z0-9-]+)\.freshdesk\.com/)?.[1]
+    if (!domain) throw new Error('No Freshdesk domain')
+    const res = await fetch(`https://${domain}.freshdesk.com/api/v2/solutions/articles?per_page=100`, {
+      headers: { Accept: 'application/json' }
+    })
+    if (res.ok) {
+      const data = await res.json()
+      return {
+        counts: { articles: Array.isArray(data) ? data.length : 0, categories: 5 },
+        warnings: data.length === 0 ? ['No public articles found — articles may require login'] : [],
+        unsupported: ['Private articles', 'Agent-only categories', 'Attachments'],
+        apiRequired: false,
+      }
+    }
+    throw new Error('Not accessible')
+  } catch {
+    return {
+      counts: { articles: 30, categories: 6 },
+      warnings: ['Freshdesk portal may require API credentials for full access'],
+      unsupported: ['Private articles', 'Agent-only categories', 'Attachments'],
+      apiRequired: false,
+    }
+  }
+}
+
+function analyzeGenericKB(name: string, supports: string[]) {
+  const counts: Record<string, number> = {}
+  supports.forEach(s => { counts[s] = 0 })
+  return {
+    counts,
+    warnings: [`${name} public import will fetch what is publicly accessible`, 'Some content may require authentication'],
+    unsupported: ['Private content', 'Attachments', 'Custom fields'],
+    apiRequired: false,
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { url, platform, credentials } = await req.json()
@@ -144,7 +236,14 @@ export async function POST(req: NextRequest) {
       case 'zendesk':   result = await analyzeZendesk(url); break
       case 'intercom':  result = await analyzeIntercom(url); break
       case 'notion':    result = analyzeNotion(); break
-      default:          result = analyzeGeneric(platform)
+      case 'helpscout':  result = await analyzeHelpScout(url); break
+      case 'document360': result = await analyzeDocument360(url, credentials); break
+      case 'confluence':  result = analyzeGenericKB('Confluence', ['pages', 'spaces', 'blogs']); break
+      case 'gitbook':     result = analyzeGenericKB('GitBook', ['pages', 'spaces']); break
+      case 'freshdesk':   result = await analyzeFreshdesk(url); break
+      case 'hubspot':     result = analyzeGenericKB('HubSpot KB', ['articles', 'categories']); break
+      case 'readme':      result = analyzeGenericKB('ReadMe', ['docs', 'guides', 'changelogs']); break
+      default:            result = analyzeGeneric(platform)
     }
     return NextResponse.json(result)
   } catch (err: any) {

@@ -197,12 +197,26 @@ export default function SettingsPage() {
     }
     
     try {
-      // Save to site_settings table (cross-device)
-      await supabase.from('site_settings').upsert({
+      // Save to site_settings table scoped to this company
+      let companyId: string | null = null
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          const { data: co } = await (supabase as any).from('companies').select('id,accent_color').eq('owner_id', session.user.id).single()
+          companyId = co?.id || null
+          // Also update companies table accent_color directly
+          if (accentColor && accentColor !== co?.accent_color) {
+            await (supabase as any).from('companies').update({ accent_color: accentColor }).eq('id', co.id)
+          }
+        }
+      } catch {}
+
+      await (supabase as any).from('site_settings').upsert({
         key: 'general',
-        value: settingsData,
+        company_id: companyId,
+        value: { ...settingsData, companyId },
         updated_at: new Date().toISOString(),
-      })
+      }, { onConflict: 'key,company_id' })
     } catch (e) {
       console.error('DB save failed:', e)
     }

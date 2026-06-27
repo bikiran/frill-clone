@@ -990,3 +990,8 @@ UPDATE ideas SET status = 'new' WHERE status = 'Under consideration' OR status =
 UPDATE ideas SET status = 'planned' WHERE status = 'Planned';
 UPDATE ideas SET status = 'in_progress' WHERE status = 'In Development' OR status = 'in_development';
 UPDATE ideas SET status = 'shipped' WHERE status = 'Shipped';
+
+-- Make site_settings company-scoped
+ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+CREATE UNIQUE INDEX IF NOT EXISTS site_settings_key_company ON site_settings(key, company_id) WHERE company_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS site_settings_key_global ON site_settings(key) WHERE company_id IS NULL;

@@ -63,6 +63,11 @@ const IntegrationsIcon = () => (
     <circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>
   </svg>
 )
+const ImportIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+  </svg>
+)
 const StarIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
@@ -96,6 +101,7 @@ const FEATURES = [
   { Icon: KnowledgeIcon, title: 'Knowledgebase', href: '/features/knowledgebase', color: '#f59e0b', desc: 'Answer questions before they\'re asked with a searchable help centre.' },
   { Icon: AnalyticsIcon, title: 'Analytics', href: '/features/ideas', color: '#8b5cf6', desc: 'Understand what your users care about most with deep insights.' },
   { Icon: IntegrationsIcon, title: 'Integrations', href: '/features/ideas', color: '#ec4899', desc: 'Connect with Slack, Jira, Linear, Zapier and 50+ more tools.' },
+  { Icon: ImportIcon, title: 'Import from Anywhere', href: '/features/import', color: '#0891b2', desc: 'Migrate from Canny, Frill, Zendesk, Intercom and 10+ platforms in minutes.' },
 ]
 
 const SOCIAL_PROOF = [
@@ -183,6 +189,7 @@ export default function LandingPage() {
               { label: 'Roadmap', href: '/features/roadmap' },
               { label: 'Announcements', href: '/features/announcements' },
               { label: 'Knowledgebase', href: '/features/knowledgebase' },
+              { label: 'Import', href: '/features/import' },
               { label: 'Pricing', href: '/pricing' },
             ].map(n => (
               <Link key={n.label} href={n.href} style={{ padding: '8px 14px', borderRadius: 10, fontSize: 14, fontWeight: 500, color: textMuted, textDecoration: 'none', transition: 'all 0.2s' }}
@@ -237,6 +244,7 @@ export default function LandingPage() {
               { label: 'Roadmap', href: '/features/roadmap' },
               { label: 'Announcements', href: '/features/announcements' },
               { label: 'Knowledgebase', href: '/features/knowledgebase' },
+              { label: 'Import', href: '/features/import' },
               { label: 'Pricing', href: '/pricing' },
               { label: 'Sign in', href: '/signin' },
             ].map(n => (

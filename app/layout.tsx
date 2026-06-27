@@ -85,18 +85,46 @@ export default function RootLayout({
 
     const loadNav = async () => {
       try {
-        const { data } = await supabase.from('site_settings').select('*').eq('key', 'general').single()
+        // Detect company from hostname
+        const h = typeof window !== 'undefined' ? window.location.hostname : ''
+        const isSubdomain = h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com'
+        const slug = isSubdomain ? h.replace('.colvy.com', '') : null
+
+        // Load settings for this specific company
+        let q = (supabase as any).from('site_settings').select('*').eq('key', 'general')
+        if (slug) {
+          // For subdomains, get the company first then its settings
+          const { data: co } = await (supabase as any).from('companies').select('id,accent_color').eq('slug', slug).single()
+          if (co) {
+            // Apply company accent color from DB (source of truth)
+            if (co.accent_color && typeof document !== 'undefined') {
+              document.documentElement.style.setProperty('--coral', co.accent_color)
+              const r = parseInt(co.accent_color.slice(1,3), 16)
+              const g = parseInt(co.accent_color.slice(3,5), 16)
+              const b = parseInt(co.accent_color.slice(5,7), 16)
+              document.documentElement.style.setProperty('--peach', `rgba(${r},${g},${b},0.1)`)
+            }
+            q = q.eq('company_id', co.id)
+          }
+        } else {
+          // On colvy.com, don't apply any company color
+          q = q.is('company_id', null)
+        }
+
+        const { data } = await q.maybeSingle()
         if (data?.value) {
           applySettings(data.value)
           if (typeof window !== 'undefined') {
-            localStorage.setItem('site_settings', JSON.stringify(data.value))
+            localStorage.setItem(`site_settings_${slug || 'colvy'}`, JSON.stringify(data.value))
           }
           return
         }
       } catch {}
       if (typeof window !== 'undefined') {
         try {
-          const s = JSON.parse(localStorage.getItem('site_settings') || '{}')
+          const h = window.location.hostname
+          const slug = h.endsWith('.colvy.com') && h !== 'colvy.com' ? h.replace('.colvy.com', '') : 'colvy'
+          const s = JSON.parse(localStorage.getItem(`site_settings_${slug}`) || '{}')
           applySettings(s)
         } catch {}
       }

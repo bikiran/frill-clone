@@ -97,6 +97,76 @@ const PLATFORMS = [
     supports: ['pages', 'databases', 'blocks'],
     description: 'Import Notion pages and databases',
   },
+  {
+    id: 'helpscout',
+    name: 'Help Scout Docs',
+    color: '#1292EE',
+    bg: '#EFF8FF',
+    pattern: /helpscoutdocs\.com|docs\.helpscout/,
+    logo: null,
+    supports: ['articles', 'categories', 'collections'],
+    description: 'Import Help Scout Docs articles and collections',
+  },
+  {
+    id: 'document360',
+    name: 'Document360',
+    color: '#7C3AED',
+    bg: '#F5F3FF',
+    pattern: /document360\.com/,
+    logo: null,
+    supports: ['articles', 'categories', 'versions'],
+    description: 'Import Document360 knowledge base articles',
+  },
+  {
+    id: 'confluence',
+    name: 'Confluence',
+    color: '#0052CC',
+    bg: '#EBF0FF',
+    pattern: /confluence|atlassian\.net\/wiki/,
+    logo: null,
+    supports: ['pages', 'spaces', 'blogs'],
+    description: 'Import Confluence pages and blog posts',
+  },
+  {
+    id: 'gitbook',
+    name: 'GitBook',
+    color: '#3884FF',
+    bg: '#EBF3FF',
+    pattern: /gitbook\.io|gitbook\.com/,
+    logo: null,
+    supports: ['pages', 'spaces'],
+    description: 'Import GitBook documentation pages',
+  },
+  {
+    id: 'freshdesk',
+    name: 'Freshdesk',
+    color: '#25C16F',
+    bg: '#ECFDF5',
+    pattern: /freshdesk\.com/,
+    logo: null,
+    supports: ['articles', 'categories', 'folders'],
+    description: 'Import Freshdesk knowledge base articles',
+  },
+  {
+    id: 'hubspot',
+    name: 'HubSpot KB',
+    color: '#FF7A59',
+    bg: '#FFF4F1',
+    pattern: /hubspot\.com/,
+    logo: null,
+    supports: ['articles', 'categories'],
+    description: 'Import HubSpot Knowledge Base articles',
+  },
+  {
+    id: 'readme',
+    name: 'ReadMe',
+    color: '#018EF5',
+    bg: '#EBF7FF',
+    pattern: /readme\.io|readme\.com/,
+    logo: null,
+    supports: ['docs', 'guides', 'api_ref', 'changelogs'],
+    description: 'Import ReadMe documentation and changelogs',
+  },
 ]
 
 // SVG icons
@@ -367,7 +437,7 @@ export default function ImportPage() {
             </div>
 
             {/* Credential fields for platforms that need API keys */}
-            {detected && ['canny', 'uservoice', 'productboard', 'typeform', 'featurebase'].includes(detected.id) && (
+            {detected && ['canny', 'uservoice', 'productboard', 'typeform', 'featurebase', 'document360', 'confluence', 'readme'].includes(detected.id) && (
               <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: 14, marginBottom: 12 }}>
                 <p style={{ fontSize: 13, fontWeight: 600, color: '#92400e', marginBottom: 10 }}>
                   🔑 {detected.name} requires an API key for full import
@@ -399,6 +469,25 @@ export default function ImportPage() {
                     <input value={credentials.apiSecret || ''} onChange={e => setCredentials(p => ({ ...p, apiSecret: e.target.value }))}
                       placeholder="API Secret" style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13 }} />
                   </div>
+                )}
+                {detected.id === 'document360' && (
+                  <input value={credentials.apiKey || ''} onChange={e => setCredentials(p => ({ ...p, apiKey: e.target.value }))}
+                    placeholder="Document360 API Token (Settings → API Tokens)"
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' as const }} />
+                )}
+                {detected.id === 'confluence' && (
+                  <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+                    <input value={credentials.domain || ''} onChange={e => setCredentials(p => ({ ...p, domain: e.target.value }))}
+                      placeholder="Confluence domain (e.g. mycompany.atlassian.net)" style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' as const }} />
+                    <input value={credentials.apiKey || ''} onChange={e => setCredentials(p => ({ ...p, apiKey: e.target.value }))}
+                      placeholder="Confluence API Token" style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' as const }} />
+                    <input value={credentials.email || ''} onChange={e => setCredentials(p => ({ ...p, email: e.target.value }))}
+                      placeholder="Your Atlassian email" style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' as const }} />
+                  </div>
+                )}
+                {detected.id === 'readme' && (
+                  <input value={credentials.apiKey || ''} onChange={e => setCredentials(p => ({ ...p, apiKey: e.target.value }))}
+                    placeholder="ReadMe API Key (from your project settings)" style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' as const }} />
                 )}
                 <p style={{ fontSize: 11, color: '#92400e', marginTop: 8 }}>Without an API key, we'll attempt to import publicly accessible data only.</p>
               </div>
