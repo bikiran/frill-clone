@@ -14,12 +14,11 @@ async function getCompanyId(): Promise<string | null> {
   if (h === 'colvy.com' || h === 'www.colvy.com' || h.includes('localhost') || h.includes('vercel.app')) return null
   if (h.endsWith('.colvy.com')) {
     const slug = h.replace('.colvy.com', '')
-    const { createClient } = await import('@supabase/supabase-js')
-    const sb = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-    const { data } = await (sb as any).from('companies').select('id').eq('slug', slug).single()
+    const { data } = await (supabase as any).from('companies').select('id,name,accent_color,logo_url').eq('slug', slug).single()
+    if (data?.accent_color) {
+      document.documentElement.style.setProperty('--coral', data.accent_color)
+      document.documentElement.style.setProperty('--peach', data.accent_color + '15')
+    }
     return data?.id || null
   }
   return null
@@ -73,7 +72,10 @@ export default function HomePage() {
 
   const fetchCustomStatuses = async () => {
     try {
-      const { data } = await supabase.from('statuses').select('*').order('order_index', { ascending: true })
+      const companyId = await getCompanyId()
+      let q = supabase.from('statuses').select('*').order('order_index', { ascending: true }) as any
+      if (companyId) q = q.eq('company_id', companyId)
+      const { data } = await q
       if (data) setCustomStatuses(data)
     } catch {}
   }

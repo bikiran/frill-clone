@@ -21,9 +21,24 @@ export default function AdminDashboard() {
   const [seeded, setSeeded] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       const u = data.session?.user
       setUser(u)
+      // Auto-seed if company has no ideas
+      if (u) {
+        try {
+          const { data: co } = await (supabase as any).from('companies').select('id,name').eq('owner_id', u.id).single()
+          if (co) {
+            const { count } = await (supabase as any).from('ideas').select('*', { count: 'exact', head: true }).eq('company_id', co.id)
+            if ((count || 0) === 0) {
+              fetch('/api/seed-company', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ companyId: co.id, companyName: co.name })
+              }).catch(() => {})
+            }
+          }
+        } catch {}
+      }
     })
     fetchStats()
     fetchActivity()
