@@ -18,8 +18,8 @@ export function middleware(req: NextRequest) {
   // colvy.com → landing page for root, normal for everything else
   if (hostname === 'colvy.com' || hostname === 'www.colvy.com') {
     if (path === '/') {
-      url.pathname = '/landing'
-      return NextResponse.rewrite(url)
+      // Use redirect so pathname becomes /landing and layout skips its nav
+      return NextResponse.redirect(new URL('/landing', req.url))
     }
     return NextResponse.next()
   }
