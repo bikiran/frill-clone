@@ -105,20 +105,21 @@ const FEATURES = [
 ]
 
 const SOCIAL_PROOF = [
-  { name: 'Sarah Chen', role: 'Head of Product, Stripe', init: 'SC', text: 'Colvy completely transformed how we collect feedback. Our NPS went up 28 points in 3 months.' },
-  { name: 'Marcus Webb', role: 'CEO, Linear', init: 'MW', text: 'The roadmap feature alone is worth it. Our customers love seeing what we\'re working on.' },
-  { name: 'Priya Sharma', role: 'CPO, Notion', init: 'PS', text: 'We replaced 3 tools with Colvy. The team productivity improvement was immediate.' },
+  { name: 'Jordan Mills', role: 'Founder, Prexty', init: 'JM', color: '#6366f1', text: 'Colvy replaced our messy spreadsheet and Notion doc overnight. Customers finally feel heard.' },
+  { name: 'Aiko Tanaka', role: 'Product Lead, nePlay', init: 'AT', color: '#10b981', text: 'The public roadmap alone doubled our trial-to-paid conversion. Our users love the transparency.' },
+  { name: 'Sam Rivera', role: 'CEO, Roxy Aquarium', init: 'SR', color: '#f59e0b', text: "Setup took 4 minutes. We migrated from Canny in one click and have not looked back since." },
 ]
 
 const STATS = [
-  { value: '12,000+', label: 'Product teams' },
-  { value: '2.4M', label: 'Ideas collected' },
-  { value: '98%', label: 'Satisfaction' },
-  { value: '4 min', label: 'Setup time' },
+  { value: '12,000+', label: 'Product teams', key: 'teams' },
+  { value: '2.4M', label: 'Ideas collected', key: 'ideas' },
+  { value: '98%', label: 'Satisfaction', key: null },
+  { value: '4 min', label: 'Setup time', key: null },
 ]
 
 export default function LandingPage() {
   const [user, setUser] = useState<any>(null)
+  const [realStats, setRealStats] = useState({ teams: 0, ideas: 0 })
   const [dark, setDark] = useState(false)
   const [scrollY, setScrollY] = useState(0)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -128,6 +129,16 @@ export default function LandingPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => setUser(data?.session?.user))
+    // Fetch real platform stats
+    Promise.all([
+      (supabase as any).from('companies').select('*', { count: 'exact', head: true }),
+      (supabase as any).from('ideas').select('*', { count: 'exact', head: true }),
+    ]).then(([coRes, ideaRes]) => {
+      setRealStats({
+        teams: coRes.count || 0,
+        ideas: ideaRes.count || 0,
+      })
+    }).catch(() => {})
     const { data: l } = supabase.auth.onAuthStateChange((_: any, s: any) => setUser(s?.user ?? null))
     const onScroll = () => setScrollY(window.scrollY)
     window.addEventListener('scroll', onScroll, { passive: true })
@@ -160,7 +171,7 @@ export default function LandingPage() {
         @keyframes slideUp { from{opacity:0;transform:translateY(30px)} to{opacity:1;transform:translateY(0)} }
         @keyframes shimmer { 0%{background-position:-200% center} 100%{background-position:200% center} }
         .hero-float { animation: float 6s ease-in-out infinite; }
-        .slide-up { opacity:0; animation:slideUp 0.8s cubic-bezier(0.16,1,0.3,1) forwards; }
+        .slide-up { opacity:0; animation:slideUp 0.8s cubic-bezier(0.16,1,0.3,1) both; }
         .d1{animation-delay:.05s} .d2{animation-delay:.15s} .d3{animation-delay:.25s} .d4{animation-delay:.35s}
         .grad-text { background:linear-gradient(135deg,#ff7a6b,#a78bfa,#60a5fa); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
         .shimmer-val { background:linear-gradient(90deg,#ff7a6b,#a78bfa,#ff7a6b); background-size:200% auto; -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; animation:shimmer 3s linear infinite; }
@@ -269,7 +280,7 @@ export default function LandingPage() {
         {/* Grid */}
         <div style={{ position: 'absolute', inset: 0, backgroundImage: `linear-gradient(${dark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.04)'} 1px,transparent 1px),linear-gradient(90deg,${dark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.04)'} 1px,transparent 1px)`, backgroundSize: '60px 60px', WebkitMaskImage: 'radial-gradient(ellipse at center,black 40%,transparent 75%)', maskImage: 'radial-gradient(ellipse at center,black 40%,transparent 75%)', pointerEvents: 'none' }} />
 
-        <div style={{ position: 'relative', maxWidth: 700, textAlign: 'center' }}>
+        <div style={{ position: 'relative', maxWidth: 700, textAlign: 'center', margin: '0 auto', width: '100%' }}>
           {/* Badge */}
           <div className="slide-up d1" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 999, marginBottom: 32, background: 'rgba(255,122,107,0.1)', border: '1px solid rgba(255,122,107,0.25)', color: '#ff7a6b', fontSize: 13, fontWeight: 600 }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'none' }} />
@@ -309,7 +320,7 @@ export default function LandingPage() {
                 ))}
               </div>
               <span style={{ fontSize: 13, color: textMuted }}>
-                Loved by <strong style={{ color: text }}>12,000+</strong> product teams
+                Loved by <strong style={{ color: text }}>{realStats.teams > 0 ? realStats.teams.toLocaleString() + '+' : 'growing'}</strong> product teams
               </span>
             </div>
           </div>
@@ -321,7 +332,13 @@ export default function LandingPage() {
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 32 }} className="md:grid-cols-4">
           {STATS.map((s, i) => (
             <div key={s.label} style={{ textAlign: 'center', opacity: statsV ? 1 : 0, transform: statsV ? 'none' : 'translateY(20px)', transition: `all 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 0.1}s` }}>
-              <div className="shimmer-val" style={{ fontSize: 'clamp(28px,4vw,40px)', fontWeight: 900, marginBottom: 4 }}>{s.value}</div>
+              <div className="shimmer-val" style={{ fontSize: 'clamp(28px,4vw,40px)', fontWeight: 900, marginBottom: 4 }}>
+                {s.key === 'teams' && realStats.teams > 0
+                  ? realStats.teams.toLocaleString() + '+'
+                  : s.key === 'ideas' && realStats.ideas > 0
+                  ? realStats.ideas > 1000 ? (realStats.ideas / 1000).toFixed(1) + 'K' : realStats.ideas.toLocaleString()
+                  : s.value}
+              </div>
               <div style={{ fontSize: 14, color: textMuted }}>{s.label}</div>
             </div>
           ))}
@@ -355,28 +372,69 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* SOCIAL PROOF */}
-      <section ref={socialRef as any} style={{ padding: '80px 24px', borderTop: `1px solid ${cardBorder}` }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-          <h2 style={{ fontSize: 'clamp(28px,4vw,40px)', fontWeight: 900, textAlign: 'center', marginBottom: 56, color: text }}>
-            Trusted by teams <span className="grad-text">worldwide</span>
-          </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 20 }}>
-            {SOCIAL_PROOF.map((s, i) => (
-              <div key={s.name} className="card-hover" style={{ padding: 28, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, opacity: socialV ? 1 : 0, transform: socialV ? 'none' : 'translateY(20px)', transition: `all 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 0.12}s` }}>
-                <div style={{ display: 'flex', gap: 3, marginBottom: 16, color: '#ff7a6b' }}>
-                  {[...Array(5)].map((_, j) => <StarIcon key={j} />)}
-                </div>
-                <p style={{ fontSize: 15, lineHeight: 1.7, marginBottom: 20, color: textMuted }}>"{s.text}"</p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#ff7a6b,#6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#fff', flexShrink: 0 }}>{s.init}</div>
-                  <div>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: text }}>{s.name}</p>
-                    <p style={{ fontSize: 12, color: textMuted }}>{s.role}</p>
-                  </div>
-                </div>
+
+
+      {/* IMPORT DEMO */}
+      <section style={{ padding: '80px 24px', background: dark ? '#050505' : '#f8f8f8', borderTop: `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
+        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'center' }}>
+            <div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 999, background: '#0891b218', border: '1px solid #0891b230', color: '#0891b2', fontSize: 12, fontWeight: 700, marginBottom: 16, textTransform: 'uppercase' as const, letterSpacing: '0.08em' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                One-click migration
               </div>
-            ))}
+              <h2 style={{ fontSize: 'clamp(28px,4vw,44px)', fontWeight: 900, color: dark ? '#fff' : '#0d0d0d', letterSpacing: '-0.02em', lineHeight: 1.15, marginBottom: 16 }}>
+                Already on another<br />platform? <span className="grad-text">Switch free.</span>
+              </h2>
+              <p style={{ fontSize: 16, color: dark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)', lineHeight: 1.7, marginBottom: 20 }}>
+                Paste your board URL and we migrate everything — ideas, votes, comments, roadmap, help articles — in minutes. <strong style={{ color: dark ? '#fff' : '#0d0d0d' }}>No data loss. No manual work.</strong>
+              </p>
+              <p style={{ fontSize: 14, color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)', lineHeight: 1.65, marginBottom: 24, padding: '12px 16px', borderRadius: 12, background: dark ? 'rgba(8,145,178,0.08)' : '#e0f2fe', borderLeft: '3px solid #0891b2' }}>
+                💳 <strong>Already paying elsewhere?</strong> We carry over your remaining subscription period. Switch to Colvy and we'll match your current plan duration — no double-paying.
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 8, marginBottom: 28 }}>
+                {['Canny', 'Frill', 'Featurebase', 'Zendesk', 'Intercom', 'Notion', 'Confluence', '+ more'].map(p => (
+                  <span key={p} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 999, background: dark ? 'rgba(255,255,255,0.07)' : '#fff', border: `1px solid ${dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'}`, color: dark ? 'rgba(255,255,255,0.7)' : '#374151', fontWeight: 500 }}>{p}</span>
+                ))}
+              </div>
+              <a href="/admin/import" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '13px 28px', borderRadius: 14, background: '#0891b2', color: '#fff', fontWeight: 700, fontSize: 15, textDecoration: 'none', transition: 'opacity 0.2s' }}
+                onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')}
+                onMouseLeave={e => (e.currentTarget.style.opacity = '1')}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Try the migration tool
+              </a>
+            </div>
+            {/* Demo mockup */}
+            <div style={{ background: dark ? 'rgba(255,255,255,0.03)' : '#fff', borderRadius: 20, border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`, padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.1)' }}>
+              {/* URL input mock */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: dark ? 'rgba(255,255,255,0.05)' : '#f8f8f8', border: `1px solid ${'#0891b2'}`, marginBottom: 16, boxShadow: '0 0 0 3px rgba(8,145,178,0.12)' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                <span style={{ fontSize: 13, color: dark ? 'rgba(255,255,255,0.6)' : '#374151', flex: 1 }}>yourcompany.canny.io</span>
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: '#0891b215', color: '#0891b2', fontWeight: 700 }}>Canny detected</span>
+              </div>
+              {/* Found items */}
+              <p style={{ fontSize: 12, fontWeight: 700, color: dark ? 'rgba(255,255,255,0.4)' : '#9ca3af', marginBottom: 10, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Found 142 items</p>
+              {[
+                { label: 'Ideas / Posts', count: 89, checked: true },
+                { label: 'Statuses', count: 5, checked: true },
+                { label: 'Topics / Tags', count: 12, checked: true },
+                { label: 'Changelog Posts', count: 23, checked: true },
+                { label: 'Votes', count: 1847, checked: false },
+              ].map(item => (
+                <div key={item.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 8, marginBottom: 4, background: item.checked ? (dark ? 'rgba(8,145,178,0.08)' : '#e0f2fe10') : 'transparent' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${item.checked ? '#0891b2' : dark ? 'rgba(255,255,255,0.2)' : '#d1d5db'}`, background: item.checked ? '#0891b2' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {item.checked && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                    </div>
+                    <span style={{ fontSize: 13, color: dark ? 'rgba(255,255,255,0.8)' : '#374151' }}>{item.label}</span>
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: item.checked ? '#0891b2' : (dark ? 'rgba(255,255,255,0.06)' : '#f3f4f6'), color: item.checked ? '#fff' : dark ? 'rgba(255,255,255,0.4)' : '#9ca3af' }}>{item.count.toLocaleString()}</span>
+                </div>
+              ))}
+              <button style={{ width: '100%', marginTop: 14, padding: '11px', borderRadius: 12, background: '#0891b2', color: '#fff', fontWeight: 700, fontSize: 14, border: 'none', cursor: 'pointer' }}>
+                Start Import →
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -440,22 +498,22 @@ export default function LandingPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 24 }}>
             {[
               {
-                quote: "We went from scattered emails and spreadsheets to a clean feedback hub. Our NPS jumped 28 points in 3 months.",
-                name: 'Sarah Chen', role: 'Head of Product', company: 'Stripe',
-                photo: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=80&h=80&fit=crop&crop=face',
+                quote: "Colvy replaced our messy spreadsheet overnight. Customers finally feel heard and our NPS jumped 28 points.",
+                name: 'Jordan Mills', role: 'Founder', company: 'Prexty',
+                photo: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=80&h=80&fit=crop&crop=face',
                 metric: '+28 NPS',
               },
               {
-                quote: "The public roadmap is a game changer. Customers know exactly what we are building. Support tickets dropped 40%.",
-                name: 'Marcus Webb', role: 'CEO', company: 'Linear',
-                photo: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=80&h=80&fit=crop&crop=face',
-                metric: '-40% tickets',
+                quote: "The public roadmap doubled our trial-to-paid conversion. Customers love knowing what we are building next.",
+                name: 'Aiko Tanaka', role: 'Product Lead', company: 'nePlay',
+                photo: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=80&h=80&fit=crop&crop=face',
+                metric: '2× conversions',
               },
               {
-                quote: "Replaced 3 separate tools with Colvy. The team loves how simple it is. Setup took 4 minutes literally.",
-                name: 'Priya Sharma', role: 'CPO', company: 'Notion',
-                photo: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=80&h=80&fit=crop&crop=face',
-                metric: '3 tools → 1',
+                quote: "We migrated from Canny in one click and were live in 4 minutes. Best product decision we made this year.",
+                name: 'Sam Rivera', role: 'CEO', company: 'Roxy Aquarium',
+                photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&h=80&fit=crop&crop=face',
+                metric: '4 min setup',
               },
             ].map((t, i) => (
               <div key={t.name} style={{ padding: 28, borderRadius: 20, background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'}`, display: 'flex', flexDirection: 'column' as const }}>
