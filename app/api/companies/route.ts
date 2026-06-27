@@ -47,10 +47,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    // Seed sample data for new company (non-blocking, won't delay signup)
+    // Seed sample data + register subdomain (both non-blocking)
     if (data?.id) {
       const { seedCompanyData } = await import('@/lib/seedCompany')
       seedCompanyData(data.id, data.name).catch(console.error)
+
+      // Register subdomain with Vercel + Cloudflare
+      const newSlug = data.slug
+      const baseUrl = process.env.NEXTAUTH_URL || 'https://colvy.com'
+      fetch(`${baseUrl}/api/domains`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: `${newSlug}.colvy.com` }),
+      }).catch(() => {})
     }
 
     return NextResponse.json({ company: data })

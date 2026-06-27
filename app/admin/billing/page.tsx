@@ -207,7 +207,14 @@ export default function BillingPage() {
             <>
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <p className="font-bold" style={{ color: 'var(--coral)' }}>14 Day Trial — 8 days remaining</p>
+                  <p className="font-bold" style={{ color: 'var(--coral)' }}>
+                    14 Day Free Trial
+                    {company?.created_at && (() => {
+                      const daysUsed = Math.floor((Date.now() - new Date(company.created_at).getTime()) / 86400000)
+                      const daysLeft = Math.max(0, 14 - daysUsed)
+                      return daysLeft > 0 ? ` — ${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining` : ' — Trial ended'
+                    })()}
+                  </p>
                   <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
                     Your trial includes Unlimited Surveys, White Labelling & Privacy Add-ons.
                   </p>

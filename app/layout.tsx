@@ -182,7 +182,7 @@ export default function RootLayout({
   const userInitial = user?.email?.[0].toUpperCase() || 'A'
 
   // Pages that use their own full-page layout (no nav wrapper)
-  const isFullPage = ['/landing', '/pricing', '/features', '/platform-admin'].some(p => pathname?.startsWith(p))
+  const isFullPage = ['/landing', '/pricing', '/features', '/platform-admin', '/admin'].some(p => pathname?.startsWith(p))
 
   if (isFullPage) {
     return (
