@@ -89,9 +89,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       const u = data?.session?.user
       if (!u) { router.push('/signin'); return }
       setUser(u)
-      const co = await getCompanyByOwner(u.id)
-      setCompany(co)
+
+      // Try to get company by owner_id first, then by hostname slug
+      let co = await getCompanyByOwner(u.id)
       const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
+
+      if (!co && hostname.endsWith('.colvy.com') && hostname !== 'colvy.com') {
+        const slug = hostname.replace('.colvy.com', '')
+        const { data: coBySlug } = await (supabase as any)
+          .from('companies').select('*').eq('slug', slug).maybeSingle()
+        if (coBySlug) {
+          // Auto-fix missing owner_id
+          if (!coBySlug.owner_id) {
+            await (supabase as any).from('companies').update({ owner_id: u.id }).eq('id', coBySlug.id)
+            co = { ...coBySlug, owner_id: u.id }
+          } else if (coBySlug.owner_id === u.id) {
+            co = coBySlug
+          }
+        }
+      }
+
+      setCompany(co)
       const parts = hostname.split('.')
       const isSubdomain = parts.length === 3 && hostname.endsWith('colvy.com')
       const isLocalOrVercel = hostname.includes('localhost') || hostname.includes('vercel.app')
@@ -157,24 +175,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         flexShrink: 0,
       }}>
         {/* Company info */}
-        {company && (
-          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {company.logo_url ? (
-                <img src={company.logo_url} alt={company.name}
-                  style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
-                  onError={(e: any) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }} />
-              ) : null}
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: company.accent_color || 'var(--coral)', display: company.logo_url ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
-                {company.name?.[0]?.toUpperCase()}
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company.name}</p>
-                <p style={{ fontSize: 11, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company.slug}.colvy.com</p>
-              </div>
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {company?.logo_url ? (
+              <img src={company.logo_url} alt={company.name}
+                style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
+                onError={(e: any) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }} />
+            ) : null}
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: company?.accent_color || 'var(--coral)', display: company?.logo_url ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
+              {/* Show first letter of company name, fallback to first letter of user email */}
+              {(company?.name?.[0] || user?.email?.[0] || '?').toUpperCase()}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {company?.name || user?.email?.split('@')[0] || 'My Board'}
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {company ? `${company.slug}.colvy.com` : typeof window !== 'undefined' ? window.location.hostname : 'colvy.com'}
+              </p>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Nav groups */}
         <nav style={{ flex: 1, padding: '10px 8px' }}>

@@ -114,10 +114,34 @@ export default function SettingsPage() {
       if (!u) return
       setUser(u)
 
-      // Load company first (source of truth for slug, domains, branding)
+      // Load company - try owner_id first, then slug from hostname as fallback
       try {
-        const { data: co, error: coErr } = await (supabase as any)
-          .from('companies').select('*').eq('owner_id', u.id).single()
+        let co: any = null
+
+        // Primary: look up by owner_id
+        const { data: coByOwner } = await (supabase as any)
+          .from('companies').select('*').eq('owner_id', u.id).maybeSingle()
+        co = coByOwner
+
+        // Fallback: look up by hostname slug (e.g. funnynepal.colvy.com)
+        if (!co && typeof window !== 'undefined') {
+          const h = window.location.hostname
+          if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+            const slug = h.replace('.colvy.com', '')
+            const { data: coBySlug } = await (supabase as any)
+              .from('companies').select('*').eq('slug', slug).maybeSingle()
+            if (coBySlug) {
+              // Fix owner_id if missing
+              if (!coBySlug.owner_id) {
+                await (supabase as any).from('companies').update({ owner_id: u.id }).eq('id', coBySlug.id)
+                co = { ...coBySlug, owner_id: u.id }
+              } else {
+                co = coBySlug
+              }
+            }
+          }
+        }
+
         if (co) {
           setCompany(co)
           if (co.name) setCompanyName(co.name)
@@ -126,7 +150,6 @@ export default function SettingsPage() {
           if (co.board_domain) setBoardDomain(co.board_domain)
           if (co.help_domain) setHelpDomain(co.help_domain)
         }
-        if (coErr) console.warn('Company load error:', coErr.message)
       } catch (e: any) {
         console.warn('Company fetch failed:', e.message)
       }
