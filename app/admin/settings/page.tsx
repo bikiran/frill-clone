@@ -879,6 +879,11 @@ export default function SettingsPage() {
                           newOrder.splice(to, 0, dragNavItem)
                           setNavOrder(newOrder)
                           setDragNavItem(null)
+                          // Real-time nav preview
+                          window.dispatchEvent(new CustomEvent('colvy-nav-update', { detail: {
+                            navIdeas, navRoadmap, navAnnouncements, navHelp,
+                            navOrder: newOrder,
+                          }}))
                         }}
                         onDragEnd={() => setDragNavItem(null)}
                         className="flex items-center justify-between py-4 border-b last:border-b-0 cursor-grab active:cursor-grabbing select-none"
@@ -900,7 +905,17 @@ export default function SettingsPage() {
                             <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{item.desc}</p>
                           </div>
                         </div>
-                        <button onClick={() => item.set(!item.state)}
+                        <button onClick={() => {
+                          item.set(!item.state)
+                          // Real-time nav preview
+                          setTimeout(() => window.dispatchEvent(new CustomEvent('colvy-nav-update', { detail: {
+                            navIdeas: label === 'Ideas' ? !item.state : navIdeas,
+                            navRoadmap: label === 'Roadmap' ? !item.state : navRoadmap,
+                            navAnnouncements: label === 'Updates' ? !item.state : navAnnouncements,
+                            navHelp: label === 'Help Centre' ? !item.state : navHelp,
+                            navOrder,
+                          }})), 0)
+                        }}
                           className="relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer shrink-0 ml-6"
                           style={{ background: item.state ? 'var(--coral)' : '#d1d5db' }}>
                           <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow"

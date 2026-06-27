@@ -43,8 +43,22 @@ export default function RootLayout({
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [isCompanyOwner, setIsCompanyOwner] = useState(false)
-  const [company, setCompany] = useState<any>(null)
-  const [isSubdomain, setIsSubdomain] = useState(false)
+  const [company, setCompany] = useState<any>(() => {
+    // Try to restore from session cache for instant branding on first render
+    if (typeof window === 'undefined') return null
+    try {
+      const h = window.location.hostname
+      const slug = h.endsWith('.colvy.com') && h !== 'colvy.com' ? h.replace('.colvy.com', '') : null
+      if (!slug) return null
+      const cached = localStorage.getItem(`company_${slug}`)
+      return cached ? JSON.parse(cached) : null
+    } catch { return null }
+  })
+  const [isSubdomain, setIsSubdomain] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const h = window.location.hostname
+    return h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com' && !h.includes('localhost')
+  })
   const [navVisibility, setNavVisibility] = useState({
     Ideas: true, Roadmap: true, Updates: true, Help: true,
   })
@@ -61,6 +75,16 @@ export default function RootLayout({
           Help: s.navHelp !== false,
         })
         if (typeof document !== 'undefined') {
+          // Dynamic favicon per company
+          if (s.faviconUrl) {
+            let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement
+            if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link) }
+            link.href = s.faviconUrl
+          } else {
+            // Reset to default colvy favicon (not prexty's)
+            const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement
+            if (link) link.href = '/favicon.png'
+          }
           // Accent color
           if (s.accentColor) {
             document.documentElement.style.setProperty('--coral', s.accentColor)
@@ -124,12 +148,31 @@ export default function RootLayout({
         try {
           const h = window.location.hostname
           const slug = h.endsWith('.colvy.com') && h !== 'colvy.com' ? h.replace('.colvy.com', '') : 'colvy'
-          const s = JSON.parse(localStorage.getItem(`site_settings_${slug}`) || '{}')
-          applySettings(s)
+          const slugKey = typeof window !== 'undefined'
+            ? (window.location.hostname.replace('.colvy.com', '') || 'colvy')
+            : 'colvy'
+          const s = JSON.parse(localStorage.getItem(`site_settings_${slugKey}`) || '{}')
+          if (s && Object.keys(s).length > 0) applySettings(s)
         } catch {}
       }
     }
     loadNav()
+
+    // Listen for real-time nav updates from settings page
+    const handleNavUpdate = (e: Event) => {
+      const s = (e as CustomEvent).detail
+      if (s) {
+        setNavVisibility({
+          Ideas: s.navIdeas !== false,
+          Roadmap: s.navRoadmap !== false,
+          Updates: s.navAnnouncements !== false,
+          Help: s.navHelp !== false,
+        })
+        if (s.navOrder) setNavOrder(s.navOrder.map((l: string) => l === 'Help Centre' ? 'Help' : l))
+      }
+    }
+    window.addEventListener('colvy-nav-update', handleNavUpdate)
+    return () => window.removeEventListener('colvy-nav-update', handleNavUpdate)
   }, [pathname])
 
   // Auth — real-time, no hard refresh needed
@@ -225,10 +268,11 @@ export default function RootLayout({
       </head>
       <body style={{ background: 'var(--canvas)' }}>
         {/* Header */}
-        <header className="sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)', display: pathname?.startsWith('/admin') ? 'none' : undefined }}>
+        <header className="sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)', display: pathname?.startsWith('/admin') ? 'none' : '' }}>
           <nav className="h-14 px-6 flex items-center justify-between">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
+              {/* On subdomains show company branding; on colvy.com show Colvy */}
               {isSubdomain && company ? (
                 <>
                   {company.logo_url
@@ -239,7 +283,9 @@ export default function RootLayout({
                 </>
               ) : (
                 <>
-                  <img src="/logo.png" alt="Colvy" className="h-7 w-auto" onError={(e: any) => { e.target.style.display='none' }} />
+                  <img src="/logo.png" alt="Colvy" className="h-7 w-auto"
+                    onLoad={(e: any) => { const span = e.target.nextSibling; if (span) span.style.display = 'none' }}
+                    onError={(e: any) => { e.target.style.display = 'none' }} />
                   <span style={{ color: 'var(--coral)' }}>Colvy</span>
                 </>
               )}

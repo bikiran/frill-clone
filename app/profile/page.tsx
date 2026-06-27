@@ -78,6 +78,8 @@ export default function ProfilePage() {
       setAvatarUrl(publicUrl)
       await supabase.auth.refreshSession()
       await supabase.auth.updateUser({ data: { avatar_url: publicUrl } })
+    // Notify layout nav to update avatar immediately
+    window.dispatchEvent(new CustomEvent('colvy-avatar-update', { detail: publicUrl }))
       setSavedMsg('Photo updated!')
       setTimeout(() => setSavedMsg(''), 2000)
     } catch (err: any) {
@@ -166,7 +168,7 @@ export default function ProfilePage() {
       <div className="max-w-4xl mx-auto px-6 py-4 border-b flex gap-4 bg-white" style={{ borderColor: 'var(--border)' }}>
         <button onClick={() => setActiveTab('ideas')} className="text-sm font-medium pb-2 border-b-2 transition-colors cursor-pointer" style={{ color: activeTab === 'ideas' ? 'var(--coral)' : 'var(--slate)', borderColor: activeTab === 'ideas' ? 'var(--coral)' : 'transparent' }}>My Ideas ({userIdeas.length})</button>
         <button onClick={() => setActiveTab('comments')} className="text-sm font-medium pb-2 border-b-2 transition-colors cursor-pointer" style={{ color: activeTab === 'comments' ? 'var(--coral)' : 'var(--slate)', borderColor: activeTab === 'comments' ? 'var(--coral)' : 'transparent' }}>My Comments ({userComments.length})</button>
-        <button onClick={() => setActiveTab('edit')} className="text-sm font-medium pb-2 border-b-2 transition-colors cursor-pointer ml-auto" style={{ color: activeTab === 'edit' ? 'var(--coral)' : 'var(--slate)', borderColor: activeTab === 'edit' ? 'var(--coral)' : 'transparent' }}>⚙ Edit Profile</button>
+        
       </div>
 
       <div className="max-w-4xl mx-auto px-6 py-8">
