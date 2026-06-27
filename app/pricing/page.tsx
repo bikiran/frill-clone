@@ -14,10 +14,12 @@ export default function PricingPage() {
     supabase.auth.getSession().then(async ({ data }) => {
       const u = data.session?.user
       setUser(u)
-      const sub = await getUserSubscription(u.id)
-      setSubscription(sub)
+      if (u?.id) {
+        const sub = await getUserSubscription(u.id)
+        setSubscription(sub)
+      }
       setLoading(false)
-    })
+    }).catch(() => setLoading(false))
   }, [])
 
   if (loading) return <div className="p-8 text-center">Loading...</div>

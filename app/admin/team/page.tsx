@@ -68,7 +68,9 @@ export default function TeamPage() {
   }
 
   const createUser = async () => {
-    if (!createEmail.trim() || !createPassword) return
+    if (!createEmail.trim()) return
+    // Generate a secure random temporary password — user will reset via forgot-password
+    const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).toUpperCase().slice(-4) + '!1'
     setWorking(true)
     try {
       const res = await fetch('/api/admin/create-user', {
@@ -76,7 +78,7 @@ export default function TeamPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: createEmail.trim(),
-          password: createPassword,
+          password: tempPassword,
           name: createName.trim(),
           role: createRole,
         }),

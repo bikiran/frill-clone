@@ -160,7 +160,9 @@ export default function SettingsPage() {
         const { data } = await supabase.from('site_settings').select('*').eq('key', 'general').single()
         if (data?.value) {
           const s = data.value
+          // Only set favicon if it belongs to THIS company's settings
           if (s.faviconUrl) setFaviconUrl(s.faviconUrl)
+          else setFaviconUrl('') // Explicitly clear — don't inherit from another company
           if (s.ogImageUrl) setOgImageUrl(s.ogImageUrl)
           if (s.logoLink) setLogoLink(s.logoLink)
           if (s.customScript) setCustomScript(s.customScript)
@@ -225,8 +227,8 @@ export default function SettingsPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (session?.user) {
-          const { data: co } = await (supabase as any).from('companies').select('id,accent_color').eq('owner_id', session.user.id).single()
-          companyId = co?.id || null
+          const { data: co } = await (supabase as any).from('companies').select('id,accent_color').eq('owner_id', session.user.id).maybeSingle()
+          companyId = co?.id || company?.id || null
           // Also update companies table accent_color directly
           if (accentColor && accentColor !== co?.accent_color) {
             await (supabase as any).from('companies').update({ accent_color: accentColor }).eq('id', co.id)
@@ -244,17 +246,33 @@ export default function SettingsPage() {
       console.error('DB save failed:', e)
     }
 
-    // Save domain + colour to companies table so custom domains work
+    // Save to companies table using company.id (most reliable, works even if owner_id was patched)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        await (supabase as any).from('companies').update({
+      const companyToUpdate = company || await (async () => {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) return null
+        const h = typeof window !== 'undefined' ? window.location.hostname : ''
+        const slug = h.endsWith('.colvy.com') ? h.replace('.colvy.com', '') : null
+        if (slug) {
+          const { data: co } = await (supabase as any).from('companies').select('*').eq('slug', slug).maybeSingle()
+          if (co) return co
+        }
+        const { data: co } = await (supabase as any).from('companies').select('*').eq('owner_id', session.user.id).maybeSingle()
+        return co
+      })()
+      if (companyToUpdate?.id) {
+        const { error: updateErr } = await (supabase as any).from('companies').update({
           name: companyName,
           accent_color: accentColor,
           board_domain: boardDomain || null,
           help_domain: helpDomain || null,
           logo_url: logoUrl || null,
-        }).eq('owner_id', session.user.id)
+        }).eq('id', companyToUpdate.id)
+        if (updateErr) console.error('Company update error:', updateErr.message)
+        else {
+          // Update local company state so UI reflects immediately
+          setCompany((prev: any) => prev ? { ...prev, name: companyName, logo_url: logoUrl, accent_color: accentColor } : prev)
+        }
       }
     } catch (e) {
       console.error('Company update failed:', e)

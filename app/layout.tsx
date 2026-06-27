@@ -161,15 +161,15 @@ export default function RootLayout({
     // Listen for real-time nav updates from settings page
     const handleNavUpdate = (e: Event) => {
       const s = (e as CustomEvent).detail
-      if (s) {
-        setNavVisibility({
-          Ideas: s.navIdeas !== false,
-          Roadmap: s.navRoadmap !== false,
-          Updates: s.navAnnouncements !== false,
-          Help: s.navHelp !== false,
-        })
-        if (s.navOrder) setNavOrder(s.navOrder.map((l: string) => l === 'Help Centre' ? 'Help' : l))
-      }
+      if (!s) return
+      const norm = (l: string) => l === 'Help Centre' ? 'Help' : l === 'Announcements' ? 'Updates' : l
+      setNavVisibility({
+        Ideas: s.navIdeas !== false,
+        Roadmap: s.navRoadmap !== false,
+        Updates: s.navAnnouncements !== false,
+        Help: s.navHelp !== false,
+      })
+      if (s.navOrder) setNavOrder(s.navOrder.map(norm))
     }
     window.addEventListener('colvy-nav-update', handleNavUpdate)
     return () => window.removeEventListener('colvy-nav-update', handleNavUpdate)
@@ -268,7 +268,7 @@ export default function RootLayout({
       </head>
       <body style={{ background: 'var(--canvas)' }}>
         {/* Header */}
-        <header className="sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)', display: pathname?.startsWith('/admin') ? 'none' : '' }}>
+        <header className="sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)' }}>
           <nav className="h-14 px-6 flex items-center justify-between">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
