@@ -1,8 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -365,7 +364,7 @@ function CompaniesPage() {
     <div>
       <SectionHeader title="Companies" sub={`${companies.length} total companies on the platform`}
         action={<div style={{ display: 'flex', gap: 8 }}>
-          <a href="/admin/create-company" style={{ padding: '8px 14px', borderRadius: 10, background: '#ff7a6b', color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>+ New Company</a>
+          <a href="https://colvy.com/admin/create-company" style={{ padding: '8px 14px', borderRadius: 10, background: '#ff7a6b', color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>+ New Company</a>
         </div>}
       />
       {msg && <div style={{ padding: '10px 16px', borderRadius: 10, background: '#d1fae5', color: '#065f46', fontSize: 13, marginBottom: 16, fontWeight: 500 }}>{msg}</div>}
@@ -733,7 +732,6 @@ function PlaceholderPage({ title, sub }: { title: string; sub: string }) {
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
 export default function SuperAdmin() {
-  const router = useRouter()
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [dark, setDark] = useState(true)
   const [page, setPage] = useState('overview')
@@ -743,7 +741,11 @@ export default function SuperAdmin() {
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: s }: any) => {
       const u = s?.session?.user
-      if (!u || u.email !== SUPER_ADMIN) { router.push('/signin'); return }
+      if (!u || u.email !== SUPER_ADMIN) {
+        // Redirect to main signin (admin.colvy.com/signin would 404)
+        window.location.href = 'https://colvy.com/signin'
+        return
+      }
       setAuthed(true)
       // Load real stats
       const [coRes, ideaRes, artRes] = await Promise.all([
@@ -790,8 +792,10 @@ export default function SuperAdmin() {
   }
 
   if (!authed) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', gap: 16 }}>
       <div style={{ width: 36, height: 36, border: '2px solid #ff7a6b', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+      <p style={{ color: '#6b6b70', fontSize: 14 }}>Checking authentication...</p>
+      <a href="https://colvy.com/signin" style={{ color: '#ff7a6b', fontSize: 13, textDecoration: 'underline' }}>Sign in at colvy.com →</a>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )

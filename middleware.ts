@@ -24,8 +24,13 @@ export function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
-  // admin.colvy.com → platform admin
+  // admin.colvy.com → platform admin dashboard
   if (hostname === 'admin.colvy.com') {
+    // Keep API routes as-is
+    if (path.startsWith('/api/') || path.startsWith('/auth/') || path.startsWith('/_next/')) {
+      return NextResponse.next()
+    }
+    // Rewrite everything else to /platform-admin
     url.pathname = `/platform-admin${path === '/' ? '' : path}`
     return NextResponse.rewrite(url)
   }
