@@ -140,9 +140,20 @@ export default function RootLayout({
       const SUPER_ADMIN = 'bishalstha76@gmail.com'
       setIsAdmin(u.email === SUPER_ADMIN)
       try {
-        const { data } = await (supabase as any).from('companies').select('*').eq('owner_id', u.id).single()
+        // Use maybeSingle() - won't throw if no company found
+        const { data } = await (supabase as any).from('companies').select('*').eq('owner_id', u.id).maybeSingle()
         setIsCompanyOwner(!!data || u.email === SUPER_ADMIN)
-        if (data) setCompany(data)
+        if (data) {
+          setCompany(data)
+          // Apply company accent color
+          if (data.accent_color) {
+            document.documentElement.style.setProperty('--coral', data.accent_color)
+            const r = parseInt(data.accent_color.slice(1,3),16)
+            const g = parseInt(data.accent_color.slice(3,5),16)
+            const b = parseInt(data.accent_color.slice(5,7),16)
+            document.documentElement.style.setProperty('--peach', `rgba(${r},${g},${b},0.1)`)
+          }
+        }
       } catch {
         setIsCompanyOwner(u.email === SUPER_ADMIN)
       }
@@ -182,7 +193,7 @@ export default function RootLayout({
   const userInitial = user?.email?.[0].toUpperCase() || 'A'
 
   // Pages that use their own full-page layout (no nav wrapper)
-  const isFullPage = ['/landing', '/pricing', '/features', '/platform-admin', '/admin'].some(p => pathname?.startsWith(p))
+  const isFullPage = ['/landing', '/pricing', '/features', '/platform-admin'].some(p => pathname?.startsWith(p))
 
   if (isFullPage) {
     return (
@@ -210,7 +221,7 @@ export default function RootLayout({
       </head>
       <body style={{ background: 'var(--canvas)' }}>
         {/* Header */}
-        <header className="sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)' }}>
+        <header className="sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)', display: pathname?.startsWith('/admin') ? 'none' : undefined }}>
           <nav className="h-14 px-6 flex items-center justify-between">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
@@ -293,11 +304,11 @@ export default function RootLayout({
                             {isCompanyOwner && <>
                               <div className="border-t my-1" style={{ borderColor: 'var(--border)' }} />
                               <p className="px-4 pt-1 pb-0.5 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>Board Owner</p>
-                              <Link href="/admin" onClick={() => setShowUserMenu(false)}
-                                className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer font-semibold" style={{ color: 'var(--coral)' }}>
+                              <a href="/admin" onClick={() => setShowUserMenu(false)}
+                                className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer font-semibold" style={{ color: 'var(--coral)', textDecoration: 'none' }}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                                 Admin Dashboard
-                              </Link>
+                              </a>
                               <Link href="/admin/settings" onClick={() => setShowUserMenu(false)}
                                 className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer" style={{ color: 'var(--ink)' }}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
