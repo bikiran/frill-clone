@@ -244,7 +244,8 @@ export default function RootLayout({
   const userInitial = user?.email?.[0].toUpperCase() || 'A'
 
   // Pages that use their own full-page layout (no nav wrapper)
-  const isFullPage = ['/landing', '/pricing', '/features', '/platform-admin'].some(p => pathname?.startsWith(p))
+  const isEmbed = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('embed') === '1'
+  const isFullPage = isEmbed || ['/landing', '/pricing', '/features', '/platform-admin', '/forms/'].some(p => pathname?.startsWith(p))
 
   if (isFullPage) {
     return (
@@ -310,8 +311,8 @@ export default function RootLayout({
                   if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
                   // On colvy.com (not a company subdomain), board nav items have nowhere to go — hide them
                   if (!isSubdomain && ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)) return false
-                  // Features/Pricing only make sense on the marketing site, and only when signed out
-                  if ((user || isSubdomain) && (item.label === 'Features' || item.label === 'Pricing')) return false
+                  // Features/Pricing only make sense on the marketing site (colvy.com) — hide them on company subdomains
+                  if (isSubdomain && (item.label === 'Features' || item.label === 'Pricing')) return false
                   return true
                 }).map(item => (
                 <Link
@@ -441,7 +442,7 @@ export default function RootLayout({
                 {NAV_ITEMS.filter(item => {
                   if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
                   if (!isSubdomain && ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)) return false
-                  if ((user || isSubdomain) && (item.label === 'Features' || item.label === 'Pricing')) return false
+                  if (isSubdomain && (item.label === 'Features' || item.label === 'Pricing')) return false
                   return true
                 }).map(item => (
                   <Link

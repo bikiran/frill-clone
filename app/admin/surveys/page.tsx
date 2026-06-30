@@ -25,6 +25,8 @@ export default function SurveysAdmin() {
   const [selectedType, setSelectedType] = useState('nps')
   const [newTitle, setNewTitle] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null)
+  const [shareModal, setShareModal] = useState<any>(null)
+  const [copiedField, setCopiedField] = useState('')
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -125,6 +127,9 @@ export default function SurveysAdmin() {
                     style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                     View Reports
                   </Link>
+                  <button onClick={() => setShareModal(s)} className="px-3 py-2 rounded-lg text-xs border transition-smooth hover:bg-gray-50 cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} title="Share or embed">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                  </button>
                   <button
                     onClick={() => setConfirmDelete({ id: s.id, title: s.title })}
                     className="px-3 py-2 rounded-lg text-xs border transition-smooth text-red-600 hover:bg-red-50 cursor-pointer"
@@ -239,6 +244,45 @@ export default function SurveysAdmin() {
           </div>
         </>
       )}
+
+      {shareModal && (() => {
+        const surveyUrl = typeof window !== 'undefined' ? `${window.location.origin}/surveys/${shareModal.id}` : ''
+        const embedCode = `<iframe src="${surveyUrl}?embed=1" width="100%" height="480" frameborder="0" style="border-radius:16px;"></iframe>`
+        const copy = (text: string, field: string) => {
+          navigator.clipboard.writeText(text)
+          setCopiedField(field)
+          setTimeout(() => setCopiedField(''), 2000)
+        }
+        return (
+          <>
+            <div className="fixed inset-0 z-50 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShareModal(null)} />
+            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-2xl shadow-2xl animate-modal mx-4 max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
+                <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Share Survey</h2>
+                <button onClick={() => setShareModal(null)} className="text-2xl cursor-pointer" style={{ color: 'var(--slate)' }}>×</button>
+              </div>
+              <div className="p-6 space-y-5">
+                <div>
+                  <label className="block text-sm font-bold mb-2" style={{ color: 'var(--ink)' }}>Direct link</label>
+                  <div className="flex gap-2">
+                    <input readOnly value={surveyUrl} className="flex-1 px-3 py-2.5 rounded-lg border text-sm bg-gray-50" style={{ borderColor: 'var(--border)' }} />
+                    <button onClick={() => copy(surveyUrl, 'link')} className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)' }}>
+                      {copiedField === 'link' ? '✓ Copied' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-2" style={{ color: 'var(--ink)' }}>Embed on your website</label>
+                  <textarea readOnly value={embedCode} rows={3} className="w-full px-3 py-2.5 rounded-lg border text-xs font-mono bg-gray-50 resize-none" style={{ borderColor: 'var(--border)' }} />
+                  <button onClick={() => copy(embedCode, 'embed')} className="mt-2 px-4 py-2 rounded-lg text-sm font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)' }}>
+                    {copiedField === 'embed' ? '✓ Copied' : 'Copy embed code'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )
+      })()}
 
       {confirmDelete && (
         <ConfirmModal

@@ -995,3 +995,34 @@ UPDATE ideas SET status = 'shipped' WHERE status = 'Shipped';
 ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
 CREATE UNIQUE INDEX IF NOT EXISTS site_settings_key_company ON site_settings(key, company_id) WHERE company_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS site_settings_key_global ON site_settings(key) WHERE company_id IS NULL;
+
+-- Forms feature (Typeform-like)
+CREATE TABLE IF NOT EXISTS forms (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT 'Untitled Form',
+  questions JSONB DEFAULT '[]'::jsonb,
+  theme JSONB DEFAULT '{}'::jsonb,
+  welcome_message TEXT DEFAULT 'Welcome! This will only take a minute.',
+  thank_you_message TEXT DEFAULT 'Thanks for completing this form!',
+  is_published BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+ALTER TABLE forms ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anyone can read published forms" ON forms FOR SELECT USING (true);
+CREATE POLICY "Authenticated users can manage forms" ON forms FOR ALL USING (true);
+
+CREATE TABLE IF NOT EXISTS form_responses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  form_id UUID REFERENCES forms(id) ON DELETE CASCADE,
+  answers JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+ALTER TABLE form_responses ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anyone can submit form responses" ON form_responses FOR INSERT WITH CHECK (true);
+CREATE POLICY "Form owners can read responses" ON form_responses FOR SELECT USING (true);
+
+-- Poll/Survey rich media (already added previously, included here for completeness)
+ALTER TABLE polls ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE polls ADD COLUMN IF NOT EXISTS image_url TEXT;
