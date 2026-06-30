@@ -7,11 +7,14 @@ import Link from 'next/link'
 
 type Question = {
   id: string
-  type: 'short_text' | 'long_text' | 'multiple_choice' | 'rating' | 'yes_no' | 'email' | 'number' | 'date'
+  type: string
   title: string
   description: string
   required: boolean
   options?: string[]
+  mediaUrl?: string
+  mediaType?: 'image' | 'video'
+  fileAccept?: string
 }
 
 const QUESTION_CATEGORIES = [
@@ -113,12 +116,15 @@ export default function FormBuilder() {
   const [welcomeMessage, setWelcomeMessage] = useState('Welcome! This will only take a minute.')
   const [thankYouMessage, setThankYouMessage] = useState('Thanks for completing this form!')
   const [endActions, setEndActions] = useState<{ type: string; label: string; url: string }[]>([])
+  const [showConfetti, setShowConfetti] = useState(true)
+  const [mediaUploading, setMediaUploading] = useState<string>('')
   const [questions, setQuestions] = useState<Question[]>([])
   const [selectedQ, setSelectedQ] = useState<string | null>(null)
   const [themeColor, setThemeColor] = useState('#ff7a6b')
   const [isPublished, setIsPublished] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [isDirty, setIsDirty] = useState(false)
   const [previewStep, setPreviewStep] = useState(-1) // -1 = welcome screen
   const [showAddMenu, setShowAddMenu] = useState(false)
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null)
@@ -136,28 +142,32 @@ export default function FormBuilder() {
       if (data.welcome_message) setWelcomeMessage(data.welcome_message)
       if (data.thank_you_message) setThankYouMessage(data.thank_you_message)
       if (data.end_actions) setEndActions(data.end_actions)
+      if (data.show_confetti !== undefined) setShowConfetti(data.show_confetti)
       setLoading(false)
     }
     init()
   }, [formId])
 
-  // Auto-save
+  // Track unsaved changes + auto-save
   useEffect(() => {
     if (isFirstLoad.current) { isFirstLoad.current = false; return }
     if (loading) return
+    setIsDirty(true)
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(() => handleSave(), 1000)
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
-  }, [title, questions, themeColor, welcomeMessage, thankYouMessage, endActions])
+  }, [title, questions, themeColor, welcomeMessage, thankYouMessage, endActions, showConfetti])
 
   const handleSave = async () => {
     setSaving(true)
     await (supabase as any).from('forms').update({
       title, questions, theme: { color: themeColor },
       welcome_message: welcomeMessage, thank_you_message: thankYouMessage, end_actions: endActions,
+      show_confetti: showConfetti,
       updated_at: new Date().toISOString(),
     }).eq('id', formId)
     setSaving(false)
+    setIsDirty(false)
   }
 
   const togglePublish = async () => {
@@ -182,6 +192,23 @@ export default function FormBuilder() {
 
   const updateQuestion = (id: string, patch: Partial<Question>) => {
     setQuestions(prev => prev.map(q => q.id === id ? { ...q, ...patch } : q))
+  }
+
+  const uploadQuestionMedia = async (file: File, questionId: string) => {
+    setMediaUploading(questionId)
+    try {
+      const ext = file.name.split('.').pop()
+      const fileName = `forms/${formId}/${Date.now()}.${ext}`
+      let uploadBucket = 'idea-images'
+      const { data, error } = await supabase.storage.from(uploadBucket).upload(fileName, file, { upsert: true })
+      if (error) throw error
+      const { data: { publicUrl } } = supabase.storage.from(uploadBucket).getPublicUrl(data.path)
+      const mediaType = file.type.startsWith('video') ? 'video' : 'image'
+      updateQuestion(questionId, { mediaUrl: publicUrl, mediaType })
+    } catch (e: any) {
+      alert('Media upload failed: ' + e.message)
+    }
+    setMediaUploading('')
   }
 
   const deleteQuestion = (id: string) => {
@@ -212,9 +239,13 @@ export default function FormBuilder() {
           onChange={e => setTitle(e.target.value)}
           style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', border: 'none', outline: 'none', background: 'transparent', minWidth: 120 }}
         />
-        <span style={{ fontSize: 11, color: saving ? '#f59e0b' : '#16a34a', display: 'flex', alignItems: 'center', gap: 4 }}>
-          {saving ? 'Saving...' : '✓ Saved'}
+        <span style={{ fontSize: 11, color: saving ? '#f59e0b' : isDirty ? '#6b6b70' : '#16a34a', display: 'flex', alignItems: 'center', gap: 4 }}>
+          {saving ? 'Saving...' : isDirty ? 'Unsaved changes' : '✓ Saved'}
         </span>
+        <button onClick={handleSave} disabled={saving || !isDirty}
+          style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: (saving || !isDirty) ? 'default' : 'pointer', border: 'none', background: isDirty ? 'var(--coral)' : '#f3f4f6', color: isDirty ? '#fff' : '#9ca3af', opacity: saving ? 0.7 : 1 }}>
+          {saving ? 'Saving...' : 'Save'}
+        </button>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 999, background: isPublished ? '#dcfce7' : '#f3f4f6', color: isPublished ? '#16a34a' : '#6b7280', fontWeight: 600 }}>
             {isPublished ? 'Live' : 'Draft'}
@@ -342,6 +373,13 @@ export default function FormBuilder() {
             ) : questions[previewStep] ? (
               <div>
                 <p style={{ fontSize: 12, fontWeight: 700, color: themeColor, marginBottom: 8 }}>QUESTION {previewStep + 1} OF {questions.length}</p>
+                {questions[previewStep].mediaUrl && (
+                  questions[previewStep].mediaType === 'video' ? (
+                    <video src={questions[previewStep].mediaUrl} controls style={{ width: '100%', borderRadius: 14, marginBottom: 16, maxHeight: 220, objectFit: 'cover' }} />
+                  ) : (
+                    <img src={questions[previewStep].mediaUrl} alt="" style={{ width: '100%', borderRadius: 14, marginBottom: 16, maxHeight: 220, objectFit: 'cover' }} />
+                  )
+                )}
                 <input value={questions[previewStep].title} onChange={e => updateQuestion(questions[previewStep].id, { title: e.target.value })}
                   placeholder="Type your question..."
                   style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', border: 'none', outline: 'none', width: '100%', marginBottom: 8, background: 'transparent' }} />
@@ -454,6 +492,47 @@ export default function FormBuilder() {
                   <span style={{ width: 15, height: 15, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: selected.required ? 20 : 3, transition: 'left 0.15s' }} />
                 </button>
               </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 8 }}>Image or video</label>
+                {selected.mediaUrl ? (
+                  <div style={{ position: 'relative' }}>
+                    {selected.mediaType === 'video' ? (
+                      <video src={selected.mediaUrl} controls style={{ width: '100%', borderRadius: 10, maxHeight: 140, objectFit: 'cover' }} />
+                    ) : (
+                      <img src={selected.mediaUrl} alt="" style={{ width: '100%', borderRadius: 10, maxHeight: 140, objectFit: 'cover' }} />
+                    )}
+                    <button onClick={() => updateQuestion(selected.id, { mediaUrl: '', mediaType: undefined })}
+                      style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                ) : (
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '14px', borderRadius: 10, border: `1.5px dashed ${themeColor}`, color: themeColor, fontSize: 12, fontWeight: 600, cursor: mediaUploading === selected.id ? 'wait' : 'pointer' }}>
+                    {mediaUploading === selected.id ? 'Uploading...' : (
+                      <>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        Add image or video
+                      </>
+                    )}
+                    <input type="file" accept="image/*,video/*" className="hidden" disabled={mediaUploading === selected.id}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadQuestionMedia(f, selected.id) }} />
+                  </label>
+                )}
+              </div>
+
+              {selected.type === 'file_upload' && (
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Accepted file types</label>
+                  <select value={selected.fileAccept || 'any'} onChange={e => updateQuestion(selected.id, { fileAccept: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer' }}>
+                    <option value="any">Any file</option>
+                    <option value="image/*">Images only</option>
+                    <option value=".pdf,.doc,.docx">Documents (PDF, Word)</option>
+                    <option value="video/*">Videos only</option>
+                  </select>
+                </div>
+              )}
             </>
           ) : previewStep === questions.length ? (
             <>
@@ -509,6 +588,16 @@ export default function FormBuilder() {
                       style={{ width: 28, height: 28, borderRadius: 8, background: c, border: themeColor === c ? '2.5px solid #0d0d0d' : '2.5px solid transparent', cursor: 'pointer' }} />
                   ))}
                 </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div>
+                  <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, display: 'block' }}>🎉 Confetti on submit</label>
+                  <span style={{ fontSize: 11, color: 'var(--slate)' }}>Celebrate when someone finishes the form</span>
+                </div>
+                <button onClick={() => setShowConfetti(!showConfetti)}
+                  style={{ width: 38, height: 21, borderRadius: 999, background: showConfetti ? themeColor : '#d1d5db', border: 'none', cursor: 'pointer', position: 'relative', flexShrink: 0, marginLeft: 12 }}>
+                  <span style={{ width: 15, height: 15, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: showConfetti ? 20 : 3, transition: 'left 0.15s' }} />
+                </button>
               </div>
               <div style={{ padding: 14, borderRadius: 12, background: '#fafafa', fontSize: 12, color: 'var(--slate)', lineHeight: 1.6 }}>
                 Select a question on the left to edit its settings, or click "Welcome screen" / "Thank you screen" to edit those messages.

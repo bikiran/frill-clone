@@ -124,6 +124,7 @@ export default function HelpArticlePage() {
   const [feedbackNote, setFeedbackNote] = useState('')
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false)
   const [user, setUser] = useState<any>(null)
+  const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
   const [openMenu, setOpenMenu] = useState(false)
   const [related, setRelated] = useState<any[]>([])
   const [showTicketForm, setShowTicketForm] = useState(false)
@@ -193,7 +194,7 @@ export default function HelpArticlePage() {
     setOpenMenu(false)
   }
 
-  const isAdmin = user?.email === ADMIN_EMAIL
+  const isAdmin = isCompanyAdmin
 
   if (loading) return <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)' }}>Loading...</div>
   if (!article) return (

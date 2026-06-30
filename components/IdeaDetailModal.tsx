@@ -57,6 +57,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   const [activityLog, setActivityLog] = useState<any[]>([])
   
   const [user, setUser] = useState<any>(null)
+  const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
   const [copied, setCopied] = useState(false)
   const [confirmDeleteIdea, setConfirmDeleteIdea] = useState(false)
   const [confirmDeleteComment, setConfirmDeleteComment] = useState<string | null>(null)
@@ -72,7 +73,15 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   const [availableSurveys, setAvailableSurveys] = useState<any[]>([])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user))
+    supabase.auth.getSession().then(({ data }) => {
+      const u = data.session?.user
+      setUser(u)
+      if (u) {
+        import('@/lib/board').then(({ isCompanyAdminUser }) => {
+          isCompanyAdminUser(u).then(setIsCompanyAdmin)
+        })
+      }
+    })
     fetchVoters()
     fetchComments()
     fetchActivity()
@@ -355,7 +364,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
     setUploadingCover(false)
   }
 
-  const isAdmin = user?.email === 'bishalstha76@gmail.com'
+  const isAdmin = isCompanyAdmin
   const isOwner = user?.id === idea.user_id
   const canEdit = isAdmin || isOwner
   const currentStatus = STATUS_CONFIG[status] || STATUS_CONFIG.new

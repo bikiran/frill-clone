@@ -46,6 +46,23 @@ export async function getCompanyByOwner(userId: string): Promise<Company | null>
   }
 }
 
+const PLATFORM_SUPER_ADMIN = 'bishalstha76@gmail.com'
+
+// Returns true if this user administers the company for the CURRENT hostname.
+// Any signed-up user is admin of their own company — not just the platform super admin.
+// The platform super admin (bishalstha76@gmail.com) also has admin rights everywhere, for support purposes.
+export async function isCompanyAdminUser(user: { id: string; email?: string } | null | undefined): Promise<boolean> {
+  if (!user) return false
+  if (user.email === PLATFORM_SUPER_ADMIN) return true
+  if (typeof window === 'undefined') return false
+  const h = window.location.hostname
+  if (h === 'colvy.com' || h === 'www.colvy.com' || h.includes('localhost') || h.includes('vercel.app')) return false
+  if (!h.endsWith('.colvy.com')) return false
+  const slug = h.replace('.colvy.com', '')
+  const co = await getCompanyBySlug(slug)
+  return !!co && co.owner_id === user.id
+}
+
 export function isValidSlug(slug: string): boolean {
   return /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/.test(slug)
 }

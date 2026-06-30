@@ -26,9 +26,18 @@ export default function RoadmapPage() {
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null)
   const [dropIndicator, setDropIndicator] = useState<{ columnKey: string; index: number } | null>(null)
   const [user, setUser] = useState<any>(null)
+  const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user))
+    supabase.auth.getSession().then(({ data }) => {
+      const u = data.session?.user
+      setUser(u)
+      if (u) {
+        import('@/lib/board').then(({ isCompanyAdminUser }) => {
+          isCompanyAdminUser(u).then(setIsCompanyAdmin)
+        })
+      }
+    })
     fetchIdeas()
     fetchCustomStatuses()
 
@@ -103,7 +112,7 @@ export default function RoadmapPage() {
     fetchIdeas()
   }
 
-  const isAdmin = user?.email === ADMIN_EMAIL
+  const isAdmin = isCompanyAdmin
   const canDrag = !!user
 
   const handleDragStart = (e: React.DragEvent, idea: any) => {

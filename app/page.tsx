@@ -55,6 +55,7 @@ export default function HomePage() {
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [topicFilter, setTopicFilter] = useState<string | null>(null)
   const [user, setUser] = useState<any>(null)
+  const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
   const [adminFilter, setAdminFilter] = useState<string | null>(null)
   const [topics, setTopics] = useState<{ id: string; emoji: string; count: number }[]>([])
   const [userVotes, setUserVotes] = useState<Set<string>>(new Set())
@@ -111,10 +112,23 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       setUser(data.session?.user)
       if (data.session?.user.id) {
         fetchUserVotes(data.session.user.id)
+        // Determine if this user is the admin of THIS company (any signed-up user owns their own company)
+        try {
+          const SUPER_ADMIN = 'bishalstha76@gmail.com'
+          if (data.session.user.email === SUPER_ADMIN) {
+            setIsCompanyAdmin(true)
+          } else {
+            const companyId = await getCompanyId()
+            if (companyId) {
+              const { data: co } = await (supabase as any).from('companies').select('owner_id').eq('id', companyId).maybeSingle()
+              setIsCompanyAdmin(co?.owner_id === data.session.user.id)
+            }
+          }
+        } catch {}
       }
     })
     fetchIdeas()
@@ -423,7 +437,7 @@ export default function HomePage() {
     else if (adminFilter === 'unprioritized') matchesAdmin = !i.priority
     
     // Hide private ideas from non-admin users
-    const isAdmin = user?.email === 'bishalstha76@gmail.com'
+    const isAdmin = isCompanyAdmin
     const isOwner = user?.id === i.user_id
     const matchesPrivacy = !i.is_private || isAdmin || isOwner
     
@@ -485,7 +499,7 @@ export default function HomePage() {
               Statuses
             </h3>
             <div className="flex items-center gap-1">
-              {user?.email === 'bishalstha76@gmail.com' && (
+              {isCompanyAdmin && (
                 <>
                   <Link href="/admin/statuses" className="text-xs px-2 py-1 rounded transition-smooth hover:bg-gray-100 flex items-center gap-1" style={{ color: 'var(--slate)' }} title="Manage statuses">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.18V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 3.09 15H3a2 2 0 0 1 0-4h.09" /></svg>
@@ -542,7 +556,7 @@ export default function HomePage() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" /></svg>
               Topics
             </h3>
-            {user?.email === 'bishalstha76@gmail.com' && (
+            {isCompanyAdmin && (
               <Link href="/admin/topics" className="text-xs px-2 py-1 rounded transition-smooth hover:bg-gray-100 flex items-center gap-1" style={{ color: 'var(--slate)' }} title="Manage topics">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.18V21a2 2 0 0 1-4 0v-.09" /></svg>
               </Link>
@@ -575,7 +589,7 @@ export default function HomePage() {
         </div>
 
         {/* Admin filters */}
-        {user?.email === 'bishalstha76@gmail.com' && (
+        {isCompanyAdmin && (
           <div>
             <h3 className="text-xs font-bold uppercase tracking-widest mb-4 flex items-center gap-1.5" style={{ color: 'var(--slate)' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>

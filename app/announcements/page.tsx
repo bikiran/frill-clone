@@ -18,6 +18,7 @@ export default function AnnouncementsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [user, setUser] = useState<any>(null)
+  const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set())
   const [subscribedIds, setSubscribedIds] = useState<Set<string>>(new Set())
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
@@ -26,7 +27,15 @@ export default function AnnouncementsPage() {
 
   useEffect(() => {
     supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null))
-    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null))
+    supabase.auth.getSession().then(({ data }) => {
+      const u = data.session?.user ?? null
+      setUser(u)
+      if (u) {
+        import('@/lib/board').then(({ isCompanyAdminUser }) => {
+          isCompanyAdminUser(u).then(setIsCompanyAdmin)
+        })
+      }
+    })
     fetchAnnouncements()
   }, [])
 
@@ -154,7 +163,7 @@ export default function AnnouncementsPage() {
     grouped[key].push(ann)
   })
 
-  const isAdmin = user?.email === 'bishalstha76@gmail.com'
+  const isAdmin = isCompanyAdmin
 
   return (
     <div className="flex h-[calc(100vh-56px)] overflow-hidden" style={{ background: 'var(--canvas)' }}>

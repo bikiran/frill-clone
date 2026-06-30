@@ -309,6 +309,8 @@ export default function RootLayout({
                 })
                 .filter(item => {
                   if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
+                  // Admin pages have their own sidebar nav — top nav here is redundant noise
+                  if (pathname?.startsWith('/admin')) return false
                   // On colvy.com (not a company subdomain), board nav items have nowhere to go — hide them
                   if (!isSubdomain && ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)) return false
                   // Features/Pricing only make sense on the marketing site (colvy.com) — hide them on company subdomains
@@ -441,6 +443,7 @@ export default function RootLayout({
               <div className="p-4 space-y-2">
                 {NAV_ITEMS.filter(item => {
                   if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
+                  if (pathname?.startsWith('/admin')) return false
                   if (!isSubdomain && ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)) return false
                   if (isSubdomain && (item.label === 'Features' || item.label === 'Pricing')) return false
                   return true

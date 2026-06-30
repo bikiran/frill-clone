@@ -1029,3 +1029,6 @@ ALTER TABLE polls ADD COLUMN IF NOT EXISTS image_url TEXT;
 
 -- Form post-submit actions (website/video/social/custom buttons)
 ALTER TABLE forms ADD COLUMN IF NOT EXISTS end_actions JSONB DEFAULT '[]'::jsonb;
+
+-- Forms: confetti toggle and rich media support on questions (questions JSONB already supports mediaUrl/mediaType/fileAccept per-question)
+ALTER TABLE forms ADD COLUMN IF NOT EXISTS show_confetti BOOLEAN DEFAULT true;

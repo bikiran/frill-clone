@@ -35,6 +35,7 @@ export default function HelpCentrePage() {
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [user, setUser] = useState<any>(null)
+  const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [showSearchDropdown, setShowSearchDropdown] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
@@ -93,7 +94,7 @@ export default function HelpCentrePage() {
       }
   }
 
-  const isAdmin = user?.email === ADMIN_EMAIL
+  const isAdmin = isCompanyAdmin
   const allCategories = Array.from(new Set(articles.map(a => a.category).filter(Boolean)))
 
   const filtered = articles.filter(a => {
