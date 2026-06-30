@@ -73,6 +73,9 @@ export default function SettingsPage() {
   const [privacyMode, setPrivacyMode] = useState('public')
   const [categories, setCategories] = useState<string[]>(['New Feature', 'Improvement', 'Fix', 'Announcement'])
   const [newCategoryName, setNewCategoryName] = useState('')
+  const [defaultHomepage, setDefaultHomepage] = useState('ideas')
+  const [removingDemo, setRemovingDemo] = useState(false)
+  const [demoRemoved, setDemoRemoved] = useState(false)
   const [dragNavItem, setDragNavItem] = useState<string | null>(null)
   // Styling
   const [accentColor, setAccentColor] = useState('#ff7a6b')
@@ -227,6 +230,7 @@ export default function SettingsPage() {
           if (s.termValues) setTermValues(s.termValues)
           if (s.privacyMode) setPrivacyMode(s.privacyMode)
           if (s.categories && Array.isArray(s.categories)) setCategories(s.categories)
+          if (s.defaultHomepage) setDefaultHomepage(s.defaultHomepage)
           const slugKey = typeof window !== 'undefined' ? (window.location.hostname.replace('.colvy.com','') || 'colvy') : 'colvy'
           if (typeof window !== 'undefined') localStorage.setItem(`site_settings_${slugKey}`, JSON.stringify(s))
         }
@@ -263,7 +267,7 @@ export default function SettingsPage() {
     guestVotingEnabled, guestSubmitEnabled, termValues, privacyMode,
     allowAnnSubsc, allowAnnComments, showAnnComments, disableAnnReactions,
     disableAnimGifs, disableCommentReactions, allowIdeaComments, showIdeaMRR,
-    showIdeaNumber, showRoadmapDesc, showIdeaDate, showIdeaActivity, requireIdeaTopic, categories,
+    showIdeaNumber, showRoadmapDesc, showIdeaDate, showIdeaActivity, requireIdeaTopic, categories, defaultHomepage,
   ])
 
   const handleSave = async () => {
@@ -274,7 +278,7 @@ export default function SettingsPage() {
       accentColor, themeMode, borderRadius,
       emailFromName, emailReplyTo, emailSignature,
       hidePoweredBy, customDomain, boardDomain, helpDomain, domainStatus,
-      guestVotingEnabled, guestSubmitEnabled, termValues, privacyMode, categories,
+      guestVotingEnabled, guestSubmitEnabled, termValues, privacyMode, categories, defaultHomepage,
       allowAnnSubsc, allowAnnComments, showAnnComments, disableAnnReactions,
       disableAnimGifs, disableCommentReactions, allowIdeaComments, showIdeaMRR,
       showIdeaNumber, showRoadmapDesc, showIdeaDate, showIdeaActivity, requireIdeaTopic,
@@ -1424,6 +1428,51 @@ export default function SettingsPage() {
                 className="w-full px-4 py-2.5 rounded-lg border text-sm focus:outline-none"
                 style={{ borderColor: 'var(--border)', fontSize: '16px' }}
               />
+            </div>
+
+            {/* Default homepage */}
+            <div className="mb-6">
+              <label className="text-sm font-semibold block mb-2" style={{ color: 'var(--ink)' }}>Default homepage</label>
+              <p className="text-xs mb-2" style={{ color: 'var(--slate)' }}>Where your logo link and "/" takes logged-in users.</p>
+              <select
+                value={defaultHomepage}
+                onChange={e => setDefaultHomepage(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-lg border text-sm focus:outline-none cursor-pointer"
+                style={{ borderColor: 'var(--border)', fontSize: '16px', color: 'var(--ink)' }}>
+                <option value="ideas">Ideas board</option>
+                <option value="roadmap">Roadmap</option>
+                <option value="announcements">Announcements</option>
+                <option value="help">Help Centre</option>
+              </select>
+            </div>
+
+            {/* Remove demo data */}
+            <div className="mb-6 p-4 rounded-xl" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+              <p className="text-sm font-semibold mb-1" style={{ color: '#991b1b' }}>Remove demo data</p>
+              <p className="text-xs mb-3" style={{ color: '#991b1b', opacity: 0.8 }}>
+                Deletes all sample ideas, topics, statuses, and announcements that were auto-generated on signup. This cannot be undone.
+              </p>
+              <button
+                onClick={async () => {
+                  if (!confirm('This will permanently delete all demo/sample data from your board. Continue?')) return
+                  setRemovingDemo(true)
+                  try {
+                    const cid = company?.id
+                    if (cid) {
+                      await (supabase as any).from('ideas').delete().eq('company_id', cid).ilike('created_by_name', '%demo%')
+                      await (supabase as any).from('ideas').delete().eq('company_id', cid).or('title.ilike.%[Example%,title.ilike.%[Demo%')
+                      await (supabase as any).from('announcements').delete().eq('company_id', cid).ilike('title', '%[Example%')
+                    }
+                    setDemoRemoved(true)
+                    setTimeout(() => setDemoRemoved(false), 3000)
+                  } catch (e) { console.error(e) }
+                  setRemovingDemo(false)
+                }}
+                disabled={removingDemo}
+                className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer disabled:opacity-50"
+                style={{ background: '#dc2626', color: '#fff', border: 'none' }}>
+                {removingDemo ? 'Removing...' : demoRemoved ? '✓ Demo data removed' : 'Remove demo data'}
+              </button>
             </div>
 
             {/* Logo link */}

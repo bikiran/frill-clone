@@ -15,7 +15,10 @@ export default function PollsAdmin() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [question, setQuestion] = useState('')
-  const [options, setOptions] = useState<string[]>(['', ''])
+  const [description, setDescription] = useState('')
+  const [pollImage, setPollImage] = useState('')
+  const [options, setOptions] = useState<{ text: string; image: string; description: string }[]>([{ text: '', image: '', description: '' }, { text: '', image: '', description: '' }])
+  const [uploadingFor, setUploadingFor] = useState<string>('')
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; question: string } | null>(null)
 
   useEffect(() => {
@@ -34,13 +37,15 @@ export default function PollsAdmin() {
   }
 
   const createPoll = async () => {
-    if (!question.trim() || options.filter(o => o.trim()).length < 2) {
+    if (!question.trim() || options.filter(o => o.text.trim()).length < 2) {
       alert('Please add a question and at least 2 options')
       return
     }
     const { error } = await supabase.from('polls').insert({
       question: question.trim(),
-      options: options.filter(o => o.trim()),
+      description: description.trim() || null,
+      image_url: pollImage || null,
+      options: options.filter(o => o.text.trim()),
       is_active: true,
     })
     if (error) {
@@ -48,9 +53,32 @@ export default function PollsAdmin() {
       return
     }
     setQuestion('')
-    setOptions(['', ''])
+    setDescription('')
+    setPollImage('')
+    setOptions([{ text: '', image: '', description: '' }, { text: '', image: '', description: '' }])
     setShowCreate(false)
     fetchPolls()
+  }
+
+  const uploadPollImage = async (file: File, target: string) => {
+    setUploadingFor(target)
+    try {
+      const ext = file.name.split('.').pop()
+      const fileName = `polls/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      let uploadBucket = 'idea-images'
+      const { data, error } = await supabase.storage.from(uploadBucket).upload(fileName, file, { upsert: true })
+      if (error) throw error
+      const { data: { publicUrl } } = supabase.storage.from(uploadBucket).getPublicUrl(data.path)
+      if (target === 'poll') {
+        setPollImage(publicUrl)
+      } else {
+        const idx = parseInt(target.replace('option-', ''))
+        setOptions(prev => prev.map((o, i) => i === idx ? { ...o, image: publicUrl } : o))
+      }
+    } catch (e: any) {
+      alert('Image upload failed: ' + e.message)
+    }
+    setUploadingFor('')
   }
 
   const deletePoll = async (id: string) => {
@@ -90,10 +118,15 @@ export default function PollsAdmin() {
           <div className="grid md:grid-cols-2 gap-4">
             {polls.map(p => (
               <div key={p.id} className="bg-white rounded-2xl border p-5 hover:shadow-md transition-smooth" style={{ borderColor: 'var(--border)' }}>
-                <h3 className="text-lg font-bold mb-3" style={{ color: 'var(--ink)' }}>{p.question}</h3>
+                {p.image_url && <img src={p.image_url} alt="" className="w-full h-28 object-cover rounded-xl mb-3" />}
+                <h3 className="text-lg font-bold mb-1" style={{ color: 'var(--ink)' }}>{p.question}</h3>
+                {p.description && <p className="text-sm mb-3" style={{ color: 'var(--slate)' }}>{p.description}</p>}
                 <div className="space-y-1 mb-4">
-                  {(Array.isArray(p.options) ? p.options : (typeof p.options === 'string' ? (() => { try { return JSON.parse(p.options) } catch { return [] } })() : [])).map((opt: string, i: number) => (
-                    <p key={i} className="text-sm" style={{ color: 'var(--slate)' }}>• {opt}</p>
+                  {(Array.isArray(p.options) ? p.options : (typeof p.options === 'string' ? (() => { try { return JSON.parse(p.options) } catch { return [] } })() : [])).map((opt: any, i: number) => (
+                    <p key={i} className="text-sm flex items-center gap-2" style={{ color: 'var(--slate)' }}>
+                      {opt.image && <img src={opt.image} alt="" className="w-5 h-5 rounded object-cover" />}
+                      • {typeof opt === 'string' ? opt : opt.text}
+                    </p>
                   ))}
                 </div>
                 <div className="flex gap-2 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
@@ -129,35 +162,96 @@ export default function PollsAdmin() {
                   style={{ borderColor: 'var(--border)', fontSize: '16px' }}
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-bold mb-2" style={{ color: 'var(--ink)' }}>Description <span className="font-normal" style={{ color: 'var(--slate)' }}>(optional)</span></label>
+                <textarea
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                  placeholder="Add more context about this poll..."
+                  rows={2}
+                  className="w-full px-4 py-2.5 rounded-lg border text-sm focus:outline-none resize-none"
+                  style={{ borderColor: 'var(--border)', fontSize: '16px' }}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold mb-2" style={{ color: 'var(--ink)' }}>Cover image <span className="font-normal" style={{ color: 'var(--slate)' }}>(optional)</span></label>
+                {pollImage ? (
+                  <div className="relative inline-block">
+                    <img src={pollImage} alt="Poll cover" className="h-24 rounded-lg border object-cover" style={{ borderColor: 'var(--border)' }} />
+                    <button onClick={() => setPollImage('')}
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-xs"
+                      style={{ background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer' }}>×</button>
+                  </div>
+                ) : (
+                  <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed text-sm cursor-pointer hover:bg-gray-50"
+                    style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
+                    {uploadingFor === 'poll' ? 'Uploading...' : '+ Add cover image'}
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadPollImage(f, 'poll') }} />
+                  </label>
+                )}
+              </div>
+
               <div>
                 <label className="block text-sm font-bold mb-2" style={{ color: 'var(--ink)' }}>Options</label>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {options.map((opt, i) => (
-                    <div key={i} className="flex gap-2">
+                    <div key={i} className="p-3 rounded-lg border" style={{ borderColor: 'var(--border)' }}>
+                      <div className="flex gap-2 mb-2">
+                        <input
+                          type="text"
+                          value={opt.text}
+                          onChange={e => {
+                            const newOpts = [...options]
+                            newOpts[i] = { ...newOpts[i], text: e.target.value }
+                            setOptions(newOpts)
+                          }}
+                          placeholder={`Option ${i + 1}`}
+                          className="flex-1 px-3 py-2 rounded-lg border text-sm focus:outline-none"
+                          style={{ borderColor: 'var(--border)', fontSize: '16px' }}
+                        />
+                        {options.length > 2 && (
+                          <button
+                            onClick={() => setOptions(options.filter((_, idx) => idx !== i))}
+                            className="px-3 py-2 rounded-lg border text-red-600 hover:bg-red-50 transition-smooth cursor-pointer"
+                            style={{ borderColor: '#fca5a5' }}>
+                            ×
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="text"
-                        value={opt}
+                        value={opt.description}
                         onChange={e => {
                           const newOpts = [...options]
-                          newOpts[i] = e.target.value
+                          newOpts[i] = { ...newOpts[i], description: e.target.value }
                           setOptions(newOpts)
                         }}
-                        placeholder={`Option ${i + 1}`}
-                        className="flex-1 px-4 py-2 rounded-lg border text-sm focus:outline-none"
-                        style={{ borderColor: 'var(--border)', fontSize: '16px' }}
+                        placeholder="Short description (optional)"
+                        className="w-full px-3 py-1.5 rounded-lg border text-xs focus:outline-none mb-2"
+                        style={{ borderColor: 'var(--border)' }}
                       />
-                      {options.length > 2 && (
-                        <button
-                          onClick={() => setOptions(options.filter((_, idx) => idx !== i))}
-                          className="px-3 py-2 rounded-lg border text-red-600 hover:bg-red-50 transition-smooth cursor-pointer"
-                          style={{ borderColor: '#fca5a5' }}>
-                          ×
-                        </button>
+                      {opt.image ? (
+                        <div className="relative inline-block">
+                          <img src={opt.image} alt="" className="h-16 rounded-md border object-cover" style={{ borderColor: 'var(--border)' }} />
+                          <button onClick={() => setOptions(prev => prev.map((o, idx) => idx === i ? { ...o, image: '' } : o))}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-xs"
+                            style={{ background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer' }}>×</button>
+                        </div>
+                      ) : (
+                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-dashed text-xs cursor-pointer hover:bg-gray-50"
+                          style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
+                          {uploadingFor === `option-${i}` ? 'Uploading...' : '+ Image'}
+                          <input type="file" accept="image/*" className="hidden"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) uploadPollImage(f, `option-${i}`) }} />
+                        </label>
                       )}
                     </div>
                   ))}
                   <button
-                    onClick={() => setOptions([...options, ''])}
+                    onClick={() => setOptions([...options, { text: '', image: '', description: '' }])}
                     className="text-sm font-medium hover:opacity-70 transition-smooth cursor-pointer"
                     style={{ color: 'var(--coral)' }}>
                     + Add option

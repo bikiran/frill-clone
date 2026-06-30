@@ -63,6 +63,7 @@ export default function RootLayout({
     Ideas: true, Roadmap: true, Updates: true, Help: true,
   })
   const [navOrder, setNavOrder] = useState(['Ideas', 'Roadmap', 'Updates', 'Help'])
+  const [homePath, setHomePath] = useState('/')
 
   // Load nav visibility from settings (DB-first, localStorage fallback)
   useEffect(() => {
@@ -74,6 +75,9 @@ export default function RootLayout({
           Updates: s.navAnnouncements !== false,
           Help: s.navHelp !== false,
         })
+        // Default homepage — where the logo link goes
+        const homeMap: Record<string, string> = { ideas: '/', roadmap: '/roadmap', announcements: '/announcements', help: '/help' }
+        setHomePath(homeMap[s.defaultHomepage] || '/')
         if (typeof document !== 'undefined') {
           // Dynamic favicon per company
           if (s.faviconUrl) {
@@ -271,7 +275,7 @@ export default function RootLayout({
         <header className="sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)' }}>
           <nav className="h-14 px-6 flex items-center justify-between">
             {/* Logo */}
-            <Link href="/" className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
+            <Link href={isSubdomain ? homePath : '/'} className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
               {/* On subdomains show company branding; on colvy.com show Colvy */}
               {isSubdomain && company ? (
                 <>
@@ -304,7 +308,10 @@ export default function RootLayout({
                 })
                 .filter(item => {
                   if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
-                  if (user && (item.label === 'Features' || item.label === 'Pricing')) return false
+                  // On colvy.com (not a company subdomain), board nav items have nowhere to go — hide them
+                  if (!isSubdomain && ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)) return false
+                  // Features/Pricing only make sense on the marketing site, and only when signed out
+                  if ((user || isSubdomain) && (item.label === 'Features' || item.label === 'Pricing')) return false
                   return true
                 }).map(item => (
                 <Link
@@ -433,7 +440,8 @@ export default function RootLayout({
               <div className="p-4 space-y-2">
                 {NAV_ITEMS.filter(item => {
                   if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
-                  if (user && (item.label === 'Features' || item.label === 'Pricing')) return false
+                  if (!isSubdomain && ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)) return false
+                  if ((user || isSubdomain) && (item.label === 'Features' || item.label === 'Pricing')) return false
                   return true
                 }).map(item => (
                   <Link
