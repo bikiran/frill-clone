@@ -1026,3 +1026,6 @@ CREATE POLICY "Form owners can read responses" ON form_responses FOR SELECT USIN
 -- Poll/Survey rich media (already added previously, included here for completeness)
 ALTER TABLE polls ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE polls ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- Form post-submit actions (website/video/social/custom buttons)
+ALTER TABLE forms ADD COLUMN IF NOT EXISTS end_actions JSONB DEFAULT '[]'::jsonb;

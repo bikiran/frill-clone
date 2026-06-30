@@ -14,16 +14,60 @@ type Question = {
   options?: string[]
 }
 
-const QUESTION_TYPES = [
-  { type: 'short_text', label: 'Short Text', icon: 'text' },
-  { type: 'long_text', label: 'Long Text', icon: 'paragraph' },
-  { type: 'multiple_choice', label: 'Multiple Choice', icon: 'list' },
-  { type: 'rating', label: 'Rating', icon: 'star' },
-  { type: 'yes_no', label: 'Yes / No', icon: 'check' },
-  { type: 'email', label: 'Email', icon: 'mail' },
-  { type: 'number', label: 'Number', icon: 'hash' },
-  { type: 'date', label: 'Date', icon: 'calendar' },
+const QUESTION_CATEGORIES = [
+  {
+    label: 'Contact info',
+    types: [
+      { type: 'contact_info', label: 'Contact Info', icon: 'user' },
+      { type: 'email', label: 'Email', icon: 'mail' },
+      { type: 'phone', label: 'Phone Number', icon: 'phone' },
+      { type: 'address', label: 'Address', icon: 'map' },
+      { type: 'website', label: 'Website', icon: 'link' },
+    ],
+  },
+  {
+    label: 'Choice',
+    types: [
+      { type: 'multiple_choice', label: 'Multiple Choice', icon: 'list' },
+      { type: 'dropdown', label: 'Dropdown', icon: 'chevron' },
+      { type: 'picture_choice', label: 'Picture Choice', icon: 'image' },
+      { type: 'yes_no', label: 'Yes/No', icon: 'check' },
+      { type: 'legal', label: 'Legal', icon: 'shield' },
+      { type: 'checkbox', label: 'Checkbox', icon: 'square-check' },
+    ],
+  },
+  {
+    label: 'Rating & ranking',
+    types: [
+      { type: 'nps', label: 'Net Promoter Score®', icon: 'gauge' },
+      { type: 'opinion_scale', label: 'Opinion Scale', icon: 'bar' },
+      { type: 'rating', label: 'Rating', icon: 'star' },
+      { type: 'ranking', label: 'Ranking', icon: 'sort' },
+      { type: 'matrix', label: 'Matrix', icon: 'grid' },
+    ],
+  },
+  {
+    label: 'Text & video',
+    types: [
+      { type: 'long_text', label: 'Long Text', icon: 'paragraph' },
+      { type: 'short_text', label: 'Short Text', icon: 'text' },
+      { type: 'video_audio', label: 'Video and Audio', icon: 'video' },
+    ],
+  },
+  {
+    label: 'Other',
+    types: [
+      { type: 'number', label: 'Number', icon: 'hash' },
+      { type: 'date', label: 'Date', icon: 'calendar' },
+      { type: 'signature', label: 'Signature', icon: 'edit' },
+      { type: 'payment', label: 'Payment', icon: 'card' },
+      { type: 'file_upload', label: 'File Upload', icon: 'upload' },
+      { type: 'scheduler', label: 'Scheduler', icon: 'clock' },
+    ],
+  },
 ] as const
+
+const QUESTION_TYPES = QUESTION_CATEGORIES.flatMap(c => c.types)
 
 function TypeIcon({ type, size = 16 }: { type: string; size?: number }) {
   const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
@@ -36,6 +80,23 @@ function TypeIcon({ type, size = 16 }: { type: string; size?: number }) {
     case 'mail': return <svg {...p}><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
     case 'hash': return <svg {...p}><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>
     case 'calendar': return <svg {...p}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    case 'user': return <svg {...p}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    case 'phone': return <svg {...p}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+    case 'map': return <svg {...p}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+    case 'link': return <svg {...p}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+    case 'chevron': return <svg {...p}><polyline points="6 9 12 15 18 9"/></svg>
+    case 'image': return <svg {...p}><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+    case 'shield': return <svg {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    case 'square-check': return <svg {...p}><rect x="3" y="3" width="18" height="18" rx="2"/><polyline points="9 12 11 14 15 10"/></svg>
+    case 'gauge': return <svg {...p}><path d="M12 14 16 8"/><circle cx="12" cy="14" r="2"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+    case 'bar': return <svg {...p}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+    case 'sort': return <svg {...p}><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="m3 17 3 3 3-3"/><path d="M6 18V4"/></svg>
+    case 'grid': return <svg {...p}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    case 'video': return <svg {...p}><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+    case 'edit': return <svg {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+    case 'card': return <svg {...p}><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+    case 'upload': return <svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    case 'clock': return <svg {...p}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     default: return <svg {...p}><circle cx="12" cy="12" r="10"/></svg>
   }
 }
@@ -51,6 +112,7 @@ export default function FormBuilder() {
   const [title, setTitle] = useState('Untitled Form')
   const [welcomeMessage, setWelcomeMessage] = useState('Welcome! This will only take a minute.')
   const [thankYouMessage, setThankYouMessage] = useState('Thanks for completing this form!')
+  const [endActions, setEndActions] = useState<{ type: string; label: string; url: string }[]>([])
   const [questions, setQuestions] = useState<Question[]>([])
   const [selectedQ, setSelectedQ] = useState<string | null>(null)
   const [themeColor, setThemeColor] = useState('#ff7a6b')
@@ -73,6 +135,7 @@ export default function FormBuilder() {
       if (data.theme?.color) setThemeColor(data.theme.color)
       if (data.welcome_message) setWelcomeMessage(data.welcome_message)
       if (data.thank_you_message) setThankYouMessage(data.thank_you_message)
+      if (data.end_actions) setEndActions(data.end_actions)
       setLoading(false)
     }
     init()
@@ -85,13 +148,13 @@ export default function FormBuilder() {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(() => handleSave(), 1000)
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
-  }, [title, questions, themeColor, welcomeMessage, thankYouMessage])
+  }, [title, questions, themeColor, welcomeMessage, thankYouMessage, endActions])
 
   const handleSave = async () => {
     setSaving(true)
     await (supabase as any).from('forms').update({
       title, questions, theme: { color: themeColor },
-      welcome_message: welcomeMessage, thank_you_message: thankYouMessage,
+      welcome_message: welcomeMessage, thank_you_message: thankYouMessage, end_actions: endActions,
       updated_at: new Date().toISOString(),
     }).eq('id', formId)
     setSaving(false)
@@ -166,6 +229,10 @@ export default function FormBuilder() {
               View →
             </Link>
           )}
+          <Link href={`/admin/forms/${formId}/results`}
+            style={{ padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none' }}>
+            Results
+          </Link>
         </div>
       </div>
 
@@ -213,16 +280,28 @@ export default function FormBuilder() {
               Add question
             </button>
             {showAddMenu && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: '#fff', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', border: '1px solid var(--border)', overflow: 'hidden', zIndex: 10 }}>
-                {QUESTION_TYPES.map(t => (
-                  <button key={t.type} onClick={() => addQuestion(t.type as Question['type'])}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = '#fafafa')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <span style={{ color: themeColor }}><TypeIcon type={t.icon} /></span>
-                    <span style={{ fontSize: 13, color: 'var(--ink)' }}>{t.label}</span>
-                  </button>
-                ))}
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: '#fff', borderRadius: 14, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', border: '1px solid var(--border)', overflow: 'hidden', zIndex: 10, maxHeight: 420, display: 'flex', flexDirection: 'column' }}>
+                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8 }}>
+                  <button style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: themeColor, color: '#fff', border: 'none', cursor: 'pointer' }}>Add elements</button>
+                  <button style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 999, background: 'transparent', color: 'var(--slate)', border: '1px solid var(--border)', cursor: 'pointer' }}>Import questions</button>
+                  <button style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 999, background: 'transparent', color: 'var(--slate)', border: '1px solid var(--border)', cursor: 'pointer' }}>Create with AI</button>
+                </div>
+                <div style={{ overflowY: 'auto', padding: '8px 0' }}>
+                  {QUESTION_CATEGORIES.map(cat => (
+                    <div key={cat.label} style={{ marginBottom: 4 }}>
+                      <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.06em', padding: '6px 14px 4px' }}>{cat.label}</p>
+                      {cat.types.map(t => (
+                        <button key={t.type} onClick={() => addQuestion(t.type as Question['type'])}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = '#fafafa')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                          <span style={{ color: themeColor, flexShrink: 0 }}><TypeIcon type={t.icon} size={15} /></span>
+                          <span style={{ fontSize: 13, color: 'var(--ink)' }}>{t.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -249,7 +328,16 @@ export default function FormBuilder() {
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
                 <textarea value={thankYouMessage} onChange={e => setThankYouMessage(e.target.value)}
-                  style={{ fontSize: 18, fontWeight: 700, color: '#0d0d0d', textAlign: 'center', border: 'none', outline: 'none', resize: 'none', width: '100%', background: 'transparent' }} rows={2} />
+                  style={{ fontSize: 18, fontWeight: 700, color: '#0d0d0d', textAlign: 'center', border: 'none', outline: 'none', resize: 'none', width: '100%', background: 'transparent', marginBottom: 20 }} rows={2} />
+                {endActions.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 280, margin: '0 auto' }}>
+                    {endActions.map((a, i) => (
+                      <div key={i} style={{ padding: '10px 16px', borderRadius: 10, background: i === 0 ? themeColor : '#fff', color: i === 0 ? '#fff' : themeColor, border: i === 0 ? 'none' : `1.5px solid ${themeColor}`, fontSize: 13, fontWeight: 600 }}>
+                        {a.label}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : questions[previewStep] ? (
               <div>
@@ -291,11 +379,11 @@ export default function FormBuilder() {
                     ))}
                   </div>
                 )}
-                {questions[previewStep].type === 'multiple_choice' && (
+                {['multiple_choice', 'dropdown', 'checkbox', 'picture_choice'].includes(questions[previewStep].type) && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {(questions[previewStep].options || []).map((opt, oi) => (
                       <div key={oi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, border: '2px solid #e5e5e5' }}>
-                        <span style={{ width: 22, height: 22, borderRadius: 6, border: '2px solid #d1d5db', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#9ca3af', flexShrink: 0 }}>
+                        <span style={{ width: 22, height: 22, borderRadius: questions[previewStep].type === 'checkbox' ? 6 : 6, border: '2px solid #d1d5db', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#9ca3af', flexShrink: 0 }}>
                           {String.fromCharCode(65 + oi)}
                         </span>
                         <input value={opt} onChange={e => {
@@ -313,6 +401,25 @@ export default function FormBuilder() {
                       const opts = [...(questions[previewStep].options || []), `Option ${(questions[previewStep].options || []).length + 1}`]
                       updateQuestion(questions[previewStep].id, { options: opts })
                     }} style={{ fontSize: 13, color: themeColor, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: 600 }}>+ Add option</button>
+                  </div>
+                )}
+                {questions[previewStep].type === 'nps' && (
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {[...Array(11)].map((_, n) => (
+                      <div key={n} style={{ width: 32, height: 32, borderRadius: 8, border: '2px solid #e5e5e5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: '#9ca3af' }}>{n}</div>
+                    ))}
+                  </div>
+                )}
+                {questions[previewStep].type === 'opinion_scale' && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[1,2,3,4,5,6,7].map(n => (
+                      <div key={n} style={{ width: 34, height: 34, borderRadius: '50%', border: '2px solid #e5e5e5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: '#9ca3af' }}>{n}</div>
+                    ))}
+                  </div>
+                )}
+                {['contact_info', 'phone', 'address', 'website', 'video_audio', 'signature', 'payment', 'file_upload', 'scheduler', 'legal', 'ranking', 'matrix'].includes(questions[previewStep].type) && (
+                  <div style={{ borderBottom: '2px solid #e5e5e5', paddingBottom: 8, fontSize: 14, color: '#9ca3af' }}>
+                    {QUESTION_TYPES.find(t => t.type === questions[previewStep].type)?.label} input preview
                   </div>
                 )}
 
@@ -333,7 +440,11 @@ export default function FormBuilder() {
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Type</label>
                 <select value={selected.type} onChange={e => updateQuestion(selected.id, { type: e.target.value as Question['type'], options: e.target.value === 'multiple_choice' ? (selected.options || ['Option 1', 'Option 2']) : undefined })}
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer' }}>
-                  {QUESTION_TYPES.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
+                  {QUESTION_CATEGORIES.map(cat => (
+                    <optgroup key={cat.label} label={cat.label}>
+                      {cat.types.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
+                    </optgroup>
+                  ))}
                 </select>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -343,6 +454,49 @@ export default function FormBuilder() {
                   <span style={{ width: 15, height: 15, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: selected.required ? 20 : 3, transition: 'left 0.15s' }} />
                 </button>
               </div>
+            </>
+          ) : previewStep === questions.length ? (
+            <>
+              <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>After Submit</h3>
+              <p style={{ fontSize: 12, color: 'var(--slate)', marginBottom: 16 }}>Show buttons to guide people after they finish.</p>
+              {endActions.map((a, i) => (
+                <div key={i} style={{ padding: 12, borderRadius: 10, border: '1px solid var(--border)', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <select value={a.type} onChange={e => {
+                        const next = [...endActions]
+                        next[i] = { ...next[i], type: e.target.value }
+                        setEndActions(next)
+                      }}
+                      style={{ fontSize: 12, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer' }}>
+                      <option value="website">Visit website</option>
+                      <option value="video">Watch video</option>
+                      <option value="social">Social media</option>
+                      <option value="custom">Custom link</option>
+                    </select>
+                    <button onClick={() => setEndActions(endActions.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                  <input value={a.label} onChange={e => {
+                      const next = [...endActions]
+                      next[i] = { ...next[i], label: e.target.value }
+                      setEndActions(next)
+                    }}
+                    placeholder="Button label (e.g. Visit our site)"
+                    style={{ width: '100%', fontSize: 12, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', marginBottom: 6, boxSizing: 'border-box' }} />
+                  <input value={a.url} onChange={e => {
+                      const next = [...endActions]
+                      next[i] = { ...next[i], url: e.target.value }
+                      setEndActions(next)
+                    }}
+                    placeholder="https://..."
+                    style={{ width: '100%', fontSize: 12, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', boxSizing: 'border-box' }} />
+                </div>
+              ))}
+              <button onClick={() => setEndActions([...endActions, { type: 'website', label: 'Visit our website', url: '' }])}
+                style={{ width: '100%', padding: '9px', borderRadius: 10, border: `1.5px dashed ${themeColor}`, background: 'transparent', color: themeColor, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                + Add button
+              </button>
             </>
           ) : (
             <>

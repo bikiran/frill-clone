@@ -29,7 +29,11 @@ export default function FormsAdmin() {
   const fetchForms = async () => {
     try {
       const { data } = await (supabase as any).from('forms').select('*').order('created_at', { ascending: false })
-      setForms(data || [])
+      const formsWithCounts = await Promise.all((data || []).map(async (f: any) => {
+        const { count } = await (supabase as any).from('form_responses').select('*', { count: 'exact', head: true }).eq('form_id', f.id)
+        return { ...f, response_count: count || 0 }
+      }))
+      setForms(formsWithCounts)
     } catch {}
     setLoading(false)
   }
@@ -114,10 +118,13 @@ export default function FormsAdmin() {
                       {f.is_published ? 'Live' : 'Draft'}
                     </span>
                   </div>
-                  <p className="text-xs mb-4" style={{ color: 'var(--slate)' }}>{(f.questions || []).length} question{(f.questions || []).length !== 1 ? 's' : ''}</p>
+                  <p className="text-xs mb-4" style={{ color: 'var(--slate)' }}>{(f.questions || []).length} question{(f.questions || []).length !== 1 ? 's' : ''} · {f.response_count || 0} response{f.response_count !== 1 ? 's' : ''}</p>
                   <div className="flex gap-2">
                     <Link href={`/admin/forms/${f.id}`} className="flex-1 py-2 rounded-lg text-xs font-medium border text-center transition-smooth hover:bg-gray-50 cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                       Edit
+                    </Link>
+                    <Link href={`/admin/forms/${f.id}/results`} className="px-3 py-2 rounded-lg text-xs border transition-smooth hover:bg-gray-50 cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} title="Results">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                     </Link>
                     <button onClick={() => setShareModal(f)} className="px-3 py-2 rounded-lg text-xs border transition-smooth hover:bg-gray-50 cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} title="Share or embed">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>

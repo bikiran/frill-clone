@@ -100,7 +100,26 @@ export default function PublicForm() {
             <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
             </div>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d' }}>{form.thank_you_message || 'Thanks for completing this form!'}</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', marginBottom: (form.end_actions || []).length > 0 ? 28 : 0 }}>{form.thank_you_message || 'Thanks for completing this form!'}</h1>
+            {(form.end_actions || []).length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 320, margin: '0 auto' }}>
+                {(form.end_actions || []).map((a: any, i: number) => (
+                  <a key={i} href={a.url || '#'} target="_blank" rel="noopener"
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                      padding: '13px 20px', borderRadius: 12, fontSize: 14, fontWeight: 700, textDecoration: 'none',
+                      background: i === 0 ? themeColor : '#fff',
+                      color: i === 0 ? '#fff' : themeColor,
+                      border: i === 0 ? 'none' : `1.5px solid ${themeColor}`,
+                    }}>
+                    {a.type === 'video' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>}
+                    {a.type === 'social' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>}
+                    {(a.type === 'website' || a.type === 'custom') && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>}
+                    {a.label}
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         ) : step === -1 ? (
           <div key="welcome" className="ff-anim">
@@ -178,6 +197,77 @@ export default function PublicForm() {
                       <span style={{ fontSize: 16, color: '#0d0d0d' }}>{opt}</span>
                     </button>
                   ))}
+                </div>
+              )}
+              {current.type === 'dropdown' && (
+                <select value={answers[current.id] || ''} onChange={e => setAnswers(p => ({ ...p, [current.id]: e.target.value }))}
+                  className="ff-input" style={{ ['--ff-color' as any]: themeColor, width: '100%', fontSize: 18, padding: '10px 0', border: 'none', borderBottom: '2.5px solid #e5e5e5', outline: 'none', background: 'transparent', cursor: 'pointer' }}>
+                  <option value="">Select an option...</option>
+                  {(current.options || []).map((opt: string, oi: number) => <option key={oi} value={opt}>{opt}</option>)}
+                </select>
+              )}
+              {current.type === 'checkbox' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {(current.options || []).map((opt: string, oi: number) => {
+                    const selectedArr: string[] = answers[current.id] || []
+                    const isChecked = selectedArr.includes(opt)
+                    return (
+                      <button key={oi} onClick={() => {
+                          const next = isChecked ? selectedArr.filter(o => o !== opt) : [...selectedArr, opt]
+                          setAnswers(p => ({ ...p, [current.id]: next }))
+                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderRadius: 12, border: `2.5px solid ${isChecked ? themeColor : '#e5e5e5'}`, background: isChecked ? `${themeColor}10` : '#fff', cursor: 'pointer', textAlign: 'left' }}>
+                        <span style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${isChecked ? themeColor : '#d1d5db'}`, background: isChecked ? themeColor : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {isChecked && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                        </span>
+                        <span style={{ fontSize: 16, color: '#0d0d0d' }}>{opt}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {current.type === 'nps' && (
+                <div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                    {[...Array(11)].map((_, n) => (
+                      <button key={n} onClick={() => setAnswers(p => ({ ...p, [current.id]: n }))}
+                        style={{ width: 38, height: 38, borderRadius: 10, border: `2px solid ${answers[current.id] === n ? themeColor : '#e5e5e5'}`, background: answers[current.id] === n ? themeColor : '#fff', color: answers[current.id] === n ? '#fff' : '#374151', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#9ca3af' }}>
+                    <span>Not likely</span><span>Very likely</span>
+                  </div>
+                </div>
+              )}
+              {current.type === 'opinion_scale' && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[1,2,3,4,5,6,7].map(n => (
+                    <button key={n} onClick={() => setAnswers(p => ({ ...p, [current.id]: n }))}
+                      style={{ width: 42, height: 42, borderRadius: '50%', border: `2px solid ${answers[current.id] === n ? themeColor : '#e5e5e5'}`, background: answers[current.id] === n ? themeColor : '#fff', color: answers[current.id] === n ? '#fff' : '#374151', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {['contact_info', 'phone', 'address', 'website'].includes(current.type) && (
+                <input autoFocus value={answers[current.id] || ''} onChange={e => setAnswers(p => ({ ...p, [current.id]: e.target.value }))}
+                  className="ff-input" style={{ ['--ff-color' as any]: themeColor, width: '100%', fontSize: 20, padding: '8px 0', border: 'none', borderBottom: '2.5px solid #e5e5e5', outline: 'none' }}
+                  placeholder={current.type === 'phone' ? '+1 (555) 000-0000' : current.type === 'website' ? 'https://...' : current.type === 'address' ? 'Street, city, country' : 'Your name'} />
+              )}
+              {current.type === 'legal' && (
+                <button onClick={() => setAnswers(p => ({ ...p, [current.id]: !p[current.id] }))}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderRadius: 12, border: `2.5px solid ${answers[current.id] ? themeColor : '#e5e5e5'}`, background: answers[current.id] ? `${themeColor}10` : '#fff', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+                  <span style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${answers[current.id] ? themeColor : '#d1d5db'}`, background: answers[current.id] ? themeColor : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {answers[current.id] && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                  </span>
+                  <span style={{ fontSize: 15, color: '#0d0d0d' }}>I agree</span>
+                </button>
+              )}
+              {['video_audio', 'signature', 'payment', 'file_upload', 'scheduler', 'ranking', 'matrix', 'picture_choice'].includes(current.type) && (
+                <div style={{ padding: '20px', borderRadius: 12, border: '2px dashed #e5e5e5', textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>
+                  This question type isn't fillable yet — coming soon.
                 </div>
               )}
             </div>

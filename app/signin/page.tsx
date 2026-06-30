@@ -148,9 +148,9 @@ function SignInForm() {
       </div>
 
       {/* RIGHT — visual / testimonial slider */}
-      <div className="sf-visual" style={{ background: 'linear-gradient(160deg, #1a1a1a 0%, #2a1815 100%)', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 48 }}>
-        <div style={{ position: 'absolute', top: '-10%', right: '-10%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,107,0.25), transparent 70%)' }} />
-        <div style={{ position: 'absolute', bottom: '-15%', left: '-10%', width: 350, height: 350, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.18), transparent 70%)' }} />
+      <div className="sf-visual" style={{ background: 'linear-gradient(160deg, #fff7f5 0%, #ffeae6 100%)', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 48 }}>
+        <div style={{ position: 'absolute', top: '-10%', right: '-10%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,107,0.18), transparent 70%)' }} />
+        <div style={{ position: 'absolute', bottom: '-15%', left: '-10%', width: 350, height: 350, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.12), transparent 70%)' }} />
 
         <div key={slide} className="sf-anim" style={{ position: 'relative', zIndex: 1, maxWidth: 440 }}>
           <div style={{ display: 'flex', gap: 3, marginBottom: 24 }}>
@@ -158,21 +158,21 @@ function SignInForm() {
               <svg key={i} width="18" height="18" viewBox="0 0 24 24" fill="#ff7a6b"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             ))}
           </div>
-          <p style={{ fontSize: 26, fontWeight: 600, color: '#fff', lineHeight: 1.4, marginBottom: 32, letterSpacing: '-0.01em' }}>
+          <p style={{ fontSize: 26, fontWeight: 600, color: '#1a1a1a', lineHeight: 1.4, marginBottom: 32, letterSpacing: '-0.01em' }}>
             "{TESTIMONIALS[slide].quote}"
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <img src={TESTIMONIALS[slide].avatar} alt={TESTIMONIALS[slide].name} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }} />
             <div>
-              <p style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{TESTIMONIALS[slide].name}</p>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>{TESTIMONIALS[slide].role}</p>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{TESTIMONIALS[slide].name}</p>
+              <p style={{ fontSize: 13, color: '#6b6b70' }}>{TESTIMONIALS[slide].role}</p>
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: 6, marginTop: 36 }}>
             {TESTIMONIALS.map((_, i) => (
               <button key={i} onClick={() => setSlide(i)}
-                style={{ width: i === slide ? 24 : 8, height: 8, borderRadius: 999, background: i === slide ? '#ff7a6b' : 'rgba(255,255,255,0.25)', border: 'none', cursor: 'pointer', transition: 'all 0.3s' }} />
+                style={{ width: i === slide ? 24 : 8, height: 8, borderRadius: 999, background: i === slide ? '#ff7a6b' : 'rgba(0,0,0,0.15)', border: 'none', cursor: 'pointer', transition: 'all 0.3s' }} />
             ))}
           </div>
         </div>

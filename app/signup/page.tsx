@@ -318,15 +318,15 @@ function SignUpForm() {
       </div>
 
       {/* RIGHT — visual */}
-      <div className="su-visual" style={{ background: 'linear-gradient(160deg, #1a1a1a 0%, #2a1815 100%)', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 48 }}>
-        <div style={{ position: 'absolute', top: '-10%', right: '-10%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,107,0.25), transparent 70%)' }} />
-        <div style={{ position: 'absolute', bottom: '-15%', left: '-10%', width: 350, height: 350, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.18), transparent 70%)' }} />
+      <div className="su-visual" style={{ background: 'linear-gradient(160deg, #fff7f5 0%, #ffeae6 100%)', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 48 }}>
+        <div style={{ position: 'absolute', top: '-10%', right: '-10%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,107,0.18), transparent 70%)' }} />
+        <div style={{ position: 'absolute', bottom: '-15%', left: '-10%', width: 350, height: 350, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.12), transparent 70%)' }} />
 
         <div style={{ position: 'relative', zIndex: 1, maxWidth: 440 }}>
-          <h2 style={{ fontSize: 30, fontWeight: 800, color: '#fff', lineHeight: 1.25, marginBottom: 16, letterSpacing: '-0.02em' }}>
+          <h2 style={{ fontSize: 30, fontWeight: 800, color: '#1a1a1a', lineHeight: 1.25, marginBottom: 16, letterSpacing: '-0.02em' }}>
             Build what your<br />customers actually want
           </h2>
-          <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6, marginBottom: 36 }}>
+          <p style={{ fontSize: 15, color: '#6b6b70', lineHeight: 1.6, marginBottom: 36 }}>
             Join 12,000+ product teams using Colvy to collect feedback, share roadmaps, and ship with confidence.
           </p>
 
@@ -337,8 +337,8 @@ function SignUpForm() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff7a6b" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
                 <div>
-                  <p style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 2 }}>{f.title}</p>
-                  <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>{f.desc}</p>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>{f.title}</p>
+                  <p style={{ fontSize: 13, color: '#6b6b70' }}>{f.desc}</p>
                 </div>
               </div>
             ))}
