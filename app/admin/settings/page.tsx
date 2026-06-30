@@ -37,6 +37,7 @@ const SIDEBAR_ITEMS = [
   { section: 'Site Navigation', items: [
     { label: 'Navigation', tab: 'nav' },
     { label: 'Terminology', tab: 'terminology' },
+    { label: 'Categories', tab: 'categories' },
   ]},
 ]
 
@@ -70,6 +71,8 @@ export default function SettingsPage() {
   const [settingsSearch, setSettingsSearch] = useState('')
   const [termValues, setTermValues] = useState<Record<string, string>>({})
   const [privacyMode, setPrivacyMode] = useState('public')
+  const [categories, setCategories] = useState<string[]>(['New Feature', 'Improvement', 'Fix', 'Announcement'])
+  const [newCategoryName, setNewCategoryName] = useState('')
   const [dragNavItem, setDragNavItem] = useState<string | null>(null)
   // Styling
   const [accentColor, setAccentColor] = useState('#ff7a6b')
@@ -223,6 +226,7 @@ export default function SettingsPage() {
           if (s.requireIdeaTopic !== undefined) setRequireIdeaTopic(s.requireIdeaTopic)
           if (s.termValues) setTermValues(s.termValues)
           if (s.privacyMode) setPrivacyMode(s.privacyMode)
+          if (s.categories && Array.isArray(s.categories)) setCategories(s.categories)
           const slugKey = typeof window !== 'undefined' ? (window.location.hostname.replace('.colvy.com','') || 'colvy') : 'colvy'
           if (typeof window !== 'undefined') localStorage.setItem(`site_settings_${slugKey}`, JSON.stringify(s))
         }
@@ -238,6 +242,30 @@ export default function SettingsPage() {
     init()
   }, [])
 
+  // Auto-save: debounced — fires 1.2s after the user stops typing/changing settings
+  const autoSaveTimer = useRef<NodeJS.Timeout | null>(null)
+  const isFirstRender = useRef(true)
+  useEffect(() => {
+    // Skip auto-save on initial mount (before data loads)
+    if (isFirstRender.current) { isFirstRender.current = false; return }
+    if (!loadedCompany) return
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    autoSaveTimer.current = setTimeout(() => {
+      handleSave()
+    }, 1200)
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
+  }, [
+    companyName, logoUrl, faviconUrl, ogImageUrl, logoLink, customScript,
+    navIdeas, navRoadmap, navAnnouncements, navHelp, navOrder,
+    accentColor, themeMode, borderRadius,
+    emailFromName, emailReplyTo, emailSignature,
+    hidePoweredBy, boardDomain, helpDomain,
+    guestVotingEnabled, guestSubmitEnabled, termValues, privacyMode,
+    allowAnnSubsc, allowAnnComments, showAnnComments, disableAnnReactions,
+    disableAnimGifs, disableCommentReactions, allowIdeaComments, showIdeaMRR,
+    showIdeaNumber, showRoadmapDesc, showIdeaDate, showIdeaActivity, requireIdeaTopic, categories,
+  ])
+
   const handleSave = async () => {
     setSaving(true)
     const settingsData = {
@@ -246,7 +274,7 @@ export default function SettingsPage() {
       accentColor, themeMode, borderRadius,
       emailFromName, emailReplyTo, emailSignature,
       hidePoweredBy, customDomain, boardDomain, helpDomain, domainStatus,
-      guestVotingEnabled, guestSubmitEnabled, termValues, privacyMode,
+      guestVotingEnabled, guestSubmitEnabled, termValues, privacyMode, categories,
       allowAnnSubsc, allowAnnComments, showAnnComments, disableAnnReactions,
       disableAnimGifs, disableCommentReactions, allowIdeaComments, showIdeaMRR,
       showIdeaNumber, showRoadmapDesc, showIdeaDate, showIdeaActivity, requireIdeaTopic,
@@ -332,11 +360,9 @@ export default function SettingsPage() {
     try {
       const ext = file.name.split('.').pop()
       const fileName = `${folder}/${Date.now()}.${ext}`
-      // Try 'settings' bucket first, fallback to 'idea-images'
       let uploadBucket = 'settings'
       let { data, error } = await supabase.storage.from(uploadBucket).upload(fileName, file, { upsert: true })
       if (error) {
-        // Fallback bucket
         uploadBucket = 'idea-images'
         const result = await supabase.storage.from(uploadBucket).upload(fileName, file, { upsert: true })
         data = result.data
@@ -345,20 +371,50 @@ export default function SettingsPage() {
       if (error) throw error
       const { data: { publicUrl } } = supabase.storage.from(uploadBucket).getPublicUrl(data!.path)
       setter(publicUrl)
-      
-      // Save URL to DB immediately, scoped to this company
+
+      // Resolve company (use state, or look up by hostname slug if not loaded yet)
+      let co = company
+      if (!co?.id && typeof window !== 'undefined') {
+        const h = window.location.hostname
+        if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+          const slug = h.replace('.colvy.com', '')
+          const { data: coBySlug } = await (supabase as any).from('companies').select('*').eq('slug', slug).maybeSingle()
+          if (coBySlug) co = coBySlug
+        }
+      }
+
+      // 1) If this is the logo, update companies.logo_url directly (source of truth for nav/sidebar)
+      if (settingKey === 'logoUrl' && co?.id) {
+        const { error: coErr } = await (supabase as any).from('companies').update({ logo_url: publicUrl }).eq('id', co.id)
+        if (coErr) console.warn('companies.logo_url update failed:', coErr.message)
+        else {
+          setCompany((prev: any) => prev ? { ...prev, logo_url: publicUrl } : { ...co, logo_url: publicUrl })
+          window.dispatchEvent(new CustomEvent('colvy-company-update', { detail: { logo_url: publicUrl } }))
+          try {
+            const slug = co.slug
+            const cached = localStorage.getItem(`company_${slug}`)
+            const merged = { ...(cached ? JSON.parse(cached) : co), logo_url: publicUrl }
+            localStorage.setItem(`company_${slug}`, JSON.stringify(merged))
+          } catch {}
+        }
+      }
+
+      // 2) Always also save into site_settings, scoped to this company
       try {
-        const cid = company?.id
+        const cid = co?.id
         const currentSettings: any = {}
         if (cid) {
           const { data: s } = await (supabase as any).from('site_settings').select('value').eq('key', 'general').eq('company_id', cid).maybeSingle()
           if (s?.value) Object.assign(currentSettings, s.value)
         }
         currentSettings[settingKey] = publicUrl
-        await (supabase as any).from('site_settings').upsert({ key: 'general', company_id: company?.id || null, value: currentSettings, updated_at: new Date().toISOString() }, { onConflict: 'key,company_id' })
+        await (supabase as any).from('site_settings').upsert({ key: 'general', company_id: cid || null, value: currentSettings, updated_at: new Date().toISOString() }, { onConflict: 'key,company_id' })
         const slugKey = typeof window !== 'undefined' ? (window.location.hostname.replace('.colvy.com','') || 'colvy') : 'colvy'
         if (typeof window !== 'undefined') localStorage.setItem(`site_settings_${slugKey}`, JSON.stringify({ ...currentSettings }))
       } catch (saveErr: any) { console.warn('URL save error:', saveErr.message) }
+
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1500)
     } catch (err: any) {
       alert('Upload failed: ' + err.message + '\n\nMake sure a "settings" or "idea-images" storage bucket exists in Supabase with public access.')
     }
@@ -433,7 +489,21 @@ export default function SettingsPage() {
       {/* Settings Sidebar */}
       <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r" style={{ borderColor: 'var(--border)', position: 'sticky', top: 0, height: 'calc(100vh - 56px)', overflowY: 'auto', flexShrink: 0 }}>
         <div className="py-4 px-3">
-          {SIDEBAR_ITEMS.map((group, gi) => (
+          {/* Sidebar search */}
+          <div className="relative mb-4 px-0">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ color: 'var(--slate)' }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input
+              value={settingsSearch}
+              onChange={e => setSettingsSearch(e.target.value)}
+              placeholder="Search settings..."
+              className="w-full text-xs focus:outline-none rounded-lg border"
+              style={{ padding: '7px 10px 7px 30px', borderColor: 'var(--border)', background: 'var(--canvas, #fafafa)', color: 'var(--ink)' }}
+            />
+          </div>
+          {(settingsSearch
+            ? SIDEBAR_ITEMS.map((g: any) => ({ ...g, items: g.items.filter((it: any) => it.label.toLowerCase().includes(settingsSearch.toLowerCase())) })).filter((g: any) => g.items.length > 0)
+            : SIDEBAR_ITEMS
+          ).map((group, gi) => (
             <div key={gi} className="mb-4">
               {group.section && (
                 <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--slate)' }}>{group.section}</p>
@@ -652,6 +722,7 @@ export default function SettingsPage() {
           {activeSettingsTab === 'privacy' && 'Privacy'}
           {activeSettingsTab === 'nav' && 'Navigation'}
           {activeSettingsTab === 'terminology' && 'Terminology'}
+          {activeSettingsTab === 'categories' && 'Categories'}
           {activeSettingsTab === 'webhooks' && 'Webhooks'}
           {activeSettingsTab === 'api' && 'API'}
           {activeSettingsTab === 'languages' && 'Languages'}
@@ -665,6 +736,7 @@ export default function SettingsPage() {
           {activeSettingsTab === 'privacy' && 'Control who can access your board.'}
           {activeSettingsTab === 'nav' && 'Show or hide navigation items.'}
           {activeSettingsTab === 'terminology' && 'Customise the labels used throughout your board.'}
+          {activeSettingsTab === 'categories' && 'Use Categories to organize your Announcements.'}
           {activeSettingsTab === 'webhooks' && 'Receive HTTP callbacks when events happen in your board.'}
           {activeSettingsTab === 'api' && 'Manage API keys for programmatic access to your board.'}
           {activeSettingsTab === 'languages' && 'Configure supported languages.'}
@@ -1193,6 +1265,80 @@ export default function SettingsPage() {
         )}
 
         {/* Terminology tab */}
+        {activeSettingsTab === 'categories' && (
+          <div className="space-y-5">
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Categories</h2>
+              <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Use Categories to organize your Announcements.</p>
+
+              <div className="flex gap-2 mb-5">
+                <input
+                  value={newCategoryName}
+                  onChange={e => setNewCategoryName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newCategoryName.trim()) {
+                      setCategories(prev => [...prev, newCategoryName.trim()])
+                      setNewCategoryName('')
+                    }
+                  }}
+                  placeholder="New category name..."
+                  className="flex-1 px-4 py-2.5 rounded-xl border text-sm focus:outline-none"
+                  style={{ borderColor: 'var(--border)' }}
+                />
+                <button
+                  onClick={() => {
+                    if (!newCategoryName.trim()) return
+                    setCategories(prev => [...prev, newCategoryName.trim()])
+                    setNewCategoryName('')
+                  }}
+                  disabled={!newCategoryName.trim()}
+                  className="px-5 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50"
+                  style={{ background: 'var(--coral)' }}>
+                  Add Category
+                </button>
+              </div>
+
+              <div className="space-y-0">
+                {categories.map((cat, i) => (
+                  <div key={cat + i}
+                    draggable
+                    onDragStart={() => setDragNavItem(cat)}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={() => {
+                      if (!dragNavItem || dragNavItem === cat) return
+                      const newCats = [...categories]
+                      const from = newCats.indexOf(dragNavItem)
+                      const to = newCats.indexOf(cat)
+                      newCats.splice(from, 1)
+                      newCats.splice(to, 0, dragNavItem)
+                      setCategories(newCats)
+                      setDragNavItem(null)
+                    }}
+                    onDragEnd={() => setDragNavItem(null)}
+                    className="flex items-center gap-3 py-3 px-2 border-b last:border-b-0 cursor-grab active:cursor-grabbing"
+                    style={{ borderColor: 'var(--border)', opacity: dragNavItem === cat ? 0.4 : 1, background: dragNavItem === cat ? 'var(--peach)' : 'transparent', borderRadius: 8 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--slate)', opacity: 0.4, flexShrink: 0 }}>
+                      <circle cx="9" cy="6" r="1" fill="currentColor"/><circle cx="15" cy="6" r="1" fill="currentColor"/>
+                      <circle cx="9" cy="12" r="1" fill="currentColor"/><circle cx="15" cy="12" r="1" fill="currentColor"/>
+                      <circle cx="9" cy="18" r="1" fill="currentColor"/><circle cx="15" cy="18" r="1" fill="currentColor"/>
+                    </svg>
+                    <span className="text-sm flex-1" style={{ color: 'var(--ink)' }}>{cat}</span>
+                    <button
+                      onClick={() => setCategories(prev => prev.filter((_, idx) => idx !== i))}
+                      className="text-xs cursor-pointer px-2 py-1 rounded-md hover:bg-red-50"
+                      style={{ color: '#ef4444', border: 'none', background: 'transparent' }}>
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                {categories.length === 0 && (
+                  <p className="text-sm text-center py-8" style={{ color: 'var(--slate)' }}>No categories yet. Add one above.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeSettingsTab === 'terminology' && (
           <div className="space-y-5">
             <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
