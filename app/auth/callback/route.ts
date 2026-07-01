@@ -32,13 +32,31 @@ export async function GET(req: NextRequest) {
       const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
         auth: { autoRefreshToken: false, persistSession: false }
       })
-      await (adminClient as any).from('companies').insert({
+      const co = await (adminClient as any).from('companies').insert({
         owner_id: data.user.id,
         slug: slug.toLowerCase(),
         name: decodeURIComponent(name),
         industry: decodeURIComponent(industry || ''),
         accent_color: '#ff7a6b',
       }).select().single()
+
+      // Auto-register subdomain with Vercel
+      if (co.data?.slug) {
+        const domain = `${co.data.slug}.colvy.com`
+        try {
+          await fetch('https://api.vercel.com/v10/projects/' + (process.env.VERCEL_PROJECT_ID || '') + '/domains', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${process.env.VERCEL_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name: domain }),
+          })
+        } catch (e) {
+          console.warn('Vercel domain registration failed (non-blocking):', e)
+        }
+      }
+
       return NextResponse.redirect(`${origin}/onboarding`)
     }
 
