@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     const [ideasRes, annRes, formsRes, pollsRes, surveysRes, helpRes] = await Promise.all([
       (supabase as any).from('ideas').select('id,title,votes,status').eq('company_id', company.id)
         .neq('is_private', true).order('votes', { ascending: false }).limit(20),
-      (supabase as any).from('announcements').select('id,title,content,tag,date,created_at')
+      (supabase as any).from('announcements').select('id,title,content,description,tag,created_at')
         .eq('company_id', company.id).order('created_at', { ascending: false }).limit(8),
       (supabase as any).from('forms').select('id,title,description').eq('company_id', company.id)
         .eq('is_public', true).order('created_at', { ascending: false }).limit(5),
@@ -34,8 +34,19 @@ export async function GET(req: NextRequest) {
       (supabase as any).from('surveys').select('id,title,questions').eq('company_id', company.id)
         .order('created_at', { ascending: false }).limit(5),
       (supabase as any).from('help_articles').select('id,title,content,slug').eq('company_id', company.id)
-        .order('created_at', { ascending: false }).limit(5),
+        .order('created_at', { ascending: false }).limit(10),
     ])
+    
+    console.log('[WIDGET API] Fetched data:', {
+      ideas: ideasRes.data?.length || 0,
+      announcements: annRes.data?.length || 0,
+      forms: formsRes.data?.length || 0,
+      polls: pollsRes.data?.length || 0,
+      surveys: surveysRes.data?.length || 0,
+      helpArticles: helpRes.data?.length || 0,
+      annError: annRes.error?.message,
+      helpError: helpRes.error?.message,
+    })
 
     return NextResponse.json({
       company,

@@ -99,10 +99,10 @@ export default function LiveChat() {
         }
       `}</style>
 
-      {/* Floating button - fixed position */}
+      {/* Floating button - fixed position on right */}
       <button
         onClick={() => setOpen(!open)}
-        className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full shadow-2xl cursor-pointer transition-all hover:scale-110 active:scale-95"
+        className="fixed z-40 w-14 h-14 rounded-full shadow-2xl cursor-pointer transition-all hover:scale-110 active:scale-95"
         style={{
           background: 'var(--coral)',
           color: 'white',
@@ -110,10 +110,15 @@ export default function LiveChat() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 24,
+          bottom: 24,
+          right: 24,
           animation: open ? 'slideIn 0.3s ease' : 'slideIn 0.3s ease',
         }}>
-        {open ? '×' : '💬'}
+        {open ? (
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        ) : (
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        )}
       </button>
 
       {/* Widget/Chat window */}
@@ -146,92 +151,17 @@ export default function LiveChat() {
             </button>
           </div>
 
-          {/* Content area */}
-          {activeTab === 'feedback' ? (
-            <div className="flex-1 overflow-hidden">
-              <iframe
-                src={`${typeof window !== 'undefined' ? window.location.origin : ''}/widget?embedded=true${slug ? `&slug=${slug}` : ''}`}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  border: 'none',
-                }}
-                title="Colvy Widget"
-              />
-            </div>
-          ) : (
-            <>
-              {/* Chat messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ background: 'var(--canvas)' }}>
-                {messages.length === 0 && (
-                  <div style={{ textAlign: 'center', color: '#9ca3af', paddingTop: 20 }}>
-                    <p style={{ fontSize: 12 }}>💬 Chat support coming soon. Use feedback tab to reach out!</p>
-                  </div>
-                )}
-                {messages.map(m => (
-                  <div key={m.id} className={`flex gap-2 ${m.from_type === 'user' ? 'flex-row-reverse' : ''}`}>
-                    {m.from_type === 'agent' && (
-                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0" style={{ background: 'var(--coral)' }}>S</div>
-                    )}
-                    <div className="max-w-[78%]">
-                      <div className="px-3 py-2 text-sm leading-relaxed"
-                        style={{
-                          background: m.from_type === 'user' ? 'var(--coral)' : 'white',
-                          color: m.from_type === 'user' ? 'white' : 'var(--ink)',
-                          borderRadius: m.from_type === 'user' ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
-                          border: m.from_type === 'agent' ? '1px solid var(--border)' : 'none',
-                        }}>
-                        {m.message}
-                      </div>
-                      <p className="text-xs mt-0.5 px-1" style={{ color: 'var(--slate)', textAlign: m.from_type === 'user' ? 'right' : 'left' }}>
-                        {formatTime(m.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {agentTyping && (
-                  <div className="flex gap-2 items-center">
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0" style={{ background: 'var(--coral)' }}>S</div>
-                    <div className="px-3 py-2.5 rounded-2xl bg-white border flex items-center gap-1" style={{ borderColor: 'var(--border)' }}>
-                      {[0,1,2].map(i => <div key={i} className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--slate)', animationDelay: `${i*150}ms` }} />)}
-                    </div>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Input area */}
-              <div className="p-3 shrink-0 flex gap-2" style={{ background: 'white', borderTop: '1px solid var(--border)' }}>
-                <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                  placeholder="Type a message..."
-                  className="flex-1 px-3 py-2 rounded-xl border text-sm focus:outline-none"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-                <button onClick={sendMessage} disabled={!input.trim()}
-                  className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer disabled:opacity-40 transition-all"
-                  style={{ background: 'var(--coral)', color: 'white' }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* Footer tabs */}
-          <div style={{ display: 'flex', gap: 0, padding: '8px 12px', background: '#f9fafb', borderTop: '1px solid var(--border)' }}>
-            {(['feedback', 'chat'] as const).map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className="flex-1 px-3 py-2 text-xs font-medium cursor-pointer rounded-lg transition-all capitalize"
-                style={{
-                  background: activeTab === tab ? 'var(--coral)' : 'transparent',
-                  color: activeTab === tab ? 'white' : 'var(--slate)',
-                  border: 'none',
-                  fontFamily: 'inherit',
-                }}>
-                {tab === 'chat' ? '💬' : '📋'} {tab}
-              </button>
-            ))}
+          {/* Widget iframe - has all tabs: feedback, roadmap, updates, help, chat */}
+          <div className="flex-1 overflow-hidden">
+            <iframe
+              src={`${typeof window !== 'undefined' ? window.location.origin : ''}/widget?embedded=true${slug ? `&slug=${slug}` : ''}`}
+              style={{
+                width: '100%',
+                height: '100%',
+                border: 'none',
+              }}
+              title="Colvy Widget"
+            />
           </div>
         </div>
       )}
