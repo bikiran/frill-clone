@@ -15,6 +15,15 @@ type Question = {
   mediaUrl?: string
   mediaType?: 'image' | 'video'
   fileAccept?: string
+  conditional_logic?: {
+    condition: 'show' | 'hide'
+    rules: Array<{
+      questionId: string
+      operator: 'equals' | 'contains' | 'is_empty'
+      value: string
+    }>
+    logic: 'all' | 'any'
+  }
 }
 
 const QUESTION_CATEGORIES = [
@@ -117,6 +126,8 @@ export default function FormBuilder() {
   const [thankYouMessage, setThankYouMessage] = useState('Thanks for completing this form!')
   const [endActions, setEndActions] = useState<{ type: string; label: string; url: string }[]>([])
   const [showConfetti, setShowConfetti] = useState(true)
+  const [scheduledStart, setScheduledStart] = useState<string>('')
+  const [scheduledEnd, setScheduledEnd] = useState<string>('')
   const [mediaUploading, setMediaUploading] = useState<string>('')
   const [questions, setQuestions] = useState<Question[]>([])
   const [selectedQ, setSelectedQ] = useState<string | null>(null)
@@ -164,6 +175,8 @@ export default function FormBuilder() {
       title, questions, theme: { color: themeColor },
       welcome_message: welcomeMessage, thank_you_message: thankYouMessage, end_actions: endActions,
       show_confetti: showConfetti,
+      scheduled_start: scheduledStart || null,
+      scheduled_end: scheduledEnd || null,
       updated_at: new Date().toISOString(),
     }).eq('id', formId)
     setSaving(false)
