@@ -54,8 +54,18 @@ export async function GET(req: NextRequest) {
       forms: { count: formsRes.data?.length || 0, error: formsRes.error?.message },
       polls: { count: pollsRes.data?.length || 0, error: pollsRes.error?.message },
       surveys: { count: surveysRes.data?.length || 0, error: surveysRes.error?.message },
-      helpArticles: { count: helpRes.data?.length || 0, error: helpRes.error?.message, data: helpRes.data },
+      helpArticles: { count: helpRes.data?.length || 0, error: helpRes.error?.message, fullData: helpRes.data },
     })
+
+    // Debug: Log raw query for help articles
+    if (helpRes.error) {
+      console.error('[WIDGET API] Help articles query error:', helpRes.error)
+    } else {
+      console.log('[WIDGET API] Help articles raw response:', {
+        count: helpRes.data?.length,
+        data: helpRes.data?.map(a => ({ id: a.id, title: a.title, status: a.status, company_id: a.company_id }))
+      })
+    }
 
     const responseData = {
       company,

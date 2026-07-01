@@ -242,6 +242,29 @@ export default function NewHelpArticlePage() {
               style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
               🖼️ Media ({mediaItems.length})
             </button>
+            <button onClick={async () => {
+              if (!company?.id) { alert('No company loaded'); return }
+              try {
+                const DEMO = [
+                  { title: 'Getting started with Colvy', content: 'Welcome to Colvy! This guide will help you set up your feedback board in minutes.\n\n## Step 1: Create your board\n\nAfter signing up, your feedback board is automatically created. You can customize it from the Admin panel.\n\n## Step 2: Invite your team\n\nGo to Admin → Team Members to invite colleagues.\n\n## Step 3: Collect feedback\n\nShare your board URL with customers and start collecting ideas.', category: 'Getting Started', status: 'published', featured: true },
+                  { title: 'How to create and manage ideas', content: 'Ideas are the core of Colvy. Here\'s how to manage them effectively.\n\n## Creating ideas\n\nClick "Share an Idea" on your board to submit new ideas.\n\n## Voting\n\nUsers can upvote ideas they care about.\n\n## Status management\n\nUpdate idea status to keep users informed.', category: 'Features', status: 'published', featured: true },
+                  { title: 'Embedding the Colvy widget', content: 'Add Colvy to your app with a simple JavaScript snippet.\n\n## Installation\n\nPaste this code before the closing </body> tag:\n\n```html\n<script src="https://yourapp.colvy.com/embed.js"></script>\n```', category: 'Integrations', status: 'published', featured: true },
+                ]
+                for (const article of DEMO) {
+                  await (supabase as any).from('help_articles').insert({
+                    company_id: company.id,
+                    ...article
+                  })
+                }
+                alert('✅ Demo articles created! Refresh to see them.')
+              } catch (e) {
+                alert('Error: ' + (e as any).message)
+              }
+            }}
+              className="px-4 py-2 rounded-lg border text-sm font-medium cursor-pointer"
+              style={{ borderColor: 'var(--border)', color: 'var(--slate)', background: '#f9f9f9' }}>
+              📚 Seed Demo
+            </button>
             <button onClick={handlePublish} disabled={saving || !title.trim()}
               className="px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
               style={{ background: 'var(--coral)' }}>

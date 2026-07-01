@@ -680,14 +680,14 @@ function WidgetContent() {
             ) : announcements.map(ann => {
               console.log('[WIDGET] Rendering announcement:', ann)
               return (
-              <div key={ann.id} onClick={() => setSelectedItem({ type: 'announcement', id: ann.id })} className="item-row" style={{ display: 'block', marginBottom: 4, cursor: 'pointer' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <div key={ann.id} onClick={() => setSelectedItem({ type: 'announcement', id: ann.id })} className="item-row" style={{ display: 'block', marginBottom: 10, cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                   {ann.tag && (
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: accentColor + '18', color: accentColor }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: accentColor + '15', color: accentColor, textTransform: 'capitalize' }}>
                       {ann.tag}
                     </span>
                   )}
-                  <span style={{ fontSize: 11, color: '#9ca3af' }}>{ann.created_at ? new Date(ann.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Today'}</span>
+                  <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500 }}>{ann.created_at ? new Date(ann.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Today'}</span>
                 </div>
                 <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d', marginBottom: 2, lineHeight: 1.3 }}>{ann.title}</p>
                 {ann.description && <p style={{ fontSize: 12, color: '#6b7280', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>{ann.description}</p>}
@@ -706,7 +706,26 @@ function WidgetContent() {
         {tab === 'help' && (
           <div style={{ animation: 'fadeIn 0.2s ease both' }}>
             {helpArticles.length === 0 ? (
-              <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingTop: 24 }}>No help articles available yet.</p>
+              <div style={{ textAlign: 'center', paddingTop: 24 }}>
+                <p style={{ fontSize: 13, color: '#9ca3af', marginBottom: 12 }}>No help articles available yet.</p>
+                <button onClick={() => {
+                  console.log('[WIDGET DEBUG] Forcing help articles refetch...')
+                  ;(async () => {
+                    const res = await fetch(`/api/widget-data?slug=${slug}`)
+                    if (res.ok) {
+                      const data = await res.json()
+                      console.log('[WIDGET DEBUG] Refetch result - helpArticles:', data.helpArticles?.length || 0)
+                      console.log('[WIDGET DEBUG] Full help articles:', data.helpArticles)
+                      if (data.helpArticles?.length > 0) {
+                        setHelpArticles(data.helpArticles)
+                        console.log('[WIDGET DEBUG] Help articles updated!')
+                      }
+                    }
+                  })()
+                }} style={{ padding: '8px 12px', background: accentColor, color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+                  Check for articles
+                </button>
+              </div>
             ) : helpArticles.map(article => {
               console.log('[WIDGET] Rendering help article:', article)
               return (
