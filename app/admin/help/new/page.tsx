@@ -33,7 +33,7 @@ export default function NewHelpArticlePage() {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [category, setCategory] = useState('Getting Started')
-  const [status, setStatus] = useState('draft')
+  const [status, setStatus] = useState('published')
   const [featured, setFeatured] = useState(false)
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
   const [showYoutubeModal, setShowYoutubeModal] = useState(false)

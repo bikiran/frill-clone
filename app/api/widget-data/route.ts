@@ -32,15 +32,18 @@ export async function GET(req: NextRequest) {
     const [ideasRes, annRes, formsRes, pollsRes, surveysRes, helpRes] = await Promise.all([
       (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private').eq('company_id', company.id)
         .neq('is_private', true).order('votes', { ascending: false }).limit(20),
-      (supabase as any).from('announcements').select('id,title,content,description,tag,created_at')
-        .eq('company_id', company.id).order('created_at', { ascending: false }).limit(8),
+      (supabase as any).from('announcements').select('id,title,description,tag,status,created_at,boost_enabled,boost_type,boost_button_label,boost_title,boost_blurb,boost_image,views,impressions')
+        .eq('company_id', company.id)
+        .eq('status', 'published')
+        .order('created_at', { ascending: false }).limit(8),
       (supabase as any).from('forms').select('id,title,description').eq('company_id', company.id)
         .eq('is_public', true).order('created_at', { ascending: false }).limit(5),
       (supabase as any).from('polls').select('id,title,options').eq('company_id', company.id)
         .order('created_at', { ascending: false }).limit(5),
       (supabase as any).from('surveys').select('id,title,questions').eq('company_id', company.id)
         .order('created_at', { ascending: false }).limit(5),
-      (supabase as any).from('help_articles').select('id,title,content,slug,created_at').eq('company_id', company.id)
+      (supabase as any).from('help_articles').select('id,title,content,category,status,featured,media,views,likes,created_at,slug').eq('company_id', company.id)
+        .eq('status', 'published')
         .order('created_at', { ascending: false }).limit(10),
     ])
     

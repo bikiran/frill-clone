@@ -37,7 +37,7 @@ export default function NewAnnouncementPage() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [tag, setTag] = useState('Feature')
-  const [status, setStatus] = useState('draft')
+  const [status, setStatus] = useState('published')
   const [language, setLanguage] = useState('English')
   const [boostEnabled, setBoostEnabled] = useState(false)
   const [boostType, setBoostType] = useState('snippet')
