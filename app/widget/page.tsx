@@ -16,6 +16,7 @@ function WidgetContent() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [expandedFeedback, setExpandedFeedback] = useState(false)
 
   const accentColor = company?.accent_color || '#ff7a6b'
 
@@ -113,22 +114,55 @@ function WidgetContent() {
                 </div>
                 <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d' }}>Thanks for your feedback!</p>
               </div>
-            ) : (
+            ) : expandedFeedback ? (
               <>
                 <textarea
                   value={feedback}
                   onChange={e => setFeedback(e.target.value)}
-                  placeholder="What's on your mind? A bug, an idea, or anything we should know."
-                  rows={4}
-                  style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1.5px solid #e5e5e5', fontSize: 13, lineHeight: 1.5, resize: 'none', outline: 'none', fontFamily: 'inherit', color: '#0d0d0d', marginBottom: 10 }}
-                  onFocus={e => e.target.style.borderColor = accentColor}
-                  onBlur={e => e.target.style.borderColor = '#e5e5e5'}
+                  placeholder="A bug, an idea, or anything we should know."
+                  rows={5}
+                  autoFocus
+                  style={{ width: '100%', padding: '12px', borderRadius: 12, border: `1.5px solid ${accentColor}`, fontSize: 13, lineHeight: 1.5, resize: 'none', outline: 'none', fontFamily: 'inherit', color: '#0d0d0d', marginBottom: 12 }}
                 />
-                <button onClick={submitFeedback} disabled={!feedback.trim() || submitting}
-                  style={{ width: '100%', padding: '10px', borderRadius: 10, background: feedback.trim() ? accentColor : '#e5e5e5', color: feedback.trim() ? '#fff' : '#9ca3af', fontSize: 13, fontWeight: 700, border: 'none', cursor: feedback.trim() ? 'pointer' : 'default', marginBottom: 18 }}>
-                  {submitting ? 'Sharing...' : 'Share'}
-                </button>
+                
+                {/* Image upload and screenshot icons */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <button
+                    onClick={() => document.getElementById('widget-image-upload')?.click()}
+                    title="Upload image"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 10, border: `1px solid #e5e5e5`, background: '#fff', cursor: 'pointer', color: accentColor, transition: 'all 0.2s' }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = accentColor)}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = '#e5e5e5')}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  </button>
+                  <input id="widget-image-upload" type="file" accept="image/*" style={{ display: 'none' }} />
+                  
+                  <button
+                    title="Take screenshot"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 10, border: `1px solid #e5e5e5`, background: '#fff', cursor: 'pointer', color: accentColor, transition: 'all 0.2s' }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = accentColor)}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = '#e5e5e5')}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  </button>
+                </div>
+
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => { setExpandedFeedback(false); setFeedback('') }}
+                    style={{ flex: 1, padding: '10px', borderRadius: 10, background: '#f3f4f6', color: '#1a1a1a', fontSize: 13, fontWeight: 700, border: 'none', cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button onClick={submitFeedback} disabled={!feedback.trim() || submitting}
+                    style={{ flex: 1, padding: '10px', borderRadius: 10, background: feedback.trim() ? accentColor : '#e5e5e5', color: feedback.trim() ? '#fff' : '#9ca3af', fontSize: 13, fontWeight: 700, border: 'none', cursor: feedback.trim() ? 'pointer' : 'default' }}>
+                    {submitting ? 'Sharing...' : 'Share'}
+                  </button>
+                </div>
               </>
+            ) : (
+              <div onClick={() => setExpandedFeedback(true)} style={{ padding: '16px', borderRadius: 12, border: `1.5px solid #e5e5e5`, background: '#fff', cursor: 'pointer', transition: 'all 0.2s', marginBottom: 18 }} onMouseEnter={e => (e.currentTarget.style.borderColor = accentColor, e.currentTarget.style.boxShadow = `0 0 0 3px ${accentColor}20`)} onMouseLeave={e => (e.currentTarget.style.borderColor = '#e5e5e5', e.currentTarget.style.boxShadow = 'none')}>
+                <p style={{ fontSize: 15, fontWeight: 700, color: '#0d0d0d', margin: '0 0 6px 0' }}>What's on your mind?</p>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>A bug, an idea, or anything we should know.</p>
+              </div>
             )}
 
             {trending.length > 0 && (

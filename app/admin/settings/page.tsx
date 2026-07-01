@@ -29,9 +29,11 @@ const SIDEBAR_ITEMS = [
     { label: 'General', tab: 'auth' },
     { label: 'Privacy', tab: 'privacy' },
   ]},
-  { section: 'API & Integrations', items: [
-    { label: 'Widget', tab: 'widget' },
+  { section: 'Feedback & Display', items: [
+    { label: 'Widget Configuration', tab: 'widget' },
     { label: 'Integrations', href: '/admin/integrations' },
+  ]},
+  { section: 'API & Webhooks', items: [
     { label: 'Webhooks', tab: 'webhooks' },
     { label: 'API', tab: 'api' },
   ]},
@@ -58,6 +60,16 @@ export default function SettingsPage() {
   const [navAnnouncements, setNavAnnouncements] = useState(true)
   const [navHelp, setNavHelp] = useState(true)
   const [navOrder, setNavOrder] = useState(['Ideas', 'Roadmap', 'Updates', 'Help Centre'])
+  // Widget Configuration
+  const [widgetFeedback, setWidgetFeedback] = useState(true)
+  const [widgetRoadmap, setWidgetRoadmap] = useState(true)
+  const [widgetUpdates, setWidgetUpdates] = useState(true)
+  const [widgetForms, setWidgetForms] = useState(true)
+  const [widgetPolls, setWidgetPolls] = useState(true)
+  const [widgetSurveys, setWidgetSurveys] = useState(true)
+  const [widgetKnowledgeBase, setWidgetKnowledgeBase] = useState(true)
+  const [widgetOrder, setWidgetOrder] = useState(['Feedback', 'Roadmap', 'Updates', 'Forms', 'Polls', 'Surveys', 'Knowledge Base'])
+  const [dragWidgetItem, setDragWidgetItem] = useState<string | null>(null)
   // Webhooks
   const [webhooks, setWebhooks] = useState<any[]>([])
   const [webhookSecret] = useState(() => typeof crypto !== 'undefined' ? crypto.randomUUID?.() || '20d12d0e-f851-4b1b-ac88-d31637988152' : '20d12d0e-f851-4b1b-ac88-d31637988152')
@@ -240,6 +252,10 @@ export default function SettingsPage() {
           if (s.requireIdeaTopic !== undefined) setRequireIdeaTopic(s.requireIdeaTopic)
           if (s.termValues) setTermValues(s.termValues)
           if (s.privacyMode) setPrivacyMode(s.privacyMode)
+          // Also support loading from is_private boolean (for backward compatibility)
+          if (s.is_private !== undefined && !s.privacyMode) {
+            setPrivacyMode(s.is_private ? 'private' : 'public')
+          }
           if (s.categories && Array.isArray(s.categories)) setCategories(s.categories)
           if (s.defaultHomepage) setDefaultHomepage(s.defaultHomepage)
           const slugKey = typeof window !== 'undefined' ? (window.location.hostname.replace('.colvy.com','') || 'colvy') : 'colvy'
@@ -272,6 +288,7 @@ export default function SettingsPage() {
   }, [
     companyName, logoUrl, faviconUrl, ogImageUrl, logoLink, customScript,
     navIdeas, navRoadmap, navAnnouncements, navHelp, navOrder,
+    widgetFeedback, widgetRoadmap, widgetUpdates, widgetForms, widgetPolls, widgetSurveys, widgetKnowledgeBase, widgetOrder,
     accentColor, themeMode, borderRadius,
     emailFromName, emailReplyTo, emailSignature,
     hidePoweredBy, boardDomain, helpDomain,
@@ -286,6 +303,7 @@ export default function SettingsPage() {
     const settingsData = {
       companyName, logoUrl, faviconUrl, ogImageUrl, logoLink, customScript,
       navIdeas, navRoadmap, navAnnouncements, navHelp, navOrder,
+      widgetFeedback, widgetRoadmap, widgetUpdates, widgetForms, widgetPolls, widgetSurveys, widgetKnowledgeBase, widgetOrder,
       accentColor, themeMode, borderRadius,
       emailFromName, emailReplyTo, emailSignature,
       hidePoweredBy, customDomain, boardDomain, helpDomain, domainStatus,
@@ -361,7 +379,7 @@ export default function SettingsPage() {
         if (updateErr) console.error('Company update error:', updateErr.message)
         else {
           // Update local company state so UI reflects immediately
-          const updated = companyToUpdate ? { ...companyToUpdate, name: companyName, logo_url: logoUrl, accent_color: accentColor } : null
+          const updated = companyToUpdate ? { ...companyToUpdate, name: companyName, logo_url: logoUrl, accent_color: accentColor, is_private: privacyMode !== 'public' } : null
           setCompany(updated)
           // Notify layout nav and other pages
           window.dispatchEvent(new CustomEvent('colvy-company-update', { detail: { name: companyName, logo_url: logoUrl, accent_color: accentColor, slug: updated?.slug } }))
@@ -1305,6 +1323,46 @@ export default function SettingsPage() {
         {/* API tab */}
         {activeSettingsTab === 'widget' && (
           <div className="space-y-5">
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Widget Display</h2>
+              <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Choose which sections to display in your embedded widget and set their order.</p>
+
+              {/* Widget toggles */}
+              <div className="space-y-3 mb-8">
+                {[
+                  { label: 'Feedback Board', state: widgetFeedback, set: setWidgetFeedback, desc: 'Let users submit and vote on ideas' },
+                  { label: 'Roadmap', state: widgetRoadmap, set: setWidgetRoadmap, desc: 'Show your product roadmap' },
+                  { label: 'Updates', state: widgetUpdates, set: setWidgetUpdates, desc: 'Display announcements and changelog' },
+                  { label: 'Forms', state: widgetForms, set: setWidgetForms, desc: 'Embed custom feedback forms' },
+                  { label: 'Polls', state: widgetPolls, set: setWidgetPolls, desc: 'Run quick polls and surveys' },
+                  { label: 'Surveys', state: widgetSurveys, set: setWidgetSurveys, desc: 'Collect detailed feedback' },
+                  { label: 'Knowledge Base', state: widgetKnowledgeBase, set: setWidgetKnowledgeBase, desc: 'Link to help articles and docs' },
+                ].map(item => (
+                  <div key={item.label} className="flex items-center justify-between p-3 rounded-xl hover:bg-gray-50" style={{ borderColor: 'var(--border)' }}>
+                    <div>
+                      <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{item.label}</p>
+                      <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>{item.desc}</p>
+                    </div>
+                    <input type="checkbox" checked={item.state} onChange={() => item.set(!item.state)} className="w-5 h-5 rounded cursor-pointer" style={{ accentColor: 'var(--coral)' }} />
+                  </div>
+                ))}
+              </div>
+
+              {/* Widget order info */}
+              <div className="p-3 rounded-xl" style={{ background: 'var(--canvas)', borderColor: 'var(--border)' }}>
+                <p className="text-xs font-medium" style={{ color: 'var(--slate)' }}>Widget sections display in the order: {widgetOrder.filter(s => {
+                  if (s === 'Feedback') return widgetFeedback
+                  if (s === 'Roadmap') return widgetRoadmap
+                  if (s === 'Updates') return widgetUpdates
+                  if (s === 'Forms') return widgetForms
+                  if (s === 'Polls') return widgetPolls
+                  if (s === 'Surveys') return widgetSurveys
+                  if (s === 'Knowledge Base') return widgetKnowledgeBase
+                  return false
+                }).join(', ')}</p>
+              </div>
+            </div>
+
             <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Feedback Widget</h2>
               <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>A floating button on your website that opens a popup with feedback, roadmap, and updates — just like UserJot.</p>
