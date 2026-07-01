@@ -8,7 +8,7 @@ function WidgetContent() {
   const params = useSearchParams()
   const slug = params.get('slug') || ''
 
-  const [tab, setTab] = useState<'feedback' | 'roadmap' | 'updates' | 'forms' | 'polls' | 'surveys' | 'help'>('feedback')
+  const [tab, setTab] = useState<'feedback' | 'roadmap' | 'updates' | 'help' | 'chat'>('feedback')
   const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement'; id: string } | null>(null)
   const [company, setCompany] = useState<any>(null)
   const [ideas, setIdeas] = useState<any[]>([])
@@ -18,9 +18,14 @@ function WidgetContent() {
   const [surveys, setSurveys] = useState<any[]>([])
   const [helpArticles, setHelpArticles] = useState<any[]>([])
   const [feedback, setFeedback] = useState('')
+  const [chatMessages, setChatMessages] = useState<any[]>([])
+  const [chatName, setChatName] = useState('')
+  const [chatEmail, setChatEmail] = useState('')
+  const [chatInput, setChatInput] = useState('')
   const [attachments, setAttachments] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [chatStarted, setChatStarted] = useState(false)
   const [loading, setLoading] = useState(true)
   const [expandedFeedback, setExpandedFeedback] = useState(false)
   const [captureInProgress, setCaptureInProgress] = useState(false)
@@ -205,7 +210,7 @@ function WidgetContent() {
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 2, background: '#f4f4f5', borderRadius: 10, padding: 3 }}>
-          {(['feedback', 'roadmap', 'updates', 'forms', 'polls', 'surveys', 'help'] as const).map(t => (
+          {(['feedback', 'roadmap', 'updates', 'help', 'chat'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               style={{ flex: 1, padding: '6px 0', borderRadius: 8, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', background: tab === t ? '#fff' : 'transparent', color: tab === t ? '#0d0d0d' : '#6b7280', boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', textTransform: 'capitalize' }}>
               {t === 'updates' ? 'Updates' : t.charAt(0).toUpperCase() + t.slice(1)}

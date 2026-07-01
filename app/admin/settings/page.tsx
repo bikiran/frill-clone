@@ -147,6 +147,19 @@ export default function SettingsPage() {
     setActiveSettingsTab(tab)
     if (typeof window !== 'undefined') window.location.hash = tab
   }
+
+  // Listen to hash changes to retain tab on reload
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '')
+      const valid = ['general','theme','emails','whitelabel','auth','nav','terminology','webhooks','api','privacy','misc']
+      if (valid.includes(hash)) {
+        setActiveSettingsTab(hash)
+      }
+    }
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
   const logoFileRef = useRef<HTMLInputElement>(null)
   const faviconFileRef = useRef<HTMLInputElement>(null)
   const ogFileRef = useRef<HTMLInputElement>(null)
@@ -346,21 +359,22 @@ export default function SettingsPage() {
       } catch {}
 
       const siteSettingsValue = { 
-        ...settingsData, 
-        faviconUrl: faviconUrl || '', 
-        ogImageUrl: ogImageUrl || '', 
+        ...settingsData,
+        faviconUrl: faviconUrl || undefined,
+        ogImageUrl: ogImageUrl || undefined,
         defaultHomepage: defaultHomepage || 'ideas',
-        navOrder: navOrder || ['Ideas', 'Roadmap', 'Updates', 'Help Centre'],
+        navOrder: Array.isArray(navOrder) ? navOrder : ['Ideas', 'Roadmap', 'Updates', 'Help Centre'],
         companyId,
         savedAt: new Date().toISOString(),
       }
       
       // DEBUG: Log what's being saved
-      console.log('[SETTINGS SAVE] Saving:', {
-        faviconUrl: faviconUrl || '(empty)',
-        ogImageUrl: ogImageUrl || '(empty)',
-        defaultHomepage: defaultHomepage || '(empty)',
-        navOrder: navOrder || '(empty)',
+      console.log('[SETTINGS SAVE] Saving all fields:', {
+        faviconUrl,
+        ogImageUrl,
+        defaultHomepage,
+        navOrder,
+        widgetFeedback, widgetRoadmap, widgetUpdates,
       })
       
       const { error: upsertErr } = await (supabase as any).from('site_settings').upsert({
@@ -369,13 +383,19 @@ export default function SettingsPage() {
         value: siteSettingsValue,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'key,company_id' })
+      
       if (upsertErr) {
         console.error('Settings upsert error:', upsertErr.message)
+        alert('❌ Failed to save settings: ' + upsertErr.message)
       } else {
-        console.log('[SETTINGS SAVE] ✅ Successfully saved to site_settings')
+        console.log('[SETTINGS SAVE] ✅ Successfully saved')
+        alert('✅ Settings saved successfully!')
       }
     } catch (e: any) {
       console.error('DB save failed:', e.message)
+      alert('❌ Save failed: ' + e.message)
+    } finally {
+      setSaving(false)
     }
 
     // Save to companies table using company.id (most reliable, works even if owner_id was patched)
