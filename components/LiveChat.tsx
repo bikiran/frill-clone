@@ -186,39 +186,6 @@ export default function LiveChat() {
           </div>
 
           {activeTab === 'chat' ? (
-            <div className="flex-1 p-5 flex flex-col justify-center overflow-y-auto">
-              <div className="text-4xl mb-3 text-center">👋</div>
-              <h3 className="text-base font-bold text-center mb-1" style={{ color: 'var(--ink)' }}>Chat with us</h3>
-              <p className="text-sm text-center mb-5" style={{ color: 'var(--slate)' }}>We typically reply in a few minutes</p>
-              <div className="space-y-3">
-                <input value={name} onChange={e => setName(e.target.value)}
-                  placeholder="Your name"
-                  className="w-full px-3 py-2.5 rounded-xl border text-sm focus:outline-none"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-                <input value={email} onChange={e => setEmail(e.target.value)} type="email"
-                  placeholder="Your email"
-                  className="w-full px-3 py-2.5 rounded-xl border text-sm focus:outline-none"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-                <button onClick={startChat} disabled={!name.trim() || !email.trim()}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
-                  style={{ background: 'var(--coral)' }}>
-                  Start Chat →
-                </button>
-              </div>
-              <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
-                <p className="text-xs text-center mb-2" style={{ color: 'var(--slate)' }}>Quick questions</p>
-                <div className="flex flex-wrap gap-1.5 justify-center">
-                  {QUICK_REPLIES.map(q => (
-                    <button key={q} onClick={() => { setName(name || 'Guest'); setEmail(email || 'guest@example.com'); setStep('chat'); setTimeout(() => { setInput(q) }, 300) }}
-                      className="px-2.5 py-1 rounded-full text-xs border cursor-pointer hover:bg-gray-50 transition-all"
-                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      {q}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : activeTab === 'widget' ? (
             <div className="flex-1 overflow-hidden rounded-b-2xl">
               <iframe
                 src={`${typeof window !== 'undefined' ? window.location.origin : ''}/widget?embedded=chat&inline=true`}
@@ -307,6 +274,20 @@ export default function LiveChat() {
               </button>
             ))}
           </div>
+          
+          {/* Greeting section below tabs */}
+          {activeTab === 'chat' && (
+            <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', fontSize: 12, textAlign: 'center', background: '#f9fafb' }}>
+              <div style={{ fontSize: 18, marginBottom: 6 }}>👋</div>
+              <p style={{ margin: '0 0 4px 0', fontWeight: 600, color: 'var(--ink)' }}>Chat with us</p>
+              <p style={{ margin: '0 0 8px 0', color: 'var(--slate)', fontSize: 11 }}>We typically reply in a few minutes</p>
+              <button onClick={() => { setName(name || 'Guest'); setEmail(email || 'guest@example.com'); setStep('chat') }}
+                className="w-full py-1.5 rounded-lg text-white text-xs font-semibold cursor-pointer"
+                style={{ background: 'var(--coral)' }}>
+                Start Chat →
+              </button>
+            </div>
+          )}
         </div>
       )}
     </>

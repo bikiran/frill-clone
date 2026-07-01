@@ -337,6 +337,20 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     setSaving(true)
+    
+    // Wait for company to be loaded
+    if (!loadedCompany) {
+      showToast('Loading settings... please wait', 'info', 2000)
+      setSaving(false)
+      return
+    }
+    
+    if (!company?.id) {
+      showToast('Error: Company information not available', 'error', 4000)
+      setSaving(false)
+      return
+    }
+    
     const settingsData = {
       companyName, logoUrl, faviconUrl, ogImageUrl, logoLink, customScript,
       navIdeas, navRoadmap, navAnnouncements, navHelp, navOrder,
@@ -350,49 +364,20 @@ export default function SettingsPage() {
       showIdeaNumber, showRoadmapDesc, showIdeaDate, showIdeaActivity, requireIdeaTopic,
     }
     
+    const companyId = company.id
+    console.log('[SETTINGS SAVE] Saving with companyId:', companyId)
+    
+    const siteSettingsValue = { 
+      ...settingsData,
+      faviconUrl: faviconUrl || undefined,
+      ogImageUrl: ogImageUrl || undefined,
+      defaultHomepage: defaultHomepage || 'ideas',
+      navOrder: Array.isArray(navOrder) ? navOrder : ['Ideas', 'Roadmap', 'Updates', 'Help Centre'],
+      companyId,
+      savedAt: new Date().toISOString(),
+    }
+    
     try {
-      // Save to site_settings table scoped to this company
-      let companyId: string | null = null
-      try {
-        // Use company state if loaded, otherwise look up by slug then owner_id
-        if (company?.id) {
-          companyId = company.id
-        } else {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (session?.user) {
-            const h = typeof window !== 'undefined' ? window.location.hostname : ''
-            if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
-              const slug = h.replace('.colvy.com', '')
-              const { data: coBySlug } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
-              companyId = coBySlug?.id || null
-            }
-            if (!companyId) {
-              const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-              companyId = co?.id || null
-            }
-          }
-        }
-      } catch {}
-
-      const siteSettingsValue = { 
-        ...settingsData,
-        faviconUrl: faviconUrl || undefined,
-        ogImageUrl: ogImageUrl || undefined,
-        defaultHomepage: defaultHomepage || 'ideas',
-        navOrder: Array.isArray(navOrder) ? navOrder : ['Ideas', 'Roadmap', 'Updates', 'Help Centre'],
-        companyId,
-        savedAt: new Date().toISOString(),
-      }
-      
-      console.log('[SETTINGS SAVE] Attempting to save with companyId:', companyId)
-      if (!companyId) {
-        console.error('[SETTINGS SAVE] NO COMPANY ID - save will fail!')
-        showToast('Error: Company not loaded. Please refresh the page.', 'error', 4000)
-        setSaving(false)
-        return
-      }
-      
-      // Try UPDATE first
       const { data: updateData, error: updateErr } = await (supabase as any)
         .from('site_settings')
         .update({
