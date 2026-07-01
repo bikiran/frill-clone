@@ -144,6 +144,45 @@ export async function seedCompanyData(companyId: string, companyName: string) {
     )
     results.push(he ? `help_articles: ${he.message}` : 'help_articles ✓')
 
+    // 7. SAMPLE FORM — a customer feedback form
+    const sampleForm = {
+      company_id: companyId,
+      title: 'Customer Feedback Form',
+      welcome_message: 'Help us improve! This takes about 2 minutes.',
+      thank_you_message: "Thank you for your feedback! We read every response.",
+      is_published: true,
+      show_confetti: true,
+      theme: { color: '#ff7a6b' },
+      end_actions: [{ type: 'website', label: 'Visit our board', url: '' }],
+      questions: [
+        {
+          id: 'q1', type: 'nps', title: 'How likely are you to recommend us to a friend?',
+          description: '0 = Not at all likely, 10 = Extremely likely', required: true,
+        },
+        {
+          id: 'q2', type: 'multiple_choice', title: 'What do you use us for?',
+          description: 'Select the option that best describes you.',
+          required: true,
+          options: ['Product feedback', 'Bug reporting', 'Feature requests', 'Internal roadmap'],
+        },
+        {
+          id: 'q3', type: 'rating', title: 'How would you rate your overall experience?',
+          description: '', required: true,
+        },
+        {
+          id: 'q4', type: 'long_text', title: 'What could we do better?',
+          description: 'Be as specific as you like — we read every response.',
+          required: false,
+        },
+        {
+          id: 'q5', type: 'email', title: "What's your email? (optional)",
+          description: "We'll only use this to follow up on your feedback.", required: false,
+        },
+      ],
+    }
+    const { error: fe } = await db.from('forms').insert(sampleForm)
+    results.push(fe ? `forms: ${fe.message}` : 'forms ✓')
+
     console.log(`Seed results for ${companyId}:`, results.join(', '))
     return { success: true, results }
   } catch (err: any) {

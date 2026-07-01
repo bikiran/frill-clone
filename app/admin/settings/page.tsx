@@ -30,6 +30,7 @@ const SIDEBAR_ITEMS = [
     { label: 'Privacy', tab: 'privacy' },
   ]},
   { section: 'API & Integrations', items: [
+    { label: 'Widget', tab: 'widget' },
     { label: 'Integrations', href: '/admin/integrations' },
     { label: 'Webhooks', tab: 'webhooks' },
     { label: 'API', tab: 'api' },
@@ -71,7 +72,12 @@ export default function SettingsPage() {
   const [settingsSearch, setSettingsSearch] = useState('')
   const [termValues, setTermValues] = useState<Record<string, string>>({})
   const [privacyMode, setPrivacyMode] = useState('public')
-  const [slugEdit, setSlugEdit] = useState('')
+  const [slugEdit, setSlugEdit] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    const h = window.location.hostname
+    if (h.endsWith('.colvy.com') && h !== 'colvy.com') return h.replace('.colvy.com', '')
+    return ''
+  })
   const [slugStatus, setSlugStatus] = useState<'idle'|'checking'|'available'|'taken'|'invalid'>('idle')
   const [slugTimer, setSlugTimer] = useState<any>(null)
   const [widgetCopied, setWidgetCopied] = useState('')
@@ -344,6 +350,7 @@ export default function SettingsPage() {
           board_domain: boardDomain || null,
           help_domain: helpDomain || null,
           logo_url: logoUrl || null,
+          is_private: privacyMode !== 'public',
         }).eq('id', companyToUpdate.id)
         if (updateErr) console.error('Company update error:', updateErr.message)
         else {
@@ -351,7 +358,7 @@ export default function SettingsPage() {
           const updated = companyToUpdate ? { ...companyToUpdate, name: companyName, logo_url: logoUrl, accent_color: accentColor } : null
           setCompany(updated)
           // Notify layout nav and other pages
-          window.dispatchEvent(new CustomEvent('colvy-company-update', { detail: { name: companyName, logo_url: logoUrl, accent_color: accentColor } }))
+          window.dispatchEvent(new CustomEvent('colvy-company-update', { detail: { name: companyName, logo_url: logoUrl, accent_color: accentColor, slug: updated?.slug } }))
           // Update cached company in localStorage
           try {
             const slug = updated?.slug || window.location.hostname.replace('.colvy.com','')
@@ -433,6 +440,14 @@ export default function SettingsPage() {
 
       setSaved(true)
       setTimeout(() => setSaved(false), 1500)
+      // Apply terminology globally via localStorage + event
+      try {
+        const slug = company?.slug || (typeof window !== 'undefined' ? window.location.hostname.replace('.colvy.com','') : null)
+        if (slug) {
+          localStorage.setItem(`terminology_${slug}`, JSON.stringify(termValues))
+          window.dispatchEvent(new CustomEvent('colvy-terminology-update', { detail: termValues }))
+        }
+      } catch {}
     } catch (err: any) {
       alert('Upload failed: ' + err.message + '\n\nMake sure a "settings" or "idea-images" storage bucket exists in Supabase with public access.')
     }
@@ -742,6 +757,7 @@ export default function SettingsPage() {
           {activeSettingsTab === 'terminology' && 'Terminology'}
           {activeSettingsTab === 'categories' && 'Categories'}
           {activeSettingsTab === 'webhooks' && 'Webhooks'}
+          {activeSettingsTab === 'widget' && 'Widget'}
           {activeSettingsTab === 'api' && 'API'}
           {activeSettingsTab === 'languages' && 'Languages'}
         </h1>
@@ -756,6 +772,7 @@ export default function SettingsPage() {
           {activeSettingsTab === 'terminology' && 'Customise the labels used throughout your board.'}
           {activeSettingsTab === 'categories' && 'Use Categories to organize your Announcements.'}
           {activeSettingsTab === 'webhooks' && 'Receive HTTP callbacks when events happen in your board.'}
+          {activeSettingsTab === 'widget' && 'Embed a feedback widget on any website.'}
           {activeSettingsTab === 'api' && 'Manage API keys for programmatic access to your board.'}
           {activeSettingsTab === 'languages' && 'Configure supported languages.'}
         </p>
@@ -1280,6 +1297,75 @@ export default function SettingsPage() {
         )}
 
         {/* API tab */}
+        {activeSettingsTab === 'widget' && (
+          <div className="space-y-5">
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Feedback Widget</h2>
+              <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>A floating button on your website that opens a popup with feedback, roadmap, and updates — just like UserJot.</p>
+
+              {/* Live preview */}
+              {company?.slug && (
+                <div className="mb-5 rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--border)', height: 480 }}>
+                  <iframe
+                    src={`/widget?slug=${company.slug}`}
+                    style={{ width: '100%', height: '100%', border: 'none' }}
+                    title="Widget preview"
+                  />
+                </div>
+              )}
+
+              {/* Embed code */}
+              <div className="mb-5">
+                <p className="text-sm font-semibold mb-2" style={{ color: 'var(--ink)' }}>Embed on your website</p>
+                <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>Paste this snippet anywhere before the <code>{`</body>`}</code> tag on your website.</p>
+                {company?.slug ? (
+                  <>
+                    <div className="rounded-xl p-4 font-mono text-xs overflow-x-auto" style={{ background: '#0d0d0d', color: '#a3e635', lineHeight: 1.6 }}>
+                      {`<script src="https://colvy.com/widget.js" data-slug="${company.slug}" async></script>`}
+                    </div>
+                    <div className="flex gap-2 mt-3 flex-wrap">
+                      <button onClick={() => {
+                        navigator.clipboard.writeText(`<script src="https://colvy.com/widget.js" data-slug="${company?.slug}" async></script>`)
+                        setWidgetCopied('embed')
+                        setTimeout(() => setWidgetCopied(''), 2000)
+                      }} className="px-4 py-2 rounded-lg text-sm font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)', border: 'none' }}>
+                        {widgetCopied === 'embed' ? '✓ Copied!' : 'Copy embed code'}
+                      </button>
+                      <a href={`/widget?slug=${company.slug}`} target="_blank" className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer" style={{ border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+                        Open full preview →
+                      </a>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-4 rounded-xl" style={{ background: 'var(--canvas)', color: 'var(--slate)', fontSize: 13 }}>
+                    Set up your Colvy URL first to get the embed code.
+                  </div>
+                )}
+              </div>
+
+              {/* iFrame embed option */}
+              <div>
+                <p className="text-sm font-semibold mb-2" style={{ color: 'var(--ink)' }}>Or embed as inline iframe</p>
+                <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>Drop this into a Help page, internal docs, or any webpage to show feedback inline.</p>
+                {company?.slug && (
+                  <>
+                    <div className="rounded-xl p-4 font-mono text-xs overflow-x-auto" style={{ background: '#0d0d0d', color: '#a3e635', lineHeight: 1.6 }}>
+                      {`<iframe src="https://colvy.com/widget?slug=${company.slug}&embed=1" width="100%" height="540" frameborder="0" style="border-radius:16px;"></iframe>`}
+                    </div>
+                    <button onClick={() => {
+                      navigator.clipboard.writeText(`<iframe src="https://colvy.com/widget?slug=${company?.slug}&embed=1" width="100%" height="540" frameborder="0" style="border-radius:16px;"></iframe>`)
+                      setWidgetCopied('iframe')
+                      setTimeout(() => setWidgetCopied(''), 2000)
+                    }} className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)', border: 'none' }}>
+                      {widgetCopied === 'iframe' ? '✓ Copied!' : 'Copy iframe code'}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeSettingsTab === 'api' && (
           <div className="space-y-5">
             <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>

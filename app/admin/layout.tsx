@@ -93,54 +93,65 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       if (!u) { router.push('/signin'); return }
       setUser(u)
 
-      // Try to get company by owner_id first, then by hostname slug
-      let co = await getCompanyByOwner(u.id)
+      // Get hostname for subdomain detection
       const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
-
-      if (!co && hostname.endsWith('.colvy.com') && hostname !== 'colvy.com') {
-        const slug = hostname.replace('.colvy.com', '')
-        const { data: coBySlug } = await (supabase as any)
-          .from('companies').select('*').eq('slug', slug).maybeSingle()
-        if (coBySlug) {
-          // Auto-fix missing owner_id
-          if (!coBySlug.owner_id) {
-            await (supabase as any).from('companies').update({ owner_id: u.id }).eq('id', coBySlug.id)
-            co = { ...coBySlug, owner_id: u.id }
-          } else if (coBySlug.owner_id === u.id) {
-            co = coBySlug
-          }
-        }
-      }
-
-      setCompany(co)
       const parts = hostname.split('.')
       const isSubdomain = parts.length === 3 && hostname.endsWith('colvy.com')
       const isLocalOrVercel = hostname.includes('localhost') || hostname.includes('vercel.app')
+      const subdomain = isSubdomain ? parts[0] : null
+
+      // Super admin can access anything
+      const SUPER_ADMIN = 'bishalstha76@gmail.com'
+      if (u.email === SUPER_ADMIN) {
+        // Load the company for display (could be any company if on a subdomain)
+        if (subdomain) {
+          const { data: co } = await (supabase as any).from('companies').select('*').eq('slug', subdomain).maybeSingle()
+          setCompany(co)
+        } else {
+          const co = await getCompanyByOwner(u.id)
+          setCompany(co)
+        }
+        setAuthed(true)
+        return
+      }
+
+      // Regular user: check subdomain access
       if (isSubdomain && !isLocalOrVercel) {
-        const subdomain = parts[0]
-        if (co && co.slug !== subdomain) {
-          // User owns a different company - redirect to their own admin
-          window.location.href = `https://${co.slug}.colvy.com/admin`
+        // On a company subdomain — load that company and verify ownership
+        const { data: subdomainCo } = await (supabase as any)
+          .from('companies').select('*').eq('slug', subdomain).maybeSingle()
+
+        if (!subdomainCo) {
+          // Subdomain doesn't exist — deny access
+          router.push('/')
           return
         }
-        if (!co) {
-          // Company not found by owner_id - try looking up by subdomain slug
-          const { data: coBySlug } = await (supabase as any)
-            .from('companies')
-            .select('*')
-            .eq('slug', subdomain)
-            .maybeSingle()
-          if (coBySlug && coBySlug.owner_id === u.id) {
-            setCompany(coBySlug)
-            setAuthed(true)
-            return
+
+        if (subdomainCo.owner_id === u.id || !subdomainCo.owner_id) {
+          // User owns this company OR it has no owner — let them in (auto-fix owner_id)
+          if (!subdomainCo.owner_id) {
+            await (supabase as any).from('companies').update({ owner_id: u.id }).eq('id', subdomainCo.id)
+            subdomainCo.owner_id = u.id
           }
-          // Still not found - let them in anyway if on their subdomain
-          // They may have signed up but company creation failed
+          setCompany(subdomainCo)
           setAuthed(true)
           return
         }
+
+        // Subdomain exists but belongs to someone else — redirect user to their own company
+        const userCo = await getCompanyByOwner(u.id)
+        if (userCo?.slug) {
+          window.location.href = `https://${userCo.slug}.colvy.com/admin`
+        } else {
+          // User owns no company — deny access
+          router.push('/')
+        }
+        return
       }
+
+      // On localhost/vercel.app/colvy.com — load user's own company if they have one
+      const userCo = await getCompanyByOwner(u.id)
+      setCompany(userCo)
       setAuthed(true)
     })
   }, [])

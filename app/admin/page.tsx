@@ -10,6 +10,25 @@ import { LightbulbIcon, MapIcon, MegaphoneIcon, SurveyIcon, PollIcon, HomeIcon }
 
 
 export default function AdminDashboard() {
+
+  const [companyId, setCompanyId] = useState<string | null>(null)
+
+  const resolveCompanyId = async () => {
+    if (typeof window !== 'undefined') {
+      const h = window.location.hostname
+      if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+        const slug = h.replace('.colvy.com', '')
+        const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+        if (co?.id) { setCompanyId(co.id); return co.id }
+      }
+    }
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.user) {
+      const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
+      if (co?.id) { setCompanyId(co.id); return co.id }
+    }
+    return null
+  }
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [plan, setPlan] = useState<any>('free')
@@ -40,8 +59,10 @@ export default function AdminDashboard() {
         } catch {}
       }
     })
-    fetchStats()
-    fetchActivity()
+    resolveCompanyId().then(cid => {
+      fetchStats(cid)
+      fetchActivity(cid)
+    })
 
     // Live activity: subscribe to ideas table changes
     const channel = (supabase as any)
@@ -77,15 +98,18 @@ export default function AdminDashboard() {
     return () => { (supabase as any).removeChannel(channel) }
   }, [router])
 
-  const fetchStats = async () => {
+  const fetchStats = async (cid?: string) => {
     try {
-      const [ideas, announcements, topics, statuses, surveys, polls] = await Promise.all([
-        supabase.from('ideas').select('id', { count: 'exact', head: true }),
-        supabase.from('announcements').select('id', { count: 'exact', head: true }),
-        supabase.from('topics').select('id', { count: 'exact', head: true }),
-        supabase.from('statuses').select('id', { count: 'exact', head: true }),
-        supabase.from('surveys').select('id', { count: 'exact', head: true }),
-        supabase.from('polls').select('id', { count: 'exact', head: true }),
+      const compId = cid || companyId || await resolveCompanyId()
+      const filter = (q: any) => compId ? q.eq('company_id', compId) : q
+      const [ideas, announcements, topics, statuses, surveys, polls, forms] = await Promise.all([
+        filter(supabase.from('ideas').select('id', { count: 'exact', head: true })),
+        filter(supabase.from('announcements').select('id', { count: 'exact', head: true })),
+        filter(supabase.from('topics').select('id', { count: 'exact', head: true })),
+        filter(supabase.from('statuses').select('id', { count: 'exact', head: true })),
+        filter(supabase.from('surveys').select('id', { count: 'exact', head: true })),
+        filter(supabase.from('polls').select('id', { count: 'exact', head: true })),
+        filter((supabase as any).from('forms').select('id', { count: 'exact', head: true })),
       ])
       
       setStats({
@@ -118,7 +142,7 @@ export default function AdminDashboard() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user) return
-      const { data: co } = await (supabase as any).from('companies').select('id, name').eq('owner_id', session.user.id).single()
+      const cid = await resolveCompanyId(); const { data: co } = cid ? await (supabase as any).from('companies').select('id,name').eq('id', cid).maybeSingle() : { data: null }
       if (!co) { alert('No company found'); return }
       const res = await fetch('/api/seed-company', {
         method: 'POST',
@@ -138,19 +162,23 @@ export default function AdminDashboard() {
     setSeeding(false)
   }
 
-  const fetchActivity = async () => {
+  const fetchActivity = async (cid?: string) => {
     try {
-      const [ideas, comments, votes, anns] = await Promise.all([
-        (supabase as any).from('ideas').select('id,title,created_at,created_by_name').order('created_at', { ascending: false }).limit(5),
-        (supabase as any).from('comments').select('id,content,created_at,author_name,idea_id').order('created_at', { ascending: false }).limit(5),
-        (supabase as any).from('votes').select('id,created_at,idea_id,guest_id,user_id').order('created_at', { ascending: false }).limit(5),
-        (supabase as any).from('announcements').select('id,title,created_at').order('created_at', { ascending: false }).limit(3),
+      const compId = cid || companyId || await resolveCompanyId()
+      const f = (q: any) => compId ? q.eq('company_id', compId) : q
+      const [ideas, comments, votes, anns, formResponses] = await Promise.all([
+        f((supabase as any).from('ideas').select('id,title,created_at,created_by_name')).order('created_at', { ascending: false }).limit(5),
+        f((supabase as any).from('comments').select('id,content,created_at,author_name,idea_id')).order('created_at', { ascending: false }).limit(5),
+        f((supabase as any).from('votes').select('id,created_at,idea_id,guest_id,user_id')).order('created_at', { ascending: false }).limit(5),
+        f((supabase as any).from('announcements').select('id,title,created_at')).order('created_at', { ascending: false }).limit(3),
+        compId ? (supabase as any).from('form_responses').select('id,created_at,form_id').order('created_at', { ascending: false }).limit(3) : { data: [] },
       ])
       const items: any[] = []
       ;(ideas.data || []).forEach((i: any) => items.push({ type: 'idea', label: i.title || 'New idea', by: i.created_by_name || 'Someone', at: i.created_at, color: '#ff7a6b', typeLabel: 'New idea' }))
       ;(comments.data || []).forEach((c: any) => items.push({ type: 'comment', label: c.content?.slice(0, 60) || 'New comment', by: c.author_name || 'Someone', at: c.created_at, color: '#7c3aed', typeLabel: 'Comment' }))
       ;(votes.data || []).forEach((v: any) => items.push({ type: 'vote', label: 'Upvoted an idea', by: v.guest_id ? 'Guest visitor' : 'Registered user', at: v.created_at, color: '#2563eb', typeLabel: 'Vote' }))
       ;(anns.data || []).forEach((a: any) => items.push({ type: 'announcement', label: a.title || 'New announcement', by: 'Admin', at: a.created_at, color: '#059669', typeLabel: 'Announcement' }))
+      ;(formResponses?.data || []).forEach((r: any) => items.push({ type: 'form_response', label: 'Submitted a form', by: 'Respondent', at: r.created_at, color: '#0891b2', typeLabel: 'Form response' }))
       items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
       setActivity(items.slice(0, 12))
     } catch {}

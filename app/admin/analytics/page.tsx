@@ -17,6 +17,23 @@ function StatCard({ label, value, sub, color }: any) {
 }
 
 export default function AnalyticsPage() {
+  const getMyCompanyId = async () => {
+    if (typeof window !== 'undefined') {
+      const h = window.location.hostname
+      if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+        const slug = h.replace('.colvy.com', '')
+        const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+        if (co?.id) return co.id
+      }
+    }
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.user) {
+      const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
+      return co?.id || null
+    }
+    return null
+  }
+
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -39,17 +56,19 @@ export default function AnalyticsPage() {
 
   const loadAll = async () => {
     try {
+      const cid = await getMyCompanyId()
+      const f = (q: any) => cid ? q.eq('company_id', cid) : q
       // Ideas
-      const { count: ic } = await (supabase as any).from('ideas').select('*', { count: 'exact', head: true })
-      const { count: vc } = await (supabase as any).from('votes').select('*', { count: 'exact', head: true })
-      const { count: cc } = await (supabase as any).from('comments').select('*', { count: 'exact', head: true })
-      const { data: top } = await (supabase as any).from('ideas').select('id,title,votes,status').order('votes', { ascending: false }).limit(5)
-      const { data: recent } = await (supabase as any).from('ideas').select('id,title,created_at,votes').order('created_at', { ascending: false }).limit(5)
+      const { count: ic } = await f((supabase as any).from('ideas').select('*', { count: 'exact', head: true }))
+      const { count: vc } = await f((supabase as any).from('votes').select('*', { count: 'exact', head: true }))
+      const { count: cc } = await f((supabase as any).from('comments').select('*', { count: 'exact', head: true }))
+      const { data: top } = await f((supabase as any).from('ideas').select('id,title,votes,status').order('votes', { ascending: false }).limit(5))
+      const { data: recent } = await f((supabase as any).from('ideas').select('id,title,created_at,votes').order('created_at', { ascending: false }).limit(5))
       setStats({ totalIdeas: ic || 0, totalVotes: vc || 0, totalComments: cc || 0, topIdeas: top || [], recentIdeas: recent || [] })
 
       // Help
-      const { data: articles } = await (supabase as any).from('help_articles').select('*')
-      const { data: tickets } = await (supabase as any).from('support_tickets').select('*')
+      const { data: articles } = await f((supabase as any).from('help_articles').select('*'))
+      const { data: tickets } = await f((supabase as any).from('support_tickets').select('*'))
       const artList = articles || []
       const ticketList = tickets || []
       const byStatus: Record<string, number> = {}

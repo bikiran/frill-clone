@@ -242,6 +242,16 @@ export default function RootLayout({
       checkOwner(u)
     })
     // Subscribe to all auth changes (sign-in, sign-out, token refresh)
+    // Close user dropdown on outside click
+    const closeMenuOnOutsideClick = (e: MouseEvent) => {
+      const menu = document.getElementById('colvy-user-menu')
+      const btn = document.getElementById('colvy-user-btn')
+      if (menu && btn && !menu.contains(e.target as Node) && !btn.contains(e.target as Node)) {
+        setShowUserMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', closeMenuOnOutsideClick)
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const u = session?.user ?? null
       setUser(u)
@@ -326,11 +336,12 @@ export default function RootLayout({
                 })
                 .filter(item => {
                   if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
-                  // Admin pages have their own sidebar nav — top nav here is redundant noise
-                  // On colvy.com (not a company subdomain), board nav has no board to show — hide it
-                  if (!isSubdomain && ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)) return false
-                  // Features/Pricing only on the marketing site
-                  if ((isSubdomain || pathname?.startsWith('/admin')) && (item.label === 'Features' || item.label === 'Pricing')) return false
+                  const isBoardItem = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)
+                  const isMarketingItem = item.label === 'Features' || item.label === 'Pricing'
+                  // On company boards (subdomain OR any logged-in company owner), show board nav
+                  const isOnBoard = isSubdomain || isCompanyOwner
+                  if (!isOnBoard && isBoardItem) return false
+                  if (isOnBoard && isMarketingItem) return false
                   return true
                 }).map(item => (
                 <Link
@@ -357,7 +368,7 @@ export default function RootLayout({
                 <>
                   <div className="relative">
                     <button
-                      onClick={() => setShowUserMenu(!showUserMenu)}
+                      onClick={(e) => { e.stopPropagation(); setShowUserMenu(!showUserMenu) }}
                       className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white transition-smooth hover:shadow-md cursor-pointer"
                       style={{ background: 'var(--coral)' }}>
                       {userInitial}
@@ -459,8 +470,11 @@ export default function RootLayout({
               <div className="p-4 space-y-2">
                 {NAV_ITEMS.filter(item => {
                   if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
-                  if (!isSubdomain && ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)) return false
-                  if ((isSubdomain || pathname?.startsWith('/admin')) && (item.label === 'Features' || item.label === 'Pricing')) return false
+                  const isBoardItem2 = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)
+                  const isMarketingItem2 = item.label === 'Features' || item.label === 'Pricing'
+                  const isOnBoard2 = isSubdomain || isCompanyOwner
+                  if (!isOnBoard2 && isBoardItem2) return false
+                  if (isOnBoard2 && isMarketingItem2) return false
                   return true
                 }).map(item => (
                   <Link

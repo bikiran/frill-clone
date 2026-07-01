@@ -17,6 +17,24 @@ const SURVEY_TYPES = [
 ]
 
 export default function SurveysAdmin() {
+  // Get company_id from hostname slug (most reliable approach)
+  const getMyCompanyId = async () => {
+    if (typeof window !== 'undefined') {
+      const h = window.location.hostname
+      if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+        const slug = h.replace('.colvy.com', '')
+        const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+        if (co?.id) return co.id
+      }
+    }
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.user) {
+      const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
+      return co?.id || null
+    }
+    return null
+  }
+
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [surveys, setSurveys] = useState<any[]>([])
@@ -38,7 +56,10 @@ export default function SurveysAdmin() {
 
   const fetchSurveys = async () => {
     try {
-      const { data, error } = await supabase.from('surveys').select('*').order('created_at', { ascending: false })
+      const companyId = await getMyCompanyId()
+      let q = supabase.from('surveys').select('*').order('created_at', { ascending: false })
+      if (companyId) q = (q as any).eq('company_id', companyId)
+      const { data, error } = await q
       if (!error && data) setSurveys(data)
     } catch {}
     setLoading(false)

@@ -63,8 +63,24 @@ export default function BillingPage() {
       if (!u) { router.push('/signin'); return }
       setUser(u)
 
-      // Load company
-      const { data: co } = await (supabase as any).from('companies').select('*').eq('owner_id', u.id).single()
+      // Load company — slug-first for reliability
+      let co: any = null
+      if (typeof window !== 'undefined') {
+        const h = window.location.hostname
+        if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+          const slug = h.replace('.colvy.com', '')
+          const { data: coBySlug } = await (supabase as any).from('companies').select('*').eq('slug', slug).maybeSingle()
+          co = coBySlug
+          if (co && !co.owner_id) {
+            await (supabase as any).from('companies').update({ owner_id: u.id }).eq('id', co.id)
+            co = { ...co, owner_id: u.id }
+          }
+        }
+      }
+      if (!co) {
+        const { data: coByOwner } = await (supabase as any).from('companies').select('*').eq('owner_id', u.id).maybeSingle()
+        co = coByOwner
+      }
       setCompany(co)
 
       // Load subscription
