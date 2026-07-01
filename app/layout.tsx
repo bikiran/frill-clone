@@ -192,7 +192,24 @@ export default function RootLayout({
 
       try {
         // Use maybeSingle() - won't throw if no company found
-        const { data } = await (supabase as any).from('companies').select('*').eq('owner_id', u.id).maybeSingle()
+        let { data } = await (supabase as any).from('companies').select('*').eq('owner_id', u.id).maybeSingle()
+        
+        // Fallback: look up by hostname slug + auto-repair owner_id
+        if (!data && onSubdomain) {
+          const h = typeof window !== 'undefined' ? window.location.hostname : ''
+          const slug = h.replace('.colvy.com', '')
+          const { data: coBySlug } = await (supabase as any).from('companies').select('*').eq('slug', slug).maybeSingle()
+          if (coBySlug) {
+            // Auto-repair: set owner_id if it's missing
+            if (!coBySlug.owner_id) {
+              await (supabase as any).from('companies').update({ owner_id: u.id }).eq('id', coBySlug.id)
+              data = { ...coBySlug, owner_id: u.id }
+            } else if (coBySlug.owner_id === u.id) {
+              data = coBySlug
+            }
+          }
+        }
+        
         setIsCompanyOwner(!!data || u.email === SUPER_ADMIN || onSubdomain)
         if (data) {
           setCompany(data)
@@ -310,11 +327,10 @@ export default function RootLayout({
                 .filter(item => {
                   if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
                   // Admin pages have their own sidebar nav — top nav here is redundant noise
-                  if (pathname?.startsWith('/admin')) return false
-                  // On colvy.com (not a company subdomain), board nav items have nowhere to go — hide them
+                  // On colvy.com (not a company subdomain), board nav has no board to show — hide it
                   if (!isSubdomain && ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)) return false
-                  // Features/Pricing only make sense on the marketing site (colvy.com) — hide them on company subdomains
-                  if (isSubdomain && (item.label === 'Features' || item.label === 'Pricing')) return false
+                  // Features/Pricing only on the marketing site
+                  if ((isSubdomain || pathname?.startsWith('/admin')) && (item.label === 'Features' || item.label === 'Pricing')) return false
                   return true
                 }).map(item => (
                 <Link
@@ -443,9 +459,8 @@ export default function RootLayout({
               <div className="p-4 space-y-2">
                 {NAV_ITEMS.filter(item => {
                   if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
-                  if (pathname?.startsWith('/admin')) return false
                   if (!isSubdomain && ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)) return false
-                  if (isSubdomain && (item.label === 'Features' || item.label === 'Pricing')) return false
+                  if ((isSubdomain || pathname?.startsWith('/admin')) && (item.label === 'Features' || item.label === 'Pricing')) return false
                   return true
                 }).map(item => (
                   <Link

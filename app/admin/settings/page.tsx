@@ -288,13 +288,22 @@ export default function SettingsPage() {
       // Save to site_settings table scoped to this company
       let companyId: string | null = null
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session?.user) {
-          const { data: co } = await (supabase as any).from('companies').select('id,accent_color').eq('owner_id', session.user.id).maybeSingle()
-          companyId = co?.id || company?.id || null
-          // Also update companies table accent_color directly
-          if (accentColor && accentColor !== co?.accent_color) {
-            await (supabase as any).from('companies').update({ accent_color: accentColor }).eq('id', co.id)
+        // Use company state if loaded, otherwise look up by slug then owner_id
+        if (company?.id) {
+          companyId = company.id
+        } else {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.user) {
+            const h = typeof window !== 'undefined' ? window.location.hostname : ''
+            if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+              const slug = h.replace('.colvy.com', '')
+              const { data: coBySlug } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+              companyId = coBySlug?.id || null
+            }
+            if (!companyId) {
+              const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
+              companyId = co?.id || null
+            }
           }
         }
       } catch {}

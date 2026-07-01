@@ -28,7 +28,25 @@ export default function FormsAdmin() {
 
   const fetchForms = async () => {
     try {
-      const { data } = await (supabase as any).from('forms').select('*').order('created_at', { ascending: false })
+      // Get company_id from current subdomain first
+      const h = typeof window !== 'undefined' ? window.location.hostname : ''
+      let companyId: string | null = null
+      if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+        const slug = h.replace('.colvy.com', '')
+        const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+        companyId = co?.id || null
+      }
+      if (!companyId) {
+        // Fallback: look up by current user's owner_id
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
+          companyId = co?.id || null
+        }
+      }
+      let q = (supabase as any).from('forms').select('*').order('created_at', { ascending: false })
+      if (companyId) q = q.eq('company_id', companyId)
+      const { data } = await q
       const formsWithCounts = await Promise.all((data || []).map(async (f: any) => {
         const { count } = await (supabase as any).from('form_responses').select('*', { count: 'exact', head: true }).eq('form_id', f.id)
         return { ...f, response_count: count || 0 }
