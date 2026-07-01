@@ -4,10 +4,10 @@ import { createClient } from '@supabase/supabase-js'
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const code = searchParams.get('code')
-  const slug = searchParams.get('slug')
-  const name = searchParams.get('name')
-  const industry = searchParams.get('industry')
-  const next = searchParams.get('next') || '/admin'
+  let slug = searchParams.get('slug')
+  let name = searchParams.get('name')
+  let industry = searchParams.get('industry')
+  const next = searchParams.get('next') || '/onboarding'
 
   const origin = req.nextUrl.origin
 
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await (supabase as any).auth.exchangeCodeForSession(code)
     if (error) throw error
 
-    // New signup with pending company
+    // New signup with company info in URL params
     if (slug && name && data.user) {
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
@@ -34,8 +34,8 @@ export async function GET(req: NextRequest) {
       })
       const co = await (adminClient as any).from('companies').insert({
         owner_id: data.user.id,
-        slug: slug.toLowerCase(),
-        name: decodeURIComponent(name),
+        slug: (slug || '').toLowerCase(),
+        name: decodeURIComponent(name || ''),
         industry: decodeURIComponent(industry || ''),
         accent_color: '#ff7a6b',
       }).select().single()
@@ -60,7 +60,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(`${origin}/onboarding`)
     }
 
-    return NextResponse.redirect(`${origin}${next}`)
+    // No company params — user confirmed email but needs to complete signup
+    // Redirect to onboarding to enter company details
+    return NextResponse.redirect(`${origin}/onboarding`)
   } catch (err: any) {
     return NextResponse.redirect(`${origin}/signin?error=${encodeURIComponent(err.message)}`)
   }

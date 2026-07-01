@@ -92,6 +92,15 @@ function SignUpForm() {
       const userId = data.user.id
 
       // 2. Create company now if we have a session (email confirm disabled)
+      // Store company info for post-email-confirm retrieval (in case redirect URL loses params)
+      if (!data.session) {
+        localStorage.setItem('pending_company', JSON.stringify({
+          slug: slug.toLowerCase(),
+          name: companyName.trim(),
+          industry: industry || '',
+        }))
+      }
+
       //    OR save to pending if email confirm is required
       if (data.session) {
         // Email confirm is OFF — user is logged in immediately
