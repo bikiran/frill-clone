@@ -232,13 +232,16 @@ export default function SettingsPage() {
       // Load site_settings scoped to THIS company
       try {
         let settingsData: any = null
+        console.log('[SETTINGS LOAD] Looking for settings with company_id:', co?.id)
         if (co?.id) {
-          const { data: d } = await (supabase as any).from('site_settings').select('*')
+          const { data: d, error: loadErr } = await (supabase as any).from('site_settings').select('*')
             .eq('key', 'general').eq('company_id', co.id).maybeSingle()
+          console.log('[SETTINGS LOAD] Query result:', { found: !!d, error: loadErr?.message })
           settingsData = d
         }
         // Fallback: unscoped (legacy)
         if (!settingsData) {
+          console.log('[SETTINGS LOAD] No company-scoped settings, trying fallback...')
           const { data: d } = await (supabase as any).from('site_settings').select('*')
             .eq('key', 'general').is('company_id', null).maybeSingle()
           settingsData = d
@@ -246,11 +249,11 @@ export default function SettingsPage() {
         const data = settingsData
         if (data?.value) {
           const s = data.value
-          console.log('[SETTINGS LOAD] Loaded from DB:', {
+          console.log('[SETTINGS LOAD] ✅ Loaded settings:', {
             faviconUrl: s.faviconUrl || '(empty)',
             ogImageUrl: s.ogImageUrl || '(empty)',
             defaultHomepage: s.defaultHomepage || '(empty)',
-            navOrder: s.navOrder || '(empty)',
+            privacyMode: s.privacyMode || '(empty)',
           })
           // Only set favicon if it belongs to THIS company's settings
           if (s.faviconUrl) setFaviconUrl(s.faviconUrl)
@@ -366,6 +369,14 @@ export default function SettingsPage() {
     
     const companyId = company.id
     console.log('[SETTINGS SAVE] Saving with companyId:', companyId)
+    console.log('[SETTINGS SAVE] Settings to save:', {
+      faviconUrl,
+      ogImageUrl,
+      defaultHomepage,
+      privacyMode,
+      logoUrl,
+      companyName,
+    })
     
     const siteSettingsValue = { 
       ...settingsData,
@@ -376,6 +387,8 @@ export default function SettingsPage() {
       companyId,
       savedAt: new Date().toISOString(),
     }
+    
+    console.log('[SETTINGS SAVE] Full value object:', siteSettingsValue)
     
     try {
       const { data: updateData, error: updateErr } = await (supabase as any)
@@ -435,6 +448,18 @@ export default function SettingsPage() {
       if (isManualSave) showToast('Save failed: ' + e.message, 'error', 4000)
     } finally {
       setSaving(false)
+    }
+
+    // BACKUP: Also save favicon/og/privacy directly to companies table
+    try {
+      if (company?.id) {
+        console.log('[SETTINGS SAVE] Saving to companies table as backup...')
+        await (supabase as any).from('companies').update({
+          logo_url: logoUrl || null,
+        }).eq('id', company.id)
+      }
+    } catch (e) {
+      console.error('Backup save to companies failed:', e)
     }
 
     // Save to companies table using company.id (most reliable, works even if owner_id was patched)
