@@ -221,10 +221,55 @@ function WidgetContent() {
               <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>{item.title}</h2>
               {selectedItem.type === 'idea' && (
                 <>
-                  <p style={{ color: 'var(--slate)', lineHeight: 1.6, marginBottom: 16, fontSize: 13 }}>{item.description}</p>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ padding: '4px 10px', background: accentColor, color: 'white', borderRadius: 16, fontSize: 11, fontWeight: 600 }}>👍 {item.votes || 0}</span>
-                    <span style={{ padding: '4px 10px', background: 'var(--canvas)', color: 'var(--slate)', borderRadius: 16, fontSize: 11, fontWeight: 600 }}>{item.status || 'Submitted'}</span>
+                  {/* Meta info */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, color: 'var(--slate)' }}>
+                    <span>User</span>
+                    <span>•</span>
+                    <span>{new Date(item.created_at).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}</span>
+                    {item.is_private && (
+                      <>
+                        <span>•</span>
+                        <span>🔒 Private</span>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Full description */}
+                  <p style={{ color: 'var(--ink)', lineHeight: 1.6, marginBottom: 16, fontSize: 13, whiteSpace: 'pre-wrap' }}>{item.description}</p>
+
+                  {/* Actions and stats */}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
+                    <button
+                      onClick={() => {
+                        // Toggle upvote
+                        console.log('[WIDGET] Upvote:', item.id)
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        background: accentColor,
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}>
+                      ▲ {item.votes || 0} Upvote
+                    </button>
+                    <span style={{ padding: '6px 12px', background: 'var(--canvas)', color: 'var(--slate)', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>
+                      {item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1) : 'Submitted'}
+                    </span>
+                  </div>
+
+                  {/* Comments section */}
+                  <div style={{ marginTop: 16 }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>💬 Comments</p>
+                    <div style={{ padding: 12, background: 'var(--canvas)', borderRadius: 8, textAlign: 'center', color: 'var(--slate)', fontSize: 12 }}>
+                      Be the first to comment on this Idea
+                    </div>
                   </div>
                 </>
               )}

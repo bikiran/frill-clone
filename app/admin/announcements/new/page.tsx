@@ -148,8 +148,7 @@ export default function NewAnnouncementPage() {
         boost_title: boostTitle, 
         boost_blurb: boostBlurb,
         boost_image: boostImage, 
-        segmentation, 
-        notify_subscribers: notifySubscribers,
+        segmentation,
       }
       
       console.log('[ANN PUBLISH] Payload to save:', payload)
