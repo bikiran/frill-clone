@@ -389,11 +389,34 @@ export default function SettingsPage() {
         company_id: companyId,
         value: siteSettingsValue,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'key,company_id' })
+      })
       
       if (upsertErr) {
-        console.error('Settings upsert error:', upsertErr.message)
-        alert('❌ Failed to save settings: ' + upsertErr.message)
+        // Fallback: try delete and re-insert
+        console.warn('Upsert failed, trying delete+insert:', upsertErr.message)
+        
+        // Delete existing
+        await (supabase as any)
+          .from('site_settings')
+          .delete()
+          .eq('key', 'general')
+          .eq('company_id', companyId)
+        
+        // Insert new
+        const { error: insertErr } = await (supabase as any).from('site_settings').insert({
+          key: 'general',
+          company_id: companyId,
+          value: siteSettingsValue,
+          updated_at: new Date().toISOString(),
+        })
+        
+        if (insertErr) {
+          console.error('Settings insert error:', insertErr.message)
+          alert('❌ Failed to save settings: ' + insertErr.message)
+        } else {
+          console.log('[SETTINGS SAVE] ✅ Successfully saved (via insert)')
+          alert('✅ Settings saved successfully!')
+        }
       } else {
         console.log('[SETTINGS SAVE] ✅ Successfully saved')
         alert('✅ Settings saved successfully!')
