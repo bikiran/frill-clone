@@ -16,14 +16,21 @@ export async function GET(req: NextRequest) {
 
   try {
     const supabase = getDb()
-    const { data: company } = await (supabase as any)
+    console.log('[WIDGET API] Fetching data for slug:', slug)
+    
+    const { data: company, error: companyError } = await (supabase as any)
       .from('companies').select('id,name,slug,logo_url,accent_color,is_private')
       .eq('slug', slug).single()
 
-    if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
+    if (companyError || !company) {
+      console.log('[WIDGET API] Company not found:', { slug, error: companyError?.message })
+      return NextResponse.json({ error: 'Company not found' }, { status: 404 })
+    }
+
+    console.log('[WIDGET API] Found company:', { id: company.id, slug: company.slug })
 
     const [ideasRes, annRes, formsRes, pollsRes, surveysRes, helpRes] = await Promise.all([
-      (supabase as any).from('ideas').select('id,title,votes,status').eq('company_id', company.id)
+      (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private').eq('company_id', company.id)
         .neq('is_private', true).order('votes', { ascending: false }).limit(20),
       (supabase as any).from('announcements').select('id,title,content,description,tag,created_at')
         .eq('company_id', company.id).order('created_at', { ascending: false }).limit(8),
@@ -33,22 +40,21 @@ export async function GET(req: NextRequest) {
         .order('created_at', { ascending: false }).limit(5),
       (supabase as any).from('surveys').select('id,title,questions').eq('company_id', company.id)
         .order('created_at', { ascending: false }).limit(5),
-      (supabase as any).from('help_articles').select('id,title,content,slug').eq('company_id', company.id)
+      (supabase as any).from('help_articles').select('id,title,content,slug,created_at').eq('company_id', company.id)
         .order('created_at', { ascending: false }).limit(10),
     ])
     
-    console.log('[WIDGET API] Fetched data:', {
-      ideas: ideasRes.data?.length || 0,
-      announcements: annRes.data?.length || 0,
-      forms: formsRes.data?.length || 0,
-      polls: pollsRes.data?.length || 0,
-      surveys: surveysRes.data?.length || 0,
-      helpArticles: helpRes.data?.length || 0,
-      annError: annRes.error?.message,
-      helpError: helpRes.error?.message,
+    console.log('[WIDGET API] Query results:', {
+      company_id: company.id,
+      ideas: { count: ideasRes.data?.length || 0, error: ideasRes.error?.message },
+      announcements: { count: annRes.data?.length || 0, error: annRes.error?.message, data: annRes.data },
+      forms: { count: formsRes.data?.length || 0, error: formsRes.error?.message },
+      polls: { count: pollsRes.data?.length || 0, error: pollsRes.error?.message },
+      surveys: { count: surveysRes.data?.length || 0, error: surveysRes.error?.message },
+      helpArticles: { count: helpRes.data?.length || 0, error: helpRes.error?.message, data: helpRes.data },
     })
 
-    return NextResponse.json({
+    const responseData = {
       company,
       ideas: ideasRes.data || [],
       announcements: annRes.data || [],
@@ -56,7 +62,14 @@ export async function GET(req: NextRequest) {
       polls: pollsRes.data || [],
       surveys: surveysRes.data || [],
       helpArticles: helpRes.data || [],
-    }, {
+    }
+
+    console.log('[WIDGET API] Returning response:', {
+      announcements_count: responseData.announcements.length,
+      help_articles_count: responseData.helpArticles.length,
+    })
+
+    return NextResponse.json(responseData, {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -64,6 +77,7 @@ export async function GET(req: NextRequest) {
       }
     })
   } catch (e: any) {
+    console.error('[WIDGET API] Error:', e.message)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

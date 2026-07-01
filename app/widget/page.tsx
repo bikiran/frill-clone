@@ -39,9 +39,20 @@ function WidgetContent() {
   useEffect(() => {
     if (!slug) { setLoading(false); return }
     ;(async () => {
+      console.log('[WIDGET FETCH] Fetching data for slug:', slug)
       const res = await fetch(`/api/widget-data?slug=${slug}`)
       if (res.ok) {
         const data = await res.json()
+        console.log('[WIDGET FETCH] Received data:', {
+          company: data.company?.id,
+          ideas: data.ideas?.length || 0,
+          announcements: data.announcements?.length || 0,
+          forms: data.forms?.length || 0,
+          helpArticles: data.helpArticles?.length || 0,
+        })
+        console.log('[WIDGET FETCH] Full announcements data:', data.announcements)
+        console.log('[WIDGET FETCH] Full help articles data:', data.helpArticles)
+        
         setCompany(data.company)
         setIdeas(data.ideas || [])
         setAnnouncements(data.announcements || [])
@@ -49,6 +60,8 @@ function WidgetContent() {
         setPolls(data.polls || [])
         setSurveys(data.surveys || [])
         setHelpArticles(data.helpArticles || [])
+      } else {
+        console.error('[WIDGET FETCH] API error:', res.status)
       }
       setLoading(false)
       // Track analytics
@@ -225,7 +238,7 @@ function WidgetContent() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, color: 'var(--slate)' }}>
                     <span>User</span>
                     <span>•</span>
-                    <span>{new Date(item.created_at).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}</span>
+                    <span>{item.created_at ? new Date(item.created_at).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'Today'}</span>
                     {item.is_private && (
                       <>
                         <span>•</span>
@@ -237,28 +250,57 @@ function WidgetContent() {
                   {/* Full description */}
                   <p style={{ color: 'var(--ink)', lineHeight: 1.6, marginBottom: 16, fontSize: 13, whiteSpace: 'pre-wrap' }}>{item.description}</p>
 
-                  {/* Actions and stats */}
+                  {/* Voting and status */}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
-                    <button
-                      onClick={() => {
-                        // Toggle upvote
-                        console.log('[WIDGET] Upvote:', item.id)
-                      }}
-                      style={{
-                        padding: '6px 12px',
-                        background: accentColor,
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: 6,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}>
-                      ▲ {item.votes || 0} Upvote
-                    </button>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      <button
+                        onClick={() => {
+                          console.log('[WIDGET] Upvote clicked:', item.id)
+                          // Update local votes
+                          setIdeas(prev => prev.map(i => 
+                            i.id === item.id ? { ...i, votes: (i.votes || 0) + 1 } : i
+                          ))
+                        }}
+                        style={{
+                          padding: '6px 10px',
+                          background: 'var(--canvas)',
+                          color: 'var(--slate)',
+                          border: `1px solid var(--border)`,
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}>
+                        ▲
+                      </button>
+                      <span style={{ fontSize: 12, fontWeight: 600, minWidth: 20, textAlign: 'center' }}>{item.votes || 0}</span>
+                      <button
+                        onClick={() => {
+                          console.log('[WIDGET] Downvote clicked:', item.id)
+                          // Update local votes
+                          setIdeas(prev => prev.map(i => 
+                            i.id === item.id ? { ...i, votes: Math.max((i.votes || 0) - 1, 0) } : i
+                          ))
+                        }}
+                        style={{
+                          padding: '6px 10px',
+                          background: 'var(--canvas)',
+                          color: 'var(--slate)',
+                          border: `1px solid var(--border)`,
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}>
+                        ▼
+                      </button>
+                    </div>
                     <span style={{ padding: '6px 12px', background: 'var(--canvas)', color: 'var(--slate)', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>
                       {item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1) : 'Submitted'}
                     </span>

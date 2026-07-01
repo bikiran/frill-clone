@@ -147,8 +147,7 @@ export default function NewAnnouncementPage() {
         boost_button_label: boostButtonLabel, 
         boost_title: boostTitle, 
         boost_blurb: boostBlurb,
-        boost_image: boostImage, 
-        segmentation,
+        boost_image: boostImage,
       }
       
       console.log('[ANN PUBLISH] Payload to save:', payload)
