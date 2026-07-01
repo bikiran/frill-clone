@@ -546,6 +546,32 @@ export default function FormBuilder() {
                   </select>
                 </div>
               )}
+
+              {/* Conditional Logic */}
+              <div style={{ marginBottom: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Conditional Logic</label>
+                <p style={{ fontSize: 11, color: 'var(--slate)', marginBottom: 10 }}>Show or hide this question based on previous answers</p>
+                {selected.conditional_logic ? (
+                  <div style={{ padding: 10, background: 'var(--canvas)', borderRadius: 8, marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, marginBottom: 6 }}>
+                      <select value={selected.conditional_logic.condition} onChange={e => updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic, condition: e.target.value as 'show' | 'hide' } })}
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12, marginBottom: 8, cursor: 'pointer' }}>
+                        <option value="show">Show this question if</option>
+                        <option value="hide">Hide this question if</option>
+                      </select>
+                    </div>
+                    <button onClick={() => updateQuestion(selected.id, { conditional_logic: undefined })}
+                      style={{ width: '100%', padding: '6px 12px', borderRadius: 6, background: 'white', border: '1px solid var(--border)', fontSize: 11, color: 'var(--slate)', cursor: 'pointer', fontWeight: 500 }}>
+                      Remove condition
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => updateQuestion(selected.id, { conditional_logic: { condition: 'show', rules: [], logic: 'all' } })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'var(--canvas)', border: '1px dashed var(--border)', fontSize: 12, color: 'var(--ink)', cursor: 'pointer', fontWeight: 500 }}>
+                    + Add condition
+                  </button>
+                )}
+              </div>
             </>
           ) : previewStep === questions.length ? (
             <>

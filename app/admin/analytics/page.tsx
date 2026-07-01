@@ -327,19 +327,41 @@ export default function AnalyticsPage() {
             {formStats.topForms.length === 0 ? (
               <p className="text-sm" style={{ color: 'var(--slate)' }}>No forms yet. <Link href="/admin/forms/new" style={{ color: 'var(--coral)' }}>Create one →</Link></p>
             ) : (
-              <div className="space-y-4">
-                {formStats.topForms.map((f: any, i: number) => (
-                  <div key={f.id} className="p-4 rounded-lg border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: 'var(--coral)' }}>{i + 1}</span>
-                        <p className="font-medium" style={{ color: 'var(--ink)' }}>{f.title}</p>
+              <>
+                <div className="mb-6 overflow-x-auto">
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+                    {formStats.topForms.map((f: any, i: number) => (
+                      <div key={f.id} className="p-4 rounded-lg border text-center" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+                        <p className="text-2xl font-black" style={{ color: 'var(--coral)' }}>{f.responseCount}</p>
+                        <p className="text-xs font-semibold mt-1 truncate" style={{ color: 'var(--ink)' }} title={f.title}>{f.title}</p>
                       </div>
-                      <span className="font-bold" style={{ color: 'var(--coral)' }}>{f.responseCount} {f.responseCount === 1 ? 'response' : 'responses'}</span>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+                <div className="space-y-4">
+                  {formStats.topForms.map((f: any, i: number) => (
+                    <div key={f.id} className="p-4 rounded-lg border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: 'var(--coral)' }}>{i + 1}</span>
+                          <p className="font-medium" style={{ color: 'var(--ink)' }}>{f.title}</p>
+                        </div>
+                        <span className="font-bold" style={{ color: 'var(--coral)' }}>{f.responseCount}</span>
+                      </div>
+                      <div style={{ width: '100%', height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            height: '100%',
+                            background: 'var(--coral)',
+                            width: `${Math.max((f.responseCount / (formStats.topForms[0].responseCount || 1)) * 100, 10)}%`,
+                            transition: 'width 0.3s ease',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </>

@@ -9,6 +9,7 @@ function WidgetContent() {
   const slug = params.get('slug') || ''
 
   const [tab, setTab] = useState<'feedback' | 'roadmap' | 'updates' | 'forms' | 'polls' | 'surveys' | 'help'>('feedback')
+  const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement'; id: string } | null>(null)
   const [company, setCompany] = useState<any>(null)
   const [ideas, setIdeas] = useState<any[]>([])
   const [announcements, setAnnouncements] = useState<any[]>([])

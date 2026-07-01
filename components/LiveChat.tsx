@@ -244,6 +244,18 @@ export default function LiveChat() {
                 </div>
               </div>
             </div>
+          ) : activeTab === 'widget' ? (
+            <div className="flex-1 overflow-hidden rounded-b-2xl">
+              <iframe
+                src={`${typeof window !== 'undefined' ? window.location.origin : ''}/widget?embedded=chat&inline=true`}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                }}
+                title="Colvy Widget"
+              />
+            </div>
           ) : (
             <>
               <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ background: 'var(--canvas)' }}>

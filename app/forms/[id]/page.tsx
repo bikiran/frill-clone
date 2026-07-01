@@ -46,6 +46,7 @@ export default function PublicForm() {
   const [answers, setAnswers] = useState<Record<string, any>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [formStatus, setFormStatus] = useState<'active' | 'coming-soon' | 'closed'>('active')
   const [showConfetti, setShowConfetti] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -54,6 +55,29 @@ export default function PublicForm() {
     ;(async () => {
       const { data, error } = await (supabase as any).from('forms').select('*').eq('id', formId).single()
       if (error || !data || !data.is_published) { setNotFound(true); setLoading(false); return }
+      
+      // Check if form is scheduled
+      const now = new Date()
+      if (data.scheduled_start) {
+        const startDate = new Date(data.scheduled_start)
+        if (now < startDate) {
+          setFormStatus('coming-soon')
+          setForm(data)
+          setLoading(false)
+          return
+        }
+      }
+      if (data.scheduled_end) {
+        const endDate = new Date(data.scheduled_end)
+        if (now > endDate) {
+          setFormStatus('closed')
+          setForm(data)
+          setLoading(false)
+          return
+        }
+      }
+      
+      setFormStatus('active')
       setForm(data)
       setLoading(false)
     })()
@@ -158,6 +182,32 @@ export default function PublicForm() {
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8 }}>
       <p style={{ fontSize: 18, fontWeight: 700, color: '#0d0d0d' }}>Form not found</p>
       <p style={{ fontSize: 14, color: '#6b6b70' }}>This form may have been unpublished or deleted.</p>
+    </div>
+  )
+
+  if (formStatus === 'coming-soon' && form?.scheduled_start) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', padding: 24 }}>
+      <div style={{ textAlign: 'center', maxWidth: 500 }}>
+        <div style={{ fontSize: 64, marginBottom: 16 }}>🚀</div>
+        <h1 style={{ fontSize: 28, fontWeight: 700, color: '#0d0d0d', marginBottom: 8 }}>{form.title}</h1>
+        <p style={{ fontSize: 16, color: '#6b6b70', marginBottom: 24 }}>
+          This form will be available on {new Date(form.scheduled_start).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+        </p>
+        <p style={{ fontSize: 14, color: '#9ca3af' }}>Check back soon!</p>
+      </div>
+    </div>
+  )
+
+  if (formStatus === 'closed' && form?.scheduled_end) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', padding: 24 }}>
+      <div style={{ textAlign: 'center', maxWidth: 500 }}>
+        <div style={{ fontSize: 64, marginBottom: 16 }}>🚫</div>
+        <h1 style={{ fontSize: 28, fontWeight: 700, color: '#0d0d0d', marginBottom: 8 }}>{form.title}</h1>
+        <p style={{ fontSize: 16, color: '#6b6b70', marginBottom: 24 }}>
+          This form closed on {new Date(form.scheduled_end).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+        </p>
+        <p style={{ fontSize: 14, color: '#9ca3af' }}>Thank you for your interest!</p>
+      </div>
     </div>
   )
 

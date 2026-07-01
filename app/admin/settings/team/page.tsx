@@ -59,6 +59,27 @@ export default function TeamPage() {
         })
 
       if (error) throw error
+      
+      // Send invitation email via Resend
+      try {
+        const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'}/team/join?company=${company.slug}&email=${encodeURIComponent(inviteEmail)}`
+        
+        await fetch('/api/send-team-invite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: inviteEmail,
+            companyName: company.name,
+            role: inviteRole,
+            inviteLink,
+            inviterName: 'Team Admin',
+          }),
+        })
+      } catch (emailError) {
+        console.warn('Team invite email failed:', emailError)
+        // Don't fail the whole operation if email fails
+      }
+      
       setMembers([...members, data[0]])
       setInviteEmail('')
       setInviteRole('editor')
