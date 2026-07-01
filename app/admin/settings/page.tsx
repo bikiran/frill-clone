@@ -164,6 +164,13 @@ export default function SettingsPage() {
   const faviconFileRef = useRef<HTMLInputElement>(null)
   const ogFileRef = useRef<HTMLInputElement>(null)
 
+  // Auto-save widget configuration when any setting changes
+  useEffect(() => {
+    if (!company?.id) return
+    const autoSaveTimer = setTimeout(handleSave, 800)
+    return () => clearTimeout(autoSaveTimer)
+  }, [widgetFeedback, widgetRoadmap, widgetUpdates, widgetForms, widgetPolls, widgetSurveys, widgetKnowledgeBase, widgetOrder])
+
   useEffect(() => {
     const init = async () => {
       const { data: authData } = await supabase.auth.getSession()

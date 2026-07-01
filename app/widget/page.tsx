@@ -9,7 +9,7 @@ function WidgetContent() {
   const slug = params.get('slug') || ''
 
   const [tab, setTab] = useState<'feedback' | 'roadmap' | 'updates' | 'help' | 'chat'>('feedback')
-  const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement'; id: string } | null>(null)
+  const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement' | 'help'; id: string } | null>(null)
   const [company, setCompany] = useState<any>(null)
   const [ideas, setIdeas] = useState<any[]>([])
   const [announcements, setAnnouncements] = useState<any[]>([])
@@ -140,7 +140,9 @@ function WidgetContent() {
   if (selectedItem) {
     const item = selectedItem.type === 'idea' 
       ? ideas.find(i => i.id === selectedItem.id)
-      : announcements.find(a => a.id === selectedItem.id)
+      : selectedItem.type === 'announcement'
+      ? announcements.find(a => a.id === selectedItem.id)
+      : helpArticles.find(h => h.id === selectedItem.id)
 
     return (
       <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', height: '100vh', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
@@ -165,6 +167,11 @@ function WidgetContent() {
                 <>
                   <p style={{ fontSize: 11, color: 'var(--slate)', marginBottom: 12 }}>{new Date(item.created_at).toLocaleDateString()}</p>
                   <div style={{ color: 'var(--ink)', lineHeight: 1.6, fontSize: 13 }}>{item.description}</div>
+                </>
+              )}
+              {selectedItem.type === 'help' && (
+                <>
+                  <div style={{ color: 'var(--ink)', lineHeight: 1.6, fontSize: 13, whiteSpace: 'pre-wrap' }}>{item.content}</div>
                 </>
               )}
             </>
@@ -367,60 +374,25 @@ function WidgetContent() {
             {announcements.length === 0 ? (
               <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingTop: 24 }}>No updates yet.</p>
             ) : announcements.map(ann => (
-              <a key={ann.id} href={`${boardUrl}/announcements`} target="_blank" rel="noopener" style={{ textDecoration: 'none', display: 'block' }}>
-                <div className="item-row" style={{ display: 'block', marginBottom: 4 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                    {ann.tag && (
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: accentColor + '18', color: accentColor }}>
-                        {ann.tag}
-                      </span>
-                    )}
-                    <span style={{ fontSize: 11, color: '#9ca3af' }}>{ann.date ? new Date(ann.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</span>
-                  </div>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d', marginBottom: 2, lineHeight: 1.3 }}>{ann.title}</p>
-                  {ann.content && <p style={{ fontSize: 12, color: '#6b7280', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>{ann.content}</p>}
+              <div key={ann.id} onClick={() => setSelectedItem({ type: 'announcement', id: ann.id })} className="item-row" style={{ display: 'block', marginBottom: 4, cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  {ann.tag && (
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: accentColor + '18', color: accentColor }}>
+                      {ann.tag}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 11, color: '#9ca3af' }}>{new Date(ann.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                 </div>
-              </a>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d', marginBottom: 2, lineHeight: 1.3 }}>{ann.title}</p>
+                {ann.description && <p style={{ fontSize: 12, color: '#6b7280', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>{ann.description}</p>}
+              </div>
             ))}
           </div>
         )}
 
-        {tab === 'forms' && (
-          <div style={{ animation: 'fadeIn 0.2s ease both' }}>
-            {forms.length === 0 ? (
-              <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingTop: 24 }}>No forms available yet.</p>
-            ) : forms.map(form => (
-              <a key={form.id} href={`${boardUrl}/forms/${form.id}`} target="_blank" rel="noopener" style={{ textDecoration: 'none', display: 'block', padding: '12px', borderRadius: 12, border: '1px solid #f0f0f0', marginBottom: 10, transition: 'all 0.2s', cursor: 'pointer' }} onMouseEnter={e => (e.currentTarget.style.borderColor = accentColor, e.currentTarget.style.boxShadow = `0 0 0 2px ${accentColor}20`)} onMouseLeave={e => (e.currentTarget.style.borderColor = '#f0f0f0', e.currentTarget.style.boxShadow = 'none')}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d', margin: 0, marginBottom: 4 }}>{form.title}</p>
-                <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>{form.description || 'Take the survey'}</p>
-              </a>
-            ))}
-          </div>
-        )}
-
-        {tab === 'polls' && (
-          <div style={{ animation: 'fadeIn 0.2s ease both' }}>
-            {polls.length === 0 ? (
-              <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingTop: 24 }}>No polls available yet.</p>
-            ) : polls.map(poll => (
-              <a key={poll.id} href={`${boardUrl}/polls/${poll.id}`} target="_blank" rel="noopener" style={{ textDecoration: 'none', display: 'block', padding: '12px', borderRadius: 12, border: '1px solid #f0f0f0', marginBottom: 10, transition: 'all 0.2s', cursor: 'pointer' }} onMouseEnter={e => (e.currentTarget.style.borderColor = accentColor, e.currentTarget.style.boxShadow = `0 0 0 2px ${accentColor}20`)} onMouseLeave={e => (e.currentTarget.style.borderColor = '#f0f0f0', e.currentTarget.style.boxShadow = 'none')}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d', margin: 0, marginBottom: 4 }}>{poll.title}</p>
-                <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>{poll.options?.length || 0} options · Vote now</p>
-              </a>
-            ))}
-          </div>
-        )}
-
-        {tab === 'surveys' && (
-          <div style={{ animation: 'fadeIn 0.2s ease both' }}>
-            {surveys.length === 0 ? (
-              <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingTop: 24 }}>No surveys available yet.</p>
-            ) : surveys.map(survey => (
-              <a key={survey.id} href={`${boardUrl}/surveys/${survey.id}`} target="_blank" rel="noopener" style={{ textDecoration: 'none', display: 'block', padding: '12px', borderRadius: 12, border: '1px solid #f0f0f0', marginBottom: 10, transition: 'all 0.2s', cursor: 'pointer' }} onMouseEnter={e => (e.currentTarget.style.borderColor = accentColor, e.currentTarget.style.boxShadow = `0 0 0 2px ${accentColor}20`)} onMouseLeave={e => (e.currentTarget.style.borderColor = '#f0f0f0', e.currentTarget.style.boxShadow = 'none')}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d', margin: 0, marginBottom: 4 }}>{survey.title}</p>
-                <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>{survey.questions?.length || 0} questions · {survey.responses || 0} responses</p>
-              </a>
-            ))}
+        {tab === 'chat' && (
+          <div style={{ animation: 'fadeIn 0.2s ease both', padding: '16px', textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+            💬 Chat support coming soon. Use feedback tab to reach out!
           </div>
         )}
 
@@ -429,10 +401,10 @@ function WidgetContent() {
             {helpArticles.length === 0 ? (
               <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingTop: 24 }}>No help articles available yet.</p>
             ) : helpArticles.map(article => (
-              <a key={article.id} href={`${boardUrl}/help/${article.slug}`} target="_blank" rel="noopener" style={{ textDecoration: 'none', display: 'block', padding: '12px', borderRadius: 12, border: '1px solid #f0f0f0', marginBottom: 10, transition: 'all 0.2s', cursor: 'pointer' }} onMouseEnter={e => (e.currentTarget.style.borderColor = accentColor, e.currentTarget.style.boxShadow = `0 0 0 2px ${accentColor}20`)} onMouseLeave={e => (e.currentTarget.style.borderColor = '#f0f0f0', e.currentTarget.style.boxShadow = 'none')}>
+              <div key={article.id} onClick={() => setSelectedItem({ type: 'help', id: article.id })} style={{ textDecoration: 'none', display: 'block', padding: '12px', borderRadius: 12, border: '1px solid #f0f0f0', marginBottom: 10, transition: 'all 0.2s', cursor: 'pointer' }} onMouseEnter={e => (e.currentTarget.style.borderColor = accentColor, e.currentTarget.style.boxShadow = `0 0 0 2px ${accentColor}20`)} onMouseLeave={e => (e.currentTarget.style.borderColor = '#f0f0f0', e.currentTarget.style.boxShadow = 'none')}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d', margin: 0, marginBottom: 4 }}>{article.title}</p>
                 {article.content && <p style={{ fontSize: 12, color: '#6b7280', margin: 0, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>{article.content}</p>}
-              </a>
+              </div>
             ))}
           </div>
         )}
@@ -440,15 +412,13 @@ function WidgetContent() {
 
       {/* Footer nav */}
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#fff', borderTop: '1px solid #f0f0f0', display: 'flex', padding: '10px 16px' }}>
-        {(['feedback', 'roadmap', 'updates', 'forms', 'polls', 'surveys', 'help'] as const).map(t => {
+        {(['feedback', 'roadmap', 'updates', 'help', 'chat'] as const).map(t => {
           const icons: Record<string, string> = {
             feedback: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
             roadmap: 'M22 12H18L15 21 9 3 6 12 2 12',
             updates: 'M22 2L11 13 M22 2L15 22 11 13 2 9l20-7z',
-            forms: 'M4 4h16v16H4z',
-            polls: 'M18 20V10M12 20V6M6 20V14',
-            surveys: 'M9 11l3 3L22 4',
             help: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z',
+            chat: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
           }
           return (
             <button key={t} onClick={() => { setTab(t); trackWidgetEvent(`view_${t}`) }}
@@ -457,10 +427,8 @@ function WidgetContent() {
                 {t === 'feedback' && <path d={icons.feedback}/>}
                 {t === 'roadmap' && <polyline points={icons.roadmap.split(' ').map(p => p.replace('L','')).join(' ')}/>}
                 {t === 'updates' && <><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></>}
-                {t === 'forms' && <rect x="3" y="3" width="18" height="18" rx="2"/>}
-                {t === 'polls' && <><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="6"/><line x1="6" y1="20" x2="6" y2="14"/></>}
-                {t === 'surveys' && <><path d="M9 11l3 3L22 4"/></>}
                 {t === 'help' && <circle cx="12" cy="12" r="10"/>}
+                {t === 'chat' && <path d={icons.chat}/>}
               </svg>
               <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'capitalize' }}>
                 {t === 'updates' ? 'Updates' : t === 'help' ? 'Help' : t.charAt(0).toUpperCase() + t.slice(1)}
