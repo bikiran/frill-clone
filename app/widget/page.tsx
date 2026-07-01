@@ -268,8 +268,51 @@ function WidgetContent() {
                     )}
                   </div>
 
-                  {/* Full description */}
-                  <p style={{ color: 'var(--ink)', lineHeight: 1.6, marginBottom: 16, fontSize: 13, whiteSpace: 'pre-wrap' }}>{item.description}</p>
+
+                  {/* Full description with images */}
+                  <div style={{ marginBottom: 16 }}>
+                    <p style={{ color: 'var(--ink)', lineHeight: 1.6, marginBottom: 12, fontSize: 13, whiteSpace: 'pre-wrap' }}>{item.description}</p>
+                    
+                    {/* Parse and display images */}
+                    {item.description && item.description.includes('http') && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                        {item.description.split(/\s/).map((part, i) => {
+                          if (part.startsWith('http') && /\.(jpg|jpeg|png|gif|webp)$/i.test(part)) {
+                            return (
+                              <div key={i} style={{ position: 'relative' }}>
+                                <img
+                                  src={part}
+                                  alt="Screenshot"
+                                  onClick={() => {
+                                    setViewerImage(part)
+                                    setShowImageViewer(true)
+                                  }}
+                                  style={{
+                                    maxWidth: '100%',
+                                    maxHeight: 200,
+                                    borderRadius: 8,
+                                    cursor: 'pointer',
+                                    border: '1px solid var(--border)',
+                                    transition: 'all 0.2s',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'
+                                    e.currentTarget.style.transform = 'scale(1.02)'
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.boxShadow = 'none'
+                                    e.currentTarget.style.transform = 'scale(1)'
+                                  }}
+                                />
+                                <span style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '4px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>Click to expand</span>
+                              </div>
+                            )
+                          }
+                          return null
+                        })}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Voting and status */}
                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
@@ -333,6 +376,79 @@ function WidgetContent() {
                     <span style={{ padding: '12px 16px', background: 'var(--canvas)', color: 'var(--slate)', borderRadius: 12, fontSize: 12, fontWeight: 600, border: '1px solid var(--border)' }}>
                       {item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1) : 'Submitted'}
                     </span>
+                  </div>
+
+                  {/* Reactions, Copy Link, Subscribe */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
+                    {/* Reactions */}
+                    <button
+                      onClick={() => alert('Reactions coming soon!')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        background: 'var(--canvas)',
+                        color: 'var(--slate)',
+                        border: '1px solid var(--border)',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        fontWeight: 500,
+                        transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f0f0f0')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--canvas)')}>
+                      😊 React
+                    </button>
+
+                    {/* Copy Link */}
+                    <button
+                      onClick={() => {
+                        const url = `${boardUrl}?idea=${item.id}`
+                        navigator.clipboard.writeText(url)
+                        alert('Link copied to clipboard!')
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        background: 'var(--canvas)',
+                        color: 'var(--slate)',
+                        border: '1px solid var(--border)',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        fontWeight: 500,
+                        transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f0f0f0')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--canvas)')}>
+                      🔗 Copy Link
+                    </button>
+
+                    {/* Subscribe */}
+                    <button
+                      onClick={() => alert('Subscribe to get notifications!')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        background: 'var(--canvas)',
+                        color: 'var(--slate)',
+                        border: '1px solid var(--border)',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        fontWeight: 500,
+                        transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f0f0f0')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--canvas)')}>
+                      🔔 Subscribe
+                    </button>
                   </div>
 
                   {/* Comments section */}
