@@ -31,6 +31,7 @@ export default function NewAnnouncementPage() {
   const editId = searchParams?.get('edit')
 
   const [user, setUser] = useState<any>(null)
+  const [company, setCompany] = useState<any>(null)
   const [saving, setSaving] = useState(false)
 
   const [title, setTitle] = useState('')
@@ -51,12 +52,38 @@ export default function NewAnnouncementPage() {
   const [images, setImages] = useState<string[]>([])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }: any) => {
-      const u = data?.session?.user
+    const init = async () => {
+      const { data: authData } = await supabase.auth.getSession()
+      const u = authData?.session?.user
+      if (!u) return
       setUser(u)
+
+      // Load company - try owner_id first, then slug from hostname
+      try {
+        let co: any = null
+        const { data: coByOwner } = await (supabase as any)
+          .from('companies').select('*').eq('owner_id', u.id).maybeSingle()
+        co = coByOwner
+
+        if (!co && typeof window !== 'undefined') {
+          const h = window.location.hostname
+          if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+            const slug = h.replace('.colvy.com', '')
+            const { data: coBySlug } = await (supabase as any)
+              .from('companies').select('*').eq('slug', slug).maybeSingle()
+            co = coBySlug
+          }
+        }
+
+        if (co) setCompany(co)
+      } catch (e: any) {
+        console.error('Company load failed:', e.message)
+      }
+
       if (editId) loadAnnouncement(editId)
-    })
-  }, [editId, router])
+    }
+    init()
+  }, [editId])
 
   const loadAnnouncement = async (id: string) => {
     try {
@@ -77,9 +104,11 @@ export default function NewAnnouncementPage() {
 
   const handlePublish = async () => {
     if (!title.trim()) { alert('Title is required'); return }
+    if (!company?.id) { alert('Company not loaded'); return }
     setSaving(true)
     try {
       const payload = {
+        company_id: company.id,
         title: title.trim(), description: description.trim(),
         tag, status, language, boost_enabled: boostEnabled,
         boost_type: boostType, boost_until: boostUntil, boost_until_date: boostUntilDate,

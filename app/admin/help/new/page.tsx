@@ -28,6 +28,7 @@ export default function NewHelpArticlePage() {
   const contentRef = useRef<HTMLTextAreaElement>(null)
 
   const [user, setUser] = useState<any>(null)
+  const [company, setCompany] = useState<any>(null)
   const [saving, setSaving] = useState(false)
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
@@ -41,12 +42,37 @@ export default function NewHelpArticlePage() {
   const [uploadingMedia, setUploadingMedia] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }: any) => {
-      const u = data?.session?.user
+    const init = async () => {
+      const { data: authData } = await supabase.auth.getSession()
+      const u = authData?.session?.user
+      if (!u) return
       setUser(u)
+
+      try {
+        let co: any = null
+        const { data: coByOwner } = await (supabase as any)
+          .from('companies').select('*').eq('owner_id', u.id).maybeSingle()
+        co = coByOwner
+
+        if (!co && typeof window !== 'undefined') {
+          const h = window.location.hostname
+          if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+            const slug = h.replace('.colvy.com', '')
+            const { data: coBySlug } = await (supabase as any)
+              .from('companies').select('*').eq('slug', slug).maybeSingle()
+            co = coBySlug
+          }
+        }
+
+        if (co) setCompany(co)
+      } catch (e: any) {
+        console.error('Company load failed:', e.message)
+      }
+
       if (editId) loadArticle(editId)
-    })
-  }, [editId, router])
+    }
+    init()
+  }, [editId])
 
   const loadArticle = async (id: string) => {
     if (id.startsWith('demo-')) {
@@ -74,9 +100,10 @@ export default function NewHelpArticlePage() {
 
   const handlePublish = async () => {
     if (!title.trim()) { alert('Title is required'); return }
+    if (!company?.id) { alert('Company not loaded'); return }
     setSaving(true)
     try {
-      const payload = { title: title.trim(), content: content.trim(), category, status, featured, media: mediaItems }
+      const payload = { company_id: company.id, title: title.trim(), content: content.trim(), category, status, featured, media: mediaItems }
       if (editId && !editId.startsWith('demo-')) {
         await (supabase as any).from('help_articles').update(payload).eq('id', editId)
       } else {
