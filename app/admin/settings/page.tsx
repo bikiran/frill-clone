@@ -319,10 +319,16 @@ export default function SettingsPage() {
         }
       } catch {}
 
+      const siteSettingsValue = { 
+        ...settingsData, 
+        faviconUrl: faviconUrl || '', 
+        ogImageUrl: ogImageUrl || '', 
+        companyId 
+      }
       await (supabase as any).from('site_settings').upsert({
         key: 'general',
         company_id: companyId,
-        value: { ...settingsData, companyId },
+        value: siteSettingsValue,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'key,company_id' })
     } catch (e) {
@@ -1700,9 +1706,9 @@ export default function SettingsPage() {
               <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Theme appearance</label>
               <div className="grid grid-cols-3 gap-3">
                 {([
-                  { key: 'light', label: 'Light', icon: '☀️' },
-                  { key: 'dark', label: 'Dark', icon: '🌙' },
-                  { key: 'auto', label: 'Auto', icon: '🌓' },
+                  { key: 'light', label: 'Light', svg: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg> },
+                  { key: 'dark', label: 'Dark', svg: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg> },
+                  { key: 'auto', label: 'Auto', svg: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20"></path><path d="M2 12h20"></path><circle cx="12" cy="12" r="10"></circle><path d="M12 12c3 0 5-1.5 5-5s-2-5-5-5-5 1.5-5 5 2 5 5 5z"></path></svg> },
                 ] as const).map(t => (
                   <button
                     key={t.key}
@@ -1712,7 +1718,7 @@ export default function SettingsPage() {
                       borderColor: themeMode === t.key ? 'var(--coral)' : 'var(--border)',
                       background: themeMode === t.key ? 'var(--peach)' : 'white',
                     }}>
-                    <div className="text-3xl mb-2">{t.icon}</div>
+                    <div className="mb-2 flex justify-center" style={{ color: themeMode === t.key ? 'var(--coral)' : 'var(--slate)' }}>{t.svg}</div>
                     <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{t.label}</div>
                   </button>
                 ))}

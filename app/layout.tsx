@@ -42,7 +42,24 @@ export default function RootLayout({
   const pathname = usePathname()
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState<string>('')
   const [isCompanyOwner, setIsCompanyOwner] = useState(false)
+
+  useEffect(() => {
+    // Listen for avatar updates from profile page
+    const handleAvatarUpdate = (e: any) => {
+      setAvatarUrl(e.detail)
+    }
+    window.addEventListener('colvy-avatar-update', handleAvatarUpdate)
+    return () => window.removeEventListener('colvy-avatar-update', handleAvatarUpdate)
+  }, [])
+
+  useEffect(() => {
+    // Set initial avatar from user metadata
+    if (user?.user_metadata?.avatar_url) {
+      setAvatarUrl(user.user_metadata.avatar_url)
+    }
+  }, [user])
   const [company, setCompany] = useState<any>(() => {
     // Try to restore from session cache for instant branding on first render
     if (typeof window === 'undefined') return null
@@ -366,18 +383,22 @@ export default function RootLayout({
             <div className="flex items-center gap-3">
               {user ? (
                 <>
-                  <div className="relative">
+                  <div className="relative" id="colvy-user-btn">
                     <button
                       onClick={(e) => { e.stopPropagation(); setShowUserMenu(!showUserMenu) }}
-                      className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white transition-smooth hover:shadow-md cursor-pointer"
-                      style={{ background: 'var(--coral)' }}>
-                      {userInitial}
+                      className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white transition-smooth hover:shadow-md cursor-pointer overflow-hidden"
+                      style={{ background: avatarUrl ? undefined : 'var(--coral)' }}>
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                      ) : (
+                        userInitial
+                      )}
                     </button>
                     
                     {showUserMenu && (
                       <>
                         <div className="fixed inset-0 z-30" onClick={() => setShowUserMenu(false)} />
-                                                <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border z-40 overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                        <div id="colvy-user-menu" className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border z-40 overflow-hidden" style={{ borderColor: 'var(--border)' }}>
                           <div className="p-3 border-b" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
                             <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{user?.user_metadata?.display_name || user.email}</p>
                             <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--slate)' }}>{user.email}</p>
