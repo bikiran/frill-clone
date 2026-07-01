@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useToast, ToastContainer } from '@/lib/toast'
 
 
 const SIDEBAR_ITEMS = [
@@ -46,6 +47,7 @@ const SIDEBAR_ITEMS = [
 
 export default function SettingsPage() {
   const router = useRouter()
+  const { toasts, showToast, removeToast } = useToast()
   const [user, setUser] = useState<any>(null)
   const [company, setCompany] = useState<any>(null)
   const [loadedCompany, setLoadedCompany] = useState(false)
@@ -150,11 +152,18 @@ export default function SettingsPage() {
 
   // Listen to hash changes to retain tab on reload
   useEffect(() => {
+    // On mount, sync hash to state immediately
+    const hash = window.location.hash.replace('#', '')
+    const valid = ['general','theme','emails','whitelabel','auth','nav','terminology','webhooks','api','privacy','misc']
+    if (valid.includes(hash) && hash !== activeSettingsTab) {
+      setActiveSettingsTab(hash)
+    }
+    
+    // Then listen for future changes
     const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '')
-      const valid = ['general','theme','emails','whitelabel','auth','nav','terminology','webhooks','api','privacy','misc']
-      if (valid.includes(hash)) {
-        setActiveSettingsTab(hash)
+      const newHash = window.location.hash.replace('#', '')
+      if (valid.includes(newHash)) {
+        setActiveSettingsTab(newHash)
       }
     }
     window.addEventListener('hashchange', handleHashChange)
@@ -412,18 +421,18 @@ export default function SettingsPage() {
         
         if (insertErr) {
           console.error('Settings insert error:', insertErr.message)
-          alert('❌ Failed to save settings: ' + insertErr.message)
+          showToast('Failed to save settings: ' + insertErr.message, 'error', 4000)
         } else {
           console.log('[SETTINGS SAVE] ✅ Successfully saved (via insert)')
-          alert('✅ Settings saved successfully!')
+          showToast('Settings saved successfully!', 'success', 3000)
         }
       } else {
         console.log('[SETTINGS SAVE] ✅ Successfully saved')
-        alert('✅ Settings saved successfully!')
+        showToast('Settings saved successfully!', 'success', 3000)
       }
     } catch (e: any) {
       console.error('DB save failed:', e.message)
-      alert('❌ Save failed: ' + e.message)
+      showToast('Save failed: ' + e.message, 'error', 4000)
     } finally {
       setSaving(false)
     }
@@ -617,6 +626,8 @@ export default function SettingsPage() {
   if (!user) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
 
   return (
+    <>
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     <div className="flex min-h-[calc(100vh-56px)]">
       {/* Settings Sidebar */}
       <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r" style={{ borderColor: 'var(--border)', position: 'sticky', top: 0, height: 'calc(100vh - 56px)', overflowY: 'auto', flexShrink: 0 }}>
@@ -2378,5 +2389,6 @@ window.YourApp('container', {
       </div>
       </div>
     </div>
+    </>
   )
 }
