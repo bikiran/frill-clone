@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TerminologyProvider } from '@/lib/terminologyContext'
 import LiveChat from '@/components/LiveChat'
+import ChatSupport from '@/components/ChatSupport'
 import UpdateNotification from '@/components/UpdateNotification'
 import './globals.css'
 
@@ -563,6 +564,7 @@ export default function RootLayout({
           </TerminologyProvider>
         </main>
         <LiveChat />
+        <ChatSupport />
         <UpdateNotification />
       </body>
     </html>

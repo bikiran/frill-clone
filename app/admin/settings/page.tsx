@@ -221,6 +221,7 @@ export default function SettingsPage() {
           if (s.faviconUrl) setFaviconUrl(s.faviconUrl)
           else setFaviconUrl('') // Explicitly clear — don't inherit from another company
           if (s.ogImageUrl) setOgImageUrl(s.ogImageUrl)
+          else setOgImageUrl('')
           if (s.logoLink) setLogoLink(s.logoLink)
           if (s.customScript) setCustomScript(s.customScript)
           if (s.navIdeas !== undefined) setNavIdeas(s.navIdeas)
@@ -258,6 +259,7 @@ export default function SettingsPage() {
           }
           if (s.categories && Array.isArray(s.categories)) setCategories(s.categories)
           if (s.defaultHomepage) setDefaultHomepage(s.defaultHomepage)
+          else setDefaultHomepage('ideas') // Default to ideas if not set
           const slugKey = typeof window !== 'undefined' ? (window.location.hostname.replace('.colvy.com','') || 'colvy') : 'colvy'
           if (typeof window !== 'undefined') localStorage.setItem(`site_settings_${slugKey}`, JSON.stringify(s))
         }
@@ -343,14 +345,15 @@ export default function SettingsPage() {
         ogImageUrl: ogImageUrl || '', 
         companyId 
       }
-      await (supabase as any).from('site_settings').upsert({
+      const { error: upsertErr } = await (supabase as any).from('site_settings').upsert({
         key: 'general',
         company_id: companyId,
         value: siteSettingsValue,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'key,company_id' })
-    } catch (e) {
-      console.error('DB save failed:', e)
+      if (upsertErr) console.error('Settings upsert error:', upsertErr.message)
+    } catch (e: any) {
+      console.error('DB save failed:', e.message)
     }
 
     // Save to companies table using company.id (most reliable, works even if owner_id was patched)

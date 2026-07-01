@@ -13,19 +13,32 @@ export default function FormResults() {
 
   const [form, setForm] = useState<any>(null)
   const [responses, setResponses] = useState<any[]>([])
+  const [company, setCompany] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'summary' | 'individual'>('summary')
   const [selectedResponse, setSelectedResponse] = useState<any>(null)
   const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null)
+  const [selectedResponses, setSelectedResponses] = useState<Set<string>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [filters, setFilters] = useState<Record<string, any>>({})
+  const [showFilterPanel, setShowFilterPanel] = useState(false)
 
   useEffect(() => {
     ;(async () => {
-      const [formRes, responsesRes] = await Promise.all([
+      const [formRes, responsesRes, companyRes] = await Promise.all([
         (supabase as any).from('forms').select('*').eq('id', formId).single(),
         (supabase as any).from('form_responses').select('*').eq('form_id', formId).order('created_at', { ascending: false }),
+        // Load company data for branding
+        (async () => {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (!session?.user) return null
+          const { data } = await (supabase as any).from('companies').select('*').eq('owner_id', session.user.id).maybeSingle()
+          return data
+        })()
       ])
       setForm(formRes.data)
       setResponses(responsesRes.data || [])
+      setCompany((await companyRes) || null)
       setLoading(false)
     })()
   }, [formId])
@@ -67,16 +80,27 @@ export default function FormResults() {
       const pageWidth = doc.internal.pageSize.getWidth()
       const pageHeight = doc.internal.pageSize.getHeight()
       const questions = form.questions || []
+      const accentColor = company?.accent_color || '#ff7a6b'
+      
+      // Convert hex to RGB for jsPDF
+      const hexToRgb = (hex: string) => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+        return result ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)] : [255, 122, 107]
+      }
+      const rgb = hexToRgb(accentColor)
       
       let yPosition = 20
       
-      // Header
+      // Header with accent color
+      doc.setTextColor(...rgb)
       doc.setFontSize(16)
+      doc.setFont(undefined, 'bold')
       doc.text(form.title, 20, yPosition)
       yPosition += 10
       
       doc.setFontSize(11)
       doc.setTextColor(120)
+      doc.setFont(undefined, 'normal')
       doc.text(`Total responses: ${responses.length}`, 20, yPosition)
       doc.text(`Generated: ${new Date().toLocaleDateString()}`, 20, yPosition + 7)
       yPosition += 20
@@ -86,14 +110,16 @@ export default function FormResults() {
       doc.setFontSize(10)
       
       responses.forEach((response, idx) => {
-        // Response header
+        // Response header with accent color
         doc.setFontSize(10)
         doc.setFont(undefined, 'bold')
+        doc.setTextColor(...rgb)
         doc.text(`Response ${idx + 1} - ${new Date(response.created_at).toLocaleString()}`, 20, yPosition)
         yPosition += 7
         
         // Questions and answers
         doc.setFont(undefined, 'normal')
+        doc.setTextColor(0)
         doc.setFontSize(9)
         questions.forEach((q: any) => {
           const answer = response.answers?.[q.id]
@@ -125,7 +151,54 @@ export default function FormResults() {
     }
   }
 
-  if (loading) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
+  const bulkDeleteResponses = async () => {
+    if (selectedResponses.size === 0) return
+    if (!confirm(`Delete ${selectedResponses.size} response(s)?`)) return
+    
+    setBulkDeleting(true)
+    try {
+      const ids = Array.from(selectedResponses)
+      await (supabase as any).from('form_responses').delete().in('id', ids)
+      setResponses(prev => prev.filter(r => !selectedResponses.has(r.id)))
+      setSelectedResponses(new Set())
+    } catch (error) {
+      console.error('Bulk delete failed:', error)
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
+  const toggleResponseSelection = (id: string) => {
+    const newSelected = new Set(selectedResponses)
+    if (newSelected.has(id)) {
+      newSelected.delete(id)
+    } else {
+      newSelected.add(id)
+    }
+    setSelectedResponses(newSelected)
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedResponses.size === filteredResponses.length) {
+      setSelectedResponses(new Set())
+    } else {
+      setSelectedResponses(new Set(filteredResponses.map(r => r.id)))
+    }
+  }
+
+  // Filter responses based on filter criteria
+  const filteredResponses = responses.filter(r => {
+    for (const [questionId, filterValue] of Object.entries(filters)) {
+      if (filterValue === '' || filterValue === null) continue
+      const answer = r.answers?.[questionId]
+      if (Array.isArray(answer)) {
+        if (!answer.includes(filterValue)) return false
+      } else if (String(answer).toLowerCase() !== String(filterValue).toLowerCase()) {
+        return false
+      }
+    }
+    return true
+  })
   if (!form) return <div className="p-8" style={{ color: 'var(--slate)' }}>Form not found</div>
 
   const questions = form.questions || []
@@ -157,7 +230,7 @@ export default function FormResults() {
               ← Back to forms
             </Link>
             <h1 className="text-2xl font-bold mt-2" style={{ color: 'var(--ink)' }}>{form.title}</h1>
-            <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>{responses.length} response{responses.length !== 1 ? 's' : ''}</p>
+            <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>{filteredResponses.length} of {responses.length} response{responses.length !== 1 ? 's' : ''}{Object.keys(filters).length > 0 ? ' (filtered)' : ''}</p>
           </div>
           <Link href={`/admin/forms/${formId}`} className="px-4 py-2 rounded-xl text-sm font-semibold border cursor-pointer hover:bg-gray-50" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
             ✎ Edit form
@@ -177,7 +250,37 @@ export default function FormResults() {
             Individual responses
           </button>
           
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => setShowFilterPanel(!showFilterPanel)}
+            className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border"
+            style={{ borderColor: 'var(--border)', color: Object.keys(filters).length > 0 ? themeColor : 'var(--slate)', background: showFilterPanel ? 'var(--canvas)' : '#fff' }}>
+            🔽 Filter {Object.keys(filters).length > 0 ? `(${Object.keys(filters).length})` : ''}
+          </button>
+          
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {view === 'individual' && responses.length > 0 && (
+              <>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedResponses.size === responses.length && responses.length > 0}
+                    onChange={toggleSelectAll}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <span style={{ color: 'var(--slate)' }}>
+                    {selectedResponses.size > 0 ? `${selectedResponses.size} selected` : 'Select all'}
+                  </span>
+                </label>
+                {selectedResponses.size > 0 && (
+                  <button
+                    onClick={bulkDeleteResponses}
+                    disabled={bulkDeleting}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
+                    style={{ borderColor: '#dc2626', color: '#dc2626', background: bulkDeleting ? 'var(--canvas)' : '#fff' }}>
+                    {bulkDeleting ? '🗑️ Deleting...' : '🗑️ Delete selected'}
+                  </button>
+                )}
+              </>
+            )}
             <button onClick={exportToExcel} disabled={responses.length === 0 || exporting !== null}
               className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
               style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: exporting === 'excel' ? 'var(--canvas)' : '#fff', opacity: responses.length === 0 ? 0.5 : 1 }}>
@@ -190,6 +293,64 @@ export default function FormResults() {
             </button>
           </div>
         </div>
+
+        {/* Filter Panel */}
+        {showFilterPanel && (
+          <div className="mb-6 bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold" style={{ color: 'var(--ink)' }}>Filter responses</h3>
+              {Object.keys(filters).length > 0 && (
+                <button onClick={() => setFilters({})} className="text-xs font-semibold" style={{ color: 'var(--coral)', cursor: 'pointer' }}>
+                  Clear all
+                </button>
+              )}
+            </div>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {questions.map(q => (
+                <div key={q.id}>
+                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>{q.title}</label>
+                  {(q.type === 'multiple_choice' || q.type === 'dropdown' || q.type === 'yes_no') ? (
+                    <select
+                      value={filters[q.id] || ''}
+                      onChange={e => {
+                        const newFilters = { ...filters }
+                        if (e.target.value) {
+                          newFilters[q.id] = e.target.value
+                        } else {
+                          delete newFilters[q.id]
+                        }
+                        setFilters(newFilters)
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border text-sm"
+                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                      <option value="">All</option>
+                      {q.options?.map((opt: string) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Search..."
+                      value={filters[q.id] || ''}
+                      onChange={e => {
+                        const newFilters = { ...filters }
+                        if (e.target.value) {
+                          newFilters[q.id] = e.target.value
+                        } else {
+                          delete newFilters[q.id]
+                        }
+                        setFilters(newFilters)
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border text-sm"
+                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {responses.length === 0 ? (
           <div className="text-center py-20 rounded-2xl border" style={{ borderColor: 'var(--border)' }}>
@@ -267,17 +428,25 @@ export default function FormResults() {
           </div>
         ) : (
           <div className="grid md:grid-cols-2 gap-4">
-            {responses.map(r => (
-              <button key={r.id} onClick={() => setSelectedResponse(r)}
-                className="text-left bg-white rounded-2xl border p-5 hover:shadow-md transition-smooth cursor-pointer" style={{ borderColor: 'var(--border)' }}>
-                <p className="text-xs mb-2" style={{ color: 'var(--slate)' }}>{new Date(r.created_at).toLocaleString()}</p>
-                {questions.slice(0, 2).map((q: any) => (
-                  <p key={q.id} className="text-sm mb-1 truncate" style={{ color: 'var(--ink)' }}>
-                    <span style={{ color: 'var(--slate)' }}>{q.title}:</span> {String(r.answers?.[q.id] ?? '—')}
-                  </p>
-                ))}
-                <p className="text-xs mt-2 font-semibold" style={{ color: themeColor }}>View full response →</p>
-              </button>
+            {filteredResponses.map(r => (
+              <div key={r.id} style={{ position: 'relative' }}>
+                <input
+                  type="checkbox"
+                  checked={selectedResponses.has(r.id)}
+                  onChange={() => toggleResponseSelection(r.id)}
+                  style={{ position: 'absolute', top: 12, left: 12, width: 20, height: 20, cursor: 'pointer', zIndex: 10 }}
+                />
+                <button onClick={() => setSelectedResponse(r)}
+                  className="text-left bg-white rounded-2xl border p-5 hover:shadow-md transition-smooth cursor-pointer w-full" style={{ borderColor: selectedResponses.has(r.id) ? 'var(--coral)' : 'var(--border)', paddingLeft: 48 }}>
+                  <p className="text-xs mb-2" style={{ color: 'var(--slate)' }}>{new Date(r.created_at).toLocaleString()}</p>
+                  {questions.slice(0, 2).map((q: any) => (
+                    <p key={q.id} className="text-sm mb-1 truncate" style={{ color: 'var(--ink)' }}>
+                      <span style={{ color: 'var(--slate)' }}>{q.title}:</span> {String(r.answers?.[q.id] ?? '—')}
+                    </p>
+                  ))}
+                  <p className="text-xs mt-2 font-semibold" style={{ color: themeColor }}>View full response →</p>
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -296,12 +465,56 @@ export default function FormResults() {
               <button onClick={() => setSelectedResponse(null)} className="text-2xl cursor-pointer" style={{ color: 'var(--slate)' }}>×</button>
             </div>
             <div className="p-6 space-y-4">
-              {questions.map((q: any) => (
-                <div key={q.id}>
-                  <p className="text-xs font-semibold mb-1" style={{ color: 'var(--slate)' }}>{q.title}</p>
-                  <p className="text-sm" style={{ color: 'var(--ink)' }}>{String(selectedResponse.answers?.[q.id] ?? '—')}</p>
-                </div>
-              ))}
+              {questions.map((q: any) => {
+                const answer = selectedResponse.answers?.[q.id]
+                const isFileUpload = q.type === 'file_upload'
+                const isMediaAnswer = answer && typeof answer === 'string' && (answer.match(/\.(jpg|jpeg|png|gif|webp|mp4|webm|mp3|wav)$/i) || answer.startsWith('data:'))
+                
+                return (
+                  <div key={q.id}>
+                    <p className="text-xs font-semibold mb-1" style={{ color: 'var(--slate)' }}>{q.title}</p>
+                    {isFileUpload && answer ? (
+                      <div>
+                        {typeof answer === 'string' ? (
+                          answer.startsWith('http') || answer.startsWith('data:') ? (
+                            answer.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                              <img src={answer} alt="uploaded" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }} />
+                            ) : answer.match(/\.(mp4|webm)$/i) ? (
+                              <video src={answer} style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }} controls />
+                            ) : (
+                              <a href={answer} target="_blank" rel="noopener" className="text-sm" style={{ color: 'var(--coral)', textDecoration: 'underline' }}>
+                                📎 {answer.split('/').pop() || 'Download file'}
+                              </a>
+                            )
+                          ) : (
+                            <p className="text-sm" style={{ color: 'var(--ink)' }}>{answer}</p>
+                          )
+                        ) : Array.isArray(answer) ? (
+                          <div className="space-y-2">
+                            {answer.map((file: string, idx: number) => (
+                              <a key={idx} href={file} target="_blank" rel="noopener" className="text-sm block" style={{ color: 'var(--coral)', textDecoration: 'underline' }}>
+                                📎 {file.split('/').pop()}
+                              </a>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm" style={{ color: 'var(--ink)' }}>—</p>
+                        )}
+                      </div>
+                    ) : isMediaAnswer && typeof answer === 'string' ? (
+                      answer.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                        <img src={answer} alt="uploaded" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }} />
+                      ) : (
+                        <p className="text-sm" style={{ color: 'var(--ink)' }}>{String(answer)}</p>
+                      )
+                    ) : Array.isArray(answer) ? (
+                      <p className="text-sm" style={{ color: 'var(--ink)' }}>{answer.join(', ')}</p>
+                    ) : (
+                      <p className="text-sm" style={{ color: 'var(--ink)' }}>{String(answer ?? '—')}</p>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
         </>

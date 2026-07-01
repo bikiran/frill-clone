@@ -377,7 +377,12 @@ export default function LandingPage() {
       {/* IMPORT DEMO */}
       <section style={{ padding: '80px 24px', background: dark ? '#050505' : '#f8f8f8', borderTop: `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
         <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'center' }}>
+          <div className="import-grid-wrapper" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'center' }}>
+            <style>{`
+              @media (max-width: 768px) {
+                .import-grid-wrapper { grid-template-columns: 1fr !important; gap: 32px !important; }
+              }
+            `}</style>
             <div>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 999, background: '#0891b218', border: '1px solid #0891b230', color: '#0891b2', fontSize: 12, fontWeight: 700, marginBottom: 16, textTransform: 'uppercase' as const, letterSpacing: '0.08em' }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>

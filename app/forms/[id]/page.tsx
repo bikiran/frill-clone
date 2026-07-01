@@ -93,6 +93,23 @@ export default function PublicForm() {
         form_id: formId,
         answers,
       })
+      
+      // Trigger email notification to form admin
+      try {
+        if (form && form.company_id) {
+          const { data: company } = await (supabase as any).from('companies').select('owner_id').eq('id', form.company_id).single()
+          if (company?.owner_id) {
+            await fetch('/api/form-notifications', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ formId, userId: company.owner_id }),
+            })
+          }
+        }
+      } catch (error) {
+        console.error('Failed to send notification:', error)
+      }
+      
       setSubmitted(true)
       if (form.show_confetti !== false) {
         setShowConfetti(true)
