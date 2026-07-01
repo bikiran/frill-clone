@@ -262,7 +262,7 @@ export default function RootLayout({
 
   // Pages that use their own full-page layout (no nav wrapper)
   const isEmbed = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('embed') === '1'
-  const isFullPage = isEmbed || ['/landing', '/pricing', '/features', '/platform-admin', '/forms/'].some(p => pathname?.startsWith(p))
+  const isFullPage = isEmbed || ['/landing', '/pricing', '/features', '/platform-admin', '/forms/', '/widget'].some(p => pathname?.startsWith(p))
 
   if (isFullPage) {
     return (

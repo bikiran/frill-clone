@@ -71,6 +71,10 @@ export default function SettingsPage() {
   const [settingsSearch, setSettingsSearch] = useState('')
   const [termValues, setTermValues] = useState<Record<string, string>>({})
   const [privacyMode, setPrivacyMode] = useState('public')
+  const [slugEdit, setSlugEdit] = useState('')
+  const [slugStatus, setSlugStatus] = useState<'idle'|'checking'|'available'|'taken'|'invalid'>('idle')
+  const [slugTimer, setSlugTimer] = useState<any>(null)
+  const [widgetCopied, setWidgetCopied] = useState('')
   const [categories, setCategories] = useState<string[]>(['New Feature', 'Improvement', 'Fix', 'Announcement'])
   const [newCategoryName, setNewCategoryName] = useState('')
   const [defaultHomepage, setDefaultHomepage] = useState('ideas')
@@ -170,6 +174,7 @@ export default function SettingsPage() {
           if (co.logo_url) setLogoUrl(co.logo_url)
           if (co.accent_color) setAccentColor(co.accent_color)
           if (co.board_domain) setBoardDomain(co.board_domain)
+          if (co.slug) setSlugEdit(co.slug)
           if (co.help_domain) setHelpDomain(co.help_domain)
         }
       } catch (e: any) {
@@ -815,25 +820,80 @@ export default function SettingsPage() {
                     ? window.location.hostname
                     : 'yourslug.colvy.com'}</p>
               <div className="space-y-5">
-                {/* Always-on Colvy URL */}
+                {/* Editable Colvy URL */}
                 <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Your Colvy URL (always active)</p>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Your Colvy URL</p>
                     <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>● Active</span>
                   </div>
-                  <p className="text-sm font-mono" style={{ color: 'var(--coral)' }}>
-                    {company?.slug
-                    ? `${company.slug}.colvy.com`
-                    : typeof window !== 'undefined' && window.location.hostname.endsWith('.colvy.com')
-                    ? window.location.hostname
-                    : 'yourslug.colvy.com'}
-                  </p>
-                  {company?.slug && (
-                    <a href={`https://${company.slug}.colvy.com`} target="_blank"
-                      className="text-xs mt-1 inline-block hover:underline" style={{ color: 'var(--slate)' }}>
-                      Open board ↗
+                  <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: slugStatus === 'taken' || slugStatus === 'invalid' ? '#ef4444' : slugStatus === 'available' ? '#10b981' : 'var(--border)' }}>
+                    <input
+                      value={slugEdit}
+                      onChange={e => {
+                        const val = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                        setSlugEdit(val)
+                        if (val === company?.slug) { setSlugStatus('idle'); return }
+                        setSlugStatus('checking')
+                        if (slugTimer) clearTimeout(slugTimer)
+                        const t = setTimeout(async () => {
+                          if (val.length < 3 || val.length > 30) { setSlugStatus('invalid'); return }
+                          const { data } = await (supabase as any).from('companies').select('id').eq('slug', val).maybeSingle()
+                          setSlugStatus(data ? 'taken' : 'available')
+                        }, 600)
+                        setSlugTimer(t)
+                      }}
+                      className="flex-1 px-3 py-2 text-sm focus:outline-none font-mono"
+                      style={{ background: 'transparent', color: 'var(--ink)' }}
+                      placeholder="your-slug"
+                    />
+                    <span className="px-2 py-2 text-sm font-medium flex-shrink-0" style={{ color: 'var(--slate)', borderLeft: '1px solid var(--border)' }}>.colvy.com</span>
+                    {slugStatus === 'available' && slugEdit !== company?.slug && (
+                      <button onClick={async () => {
+                        if (!company?.id) return
+                        await (supabase as any).from('companies').update({ slug: slugEdit }).eq('id', company.id)
+                        setCompany((prev: any) => prev ? { ...prev, slug: slugEdit } : prev)
+                        setSlugStatus('idle')
+                        // Register new subdomain with Vercel
+                        fetch('/api/domains', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ domain: `${slugEdit}.colvy.com` }) }).catch(() => {})
+                      }}
+                        className="px-3 py-2 text-xs font-bold cursor-pointer text-white flex-shrink-0"
+                        style={{ background: '#10b981', border: 'none' }}>
+                        Save
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-xs" style={{ color: slugStatus === 'taken' ? '#ef4444' : slugStatus === 'invalid' ? '#ef4444' : slugStatus === 'available' ? '#10b981' : slugStatus === 'checking' ? '#f59e0b' : 'var(--slate)' }}>
+                      {slugStatus === 'checking' ? 'Checking availability...' : slugStatus === 'taken' ? '✗ Already taken' : slugStatus === 'invalid' ? '✗ 3–30 chars, letters, numbers, hyphens' : slugStatus === 'available' ? '✓ Available' : 'Lowercase letters, numbers, hyphens'}
+                    </p>
+                    {company?.slug && (
+                      <a href={`https://${company.slug}.colvy.com`} target="_blank"
+                        className="text-xs hover:underline" style={{ color: 'var(--slate)' }}>
+                        Open board ↗
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {/* Widget embed */}
+                <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
+                  <p className="text-sm font-semibold mb-1" style={{ color: 'var(--ink)' }}>Feedback widget</p>
+                  <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>Add a floating feedback button to any website. Paste this snippet before {`</body>`}.</p>
+                  {company?.slug && (<>
+                    <div className="rounded-lg p-3 font-mono text-xs overflow-x-auto" style={{ background: '#0d0d0d', color: '#a3e635' }}>
+                      {`<script src="https://colvy.com/widget.js" data-slug="${company.slug}" async></script>`}
+                    </div>
+                    <button onClick={() => {
+                      navigator.clipboard.writeText(`<script src="https://colvy.com/widget.js" data-slug="${company?.slug}" async></script>`)
+                      setWidgetCopied('snippet')
+                      setTimeout(() => setWidgetCopied(''), 2000)
+                    }} className="mt-2 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer text-white" style={{ background: 'var(--coral)', border: 'none' }}>
+                      {widgetCopied === 'snippet' ? '✓ Copied!' : 'Copy snippet'}
+                    </button>
+                    <a href={`/widget?slug=${company.slug}`} target="_blank" className="ml-2 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer" style={{ border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none', display: 'inline-block', marginTop: 8 }}>
+                      Preview popup →
                     </a>
-                  )}
+                  </>)}
                 </div>
 
                 {/* Board domain */}
