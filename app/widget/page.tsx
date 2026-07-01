@@ -69,6 +69,26 @@ function WidgetContent() {
     })()
   }, [slug])
 
+  // Refetch data periodically to ensure announcements/help persist
+  useEffect(() => {
+    if (!slug) return
+    
+    const interval = setInterval(() => {
+      ;(async () => {
+        console.log('[WIDGET REFETCH] Periodic refetch for slug:', slug)
+        const res = await fetch(`/api/widget-data?slug=${slug}`)
+        if (res.ok) {
+          const data = await res.json()
+          console.log('[WIDGET REFETCH] Got announcements:', data.announcements?.length, 'help articles:', data.helpArticles?.length)
+          setAnnouncements(data.announcements || [])
+          setHelpArticles(data.helpArticles || [])
+        }
+      })()
+    }, 5000) // Refetch every 5 seconds
+    
+    return () => clearInterval(interval)
+  }, [slug])
+
   // Real-time subscriptions for announcements and help articles
   useEffect(() => {
     if (!company?.id) return
@@ -251,57 +271,46 @@ function WidgetContent() {
                   <p style={{ color: 'var(--ink)', lineHeight: 1.6, marginBottom: 16, fontSize: 13, whiteSpace: 'pre-wrap' }}>{item.description}</p>
 
                   {/* Voting and status */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                      <button
-                        onClick={() => {
-                          console.log('[WIDGET] Upvote clicked:', item.id)
-                          // Update local votes
-                          setIdeas(prev => prev.map(i => 
-                            i.id === item.id ? { ...i, votes: (i.votes || 0) + 1 } : i
-                          ))
-                        }}
-                        style={{
-                          padding: '6px 10px',
-                          background: 'var(--canvas)',
-                          color: 'var(--slate)',
-                          border: `1px solid var(--border)`,
-                          borderRadius: 6,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}>
-                        ▲
-                      </button>
-                      <span style={{ fontSize: 12, fontWeight: 600, minWidth: 20, textAlign: 'center' }}>{item.votes || 0}</span>
-                      <button
-                        onClick={() => {
-                          console.log('[WIDGET] Downvote clicked:', item.id)
-                          // Update local votes
-                          setIdeas(prev => prev.map(i => 
-                            i.id === item.id ? { ...i, votes: Math.max((i.votes || 0) - 1, 0) } : i
-                          ))
-                        }}
-                        style={{
-                          padding: '6px 10px',
-                          background: 'var(--canvas)',
-                          color: 'var(--slate)',
-                          border: `1px solid var(--border)`,
-                          borderRadius: 6,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}>
-                        ▼
-                      </button>
-                    </div>
-                    <span style={{ padding: '6px 12px', background: 'var(--canvas)', color: 'var(--slate)', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
+                    {/* Vote button - matches main page */}
+                    <button
+                      onClick={() => {
+                        console.log('[WIDGET] Upvote clicked:', item.id)
+                        setIdeas(prev => prev.map(i => 
+                          i.id === item.id ? { ...i, votes: (i.votes || 0) + 1 } : i
+                        ))
+                      }}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 4,
+                        padding: '12px 16px',
+                        borderRadius: 12,
+                        background: 'var(--canvas)',
+                        color: 'var(--slate)',
+                        border: '1px solid var(--border)',
+                        cursor: 'pointer',
+                        minWidth: 60,
+                        transition: 'all 0.2s',
+                        fontSize: 12,
+                        fontWeight: 600,
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#f0f0f0'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'var(--canvas)'
+                      }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="18 15 12 9 6 15" />
+                      </svg>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>{item.votes || 0}</span>
+                    </button>
+
+                    {/* Status badge */}
+                    <span style={{ padding: '12px 16px', background: 'var(--canvas)', color: 'var(--slate)', borderRadius: 12, fontSize: 12, fontWeight: 600, border: '1px solid var(--border)' }}>
                       {item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1) : 'Submitted'}
                     </span>
                   </div>
@@ -357,34 +366,6 @@ function WidgetContent() {
           .item-row { padding: 8px 10px; gap: 8px; }
         }
       `}</style>
-
-      {/* Header */}
-      <div style={{ padding: '14px 16px 0', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          {company?.logo_url ? (
-            <img src={company.logo_url} alt={company.name} style={{ width: 28, height: 28, borderRadius: 8, objectFit: 'cover' }} />
-          ) : (
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 800 }}>
-              {(company?.name || slug)[0]?.toUpperCase()}
-            </div>
-          )}
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#0d0d0d' }}>{company?.name || slug}</span>
-          <a href={boardUrl} target="_blank" rel="noopener" style={{ marginLeft: 'auto', fontSize: 11, color: '#9ca3af', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            Board
-          </a>
-        </div>
-
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 2, background: '#f4f4f5', borderRadius: 10, padding: 3 }}>
-          {(['feedback', 'roadmap', 'updates', 'help', 'chat'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              style={{ flex: 1, padding: '6px 0', borderRadius: 8, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', background: tab === t ? '#fff' : 'transparent', color: tab === t ? '#0d0d0d' : '#6b7280', boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', textTransform: 'capitalize' }}>
-              {t === 'updates' ? 'Updates' : t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Scrollable content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 80px' }}>
@@ -525,17 +506,39 @@ function WidgetContent() {
             {(['planned', 'in_progress', 'new', 'shipped'] as const).map(status => {
               const items = ideas.filter(i => i.status === status)
               if (items.length === 0) return null
-              const labels: Record<string, { label: string; color: string; dot: string }> = {
-                in_progress: { label: 'In Progress', color: '#f59e0b', dot: '#f59e0b' },
-                planned: { label: 'Planned', color: '#6366f1', dot: '#6366f1' },
-                new: { label: 'Under Review', color: '#6b7280', dot: '#9ca3af' },
-                shipped: { label: 'Shipped', color: '#10b981', dot: '#10b981' },
+              const labels: Record<string, { label: string; color: string; dot: string; icon: React.ReactNode }> = {
+                in_progress: { 
+                  label: 'In Progress', 
+                  color: '#f59e0b', 
+                  dot: '#f59e0b',
+                  icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                },
+                planned: { 
+                  label: 'Planned', 
+                  color: '#6366f1', 
+                  dot: '#6366f1',
+                  icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                },
+                new: { 
+                  label: 'Under Review', 
+                  color: '#6b7280', 
+                  dot: '#9ca3af',
+                  icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                },
+                shipped: { 
+                  label: 'Shipped', 
+                  color: '#10b981', 
+                  dot: '#10b981',
+                  icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                },
               }
               const meta = labels[status]
               return (
                 <div key={status} style={{ marginBottom: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: meta.dot }} />
+                    <div style={{ color: meta.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {meta.icon}
+                    </div>
                     <p style={{ fontSize: 11, fontWeight: 700, color: meta.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{meta.label}</p>
                   </div>
                   {items.slice(0, 4).map(idea => (
