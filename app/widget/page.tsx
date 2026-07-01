@@ -33,6 +33,7 @@ function WidgetContent() {
   const [captureInProgress, setCaptureInProgress] = useState(false)
   const [showImageViewer, setShowImageViewer] = useState(false)
   const [viewerImage, setViewerImage] = useState('')
+  const [animatingVotes, setAnimatingVotes] = useState<Set<string>>(new Set())
 
   const accentColor = company?.accent_color || '#ff7a6b'
 
@@ -50,8 +51,8 @@ function WidgetContent() {
           forms: data.forms?.length || 0,
           helpArticles: data.helpArticles?.length || 0,
         })
-        console.log('[WIDGET FETCH] Full announcements data:', data.announcements)
-        console.log('[WIDGET FETCH] Full help articles data:', data.helpArticles)
+        console.log('[WIDGET FETCH] Full announcements array:', data.announcements)
+        console.log('[WIDGET FETCH] Full help articles array:', data.helpArticles)
         
         setCompany(data.company)
         setIdeas(data.ideas || [])
@@ -272,13 +273,21 @@ function WidgetContent() {
 
                   {/* Voting and status */}
                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
-                    {/* Vote button - matches main page */}
+                    {/* Vote button - matches main page with animation */}
                     <button
                       onClick={() => {
                         console.log('[WIDGET] Upvote clicked:', item.id)
+                        setAnimatingVotes(prev => new Set(prev).add(item.id))
                         setIdeas(prev => prev.map(i => 
                           i.id === item.id ? { ...i, votes: (i.votes || 0) + 1 } : i
                         ))
+                        setTimeout(() => {
+                          setAnimatingVotes(prev => {
+                            const newSet = new Set(prev)
+                            newSet.delete(item.id)
+                            return newSet
+                          })
+                        }, 500)
                       }}
                       style={{
                         display: 'flex',
@@ -296,6 +305,8 @@ function WidgetContent() {
                         transition: 'all 0.2s',
                         fontSize: 12,
                         fontWeight: 600,
+                        position: 'relative',
+                        animation: animatingVotes.has(item.id) ? 'voteBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none',
                       }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.background = '#f0f0f0'
@@ -307,6 +318,15 @@ function WidgetContent() {
                         <polyline points="18 15 12 9 6 15" />
                       </svg>
                       <span style={{ fontSize: 13, fontWeight: 700 }}>{item.votes || 0}</span>
+                      {animatingVotes.has(item.id) && (
+                        <div style={{
+                          position: 'absolute',
+                          width: '100%',
+                          height: '100%',
+                          borderRadius: 12,
+                          animation: 'voteRipple 0.6s ease-out',
+                        }} />
+                      )}
                     </button>
 
                     {/* Status badge */}
@@ -326,13 +346,92 @@ function WidgetContent() {
               )}
               {selectedItem.type === 'announcement' && (
                 <>
-                  <p style={{ fontSize: 11, color: 'var(--slate)', marginBottom: 12 }}>{new Date(item.created_at).toLocaleDateString()}</p>
-                  <div style={{ color: 'var(--ink)', lineHeight: 1.6, fontSize: 13 }}>{item.description}</div>
+                  <p style={{ fontSize: 11, color: 'var(--slate)', marginBottom: 12 }}>{item.created_at ? new Date(item.created_at).toLocaleDateString() : 'Today'}</p>
+                  <div style={{ color: 'var(--ink)', lineHeight: 1.6, fontSize: 13 }}>
+                    {item.description}
+                    {/* Parse and display images in description */}
+                    {item.description && item.description.includes('http') && (
+                      <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {/* Extract image URLs from description */}
+                        {item.description.split(/\s/).map((part, i) => {
+                          if (part.startsWith('http') && /\.(jpg|jpeg|png|gif|webp)$/i.test(part)) {
+                            return (
+                              <img
+                                key={i}
+                                src={part}
+                                alt="Screenshot"
+                                onClick={() => {
+                                  setViewerImage(part)
+                                  setShowImageViewer(true)
+                                }}
+                                style={{
+                                  maxWidth: '100%',
+                                  maxHeight: 200,
+                                  borderRadius: 8,
+                                  cursor: 'pointer',
+                                  border: '1px solid var(--border)',
+                                  transition: 'all 0.2s',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'
+                                  e.currentTarget.style.transform = 'scale(1.02)'
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.boxShadow = 'none'
+                                  e.currentTarget.style.transform = 'scale(1)'
+                                }}
+                              />
+                            )
+                          }
+                          return null
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
               {selectedItem.type === 'help' && (
                 <>
-                  <div style={{ color: 'var(--ink)', lineHeight: 1.6, fontSize: 13, whiteSpace: 'pre-wrap' }}>{item.content}</div>
+                  <div style={{ color: 'var(--ink)', lineHeight: 1.6, fontSize: 13, whiteSpace: 'pre-wrap' }}>
+                    {item.content}
+                    {/* Parse and display images in content */}
+                    {item.content && item.content.includes('http') && (
+                      <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {item.content.split(/\s/).map((part, i) => {
+                          if (part.startsWith('http') && /\.(jpg|jpeg|png|gif|webp)$/i.test(part)) {
+                            return (
+                              <img
+                                key={i}
+                                src={part}
+                                alt="Screenshot"
+                                onClick={() => {
+                                  setViewerImage(part)
+                                  setShowImageViewer(true)
+                                }}
+                                style={{
+                                  maxWidth: '100%',
+                                  maxHeight: 200,
+                                  borderRadius: 8,
+                                  cursor: 'pointer',
+                                  border: '1px solid var(--border)',
+                                  transition: 'all 0.2s',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'
+                                  e.currentTarget.style.transform = 'scale(1.02)'
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.boxShadow = 'none'
+                                  e.currentTarget.style.transform = 'scale(1)'
+                                }}
+                              />
+                            )
+                          }
+                          return null
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
             </>
@@ -357,6 +456,8 @@ function WidgetContent() {
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #e5e5e5; border-radius: 2px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes voteBounce { 0% { transform: scale(1); } 40% { transform: scale(1.3) translateY(-4px); } 70% { transform: scale(0.95); } 100% { transform: scale(1); } }
+        @keyframes voteRipple { 0% { box-shadow: 0 0 0 0 rgba(255, 122, 107, 0.4); } 100% { box-shadow: 0 0 0 20px rgba(255, 122, 107, 0); } }
         .item-row { cursor: pointer; border-radius: 12px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; transition: background 0.15s; }
         .item-row:hover { background: #f9f9f9; }
         .vote-pill { display: flex; align-items: center; gap: 4px; min-width: 32px; flex-shrink: 0; }
@@ -366,6 +467,24 @@ function WidgetContent() {
           .item-row { padding: 8px 10px; gap: 8px; }
         }
       `}</style>
+
+      {/* Top Header with Logo and Name */}
+      <div style={{ padding: '14px 16px', flexShrink: 0, borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {company?.logo_url ? (
+            <img src={company.logo_url} alt={company.name} style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover' }} />
+          ) : (
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 800 }}>
+              {(company?.name || slug)[0]?.toUpperCase()}
+            </div>
+          )}
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#0d0d0d' }}>{company?.name || slug}</span>
+          <a href={boardUrl} target="_blank" rel="noopener" style={{ marginLeft: 'auto', fontSize: 11, color: '#9ca3af', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Board
+          </a>
+        </div>
+      </div>
 
       {/* Scrollable content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 80px' }}>
@@ -558,7 +677,9 @@ function WidgetContent() {
           <div style={{ animation: 'fadeIn 0.2s ease both' }}>
             {announcements.length === 0 ? (
               <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingTop: 24 }}>No updates yet.</p>
-            ) : announcements.map(ann => (
+            ) : announcements.map(ann => {
+              console.log('[WIDGET] Rendering announcement:', ann)
+              return (
               <div key={ann.id} onClick={() => setSelectedItem({ type: 'announcement', id: ann.id })} className="item-row" style={{ display: 'block', marginBottom: 4, cursor: 'pointer' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                   {ann.tag && (
@@ -566,12 +687,13 @@ function WidgetContent() {
                       {ann.tag}
                     </span>
                   )}
-                  <span style={{ fontSize: 11, color: '#9ca3af' }}>{new Date(ann.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                  <span style={{ fontSize: 11, color: '#9ca3af' }}>{ann.created_at ? new Date(ann.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Today'}</span>
                 </div>
                 <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d', marginBottom: 2, lineHeight: 1.3 }}>{ann.title}</p>
                 {ann.description && <p style={{ fontSize: 12, color: '#6b7280', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>{ann.description}</p>}
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
 
@@ -585,12 +707,15 @@ function WidgetContent() {
           <div style={{ animation: 'fadeIn 0.2s ease both' }}>
             {helpArticles.length === 0 ? (
               <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingTop: 24 }}>No help articles available yet.</p>
-            ) : helpArticles.map(article => (
+            ) : helpArticles.map(article => {
+              console.log('[WIDGET] Rendering help article:', article)
+              return (
               <div key={article.id} onClick={() => setSelectedItem({ type: 'help', id: article.id })} style={{ textDecoration: 'none', display: 'block', padding: '12px', borderRadius: 12, border: '1px solid #f0f0f0', marginBottom: 10, transition: 'all 0.2s', cursor: 'pointer' }} onMouseEnter={e => (e.currentTarget.style.borderColor = accentColor, e.currentTarget.style.boxShadow = `0 0 0 2px ${accentColor}20`)} onMouseLeave={e => (e.currentTarget.style.borderColor = '#f0f0f0', e.currentTarget.style.boxShadow = 'none')}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d', margin: 0, marginBottom: 4 }}>{article.title}</p>
                 {article.content && <p style={{ fontSize: 12, color: '#6b7280', margin: 0, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>{article.content}</p>}
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
