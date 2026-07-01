@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import * as XLSX from 'xlsx'
+import jsPDF from 'jspdf'
 
 export default function FormResults() {
   const params = useParams()
@@ -14,6 +16,7 @@ export default function FormResults() {
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'summary' | 'individual'>('summary')
   const [selectedResponse, setSelectedResponse] = useState<any>(null)
+  const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null)
 
   useEffect(() => {
     ;(async () => {
@@ -26,6 +29,101 @@ export default function FormResults() {
       setLoading(false)
     })()
   }, [formId])
+
+  const exportToExcel = () => {
+    if (exporting) return
+    setExporting('excel')
+    try {
+      const questions = form.questions || []
+      const headers = ['Response ID', 'Submitted At', ...questions.map((q: any) => q.title)]
+      
+      const data = responses.map((r: any) => [
+        r.id.slice(0, 8),
+        new Date(r.created_at).toLocaleString(),
+        ...questions.map((q: any) => {
+          const answer = r.answers?.[q.id]
+          if (Array.isArray(answer)) return answer.join(', ')
+          return answer || ''
+        })
+      ])
+
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data])
+      worksheet['!cols'] = Array(headers.length).fill({ wch: 20 })
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Responses')
+      XLSX.writeFile(workbook, `${form.title}-responses.xlsx`)
+    } catch (error) {
+      console.error('Export failed:', error)
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  const exportToPDF = () => {
+    if (exporting) return
+    setExporting('pdf')
+    try {
+      const doc = new jsPDF()
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const questions = form.questions || []
+      
+      let yPosition = 20
+      
+      // Header
+      doc.setFontSize(16)
+      doc.text(form.title, 20, yPosition)
+      yPosition += 10
+      
+      doc.setFontSize(11)
+      doc.setTextColor(120)
+      doc.text(`Total responses: ${responses.length}`, 20, yPosition)
+      doc.text(`Generated: ${new Date().toLocaleDateString()}`, 20, yPosition + 7)
+      yPosition += 20
+      
+      // Responses
+      doc.setTextColor(0)
+      doc.setFontSize(10)
+      
+      responses.forEach((response, idx) => {
+        // Response header
+        doc.setFontSize(10)
+        doc.setFont(undefined, 'bold')
+        doc.text(`Response ${idx + 1} - ${new Date(response.created_at).toLocaleString()}`, 20, yPosition)
+        yPosition += 7
+        
+        // Questions and answers
+        doc.setFont(undefined, 'normal')
+        doc.setFontSize(9)
+        questions.forEach((q: any) => {
+          const answer = response.answers?.[q.id]
+          const answerText = Array.isArray(answer) ? answer.join(', ') : (answer || '(No answer)')
+          
+          doc.text(`${q.title}:`, 20, yPosition)
+          yPosition += 5
+          
+          const lines = doc.splitTextToSize(`${answerText}`, pageWidth - 40)
+          lines.forEach((line: string) => {
+            doc.text(line, 25, yPosition)
+            yPosition += 5
+          })
+          yPosition += 2
+        })
+        
+        yPosition += 5
+        if (yPosition > pageHeight - 20) {
+          doc.addPage()
+          yPosition = 20
+        }
+      })
+      
+      doc.save(`${form.title}-responses.pdf`)
+    } catch (error) {
+      console.error('PDF export failed:', error)
+    } finally {
+      setExporting(null)
+    }
+  }
 
   if (loading) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
   if (!form) return <div className="p-8" style={{ color: 'var(--slate)' }}>Form not found</div>
@@ -67,7 +165,7 @@ export default function FormResults() {
         </div>
 
         {/* View toggle */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-6 flex-wrap items-center">
           <button onClick={() => setView('summary')}
             className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer"
             style={{ background: view === 'summary' ? themeColor : 'transparent', color: view === 'summary' ? '#fff' : 'var(--slate)', border: view === 'summary' ? 'none' : '1px solid var(--border)' }}>
@@ -78,6 +176,19 @@ export default function FormResults() {
             style={{ background: view === 'individual' ? themeColor : 'transparent', color: view === 'individual' ? '#fff' : 'var(--slate)', border: view === 'individual' ? 'none' : '1px solid var(--border)' }}>
             Individual responses
           </button>
+          
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={exportToExcel} disabled={responses.length === 0 || exporting !== null}
+              className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
+              style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: exporting === 'excel' ? 'var(--canvas)' : '#fff', opacity: responses.length === 0 ? 0.5 : 1 }}>
+              {exporting === 'excel' ? '↓ Exporting...' : '📊 Export to Excel'}
+            </button>
+            <button onClick={exportToPDF} disabled={responses.length === 0 || exporting !== null}
+              className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
+              style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: exporting === 'pdf' ? 'var(--canvas)' : '#fff', opacity: responses.length === 0 ? 0.5 : 1 }}>
+              {exporting === 'pdf' ? '↓ Exporting...' : '📄 Export to PDF'}
+            </button>
+          </div>
         </div>
 
         {responses.length === 0 ? (

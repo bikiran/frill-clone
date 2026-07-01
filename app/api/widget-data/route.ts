@@ -22,17 +22,29 @@ export async function GET(req: NextRequest) {
 
     if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
 
-    const [ideasRes, annRes] = await Promise.all([
+    const [ideasRes, annRes, formsRes, pollsRes, surveysRes, helpRes] = await Promise.all([
       (supabase as any).from('ideas').select('id,title,votes,status').eq('company_id', company.id)
         .neq('is_private', true).order('votes', { ascending: false }).limit(20),
       (supabase as any).from('announcements').select('id,title,content,tag,date,created_at')
         .eq('company_id', company.id).order('created_at', { ascending: false }).limit(8),
+      (supabase as any).from('forms').select('id,title,description').eq('company_id', company.id)
+        .eq('is_public', true).order('created_at', { ascending: false }).limit(5),
+      (supabase as any).from('polls').select('id,title,options').eq('company_id', company.id)
+        .order('created_at', { ascending: false }).limit(5),
+      (supabase as any).from('surveys').select('id,title,questions').eq('company_id', company.id)
+        .order('created_at', { ascending: false }).limit(5),
+      (supabase as any).from('help_articles').select('id,title,content,slug').eq('company_id', company.id)
+        .order('created_at', { ascending: false }).limit(5),
     ])
 
     return NextResponse.json({
       company,
       ideas: ideasRes.data || [],
       announcements: annRes.data || [],
+      forms: formsRes.data || [],
+      polls: pollsRes.data || [],
+      surveys: surveysRes.data || [],
+      helpArticles: helpRes.data || [],
     }, {
       headers: {
         'Access-Control-Allow-Origin': '*',
@@ -48,7 +60,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const supabase = getDb()
-    const { slug, title } = await req.json()
+    const { slug, title, attachments } = await req.json()
     if (!slug || !title) return NextResponse.json({ error: 'slug and title required' }, { status: 400 })
 
     const { data: company } = await (supabase as any)
@@ -62,6 +74,7 @@ export async function POST(req: NextRequest) {
       votes: 0,
       status: 'new',
       created_by_name: 'Widget User',
+      attachments: attachments || [],
     })
 
     return NextResponse.json({ ok: true }, {
