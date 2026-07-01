@@ -403,7 +403,14 @@ export default function SettingsPage() {
       
       if (updateData && updateData.length > 0) {
         console.log('[SETTINGS SAVE] ✅ Successfully updated')
-        if (isManualSave) showToast('Settings saved successfully!', 'success', 3000)
+        if (isManualSave) {
+          showToast('Settings saved successfully!', 'success', 3000)
+          // Hard reload after 2 seconds to ensure data is fresh
+          setTimeout(() => {
+            console.log('[SETTINGS SAVE] Reloading to verify save...')
+            window.location.reload()
+          }, 2000)
+        }
       } else if (updateErr) {
         console.warn('Update failed:', updateErr.message, 'Trying insert...')
         // If update failed or returned no rows, try INSERT
@@ -421,7 +428,13 @@ export default function SettingsPage() {
           if (isManualSave) showToast('Failed to save settings: ' + insertErr.message, 'error', 4000)
         } else {
           console.log('[SETTINGS SAVE] ✅ Successfully saved (via insert)')
-          if (isManualSave) showToast('Settings saved successfully!', 'success', 3000)
+          if (isManualSave) {
+            showToast('Settings saved successfully!', 'success', 3000)
+            setTimeout(() => {
+              console.log('[SETTINGS SAVE] Reloading to verify save...')
+              window.location.reload()
+            }, 2000)
+          }
         }
       } else {
         // No error but no rows updated - means record doesn't exist, try insert
@@ -440,7 +453,13 @@ export default function SettingsPage() {
           if (isManualSave) showToast('Failed to save settings: ' + insertErr.message, 'error', 4000)
         } else {
           console.log('[SETTINGS SAVE] ✅ Successfully saved (via insert)')
-          if (isManualSave) showToast('Settings saved successfully!', 'success', 3000)
+          if (isManualSave) {
+            showToast('Settings saved successfully!', 'success', 3000)
+            setTimeout(() => {
+              console.log('[SETTINGS SAVE] Reloading to verify save...')
+              window.location.reload()
+            }, 2000)
+          }
         }
       }
     } catch (e: any) {
