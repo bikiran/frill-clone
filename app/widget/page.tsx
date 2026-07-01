@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
+import { supabase } from '@/lib/supabase'
+import ImageViewer from '@/components/ImageViewer'
 
 function WidgetContent() {
   const params = useSearchParams()
@@ -29,6 +31,8 @@ function WidgetContent() {
   const [loading, setLoading] = useState(true)
   const [expandedFeedback, setExpandedFeedback] = useState(false)
   const [captureInProgress, setCaptureInProgress] = useState(false)
+  const [showImageViewer, setShowImageViewer] = useState(false)
+  const [viewerImage, setViewerImage] = useState('')
 
   const accentColor = company?.accent_color || '#ff7a6b'
 
@@ -51,6 +55,66 @@ function WidgetContent() {
       trackWidgetView(slug)
     })()
   }, [slug])
+
+  // Real-time subscriptions for announcements and help articles
+  useEffect(() => {
+    if (!company?.id) return
+
+    console.log('[WIDGET] Setting up real-time subscriptions for company:', company.id)
+
+    const annChannel = supabase
+      .channel(`announcements-${company.id}`)
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'announcements', 
+          filter: `company_id=eq.${company.id}` 
+        }, 
+        (payload) => {
+          console.log('[WIDGET] Announcement changed:', payload)
+          if (payload.eventType === 'DELETE') {
+            setAnnouncements(prev => prev.filter(a => a.id !== payload.old.id))
+          } else {
+            setAnnouncements(prev => {
+              const exists = prev.find(a => a.id === payload.new.id)
+              if (exists) return prev.map(a => a.id === payload.new.id ? payload.new : a)
+              return [payload.new, ...prev]
+            })
+          }
+        }
+      )
+      .subscribe()
+
+    const helpChannel = supabase
+      .channel(`help-articles-${company.id}`)
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'help_articles', 
+          filter: `company_id=eq.${company.id}` 
+        }, 
+        (payload) => {
+          console.log('[WIDGET] Help article changed:', payload)
+          if (payload.eventType === 'DELETE') {
+            setHelpArticles(prev => prev.filter(a => a.id !== payload.old.id))
+          } else {
+            setHelpArticles(prev => {
+              const exists = prev.find(a => a.id === payload.new.id)
+              if (exists) return prev.map(a => a.id === payload.new.id ? payload.new : a)
+              return [payload.new, ...prev]
+            })
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(annChannel)
+      supabase.removeChannel(helpChannel)
+    }
+  }, [company?.id])
 
   const trackWidgetView = async (slug: string) => {
     try {
@@ -184,6 +248,14 @@ function WidgetContent() {
 
   return (
     <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', height: '100vh', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
+      {/* Image Viewer */}
+      {showImageViewer && (
+        <ImageViewer
+          imageSrc={viewerImage}
+          onClose={() => setShowImageViewer(false)}
+        />
+      )}
+
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #e5e5e5; border-radius: 2px; }
