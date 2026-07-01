@@ -173,10 +173,10 @@ export default function SettingsPage() {
   const faviconFileRef = useRef<HTMLInputElement>(null)
   const ogFileRef = useRef<HTMLInputElement>(null)
 
-  // Auto-save widget configuration when any setting changes
+  // Auto-save widget configuration when any setting changes (silent, no notifications)
   useEffect(() => {
     if (!company?.id) return
-    const autoSaveTimer = setTimeout(handleSave, 800)
+    const autoSaveTimer = setTimeout(() => handleSave(false), 800)
     return () => clearTimeout(autoSaveTimer)
   }, [widgetFeedback, widgetRoadmap, widgetUpdates, widgetForms, widgetPolls, widgetSurveys, widgetKnowledgeBase, widgetOrder])
 
@@ -335,18 +335,18 @@ export default function SettingsPage() {
     showIdeaNumber, showRoadmapDesc, showIdeaDate, showIdeaActivity, requireIdeaTopic, categories, defaultHomepage,
   ])
 
-  const handleSave = async () => {
+  const handleSave = async (isManualSave: boolean = false) => {
     setSaving(true)
     
     // Wait for company to be loaded
     if (!loadedCompany) {
-      showToast('Loading settings... please wait', 'info', 2000)
+      if (isManualSave) showToast('Loading settings... please wait', 'info', 2000)
       setSaving(false)
       return
     }
     
     if (!company?.id) {
-      showToast('Error: Company information not available', 'error', 4000)
+      if (isManualSave) showToast('Error: Company information not available', 'error', 4000)
       setSaving(false)
       return
     }
@@ -390,7 +390,7 @@ export default function SettingsPage() {
       
       if (updateData && updateData.length > 0) {
         console.log('[SETTINGS SAVE] ✅ Successfully updated')
-        showToast('Settings saved successfully!', 'success', 3000)
+        if (isManualSave) showToast('Settings saved successfully!', 'success', 3000)
       } else if (updateErr) {
         console.warn('Update failed:', updateErr.message, 'Trying insert...')
         // If update failed or returned no rows, try INSERT
@@ -405,10 +405,10 @@ export default function SettingsPage() {
         
         if (insertErr) {
           console.error('[SETTINGS SAVE] Insert failed:', insertErr.message)
-          showToast('Failed to save settings: ' + insertErr.message, 'error', 4000)
+          if (isManualSave) showToast('Failed to save settings: ' + insertErr.message, 'error', 4000)
         } else {
           console.log('[SETTINGS SAVE] ✅ Successfully saved (via insert)')
-          showToast('Settings saved successfully!', 'success', 3000)
+          if (isManualSave) showToast('Settings saved successfully!', 'success', 3000)
         }
       } else {
         // No error but no rows updated - means record doesn't exist, try insert
@@ -424,15 +424,15 @@ export default function SettingsPage() {
         
         if (insertErr) {
           console.error('[SETTINGS SAVE] Insert error:', insertErr.message)
-          showToast('Failed to save settings: ' + insertErr.message, 'error', 4000)
+          if (isManualSave) showToast('Failed to save settings: ' + insertErr.message, 'error', 4000)
         } else {
           console.log('[SETTINGS SAVE] ✅ Successfully saved (via insert)')
-          showToast('Settings saved successfully!', 'success', 3000)
+          if (isManualSave) showToast('Settings saved successfully!', 'success', 3000)
         }
       }
     } catch (e: any) {
       console.error('DB save failed:', e.message)
-      showToast('Save failed: ' + e.message, 'error', 4000)
+      if (isManualSave) showToast('Save failed: ' + e.message, 'error', 4000)
     } finally {
       setSaving(false)
     }
@@ -846,7 +846,7 @@ export default function SettingsPage() {
           </div>
 
           <div className="mt-6 flex justify-end">
-            <button onClick={handleSave} disabled={saving}
+            <button onClick={() => handleSave(true)} disabled={saving}
               className="px-8 py-3 rounded-xl font-semibold text-white cursor-pointer disabled:opacity-50"
               style={{ background: 'var(--coral)' }}>
               {saving ? 'Saving...' : saved ? '✅ Saved!' : 'Save Settings'}
@@ -1148,7 +1148,7 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="flex justify-end">
-              <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
+              <button onClick={() => handleSave(true)} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
                 {saving ? 'Saving...' : saved ? '✅ Saved!' : 'Save Settings'}
               </button>
             </div>
@@ -1314,7 +1314,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div className="flex justify-end">
-                <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
+                <button onClick={() => handleSave(true)} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
                   {saving ? 'Saving...' : saved ? '✅ Saved!' : 'Save Settings'}
                 </button>
               </div>
@@ -1671,7 +1671,7 @@ export default function SettingsPage() {
                 ))}
               </div>
               <div className="flex justify-end mt-4">
-                <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
+                <button onClick={() => handleSave(true)} disabled={saving} className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer disabled:opacity-50" style={{ background: 'var(--coral)' }}>
                   {saving ? 'Saving...' : saved ? '✅ Saved!' : 'Save Terminology'}
                 </button>
               </div>
@@ -2376,7 +2376,7 @@ window.YourApp('container', {
           <div className="flex items-center justify-end gap-3">
             {saved && <span className="text-sm text-green-600">✓ Saved</span>}
             <button
-              onClick={handleSave}
+              onClick={() => handleSave(true)}
               disabled={saving}
               className="px-6 py-2.5 rounded-xl font-semibold text-white text-sm transition-smooth press-effect cursor-pointer disabled:opacity-50"
               style={{ background: 'var(--coral)' }}>
