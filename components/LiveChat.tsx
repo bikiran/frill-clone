@@ -13,10 +13,13 @@ type Message = {
   created_at: string
 }
 
+type Tab = 'chat' | 'widget'
+
 const QUICK_REPLIES = ['How do I get started?', 'I found a bug', 'Billing question', 'Feature request']
 
 export default function LiveChat() {
   const [open, setOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<Tab>('chat')
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [name, setName] = useState('')
@@ -174,24 +177,41 @@ export default function LiveChat() {
       {open && (
         <div className="fixed bottom-24 right-6 z-50 w-80 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
           style={{ height: 480, border: '1px solid var(--border)', background: 'white' }}>
-          {/* Header */}
-          <div className="px-4 py-3 flex items-center gap-3 shrink-0" style={{ background: 'var(--coral)' }}>
-            <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-lg" style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}>
-              S
-            </div>
-            <div className="flex-1">
-              <p className="font-semibold text-white text-sm">Support Chat</p>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full" style={{ background: '#4ade80' }}></div>
-                <p className="text-xs text-white" style={{ opacity: 0.85 }}>We're online</p>
+          {/* Header with tabs */}
+          <div style={{ background: 'var(--coral)' }}>
+            <div className="px-4 py-3 flex items-center gap-3 shrink-0">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-lg" style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}>
+                S
               </div>
+              <div className="flex-1">
+                <p className="font-semibold text-white text-sm">Support</p>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full" style={{ background: '#4ade80' }}></div>
+                  <p className="text-xs text-white" style={{ opacity: 0.85 }}>Online</p>
+                </div>
+              </div>
+              <button onClick={() => setOpen(false)} className="text-white cursor-pointer" style={{ opacity: 0.7 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
             </div>
-            <button onClick={() => setOpen(false)} className="text-white cursor-pointer" style={{ opacity: 0.7 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
+            {/* Tabs */}
+            <div className="flex gap-0 px-4 pb-0">
+              {(['chat', 'widget'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className="px-4 py-2 text-sm font-medium cursor-pointer border-b-2 transition-all capitalize"
+                  style={{
+                    borderBottomColor: activeTab === tab ? 'white' : 'transparent',
+                    color: activeTab === tab ? 'white' : 'rgba(255,255,255,0.6)',
+                  }}>
+                  {tab}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {step === 'intro' ? (
+          {activeTab === 'chat' ? (
             <div className="flex-1 p-5 flex flex-col justify-center overflow-y-auto">
               <div className="text-4xl mb-3 text-center">👋</div>
               <h3 className="text-base font-bold text-center mb-1" style={{ color: 'var(--ink)' }}>Chat with us</h3>

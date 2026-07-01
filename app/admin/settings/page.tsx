@@ -217,9 +217,15 @@ export default function SettingsPage() {
         const data = settingsData
         if (data?.value) {
           const s = data.value
+          console.log('[SETTINGS LOAD] Loaded from DB:', {
+            faviconUrl: s.faviconUrl || '(empty)',
+            ogImageUrl: s.ogImageUrl || '(empty)',
+            defaultHomepage: s.defaultHomepage || '(empty)',
+            navOrder: s.navOrder || '(empty)',
+          })
           // Only set favicon if it belongs to THIS company's settings
           if (s.faviconUrl) setFaviconUrl(s.faviconUrl)
-          else setFaviconUrl('') // Explicitly clear — don't inherit from another company
+          else setFaviconUrl('')
           if (s.ogImageUrl) setOgImageUrl(s.ogImageUrl)
           else setOgImageUrl('')
           if (s.logoLink) setLogoLink(s.logoLink)
@@ -228,7 +234,7 @@ export default function SettingsPage() {
           if (s.navRoadmap !== undefined) setNavRoadmap(s.navRoadmap)
           if (s.navAnnouncements !== undefined) setNavAnnouncements(s.navAnnouncements)
           if (s.navHelp !== undefined) setNavHelp(s.navHelp)
-          if (s.navOrder) setNavOrder(s.navOrder)
+          if (s.navOrder && Array.isArray(s.navOrder)) setNavOrder(s.navOrder)
           if (s.themeMode) setThemeMode(s.themeMode)
           if (s.borderRadius) setBorderRadius(s.borderRadius)
           if (s.emailFromName) setEmailFromName(s.emailFromName)
@@ -343,15 +349,31 @@ export default function SettingsPage() {
         ...settingsData, 
         faviconUrl: faviconUrl || '', 
         ogImageUrl: ogImageUrl || '', 
-        companyId 
+        defaultHomepage: defaultHomepage || 'ideas',
+        navOrder: navOrder || ['Ideas', 'Roadmap', 'Updates', 'Help Centre'],
+        companyId,
+        savedAt: new Date().toISOString(),
       }
+      
+      // DEBUG: Log what's being saved
+      console.log('[SETTINGS SAVE] Saving:', {
+        faviconUrl: faviconUrl || '(empty)',
+        ogImageUrl: ogImageUrl || '(empty)',
+        defaultHomepage: defaultHomepage || '(empty)',
+        navOrder: navOrder || '(empty)',
+      })
+      
       const { error: upsertErr } = await (supabase as any).from('site_settings').upsert({
         key: 'general',
         company_id: companyId,
         value: siteSettingsValue,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'key,company_id' })
-      if (upsertErr) console.error('Settings upsert error:', upsertErr.message)
+      if (upsertErr) {
+        console.error('Settings upsert error:', upsertErr.message)
+      } else {
+        console.log('[SETTINGS SAVE] ✅ Successfully saved to site_settings')
+      }
     } catch (e: any) {
       console.error('DB save failed:', e.message)
     }
