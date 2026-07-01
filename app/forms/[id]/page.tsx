@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getVisibleQuestions } from '@/lib/conditional-logic'
 
 function Confetti({ color }: { color: string }) {
   const pieces = Array.from({ length: 60 }, (_, i) => i)
@@ -84,8 +85,9 @@ export default function PublicForm() {
   }, [formId])
 
   const questions = form?.questions || []
+  const visibleQuestions = getVisibleQuestions(questions, answers)
   const themeColor = form?.theme?.color || '#ff7a6b'
-  const current = questions[step]
+  const current = visibleQuestions[step]
 
   // Question types where a single tap/click is an unambiguous answer — auto-advance
   const AUTO_ADVANCE_TYPES = ['multiple_choice', 'dropdown', 'yes_no', 'rating', 'nps', 'opinion_scale', 'legal']
@@ -95,7 +97,7 @@ export default function PublicForm() {
       alert('This question is required')
       return
     }
-    if (step < questions.length - 1) setStep(step + 1)
+    if (step < visibleQuestions.length - 1) setStep(step + 1)
     else handleSubmit()
   }
 

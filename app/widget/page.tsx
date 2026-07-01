@@ -131,6 +131,44 @@ function WidgetContent() {
     </div>
   )
 
+  // Detail view rendering
+  if (selectedItem) {
+    const item = selectedItem.type === 'idea' 
+      ? ideas.find(i => i.id === selectedItem.id)
+      : announcements.find(a => a.id === selectedItem.id)
+
+    return (
+      <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', height: '100vh', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <button onClick={() => setSelectedItem(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: 0, color: 'var(--slate)', fontWeight: 700 }}>←</button>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Back</span>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+          {item && (
+            <>
+              <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>{item.title}</h2>
+              {selectedItem.type === 'idea' && (
+                <>
+                  <p style={{ color: 'var(--slate)', lineHeight: 1.6, marginBottom: 16, fontSize: 13 }}>{item.description}</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ padding: '4px 10px', background: accentColor, color: 'white', borderRadius: 16, fontSize: 11, fontWeight: 600 }}>👍 {item.votes || 0}</span>
+                    <span style={{ padding: '4px 10px', background: 'var(--canvas)', color: 'var(--slate)', borderRadius: 16, fontSize: 11, fontWeight: 600 }}>{item.status || 'Submitted'}</span>
+                  </div>
+                </>
+              )}
+              {selectedItem.type === 'announcement' && (
+                <>
+                  <p style={{ fontSize: 11, color: 'var(--slate)', marginBottom: 12 }}>{new Date(item.created_at).toLocaleDateString()}</p>
+                  <div style={{ color: 'var(--ink)', lineHeight: 1.6, fontSize: 13 }}>{item.description}</div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', height: '100vh', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
       <style>{`
@@ -260,13 +298,13 @@ function WidgetContent() {
                   <a href={boardUrl} target="_blank" rel="noopener" style={{ fontSize: 11, color: accentColor, textDecoration: 'none', fontWeight: 600 }}>See all</a>
                 </div>
                 {trending.map(idea => (
-                  <a key={idea.id} href={`${boardUrl}?idea=${idea.id}`} target="_blank" rel="noopener" className="item-row" style={{ textDecoration: 'none', display: 'flex' }}>
+                  <div key={idea.id} onClick={() => setSelectedItem({ type: 'idea', id: idea.id })} className="item-row" style={{ textDecoration: 'none', display: 'flex' }}>
                     <div className="vote-pill">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={accentColor} strokeWidth="2.5" strokeLinecap="round"><polyline points="18 15 12 9 6 15"/></svg>
                       <span style={{ fontSize: 11, fontWeight: 700, color: accentColor }}>{idea.votes || 0}</span>
                     </div>
                     <span style={{ fontSize: 13, color: '#0d0d0d', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{idea.title}</span>
-                  </a>
+                  </div>
                 ))}
               </>
             )}
@@ -278,10 +316,10 @@ function WidgetContent() {
                   <a href={`${boardUrl}/roadmap`} target="_blank" rel="noopener" style={{ fontSize: 11, color: accentColor, textDecoration: 'none', fontWeight: 600 }}>See roadmap</a>
                 </div>
                 {inProgress.map(idea => (
-                  <a key={idea.id} href={`${boardUrl}?idea=${idea.id}`} target="_blank" rel="noopener" className="item-row" style={{ textDecoration: 'none', display: 'flex' }}>
+                  <div key={idea.id} onClick={() => setSelectedItem({ type: 'idea', id: idea.id })} className="item-row" style={{ textDecoration: 'none', display: 'flex' }}>
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }} />
                     <span style={{ fontSize: 13, color: '#0d0d0d', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{idea.title}</span>
-                  </a>
+                  </div>
                 ))}
               </>
             )}
@@ -307,10 +345,10 @@ function WidgetContent() {
                     <p style={{ fontSize: 11, fontWeight: 700, color: meta.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{meta.label}</p>
                   </div>
                   {items.slice(0, 4).map(idea => (
-                    <a key={idea.id} href={`${boardUrl}?idea=${idea.id}`} target="_blank" rel="noopener" className="item-row" style={{ textDecoration: 'none', display: 'flex', marginLeft: 14 }}>
+                    <div key={idea.id} onClick={() => setSelectedItem({ type: 'idea', id: idea.id })} className="item-row" style={{ textDecoration: 'none', display: 'flex', marginLeft: 14 }}>
                       <span style={{ fontSize: 13, color: '#0d0d0d', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{idea.title}</span>
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', flexShrink: 0 }}>▲ {idea.votes || 0}</span>
-                    </a>
+                    </div>
                   ))}
                 </div>
               )
