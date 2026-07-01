@@ -43,30 +43,43 @@ export default function NewHelpArticlePage() {
 
   useEffect(() => {
     const init = async () => {
+      console.log('[HELP INIT] Starting initialization...')
       const { data: authData } = await supabase.auth.getSession()
       const u = authData?.session?.user
+      console.log('[HELP INIT] User:', u?.id)
       if (!u) return
+
       setUser(u)
 
       try {
+        console.log('[HELP INIT] Loading company for user:', u.id)
         let co: any = null
-        const { data: coByOwner } = await (supabase as any)
+        const { data: coByOwner, error: ownerError } = await (supabase as any)
           .from('companies').select('*').eq('owner_id', u.id).maybeSingle()
+        console.log('[HELP INIT] Company by owner_id result:', { found: !!coByOwner, id: coByOwner?.id, error: ownerError })
         co = coByOwner
 
         if (!co && typeof window !== 'undefined') {
           const h = window.location.hostname
+          console.log('[HELP INIT] No company by owner_id, trying hostname:', h)
           if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
             const slug = h.replace('.colvy.com', '')
-            const { data: coBySlug } = await (supabase as any)
+            console.log('[HELP INIT] Slug:', slug)
+            const { data: coBySlug, error: slugError } = await (supabase as any)
               .from('companies').select('*').eq('slug', slug).maybeSingle()
+            console.log('[HELP INIT] Company by slug result:', { found: !!coBySlug, id: coBySlug?.id, error: slugError })
             co = coBySlug
           }
         }
 
-        if (co) setCompany(co)
+        if (co) {
+          console.log('[HELP INIT] ✅ Company loaded:', { id: co.id, slug: co.slug })
+          setCompany(co)
+        } else {
+          console.log('[HELP INIT] ❌ No company found!')
+        }
       } catch (e: any) {
-        console.error('Company load failed:', e.message)
+        console.error('[HELP INIT] ❌ Company load failed:', e.message)
       }
 
       if (editId) loadArticle(editId)
@@ -99,18 +112,55 @@ export default function NewHelpArticlePage() {
   }
 
   const handlePublish = async () => {
-    if (!title.trim()) { alert('Title is required'); return }
-    if (!company?.id) { alert('Company not loaded'); return }
+    console.log('[HELP PUBLISH] Starting publish...')
+    console.log('[HELP PUBLISH] company:', company)
+    console.log('[HELP PUBLISH] company?.id:', company?.id)
+    
+    if (!title.trim()) { 
+      alert('Title is required')
+      console.log('[HELP PUBLISH] Failed: No title')
+      return 
+    }
+    
+    if (!company?.id) { 
+      alert('Company not loaded. Please refresh the page.')
+      console.log('[HELP PUBLISH] Failed: No company loaded')
+      return 
+    }
+    
     setSaving(true)
     try {
-      const payload = { company_id: company.id, title: title.trim(), content: content.trim(), category, status, featured, media: mediaItems }
-      if (editId && !editId.startsWith('demo-')) {
-        await (supabase as any).from('help_articles').update(payload).eq('id', editId)
-      } else {
-        await (supabase as any).from('help_articles').insert({ ...payload, views: 0, likes: 0 })
+      const payload = { 
+        company_id: company.id, 
+        title: title.trim(), 
+        content: content.trim(), 
+        category, 
+        status, 
+        featured, 
+        media: mediaItems 
       }
+      
+      console.log('[HELP PUBLISH] Payload to save:', payload)
+      
+      if (editId && !editId.startsWith('demo-')) {
+        console.log('[HELP PUBLISH] Updating help article:', editId)
+        const { data, error } = await (supabase as any).from('help_articles').update(payload).eq('id', editId)
+        console.log('[HELP PUBLISH] Update result:', { data, error })
+        if (error) throw error
+      } else {
+        console.log('[HELP PUBLISH] Inserting new help article')
+        const { data, error } = await (supabase as any).from('help_articles').insert({ ...payload, views: 0, likes: 0 })
+        console.log('[HELP PUBLISH] Insert result:', { data, error })
+        if (error) throw error
+      }
+      
+      console.log('[HELP PUBLISH] ✅ Successfully saved!')
+      alert('Help article published successfully!')
       router.push('/admin/help')
-    } catch (err: any) { alert('Error: ' + err.message) }
+    } catch (err: any) { 
+      console.error('[HELP PUBLISH] ❌ Error:', err)
+      alert('Error: ' + err.message) 
+    }
     setSaving(false)
   }
 

@@ -53,31 +53,44 @@ export default function NewAnnouncementPage() {
 
   useEffect(() => {
     const init = async () => {
+      console.log('[ANN INIT] Starting initialization...')
       const { data: authData } = await supabase.auth.getSession()
       const u = authData?.session?.user
+      console.log('[ANN INIT] User:', u?.id)
       if (!u) return
+
       setUser(u)
 
       // Load company - try owner_id first, then slug from hostname
       try {
+        console.log('[ANN INIT] Loading company for user:', u.id)
         let co: any = null
-        const { data: coByOwner } = await (supabase as any)
+        const { data: coByOwner, error: ownerError } = await (supabase as any)
           .from('companies').select('*').eq('owner_id', u.id).maybeSingle()
+        console.log('[ANN INIT] Company by owner_id result:', { found: !!coByOwner, id: coByOwner?.id, error: ownerError })
         co = coByOwner
 
         if (!co && typeof window !== 'undefined') {
           const h = window.location.hostname
+          console.log('[ANN INIT] No company by owner_id, trying hostname:', h)
           if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
             const slug = h.replace('.colvy.com', '')
-            const { data: coBySlug } = await (supabase as any)
+            console.log('[ANN INIT] Slug:', slug)
+            const { data: coBySlug, error: slugError } = await (supabase as any)
               .from('companies').select('*').eq('slug', slug).maybeSingle()
+            console.log('[ANN INIT] Company by slug result:', { found: !!coBySlug, id: coBySlug?.id, error: slugError })
             co = coBySlug
           }
         }
 
-        if (co) setCompany(co)
+        if (co) {
+          console.log('[ANN INIT] ✅ Company loaded:', { id: co.id, slug: co.slug })
+          setCompany(co)
+        } else {
+          console.log('[ANN INIT] ❌ No company found!')
+        }
       } catch (e: any) {
-        console.error('Company load failed:', e.message)
+        console.error('[ANN INIT] ❌ Company load failed:', e.message)
       }
 
       if (editId) loadAnnouncement(editId)
@@ -103,25 +116,64 @@ export default function NewAnnouncementPage() {
   }
 
   const handlePublish = async () => {
-    if (!title.trim()) { alert('Title is required'); return }
-    if (!company?.id) { alert('Company not loaded'); return }
+    console.log('[ANN PUBLISH] Starting publish...')
+    console.log('[ANN PUBLISH] company:', company)
+    console.log('[ANN PUBLISH] company?.id:', company?.id)
+    
+    if (!title.trim()) { 
+      alert('Title is required')
+      console.log('[ANN PUBLISH] Failed: No title')
+      return 
+    }
+    
+    if (!company?.id) { 
+      alert('Company not loaded. Please refresh the page.')
+      console.log('[ANN PUBLISH] Failed: No company loaded')
+      return 
+    }
+    
     setSaving(true)
     try {
       const payload = {
         company_id: company.id,
-        title: title.trim(), description: description.trim(),
-        tag, status, language, boost_enabled: boostEnabled,
-        boost_type: boostType, boost_until: boostUntil, boost_until_date: boostUntilDate,
-        boost_button_label: boostButtonLabel, boost_title: boostTitle, boost_blurb: boostBlurb,
-        boost_image: boostImage, segmentation, notify_subscribers: notifySubscribers,
+        title: title.trim(), 
+        description: description.trim(),
+        tag, 
+        status, 
+        language, 
+        boost_enabled: boostEnabled,
+        boost_type: boostType, 
+        boost_until: boostUntil, 
+        boost_until_date: boostUntilDate,
+        boost_button_label: boostButtonLabel, 
+        boost_title: boostTitle, 
+        boost_blurb: boostBlurb,
+        boost_image: boostImage, 
+        segmentation, 
+        notify_subscribers: notifySubscribers,
       }
+      
+      console.log('[ANN PUBLISH] Payload to save:', payload)
+      
       if (editId) {
-        await (supabase as any).from('announcements').update(payload).eq('id', editId)
+        console.log('[ANN PUBLISH] Updating announcement:', editId)
+        const { data, error } = await (supabase as any).from('announcements').update(payload).eq('id', editId)
+        console.log('[ANN PUBLISH] Update result:', { data, error })
+        if (error) throw error
       } else {
-        await (supabase as any).from('announcements').insert({ ...payload, views: 0, impressions: 0 })
+        console.log('[ANN PUBLISH] Inserting new announcement')
+        const { data, error } = await (supabase as any).from('announcements').insert({ ...payload, views: 0, impressions: 0 })
+        console.log('[ANN PUBLISH] Insert result:', { data, error })
+        if (error) throw error
       }
+      
+      console.log('[ANN PUBLISH] ✅ Successfully saved!')
+      alert('Announcement published successfully!')
       router.push('/admin/announcements')
-    } catch (err: any) { alert('Error: ' + err.message) }
+    } catch (err: any) { 
+      console.error('[ANN PUBLISH] ❌ Error:', err)
+      alert('Error: ' + err.message) 
+    }
     setSaving(false)
   }
 
