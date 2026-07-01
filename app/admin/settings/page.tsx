@@ -384,51 +384,66 @@ export default function SettingsPage() {
         savedAt: new Date().toISOString(),
       }
       
-      // DEBUG: Log what's being saved
-      console.log('[SETTINGS SAVE] Saving all fields:', {
-        faviconUrl,
-        ogImageUrl,
-        defaultHomepage,
-        navOrder,
-        widgetFeedback, widgetRoadmap, widgetUpdates,
-      })
+      console.log('[SETTINGS SAVE] Attempting to save with companyId:', companyId)
+      if (!companyId) {
+        console.error('[SETTINGS SAVE] NO COMPANY ID - save will fail!')
+        showToast('Error: Company not loaded. Please refresh the page.', 'error', 4000)
+        setSaving(false)
+        return
+      }
       
-      const { error: upsertErr } = await (supabase as any).from('site_settings').upsert({
-        key: 'general',
-        company_id: companyId,
-        value: siteSettingsValue,
-        updated_at: new Date().toISOString(),
-      })
-      
-      if (upsertErr) {
-        // Fallback: try delete and re-insert
-        console.warn('Upsert failed, trying delete+insert:', upsertErr.message)
-        
-        // Delete existing
-        await (supabase as any)
-          .from('site_settings')
-          .delete()
-          .eq('key', 'general')
-          .eq('company_id', companyId)
-        
-        // Insert new
-        const { error: insertErr } = await (supabase as any).from('site_settings').insert({
-          key: 'general',
-          company_id: companyId,
+      // Try UPDATE first
+      const { data: updateData, error: updateErr } = await (supabase as any)
+        .from('site_settings')
+        .update({
           value: siteSettingsValue,
           updated_at: new Date().toISOString(),
         })
+        .eq('key', 'general')
+        .eq('company_id', companyId)
+        .select()
+      
+      if (updateData && updateData.length > 0) {
+        console.log('[SETTINGS SAVE] ✅ Successfully updated')
+        showToast('Settings saved successfully!', 'success', 3000)
+      } else if (updateErr) {
+        console.warn('Update failed:', updateErr.message, 'Trying insert...')
+        // If update failed or returned no rows, try INSERT
+        const { error: insertErr } = await (supabase as any)
+          .from('site_settings')
+          .insert({
+            key: 'general',
+            company_id: companyId,
+            value: siteSettingsValue,
+            updated_at: new Date().toISOString(),
+          })
         
         if (insertErr) {
-          console.error('Settings insert error:', insertErr.message)
+          console.error('[SETTINGS SAVE] Insert failed:', insertErr.message)
           showToast('Failed to save settings: ' + insertErr.message, 'error', 4000)
         } else {
           console.log('[SETTINGS SAVE] ✅ Successfully saved (via insert)')
           showToast('Settings saved successfully!', 'success', 3000)
         }
       } else {
-        console.log('[SETTINGS SAVE] ✅ Successfully saved')
-        showToast('Settings saved successfully!', 'success', 3000)
+        // No error but no rows updated - means record doesn't exist, try insert
+        console.log('No existing record, trying insert...')
+        const { error: insertErr } = await (supabase as any)
+          .from('site_settings')
+          .insert({
+            key: 'general',
+            company_id: companyId,
+            value: siteSettingsValue,
+            updated_at: new Date().toISOString(),
+          })
+        
+        if (insertErr) {
+          console.error('[SETTINGS SAVE] Insert error:', insertErr.message)
+          showToast('Failed to save settings: ' + insertErr.message, 'error', 4000)
+        } else {
+          console.log('[SETTINGS SAVE] ✅ Successfully saved (via insert)')
+          showToast('Settings saved successfully!', 'success', 3000)
+        }
       }
     } catch (e: any) {
       console.error('DB save failed:', e.message)

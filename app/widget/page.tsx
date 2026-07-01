@@ -124,8 +124,9 @@ function WidgetContent() {
     } catch {}
   }
 
-  const trending = ideas.filter(i => i.status === 'new' || i.status === 'planned').slice(0, 4)
+  const trending = ideas.filter(i => !i.status || i.status === 'new' || i.status === 'planned').slice(0, 4)
   const inProgress = ideas.filter(i => i.status === 'in_progress').slice(0, 3)
+  const allIdeas = ideas.slice(0, 50)  // Show all ideas up to 50
 
   const boardUrl = `https://${slug}.colvy.com`
 
@@ -334,6 +335,28 @@ function WidgetContent() {
                   </div>
                 ))}
               </>
+            )}
+
+            {trending.length === 0 && inProgress.length === 0 && allIdeas.length > 0 && (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent ideas</p>
+                  <a href={boardUrl} target="_blank" rel="noopener" style={{ fontSize: 11, color: accentColor, textDecoration: 'none', fontWeight: 600 }}>See all</a>
+                </div>
+                {allIdeas.map(idea => (
+                  <div key={idea.id} onClick={() => setSelectedItem({ type: 'idea', id: idea.id })} className="item-row" style={{ textDecoration: 'none', display: 'flex' }}>
+                    <div className="vote-pill">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={accentColor} strokeWidth="2.5" strokeLinecap="round"><polyline points="18 15 12 9 6 15"/></svg>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: accentColor }}>{idea.votes || 0}</span>
+                    </div>
+                    <span style={{ fontSize: 13, color: '#0d0d0d', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{idea.title}</span>
+                  </div>
+                ))}
+              </>
+            )}
+            
+            {ideas.length === 0 && (
+              <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingTop: 24 }}>No ideas submitted yet. Be the first!</p>
             )}
           </div>
         )}
