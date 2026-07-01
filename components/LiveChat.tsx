@@ -177,38 +177,12 @@ export default function LiveChat() {
       {open && (
         <div className="fixed bottom-24 right-6 z-50 w-80 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
           style={{ height: 480, border: '1px solid var(--border)', background: 'white' }}>
-          {/* Header with tabs */}
-          <div style={{ background: 'var(--coral)' }}>
-            <div className="px-4 py-3 flex items-center gap-3 shrink-0">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-lg" style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}>
-                S
-              </div>
-              <div className="flex-1">
-                <p className="font-semibold text-white text-sm">Support</p>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full" style={{ background: '#4ade80' }}></div>
-                  <p className="text-xs text-white" style={{ opacity: 0.85 }}>Online</p>
-                </div>
-              </div>
-              <button onClick={() => setOpen(false)} className="text-white cursor-pointer" style={{ opacity: 0.7 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-            {/* Tabs */}
-            <div className="flex gap-0 px-4 pb-0">
-              {(['chat', 'widget'] as const).map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className="px-4 py-2 text-sm font-medium cursor-pointer border-b-2 transition-all capitalize"
-                  style={{
-                    borderBottomColor: activeTab === tab ? 'white' : 'transparent',
-                    color: activeTab === tab ? 'white' : 'rgba(255,255,255,0.6)',
-                  }}>
-                  {tab}
-                </button>
-              ))}
-            </div>
+          {/* Close button */}
+          <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'flex-end', borderBottom: '1px solid var(--border)' }}>
+            <button onClick={() => setOpen(false)} className="text-slate-400 cursor-pointer hover:text-slate-600"
+              style={{ fontSize: 20, fontWeight: 'bold' }}>
+              ×
+            </button>
           </div>
 
           {activeTab === 'chat' ? (
@@ -317,6 +291,22 @@ export default function LiveChat() {
               </div>
             </>
           )}
+          
+          {/* Footer tabs */}
+          <div style={{ display: 'flex', gap: 0, padding: '8px 12px', background: '#f9fafb', borderTop: '1px solid var(--border)' }}>
+            {(['chat', 'widget'] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className="flex-1 px-3 py-2 text-xs font-medium cursor-pointer rounded-lg transition-all capitalize"
+                style={{
+                  background: activeTab === tab ? 'var(--coral)' : 'transparent',
+                  color: activeTab === tab ? 'white' : 'var(--slate)',
+                }}>
+                {tab === 'chat' ? '💬' : '📋'} {tab}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </>
