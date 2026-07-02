@@ -553,39 +553,57 @@ function WidgetContent() {
               )}
               {selectedItem.type === 'help' && (
                 <>
-                  <div style={{ color: 'var(--ink)', lineHeight: 1.6, fontSize: 13, whiteSpace: 'pre-wrap' }}>
-                    {item.content}
+                  {/* Article Content */}
+                  <div style={{ marginBottom: 24 }}>
+                    <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 12, lineHeight: 1.3 }}>{item.title}</h2>
+                    
+                    {item.category && (
+                      <div style={{ marginBottom: 12 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: '4px 8px', borderRadius: 4, background: accentColor + '15', color: accentColor, textTransform: 'capitalize' }}>
+                          {item.category}
+                        </span>
+                      </div>
+                    )}
+
+                    <div style={{ color: 'var(--ink)', lineHeight: 1.7, fontSize: 13, marginBottom: 12 }}>
+                      {item.content?.split('\n').filter(Boolean).map((line, i) => (
+                        <p key={i} style={{ margin: '0 0 12px 0', wordBreak: 'break-word' }}>{line}</p>
+                      ))}
+                    </div>
+                    
                     {/* Parse and display images in content */}
                     {item.content && item.content.includes('http') && (
                       <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                         {item.content.split(/\s/).map((part, i) => {
                           if (part.startsWith('http') && /\.(jpg|jpeg|png|gif|webp)$/i.test(part)) {
                             return (
-                              <img
-                                key={i}
-                                src={part}
-                                alt="Screenshot"
-                                onClick={() => {
-                                  setViewerImage(part)
-                                  setShowImageViewer(true)
-                                }}
-                                style={{
-                                  maxWidth: '100%',
-                                  maxHeight: 200,
-                                  borderRadius: 8,
-                                  cursor: 'pointer',
-                                  border: '1px solid var(--border)',
-                                  transition: 'all 0.2s',
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'
-                                  e.currentTarget.style.transform = 'scale(1.02)'
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.boxShadow = 'none'
-                                  e.currentTarget.style.transform = 'scale(1)'
-                                }}
-                              />
+                              <div key={i} style={{ position: 'relative' }}>
+                                <img
+                                  src={part}
+                                  alt="Article image"
+                                  onClick={() => {
+                                    setViewerImage(part)
+                                    setShowImageViewer(true)
+                                  }}
+                                  style={{
+                                    maxWidth: '100%',
+                                    maxHeight: 200,
+                                    borderRadius: 8,
+                                    cursor: 'pointer',
+                                    border: '1px solid var(--border)',
+                                    transition: 'all 0.2s',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'
+                                    e.currentTarget.style.transform = 'scale(1.02)'
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.boxShadow = 'none'
+                                    e.currentTarget.style.transform = 'scale(1)'
+                                  }}
+                                />
+                                <span style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '4px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>Click to expand</span>
+                              </div>
                             )
                           }
                           return null
@@ -593,6 +611,134 @@ function WidgetContent() {
                       </div>
                     )}
                   </div>
+
+                  {/* Divider */}
+                  <div style={{ height: 1, background: 'var(--border)', margin: '20px 0' }} />
+
+                  {/* Helpful Feedback Section */}
+                  <div style={{ marginBottom: 20 }}>
+                    <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>Did this article help solve your problem?</h3>
+                    <p style={{ fontSize: 12, color: 'var(--slate)', marginBottom: 12, margin: '0 0 12px 0' }}>Your feedback helps us improve our documentation.</p>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => trackWidgetEvent('help_feedback_yes')}
+                        style={{
+                          flex: 1,
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          border: '1px solid var(--border)',
+                          background: '#fff',
+                          cursor: 'pointer',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: 'var(--ink)',
+                          transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#f0fdf4'
+                          e.currentTarget.style.borderColor = '#22c55e'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = '#fff'
+                          e.currentTarget.style.borderColor = 'var(--border)'
+                        }}>
+                        👍 Yes, it helped!
+                      </button>
+                      <button
+                        onClick={() => trackWidgetEvent('help_feedback_no')}
+                        style={{
+                          flex: 1,
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          border: '1px solid var(--border)',
+                          background: '#fff',
+                          cursor: 'pointer',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: 'var(--ink)',
+                          transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#fef2f2'
+                          e.currentTarget.style.borderColor = '#ef4444'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = '#fff'
+                          e.currentTarget.style.borderColor = 'var(--border)'
+                        }}>
+                        👎 Not really
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div style={{ height: 1, background: 'var(--border)', margin: '20px 0' }} />
+
+                  {/* Still Need Help Section */}
+                  <div style={{ marginBottom: 20 }}>
+                    <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>🎫 Still need help?</h3>
+                    <p style={{ fontSize: 12, color: 'var(--slate)', margin: '0 0 12px 0' }}>Submit a support ticket and we'll get back to you.</p>
+                    <button
+                      onClick={() => trackWidgetEvent('help_open_ticket')}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: 8,
+                        border: `1.5px solid ${accentColor}`,
+                        background: accentColor,
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: '#fff',
+                        transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.opacity = '0.9'
+                        e.currentTarget.style.transform = 'translateY(-1px)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = '1'
+                        e.currentTarget.style.transform = 'translateY(0)'
+                      }}>
+                      Open Ticket
+                    </button>
+                  </div>
+
+                  {/* Related Articles Section */}
+                  {helpArticles.filter(a => a.id !== item.id && a.category === item.category).length > 0 && (
+                    <>
+                      <div style={{ height: 1, background: 'var(--border)', margin: '20px 0' }} />
+                      <div>
+                        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>Related Articles</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {helpArticles.filter(a => a.id !== item.id && a.category === item.category).slice(0, 3).map(article => (
+                            <div
+                              key={article.id}
+                              onClick={() => setSelectedItem({ type: 'help', id: article.id })}
+                              style={{
+                                padding: '10px 12px',
+                                borderRadius: 8,
+                                border: '1px solid var(--border)',
+                                background: '#fff',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'var(--canvas)'
+                                e.currentTarget.style.borderColor = accentColor
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = '#fff'
+                                e.currentTarget.style.borderColor = 'var(--border)'
+                              }}>
+                              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', margin: '0 0 4px 0' }}>{article.title}</p>
+                              <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--slate)' }}>📁 {article.category}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </>
