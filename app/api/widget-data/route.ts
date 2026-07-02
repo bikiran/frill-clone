@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     console.log('[WIDGET API] Found company:', { id: company.id, slug: company.slug })
 
     const [ideasRes, annRes, formsRes, pollsRes, surveysRes, helpRes] = await Promise.all([
-      (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private').eq('company_id', company.id)
+      (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private,attachments').eq('company_id', company.id)
         .neq('is_private', true).order('votes', { ascending: false }).limit(20),
       (supabase as any).from('announcements').select('id,title,description,tag,status,created_at,boost_enabled,boost_type,boost_button_label,boost_title,boost_blurb,boost_image,views,impressions')
         .eq('company_id', company.id)
@@ -106,19 +106,77 @@ export async function POST(req: NextRequest) {
 
     if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
 
-    await (supabase as any).from('ideas').insert({
+    console.log('[WIDGET API POST] Creating idea:', { slug, title, attachmentCount: attachments?.length || 0 })
+
+    // Process attachments - upload to Supabase Storage
+    let attachmentUrls: string[] = []
+    if (attachments && attachments.length > 0) {
+      for (const attachment of attachments) {
+        try {
+          // attachment is base64 data URL: "data:image/png;base64,iVBORw0KGgo..."
+          const base64Parts = attachment.split(',')
+          const base64Data = base64Parts[1]
+          const mimeType = base64Parts[0].match(/data:([^;]+)/)?.[1] || 'image/png'
+          
+          // Convert base64 to buffer
+          const buffer = Buffer.from(base64Data, 'base64')
+          const fileExtension = mimeType.split('/')[1] || 'png'
+          const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExtension}`
+          const filePath = `ideas/${company.id}/${fileName}`
+
+          console.log('[WIDGET API POST] Uploading attachment:', { fileName, size: buffer.length })
+
+          // Upload to Supabase Storage
+          const { data: uploadData, error: uploadError } = await (supabase as any)
+            .storage
+            .from('feedback-attachments')
+            .upload(filePath, buffer, { 
+              contentType: mimeType,
+              upsert: false 
+            })
+
+          if (uploadError) {
+            console.error('[WIDGET API POST] Upload error:', uploadError)
+            throw uploadError
+          }
+
+          // Get public URL
+          const { data: { publicUrl } } = await (supabase as any)
+            .storage
+            .from('feedback-attachments')
+            .getPublicUrl(filePath)
+
+          attachmentUrls.push(publicUrl)
+          console.log('[WIDGET API POST] Upload successful:', { publicUrl })
+        } catch (err) {
+          console.error('[WIDGET API POST] Error processing attachment:', err)
+        }
+      }
+    }
+
+    console.log('[WIDGET API POST] Processed attachments:', { count: attachmentUrls.length, urls: attachmentUrls })
+
+    const { data: idea, error: insertError } = await (supabase as any).from('ideas').insert({
       company_id: company.id,
       title: title.trim(),
       votes: 0,
       status: 'new',
       created_by_name: 'Widget User',
-      attachments: attachments || [],
-    })
+      attachments: attachmentUrls,
+    }).select()
 
-    return NextResponse.json({ ok: true }, {
+    if (insertError) {
+      console.error('[WIDGET API POST] Insert error:', insertError)
+      throw insertError
+    }
+
+    console.log('[WIDGET API POST] Idea created successfully:', { ideaId: idea?.[0]?.id, attachmentCount: attachmentUrls.length })
+
+    return NextResponse.json({ ok: true, idea: idea?.[0] }, {
       headers: { 'Access-Control-Allow-Origin': '*' }
     })
   } catch (e: any) {
+    console.error('[WIDGET API POST] Error:', e.message)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

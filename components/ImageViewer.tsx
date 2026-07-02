@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import ImageAnnotator from './ImageAnnotator'
 
 export default function ImageViewer({ 
   imageSrc, 
@@ -13,6 +14,7 @@ export default function ImageViewer({
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [showAnnotator, setShowAnnotator] = useState(false)
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault()
@@ -36,6 +38,19 @@ export default function ImageViewer({
 
   const handleMouseUp = () => {
     setIsDragging(false)
+  }
+
+  if (showAnnotator) {
+    return (
+      <ImageAnnotator
+        imageSrc={imageSrc}
+        onClose={() => setShowAnnotator(false)}
+        onSave={() => {
+          setShowAnnotator(false)
+          onClose()
+        }}
+      />
+    )
   }
 
   return (
@@ -117,6 +132,23 @@ export default function ImageViewer({
               fontSize: 12,
             }}>
             ⟲ Reset
+          </button>
+
+          <div style={{ width: 1, height: 20, background: '#666' }} />
+
+          <button
+            onClick={() => setShowAnnotator(true)}
+            style={{
+              padding: '8px 12px',
+              background: '#ff7a6b',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 'bold',
+            }}>
+            ✏️ Annotate
           </button>
         </div>
 
