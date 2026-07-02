@@ -1,5 +1,6 @@
 'use client'
 
+
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -281,7 +282,7 @@ export default function FormBuilder() {
           {isPublished && (
             <Link href={`/forms/${formId}`} target="_blank"
               style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 600, border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none' }}>
-              View →
+              View
             </Link>
           )}
           <Link href={`/admin/forms/${formId}/results`}
@@ -294,7 +295,7 @@ export default function FormBuilder() {
       {/* Mobile panel switcher */}
       {isMobile && (
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', background: '#fff', flexShrink: 0 }}>
-          {([['steps', '☰ Steps'], ['preview', '👁 Preview'], ['settings', '⚙ Settings']] as const).map(([key, label]) => (
+          {([['steps', 'Steps'], ['preview', 'Preview'], ['settings', 'Settings']] as const).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setMobilePanel(key)}
@@ -349,7 +350,7 @@ export default function FormBuilder() {
           <button
             onClick={() => { setPreviewStep(questions.length); if (isMobile) setMobilePanel('preview') }}
             style={{ width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 10, marginBottom: 12, cursor: 'pointer', border: 'none', background: previewStep === questions.length ? '#fff' : 'transparent', boxShadow: previewStep === questions.length ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>🎉 Thank you screen</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Thank you screen</span>
           </button>
 
           <div style={{ position: 'relative' }}>
@@ -398,7 +399,7 @@ export default function FormBuilder() {
                 <textarea value={welcomeMessage} onChange={e => setWelcomeMessage(e.target.value)}
                   style={{ fontSize: 15, color: '#6b6b70', lineHeight: 1.6, marginBottom: 28, border: 'none', outline: 'none', resize: 'none', width: '100%', background: 'transparent' }} rows={2} />
                 <button style={{ padding: '12px 28px', borderRadius: 12, background: themeColor, color: '#fff', fontWeight: 700, fontSize: 14, border: 'none', cursor: 'pointer', width: 'fit-content' }}>
-                  Start →
+                  Start
                 </button>
               </div>
             ) : previewStep === questions.length ? (
@@ -510,7 +511,7 @@ export default function FormBuilder() {
                 )}
 
                 <button style={{ marginTop: 28, padding: '11px 24px', borderRadius: 12, background: themeColor, color: '#fff', fontWeight: 700, fontSize: 14, border: 'none', cursor: 'pointer' }}>
-                  OK →
+                  OK
                 </button>
               </div>
             ) : null}
@@ -665,7 +666,7 @@ export default function FormBuilder() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div>
-                  <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, display: 'block' }}>🎉 Confetti on submit</label>
+                  <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, display: 'block' }}>Confetti on submit</label>
                   <span style={{ fontSize: 11, color: 'var(--slate)' }}>Celebrate when someone finishes the form</span>
                 </div>
                 <button onClick={() => setShowConfetti(!showConfetti)}

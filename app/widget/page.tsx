@@ -1,5 +1,6 @@
 'use client'
 
+
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
@@ -642,7 +643,7 @@ function WidgetContent() {
                           e.currentTarget.style.background = '#fff'
                           e.currentTarget.style.borderColor = 'var(--border)'
                         }}>
-                        👍 Yes, it helped!
+                        Yes, it helped!
                       </button>
                       <button
                         onClick={() => trackWidgetEvent('help_feedback_no')}
@@ -666,7 +667,7 @@ function WidgetContent() {
                           e.currentTarget.style.background = '#fff'
                           e.currentTarget.style.borderColor = 'var(--border)'
                         }}>
-                        👎 Not really
+                        Not really
                       </button>
                     </div>
                   </div>
@@ -676,7 +677,7 @@ function WidgetContent() {
 
                   {/* Still Need Help Section */}
                   <div style={{ marginBottom: 20 }}>
-                    <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>🎫 Still need help?</h3>
+                    <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>Still need help?</h3>
                     <p style={{ fontSize: 12, color: 'var(--slate)', margin: '0 0 12px 0' }}>Submit a support ticket and we'll get back to you.</p>
                     <button
                       onClick={() => trackWidgetEvent('help_open_ticket')}
@@ -732,7 +733,7 @@ function WidgetContent() {
                                 e.currentTarget.style.borderColor = 'var(--border)'
                               }}>
                               <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', margin: '0 0 4px 0' }}>{article.title}</p>
-                              <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--slate)' }}>📁 {article.category}</span>
+                              <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--slate)' }}>{article.category}</span>
                             </div>
                           ))}
                         </div>
@@ -1018,7 +1019,7 @@ function WidgetContent() {
 
         {tab === 'chat' && (
           <div style={{ animation: 'fadeIn 0.2s ease both', padding: '16px', textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
-            💬 Chat support coming soon. Use feedback tab to reach out!
+            Chat support coming soon. Use feedback tab to reach out!
           </div>
         )}
 

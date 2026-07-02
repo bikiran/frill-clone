@@ -225,3 +225,26 @@ export const BellIcon = ({ size = 18, color = 'currentColor', className, filled 
     <path d="M13.73 21a2 2 0 0 1-3.46 0" />
   </svg>
 )
+
+// Widget & Form Icons
+export const ThumbsUpIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-2.7l-1.38-5.05a2 2 0 0 0-1.9-1.25H14z" />
+    <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
+  </svg>
+)
+
+export const ThumbsDownIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 2.7l1.38 5.05a2 2 0 0 0 1.9 1.25H10z" />
+    <path d="M17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3" />
+  </svg>
+)
+
+export const TicketIcon = ({ size = 18, color = 'currentColor', className }: IconProps) => (
+  <svg {...baseProps(size, color)} className={className}>
+    <path d="M3 9.5C3 8.119 4.119 7 5.5 7H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5.5C4.119 17 3 15.881 3 14.5v-5z" />
+    <line x1="3" y1="12" x2="21" y2="12" />
+  </svg>
+)
+

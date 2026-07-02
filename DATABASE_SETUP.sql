@@ -1033,3 +1033,24 @@ ALTER TABLE forms ADD COLUMN IF NOT EXISTS end_actions JSONB DEFAULT '[]'::jsonb
 
 -- Forms: confetti toggle and rich media support on questions (questions JSONB already supports mediaUrl/mediaType/fileAccept per-question)
 ALTER TABLE forms ADD COLUMN IF NOT EXISTS show_confetti BOOLEAN DEFAULT true;
+
+-- Help Categories table
+CREATE TABLE IF NOT EXISTS help_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id),
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  description TEXT,
+  icon TEXT,
+  position INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(company_id, slug)
+);
+
+CREATE INDEX IF NOT EXISTS help_categories_company_idx ON help_categories(company_id);
+CREATE INDEX IF NOT EXISTS help_categories_position_idx ON help_categories(company_id, position);
+
+-- Add category_id to help_articles
+ALTER TABLE help_articles ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES help_categories(id);
+CREATE INDEX IF NOT EXISTS help_articles_category_id_idx ON help_articles(category_id);
