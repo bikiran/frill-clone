@@ -4,37 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getVisibleQuestions } from '@/lib/conditional-logic'
-
-function Confetti({ color }: { color: string }) {
-  const pieces = Array.from({ length: 60 }, (_, i) => i)
-  const colors = [color, '#10b981', '#f59e0b', '#6366f1', '#ec4899']
-  return (
-    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 50 }}>
-      <style>{`
-        @keyframes confettiFall {
-          0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(110vh) rotate(720deg); opacity: 0.3; }
-        }
-      `}</style>
-      {pieces.map(i => {
-        const left = Math.random() * 100
-        const delay = Math.random() * 0.6
-        const duration = 2.2 + Math.random() * 1.6
-        const size = 6 + Math.random() * 6
-        const c = colors[i % colors.length]
-        const isCircle = i % 3 === 0
-        return (
-          <div key={i} style={{
-            position: 'absolute', top: 0, left: `${left}%`,
-            width: size, height: isCircle ? size : size * 1.6,
-            background: c, borderRadius: isCircle ? '50%' : 2,
-            animation: `confettiFall ${duration}s ease-in ${delay}s both`,
-          }} />
-        )
-      })}
-    </div>
-  )
-}
+import Confetti from '@/components/Confetti'
 
 export default function PublicForm() {
   const params = useParams()
@@ -222,7 +192,7 @@ export default function PublicForm() {
         .ff-input:focus { border-color: var(--ff-color) !important; }
       `}</style>
 
-      {showConfetti && <Confetti color={themeColor} />}
+      <Confetti show={showConfetti} color={themeColor} />
 
       {step >= 0 && !submitted && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 4, background: '#f0f0f0', zIndex: 10 }}>

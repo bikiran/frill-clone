@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-// Server-side settings save/load using the service role key.
-// This bypasses any client-side auth/RLS quirks and verifies
-// every write by reading it back before responding.
-
 function getDb() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } }
-  )
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  
+  if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL not set')
+  if (!serviceKey && !anonKey) throw new Error('Neither SUPABASE_SERVICE_ROLE_KEY nor NEXT_PUBLIC_SUPABASE_ANON_KEY set')
+  
+  // Try service key first (bypasses RLS), fall back to anon key
+  const key = serviceKey || anonKey
+  console.log('[SETTINGS API] Using', serviceKey ? 'service role key' : 'anon key')
+  
+  return createClient(url, key!, { auth: { persistSession: false } })
 }
 
 export async function GET(req: NextRequest) {
