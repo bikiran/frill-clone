@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
-const CATEGORIES = ['Getting Started', 'Features', 'Billing', 'Integrations', 'Troubleshooting', 'API', 'Other']
+const DEFAULT_CATEGORIES = ['Getting Started', 'Features', 'Billing', 'Integrations', 'Troubleshooting', 'API', 'Other']
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -35,6 +35,7 @@ export default function NewHelpArticlePage() {
   const [category, setCategory] = useState('Getting Started')
   const [status, setStatus] = useState('published')
   const [featured, setFeatured] = useState(false)
+  const [categories, setCategories] = useState<any[]>([])
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
   const [showYoutubeModal, setShowYoutubeModal] = useState(false)
   const [youtubeUrl, setYoutubeUrl] = useState('')
@@ -75,6 +76,26 @@ export default function NewHelpArticlePage() {
         if (co) {
           console.log('[HELP INIT] ✅ Company loaded:', { id: co.id, slug: co.slug })
           setCompany(co)
+          
+          // Load help categories
+          try {
+            const { data: cats } = await (supabase as any)
+              .from('help_categories')
+              .select('*')
+              .eq('company_id', co.id)
+              .order('position', { ascending: true })
+            if (cats && cats.length > 0) {
+              setCategories(cats)
+              setCategory(cats[0].slug) // Use first category by default
+              console.log('[HELP INIT] ✅ Categories loaded:', cats.length)
+            } else {
+              setCategories([])
+              setCategory('Getting Started') // Fall back to default
+            }
+          } catch (e) {
+            console.error('[HELP INIT] Category load failed:', e)
+            setCategories([])
+          }
         } else {
           console.log('[HELP INIT] ❌ No company found!')
         }
@@ -497,8 +518,15 @@ Images: upload using the 🖼️ button above"
                   <select value={category} onChange={e => setCategory(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
                     style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                    {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                    {categories.length > 0 ? (
+                      categories.map(c => <option key={c.id} value={c.slug}>{c.name}</option>)
+                    ) : (
+                      DEFAULT_CATEGORIES.map(c => <option key={c}>{c}</option>)
+                    )}
                   </select>
+                  {categories.length === 0 && (
+                    <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 4 }}>No categories yet. <a href="/admin/settings/help-categories" style={{ color: 'var(--coral)', textDecoration: 'none', fontWeight: 600 }}>Create one →</a></p>
+                  )}
                 </div>
                 <div className="flex items-center justify-between">
                   <div>

@@ -209,7 +209,7 @@ export default function HelpCentrePage() {
             {/* Featured */}
             {featured.length > 0 && !search && (
               <div className="mb-10">
-                <h2 className="text-sm font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--slate)' }}>⭐ Featured Articles</h2>
+                <h2 className="text-sm font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--slate)' }}>Featured Articles</h2>
                 <div className="grid md:grid-cols-3 gap-4">
                   {featured.map(a => (
                     <Link key={a.id} href={`/help/${a.id}`}

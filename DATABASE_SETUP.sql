@@ -1054,3 +1054,13 @@ CREATE INDEX IF NOT EXISTS help_categories_position_idx ON help_categories(compa
 -- Add category_id to help_articles
 ALTER TABLE help_articles ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES help_categories(id);
 CREATE INDEX IF NOT EXISTS help_articles_category_id_idx ON help_articles(category_id);
+
+-- Forms table updates for conditional logic & piping
+-- Note: conditional_logic is already stored in JSON in the questions array
+-- No migration needed - fields already supported in existing schema
+
+-- Add optional columns for form display settings
+ALTER TABLE forms ADD COLUMN IF NOT EXISTS display_style TEXT DEFAULT 'list'; -- 'list' or 'typeform'
+ALTER TABLE forms ADD COLUMN IF NOT EXISTS enable_piping BOOLEAN DEFAULT true;
+
+CREATE INDEX IF NOT EXISTS forms_display_style_idx ON forms(company_id, display_style);

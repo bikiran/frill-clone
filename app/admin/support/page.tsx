@@ -175,7 +175,8 @@ export default function SupportPage() {
         <button onClick={() => setActiveTab('chat')}
           className="px-4 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer"
           style={{ borderColor: activeTab === 'chat' ? 'var(--coral)' : 'transparent', color: activeTab === 'chat' ? 'var(--coral)' : 'var(--slate)' }}>
-          💬 Live Chat {chatSessions.length > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-xs" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{chatSessions.length}</span>}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', marginRight: 6, verticalAlign: 'text-bottom' }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Live Chat {chatSessions.length > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-xs" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{chatSessions.length}</span>}
         </button>
         <button onClick={() => setActiveTab('tickets')}
           className="px-4 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer"
@@ -196,7 +197,7 @@ export default function SupportPage() {
               <div className="flex-1 overflow-y-auto">
                 {chatSessions.length === 0 ? (
                   <div className="p-6 text-center">
-                    <div className="text-3xl mb-2">💬</div>
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="1.5" style={{ margin: '0 auto 12px' }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                     <p className="text-sm" style={{ color: 'var(--slate)' }}>No chats yet</p>
                     <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>New chats will appear here in real time</p>
                   </div>
@@ -231,7 +232,7 @@ export default function SupportPage() {
             <main className="flex-1 flex flex-col min-h-0">
               {!selectedSession ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                  <div className="text-5xl mb-4">💬</div>
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="1.5" style={{ marginBottom: 16 }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                   <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Select a conversation</h2>
                   <p style={{ color: 'var(--slate)' }}>Choose a chat from the sidebar to start replying</p>
                 </div>

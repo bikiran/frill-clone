@@ -755,6 +755,41 @@ export default function FormBuilder() {
           ) : (
             <>
               <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>Form Design</h3>
+              
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 8 }}>Display style</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => handleSave({ display_style: 'list' })}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: form?.display_style === 'list' ? `2px solid ${themeColor}` : '1px solid var(--border)',
+                      background: form?.display_style === 'list' ? `${themeColor}11` : '#fff',
+                      color: form?.display_style === 'list' ? themeColor : 'var(--ink)',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}>
+                    List view
+                  </button>
+                  <button onClick={() => handleSave({ display_style: 'typeform' })}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: form?.display_style === 'typeform' ? `2px solid ${themeColor}` : '1px solid var(--border)',
+                      background: form?.display_style === 'typeform' ? `${themeColor}11` : '#fff',
+                      color: form?.display_style === 'typeform' ? themeColor : 'var(--ink)',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}>
+                    Typeform style
+                  </button>
+                </div>
+              </div>
+              
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 8 }}>Theme color</label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
