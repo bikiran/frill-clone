@@ -234,17 +234,24 @@ export default function SettingsPage() {
         let settingsData: any = null
         console.log('[SETTINGS LOAD] Looking for settings with company_id:', co?.id)
         if (co?.id) {
-          const { data: d, error: loadErr } = await (supabase as any).from('site_settings').select('*')
-            .eq('key', 'general').eq('company_id', co.id).maybeSingle()
-          console.log('[SETTINGS LOAD] Query result:', { found: !!d, error: loadErr?.message })
-          settingsData = d
+          // Use order + limit(1) instead of maybeSingle() so a stray
+          // duplicate row (e.g. from before the unique constraint existed)
+          // can't cause the whole query to silently error out.
+          const { data: rows, error: loadErr } = await (supabase as any).from('site_settings').select('*')
+            .eq('key', 'general').eq('company_id', co.id)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+          console.log('[SETTINGS LOAD] Query result:', { found: !!rows?.length, error: loadErr?.message })
+          settingsData = rows?.[0] || null
         }
         // Fallback: unscoped (legacy)
         if (!settingsData) {
           console.log('[SETTINGS LOAD] No company-scoped settings, trying fallback...')
-          const { data: d } = await (supabase as any).from('site_settings').select('*')
-            .eq('key', 'general').is('company_id', null).maybeSingle()
-          settingsData = d
+          const { data: rows } = await (supabase as any).from('site_settings').select('*')
+            .eq('key', 'general').is('company_id', null)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+          settingsData = rows?.[0] || null
         }
         const data = settingsData
         if (data?.value) {
@@ -534,8 +541,9 @@ export default function SettingsPage() {
         const cid = co?.id
         const currentSettings: any = {}
         if (cid) {
-          const { data: s } = await (supabase as any).from('site_settings').select('value').eq('key', 'general').eq('company_id', cid).maybeSingle()
-          if (s?.value) Object.assign(currentSettings, s.value)
+          const { data: rows } = await (supabase as any).from('site_settings').select('value').eq('key', 'general').eq('company_id', cid)
+            .order('updated_at', { ascending: false }).limit(1)
+          if (rows?.[0]?.value) Object.assign(currentSettings, rows[0].value)
         }
         currentSettings[settingKey] = publicUrl
         await (supabase as any).from('site_settings').upsert({ key: 'general', company_id: cid || null, value: currentSettings, updated_at: new Date().toISOString() }, { onConflict: 'key,company_id' })
