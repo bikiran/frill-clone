@@ -34,6 +34,8 @@ function WidgetContent() {
   const [showImageViewer, setShowImageViewer] = useState(false)
   const [viewerImage, setViewerImage] = useState('')
   const [animatingVotes, setAnimatingVotes] = useState<Set<string>>(new Set())
+  const [helpSearch, setHelpSearch] = useState('')
+  const [helpCategory, setHelpCategory] = useState<string | null>(null)
 
   const accentColor = company?.accent_color || '#ff7a6b'
 
@@ -228,6 +230,15 @@ function WidgetContent() {
 
   const boardUrl = `https://${slug}.colvy.com`
 
+  // Computed help article variables
+  const allHelpCategories = Array.from(new Set(helpArticles.map(a => a.category).filter(Boolean)))
+  const filteredHelpArticles = helpArticles.filter(a => {
+    const q = helpSearch.toLowerCase()
+    const matchSearch = !helpSearch || a.title?.toLowerCase().includes(q) || a.content?.toLowerCase().includes(q)
+    const matchCat = !helpCategory || a.category === helpCategory
+    return matchSearch && matchCat
+  })
+
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
       <div style={{ width: 24, height: 24, border: `2px solid #f0f0f0`, borderTopColor: '#ff7a6b', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -268,12 +279,46 @@ function WidgetContent() {
                     )}
                   </div>
 
-
                   {/* Full description with images */}
                   <div style={{ marginBottom: 16 }}>
                     <p style={{ color: 'var(--ink)', lineHeight: 1.6, marginBottom: 12, fontSize: 13, whiteSpace: 'pre-wrap' }}>{item.description}</p>
                     
-                    {/* Parse and display images */}
+                    {/* Display attachments (uploaded images) */}
+                    {item.attachments && item.attachments.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                        {item.attachments.map((img: string, i: number) => (
+                          <div key={i} style={{ position: 'relative' }}>
+                            <img
+                              src={img}
+                              alt={`Attachment ${i + 1}`}
+                              onClick={() => {
+                                setViewerImage(img)
+                                setShowImageViewer(true)
+                              }}
+                              style={{
+                                maxWidth: '100%',
+                                maxHeight: 200,
+                                borderRadius: 8,
+                                cursor: 'pointer',
+                                border: '1px solid var(--border)',
+                                transition: 'all 0.2s',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'
+                                e.currentTarget.style.transform = 'scale(1.02)'
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.boxShadow = 'none'
+                                e.currentTarget.style.transform = 'scale(1)'
+                              }}
+                            />
+                            <span style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '4px 8px', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>Click to expand</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Parse and display images in description */}
                     {item.description && item.description.includes('http') && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
                         {item.description.split(/\s/).map((part, i) => {
@@ -794,12 +839,24 @@ function WidgetContent() {
             {announcements.length === 0 ? (
               <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingTop: 24 }}>No updates yet.</p>
             ) : announcements.map(ann => {
-              console.log('[WIDGET] Rendering announcement:', ann)
+              // Tag color mapping matching main page
+              const TAG_COLORS: Record<string, { bg: string; color: string }> = {
+                'new_feature': { bg: '#dbeafe', color: '#0284c7' },
+                'improvement': { bg: '#fef3c7', color: '#ca8a04' },
+                'bug_fix': { bg: '#fee2e2', color: '#dc2626' },
+                'announcement': { bg: '#f3e8ff', color: '#7c3aed' },
+                'feature': { bg: '#dbeafe', color: '#0284c7' },
+                'update': { bg: '#fef3c7', color: '#ca8a04' },
+              }
+              
+              const tagKey = (ann.tag || '').toLowerCase().replace(/ /g, '_')
+              const tagColor = TAG_COLORS[tagKey] || { bg: accentColor + '15', color: accentColor }
+              
               return (
               <div key={ann.id} onClick={() => setSelectedItem({ type: 'announcement', id: ann.id })} className="item-row" style={{ display: 'block', marginBottom: 10, cursor: 'pointer' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                   {ann.tag && (
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: accentColor + '15', color: accentColor, textTransform: 'capitalize' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: tagColor.bg, color: tagColor.color, textTransform: 'capitalize' }}>
                       {ann.tag}
                     </span>
                   )}
@@ -820,37 +877,116 @@ function WidgetContent() {
         )}
 
         {tab === 'help' && (
-          <div style={{ animation: 'fadeIn 0.2s ease both' }}>
-            {helpArticles.length === 0 ? (
-              <div style={{ textAlign: 'center', paddingTop: 24 }}>
-                <p style={{ fontSize: 13, color: '#9ca3af', marginBottom: 12 }}>No help articles available yet.</p>
-                <button onClick={() => {
-                  console.log('[WIDGET DEBUG] Forcing help articles refetch...')
-                  ;(async () => {
-                    const res = await fetch(`/api/widget-data?slug=${slug}`)
-                    if (res.ok) {
-                      const data = await res.json()
-                      console.log('[WIDGET DEBUG] Refetch result - helpArticles:', data.helpArticles?.length || 0)
-                      console.log('[WIDGET DEBUG] Full help articles:', data.helpArticles)
-                      if (data.helpArticles?.length > 0) {
-                        setHelpArticles(data.helpArticles)
-                        console.log('[WIDGET DEBUG] Help articles updated!')
-                      }
-                    }
-                  })()
-                }} style={{ padding: '8px 12px', background: accentColor, color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-                  Check for articles
+          <div style={{ animation: 'fadeIn 0.2s ease both', display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {/* Search */}
+            <div style={{ padding: '12px 0', marginBottom: 12, borderBottom: '1px solid var(--border)' }}>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  placeholder="Search help..."
+                  onChange={(e) => setHelpSearch(e.target.value)}
+                  value={helpSearch}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px 8px 28px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border)',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: 'var(--ink)',
+                  }}
+                />
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)' }}>
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+              </div>
+            </div>
+
+            {/* Categories */}
+            {allHelpCategories.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
+                <button
+                  onClick={() => setHelpCategory(null)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    border: '1px solid var(--border)',
+                    background: !helpCategory ? accentColor : 'white',
+                    color: !helpCategory ? 'white' : 'var(--slate)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}>
+                  All
                 </button>
+                {allHelpCategories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setHelpCategory(helpCategory === cat ? null : cat)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      border: '1px solid var(--border)',
+                      background: helpCategory === cat ? accentColor : 'white',
+                      color: helpCategory === cat ? 'white' : 'var(--slate)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}>
+                    {cat}
+                  </button>
+                ))}
               </div>
-            ) : helpArticles.map(article => {
-              console.log('[WIDGET] Rendering help article:', article)
-              return (
-              <div key={article.id} onClick={() => setSelectedItem({ type: 'help', id: article.id })} style={{ textDecoration: 'none', display: 'block', padding: '12px', borderRadius: 12, border: '1px solid #f0f0f0', marginBottom: 10, transition: 'all 0.2s', cursor: 'pointer' }} onMouseEnter={e => (e.currentTarget.style.borderColor = accentColor, e.currentTarget.style.boxShadow = `0 0 0 2px ${accentColor}20`)} onMouseLeave={e => (e.currentTarget.style.borderColor = '#f0f0f0', e.currentTarget.style.boxShadow = 'none')}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d', margin: 0, marginBottom: 4 }}>{article.title}</p>
-                {article.content && <p style={{ fontSize: 12, color: '#6b7280', margin: 0, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>{article.content}</p>}
+            )}
+
+            {/* Articles list */}
+            {filteredHelpArticles.length === 0 ? (
+              <div style={{ textAlign: 'center', paddingTop: 24, color: '#9ca3af', fontSize: 13 }}>
+                {helpSearch ? 'No articles found.' : 'No help articles available yet.'}
               </div>
-              )
-            })}
+            ) : (
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                {filteredHelpArticles.map((article, idx) => (
+                  <div
+                    key={article.id}
+                    onClick={() => setSelectedItem({ type: 'help', id: article.id })}
+                    style={{
+                      padding: '12px',
+                      borderRadius: 10,
+                      border: selectedItem.type === 'help' && selectedItem.id === article.id ? `2px solid ${accentColor}` : '1px solid var(--border)',
+                      marginBottom: 8,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      background: selectedItem.type === 'help' && selectedItem.id === article.id ? accentColor + '08' : 'white',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (selectedItem.type !== 'help' || selectedItem.id !== article.id) {
+                        e.currentTarget.style.borderColor = accentColor
+                        e.currentTarget.style.background = accentColor + '05'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (selectedItem.type !== 'help' || selectedItem.id !== article.id) {
+                        e.currentTarget.style.borderColor = 'var(--border)'
+                        e.currentTarget.style.background = 'white'
+                      }
+                    }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', margin: 0, marginBottom: 2 }}>{article.title}</p>
+                        {article.category && (
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: accentColor + '15', color: accentColor }}>
+                            {article.category}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
