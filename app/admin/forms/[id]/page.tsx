@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { extractDominantColor } from '@/lib/extract-color'
 import Link from 'next/link'
 
 type Question = {
@@ -164,6 +165,31 @@ export default function FormBuilder() {
       if (data.thank_you_message) setThankYouMessage(data.thank_you_message)
       if (data.end_actions) setEndActions(data.end_actions)
       if (data.show_confetti !== undefined) setShowConfetti(data.show_confetti)
+      
+      // Extract color from company logo if no theme set
+      if (!data.theme?.color) {
+        try {
+          const { data: authData } = await supabase.auth.getSession()
+          if (authData?.session?.user?.id) {
+            const { data: co } = await (supabase as any)
+              .from('companies')
+              .select('logo_url, accent_color')
+              .eq('owner_id', authData.session.user.id)
+              .maybeSingle()
+            
+            if (co?.logo_url) {
+              const color = await extractDominantColor(co.logo_url)
+              setThemeColor(color)
+              console.log('[FORM BUILDER] Extracted color from logo:', color)
+            } else if (co?.accent_color) {
+              setThemeColor(co.accent_color)
+            }
+          }
+        } catch (e) {
+          console.error('[FORM BUILDER] Error extracting logo color:', e)
+        }
+      }
+      
       setLoading(false)
     }
     init()
@@ -588,17 +614,91 @@ export default function FormBuilder() {
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Conditional Logic</label>
                 <p style={{ fontSize: 11, color: 'var(--slate)', marginBottom: 10 }}>Show or hide this question based on previous answers</p>
                 {selected.conditional_logic ? (
-                  <div style={{ padding: 10, background: 'var(--canvas)', borderRadius: 8, marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, marginBottom: 6 }}>
+                  <div style={{ padding: 12, background: 'var(--canvas)', borderRadius: 8, marginBottom: 10 }}>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>CONDITION</label>
                       <select value={selected.conditional_logic.condition} onChange={e => updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic, condition: e.target.value as 'show' | 'hide' } })}
-                        style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12, marginBottom: 8, cursor: 'pointer' }}>
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12, cursor: 'pointer' }}>
                         <option value="show">Show this question if</option>
                         <option value="hide">Hide this question if</option>
                       </select>
                     </div>
+                    
+                    <div style={{ marginBottom: 12, padding: '10px', background: '#fff', borderRadius: 6, border: '1px solid var(--border)' }}>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Logic</label>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={() => updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic, logic: 'all' } })}
+                          style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: selected.conditional_logic.logic === 'all' ? themeColor : '#fff', color: selected.conditional_logic.logic === 'all' ? '#fff' : 'var(--ink)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                          Match all
+                        </button>
+                        <button onClick={() => updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic, logic: 'any' } })}
+                          style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: selected.conditional_logic.logic === 'any' ? themeColor : '#fff', color: selected.conditional_logic.logic === 'any' ? '#fff' : 'var(--ink)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                          Match any
+                        </button>
+                      </div>
+                    </div>
+
+                    {selected.conditional_logic.rules.map((rule, ruleIdx) => (
+                      <div key={ruleIdx} style={{ padding: 10, background: '#fff', borderRadius: 6, marginBottom: 8, border: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                          <select value={rule.questionId} onChange={e => {
+                            const newRules = [...selected.conditional_logic!.rules]
+                            newRules[ruleIdx] = { ...rule, questionId: e.target.value }
+                            updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic!, rules: newRules } })
+                          }}
+                            style={{ flex: 1, fontSize: 11, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer' }}>
+                            <option value="">Select question...</option>
+                            {questions.map(q => q.id !== selected.id && <option key={q.id} value={q.id}>{q.title || 'Untitled'}</option>)}
+                          </select>
+                          <button onClick={() => {
+                            const newRules = selected.conditional_logic!.rules.filter((_, i) => i !== ruleIdx)
+                            updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic!, rules: newRules } })
+                          }}
+                            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #fee2e2', background: '#fff', cursor: 'pointer', color: '#dc2626' }}>
+                            ×
+                          </button>
+                        </div>
+                        {rule.questionId && (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <select value={rule.operator} onChange={e => {
+                              const newRules = [...selected.conditional_logic!.rules]
+                              newRules[ruleIdx] = { ...rule, operator: e.target.value as 'equals' | 'contains' | 'is_empty' }
+                              updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic!, rules: newRules } })
+                            }}
+                              style={{ flex: 1, fontSize: 11, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer' }}>
+                              <option value="equals">equals</option>
+                              <option value="contains">contains</option>
+                              <option value="is_empty">is empty</option>
+                            </select>
+                            {rule.operator !== 'is_empty' && (
+                              <input value={rule.value} onChange={e => {
+                                const newRules = [...selected.conditional_logic!.rules]
+                                newRules[ruleIdx] = { ...rule, value: e.target.value }
+                                updateQuestion(selected.id, { conditional_logic: { ...selected.conditional_logic!, rules: newRules } })
+                              }}
+                                placeholder="value"
+                                style={{ flex: 1, fontSize: 11, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--border)' }} />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    
+                    <button onClick={() => {
+                      updateQuestion(selected.id, { 
+                        conditional_logic: { 
+                          ...selected.conditional_logic!, 
+                          rules: [...selected.conditional_logic!.rules, { questionId: '', operator: 'equals', value: '' }] 
+                        } 
+                      })
+                    }}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: 6, background: 'white', border: '1px dashed var(--border)', fontSize: 11, color: 'var(--slate)', cursor: 'pointer', marginBottom: 10, fontWeight: 500 }}>
+                      + Add rule
+                    </button>
+
                     <button onClick={() => updateQuestion(selected.id, { conditional_logic: undefined })}
-                      style={{ width: '100%', padding: '6px 12px', borderRadius: 6, background: 'white', border: '1px solid var(--border)', fontSize: 11, color: 'var(--slate)', cursor: 'pointer', fontWeight: 500 }}>
-                      Remove condition
+                      style={{ width: '100%', padding: '6px 12px', borderRadius: 6, background: '#fef2f2', border: '1px solid #fee2e2', fontSize: 11, color: '#dc2626', cursor: 'pointer', fontWeight: 500 }}>
+                      Remove all conditions
                     </button>
                   </div>
                 ) : (
