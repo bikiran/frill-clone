@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     console.log('[WIDGET API] Found company:', { id: company.id, slug: company.slug })
 
     const [ideasRes, annRes, formsRes, pollsRes, surveysRes, helpRes] = await Promise.all([
-      (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private,attachments').eq('company_id', company.id)
+      (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private').eq('company_id', company.id)
         .neq('is_private', true).order('votes', { ascending: false }).limit(20),
       (supabase as any).from('announcements').select('id,title,description,tag,status,created_at,boost_enabled,boost_type,boost_button_label,boost_title,boost_blurb,boost_image,views,impressions')
         .eq('company_id', company.id)

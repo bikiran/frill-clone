@@ -955,20 +955,20 @@ function WidgetContent() {
                     style={{
                       padding: '12px',
                       borderRadius: 10,
-                      border: selectedItem.type === 'help' && selectedItem.id === article.id ? `2px solid ${accentColor}` : '1px solid var(--border)',
+                      border: selectedItem && selectedItem.type === 'help' && selectedItem.id === article.id ? `2px solid ${accentColor}` : '1px solid var(--border)',
                       marginBottom: 8,
                       cursor: 'pointer',
                       transition: 'all 0.2s',
-                      background: selectedItem.type === 'help' && selectedItem.id === article.id ? accentColor + '08' : 'white',
+                      background: selectedItem && selectedItem.type === 'help' && selectedItem.id === article.id ? accentColor + '08' : 'white',
                     }}
                     onMouseEnter={(e) => {
-                      if (selectedItem.type !== 'help' || selectedItem.id !== article.id) {
+                      if (!selectedItem || selectedItem.type !== 'help' || selectedItem.id !== article.id) {
                         e.currentTarget.style.borderColor = accentColor
                         e.currentTarget.style.background = accentColor + '05'
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (selectedItem.type !== 'help' || selectedItem.id !== article.id) {
+                      if (!selectedItem || selectedItem.type !== 'help' || selectedItem.id !== article.id) {
                         e.currentTarget.style.borderColor = 'var(--border)'
                         e.currentTarget.style.background = 'white'
                       }
