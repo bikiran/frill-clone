@@ -391,18 +391,21 @@ export default function SettingsPage() {
     console.log('[SETTINGS SAVE] Full value object:', siteSettingsValue)
     
     try {
-      const { data: updateData, error: updateErr } = await (supabase as any)
+      const { data: upsertData, error: upsertErr } = await (supabase as any)
         .from('site_settings')
-        .update({
+        .upsert({
+          key: 'general',
+          company_id: companyId,
           value: siteSettingsValue,
           updated_at: new Date().toISOString(),
-        })
-        .eq('key', 'general')
-        .eq('company_id', companyId)
+        }, { onConflict: 'key,company_id' })
         .select()
-      
-      if (updateData && updateData.length > 0) {
-        console.log('[SETTINGS SAVE] ✅ Successfully updated')
+
+      if (upsertErr) {
+        console.error('[SETTINGS SAVE] Upsert failed:', upsertErr.message)
+        if (isManualSave) showToast('Failed to save settings: ' + upsertErr.message, 'error', 4000)
+      } else {
+        console.log('[SETTINGS SAVE] ✅ Successfully saved:', upsertData)
         if (isManualSave) {
           showToast('Settings saved successfully!', 'success', 3000)
           // Hard reload after 2 seconds to ensure data is fresh
@@ -410,56 +413,6 @@ export default function SettingsPage() {
             console.log('[SETTINGS SAVE] Reloading to verify save...')
             window.location.reload()
           }, 2000)
-        }
-      } else if (updateErr) {
-        console.warn('Update failed:', updateErr.message, 'Trying insert...')
-        // If update failed or returned no rows, try INSERT
-        const { error: insertErr } = await (supabase as any)
-          .from('site_settings')
-          .insert({
-            key: 'general',
-            company_id: companyId,
-            value: siteSettingsValue,
-            updated_at: new Date().toISOString(),
-          })
-        
-        if (insertErr) {
-          console.error('[SETTINGS SAVE] Insert failed:', insertErr.message)
-          if (isManualSave) showToast('Failed to save settings: ' + insertErr.message, 'error', 4000)
-        } else {
-          console.log('[SETTINGS SAVE] ✅ Successfully saved (via insert)')
-          if (isManualSave) {
-            showToast('Settings saved successfully!', 'success', 3000)
-            setTimeout(() => {
-              console.log('[SETTINGS SAVE] Reloading to verify save...')
-              window.location.reload()
-            }, 2000)
-          }
-        }
-      } else {
-        // No error but no rows updated - means record doesn't exist, try insert
-        console.log('No existing record, trying insert...')
-        const { error: insertErr } = await (supabase as any)
-          .from('site_settings')
-          .insert({
-            key: 'general',
-            company_id: companyId,
-            value: siteSettingsValue,
-            updated_at: new Date().toISOString(),
-          })
-        
-        if (insertErr) {
-          console.error('[SETTINGS SAVE] Insert error:', insertErr.message)
-          if (isManualSave) showToast('Failed to save settings: ' + insertErr.message, 'error', 4000)
-        } else {
-          console.log('[SETTINGS SAVE] ✅ Successfully saved (via insert)')
-          if (isManualSave) {
-            showToast('Settings saved successfully!', 'success', 3000)
-            setTimeout(() => {
-              console.log('[SETTINGS SAVE] Reloading to verify save...')
-              window.location.reload()
-            }, 2000)
-          }
         }
       }
     } catch (e: any) {

@@ -93,7 +93,8 @@ CREATE TABLE IF NOT EXISTS team_members (
 
 -- Site Settings (singleton key-value store)
 CREATE TABLE IF NOT EXISTS site_settings (
-  "key" TEXT PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "key" TEXT NOT NULL,
   "value" JSONB,
   updated_at TIMESTAMP DEFAULT NOW()
 );
