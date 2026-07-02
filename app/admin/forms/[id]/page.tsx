@@ -138,6 +138,15 @@ export default function FormBuilder() {
   const [isDirty, setIsDirty] = useState(false)
   const [previewStep, setPreviewStep] = useState(-1) // -1 = welcome screen
   const [showAddMenu, setShowAddMenu] = useState(false)
+  // Mobile responsiveness
+  const [isMobile, setIsMobile] = useState(false)
+  const [mobilePanel, setMobilePanel] = useState<'steps' | 'preview' | 'settings'>('preview')
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null)
   const isFirstLoad = useRef(true)
 
@@ -243,48 +252,74 @@ export default function FormBuilder() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
       {/* Top bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: '1px solid var(--border)', background: '#fff', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, padding: isMobile ? '8px 12px' : '10px 20px', borderBottom: '1px solid var(--border)', background: '#fff', flexShrink: 0, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
         <Link href="/admin/forms" style={{ color: 'var(--slate)', display: 'flex' }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
         </Link>
         <input
           value={title}
           onChange={e => setTitle(e.target.value)}
-          style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', border: 'none', outline: 'none', background: 'transparent', minWidth: 120 }}
+          style={{ fontSize: isMobile ? 14 : 15, fontWeight: 700, color: 'var(--ink)', border: 'none', outline: 'none', background: 'transparent', minWidth: 0, flex: isMobile ? 1 : 'none', width: isMobile ? undefined : undefined }}
         />
-        <span style={{ fontSize: 11, color: saving ? '#f59e0b' : isDirty ? '#6b6b70' : '#16a34a', display: 'flex', alignItems: 'center', gap: 4 }}>
-          {saving ? 'Saving...' : isDirty ? 'Unsaved changes' : '✓ Saved'}
+        <span style={{ fontSize: 11, color: saving ? '#f59e0b' : isDirty ? '#6b6b70' : '#16a34a', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+          {saving ? 'Saving...' : isDirty ? (isMobile ? '●' : 'Unsaved changes') : (isMobile ? '✓' : '✓ Saved')}
         </span>
         <button onClick={handleSave} disabled={saving || !isDirty}
           style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: (saving || !isDirty) ? 'default' : 'pointer', border: 'none', background: isDirty ? 'var(--coral)' : '#f3f4f6', color: isDirty ? '#fff' : '#9ca3af', opacity: saving ? 0.7 : 1 }}>
           {saving ? 'Saving...' : 'Save'}
         </button>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 999, background: isPublished ? '#dcfce7' : '#f3f4f6', color: isPublished ? '#16a34a' : '#6b7280', fontWeight: 600 }}>
-            {isPublished ? 'Live' : 'Draft'}
-          </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+          {!isMobile && (
+            <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 999, background: isPublished ? '#dcfce7' : '#f3f4f6', color: isPublished ? '#16a34a' : '#6b7280', fontWeight: 600 }}>
+              {isPublished ? 'Live' : 'Draft'}
+            </span>
+          )}
           <button onClick={togglePublish}
-            style={{ padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: 'none', background: isPublished ? '#f3f4f6' : 'var(--coral)', color: isPublished ? '#374151' : '#fff' }}>
+            style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: 'pointer', border: 'none', background: isPublished ? '#f3f4f6' : 'var(--coral)', color: isPublished ? '#374151' : '#fff' }}>
             {isPublished ? 'Unpublish' : 'Publish'}
           </button>
           {isPublished && (
             <Link href={`/forms/${formId}`} target="_blank"
-              style={{ padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none' }}>
+              style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 600, border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none' }}>
               View →
             </Link>
           )}
           <Link href={`/admin/forms/${formId}/results`}
-            style={{ padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none' }}>
+            style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 600, border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none' }}>
             Results
           </Link>
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '280px 1fr 320px', overflow: 'hidden' }}>
+      {/* Mobile panel switcher */}
+      {isMobile && (
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', background: '#fff', flexShrink: 0 }}>
+          {([['steps', '☰ Steps'], ['preview', '👁 Preview'], ['settings', '⚙ Settings']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setMobilePanel(key)}
+              style={{
+                flex: 1,
+                padding: '10px 8px',
+                fontSize: 12,
+                fontWeight: 700,
+                border: 'none',
+                cursor: 'pointer',
+                background: 'transparent',
+                color: mobilePanel === key ? themeColor : 'var(--slate)',
+                borderBottom: mobilePanel === key ? `2px solid ${themeColor}` : '2px solid transparent',
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '280px 1fr 320px', overflow: 'hidden' }}>
         {/* LEFT: Question list */}
-        <div style={{ borderRight: '1px solid var(--border)', overflowY: 'auto', padding: 16, background: '#fafafa' }}>
+        <div style={{ borderRight: isMobile ? 'none' : '1px solid var(--border)', overflowY: 'auto', padding: 16, background: '#fafafa', display: isMobile && mobilePanel !== 'steps' ? 'none' : 'block' }}>
           <button
-            onClick={() => setPreviewStep(-1)}
+            onClick={() => { setPreviewStep(-1); if (isMobile) setMobilePanel('preview') }}
             style={{ width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 10, marginBottom: 6, cursor: 'pointer', border: 'none', background: previewStep === -1 ? '#fff' : 'transparent', boxShadow: previewStep === -1 ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>👋 Welcome screen</span>
           </button>
@@ -295,7 +330,7 @@ export default function FormBuilder() {
               onDragStart={(e) => e.dataTransfer.setData('text/plain', String(i))}
               onDragOver={e => e.preventDefault()}
               onDrop={e => { const from = parseInt(e.dataTransfer.getData('text/plain')); reorder(from, i) }}
-              onClick={() => { setSelectedQ(q.id); setPreviewStep(i) }}
+              onClick={() => { setSelectedQ(q.id); setPreviewStep(i); if (isMobile) setMobilePanel('preview') }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, marginBottom: 6, cursor: 'grab',
                 background: selectedQ === q.id ? '#fff' : 'transparent',
@@ -312,7 +347,7 @@ export default function FormBuilder() {
           ))}
 
           <button
-            onClick={() => setPreviewStep(questions.length)}
+            onClick={() => { setPreviewStep(questions.length); if (isMobile) setMobilePanel('preview') }}
             style={{ width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 10, marginBottom: 12, cursor: 'pointer', border: 'none', background: previewStep === questions.length ? '#fff' : 'transparent', boxShadow: previewStep === questions.length ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>🎉 Thank you screen</span>
           </button>
@@ -352,8 +387,8 @@ export default function FormBuilder() {
         </div>
 
         {/* CENTER: Live preview */}
-        <div style={{ overflowY: 'auto', background: '#f4f4f5', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
-          <div style={{ width: '100%', maxWidth: 560, background: '#fff', borderRadius: 20, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', padding: 48, minHeight: 360, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <div style={{ overflowY: 'auto', background: '#f4f4f5', display: isMobile && mobilePanel !== 'preview' ? 'none' : 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'center', padding: isMobile ? 12 : 32 }}>
+          <div style={{ width: '100%', maxWidth: 560, background: '#fff', borderRadius: isMobile ? 14 : 20, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', padding: isMobile ? 20 : 48, minHeight: isMobile ? 280 : 360, display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: isMobile ? 8 : 0 }}>
             {previewStep === -1 ? (
               <div>
                 <div style={{ width: 48, height: 48, borderRadius: 14, background: themeColor, marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -483,7 +518,7 @@ export default function FormBuilder() {
         </div>
 
         {/* RIGHT: Settings panel */}
-        <div style={{ borderLeft: '1px solid var(--border)', overflowY: 'auto', padding: 20 }}>
+        <div style={{ borderLeft: isMobile ? 'none' : '1px solid var(--border)', overflowY: 'auto', padding: isMobile ? 16 : 20, display: isMobile && mobilePanel !== 'settings' ? 'none' : 'block' }}>
           {selected ? (
             <>
               <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>Question Settings</h3>

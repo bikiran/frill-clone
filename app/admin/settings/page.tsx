@@ -173,12 +173,8 @@ export default function SettingsPage() {
   const faviconFileRef = useRef<HTMLInputElement>(null)
   const ogFileRef = useRef<HTMLInputElement>(null)
 
-  // Auto-save widget configuration when any setting changes (silent, no notifications)
-  useEffect(() => {
-    if (!company?.id) return
-    const autoSaveTimer = setTimeout(() => handleSave(false), 800)
-    return () => clearTimeout(autoSaveTimer)
-  }, [widgetFeedback, widgetRoadmap, widgetUpdates, widgetForms, widgetPolls, widgetSurveys, widgetKnowledgeBase, widgetOrder])
+  // (Widget auto-save is handled by the main debounced auto-save effect below,
+  //  which includes all widget deps and has proper first-render/loaded guards.)
 
   useEffect(() => {
     const init = async () => {
@@ -229,20 +225,15 @@ export default function SettingsPage() {
       }
       setLoadedCompany(true)
 
-      // Load site_settings scoped to THIS company
+      // Load site_settings scoped to THIS company (via server API — same path as save)
       try {
         let settingsData: any = null
         console.log('[SETTINGS LOAD] Looking for settings with company_id:', co?.id)
         if (co?.id) {
-          // Use order + limit(1) instead of maybeSingle() so a stray
-          // duplicate row (e.g. from before the unique constraint existed)
-          // can't cause the whole query to silently error out.
-          const { data: rows, error: loadErr } = await (supabase as any).from('site_settings').select('*')
-            .eq('key', 'general').eq('company_id', co.id)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-          console.log('[SETTINGS LOAD] Query result:', { found: !!rows?.length, error: loadErr?.message })
-          settingsData = rows?.[0] || null
+          const res = await fetch(`/api/admin/settings?company_id=${co.id}`)
+          const result = await res.json()
+          console.log('[SETTINGS LOAD] Query result:', { found: !!result.settings, error: result.error })
+          settingsData = result.settings || null
         }
         // Fallback: unscoped (legacy)
         if (!settingsData) {
@@ -398,21 +389,19 @@ export default function SettingsPage() {
     console.log('[SETTINGS SAVE] Full value object:', siteSettingsValue)
     
     try {
-      const { data: upsertData, error: upsertErr } = await (supabase as any)
-        .from('site_settings')
-        .upsert({
-          key: 'general',
-          company_id: companyId,
-          value: siteSettingsValue,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'key,company_id' })
-        .select()
+      // Save via server-side API (service role key + read-back verification)
+      const res = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: companyId, value: siteSettingsValue }),
+      })
+      const result = await res.json()
 
-      if (upsertErr) {
-        console.error('[SETTINGS SAVE] Upsert failed:', upsertErr.message)
-        if (isManualSave) showToast('Failed to save settings: ' + upsertErr.message, 'error', 4000)
+      if (!res.ok || result.error) {
+        console.error('[SETTINGS SAVE] Server save failed:', result.error)
+        if (isManualSave) showToast('Failed to save settings: ' + (result.error || 'unknown error'), 'error', 4000)
       } else {
-        console.log('[SETTINGS SAVE] ✅ Successfully saved:', upsertData)
+        console.log('[SETTINGS SAVE] ✅ Verified save via', result.method, '— row:', result.settings?.id)
         if (isManualSave) {
           showToast('Settings saved successfully!', 'success', 3000)
           // Hard reload after 2 seconds to ensure data is fresh
