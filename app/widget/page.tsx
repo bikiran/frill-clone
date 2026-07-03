@@ -74,7 +74,7 @@ function WidgetContent() {
     })()
   }, [slug])
 
-  // Refetch data periodically to ensure announcements/help persist
+  // Refetch data periodically to ensure ideas, announcements, and help persist
   useEffect(() => {
     if (!slug) return
     
@@ -84,7 +84,8 @@ function WidgetContent() {
         const res = await fetch(`/api/widget-data?slug=${slug}`)
         if (res.ok) {
           const data = await res.json()
-          console.log('[WIDGET REFETCH] Got announcements:', data.announcements?.length, 'help articles:', data.helpArticles?.length)
+          console.log('[WIDGET REFETCH] Got ideas:', data.ideas?.length, 'announcements:', data.announcements?.length, 'help articles:', data.helpArticles?.length)
+          setIdeas(data.ideas || [])
           setAnnouncements(data.announcements || [])
           setHelpArticles(data.helpArticles || [])
         }
@@ -213,6 +214,15 @@ function WidgetContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slug, title: feedback.trim(), attachments, user_name: anonymousName }),
       })
+      
+      // Refetch ideas to show the newly submitted idea with correct timestamp
+      const res = await fetch(`/api/widget-data?slug=${slug}`)
+      if (res.ok) {
+        const data = await res.json()
+        setIdeas(data.ideas || [])
+        console.log('[WIDGET] Refetched ideas after submission:', data.ideas?.length)
+      }
+      
       // Track analytics
       trackWidgetEvent('submit_feedback')
       setSubmitted(true)
@@ -277,7 +287,7 @@ function WidgetContent() {
                 <>
                   {/* Meta info */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, color: 'var(--slate)' }}>
-                    <span>{item.user_name || 'Anonymous'}</span>
+                    <span>{item.created_by_name || 'Anonymous'}</span>
                     <span>•</span>
                     <span>{item.created_at ? getRelativeTime(item.created_at) : 'just now'}</span>
                     {item.is_private && (

@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     console.log('[WIDGET API] Found company:', { id: company.id, slug: company.slug })
 
     const [ideasRes, annRes, formsRes, pollsRes, surveysRes, helpRes] = await Promise.all([
-      (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private,attachments').eq('company_id', company.id)
+      (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private,attachments,created_by_name').eq('company_id', company.id)
         .neq('is_private', true).order('votes', { ascending: false }).limit(20),
       (supabase as any).from('announcements').select('id,title,description,tag,status,created_at,is_pinned,boost_enabled,boost_type,boost_button_label,boost_title,boost_blurb,boost_image,views,impressions')
         .eq('company_id', company.id)
@@ -161,8 +161,9 @@ export async function POST(req: NextRequest) {
       title: title.trim(),
       votes: 0,
       status: 'new',
-      user_name: user_name || 'Anonymous',
+      created_by_name: user_name || 'Anonymous',
       attachments: attachmentUrls,
+      created_at: new Date().toISOString(),
     }).select()
 
     if (insertError) {
