@@ -1,5 +1,13 @@
 // lib/ai-service.ts
-import Anthropic from '@anthropic-ai/sdk';
+// Lazy-load Anthropic SDK to prevent build failures if not installed
+let Anthropic: any = null
+
+try {
+  // This will only fail at runtime if SDK isn't installed
+  Anthropic = require('@anthropic-ai/sdk').default
+} catch (e) {
+  console.warn('Anthropic SDK not installed. AI features will not work. Run: npm install @anthropic-ai/sdk')
+}
 
 export type AIProvider = 'claude' | 'openai' | 'gemini'
 export type AITask = 'improve_writing' | 'summarize' | 'fix_formatting' | 'suggest_tags' | 'write_help_article' | 'build_form' | 'create_poll' | 'create_survey'
@@ -12,22 +20,37 @@ interface AIServiceConfig {
 
 export class AIService {
   private provider: AIProvider
-  private anthropic: Anthropic | null = null
+  private anthropic: any = null
   private model: string
+  private isAvailable: boolean = false
 
   constructor(config: AIServiceConfig = {}) {
     this.provider = config.provider || 'claude'
     this.model = config.model || 'claude-3-5-sonnet-20241022'
 
     if (this.provider === 'claude') {
-      this.anthropic = new Anthropic({
-        apiKey: config.apiKey || process.env.ANTHROPIC_API_KEY,
-      })
+      if (!Anthropic) {
+        throw new Error('Anthropic SDK not installed. Run: npm install @anthropic-ai/sdk')
+      }
+      
+      const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY
+      if (!apiKey) {
+        throw new Error('ANTHROPIC_API_KEY environment variable not set')
+      }
+
+      this.anthropic = new Anthropic({ apiKey })
+      this.isAvailable = true
+    }
+  }
+
+  private ensureAvailable() {
+    if (!this.isAvailable || !this.anthropic) {
+      throw new Error('Claude AI service not available. Check that Anthropic SDK is installed and API key is set.')
     }
   }
 
   async improveWriting(text: string, tone: 'professional' | 'casual' | 'persuasive' = 'professional'): Promise<string> {
-    if (!this.anthropic) throw new Error('Claude API not configured')
+    this.ensureAvailable()
 
     const message = await this.anthropic.messages.create({
       model: this.model,
@@ -44,7 +67,7 @@ export class AIService {
   }
 
   async summarize(text: string, maxLength: number = 150): Promise<string> {
-    if (!this.anthropic) throw new Error('Claude API not configured')
+    this.ensureAvailable()
 
     const message = await this.anthropic.messages.create({
       model: this.model,
@@ -61,7 +84,7 @@ export class AIService {
   }
 
   async fixFormatting(text: string): Promise<string> {
-    if (!this.anthropic) throw new Error('Claude API not configured')
+    this.ensureAvailable()
 
     const message = await this.anthropic.messages.create({
       model: this.model,
@@ -78,7 +101,7 @@ export class AIService {
   }
 
   async suggestTags(text: string, maxTags: number = 5): Promise<string[]> {
-    if (!this.anthropic) throw new Error('Claude API not configured')
+    this.ensureAvailable()
 
     const message = await this.anthropic.messages.create({
       model: this.model,
@@ -101,7 +124,7 @@ export class AIService {
   }
 
   async writeHelpArticle(topic: string, details: string): Promise<{ title: string; content: string }> {
-    if (!this.anthropic) throw new Error('Claude API not configured')
+    this.ensureAvailable()
 
     const message = await this.anthropic.messages.create({
       model: this.model,
@@ -124,7 +147,7 @@ export class AIService {
   }
 
   async buildForm(description: string): Promise<{ fields: Array<{ label: string; type: string; required: boolean }> }> {
-    if (!this.anthropic) throw new Error('Claude API not configured')
+    this.ensureAvailable()
 
     const message = await this.anthropic.messages.create({
       model: this.model,
@@ -147,7 +170,7 @@ export class AIService {
   }
 
   async createPoll(question: string): Promise<{ question: string; options: string[] }> {
-    if (!this.anthropic) throw new Error('Claude API not configured')
+    this.ensureAvailable()
 
     const message = await this.anthropic.messages.create({
       model: this.model,
@@ -170,7 +193,7 @@ export class AIService {
   }
 
   async createSurvey(topic: string): Promise<{ questions: Array<{ title: string; type: 'text' | 'single_choice' | 'multiple_choice' | 'rating'; options?: string[] }> }> {
-    if (!this.anthropic) throw new Error('Claude API not configured')
+    this.ensureAvailable()
 
     const message = await this.anthropic.messages.create({
       model: this.model,

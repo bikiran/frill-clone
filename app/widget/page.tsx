@@ -38,6 +38,8 @@ function WidgetContent() {
   const [animatingVotes, setAnimatingVotes] = useState<Set<string>>(new Set())
   const [helpSearch, setHelpSearch] = useState('')
   const [helpCategory, setHelpCategory] = useState<string | null>(null)
+  const [aiLoading, setAiLoading] = useState<string | null>(null)
+  const [aiError, setAiError] = useState('')
 
   const accentColor = company?.accent_color || '#ff7a6b'
 
@@ -181,6 +183,39 @@ function WidgetContent() {
       console.error('Screenshot failed:', error)
     } finally {
       setCaptureInProgress(false)
+    }
+  }
+
+  const enhanceFeedback = async (task: 'improve_writing' | 'fix_formatting') => {
+    if (!feedback.trim()) return
+    
+    setAiLoading(task === 'improve_writing' ? 'improve' : 'fix')
+    setAiError('')
+    
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          task,
+          text: feedback,
+          tone: 'professional'
+        })
+      })
+      
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'AI service error')
+      }
+      
+      const data = await res.json()
+      if (typeof data.result === 'string') {
+        setFeedback(data.result)
+      }
+    } catch (err: any) {
+      setAiError(err.message || 'Failed to enhance text')
+    } finally {
+      setAiLoading(null)
     }
   }
 
@@ -862,6 +897,60 @@ function WidgetContent() {
                   autoFocus
                   style={{ width: '100%', padding: '12px', borderRadius: 12, border: `1.5px solid ${accentColor}`, fontSize: 13, lineHeight: 1.5, resize: 'none', outline: 'none', fontFamily: 'inherit', color: '#0d0d0d', marginBottom: 12 }}
                 />
+                
+                {/* AI Enhancement Buttons */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => enhanceFeedback('improve_writing')}
+                    disabled={!feedback.trim()}
+                    title="Improve writing with AI"
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: '1px solid #e5e5e5',
+                      background: aiLoading === 'improve' ? '#f3f4f6' : '#fff',
+                      cursor: !feedback.trim() ? 'default' : 'pointer',
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: '#0d0d0d',
+                      opacity: !feedback.trim() ? 0.5 : 1,
+                      transition: 'all 0.2s'
+                    }}>
+                    {aiLoading === 'improve' ? '✨ Improving...' : '✨ Improve'}
+                  </button>
+
+                  <button
+                    onClick={() => enhanceFeedback('fix_formatting')}
+                    disabled={!feedback.trim()}
+                    title="Fix grammar and formatting"
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: '1px solid #e5e5e5',
+                      background: aiLoading === 'fix' ? '#f3f4f6' : '#fff',
+                      cursor: !feedback.trim() ? 'default' : 'pointer',
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: '#0d0d0d',
+                      opacity: !feedback.trim() ? 0.5 : 1,
+                      transition: 'all 0.2s'
+                    }}>
+                    {aiLoading === 'fix' ? '🔧 Fixing...' : '🔧 Fix'}
+                  </button>
+                </div>
+
+                {aiError && (
+                  <div style={{
+                    marginBottom: 12,
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: '#fee2e2',
+                    color: '#991b1b',
+                    fontSize: 12
+                  }}>
+                    {aiError}
+                  </div>
+                )}
                 
                 {/* Image attachment preview */}
                 {attachments.length > 0 && (

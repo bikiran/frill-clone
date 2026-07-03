@@ -62,6 +62,9 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   const [newFormTitle, setNewFormTitle] = useState('')
   const [formFields, setFormFields] = useState<any[]>([])
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null)
+  const [aiLoading, setAiLoading] = useState<string | null>(null)
+  const [aiError, setAiError] = useState('')
+  
   const titleRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -407,6 +410,40 @@ export default function IdeaModal({ onClose, onSubmitted }: {
     setTimeout(() => container.remove(), 6000)
   }
 
+  const enhanceText = async (task: 'improve_writing' | 'fix_formatting' | 'summarize') => {
+    if (!description.trim()) return
+    
+    setAiLoading(task === 'improve_writing' ? 'improve' : task === 'fix_formatting' ? 'fix' : 'summarize')
+    setAiError('')
+    
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          task,
+          text: description,
+          tone: 'professional',
+          maxLength: 500
+        })
+      })
+      
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'AI service error')
+      }
+      
+      const data = await res.json()
+      if (typeof data.result === 'string') {
+        setDescription(data.result)
+      }
+    } catch (err: any) {
+      setAiError(err.message || 'Failed to enhance text')
+    } finally {
+      setAiLoading(null)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim()) return
@@ -544,6 +581,64 @@ export default function IdeaModal({ onClose, onSubmitted }: {
               className="w-full px-4 py-3 border rounded-xl text-sm focus:outline-none transition-smooth resize-none"
               style={{ borderColor: 'var(--border)', fontSize: '16px' }}
             />
+            
+            {/* AI Enhancement Buttons */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => enhanceText('improve_writing')}
+                disabled={!description.trim()}
+                className="px-3 py-2 rounded-lg border text-xs font-medium transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ 
+                  borderColor: 'var(--border)',
+                  background: aiLoading === 'improve' ? '#f3f4f6' : '#fff',
+                  color: 'var(--ink)'
+                }}
+                title="Improve writing with AI">
+                {aiLoading === 'improve' ? '✨ Improving...' : '✨ Improve'}
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => enhanceText('fix_formatting')}
+                disabled={!description.trim()}
+                className="px-3 py-2 rounded-lg border text-xs font-medium transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ 
+                  borderColor: 'var(--border)',
+                  background: aiLoading === 'fix' ? '#f3f4f6' : '#fff',
+                  color: 'var(--ink)'
+                }}
+                title="Fix grammar and formatting">
+                {aiLoading === 'fix' ? '🔧 Fixing...' : '🔧 Fix'}
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => enhanceText('summarize')}
+                disabled={!description.trim()}
+                className="px-3 py-2 rounded-lg border text-xs font-medium transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ 
+                  borderColor: 'var(--border)',
+                  background: aiLoading === 'summarize' ? '#f3f4f6' : '#fff',
+                  color: 'var(--ink)'
+                }}
+                title="Summarize to be more concise">
+                {aiLoading === 'summarize' ? '📝 Summarizing...' : '📝 Summarize'}
+              </button>
+            </div>
+            
+            {aiError && (
+              <div style={{
+                marginTop: 8,
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: '#fee2e2',
+                color: '#991b1b',
+                fontSize: 12
+              }}>
+                {aiError}
+              </div>
+            )}
           </div>
 
           {imagePreview && (
