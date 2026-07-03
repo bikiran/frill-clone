@@ -525,8 +525,11 @@ export default function RootLayout({
                   return true
                 }).map(item => {
                   const labelKey = item.label.toLowerCase()
-                  const key = labelKey === 'ideas' ? 'ideas' : labelKey === 'roadmap' ? 'roadmap' : labelKey === 'updates' ? 'updates' : 'help'
-                  const showDot = freshContent[key as keyof typeof freshContent]
+                  let key: 'ideas' | 'roadmap' | 'updates' | 'help' = 'help'
+                  if (labelKey === 'ideas') key = 'ideas'
+                  else if (labelKey === 'roadmap') key = 'roadmap'
+                  else if (labelKey === 'updates') key = 'updates'
+                  const showDot = freshContent[key]
                   return (
                     <Link
                       key={item.href}
@@ -758,8 +761,11 @@ export default function RootLayout({
                   return true
                 }).map(item => {
                   const labelKey = item.label.toLowerCase()
-                  const key = labelKey === 'ideas' ? 'ideas' : labelKey === 'roadmap' ? 'roadmap' : labelKey === 'updates' ? 'updates' : 'help'
-                  const showDot = freshContent[key as keyof typeof freshContent]
+                  let key: 'ideas' | 'roadmap' | 'updates' | 'help' = 'help'
+                  if (labelKey === 'ideas') key = 'ideas'
+                  else if (labelKey === 'roadmap') key = 'roadmap'
+                  else if (labelKey === 'updates') key = 'updates'
+                  const showDot = freshContent[key]
                   return (
                     <Link
                       key={item.href}
