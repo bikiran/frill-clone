@@ -645,7 +645,8 @@ export default function RootLayout({
                 <>
                   <Link
                     href="/signin"
-                    onClick={() => setShowDrawer(false)}\n                    className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-smooth hover:opacity-70"
+                    onClick={() => setShowDrawer(false)}
+                    className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-smooth hover:opacity-70"
                     style={{ color: 'var(--slate)' }}>
                     Sign in
                   </Link>
