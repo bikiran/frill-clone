@@ -7,9 +7,20 @@ export async function GET(req: NextRequest) {
   let slug = searchParams.get('slug')
   let name = searchParams.get('name')
   let industry = searchParams.get('industry')
+  const companyId = searchParams.get('company_id')
   const next = searchParams.get('next') || '/onboarding'
 
   const origin = req.nextUrl.origin
+
+  // Detect company subdomain from request host (e.g. acme.colvy.com)
+  const host = req.headers.get('host') || ''
+  let subdomainSlug: string | null = null
+  if (host.endsWith('.colvy.com')) {
+    const sub = host.split('.')[0]
+    if (sub && sub !== 'www' && sub !== 'admin' && sub !== 'colvy') {
+      subdomainSlug = sub
+    }
+  }
 
   // No code — could be a hash-based token (password reset)
   // Redirect to client-side handler that can read the hash fragment
@@ -25,6 +36,40 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await (supabase as any).auth.exchangeCodeForSession(code)
     if (error) throw error
+
+    // Company subdomain signup/signin — join company as viewer, redirect to board
+    if ((companyId || subdomainSlug) && data.user) {
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      })
+
+      // Resolve the company either by id (email signup param) or by slug (subdomain host)
+      let company: any = null
+      if (companyId) {
+        const res = await (adminClient as any).from('companies').select('id, slug').eq('id', companyId).single()
+        company = res.data
+      } else if (subdomainSlug) {
+        const res = await (adminClient as any).from('companies').select('id, slug').eq('slug', subdomainSlug).single()
+        company = res.data
+      }
+
+      if (company) {
+        // Add user to the company as viewer (skip if already a member)
+        const existing = await (adminClient as any).from('team_members')
+          .select('id').eq('email', data.user.email).maybeSingle()
+        if (!existing.data) {
+          await (adminClient as any).from('team_members').insert({
+            email: data.user.email,
+            user_id: data.user.id,
+            role: 'viewer',
+            status: 'active',
+          })
+        }
+        // Redirect to the company board
+        return NextResponse.redirect(`https://${company.slug}.colvy.com/`)
+      }
+    }
 
     // New signup with company info in URL params
     if (slug && name && data.user) {

@@ -233,7 +233,6 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       addToast('Failed to create form', 'error')
     }
   }
-  }
 
   const triggerConfetti = () => {
     // Futuristic particle explosion - geometric shapes, sparkles, neon trails
