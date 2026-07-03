@@ -2,11 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-)
-
 /**
  * POST /api/woocommerce/setup
  * Configure WooCommerce integration for a company
@@ -40,6 +35,12 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       )
     }
+
+    // Lazy load Supabase
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+    )
 
     // Save integration settings
     const { data, error } = await supabase
@@ -91,6 +92,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     }
 
+    // Lazy load Supabase
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+    )
+
     const { data, error } = await supabase
       .from('woocommerce_integrations')
       .select('id, company_id, store_url, is_active, last_synced_at, sync_frequency_minutes')
@@ -122,6 +129,12 @@ export async function DELETE(req: NextRequest) {
     if (!companyId) {
       return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     }
+
+    // Lazy load Supabase
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+    )
 
     const { error } = await supabase
       .from('woocommerce_integrations')

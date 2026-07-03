@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-)
-
 /**
  * GET /api/woocommerce/customer?email=user@example.com&companyId=...
  * Look up customer by email and return their purchase history
@@ -21,6 +16,12 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Lazy load Supabase inside handler
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+    )
 
     // Look up customer in synced data
     const { data: customer, error: customerError } = await supabase
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get their orders
-    const { data: orders, error: ordersError } = await supabase
+    const { data: orders } = await supabase
       .from('woocommerce_orders')
       .select('*')
       .eq('company_id', companyId)
