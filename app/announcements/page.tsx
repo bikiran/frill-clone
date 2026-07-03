@@ -56,7 +56,7 @@ export default function AnnouncementsPage() {
       let q = (supabase as any).from('announcements').select('*')
       if (companyId) q = q.eq('company_id', companyId)
       else q = q.eq('status', 'published')
-      const { data } = await q.order('created_at', { ascending: false })
+      const { data } = await q.order('is_pinned', { ascending: false }).order('created_at', { ascending: false })
 
       setAnnouncements(data || [])
       if (data?.[0] && !selectedId) setSelectedId(data[0].id)
@@ -242,9 +242,12 @@ export default function AnnouncementsPage() {
                         {/* Content */}
                         <div className="flex-1 min-w-0">
                           {ann.is_pinned && (
-                            <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: 'var(--coral)' }}>
-                              📌 Pinned
-                            </p>
+                            <div className="flex items-center gap-1.5 mb-1.5 px-2 py-1 rounded-md" style={{ background: 'var(--peach)' }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'var(--coral)' }}><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 9.5c0 .83-.67 1.5-1.5 1.5S11 13.33 11 12.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5z"/></svg>
+                              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--coral)' }}>
+                                Pinned
+                              </p>
+                            </div>
                           )}
                           <p
                             className="text-sm font-semibold line-clamp-2 leading-snug"
@@ -313,8 +316,9 @@ export default function AnnouncementsPage() {
                       {tagCfg.label}
                     </span>
                     {ann.is_pinned && (
-                      <span className="text-xs px-2.5 py-1 rounded-full font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
-                        📌 Pinned
+                      <span className="text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 9.5c0 .83-.67 1.5-1.5 1.5S11 13.33 11 12.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5z"/></svg>
+                        Pinned
                       </span>
                     )}
                     <span className="text-xs" style={{ color: 'var(--slate)' }}>

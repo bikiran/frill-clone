@@ -32,10 +32,10 @@ export async function GET(req: NextRequest) {
     const [ideasRes, annRes, formsRes, pollsRes, surveysRes, helpRes] = await Promise.all([
       (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private,attachments').eq('company_id', company.id)
         .neq('is_private', true).order('votes', { ascending: false }).limit(20),
-      (supabase as any).from('announcements').select('id,title,description,tag,status,created_at,boost_enabled,boost_type,boost_button_label,boost_title,boost_blurb,boost_image,views,impressions')
+      (supabase as any).from('announcements').select('id,title,description,tag,status,created_at,is_pinned,boost_enabled,boost_type,boost_button_label,boost_title,boost_blurb,boost_image,views,impressions')
         .eq('company_id', company.id)
         .eq('status', 'published')
-        .order('created_at', { ascending: false }).limit(8),
+        .order('is_pinned', { ascending: false }).order('created_at', { ascending: false }).limit(8),
       (supabase as any).from('forms').select('id,title,description').eq('company_id', company.id)
         .eq('is_public', true).order('created_at', { ascending: false }).limit(5),
       (supabase as any).from('polls').select('id,title,options').eq('company_id', company.id)
@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const supabase = getDb()
-    const { slug, title, attachments } = await req.json()
+    const { slug, title, attachments, user_name } = await req.json()
     if (!slug || !title) return NextResponse.json({ error: 'slug and title required' }, { status: 400 })
 
     const { data: company } = await (supabase as any)
@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
       title: title.trim(),
       votes: 0,
       status: 'new',
-      created_by_name: 'Widget User',
+      user_name: user_name || 'Anonymous',
       attachments: attachmentUrls,
     }).select()
 

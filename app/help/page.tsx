@@ -161,8 +161,9 @@ export default function HelpCentrePage() {
         </div>
         {isAdmin && (
           <div className="mt-5">
-            <Link href="/admin/help" className="px-4 py-2 rounded-lg text-sm font-semibold text-white inline-block" style={{ background: 'var(--coral)' }}>
-              ⚙️ Manage Articles
+            <Link href="/admin/help" className="px-4 py-2 rounded-lg text-sm font-semibold text-white inline-flex items-center gap-2" style={{ background: 'var(--coral)' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M4.22 4.22l4.24 4.24m0 5.08l-4.24 4.24M1 12h6m6 0h6m-5.78-5.78l4.24-4.24m0 5.08l4.24 4.24"/></svg>
+              Manage Articles
             </Link>
           </div>
         )}

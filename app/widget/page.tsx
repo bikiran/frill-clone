@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import ImageViewer from '@/components/ImageViewer'
+import { getRelativeTime } from '@/lib/time-utils'
 
 function WidgetContent() {
   const params = useSearchParams()
@@ -200,10 +201,17 @@ function WidgetContent() {
     if (!feedback.trim() && attachments.length === 0) return
     setSubmitting(true)
     try {
+      // Generate anonymous name
+      const adjectives = ['Happy', 'Clever', 'Brave', 'Swift', 'Wise', 'Calm', 'Bold', 'Keen', 'Kind', 'Bright']
+      const nouns = ['Penguin', 'Phoenix', 'Dragon', 'Tiger', 'Eagle', 'Wolf', 'Fox', 'Panda', 'Otter', 'Hawk']
+      const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)]
+      const randomNoun = nouns[Math.floor(Math.random() * nouns.length)]
+      const anonymousName = `${randomAdj} ${randomNoun}`
+
       await fetch('/api/widget-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, title: feedback.trim(), attachments }),
+        body: JSON.stringify({ slug, title: feedback.trim(), attachments, user_name: anonymousName }),
       })
       // Track analytics
       trackWidgetEvent('submit_feedback')
@@ -269,9 +277,9 @@ function WidgetContent() {
                 <>
                   {/* Meta info */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, color: 'var(--slate)' }}>
-                    <span>User</span>
+                    <span>{item.user_name || 'Anonymous'}</span>
                     <span>•</span>
-                    <span>{item.created_at ? new Date(item.created_at).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'Today'}</span>
+                    <span>{item.created_at ? getRelativeTime(item.created_at) : 'just now'}</span>
                     {item.is_private && (
                       <>
                         <span>•</span>
@@ -750,7 +758,7 @@ function WidgetContent() {
   }
 
   return (
-    <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', height: '100vh', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
+    <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', height: '100vh', maxWidth: '100vw', width: '100%', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
       {/* Image Viewer */}
       {showImageViewer && (
         <ImageViewer
@@ -1000,14 +1008,17 @@ function WidgetContent() {
               const tagColor = TAG_COLORS[tagKey] || { bg: accentColor + '15', color: accentColor }
               
               return (
-              <div key={ann.id} onClick={() => setSelectedItem({ type: 'announcement', id: ann.id })} className="item-row" style={{ display: 'block', marginBottom: 10, cursor: 'pointer' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <div key={ann.id} onClick={() => setSelectedItem({ type: 'announcement', id: ann.id })} className="item-row" style={{ display: 'block', marginBottom: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 12, background: ann.is_pinned ? 'var(--peach)' : 'transparent' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                  {ann.is_pinned && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'var(--coral)' }}><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 9.5c0 .83-.67 1.5-1.5 1.5S11 13.33 11 12.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5z"/></svg>
+                  )}
                   {ann.tag && (
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: tagColor.bg, color: tagColor.color, textTransform: 'capitalize' }}>
                       {ann.tag}
                     </span>
                   )}
-                  <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500 }}>{ann.created_at ? new Date(ann.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Today'}</span>
+                  <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500 }}>{ann.created_at ? getRelativeTime(ann.created_at) : 'just now'}</span>
                 </div>
                 <p style={{ fontSize: 13, fontWeight: 700, color: '#0d0d0d', marginBottom: 2, lineHeight: 1.3 }}>{ann.title}</p>
                 {ann.description && <p style={{ fontSize: 12, color: '#6b7280', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>{ann.description}</p>}

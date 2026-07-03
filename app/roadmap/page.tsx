@@ -278,7 +278,7 @@ export default function RoadmapPage() {
             {showSortDropdown && (
               <>
                 <div className="fixed inset-0 z-30" onClick={() => setShowSortDropdown(false)} />
-                <div className="absolute top-full right-0 mt-2 w-52 rounded-lg shadow-xl border z-40 overflow-hidden animate-fade-in-up" style={{ background: 'white', borderColor: 'var(--border)' }}>
+                <div className="absolute top-full right-0 mt-2 rounded-lg shadow-xl border z-40 overflow-hidden animate-fade-in-up" style={{ background: 'white', borderColor: 'var(--border)', maxWidth: 'calc(100vw - 24px)', width: 'auto', minWidth: '200px' }}>
                   {SORT_OPTIONS.map(opt => (
                     <button
                       key={opt.key}
@@ -303,11 +303,10 @@ export default function RoadmapPage() {
           {/* Filter dropdown */}
           <div className="relative">
             <button
-              onClick={() => { setShowFilterDropdown(!showFilterDropdown); setShowSortDropdown(false) }}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-smooth hover:bg-gray-50 cursor-pointer"
+              onClick={() => { setShowFilterDropdown(!showFilterDropdown); setShowSortDropdown(false) }}\n              className="flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-smooth hover:bg-gray-50 cursor-pointer"
               style={{ borderColor: filterTopic ? 'var(--coral)' : 'var(--border)', color: filterTopic ? 'var(--coral)' : 'var(--ink)' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
-              <span className="font-medium">Filter</span>
+              <span className="font-medium">{filterTopic ? `#${filterTopic}` : 'All Ideas'}</span>
             </button>
             {showFilterDropdown && (
               <>
@@ -338,8 +337,8 @@ export default function RoadmapPage() {
             <Link
               href="/admin/statuses"
               className="px-3 py-2 rounded-lg font-medium border text-sm transition-smooth press-effect cursor-pointer hover:bg-gray-50"
-              style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-              ⚙️
+              style={{ borderColor: 'var(--border)', color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M4.22 4.22l4.24 4.24m0 5.08l-4.24 4.24M1 12h6m6 0h6m-5.78-5.78l4.24-4.24m0 5.08l4.24 4.24"/></svg>
             </Link>
           )}
           {user && (
