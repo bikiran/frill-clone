@@ -110,6 +110,7 @@ function SignUpForm() {
     setLoading(true)
     try {
       // 1. Sign up user
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
       const { data, error: authErr } = await supabase.auth.signUp({
         email, password,
         options: {
@@ -119,8 +120,8 @@ function SignUpForm() {
             industry: companyContext ? 'N/A' : industry
           },
           emailRedirectTo: companyContext
-            ? `${window.location.origin}/auth/callback?company_id=${companyContext.id}`
-            : `${window.location.origin}/auth/callback?slug=${slug}&name=${encodeURIComponent(companyName)}&industry=${encodeURIComponent(industry)}`,
+            ? `${baseUrl}/auth/callback?company_id=${companyContext.id}`
+            : `${baseUrl}/auth/callback?slug=${encodeURIComponent(slug)}&name=${encodeURIComponent(companyName)}&industry=${encodeURIComponent(industry)}`,
         },
       })
       if (authErr) throw authErr

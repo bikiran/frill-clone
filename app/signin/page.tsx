@@ -35,14 +35,46 @@ function SignInForm() {
   const [error, setError] = useState('')
   const [oauthLoading, setOAuthLoading] = useState('')
   const [slide, setSlide] = useState(0)
+  const [companyContext, setCompanyContext] = useState<any>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => {
-      if (data?.session?.user) router.push('/admin')
+      if (data?.session?.user) {
+        const redirect = params.get('redirect')
+        window.location.href = redirect || getRedirectUrl()
+      }
     })
+
+    // Detect company subdomain
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname
+      const isSubdomain = hostname.endsWith('.colvy.com') && hostname !== 'colvy.com' && hostname !== 'www.colvy.com' && !hostname.includes('localhost')
+      
+      if (isSubdomain) {
+        const slug = hostname.split('.')[0]
+        supabase.from('companies').select('id, name, slug').eq('slug', slug).single().then(({ data }) => {
+          if (data) {
+            setCompanyContext(data)
+          }
+        })
+      }
+    }
+
     const t = setInterval(() => setSlide(s => (s + 1) % TESTIMONIALS.length), 5000)
     return () => clearInterval(t)
   }, [])
+
+  const getRedirectUrl = () => {
+    if (companyContext) {
+      const hostname = window.location.hostname
+      const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
+      if (!isLocal) {
+        return `https://${companyContext.slug}.colvy.com/`
+      }
+      return '/'
+    }
+    return '/admin'
+  }
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -50,17 +82,26 @@ function SignInForm() {
     setError('')
     const { error: err } = await supabase.auth.signInWithPassword({ email, password })
     if (err) { setError(err.message); setLoading(false); return }
-    const redirect = params.get('redirect')
-    window.location.href = redirect || '/admin'
+    const redirect = params.get('redirect') || getRedirectUrl()
+    window.location.href = redirect
   }
 
   const handleGoogle = async () => {
     setOAuthLoading('google')
+    // Store company context for OAuth callback
+    if (companyContext) {
+      localStorage.setItem('oauth_company_context', JSON.stringify(companyContext))
+    }
     const { error: err } = await signInWithGoogle()
     if (err) { setError('Google sign-in not enabled. Enable it in Supabase → Authentication → Providers → Google.'); setOAuthLoading('') }
   }
+
   const handleGitHub = async () => {
     setOAuthLoading('github')
+    // Store company context for OAuth callback
+    if (companyContext) {
+      localStorage.setItem('oauth_company_context', JSON.stringify(companyContext))
+    }
     const { error: err } = await signInWithGitHub()
     if (err) { setError('GitHub sign-in not enabled. Enable it in Supabase → Authentication → Providers → GitHub.'); setOAuthLoading('') }
   }
