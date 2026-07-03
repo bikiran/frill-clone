@@ -178,7 +178,7 @@ export default function CustomerSegmentationPage() {
           padding: '16px',
           background: '#fff'
         }}>
-          <h2 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 600', color: 'var(--ink)' }}>
+          <h2 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 600, color: 'var(--ink)' }}>
             {selectedSegment.name} ({segmentedCustomers.length})
           </h2>
 
