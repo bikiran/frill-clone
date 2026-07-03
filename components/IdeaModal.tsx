@@ -20,6 +20,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   onSubmitted: () => void
 }) {
   const { addToast } = useToast()
+  const [companyId, setCompanyId] = useState<string | null>(null)
   
   const [title, setTitle]               = useState('')
   const [description, setDescription]   = useState('')
@@ -66,6 +67,16 @@ export default function IdeaModal({ onClose, onSubmitted }: {
 
   useEffect(() => {
     setTimeout(() => titleRef.current?.focus(), 100)
+    // Resolve the current board's company_id from the subdomain so new ideas attach to it
+    if (typeof window !== 'undefined') {
+      const h = window.location.hostname
+      if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com' && !h.includes('localhost')) {
+        const slug = h.replace('.colvy.com', '')
+        supabase.from('companies').select('id').eq('slug', slug).maybeSingle().then(({ data }) => {
+          if (data?.id) setCompanyId(data.id)
+        })
+      }
+    }
     supabase.auth.getSession().then(async ({ data }) => {
       setAuthed(!!data.session)
       const user = data.session?.user
@@ -433,9 +444,11 @@ export default function IdeaModal({ onClose, onSubmitted }: {
         poll_id: attachedPoll,
         survey_id: attachedSurvey,
         is_private: isPrivate,
+        company_id: companyId,
       }).select().single()
 
     if (err || !idea) {
+      console.error('Idea insert failed:', err)
       setError('Something went wrong. Please try again.')
       setLoading(false)
       return

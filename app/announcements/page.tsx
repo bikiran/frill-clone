@@ -56,7 +56,7 @@ export default function AnnouncementsPage() {
       let q = (supabase as any).from('announcements').select('*')
       if (companyId) q = q.eq('company_id', companyId)
       else q = q.eq('status', 'published')
-      const { data } = await q.order('is_pinned', { ascending: false }).order('created_at', { ascending: false })
+      const { data } = await q.order('created_at', { ascending: false })
 
       setAnnouncements(data || [])
       if (data?.[0] && !selectedId) setSelectedId(data[0].id)
@@ -155,13 +155,22 @@ export default function AnnouncementsPage() {
     !search || a.title.toLowerCase().includes(search.toLowerCase())
   )
 
-  // Group sidebar items by month
+  // Pinned items get their own section at the top (still newest-pinned-first among themselves).
+  // Everything else stays strictly chronological so month groups never appear out of order.
+  const pinnedItems = filtered.filter(a => a.is_pinned)
+  const chronologicalItems = filtered.filter(a => !a.is_pinned)
+
+  // Group sidebar items by month — built only from strictly date-sorted items,
+  // so a pinned older post can never push an older month group above a newer one.
   const grouped: Record<string, any[]> = {}
-  filtered.forEach(ann => {
+  chronologicalItems.forEach(ann => {
     const key = new Date(ann.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     if (!grouped[key]) grouped[key] = []
     grouped[key].push(ann)
   })
+
+  // Main feed order: pinned first (as a distinct, clearly-labeled block), then strict newest-first.
+  const feedItems = [...pinnedItems, ...chronologicalItems]
 
   const isAdmin = isCompanyAdmin
 
@@ -210,6 +219,53 @@ export default function AnnouncementsPage() {
             <div className="relative py-2">
               {/* Vertical timeline line */}
               <div className="absolute left-[22px] top-0 bottom-0 w-px" style={{ background: 'var(--border)' }} />
+
+              {pinnedItems.length > 0 && (
+                <div>
+                  <div className="pl-12 pr-4 py-1.5 sticky top-0 z-10 bg-white">
+                    <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: 'var(--coral)' }}>Pinned</p>
+                  </div>
+                  {pinnedItems.map(ann => {
+                    const isActive = selectedId === ann.id
+                    const tagCfg = TAG_COLORS[ann.tag] || TAG_COLORS.announcement
+                    return (
+                      <button
+                        key={ann.id}
+                        onClick={() => handleSelect(ann)}
+                        className="w-full text-left flex items-start gap-3 px-4 py-3 transition-smooth hover:bg-gray-50 relative"
+                        style={{ background: isActive ? 'var(--peach)' : 'transparent' }}>
+                        <div className="relative shrink-0 mt-1 z-10">
+                          <div
+                            className="w-4 h-4 rounded-full border-2 border-white flex items-center justify-center transition-all"
+                            style={{
+                              background: isActive ? 'var(--coral)' : 'var(--border)',
+                              boxShadow: isActive ? '0 0 0 3px var(--peach), 0 0 0 5px var(--coral)' : 'none',
+                              transform: isActive ? 'scale(1.2)' : 'scale(1)',
+                            }}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-1.5 px-2 py-1 rounded-md" style={{ background: 'var(--peach)' }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'var(--coral)' }}><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 9.5c0 .83-.67 1.5-1.5 1.5S11 13.33 11 12.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5z"/></svg>
+                            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--coral)' }}>Pinned</p>
+                          </div>
+                          <p className="text-sm font-semibold line-clamp-2 leading-snug" style={{ color: isActive ? 'var(--coral)' : 'var(--ink)' }}>
+                            {ann.title}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: tagCfg.bg, color: tagCfg.color }}>
+                              {tagCfg.label}
+                            </span>
+                            <span className="text-[11px]" style={{ color: 'var(--slate)' }}>
+                              {new Date(ann.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
 
               {Object.entries(grouped).map(([month, items]) => (
                 <div key={month}>
@@ -298,7 +354,7 @@ export default function AnnouncementsPage() {
           </div>
         ) : (
           <div className="max-w-3xl mx-auto px-6 md:px-12 py-8 md:py-12">
-            {filtered.map((ann, idx) => {
+            {feedItems.map((ann, idx) => {
               const tagCfg = TAG_COLORS[ann.tag] || TAG_COLORS.announcement
               const liked = likedIds.has(ann.id)
               const subscribed = subscribedIds.has(ann.id)

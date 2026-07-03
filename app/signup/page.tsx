@@ -16,6 +16,9 @@ function SignUpForm() {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [companyContext, setCompanyContext] = useState<any>(null) // For company subdomain signup
+  const [isSubdomainContext, setIsSubdomainContext] = useState(false) // True if we're on a *.colvy.com board URL
+  const [companyCheckDone, setCompanyCheckDone] = useState(false)
+  const [companyLookupFailed, setCompanyLookupFailed] = useState(false)
 
   // Step 1
   const [email, setEmail] = useState('')
@@ -40,21 +43,29 @@ function SignUpForm() {
       if (data?.session?.user) router.push('/admin')
     })
 
-    // Check if signing up through company subdomain
+    // Check if signing up through company subdomain — this MUST resolve before
+    // the form can be submitted, so a viewer can never accidentally fall through
+    // to the "create a new company" flow (which would make them an owner/admin).
     if (typeof window !== 'undefined') {
       const hostname = window.location.hostname
       const isSubdomain = hostname.endsWith('.colvy.com') && hostname !== 'colvy.com' && hostname !== 'www.colvy.com' && !hostname.includes('localhost')
-      
+      setIsSubdomainContext(isSubdomain)
+
       if (isSubdomain) {
-        const slug = hostname.split('.')[0]
-        // Fetch company by slug
-        supabase.from('companies').select('id, name, slug').eq('slug', slug).single().then(({ data, error }) => {
-          if (data && !error) {
+        const boardSlug = hostname.split('.')[0]
+        // maybeSingle() never throws on zero/duplicate rows — a definitive result either way
+        supabase.from('companies').select('id, name, slug').eq('slug', boardSlug).maybeSingle().then(({ data }) => {
+          if (data) {
             setCompanyContext(data)
-            // Skip step 2 for subdomain signups
             setStep(1)
+          } else {
+            // Board genuinely doesn't exist — do NOT allow falling through to company creation
+            setCompanyLookupFailed(true)
           }
+          setCompanyCheckDone(true)
         })
+      } else {
+        setCompanyCheckDone(true)
       }
     }
   }, [router])
@@ -85,7 +96,14 @@ function SignUpForm() {
     setError('')
     if (password !== confirmPassword) { setError('Passwords do not match'); return }
     if (password.length < 6) { setError('Password must be at least 6 characters'); return }
-    
+
+    // Never allow creating a brand-new company while sitting on someone else's board URL —
+    // this is what previously let a viewer accidentally become an owner/admin.
+    if (isSubdomainContext && !companyContext) {
+      setError('This board could not be found. Please refresh and try again.')
+      return
+    }
+
     // If joining an existing company, go directly to signup
     if (companyContext) {
       handleSignUp(e)
@@ -101,6 +119,11 @@ function SignUpForm() {
 
     // If signing up through company subdomain, skip company creation validation
     if (!companyContext) {
+      // Never allow creating a brand-new company while on someone else's board subdomain
+      if (isSubdomainContext) {
+        setError('This board could not be found. Please refresh and try again.')
+        return
+      }
       // Regular signup (new company)
       if (!companyName.trim()) { setError('Company name is required'); return }
       if (slugStatus !== 'available') { setError('Please choose a valid, available board URL'); return }
@@ -231,6 +254,28 @@ function SignUpForm() {
     { title: 'Public roadmap', desc: 'Show what you are building next' },
     { title: 'Ship updates', desc: 'Announce releases with a changelog' },
   ]
+
+  // Resolving which board this signup belongs to — never show the form (which could
+  // otherwise fall through to "create a new company") until this is settled.
+  if (isSubdomainContext && !companyCheckDone) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff' }}>
+        <div style={{ width: 32, height: 32, border: '3px solid #f0f0f0', borderTop: '3px solid #ff7a6b', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    )
+  }
+
+  if (isSubdomainContext && companyLookupFailed) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: '#fff' }}>
+        <div style={{ maxWidth: 380, width: '100%', textAlign: 'center' }}>
+          <h1 style={{ fontSize: 20, fontWeight: 800, color: '#0d0d0d', marginBottom: 8 }}>Board not found</h1>
+          <p style={{ fontSize: 14, color: '#6b6b70' }}>We couldn't find a board at this address. Double-check the URL, or contact whoever shared it with you.</p>
+        </div>
+      </div>
+    )
+  }
 
   // Email confirmation screen
   if (needsConfirmation) {

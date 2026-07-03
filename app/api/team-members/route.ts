@@ -14,16 +14,17 @@ export async function POST(req: Request) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400 })
     }
 
-    // Insert or update team member
+    // Insert or update team member (scoped per company)
     const { data, error } = await supabase
       .from('team_members')
       .upsert({
         user_id: userId,
         email,
         role,
+        company_id: companyId,
         status: 'active', // Auto-activate for direct signups
       }, {
-        onConflict: 'email',
+        onConflict: 'company_id,email',
       })
       .select()
 

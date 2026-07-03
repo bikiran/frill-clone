@@ -37,41 +37,8 @@ export async function GET(req: NextRequest) {
     const { data, error } = await (supabase as any).auth.exchangeCodeForSession(code)
     if (error) throw error
 
-    // Company subdomain signup/signin — join company as viewer, redirect to board
-    if ((companyId || subdomainSlug) && data.user) {
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
-        auth: { autoRefreshToken: false, persistSession: false }
-      })
-
-      // Resolve the company either by id (email signup param) or by slug (subdomain host)
-      let company: any = null
-      if (companyId) {
-        const res = await (adminClient as any).from('companies').select('id, slug').eq('id', companyId).single()
-        company = res.data
-      } else if (subdomainSlug) {
-        const res = await (adminClient as any).from('companies').select('id, slug').eq('slug', subdomainSlug).single()
-        company = res.data
-      }
-
-      if (company) {
-        // Add user to the company as viewer (skip if already a member)
-        const existing = await (adminClient as any).from('team_members')
-          .select('id').eq('email', data.user.email).maybeSingle()
-        if (!existing.data) {
-          await (adminClient as any).from('team_members').insert({
-            email: data.user.email,
-            user_id: data.user.id,
-            role: 'viewer',
-            status: 'active',
-          })
-        }
-        // Redirect to the company board
-        return NextResponse.redirect(`https://${company.slug}.colvy.com/`)
-      }
-    }
-
-    // New signup with company info in URL params
+    // New signup with company info in URL params — explicit intent to create a company,
+    // always takes priority over host-based subdomain detection below.
     if (slug && name && data.user) {
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
@@ -103,6 +70,41 @@ export async function GET(req: NextRequest) {
       }
 
       return NextResponse.redirect(`${origin}/onboarding`)
+    }
+
+    // Company subdomain signup/signin — join company as viewer, redirect to board
+    if ((companyId || subdomainSlug) && data.user) {
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      })
+
+      // Resolve the company either by id (email signup param) or by slug (subdomain host)
+      let company: any = null
+      if (companyId) {
+        const res = await (adminClient as any).from('companies').select('id, slug').eq('id', companyId).single()
+        company = res.data
+      } else if (subdomainSlug) {
+        const res = await (adminClient as any).from('companies').select('id, slug').eq('slug', subdomainSlug).single()
+        company = res.data
+      }
+
+      if (company) {
+        // Add user to the company as viewer (skip if already a member)
+        const existing = await (adminClient as any).from('team_members')
+          .select('id').eq('email', data.user.email).maybeSingle()
+        if (!existing.data) {
+          await (adminClient as any).from('team_members').insert({
+            email: data.user.email,
+            user_id: data.user.id,
+            company_id: company.id,
+            role: 'viewer',
+            status: 'active',
+          })
+        }
+        // Redirect to the company board
+        return NextResponse.redirect(`https://${company.slug}.colvy.com/`)
+      }
     }
 
     // No company params — user confirmed email but needs to complete signup
