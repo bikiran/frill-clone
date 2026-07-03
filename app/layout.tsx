@@ -396,7 +396,23 @@ export default function RootLayout({
     }
   }
 
-  // Fetch fresh content indicators
+  // Mark content as viewed
+  const markAsViewed = (section: 'ideas' | 'roadmap' | 'updates' | 'help') => {
+    const lastVisits = JSON.parse(localStorage.getItem('lastVisits') || '{}')
+    lastVisits[section] = new Date().toISOString()
+    localStorage.setItem('lastVisits', JSON.stringify(lastVisits))
+    setFreshContent(prev => ({ ...prev, [section]: false }))
+  }
+
+  // Mark content as viewed when navigating
+  useEffect(() => {
+    if (pathname === '/') markAsViewed('ideas')
+    else if (pathname === '/roadmap') markAsViewed('roadmap')
+    else if (pathname === '/announcements') markAsViewed('updates')
+    else if (pathname === '/help') markAsViewed('help')
+  }, [pathname])
+
+  // Check fresh content
   const checkFreshContent = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -440,26 +456,10 @@ export default function RootLayout({
     }
   }
 
-  // Mark content as viewed
-  const markAsViewed = (section: 'ideas' | 'roadmap' | 'updates' | 'help') => {
-    const lastVisits = JSON.parse(localStorage.getItem('lastVisits') || '{}')
-    lastVisits[section] = new Date().toISOString()
-    localStorage.setItem('lastVisits', JSON.stringify(lastVisits))
-    setFreshContent(prev => ({ ...prev, [section]: false }))
-  }
-
-  // Mark content as viewed when navigating
-  useEffect(() => {
-    if (pathname === '/') markAsViewed('ideas')
-    else if (pathname === '/roadmap') markAsViewed('roadmap')
-    else if (pathname === '/announcements') markAsViewed('updates')
-    else if (pathname === '/help') markAsViewed('help')
-  }, [pathname])
-
   // Check fresh content on page load and periodically
   useEffect(() => {
     checkFreshContent()
-    const interval = setInterval(checkFreshContent, 60000) // Check every minute
+    const interval = setInterval(checkFreshContent, 60000)
     return () => clearInterval(interval)
   }, [])
 

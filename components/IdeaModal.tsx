@@ -38,11 +38,9 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
   const [creatingPoll, setCreatingPoll] = useState(false)
   const [creatingSurvey, setCreatingSurvey] = useState(false)
-  const [creatingForm, setCreatingForm] = useState(false)
   const [newPollQuestion, setNewPollQuestion] = useState('')
   const [newPollOptions, setNewPollOptions] = useState(['', ''])
   const [newSurveyTitle, setNewSurveyTitle] = useState('')
-  const [newFormTitle, setNewFormTitle] = useState('')
   const titleRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -97,7 +95,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   }
 
   const createNewPoll = async () => {
-    if (!newPollQuestion.trim() || newPollOptions.some(o => !o.trim())) {
+    if (!newPollQuestion.trim() || newPollOptions.filter(o => o.trim()).length < 2) {
       return
     }
     try {
@@ -617,44 +615,6 @@ export default function IdeaModal({ onClose, onSubmitted }: {
               </div>
             </div>
           )}
-                
-                {/* Survey button */}
-                {availableSurveys.length > 0 && (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => { setShowSurveyPicker(!showSurveyPicker); setShowPollPicker(false) }}
-                      className="px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-smooth cursor-pointer hover:bg-gray-50"
-                      style={{ 
-                        borderColor: attachedSurvey ? '#16a34a' : 'var(--border)',
-                        background: attachedSurvey ? '#f0fdf4' : 'white',
-                        color: attachedSurvey ? '#16a34a' : 'var(--slate)',
-                      }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                      {attachedSurvey ? availableSurveys.find(s => s.id === attachedSurvey)?.title?.slice(0, 25) + '...' : '+ Add Survey'}
-                      {attachedSurvey && (
-                        <span onClick={(e) => { e.stopPropagation(); setAttachedSurvey(null) }} className="ml-1 hover:opacity-70">×</span>
-                      )}
-                    </button>
-                    {showSurveyPicker && (
-                      <div className="absolute top-full mt-1 left-0 z-10 w-72 bg-white border rounded-xl shadow-lg p-2 max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
-                        {availableSurveys.map(survey => (
-                          <button
-                            key={survey.id}
-                            type="button"
-                            onClick={() => { setAttachedSurvey(survey.id); setShowSurveyPicker(false) }}
-                            className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer"
-                            style={{ color: 'var(--ink)' }}>
-                            {survey.title}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -869,3 +829,5 @@ export default function IdeaModal({ onClose, onSubmitted }: {
         .animate-slide-in-right { animation: slide-in-right 0.3s ease-out; }
       `}</style>
     </>
+  )
+}
