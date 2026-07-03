@@ -71,6 +71,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   
   const [user, setUser] = useState<any>(null)
   const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
+  const [userRole, setUserRole] = useState<'viewer' | 'editor' | 'admin' | null>(null)
   const [copied, setCopied] = useState(false)
   const [confirmDeleteIdea, setConfirmDeleteIdea] = useState(false)
   const [confirmDeleteComment, setConfirmDeleteComment] = useState<string | null>(null)
@@ -86,13 +87,22 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   const [availableSurveys, setAvailableSurveys] = useState<any[]>([])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       const u = data.session?.user
       setUser(u)
       if (u) {
         import('@/lib/board').then(({ isCompanyAdminUser }) => {
           isCompanyAdminUser(u).then(setIsCompanyAdmin)
         })
+        // Fetch user's role from team_members
+        const { data: member } = await (supabase as any)
+          .from('team_members')
+          .select('role')
+          .eq('user_id', u.id)
+          .maybeSingle()
+        if (member?.role) {
+          setUserRole(member.role as 'viewer' | 'editor' | 'admin')
+        }
       }
     })
     fetchVoters()
@@ -383,6 +393,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   const isAdmin = isCompanyAdmin
   const isOwner = user?.id === idea.user_id
   const canEdit = isAdmin || isOwner
+  const canEditStatus = isAdmin || userRole === 'editor'  // Only admin or editor can change idea status
   const currentStatus = STATUS_CONFIG[status] || STATUS_CONFIG.new
   const currentPriority = priority ? PRIORITY_PRESETS[priority] : null
 
@@ -451,7 +462,9 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
               <div className="flex-1 overflow-y-auto p-3 space-y-1">
                 <button
                   onClick={() => setSubPanel('status')}
-                  className="w-full flex items-center justify-between gap-3 p-3 rounded-lg hover:bg-white transition-smooth">
+                  disabled={!canEditStatus}
+                  className="w-full flex items-center justify-between gap-3 p-3 rounded-lg hover:bg-white transition-smooth disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                  title={!canEditStatus ? 'Only admins and editors can change status' : ''}>
                   <span className="flex items-center gap-3">
                     <span className="w-5 h-5 rounded-full border-2 flex items-center justify-center" style={{ borderColor: currentStatus.color }}>
                       <span className="w-2 h-2 rounded-full" style={{ background: currentStatus.color }} />
@@ -623,6 +636,11 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                 
                 <h3 className="text-base font-bold mb-4" style={{ color: 'var(--ink)' }}>Status</h3>
                 
+                {!canEditStatus ? (
+                  <div className="p-4 rounded-lg" style={{ background: '#fef2f2', color: '#dc2626', fontSize: 13, textAlign: 'center' }}>
+                    Only admins and editors can change idea status.
+                  </div>
+                ) : (
                 <div className="space-y-1 mb-6">
                   {(() => {
                     const defaultKeys = new Set(Object.keys(STATUS_CONFIG))
@@ -648,6 +666,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                   ))
                   })()}
                 </div>
+                )}
 
                 <a href="/admin/statuses" className="text-sm font-medium" style={{ color: '#3b82f6' }}>
                   Manage statuses

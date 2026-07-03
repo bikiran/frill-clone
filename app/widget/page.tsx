@@ -792,19 +792,33 @@ function WidgetContent() {
       )}
 
       <style>{`
+        html, body { 
+          width: 100%; 
+          height: 100%; 
+          margin: 0; 
+          padding: 0; 
+          overflow: hidden;
+          box-sizing: border-box;
+        }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #e5e5e5; border-radius: 2px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
         @keyframes voteBounce { 0% { transform: scale(1); } 40% { transform: scale(1.3) translateY(-4px); } 70% { transform: scale(0.95); } 100% { transform: scale(1); } }
         @keyframes voteRipple { 0% { box-shadow: 0 0 0 0 rgba(255, 122, 107, 0.4); } 100% { box-shadow: 0 0 0 20px rgba(255, 122, 107, 0); } }
-        .item-row { cursor: pointer; border-radius: 12px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; transition: background 0.15s; }
+        .item-row { cursor: pointer; border-radius: 12px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; transition: background 0.15s; width: 100%; box-sizing: border-box; }
         .item-row:hover { background: #f9f9f9; }
         .vote-pill { display: flex; align-items: center; gap: 4px; min-width: 32px; flex-shrink: 0; }
-        
+        input[type="text"], input[type="email"], input[type="number"], textarea, select { 
+          width: 100%; 
+          box-sizing: border-box; 
+          max-width: 100%;
+          font-size: 16px;
+        }
         @media (max-width: 480px) {
           ::-webkit-scrollbar { width: 3px; }
           .item-row { padding: 8px 10px; gap: 8px; }
+          html, body { width: 100vw; height: 100vh; }
         }
       `}</style>
 
