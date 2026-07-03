@@ -43,6 +43,7 @@ export default function RootLayout({
   const [notifications, setNotifications] = useState<any[]>([])
   const [notificationFilter, setNotificationFilter] = useState<'unread' | 'all'>('unread')
   const [loadingNotifications, setLoadingNotifications] = useState(false)
+  const [freshContent, setFreshContent] = useState({ ideas: false, roadmap: false, updates: false, help: false })
   const pathname = usePathname()
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -395,6 +396,73 @@ export default function RootLayout({
     }
   }
 
+  // Fetch fresh content indicators
+  const checkFreshContent = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user.id) {
+        setFreshContent({ ideas: false, roadmap: false, updates: false, help: false })
+        return
+      }
+
+      // Get user's last visit timestamps from localStorage
+      const lastVisits = JSON.parse(localStorage.getItem('lastVisits') || '{}')
+      const lastIdeasCheck = lastVisits.ideas ? new Date(lastVisits.ideas) : new Date(0)
+      const lastRoadmapCheck = lastVisits.roadmap ? new Date(lastVisits.roadmap) : new Date(0)
+      const lastUpdatesCheck = lastVisits.updates ? new Date(lastVisits.updates) : new Date(0)
+      const lastHelpCheck = lastVisits.help ? new Date(lastVisits.help) : new Date(0)
+
+      // Check for fresh ideas
+      const { count: ideasCount } = await supabase.from('ideas').select('*', { count: 'exact', head: true })
+        .gt('created_at', lastIdeasCheck.toISOString())
+      
+      // Check for fresh announcements (updates)
+      const { count: updatesCount } = await supabase.from('announcements').select('*', { count: 'exact', head: true })
+        .gt('created_at', lastUpdatesCheck.toISOString())
+      
+      // Check for fresh help articles
+      const { count: helpCount } = await supabase.from('help_articles').select('*', { count: 'exact', head: true })
+        .gt('updated_at', lastHelpCheck.toISOString())
+      
+      // Check for roadmap status changes
+      const { count: roadmapCount } = await supabase.from('ideas').select('*', { count: 'exact', head: true })
+        .neq('status', 'new')
+        .gt('updated_at', lastRoadmapCheck.toISOString())
+
+      setFreshContent({
+        ideas: (ideasCount || 0) > 0,
+        roadmap: (roadmapCount || 0) > 0,
+        updates: (updatesCount || 0) > 0,
+        help: (helpCount || 0) > 0,
+      })
+    } catch (err) {
+      console.error('Error checking fresh content:', err)
+    }
+  }
+
+  // Mark content as viewed
+  const markAsViewed = (section: 'ideas' | 'roadmap' | 'updates' | 'help') => {
+    const lastVisits = JSON.parse(localStorage.getItem('lastVisits') || '{}')
+    lastVisits[section] = new Date().toISOString()
+    localStorage.setItem('lastVisits', JSON.stringify(lastVisits))
+    setFreshContent(prev => ({ ...prev, [section]: false }))
+  }
+
+  // Mark content as viewed when navigating
+  useEffect(() => {
+    if (pathname === '/') markAsViewed('ideas')
+    else if (pathname === '/roadmap') markAsViewed('roadmap')
+    else if (pathname === '/announcements') markAsViewed('updates')
+    else if (pathname === '/help') markAsViewed('help')
+  }, [pathname])
+
+  // Check fresh content on page load and periodically
+  useEffect(() => {
+    checkFreshContent()
+    const interval = setInterval(checkFreshContent, 60000) // Check every minute
+    return () => clearInterval(interval)
+  }, [])
+
   // Fetch notifications when dropdown opens
   useEffect(() => {
     if (showNotifications) {
@@ -455,23 +523,32 @@ export default function RootLayout({
                   if (!isOnBoard && isBoardItem) return false
                   if (isOnBoard && isMarketingItem) return false
                   return true
-                }).map(item => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="px-4 py-2 rounded-lg text-sm font-medium transition-smooth group relative"
-                  style={{
-                    color: pathname === item.href ? 'var(--coral)' : 'var(--slate)',
-                  }}>
-                  <span className="flex items-center gap-2">
-                    <span className="group-hover:scale-110 transition-transform"><NavIcon type={item.icon} size={18} /></span>
-                    {item.label}
-                  </span>
-                  {pathname === item.href && (
-                    <div className="absolute bottom-0 left-0 right-0 h-1 rounded-t-lg" style={{ background: 'var(--coral)' }} />
-                  )}
-                </Link>
-              ))}
+                }).map(item => {
+                  const labelKey = item.label.toLowerCase() as keyof typeof freshContent
+                  const showDot = freshContent[labelKey as 'ideas' | 'roadmap' | 'updates' | 'help']
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className="px-4 py-2 rounded-lg text-sm font-medium transition-smooth group relative"
+                      style={{
+                        color: pathname === item.href ? 'var(--coral)' : 'var(--slate)',
+                      }}>
+                      <span className="flex items-center gap-2">
+                        <span className="group-hover:scale-110 transition-transform relative">
+                          <NavIcon type={item.icon} size={18} />
+                          {showDot && (
+                            <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }} />
+                          )}
+                        </span>
+                        {item.label}
+                      </span>
+                      {pathname === item.href && (
+                        <div className="absolute bottom-0 left-0 right-0 h-1 rounded-t-lg" style={{ background: 'var(--coral)' }} />
+                      )}
+                    </Link>
+                  )
+                })
             </div>
 
             {/* Right side */}
@@ -678,22 +755,31 @@ export default function RootLayout({
                   if (!isOnBoard2 && isBoardItem2) return false
                   if (isOnBoard2 && isMarketingItem2) return false
                   return true
-                }).map(item => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setShowDrawer(false)}
-                    className="block px-4 py-3 rounded-lg font-medium transition-smooth cursor-pointer"
-                    style={{
-                      background: pathname === item.href ? 'var(--peach)' : 'transparent',
-                      color: pathname === item.href ? 'var(--coral)' : 'var(--ink)',
-                    }}>
-                    <span className="flex items-center gap-2">
-                      <NavIcon type={item.icon} size={18} />
-                      {item.label}
-                    </span>
-                  </Link>
-                ))}
+                }).map(item => {
+                  const labelKey = item.label.toLowerCase() as keyof typeof freshContent
+                  const showDot = freshContent[labelKey as 'ideas' | 'roadmap' | 'updates' | 'help']
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setShowDrawer(false)}
+                      className="block px-4 py-3 rounded-lg font-medium transition-smooth cursor-pointer relative"
+                      style={{
+                        background: pathname === item.href ? 'var(--peach)' : 'transparent',
+                        color: pathname === item.href ? 'var(--coral)' : 'var(--ink)',
+                      }}>
+                      <span className="flex items-center gap-2">
+                        <span className="relative">
+                          <NavIcon type={item.icon} size={18} />
+                          {showDot && (
+                            <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }} />
+                          )}
+                        </span>
+                        {item.label}
+                      </span>
+                    </Link>
+                  )
+                })}
                 {isAdmin && (
                   <Link
                     href="/admin"

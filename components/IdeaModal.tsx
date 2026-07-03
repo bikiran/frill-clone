@@ -35,18 +35,36 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   const [isPrivate, setIsPrivate]       = useState(false)
   const [showNameDropdown, setShowNameDropdown] = useState(false)
   const [currentUser, setCurrentUser]   = useState<any>(null)
+  const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
+  const [creatingPoll, setCreatingPoll] = useState(false)
+  const [creatingSurvey, setCreatingSurvey] = useState(false)
+  const [creatingForm, setCreatingForm] = useState(false)
+  const [newPollQuestion, setNewPollQuestion] = useState('')
+  const [newPollOptions, setNewPollOptions] = useState(['', ''])
+  const [newSurveyTitle, setNewSurveyTitle] = useState('')
+  const [newFormTitle, setNewFormTitle] = useState('')
   const titleRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setTimeout(() => titleRef.current?.focus(), 100)
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       setAuthed(!!data.session)
       const user = data.session?.user
       if (user) {
         setCurrentUser(user)
         const displayName = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Anonymous'
         setName(displayName)
+        
+        // Check if user is admin (super admin or company owner)
+        const SUPER_ADMIN = 'bishalstha76@gmail.com'
+        if (user.email === SUPER_ADMIN) {
+          setIsCompanyAdmin(true)
+        } else {
+          // Check if company owner
+          const { data: company } = await (supabase as any).from('companies').select('*').eq('owner_id', user.id).maybeSingle()
+          setIsCompanyAdmin(!!company)
+        }
       }
     })
     // Fetch available polls and surveys
@@ -75,6 +93,48 @@ export default function IdeaModal({ onClose, onSubmitted }: {
         setImagePreview(event.target?.result as string)
       }
       reader.readAsDataURL(file)
+    }
+  }
+
+  const createNewPoll = async () => {
+    if (!newPollQuestion.trim() || newPollOptions.some(o => !o.trim())) {
+      return
+    }
+    try {
+      const { data, error } = await supabase.from('polls').insert({
+        question: newPollQuestion,
+        options: newPollOptions.filter(o => o.trim()),
+        status: 'active',
+      }).select().single()
+      
+      if (error) throw error
+      
+      setAvailablePolls([...availablePolls, data])
+      setAttachedPoll(data.id)
+      setCreatingPoll(false)
+      setNewPollQuestion('')
+      setNewPollOptions(['', ''])
+    } catch (err) {
+      console.error('Error creating poll:', err)
+    }
+  }
+
+  const createNewSurvey = async () => {
+    if (!newSurveyTitle.trim()) return
+    try {
+      const { data, error } = await supabase.from('surveys').insert({
+        title: newSurveyTitle,
+        status: 'active',
+      }).select().single()
+      
+      if (error) throw error
+      
+      setAvailableSurveys([...availableSurveys, data])
+      setAttachedSurvey(data.id)
+      setCreatingSurvey(false)
+      setNewSurveyTitle('')
+    } catch (err) {
+      console.error('Error creating survey:', err)
     }
   }
 
@@ -442,47 +502,121 @@ export default function IdeaModal({ onClose, onSubmitted }: {
             </div>
           </div>
 
-          {/* Attach Poll or Survey */}
-          {(availablePolls.length > 0 || availableSurveys.length > 0) && (
+          {/* Admin Poll/Survey/Form Creation */}
+          {isCompanyAdmin && (
             <div>
               <label className="block text-sm font-bold mb-2" style={{ color: 'var(--ink)' }}>
-                Attach Poll or Survey (optional)
+                Attach Poll, Survey, or Form (optional)
               </label>
               <div className="flex gap-2 flex-wrap">
                 {/* Poll button */}
-                {availablePolls.length > 0 && (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => { setShowPollPicker(!showPollPicker); setShowSurveyPicker(false) }}
-                      className="px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-smooth cursor-pointer hover:bg-gray-50"
-                      style={{ 
-                        borderColor: attachedPoll ? '#0369a1' : 'var(--border)',
-                        background: attachedPoll ? '#e0f2fe' : 'white',
-                        color: attachedPoll ? '#0369a1' : 'var(--slate)',
-                      }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12h2v5H7z"/><path d="M11 8h2v9h-2z"/></svg>
-                      {attachedPoll ? availablePolls.find(p => p.id === attachedPoll)?.question?.slice(0, 25) + '...' : '+ Add Poll'}
-                      {attachedPoll && (
-                        <span onClick={(e) => { e.stopPropagation(); setAttachedPoll(null) }} className="ml-1 hover:opacity-70">×</span>
-                      )}
-                    </button>
-                    {showPollPicker && (
-                      <div className="absolute top-full mt-1 left-0 z-10 w-72 bg-white border rounded-xl shadow-lg p-2 max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
-                        {availablePolls.map(poll => (
-                          <button
-                            key={poll.id}
-                            type="button"
-                            onClick={() => { setAttachedPoll(poll.id); setShowPollPicker(false) }}
-                            className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer"
-                            style={{ color: 'var(--ink)' }}>
-                            {poll.question}
-                          </button>
-                        ))}
-                      </div>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => { setShowPollPicker(!showPollPicker); setShowSurveyPicker(false) }}
+                    className="px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-smooth cursor-pointer hover:bg-gray-50"
+                    style={{ 
+                      borderColor: attachedPoll ? '#0369a1' : 'var(--border)',
+                      background: attachedPoll ? '#e0f2fe' : 'white',
+                      color: attachedPoll ? '#0369a1' : 'var(--slate)',
+                    }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12h2v5H7z"/><path d="M11 8h2v9h-2z"/></svg>
+                    {attachedPoll ? availablePolls.find(p => p.id === attachedPoll)?.question?.slice(0, 25) + '...' : '+ Add Poll'}
+                    {attachedPoll && (
+                      <span onClick={(e) => { e.stopPropagation(); setAttachedPoll(null) }} className="ml-1 hover:opacity-70">×</span>
                     )}
-                  </div>
-                )}
+                  </button>
+                  {showPollPicker && (
+                    <div className="absolute top-full mt-1 left-0 z-10 w-72 bg-white border rounded-xl shadow-lg p-2 max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
+                      {availablePolls.length === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => { setCreatingPoll(true); setShowPollPicker(false) }}
+                          className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer flex items-center gap-2"
+                          style={{ color: 'var(--coral)' }}>
+                          <span>+ Create new poll</span>
+                        </button>
+                      ) : (
+                        <>
+                          {availablePolls.map(poll => (
+                            <button
+                              key={poll.id}
+                              type="button"
+                              onClick={() => { setAttachedPoll(poll.id); setShowPollPicker(false) }}
+                              className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer"
+                              style={{ color: 'var(--ink)' }}>
+                              {poll.question}
+                            </button>
+                          ))}
+                          <div className="border-t mt-2 pt-2" style={{ borderColor: 'var(--border)' }} />
+                          <button
+                            type="button"
+                            onClick={() => { setCreatingPoll(true); setShowPollPicker(false) }}
+                            className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer flex items-center gap-2"
+                            style={{ color: 'var(--coral)' }}>
+                            <span>+ Create new poll</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Survey button */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => { setShowSurveyPicker(!showSurveyPicker); setShowPollPicker(false) }}
+                    className="px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-smooth cursor-pointer hover:bg-gray-50"
+                    style={{ 
+                      borderColor: attachedSurvey ? '#7c3aed' : 'var(--border)',
+                      background: attachedSurvey ? '#ede9fe' : 'white',
+                      color: attachedSurvey ? '#7c3aed' : 'var(--slate)',
+                    }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    {attachedSurvey ? availableSurveys.find(s => s.id === attachedSurvey)?.title?.slice(0, 20) + '...' : '+ Add Survey'}
+                    {attachedSurvey && (
+                      <span onClick={(e) => { e.stopPropagation(); setAttachedSurvey(null) }} className="ml-1 hover:opacity-70">×</span>
+                    )}
+                  </button>
+                  {showSurveyPicker && (
+                    <div className="absolute top-full mt-1 left-0 z-10 w-72 bg-white border rounded-xl shadow-lg p-2 max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
+                      {availableSurveys.length === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => { setCreatingSurvey(true); setShowSurveyPicker(false) }}
+                          className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer flex items-center gap-2"
+                          style={{ color: 'var(--coral)' }}>
+                          <span>+ Create new survey</span>
+                        </button>
+                      ) : (
+                        <>
+                          {availableSurveys.map(survey => (
+                            <button
+                              key={survey.id}
+                              type="button"
+                              onClick={() => { setAttachedSurvey(survey.id); setShowSurveyPicker(false) }}
+                              className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer"
+                              style={{ color: 'var(--ink)' }}>
+                              {survey.title}
+                            </button>
+                          ))}
+                          <div className="border-t mt-2 pt-2" style={{ borderColor: 'var(--border)' }} />
+                          <button
+                            type="button"
+                            onClick={() => { setCreatingSurvey(true); setShowSurveyPicker(false) }}
+                            className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer flex items-center gap-2"
+                            style={{ color: 'var(--coral)' }}>
+                            <span>+ Create new survey</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
                 
                 {/* Survey button */}
                 {availableSurveys.length > 0 && (
@@ -634,6 +768,104 @@ export default function IdeaModal({ onClose, onSubmitted }: {
           </button>
         </div>
       </div>
+
+      {/* Poll Creation Panel */}
+      {creatingPoll && (
+        <>
+          <div className="fixed inset-0 z-40 animate-backdrop" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setCreatingPoll(false)} />
+          <div className="fixed right-0 top-0 z-50 w-full md:w-96 h-screen bg-white shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
+            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Create Poll</h2>
+                <button onClick={() => setCreatingPoll(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-smooth cursor-pointer">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Question</label>
+                <input type="text" value={newPollQuestion} onChange={e => setNewPollQuestion(e.target.value)}
+                  placeholder="What do you think?" autoFocus
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none" style={{ borderColor: 'var(--border)' }} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Options</label>
+                {newPollOptions.map((opt, i) => (
+                  <input key={i} type="text" value={opt} onChange={e => {
+                    const newOpts = [...newPollOptions]
+                    newOpts[i] = e.target.value
+                    setNewPollOptions(newOpts)
+                  }}
+                    placeholder={`Option ${i + 1}`}
+                    className="w-full px-4 py-2 border rounded-lg focus:outline-none mb-2"
+                    style={{ borderColor: 'var(--border)' }} />
+                ))}
+                <button onClick={() => setNewPollOptions([...newPollOptions, ''])}
+                  className="text-xs font-medium" style={{ color: 'var(--coral)' }}>
+                  + Add option
+                </button>
+              </div>
+            </div>
+            <div className="p-6 border-t flex gap-3" style={{ borderColor: 'var(--border)' }}>
+              <button onClick={() => setCreatingPoll(false)}
+                className="flex-1 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
+                style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                Cancel
+              </button>
+              <button onClick={createNewPoll} disabled={!newPollQuestion.trim() || newPollOptions.filter(o => o.trim()).length < 2}
+                className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-smooth cursor-pointer disabled:opacity-50"
+                style={{ background: 'var(--coral)' }}>
+                Create Poll
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Survey Creation Panel */}
+      {creatingSurvey && (
+        <>
+          <div className="fixed inset-0 z-40 animate-backdrop" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setCreatingSurvey(false)} />
+          <div className="fixed right-0 top-0 z-50 w-full md:w-96 h-screen bg-white shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
+            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Create Survey</h2>
+                <button onClick={() => setCreatingSurvey(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-smooth cursor-pointer">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Survey Title</label>
+                <input type="text" value={newSurveyTitle} onChange={e => setNewSurveyTitle(e.target.value)}
+                  placeholder="Customer Satisfaction" autoFocus
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none" style={{ borderColor: 'var(--border)' }} />
+              </div>
+              <p className="text-xs" style={{ color: 'var(--slate)' }}>You can configure survey questions in the admin settings after creating it.</p>
+            </div>
+            <div className="p-6 border-t flex gap-3" style={{ borderColor: 'var(--border)' }}>
+              <button onClick={() => setCreatingSurvey(false)}
+                className="flex-1 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
+                style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                Cancel
+              </button>
+              <button onClick={createNewSurvey} disabled={!newSurveyTitle.trim()}
+                className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-smooth cursor-pointer disabled:opacity-50"
+                style={{ background: 'var(--coral)' }}>
+                Create Survey
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      <style>{`
+        @keyframes slide-in-right {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        .animate-slide-in-right { animation: slide-in-right 0.3s ease-out; }
+      `}</style>
     </>
-  )
-}
