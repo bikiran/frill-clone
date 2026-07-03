@@ -524,8 +524,9 @@ export default function RootLayout({
                   if (isOnBoard && isMarketingItem) return false
                   return true
                 }).map(item => {
-                  const labelKey = item.label.toLowerCase() as keyof typeof freshContent
-                  const showDot = freshContent[labelKey as 'ideas' | 'roadmap' | 'updates' | 'help']
+                  const labelKey = item.label.toLowerCase()
+                  const key = labelKey === 'ideas' ? 'ideas' : labelKey === 'roadmap' ? 'roadmap' : labelKey === 'updates' ? 'updates' : 'help'
+                  const showDot = freshContent[key as keyof typeof freshContent]
                   return (
                     <Link
                       key={item.href}
@@ -756,8 +757,9 @@ export default function RootLayout({
                   if (isOnBoard2 && isMarketingItem2) return false
                   return true
                 }).map(item => {
-                  const labelKey = item.label.toLowerCase() as keyof typeof freshContent
-                  const showDot = freshContent[labelKey as 'ideas' | 'roadmap' | 'updates' | 'help']
+                  const labelKey = item.label.toLowerCase()
+                  const key = labelKey === 'ideas' ? 'ideas' : labelKey === 'roadmap' ? 'roadmap' : labelKey === 'updates' ? 'updates' : 'help'
+                  const showDot = freshContent[key as keyof typeof freshContent]
                   return (
                     <Link
                       key={item.href}
