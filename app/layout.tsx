@@ -39,6 +39,7 @@ export default function RootLayout({
 }) {
   const [showDrawer, setShowDrawer] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
   const pathname = usePathname()
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -385,6 +386,7 @@ export default function RootLayout({
                 <>
                   {/* Notification icon */}
                   <button
+                    onClick={() => setShowNotifications(!showNotifications)}
                     className="w-9 h-9 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition-smooth cursor-pointer relative"
                     title="Notifications">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -393,6 +395,22 @@ export default function RootLayout({
                     </svg>
                     <div className="absolute top-1 right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }}></div>
                   </button>
+                  
+                  {showNotifications && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setShowNotifications(false)} />
+                      <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border z-40 overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                        <div className="p-4 border-b" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+                          <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Notifications</p>
+                        </div>
+                        <div className="max-h-96 overflow-y-auto">
+                          <div className="p-4 text-center" style={{ color: 'var(--slate)' }}>
+                            <p className="text-sm">No new notifications</p>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                   
                   <div className="relative" id="colvy-user-btn">
                     <button

@@ -563,28 +563,32 @@ export default function HomePage() {
             )}
           </div>
           <nav className="space-y-0.5">
-            {topics.map(t => (
-              <button
-                key={t.id}
-                onClick={() => setTopicFilter(topicFilter === t.id ? null : t.id)}
-                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-smooth press-effect relative group"
-                style={{
-                  background: topicFilter === t.id ? 'var(--peach)' : 'transparent',
-                  color: topicFilter === t.id ? 'var(--coral)' : 'var(--ink)',
-                }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" /></svg>
-                <span className="flex-1 text-left capitalize">{t.id}</span>
-                <span className="text-xs" style={{ color: 'var(--slate)' }}>{t.count}</span>
-                {topicFilter === t.id && (
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); setTopicFilter(null) }} 
-                    className="p-0.5 rounded-full hover:bg-gray-200 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity" 
-                    style={{ color: 'var(--slate)' }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                  </button>
-                )}
-              </button>
-            ))}
+            {topics.length > 0 ? (
+              topics.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setTopicFilter(topicFilter === t.id ? null : t.id)}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-smooth press-effect relative group"
+                  style={{
+                    background: topicFilter === t.id ? 'var(--peach)' : 'transparent',
+                    color: topicFilter === t.id ? 'var(--coral)' : 'var(--ink)',
+                  }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" /></svg>
+                  <span className="flex-1 text-left capitalize">{t.id}</span>
+                  <span className="text-xs" style={{ color: 'var(--slate)' }}>{t.count}</span>
+                  {topicFilter === t.id && (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setTopicFilter(null) }} 
+                      className="p-0.5 rounded-full hover:bg-gray-200 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity" 
+                      style={{ color: 'var(--slate)' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                    </button>
+                  )}
+                </button>
+              ))
+            ) : (
+              <p className="text-xs" style={{ color: 'var(--slate)' }}>No topics yet</p>
+            )}
           </nav>
         </div>
 

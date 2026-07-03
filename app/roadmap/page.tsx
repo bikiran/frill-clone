@@ -243,7 +243,13 @@ export default function RoadmapPage() {
 
   const grouped = allStatuses.map(s => {
     let columnIdeas = ideas.filter(i => i.status === s.key)
-    if (filterTopic) columnIdeas = columnIdeas.filter(i => i.topics && i.topics.includes(filterTopic))
+    if (filterTopic === 'no-topic') {
+      columnIdeas = columnIdeas.filter(i => !i.topics || i.topics.length === 0)
+    } else if (filterTopic === 'private') {
+      columnIdeas = columnIdeas.filter(i => i.is_private)
+    } else if (filterTopic) {
+      columnIdeas = columnIdeas.filter(i => i.topics && i.topics.includes(filterTopic))
+    }
     return { ...s, ideas: sortIdeas(columnIdeas) }
   })
 
@@ -320,6 +326,19 @@ export default function RoadmapPage() {
                     All Ideas {!filterTopic && '✓'}
                   </button>
                   <div className="border-t" style={{ borderColor: 'var(--border)' }} />
+                  <button
+                    onClick={() => { setFilterTopic('no-topic'); setShowFilterDropdown(false) }}
+                    className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 transition-smooth cursor-pointer"
+                    style={{ color: filterTopic === 'no-topic' ? 'var(--coral)' : 'var(--ink)', fontWeight: filterTopic === 'no-topic' ? 600 : 400 }}>
+                    No Topic {filterTopic === 'no-topic' && '✓'}
+                  </button>
+                  <button
+                    onClick={() => { setFilterTopic('private'); setShowFilterDropdown(false) }}
+                    className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 transition-smooth cursor-pointer"
+                    style={{ color: filterTopic === 'private' ? 'var(--coral)' : 'var(--ink)', fontWeight: filterTopic === 'private' ? 600 : 400 }}>
+                    Private {filterTopic === 'private' && '✓'}
+                  </button>
+                  {allTopics.length > 0 && <div className="border-t" style={{ borderColor: 'var(--border)' }} />}
                   {allTopics.map(t => (
                     <button
                       key={t}
@@ -339,7 +358,7 @@ export default function RoadmapPage() {
               href="/admin/statuses"
               className="px-3 py-2 rounded-lg font-medium border text-sm transition-smooth press-effect cursor-pointer hover:bg-gray-50"
               style={{ borderColor: 'var(--border)', color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M4.22 4.22l4.24 4.24m0 5.08l-4.24 4.24M1 12h6m6 0h6m-5.78-5.78l4.24-4.24m0 5.08l4.24 4.24"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6"/><path d="M4.22 4.22l4.24 4.24m0 5.08l-4.24 4.24"/><path d="M1 12h6m6 0h6"/><path d="M19.78 4.22l-4.24 4.24m0 5.08l4.24 4.24"/></svg>
             </Link>
           )}
           {user && (

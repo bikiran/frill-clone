@@ -768,7 +768,7 @@ function WidgetContent() {
   }
 
   return (
-    <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', height: '100vh', maxWidth: '100vw', width: '100%', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
+    <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', height: '100vh', maxWidth: '100vw', width: '100%', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden', overflowX: 'hidden', boxSizing: 'border-box' }}>
       {/* Image Viewer */}
       {showImageViewer && (
         <ImageViewer
@@ -1174,7 +1174,7 @@ function WidgetContent() {
               style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', color: tab === t ? accentColor : '#9ca3af' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 {t === 'feedback' && <path d={icons.feedback}/>}
-                {t === 'roadmap' && <polyline points={icons.roadmap.split(' ').map(p => p.replace('L','')).join(' ')}/>}
+                {t === 'roadmap' && <path d={icons.roadmap}/>}
                 {t === 'updates' && <><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></>}
                 {t === 'help' && <circle cx="12" cy="12" r="10"/>}
                 {t === 'chat' && <path d={icons.chat}/>}
