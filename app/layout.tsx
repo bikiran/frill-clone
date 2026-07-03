@@ -43,7 +43,7 @@ export default function RootLayout({
   const [notifications, setNotifications] = useState<any[]>([])
   const [notificationFilter, setNotificationFilter] = useState<'unread' | 'all'>('unread')
   const [loadingNotifications, setLoadingNotifications] = useState(false)
-  const [freshContent, setFreshContent] = useState({ ideas: false, roadmap: false, updates: false, help: false })
+  const [freshContent] = useState({ ideas: false, roadmap: false, updates: false, help: false })
   const pathname = usePathname()
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -396,73 +396,6 @@ export default function RootLayout({
     }
   }
 
-  // Mark content as viewed
-  const markAsViewed = (section: 'ideas' | 'roadmap' | 'updates' | 'help') => {
-    const lastVisits = JSON.parse(localStorage.getItem('lastVisits') || '{}')
-    lastVisits[section] = new Date().toISOString()
-    localStorage.setItem('lastVisits', JSON.stringify(lastVisits))
-    setFreshContent(prev => ({ ...prev, [section]: false }))
-  }
-
-  // Mark content as viewed when navigating
-  useEffect(() => {
-    if (pathname === '/') markAsViewed('ideas')
-    else if (pathname === '/roadmap') markAsViewed('roadmap')
-    else if (pathname === '/announcements') markAsViewed('updates')
-    else if (pathname === '/help') markAsViewed('help')
-  }, [pathname])
-
-  // Check fresh content
-  const checkFreshContent = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user.id) {
-        setFreshContent({ ideas: false, roadmap: false, updates: false, help: false })
-        return
-      }
-
-      // Get user's last visit timestamps from localStorage
-      const lastVisits = JSON.parse(localStorage.getItem('lastVisits') || '{}')
-      const lastIdeasCheck = lastVisits.ideas ? new Date(lastVisits.ideas) : new Date(0)
-      const lastRoadmapCheck = lastVisits.roadmap ? new Date(lastVisits.roadmap) : new Date(0)
-      const lastUpdatesCheck = lastVisits.updates ? new Date(lastVisits.updates) : new Date(0)
-      const lastHelpCheck = lastVisits.help ? new Date(lastVisits.help) : new Date(0)
-
-      // Check for fresh ideas
-      const { count: ideasCount } = await supabase.from('ideas').select('*', { count: 'exact', head: true })
-        .gt('created_at', lastIdeasCheck.toISOString())
-      
-      // Check for fresh announcements (updates)
-      const { count: updatesCount } = await supabase.from('announcements').select('*', { count: 'exact', head: true })
-        .gt('created_at', lastUpdatesCheck.toISOString())
-      
-      // Check for fresh help articles
-      const { count: helpCount } = await supabase.from('help_articles').select('*', { count: 'exact', head: true })
-        .gt('updated_at', lastHelpCheck.toISOString())
-      
-      // Check for roadmap status changes
-      const { count: roadmapCount } = await supabase.from('ideas').select('*', { count: 'exact', head: true })
-        .neq('status', 'new')
-        .gt('updated_at', lastRoadmapCheck.toISOString())
-
-      setFreshContent({
-        ideas: (ideasCount || 0) > 0,
-        roadmap: (roadmapCount || 0) > 0,
-        updates: (updatesCount || 0) > 0,
-        help: (helpCount || 0) > 0,
-      })
-    } catch (err) {
-      console.error('Error checking fresh content:', err)
-    }
-  }
-
-  // Check fresh content on page load and periodically
-  useEffect(() => {
-    checkFreshContent()
-    const interval = setInterval(checkFreshContent, 60000)
-    return () => clearInterval(interval)
-  }, [])
-
   // Fetch notifications when dropdown opens
   useEffect(() => {
     if (showNotifications) {
@@ -524,12 +457,11 @@ export default function RootLayout({
                   if (isOnBoard && isMarketingItem) return false
                   return true
                 }).map(item => {
-                  const labelKey = item.label.toLowerCase()
-                  let key: 'ideas' | 'roadmap' | 'updates' | 'help' = 'help'
-                  if (labelKey === 'ideas') key = 'ideas'
-                  else if (labelKey === 'roadmap') key = 'roadmap'
-                  else if (labelKey === 'updates') key = 'updates'
-                  const showDot = freshContent[key]
+                  let showDot = false
+                  if (item.label === 'Ideas') showDot = freshContent.ideas
+                  else if (item.label === 'Roadmap') showDot = freshContent.roadmap
+                  else if (item.label === 'Updates') showDot = freshContent.updates
+                  else if (item.label === 'Help') showDot = freshContent.help
                   return (
                     <Link
                       key={item.href}
@@ -760,18 +692,17 @@ export default function RootLayout({
                   if (isOnBoard2 && isMarketingItem2) return false
                   return true
                 }).map(item => {
-                  const labelKey = item.label.toLowerCase()
-                  let key: 'ideas' | 'roadmap' | 'updates' | 'help' = 'help'
-                  if (labelKey === 'ideas') key = 'ideas'
-                  else if (labelKey === 'roadmap') key = 'roadmap'
-                  else if (labelKey === 'updates') key = 'updates'
-                  const showDot = freshContent[key]
+                  let showDot = false
+                  if (item.label === 'Ideas') showDot = freshContent.ideas
+                  else if (item.label === 'Roadmap') showDot = freshContent.roadmap
+                  else if (item.label === 'Updates') showDot = freshContent.updates
+                  else if (item.label === 'Help') showDot = freshContent.help
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
                       onClick={() => setShowDrawer(false)}
-                      className="block px-4 py-3 rounded-lg font-medium transition-smooth cursor-pointer relative"
+                      className="block px-4 py-3 rounded-lg font-medium transition-smooth cursor-pointer"
                       style={{
                         background: pathname === item.href ? 'var(--peach)' : 'transparent',
                         color: pathname === item.href ? 'var(--coral)' : 'var(--ink)',

@@ -54,12 +54,11 @@ export default function IdeaModal({ onClose, onSubmitted }: {
         const displayName = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Anonymous'
         setName(displayName)
         
-        // Check if user is admin (super admin or company owner)
+        // Check if user is admin
         const SUPER_ADMIN = 'bishalstha76@gmail.com'
         if (user.email === SUPER_ADMIN) {
           setIsCompanyAdmin(true)
         } else {
-          // Check if company owner
           const { data: company } = await (supabase as any).from('companies').select('*').eq('owner_id', user.id).maybeSingle()
           setIsCompanyAdmin(!!company)
         }
@@ -504,7 +503,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
           {isCompanyAdmin && (
             <div>
               <label className="block text-sm font-bold mb-2" style={{ color: 'var(--ink)' }}>
-                Attach Poll, Survey, or Form (optional)
+                Attach Poll or Survey (optional)
               </label>
               <div className="flex gap-2 flex-wrap">
                 {/* Poll button */}
@@ -803,7 +802,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
                   placeholder="Customer Satisfaction" autoFocus
                   className="w-full px-4 py-2 border rounded-lg focus:outline-none" style={{ borderColor: 'var(--border)' }} />
               </div>
-              <p className="text-xs" style={{ color: 'var(--slate)' }}>You can configure survey questions in the admin settings after creating it.</p>
+              <p className="text-xs" style={{ color: 'var(--slate)' }}>You can configure survey questions in admin settings after creating it.</p>
             </div>
             <div className="p-6 border-t flex gap-3" style={{ borderColor: 'var(--border)' }}>
               <button onClick={() => setCreatingSurvey(false)}
