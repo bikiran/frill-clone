@@ -524,28 +524,10 @@ export default function IdeaModal({ onClose, onSubmitted }: {
                     )}
                   </button>
                   {showPollPicker && (
-                    <div className="absolute top-full mt-1 left-0 z-10 w-72 bg-white border rounded-xl shadow-lg p-2 max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
-                      {availablePolls.length === 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => { setCreatingPoll(true); setShowPollPicker(false) }}
-                          className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer flex items-center gap-2"
-                          style={{ color: 'var(--coral)' }}>
-                          <span>+ Create new poll</span>
-                        </button>
-                      ) : (
-                        <>
-                          {availablePolls.map(poll => (
-                            <button
-                              key={poll.id}
-                              type="button"
-                              onClick={() => { setAttachedPoll(poll.id); setShowPollPicker(false) }}
-                              className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer"
-                              style={{ color: 'var(--ink)' }}>
-                              {poll.question}
-                            </button>
-                          ))}
-                          <div className="border-t mt-2 pt-2" style={{ borderColor: 'var(--border)' }} />
+                    <>
+                      <div className="fixed inset-0 z-0" onClick={() => setShowPollPicker(false)} />
+                      <div className="absolute top-full mt-1 left-0 z-10 w-72 bg-white border rounded-xl shadow-lg p-2 max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
+                        {availablePolls.length === 0 ? (
                           <button
                             type="button"
                             onClick={() => { setCreatingPoll(true); setShowPollPicker(false) }}
@@ -553,9 +535,30 @@ export default function IdeaModal({ onClose, onSubmitted }: {
                             style={{ color: 'var(--coral)' }}>
                             <span>+ Create new poll</span>
                           </button>
-                        </>
-                      )}
-                    </div>
+                        ) : (
+                          <>
+                            {availablePolls.map(poll => (
+                              <button
+                                key={poll.id}
+                                type="button"
+                                onClick={() => { setAttachedPoll(poll.id); setShowPollPicker(false) }}
+                                className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer"
+                                style={{ color: 'var(--ink)' }}>
+                                {poll.question}
+                              </button>
+                            ))}
+                            <div className="border-t mt-2 pt-2" style={{ borderColor: 'var(--border)' }} />
+                            <button
+                              type="button"
+                              onClick={() => { setCreatingPoll(true); setShowPollPicker(false) }}
+                              className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer flex items-center gap-2"
+                              style={{ color: 'var(--coral)' }}>
+                              <span>+ Create new poll</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
 
