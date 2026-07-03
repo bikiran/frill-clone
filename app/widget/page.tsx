@@ -274,12 +274,12 @@ function WidgetContent() {
       : helpArticles.find(h => h.id === selectedItem.id)
 
     return (
-      <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', height: '100vh', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+      <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden', boxSizing: 'border-box', position: 'fixed', top: 0, left: 0, margin: 0, padding: 0 }}>
+        <div style={{ padding: 'clamp(10px, 3vw, 14px) clamp(12px, 3vw, 16px)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, width: '100%', boxSizing: 'border-box' }}>
           <button onClick={() => setSelectedItem(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: 0, color: 'var(--slate)', fontWeight: 700 }}>←</button>
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Back</span>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 'clamp(8px, 3vw, 16px)', width: '100%', boxSizing: 'border-box' }}>
           {item && (
             <>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>{item.title}</h2>
@@ -768,7 +768,21 @@ function WidgetContent() {
   }
 
   return (
-    <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', height: '100vh', maxWidth: '100vw', width: '100%', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden', overflowX: 'hidden', boxSizing: 'border-box' }}>
+    <div style={{ 
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', 
+      height: '100vh', 
+      width: '100vw',
+      display: 'flex', 
+      flexDirection: 'column', 
+      background: '#fff', 
+      overflow: 'hidden',
+      boxSizing: 'border-box',
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      margin: 0,
+      padding: 0,
+    }}>
       {/* Image Viewer */}
       {showImageViewer && (
         <ImageViewer
@@ -795,7 +809,7 @@ function WidgetContent() {
       `}</style>
 
       {/* Top Header with Logo and Name */}
-      <div style={{ padding: '14px 16px', flexShrink: 0, borderBottom: '1px solid var(--border)' }}>
+      <div style={{ padding: 'clamp(10px, 3vw, 14px) clamp(12px, 3vw, 16px)', flexShrink: 0, borderBottom: '1px solid var(--border)', width: '100%', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {company?.logo_url ? (
             <img src={company.logo_url} alt={company.name} style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover' }} />
@@ -813,7 +827,7 @@ function WidgetContent() {
       </div>
 
       {/* Scrollable content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 80px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 'clamp(8px, 3vw, 16px)', paddingBottom: '100px', width: '100%', boxSizing: 'border-box' }}>
 
         {tab === 'feedback' && (
           <div style={{ animation: 'fadeIn 0.2s ease both' }}>
@@ -1160,7 +1174,7 @@ function WidgetContent() {
       </div>
 
       {/* Footer nav */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#fff', borderTop: '1px solid #f0f0f0', display: 'flex', padding: '10px 16px' }}>
+      <div style={{ background: '#fff', borderTop: '1px solid #f0f0f0', display: 'flex', padding: 'clamp(6px, 2vw, 10px) clamp(12px, 3vw, 16px)', gap: 'clamp(4px, 2vw, 8px)', flexShrink: 0, width: '100%', boxSizing: 'border-box', justifyContent: 'space-around' }}>
         {(['feedback', 'roadmap', 'updates', 'help', 'chat'] as const).map(t => {
           const icons: Record<string, string> = {
             feedback: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
