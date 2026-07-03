@@ -15,6 +15,15 @@ const DEFAULT_STATUSES = [
   { key: 'shipped', label: 'Shipped', color: '#10b981', bg: '#d1fae5' },
 ]
 
+const DEFAULT_TOPICS = [
+  { id: 'welcome', label: 'Welcome', emoji: '👋' },
+  { id: 'improvement', label: 'Improvement', emoji: '⬆️' },
+  { id: 'integrations', label: 'Integrations', emoji: '🔗' },
+  { id: 'styling', label: 'Styling', emoji: '🎨' },
+  { id: 'misc', label: 'Misc', emoji: '✨' },
+  { id: 'bug', label: 'Bug Report', emoji: '🐛' },
+]
+
 export default function RoadmapPage() {
   const [ideas, setIdeas] = useState<any[]>([])
   const [customStatuses, setCustomStatuses] = useState<any[]>([])
@@ -253,8 +262,11 @@ export default function RoadmapPage() {
     return { ...s, ideas: sortIdeas(columnIdeas) }
   })
 
-  // Gather all topics for filter
-  const allTopics = Array.from(new Set(ideas.flatMap(i => i.topics || [])))
+  // Gather all topics for filter - include default topics even if not used yet
+  const allTopics = Array.from(new Set([
+    ...ideas.flatMap(i => i.topics || []),
+    ...DEFAULT_TOPICS.map(t => t.id)
+  ]))
 
   if (loading) {
     return <div className="p-8 text-center">Loading roadmap...</div>
@@ -345,7 +357,7 @@ export default function RoadmapPage() {
                       onClick={() => { setFilterTopic(t); setShowFilterDropdown(false) }}
                       className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 transition-smooth cursor-pointer capitalize"
                       style={{ color: filterTopic === t ? 'var(--coral)' : 'var(--ink)', fontWeight: filterTopic === t ? 600 : 400 }}>
-                      #{t} {filterTopic === t && '✓'}
+                      {DEFAULT_TOPICS.find(dt => dt.id === t)?.emoji || '#'} {t} {filterTopic === t && '✓'}
                     </button>
                   ))}
                 </div>

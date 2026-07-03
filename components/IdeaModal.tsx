@@ -32,6 +32,9 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   const [availableSurveys, setAvailableSurveys] = useState<any[]>([])
   const [showPollPicker, setShowPollPicker] = useState(false)
   const [showSurveyPicker, setShowSurveyPicker] = useState(false)
+  const [isPrivate, setIsPrivate]       = useState(false)
+  const [showNameDropdown, setShowNameDropdown] = useState(false)
+  const [currentUser, setCurrentUser]   = useState<any>(null)
   const titleRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -39,7 +42,12 @@ export default function IdeaModal({ onClose, onSubmitted }: {
     setTimeout(() => titleRef.current?.focus(), 100)
     supabase.auth.getSession().then(({ data }) => {
       setAuthed(!!data.session)
-      if (data.session?.user.email) setName(data.session.user.email.split('@')[0])
+      const user = data.session?.user
+      if (user) {
+        setCurrentUser(user)
+        const displayName = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Anonymous'
+        setName(displayName)
+      }
     })
     // Fetch available polls and surveys
     supabase.from('polls').select('*').then(({ data }) => {
@@ -268,6 +276,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
         image_url: imageUrl,
         poll_id: attachedPoll,
         survey_id: attachedSurvey,
+        is_private: isPrivate,
       }).select().single()
 
     if (err || !idea) {
@@ -408,6 +417,31 @@ export default function IdeaModal({ onClose, onSubmitted }: {
             </div>
           </div>
 
+          {/* Private Toggle */}
+          <div className="flex items-center gap-3 p-3 rounded-lg border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+            <button
+              type="button"
+              onClick={() => setIsPrivate(!isPrivate)}
+              className="relative w-10 h-6 rounded-full transition-all"
+              style={{ background: isPrivate ? 'var(--coral)' : '#d1d5db' }}>
+              <div className="absolute top-1 transition-transform" style={{ 
+                left: isPrivate ? '20px' : '2px',
+                width: '20px',
+                height: '20px',
+                background: 'white',
+                borderRadius: '50%'
+              }} />
+            </button>
+            <div>
+              <label className="block text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                Make this idea private
+              </label>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>
+                {isPrivate ? 'Only you can see this' : 'Everyone can see this'}
+              </p>
+            </div>
+          </div>
+
           {/* Attach Poll or Survey */}
           {(availablePolls.length > 0 || availableSurveys.length > 0) && (
             <div>
@@ -494,15 +528,15 @@ export default function IdeaModal({ onClose, onSubmitted }: {
                 Your name
               </label>
               {name && (
-                <button type="button" onClick={() => setName('')}
+                <button type="button" onClick={() => setShowNameDropdown(!showNameDropdown)}
                   className="text-xs font-medium press-effect"
                   style={{ color: 'var(--coral)' }}>
                   Change
                 </button>
               )}
             </div>
-            {name && (
-              <div className="px-4 py-3 rounded-xl bg-gray-50 border mb-3 flex items-center justify-between"
+            {name && !showNameDropdown && (
+              <div className="px-4 py-3 rounded-xl bg-gray-50 border mb-3 flex items-center justify-between relative"
                 style={{ borderColor: 'var(--border)' }}>
                 <div className="flex items-center gap-3">
                   <span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
@@ -513,6 +547,36 @@ export default function IdeaModal({ onClose, onSubmitted }: {
                     <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{name}</p>
                   </div>
                 </div>
+              </div>
+            )}
+            {showNameDropdown && (
+              <div className="absolute left-0 right-0 z-50 bg-white border rounded-xl shadow-lg mb-3 p-2" 
+                style={{ borderColor: 'var(--border)' }}>
+                <button
+                  type="button"
+                  onClick={() => { setName(currentUser?.email?.split('@')[0] || 'Anonymous'); setShowNameDropdown(false) }}
+                  className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 rounded-lg transition-smooth flex items-center gap-3"
+                  style={{ color: 'var(--ink)' }}>
+                  <span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                    style={{ background: 'var(--coral)' }}>
+                    {currentUser?.email?.[0]?.toUpperCase() || 'A'}
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium">{currentUser?.email?.split('@')[0] || 'Anonymous'}</p>
+                    <p className="text-xs" style={{ color: 'var(--slate)' }}>{currentUser?.email}</p>
+                  </div>
+                </button>
+                <div className="border-t my-2" style={{ borderColor: 'var(--border)' }} />
+                <button
+                  type="button"
+                  onClick={() => { setName(''); setShowNameDropdown(false) }}
+                  className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 rounded-lg transition-smooth flex items-center gap-3"
+                  style={{ color: 'var(--coral)' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  <p className="text-sm font-medium">Add new user</p>
+                </button>
               </div>
             )}
             {!name && (

@@ -33,6 +33,15 @@ const ADMIN_FILTERS = [
   { key: 'unprioritized', label: 'Unprioritized', icon: 'flag' },
 ]
 
+const DEFAULT_TOPICS = [
+  { id: 'welcome', label: 'Welcome', emoji: '👋' },
+  { id: 'improvement', label: 'Improvement', emoji: '⬆️' },
+  { id: 'integrations', label: 'Integrations', emoji: '🔗' },
+  { id: 'styling', label: 'Styling', emoji: '🎨' },
+  { id: 'misc', label: 'Misc', emoji: '✨' },
+  { id: 'bug', label: 'Bug Report', emoji: '🐛' },
+]
+
 const FilterIcon = ({ type }: { type: string }) => {
   const p = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   switch (type) {
@@ -397,12 +406,24 @@ export default function HomePage() {
   }
 
   const fetchTopics = async () => {
+    const DEFAULT_TOPICS = [
+      { id: 'welcome', label: 'Welcome', emoji: '👋' },
+      { id: 'improvement', label: 'Improvement', emoji: '⬆️' },
+      { id: 'integrations', label: 'Integrations', emoji: '🔗' },
+      { id: 'styling', label: 'Styling', emoji: '🎨' },
+      { id: 'misc', label: 'Misc', emoji: '✨' },
+      { id: 'bug', label: 'Bug Report', emoji: '🐛' },
+    ]
+    
     const companyId = await getCompanyId()
     let q = supabase.from('ideas').select('topics') as any
     if (companyId) q = q.eq('company_id', companyId)
     const { data } = await q
+    
+    const topicMap: Record<string, number> = {}
+    
+    // Aggregate topics from ideas
     if (data) {
-      const topicMap: Record<string, number> = {}
       data.forEach((idea: any) => {
         if (idea.topics) {
           idea.topics.forEach((t: string) => {
@@ -410,13 +431,21 @@ export default function HomePage() {
           })
         }
       })
-      const topicsList = Object.entries(topicMap).map(([id, count]) => ({
-        id,
-        emoji: '#',
-        count,
-      }))
-      setTopics(topicsList.sort((a, b) => b.count - a.count))
     }
+    
+    // Include default topics even if no ideas have them yet
+    DEFAULT_TOPICS.forEach(topic => {
+      if (!topicMap[topic.id]) {
+        topicMap[topic.id] = 0 // Show default topics with 0 count if not in use
+      }
+    })
+    
+    const topicsList = Object.entries(topicMap).map(([id, count]) => ({
+      id,
+      emoji: DEFAULT_TOPICS.find(t => t.id === id)?.emoji || '#',
+      count,
+    }))
+    setTopics(topicsList.sort((a, b) => b.count - a.count))
   }
 
   const priorityWeight: Record<string, number> = {
@@ -574,7 +603,7 @@ export default function HomePage() {
                     color: topicFilter === t.id ? 'var(--coral)' : 'var(--ink)',
                   }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" /></svg>
-                  <span className="flex-1 text-left capitalize">{t.id}</span>
+                  <span className="flex-1 text-left">{DEFAULT_TOPICS.find(dt => dt.id === t.id)?.emoji || '#'} {DEFAULT_TOPICS.find(dt => dt.id === t.id)?.label || t.id}</span>
                   <span className="text-xs" style={{ color: 'var(--slate)' }}>{t.count}</span>
                   {topicFilter === t.id && (
                     <button 
