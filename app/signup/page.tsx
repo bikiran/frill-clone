@@ -15,6 +15,7 @@ const INDUSTRIES = ['SaaS', 'E-commerce', 'Healthcare', 'Education', 'Finance',
 function SignUpForm() {
   const router = useRouter()
   const [step, setStep] = useState(1)
+  const [companyContext, setCompanyContext] = useState<any>(null) // For company subdomain signup
 
   // Step 1
   const [email, setEmail] = useState('')
@@ -34,9 +35,28 @@ function SignUpForm() {
   const [needsConfirmation, setNeedsConfirmation] = useState(false)
 
   useEffect(() => {
+    // Check if user is already signed in
     supabase.auth.getSession().then(({ data }: any) => {
       if (data?.session?.user) router.push('/admin')
     })
+
+    // Check if signing up through company subdomain
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname
+      const isSubdomain = hostname.endsWith('.colvy.com') && hostname !== 'colvy.com' && hostname !== 'www.colvy.com' && !hostname.includes('localhost')
+      
+      if (isSubdomain) {
+        const slug = hostname.split('.')[0]
+        // Fetch company by slug
+        supabase.from('companies').select('id, name, slug').eq('slug', slug).single().then(({ data, error }) => {
+          if (data && !error) {
+            setCompanyContext(data)
+            // Skip step 2 for subdomain signups
+            setStep(1)
+          }
+        })
+      }
+    }
   }, [router])
 
   // Auto-generate slug from company name
@@ -65,25 +85,42 @@ function SignUpForm() {
     setError('')
     if (password !== confirmPassword) { setError('Passwords do not match'); return }
     if (password.length < 6) { setError('Password must be at least 6 characters'); return }
-    setStep(2)
+    
+    // If joining an existing company, go directly to signup
+    if (companyContext) {
+      handleSignUp(e)
+    } else {
+      // Otherwise, go to step 2 to set up new company
+      setStep(2)
+    }
   }
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    if (!companyName.trim()) { setError('Company name is required'); return }
-    if (slugStatus !== 'available') { setError('Please choose a valid, available board URL'); return }
-    if (!industry) { setError('Please select an industry'); return }
+
+    // If signing up through company subdomain, skip company creation validation
+    if (!companyContext) {
+      // Regular signup (new company)
+      if (!companyName.trim()) { setError('Company name is required'); return }
+      if (slugStatus !== 'available') { setError('Please choose a valid, available board URL'); return }
+      if (!industry) { setError('Please select an industry'); return }
+    }
 
     setLoading(true)
     try {
-      // 1. Sign up
+      // 1. Sign up user
       const { data, error: authErr } = await supabase.auth.signUp({
         email, password,
         options: {
-          data: { display_name: companyName, company: companyName, industry },
-          // Store company info in metadata so we can create it after email confirm
-          emailRedirectTo: `${window.location.origin}/auth/callback?slug=${slug}&name=${encodeURIComponent(companyName)}&industry=${encodeURIComponent(industry)}`,
+          data: { 
+            display_name: companyContext?.name || companyName,
+            company: companyContext?.name || companyName,
+            industry: companyContext ? 'N/A' : industry
+          },
+          emailRedirectTo: companyContext
+            ? `${window.location.origin}/auth/callback?company_id=${companyContext.id}`
+            : `${window.location.origin}/auth/callback?slug=${slug}&name=${encodeURIComponent(companyName)}&industry=${encodeURIComponent(industry)}`,
         },
       })
       if (authErr) throw authErr
@@ -91,49 +128,84 @@ function SignUpForm() {
 
       const userId = data.user.id
 
-      // 2. Create company now if we have a session (email confirm disabled)
-      // Store company info for post-email-confirm retrieval (in case redirect URL loses params)
-      if (!data.session) {
-        localStorage.setItem('pending_company', JSON.stringify({
-          slug: slug.toLowerCase(),
-          name: companyName.trim(),
-          industry: industry || '',
-        }))
-      }
-
-      //    OR save to pending if email confirm is required
-      if (data.session) {
-        // Email confirm is OFF — user is logged in immediately
-        const res = await fetch('/api/companies', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, slug: slug.toLowerCase(), name: companyName.trim(), industry, accentColor: '#ff7a6b' }),
-        })
-        const result = await res.json()
-        if (result.error && !result.error.includes('duplicate')) throw new Error(result.error)
-
-        // Auto-register subdomain in Vercel so slug.colvy.com works immediately
-        try {
-          await fetch('/api/domains', {
+      if (companyContext) {
+        // Company subdomain signup — add as viewer
+        if (data.session) {
+          // Email confirm is OFF
+          await fetch('/api/team-members', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ domain: `${slug.toLowerCase()}.colvy.com` }),
+            body: JSON.stringify({
+              userId,
+              companyId: companyContext.id,
+              role: 'viewer', // Viewers can vote, share ideas, see roadmap (read-only), get notifications
+              email
+            }),
           })
-        } catch {} // Non-fatal — user can still use the app
-        // Redirect to their subdomain onboarding
-        const hostname = window.location.hostname
-        const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
-        if (!isLocal) {
-          window.location.href = `https://${slug.toLowerCase()}.colvy.com/onboarding`
+          
+          // Redirect to the company board
+          const hostname = window.location.hostname
+          const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
+          if (!isLocal) {
+            window.location.href = `https://${companyContext.slug}.colvy.com/`
+          } else {
+            router.push('/')
+          }
         } else {
-          router.push('/onboarding')
+          // Email confirm is ON
+          localStorage.setItem('pending_company_join', JSON.stringify({
+            userId,
+            companyId: companyContext.id,
+            email,
+            role: 'viewer'
+          }))
+          setNeedsConfirmation(true)
         }
       } else {
-        // Email confirm is ON — save pending company to localStorage, show confirm screen
-        localStorage.setItem('pending_company', JSON.stringify({
-          userId, slug: slug.toLowerCase(), name: companyName.trim(), industry
-        }))
-        setNeedsConfirmation(true)
+        // Regular signup — create new company
+        // Store company info for post-email-confirm retrieval
+        if (!data.session) {
+          localStorage.setItem('pending_company', JSON.stringify({
+            slug: slug.toLowerCase(),
+            name: companyName.trim(),
+            industry: industry || '',
+          }))
+        }
+
+        if (data.session) {
+          // Email confirm is OFF — user is logged in immediately
+          const res = await fetch('/api/companies', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, slug: slug.toLowerCase(), name: companyName.trim(), industry, accentColor: '#ff7a6b' }),
+          })
+          const result = await res.json()
+          if (result.error && !result.error.includes('duplicate')) throw new Error(result.error)
+
+          // Auto-register subdomain in Vercel so slug.colvy.com works immediately
+          try {
+            await fetch('/api/domains', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ domain: `${slug.toLowerCase()}.colvy.com` }),
+            })
+          } catch {} // Non-fatal
+          
+          // Redirect to their subdomain onboarding
+          const hostname = window.location.hostname
+          const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
+          if (!isLocal) {
+            window.location.href = `https://${slug.toLowerCase()}.colvy.com/onboarding`
+          } else {
+            router.push('/onboarding')
+          }
+        } else {
+          // Email confirm is ON
+          localStorage.setItem('pending_company', JSON.stringify({
+            userId, slug: slug.toLowerCase(), name: companyName.trim(), industry
+          }))
+          setNeedsConfirmation(true)
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Sign up failed')
@@ -199,15 +271,15 @@ function SignUpForm() {
 
           {/* Step indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
-            {[1, 2].map(s => (
+            {(companyContext ? [1] : [1, 2]).map(s => (
               <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, background: step >= s ? '#ff7a6b' : '#e5e5e5', color: step >= s ? '#fff' : '#9ca3af' }}>
                   {step > s ? '✓' : s}
                 </div>
-                {s < 2 && <div style={{ height: 2, width: 28, borderRadius: 2, background: step > s ? '#ff7a6b' : '#e5e5e5' }} />}
+                {s < (companyContext ? 1 : 2) && <div style={{ height: 2, width: 28, borderRadius: 2, background: step > s ? '#ff7a6b' : '#e5e5e5' }} />}
               </div>
             ))}
-            <span style={{ marginLeft: 6, fontSize: 12, color: '#6b6b70' }}>{step === 1 ? 'Account details' : 'Your board'}</span>
+            <span style={{ marginLeft: 6, fontSize: 12, color: '#6b6b70' }}>{step === 1 ? (companyContext ? 'Join ' + companyContext.name : 'Account details') : 'Your board'}</span>
           </div>
 
           {error && <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 13 }}>{error}</div>}
@@ -215,7 +287,11 @@ function SignUpForm() {
           {step === 1 ? (
             <>
               <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', marginBottom: 4 }}>Create your account</h1>
-              <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 24 }}>Free forever — no credit card needed</p>
+              {companyContext ? (
+                <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 24 }}>Join <strong>{companyContext.name}</strong> to start sharing feedback</p>
+              ) : (
+                <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 24 }}>Free forever — no credit card needed</p>
+              )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
                 <button onClick={handleGoogle} disabled={!!oauthLoading}
@@ -261,11 +337,11 @@ function SignUpForm() {
                 </div>
                 <button type="submit"
                   style={{ width: '100%', padding: '12px', borderRadius: 12, background: '#ff7a6b', color: '#fff', fontWeight: 700, fontSize: 15, border: 'none', cursor: 'pointer' }}>
-                  Continue →
+                  {companyContext ? 'Join ' + companyContext.name + ' →' : 'Continue →'}
                 </button>
               </form>
             </>
-          ) : (
+          ) : !companyContext && (
             <>
               <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', marginBottom: 4 }}>Set up your board</h1>
               <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 24 }}>Choose your company name and URL</p>

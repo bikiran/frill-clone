@@ -40,6 +40,9 @@ export default function RootLayout({
   const [showDrawer, setShowDrawer] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [notificationFilter, setNotificationFilter] = useState<'unread' | 'all'>('unread')
+  const [loadingNotifications, setLoadingNotifications] = useState(false)
   const pathname = usePathname()
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -308,6 +311,97 @@ export default function RootLayout({
     )
   }
 
+  // Fetch notifications when user opens notification panel
+  const fetchNotifications = async () => {
+    try {
+      setLoadingNotifications(true)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user.id) {
+        setNotifications([])
+        setLoadingNotifications(false)
+        return
+      }
+
+      let q = supabase.from('notifications').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false }).limit(50)
+      const { data } = await q
+      setNotifications(data || [])
+    } catch (err) {
+      console.error('Error fetching notifications:', err)
+      setNotifications([])
+    } finally {
+      setLoadingNotifications(false)
+    }
+  }
+
+  const markAllAsRead = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user.id) return
+      
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('user_id', session.user.id)
+        .eq('is_read', false)
+      
+      // Refetch notifications
+      await fetchNotifications()
+    } catch (err) {
+      console.error('Error marking as read:', err)
+    }
+  }
+
+  const markNotificationAsRead = async (notificationId: string) => {
+    try {
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', notificationId)
+      
+      // Update local state
+      setNotifications(notifications.map(n => 
+        n.id === notificationId ? { ...n, is_read: true } : n
+      ))
+    } catch (err) {
+      console.error('Error marking notification as read:', err)
+    }
+  }
+
+  const handleNotificationClick = async (notification: any) => {
+    // Mark as read
+    if (!notification.is_read) {
+      await markNotificationAsRead(notification.id)
+    }
+
+    // Navigate based on type
+    if (notification.type === 'idea' && notification.idea_id) {
+      setShowNotifications(false)
+      router.push(`/?idea=${notification.idea_id}`)
+    } else if (notification.type === 'roadmap') {
+      setShowNotifications(false)
+      router.push('/roadmap')
+    } else if (notification.type === 'announcement' && notification.announcement_id) {
+      setShowNotifications(false)
+      router.push(`/announcements?id=${notification.announcement_id}`)
+    } else if (notification.type === 'help' && notification.article_id) {
+      setShowNotifications(false)
+      router.push(`/help/${notification.article_id}`)
+    } else if (notification.type === 'form' && notification.form_id) {
+      setShowNotifications(false)
+      router.push(`/forms/${notification.form_id}`)
+    } else if (notification.type === 'settings') {
+      setShowNotifications(false)
+      router.push('/admin/settings')
+    }
+  }
+
+  // Fetch notifications when dropdown opens
+  useEffect(() => {
+    if (showNotifications) {
+      fetchNotifications()
+    }
+  }, [showNotifications])
+
   return (
     <html lang="en">
       <head>
@@ -399,14 +493,73 @@ export default function RootLayout({
                   {showNotifications && (
                     <>
                       <div className="fixed inset-0 z-30" onClick={() => setShowNotifications(false)} />
-                      <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border z-40 overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-                        <div className="p-4 border-b" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-                          <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Notifications</p>
-                        </div>
-                        <div className="max-h-96 overflow-y-auto">
-                          <div className="p-4 text-center" style={{ color: 'var(--slate)' }}>
-                            <p className="text-sm">No new notifications</p>
+                      <div className="absolute top-full right-0 mt-2 w-96 max-h-[600px] bg-white rounded-xl shadow-2xl border z-40 flex flex-col overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                        {/* Header with filters */}
+                        <div className="p-4 border-b flex items-center justify-between shrink-0" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+                          <h3 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Notifications</h3>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setNotificationFilter(notificationFilter === 'unread' ? 'all' : 'unread')}
+                              className="px-3 py-1 rounded-full text-xs font-medium transition-smooth cursor-pointer"
+                              style={{
+                                background: notificationFilter === 'unread' ? 'var(--coral)' : 'transparent',
+                                color: notificationFilter === 'unread' ? 'white' : 'var(--slate)',
+                                border: notificationFilter === 'unread' ? 'none' : `1px solid var(--border)`
+                              }}>
+                              {notificationFilter === 'unread' ? 'Unread' : 'Show all'}
+                            </button>
+                            {notifications.some(n => !n.is_read) && (
+                              <button
+                                onClick={markAllAsRead}
+                                className="px-3 py-1 rounded-full text-xs font-medium transition-smooth cursor-pointer border"
+                                style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
+                                Mark all as read
+                              </button>
+                            )}
                           </div>
+                        </div>
+                        
+                        {/* Notifications list */}
+                        <div className="overflow-y-auto flex-1">
+                          {loadingNotifications ? (
+                            <div className="p-8 text-center" style={{ color: 'var(--slate)' }}>
+                              <p className="text-sm">Loading...</p>
+                            </div>
+                          ) : notifications.length === 0 ? (
+                            <div className="p-8 text-center" style={{ color: 'var(--slate)' }}>
+                              <p className="text-sm">No {notificationFilter === 'unread' ? 'unread ' : ''}notifications</p>
+                            </div>
+                          ) : (
+                            notifications
+                              .filter(n => notificationFilter === 'all' || !n.is_read)
+                              .map(notification => (
+                                <button
+                                  key={notification.id}
+                                  onClick={() => handleNotificationClick(notification)}
+                                  className="w-full px-4 py-3 border-b text-left transition-smooth hover:bg-gray-50 cursor-pointer"
+                                  style={{
+                                    borderColor: 'var(--border)',
+                                    background: !notification.is_read ? 'var(--peach)' : 'transparent'
+                                  }}>
+                                  <div className="flex items-start gap-3">
+                                    <div className="w-2 h-2 rounded-full mt-2 shrink-0" style={{
+                                      background: !notification.is_read ? 'var(--coral)' : 'transparent'
+                                    }} />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                                        {notification.title}
+                                      </p>
+                                      <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--slate)' }}>
+                                        {notification.message}
+                                      </p>
+                                      <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>
+                                        {new Date(notification.created_at).toLocaleDateString()} {new Date(notification.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </button>
+                              ))
+                          )}
                         </div>
                       </div>
                     </>
