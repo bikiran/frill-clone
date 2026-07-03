@@ -26,7 +26,7 @@ export class AIService {
 
   constructor(config: AIServiceConfig = {}) {
     this.provider = config.provider || 'claude'
-    this.model = config.model || 'claude-3-5-sonnet-20241022'
+    this.model = config.model || 'claude-opus-4-1'  // Valid Anthropic model
 
     if (this.provider === 'claude') {
       if (!Anthropic) {
