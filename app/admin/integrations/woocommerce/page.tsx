@@ -4,16 +4,12 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
-
 export default function WooCommerceIntegration() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const slug = searchParams.get('slug') || ''
 
+  const [supabase, setSupabase] = useState<any>(null)
   const [companyId, setCompanyId] = useState('')
   const [loading, setLoading] = useState(true)
   const [configuring, setConfiguring] = useState(false)
@@ -33,7 +29,14 @@ export default function WooCommerceIntegration() {
   useEffect(() => {
     const init = async () => {
       try {
-        const { data: company } = await supabase
+        // Lazy load Supabase client
+        const sb = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+        )
+        setSupabase(sb)
+
+        const { data: company } = await sb
           .from('companies')
           .select('id')
           .eq('slug', slug)
