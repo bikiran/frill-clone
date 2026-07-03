@@ -33,11 +33,17 @@ export class AIService {
         throw new Error('Anthropic SDK not installed. Run: npm install @anthropic-ai/sdk')
       }
       
+      // Try to get API key from config first, then environment
       const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY
-      if (!apiKey) {
-        throw new Error('ANTHROPIC_API_KEY environment variable not set')
+      
+      if (!apiKey || apiKey.trim() === '') {
+        const err = new Error('ANTHROPIC_API_KEY environment variable not set')
+        console.error('[AI Service] Error:', err.message)
+        console.error('[AI Service] Available env vars:', Object.keys(process.env).filter(k => k.includes('ANTHROPIC')).length)
+        throw err
       }
 
+      console.log('[AI Service] Initializing with model:', this.model)
       this.anthropic = new Anthropic({ apiKey })
       this.isAvailable = true
     }

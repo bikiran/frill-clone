@@ -57,14 +57,17 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'Unknown task' }, { status: 400 })
       }
     } catch (serviceError: any) {
+      console.error('[AI API] Service error:', serviceError.message)
+      
       if (serviceError.message.includes('Anthropic SDK not installed')) {
         return NextResponse.json({
           error: 'AI features not configured. Please run: npm install @anthropic-ai/sdk and set ANTHROPIC_API_KEY'
         }, { status: 503 })
       }
       if (serviceError.message.includes('ANTHROPIC_API_KEY')) {
+        console.error('[AI API] Missing API key. Env vars available:', Object.keys(process.env).filter(k => k.includes('ANTHROPIC')).length)
         return NextResponse.json({
-          error: 'ANTHROPIC_API_KEY environment variable not set'
+          error: 'ANTHROPIC_API_KEY not set. Set it on Vercel → Settings → Environment Variables'
         }, { status: 503 })
       }
       throw serviceError
