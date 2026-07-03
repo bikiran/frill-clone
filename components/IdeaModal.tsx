@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useToast } from '@/components/ToastProvider'
+import { SurveyQuestionBuilder, type SurveyQuestion } from '@/components/SurveyQuestionBuilder'
+import { FormFieldBuilder, type FormField } from '@/components/FormFieldBuilder'
 
 const TOPICS = [
   { id: 'welcome', label: 'Welcome', emoji: '👋' },
@@ -16,6 +19,8 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   onClose: () => void
   onSubmitted: () => void
 }) {
+  const { addToast } = useToast()
+  
   const [title, setTitle]               = useState('')
   const [description, setDescription]   = useState('')
   const [name, setName]                 = useState('')
@@ -40,7 +45,11 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   const [creatingSurvey, setCreatingSurvey] = useState(false)
   const [newPollQuestion, setNewPollQuestion] = useState('')
   const [newPollOptions, setNewPollOptions] = useState(['', ''])
+  const [newPollDescription, setNewPollDescription] = useState('')
+  const [newPollType, setNewPollType] = useState<'single_choice' | 'multiple_choice' | 'rating' | 'ranking'>('single_choice')
   const [newSurveyTitle, setNewSurveyTitle] = useState('')
+  const [surveyQuestions, setSurveyQuestions] = useState<any[]>([])
+  const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null)
   const [showAddUserModal, setShowAddUserModal] = useState(false)
   const [newUserName, setNewUserName] = useState('')
   const [newUserEmail, setNewUserEmail] = useState('')
@@ -50,6 +59,8 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   const [showFormPicker, setShowFormPicker] = useState(false)
   const [creatingForm, setCreatingForm] = useState(false)
   const [newFormTitle, setNewFormTitle] = useState('')
+  const [formFields, setFormFields] = useState<any[]>([])
+  const [activeFieldId, setActiveFieldId] = useState<string | null>(null)
   const titleRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -80,7 +91,16 @@ export default function IdeaModal({ onClose, onSubmitted }: {
     supabase.from('surveys').select('*').then(({ data }) => {
       if (data) setAvailableSurveys(data)
     })
-    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const handleKey = (e: KeyboardEvent) => { 
+      if (e.key === 'Escape') {
+        // Close open panels first, then modal
+        if (creatingPoll) setCreatingPoll(false)
+        else if (creatingSurvey) setCreatingSurvey(false)
+        else if (creatingForm) setCreatingForm(false)
+        else if (showAddUserModal) setShowAddUserModal(false)
+        else onClose()
+      }
+    }
     window.addEventListener('keydown', handleKey)
     document.body.style.overflow = 'hidden'
     return () => {
@@ -103,13 +123,15 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   }
 
   const createNewPoll = async () => {
-    if (!newPollQuestion.trim() || newPollOptions.filter(o => o.trim()).length < 2) {
+    if (!newPollQuestion.trim() || (newPollType !== 'rating' && newPollOptions.filter(o => o.trim()).length < 2)) {
       return
     }
     try {
       const { data, error } = await supabase.from('polls').insert({
         question: newPollQuestion,
-        options: newPollOptions.filter(o => o.trim()),
+        description: newPollDescription.trim() || null,
+        poll_type: newPollType,
+        options: newPollType !== 'rating' ? newPollOptions.filter(o => o.trim()) : null,
         status: 'active',
       }).select().single()
       
@@ -120,16 +142,21 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       setCreatingPoll(false)
       setNewPollQuestion('')
       setNewPollOptions(['', ''])
+      setNewPollDescription('')
+      setNewPollType('single_choice')
+      addToast('Poll created successfully!', 'success')
     } catch (err) {
       console.error('Error creating poll:', err)
+      addToast('Failed to create poll', 'error')
     }
   }
 
   const createNewSurvey = async () => {
-    if (!newSurveyTitle.trim()) return
+    if (!newSurveyTitle.trim() || surveyQuestions.length === 0) return
     try {
       const { data, error } = await supabase.from('surveys').insert({
         title: newSurveyTitle,
+        questions: surveyQuestions,
         status: 'active',
       }).select().single()
       
@@ -139,14 +166,18 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       setAttachedSurvey(data.id)
       setCreatingSurvey(false)
       setNewSurveyTitle('')
+      setSurveyQuestions([])
+      addToast('Survey created successfully!', 'success')
     } catch (err) {
       console.error('Error creating survey:', err)
+      addToast('Failed to create survey', 'error')
     }
   }
 
   const addNewUser = async () => {
     if (!newUserName.trim() || !newUserEmail.trim() || !newUserPermission) {
       setError('Please fill all fields and confirm permission')
+      addToast('Please complete all fields', 'warning')
       return
     }
     try {
@@ -171,17 +202,20 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       setNewUserEmail('')
       setNewUserPermission(false)
       setLoading(false)
+      addToast('User added successfully!', 'success')
     } catch (err: any) {
       setError(err.message || 'Error adding user')
       setLoading(false)
+      addToast('Failed to add user', 'error')
     }
   }
 
   const createNewForm = async () => {
-    if (!newFormTitle.trim()) return
+    if (!newFormTitle.trim() || formFields.length === 0) return
     try {
       const { data, error } = await supabase.from('forms').insert({
         title: newFormTitle,
+        fields: formFields,
         display_style: 'modal',
         status: 'active',
       }).select().single()
@@ -192,15 +226,13 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       setAttachedForm(data.id)
       setCreatingForm(false)
       setNewFormTitle('')
+      setFormFields([])
+      addToast('Form created successfully!', 'success')
     } catch (err) {
       console.error('Error creating form:', err)
+      addToast('Failed to create form', 'error')
     }
   }
-      setCreatingSurvey(false)
-      setNewSurveyTitle('')
-    } catch (err) {
-      console.error('Error creating survey:', err)
-    }
   }
 
   const triggerConfetti = () => {
@@ -862,11 +894,13 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       {creatingForm && (
         <>
           <div className="fixed inset-0 z-40 animate-backdrop" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setCreatingForm(false)} />
-          <div className="fixed right-0 top-0 z-50 w-full md:w-96 h-screen bg-white shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
+          <div className="fixed right-0 top-0 z-50 w-full sm:w-96 h-screen bg-white shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
             <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Create Form</h2>
-                <button onClick={() => setCreatingForm(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-smooth cursor-pointer">
+                <button onClick={() => { setCreatingForm(false); setNewFormTitle(''); setFormFields([]) }} 
+                  className="p-1 hover:bg-gray-100 rounded-lg transition-smooth cursor-pointer"
+                  title="Close (Esc)">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </div>
@@ -876,17 +910,25 @@ export default function IdeaModal({ onClose, onSubmitted }: {
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Form Title</label>
                 <input type="text" value={newFormTitle} onChange={e => setNewFormTitle(e.target.value)}
                   placeholder="Customer Feedback" autoFocus
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none" style={{ borderColor: 'var(--border)' }} />
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none text-sm" style={{ borderColor: 'var(--border)' }} />
               </div>
-              <p className="text-xs" style={{ color: 'var(--slate)' }}>You can configure form fields in admin settings after creating it.</p>
+
+              {/* Fields Builder */}
+              <div>
+                <label className="block text-sm font-medium mb-3" style={{ color: 'var(--ink)' }}>Fields</label>
+                <FormFieldBuilder 
+                  fields={formFields}
+                  onFieldsChange={setFormFields}
+                />
+              </div>
             </div>
             <div className="p-6 border-t flex gap-3" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => setCreatingForm(false)}
+              <button onClick={() => { setCreatingForm(false); setNewFormTitle(''); setFormFields([]) }}
                 className="flex-1 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
                 style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                 Cancel
               </button>
-              <button onClick={createNewForm} disabled={!newFormTitle.trim()}
+              <button onClick={createNewForm} disabled={!newFormTitle.trim() || formFields.length === 0}
                 className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-smooth cursor-pointer disabled:opacity-50"
                 style={{ background: 'var(--coral)' }}>
                 Create Form
@@ -900,47 +942,123 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       {creatingPoll && (
         <>
           <div className="fixed inset-0 z-40 animate-backdrop" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setCreatingPoll(false)} />
-          <div className="fixed right-0 top-0 z-50 w-full md:w-96 h-screen bg-white shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
+          <div className="fixed right-0 top-0 z-50 w-full sm:w-96 h-screen bg-white shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
             <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Create Poll</h2>
-                <button onClick={() => setCreatingPoll(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-smooth cursor-pointer">
+                <button onClick={() => { setCreatingPoll(false); setNewPollQuestion(''); setNewPollOptions(['', '']); setNewPollDescription(''); setNewPollType('single_choice') }} 
+                  className="p-1 hover:bg-gray-100 rounded-lg transition-smooth cursor-pointer"
+                  title="Close (Esc)">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {/* Poll Type Selector */}
+              <div>
+                <label className="block text-sm font-medium mb-3" style={{ color: 'var(--ink)' }}>Poll Type</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50">
+                    <input 
+                      type="radio"
+                      name="pollType"
+                      value="single_choice"
+                      checked={newPollType === 'single_choice'}
+                      onChange={(e) => setNewPollType(e.target.value as any)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm" style={{ color: 'var(--ink)' }}>Single Choice</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50">
+                    <input 
+                      type="radio"
+                      name="pollType"
+                      value="multiple_choice"
+                      checked={newPollType === 'multiple_choice'}
+                      onChange={(e) => setNewPollType(e.target.value as any)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm" style={{ color: 'var(--ink)' }}>Multiple Choice</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50">
+                    <input 
+                      type="radio"
+                      name="pollType"
+                      value="rating"
+                      checked={newPollType === 'rating'}
+                      onChange={(e) => setNewPollType(e.target.value as any)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm" style={{ color: 'var(--ink)' }}>Rating (1-5)</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50">
+                    <input 
+                      type="radio"
+                      name="pollType"
+                      value="ranking"
+                      checked={newPollType === 'ranking'}
+                      onChange={(e) => setNewPollType(e.target.value as any)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm" style={{ color: 'var(--ink)' }}>Ranking</span>
+                  </label>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Question</label>
                 <input type="text" value={newPollQuestion} onChange={e => setNewPollQuestion(e.target.value)}
                   placeholder="What do you think?" autoFocus
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none" style={{ borderColor: 'var(--border)' }} />
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none text-sm" style={{ borderColor: 'var(--border)' }} />
               </div>
+              
               <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Options</label>
-                {newPollOptions.map((opt, i) => (
-                  <input key={i} type="text" value={opt} onChange={e => {
-                    const newOpts = [...newPollOptions]
-                    newOpts[i] = e.target.value
-                    setNewPollOptions(newOpts)
-                  }}
-                    placeholder={`Option ${i + 1}`}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none mb-2"
-                    style={{ borderColor: 'var(--border)' }} />
-                ))}
-                <button onClick={() => setNewPollOptions([...newPollOptions, ''])}
-                  className="text-xs font-medium" style={{ color: 'var(--coral)' }}>
-                  + Add option
-                </button>
+                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Description (Optional)</label>
+                <textarea value={newPollDescription} onChange={e => setNewPollDescription(e.target.value)}
+                  placeholder="Add more context..." rows={2}
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none text-sm resize-none" style={{ borderColor: 'var(--border)' }} />
               </div>
+              
+              {newPollType !== 'rating' && (
+                <div>
+                  <label className="block text-sm font-medium mb-3" style={{ color: 'var(--ink)' }}>Options</label>
+                  {newPollOptions.map((opt, i) => (
+                    <div key={i} className="flex gap-2 mb-2">
+                      <input type="text" value={opt} onChange={e => {
+                        const newOpts = [...newPollOptions]
+                        newOpts[i] = e.target.value
+                        setNewPollOptions(newOpts)
+                      }}
+                        placeholder={`Option ${i + 1}`}
+                        className="flex-1 px-4 py-2 border rounded-lg focus:outline-none text-sm"
+                        style={{ borderColor: 'var(--border)' }} />
+                      {newPollOptions.length > 2 && (
+                        <button onClick={() => setNewPollOptions(newPollOptions.filter((_, idx) => idx !== i))}
+                          className="p-2 hover:bg-red-50 rounded-lg transition-smooth cursor-pointer text-red-600"
+                          title="Delete option">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {newPollOptions.length < 5 && (
+                    <button onClick={() => setNewPollOptions([...newPollOptions, ''])}
+                      className="text-xs font-medium mt-2 py-1 px-2 rounded hover:bg-gray-100" style={{ color: 'var(--coral)' }}>
+                      + Add option
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <div className="p-6 border-t flex gap-3" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => setCreatingPoll(false)}
+              <button onClick={() => { setCreatingPoll(false); setNewPollQuestion(''); setNewPollOptions(['', '']); setNewPollDescription(''); setNewPollType('single_choice') }}
                 className="flex-1 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
                 style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                 Cancel
               </button>
-              <button onClick={createNewPoll} disabled={!newPollQuestion.trim() || newPollOptions.filter(o => o.trim()).length < 2}
+              <button onClick={createNewPoll} disabled={!newPollQuestion.trim() || (newPollType !== 'rating' && newPollOptions.filter(o => o.trim()).length < 2)}
                 className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-smooth cursor-pointer disabled:opacity-50"
                 style={{ background: 'var(--coral)' }}>
                 Create Poll
@@ -954,11 +1072,13 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       {creatingSurvey && (
         <>
           <div className="fixed inset-0 z-40 animate-backdrop" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setCreatingSurvey(false)} />
-          <div className="fixed right-0 top-0 z-50 w-full md:w-96 h-screen bg-white shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
+          <div className="fixed right-0 top-0 z-50 w-full sm:w-96 h-screen bg-white shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
             <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Create Survey</h2>
-                <button onClick={() => setCreatingSurvey(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-smooth cursor-pointer">
+                <button onClick={() => { setCreatingSurvey(false); setNewSurveyTitle(''); setSurveyQuestions([]) }} 
+                  className="p-1 hover:bg-gray-100 rounded-lg transition-smooth cursor-pointer"
+                  title="Close (Esc)">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </div>
@@ -968,17 +1088,25 @@ export default function IdeaModal({ onClose, onSubmitted }: {
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Survey Title</label>
                 <input type="text" value={newSurveyTitle} onChange={e => setNewSurveyTitle(e.target.value)}
                   placeholder="Customer Satisfaction" autoFocus
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none" style={{ borderColor: 'var(--border)' }} />
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none text-sm" style={{ borderColor: 'var(--border)' }} />
               </div>
-              <p className="text-xs" style={{ color: 'var(--slate)' }}>You can configure survey questions in admin settings after creating it.</p>
+
+              {/* Questions Builder */}
+              <div>
+                <label className="block text-sm font-medium mb-3" style={{ color: 'var(--ink)' }}>Questions</label>
+                <SurveyQuestionBuilder 
+                  questions={surveyQuestions}
+                  onQuestionsChange={setSurveyQuestions}
+                />
+              </div>
             </div>
             <div className="p-6 border-t flex gap-3" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => setCreatingSurvey(false)}
+              <button onClick={() => { setCreatingSurvey(false); setNewSurveyTitle(''); setSurveyQuestions([]) }}
                 className="flex-1 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
                 style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                 Cancel
               </button>
-              <button onClick={createNewSurvey} disabled={!newSurveyTitle.trim()}
+              <button onClick={createNewSurvey} disabled={!newSurveyTitle.trim() || surveyQuestions.length === 0}
                 className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-smooth cursor-pointer disabled:opacity-50"
                 style={{ background: 'var(--coral)' }}>
                 Create Survey
@@ -992,7 +1120,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       {showAddUserModal && (
         <>
           <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowAddUserModal(false)} />
-          <div className="fixed inset-1/2 z-50 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl p-8 w-96 shadow-2xl">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white rounded-2xl p-6 sm:p-8 w-full sm:w-96 max-h-screen overflow-y-auto shadow-2xl">
             <h2 className="text-lg font-bold mb-6" style={{ color: 'var(--ink)' }}>Add a new user</h2>
             
             <div className="space-y-4 mb-6">
@@ -1001,7 +1129,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
                 <input type="text" value={newUserName} onChange={e => setNewUserName(e.target.value)}
                   placeholder="John Doe"
                   className="w-full px-4 py-2 border rounded-lg focus:outline-none text-sm"
-                  style={{ borderColor: 'var(--border)' }} autoFocus />
+                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} autoFocus />
               </div>
               
               <div>
@@ -1009,12 +1137,12 @@ export default function IdeaModal({ onClose, onSubmitted }: {
                 <input type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)}
                   placeholder="john@example.com"
                   className="w-full px-4 py-2 border rounded-lg focus:outline-none text-sm"
-                  style={{ borderColor: 'var(--border)' }} />
+                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
               </div>
               
               <div className="flex items-center gap-2">
                 <input type="checkbox" id="permission" checked={newUserPermission} onChange={e => setNewUserPermission(e.target.checked)}
-                  className="w-4 h-4 rounded" />
+                  className="w-4 h-4 rounded cursor-pointer" />
                 <label htmlFor="permission" className="text-sm" style={{ color: 'var(--ink)' }}>
                   I have permission to add this person's details
                 </label>
@@ -1023,14 +1151,14 @@ export default function IdeaModal({ onClose, onSubmitted }: {
             
             {error && <p className="text-sm text-red-500 mb-4">{error}</p>}
             
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button onClick={() => setShowAddUserModal(false)}
-                className="flex-1 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
+                className="flex-1 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50 order-2 sm:order-1"
                 style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                 Cancel
               </button>
               <button onClick={addNewUser} disabled={loading || !newUserName.trim() || !newUserEmail.trim() || !newUserPermission}
-                className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-smooth cursor-pointer disabled:opacity-50"
+                className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-smooth cursor-pointer disabled:opacity-50 order-1 sm:order-2"
                 style={{ background: 'var(--coral)' }}>
                 {loading ? 'Adding...' : 'Add user'}
               </button>

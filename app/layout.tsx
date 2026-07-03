@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { TerminologyProvider } from '@/lib/terminologyContext'
+import { ToastProvider } from '@/components/ToastProvider'
 import LiveChat from '@/components/LiveChat'
 import UpdateNotification from '@/components/UpdateNotification'
 import './globals.css'
@@ -757,9 +758,11 @@ export default function RootLayout({
         )}
 
         <main className="w-full px-0 py-0">
-          <TerminologyProvider>
-            {children}
-          </TerminologyProvider>
+          <ToastProvider>
+            <TerminologyProvider>
+              {children}
+            </TerminologyProvider>
+          </ToastProvider>
         </main>
         <LiveChat />
         <UpdateNotification />

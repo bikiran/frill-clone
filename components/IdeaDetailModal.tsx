@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getRandomName } from '@/lib/randomNames'
+import { useToast } from '@/components/ToastProvider'
 import ConfirmModal from './ConfirmModal'
 import { AssignIcon, PinIcon, MergeIcon, ArchiveIcon, TrashIcon, EditIcon, ShareIcon, CloseIcon, EyeIcon, LockIcon } from './Icons'
 
@@ -21,9 +22,20 @@ const PRIORITY_PRESETS: Record<string, { label: string; color: string; bg: strin
   low: { label: 'Low', color: '#3b82f6', bg: '#dbeafe', vote: 20, reward: 20, effort: 4 },
 }
 
+const DEFAULT_TOPICS = [
+  { id: 'welcome', label: 'Welcome', emoji: '👋' },
+  { id: 'improvement', label: 'Improvement', emoji: '⬆️' },
+  { id: 'integrations', label: 'Integrations', emoji: '🔗' },
+  { id: 'styling', label: 'Styling', emoji: '🎨' },
+  { id: 'misc', label: 'Misc', emoji: '✨' },
+  { id: 'bug', label: 'Bug Report', emoji: '🐛' },
+]
+
 type SubPanel = null | 'status' | 'priority' | 'visibility'
 
 export default function IdeaDetailModal({ idea, onClose, showActivity = true }: { idea: any; onClose: () => void; showActivity?: boolean }) {
+  const { addToast } = useToast()
+  
   const [status, setStatus] = useState(idea.status || 'new')
   const [priority, setPriority] = useState(idea.priority || '')
   const [isPrivate, setIsPrivate] = useState(idea.is_private || false)
@@ -39,6 +51,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(idea.title)
   const [editDescription, setEditDescription] = useState(idea.description || '')
+  const [editTopics, setEditTopics] = useState<string[]>(idea.topics || [])
   
   // Comments
   const [voters, setVoters] = useState<any[]>([])
@@ -247,10 +260,13 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
     await supabase.from('ideas').update({
       title: editTitle.trim(),
       description: editDescription.trim() || null,
+      topics: editTopics,
     }).eq('id', idea.id)
     idea.title = editTitle.trim()
     idea.description = editDescription.trim()
+    idea.topics = editTopics
     setEditing(false)
+    addToast('Idea updated successfully!', 'success')
   }
 
   const shareIdea = async () => {
@@ -981,6 +997,51 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                 )
               )}
             </div>
+
+            {/* Topics Selector (Edit Mode) */}
+            {editing && (
+              <div className="ml-16 mb-6">
+                <label className="block text-sm font-semibold mb-3" style={{ color: 'var(--ink)' }}>
+                  Choose up to 3 Topics for this Idea
+                </label>
+                <div className="space-y-2">
+                  {DEFAULT_TOPICS.map(topic => (
+                    <label key={topic.id} className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                      <input 
+                        type="checkbox"
+                        checked={editTopics.includes(topic.id)}
+                        onChange={(e) => {
+                          if (e.target.checked && editTopics.length < 3) {
+                            setEditTopics([...editTopics, topic.id])
+                          } else if (!e.target.checked) {
+                            setEditTopics(editTopics.filter(t => t !== topic.id))
+                          }
+                        }}
+                        disabled={!editTopics.includes(topic.id) && editTopics.length >= 3}
+                        className="w-4 h-4 rounded cursor-pointer"
+                      />
+                      <span>{topic.emoji}</span>
+                      <span className="text-sm" style={{ color: 'var(--ink)' }}>{topic.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Topics Display (View Mode) */}
+            {!editing && idea.topics && idea.topics.length > 0 && (
+              <div className="ml-16 mb-6 flex flex-wrap gap-2">
+                {idea.topics.map(topicId => {
+                  const topic = DEFAULT_TOPICS.find(t => t.id === topicId)
+                  return topic ? (
+                    <div key={topicId} className="px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-1" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
+                      <span>{topic.emoji}</span>
+                      <span>{topic.label}</span>
+                    </div>
+                  ) : null
+                })}
+              </div>
+            )}
 
             {/* Edit save/cancel */}
             {editing && (
