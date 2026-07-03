@@ -456,35 +456,31 @@ export default function RootLayout({
                   if (!isOnBoard && isBoardItem) return false
                   if (isOnBoard && isMarketingItem) return false
                   return true
-                }).map(item => {
-                  let showDot = false
-                  if (item.label === 'Ideas') showDot = freshContent.ideas
-                  else if (item.label === 'Roadmap') showDot = freshContent.roadmap
-                  else if (item.label === 'Updates') showDot = freshContent.updates
-                  else if (item.label === 'Help') showDot = freshContent.help
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="px-4 py-2 rounded-lg text-sm font-medium transition-smooth group relative"
-                      style={{
-                        color: pathname === item.href ? 'var(--coral)' : 'var(--slate)',
-                      }}>
-                      <span className="flex items-center gap-2">
-                        <span className="group-hover:scale-110 transition-transform relative">
-                          <NavIcon type={item.icon} size={18} />
-                          {showDot && (
-                            <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }} />
-                          )}
-                        </span>
-                        {item.label}
-                      </span>
-                      {pathname === item.href && (
-                        <div className="absolute bottom-0 left-0 right-0 h-1 rounded-t-lg" style={{ background: 'var(--coral)' }} />
+                }).map(item => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="px-4 py-2 rounded-lg text-sm font-medium transition-smooth group relative"
+                  style={{
+                    color: pathname === item.href ? 'var(--coral)' : 'var(--slate)',
+                  }}>
+                  <span className="flex items-center gap-2">
+                    <span className="group-hover:scale-110 transition-transform relative">
+                      <NavIcon type={item.icon} size={18} />
+                      {((item.label === 'Ideas' && freshContent.ideas) ||
+                        (item.label === 'Roadmap' && freshContent.roadmap) ||
+                        (item.label === 'Updates' && freshContent.updates) ||
+                        (item.label === 'Help' && freshContent.help)) && (
+                        <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }} />
                       )}
-                    </Link>
-                  )
-                })
+                    </span>
+                    {item.label}
+                  </span>
+                  {pathname === item.href && (
+                    <div className="absolute bottom-0 left-0 right-0 h-1 rounded-t-lg" style={{ background: 'var(--coral)' }} />
+                  )}
+                </Link>
+              ))}
             </div>
 
             {/* Right side */}
@@ -691,34 +687,30 @@ export default function RootLayout({
                   if (!isOnBoard2 && isBoardItem2) return false
                   if (isOnBoard2 && isMarketingItem2) return false
                   return true
-                }).map(item => {
-                  let showDot = false
-                  if (item.label === 'Ideas') showDot = freshContent.ideas
-                  else if (item.label === 'Roadmap') showDot = freshContent.roadmap
-                  else if (item.label === 'Updates') showDot = freshContent.updates
-                  else if (item.label === 'Help') showDot = freshContent.help
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setShowDrawer(false)}
-                      className="block px-4 py-3 rounded-lg font-medium transition-smooth cursor-pointer"
-                      style={{
-                        background: pathname === item.href ? 'var(--peach)' : 'transparent',
-                        color: pathname === item.href ? 'var(--coral)' : 'var(--ink)',
-                      }}>
-                      <span className="flex items-center gap-2">
-                        <span className="relative">
-                          <NavIcon type={item.icon} size={18} />
-                          {showDot && (
-                            <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }} />
-                          )}
-                        </span>
-                        {item.label}
+                }).map(item => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setShowDrawer(false)}
+                    className="block px-4 py-3 rounded-lg font-medium transition-smooth cursor-pointer"
+                    style={{
+                      background: pathname === item.href ? 'var(--peach)' : 'transparent',
+                      color: pathname === item.href ? 'var(--coral)' : 'var(--ink)',
+                    }}>
+                    <span className="flex items-center gap-2">
+                      <span className="relative">
+                        <NavIcon type={item.icon} size={18} />
+                        {((item.label === 'Ideas' && freshContent.ideas) ||
+                          (item.label === 'Roadmap' && freshContent.roadmap) ||
+                          (item.label === 'Updates' && freshContent.updates) ||
+                          (item.label === 'Help' && freshContent.help)) && (
+                          <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }} />
+                        )}
                       </span>
-                    </Link>
-                  )
-                })}
+                      {item.label}
+                    </span>
+                  </Link>
+                ))}
                 {isAdmin && (
                   <Link
                     href="/admin"
