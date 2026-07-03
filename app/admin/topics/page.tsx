@@ -21,6 +21,8 @@ export default function TopicsPage() {
   const [newEmoji, setNewEmoji] = useState('✨')
   const [user, setUser] = useState<any>(null)
   const [checking, setChecking] = useState(true)
+  const [topicLimit, setTopicLimit] = useState(3)
+  const [topicPermission, setTopicPermission] = useState<'everybody' | 'members'>('everybody')
   const router = useRouter()
 
   useEffect(() => {
@@ -66,11 +68,70 @@ export default function TopicsPage() {
           ← Back to Ideas
         </Link>
         <h1 className="text-3xl font-bold mt-4 mb-2" style={{ color: 'var(--ink)' }}>
-          Manage Topics
+          Topics
         </h1>
         <p style={{ color: 'var(--slate)' }}>
-          Add Topics so that users can tag them when creating Ideas.
+          Organize ideas with topics so users can filter by tags.
         </p>
+      </div>
+
+      {/* Private Topics Notice */}
+      <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-4 mb-8" style={{ borderColor: '#3b82f6' }}>
+        <h3 className="font-semibold text-sm mb-2" style={{ color: '#1e40af' }}>Remember: Private Topics are a paid feature</h3>
+        <p className="text-sm mb-3" style={{ color: '#1e40af' }}>
+          Private Topics are part of the Privacy Add-on. They will be converted to normal Topics at the end of your trial unless you purchase the Growth plan or Privacy Add-on.
+        </p>
+        <a href="https://colvy.com/settings/company/upgrade" className="text-sm font-medium hover:underline" style={{ color: '#3b82f6' }}>
+          Compare plans →
+        </a>
+      </div>
+
+      {/* Topic Settings */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        {/* Topic Limit */}
+        <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+          <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--ink)' }}>Topic Limit</h3>
+          <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>The maximum number of topics on an Idea (set to 0 for unlimited).</p>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              value={topicLimit}
+              onChange={e => setTopicLimit(Math.max(0, parseInt(e.target.value) || 0))}
+              min="0"
+              className="w-20 px-4 py-2 border rounded-lg focus:outline-none text-sm"
+              style={{ borderColor: 'var(--border)', fontSize: '16px' }}
+            />
+            <span style={{ color: 'var(--slate)' }} className="text-sm">topics per idea</span>
+          </div>
+        </div>
+
+        {/* Topic Permissions */}
+        <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+          <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--ink)' }}>Topic Permissions</h3>
+          <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Control who can assign topics to Ideas.</p>
+          <div className="space-y-2">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input 
+                type="radio" 
+                name="permission"
+                checked={topicPermission === 'everybody'}
+                onChange={() => setTopicPermission('everybody')}
+                className="w-4 h-4"
+              />
+              <span className="text-sm" style={{ color: 'var(--ink)' }}>Everybody</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input 
+                type="radio" 
+                name="permission"
+                checked={topicPermission === 'members'}
+                onChange={() => setTopicPermission('members')}
+                className="w-4 h-4"
+              />
+              <span className="text-sm" style={{ color: 'var(--ink)' }}>Company members</span>
+            </label>
+          </div>
+        </div>
       </div>
 
       {/* Add Topic Form */}
