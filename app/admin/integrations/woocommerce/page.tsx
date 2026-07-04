@@ -57,7 +57,7 @@ export default function WooCommerceIntegration() {
         if (!companyId) {
           const { data: { session } } = await sb.auth.getSession()
           
-          if (session?.user) {
+          if (session?.user?.id) {
             // Get user's first company membership
             const { data: teamMember } = await sb
               .from('team_members')
@@ -68,6 +68,18 @@ export default function WooCommerceIntegration() {
 
             if (teamMember?.company_id) {
               companyId = teamMember.company_id
+            } else {
+              // Check if user is owner of any company
+              const { data: ownedCompany } = await sb
+                .from('companies')
+                .select('id')
+                .eq('owner_id', session.user.id)
+                .limit(1)
+                .single()
+
+              if (ownedCompany?.id) {
+                companyId = ownedCompany.id
+              }
             }
           }
         }
@@ -83,7 +95,11 @@ export default function WooCommerceIntegration() {
         await fetchIntegration(companyId)
       } catch (err: any) {
         console.error('Init error:', err)
-        setError(err.message || 'Failed to load page')
+        if (err.message?.includes('auth')) {
+          setError('Please sign in to access this page.')
+        } else {
+          setError(err.message || 'Failed to load page')
+        }
         setLoading(false)
       }
     }

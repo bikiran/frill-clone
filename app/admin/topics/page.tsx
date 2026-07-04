@@ -4,14 +4,15 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { IconPencil, IconTrash, IconLock, IconUnlock } from '@/components/SvgIcons'
 
 const DEFAULT_TOPICS = [
-  { id: 'welcome', label: 'Welcome', emoji: '👋' },
-  { id: 'improvement', label: 'Improvement', emoji: '⬆️' },
-  { id: 'integrations', label: 'Integrations', emoji: '🔗' },
-  { id: 'styling', label: 'Styling', emoji: '🎨' },
-  { id: 'misc', label: 'Misc', emoji: '✨' },
-  { id: 'bug', label: 'Bug Report', emoji: '🐛' },
+  { id: 'welcome', label: 'Welcome', emoji: '👋', isPrivate: false, order: 0 },
+  { id: 'improvement', label: 'Improvement', emoji: '⬆️', isPrivate: false, order: 1 },
+  { id: 'integrations', label: 'Integrations', emoji: '🔗', isPrivate: false, order: 2 },
+  { id: 'styling', label: 'Styling', emoji: '🎨', isPrivate: false, order: 3 },
+  { id: 'misc', label: 'Misc', emoji: '✨', isPrivate: false, order: 4 },
+  { id: 'bug', label: 'Bug Report', emoji: '🐛', isPrivate: false, order: 5 },
 ]
 
 export default function TopicsPage() {
@@ -22,6 +23,9 @@ export default function TopicsPage() {
   const [checking, setChecking] = useState(true)
   const [topicLimit, setTopicLimit] = useState(3)
   const [topicPermission, setTopicPermission] = useState<'everybody' | 'members'>('everybody')
+  const [draggedItem, setDraggedItem] = useState<number | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingLabel, setEditingLabel] = useState('')
   const router = useRouter()
   const searchParams = useSearchParams()
   const slug = searchParams.get('slug') || ''
@@ -30,7 +34,6 @@ export default function TopicsPage() {
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user
       if (!u) {
-        // Not signed in - redirect to signin
         router.push('/signin?next=/admin/topics')
         return
       }
@@ -41,10 +44,13 @@ export default function TopicsPage() {
 
   const addTopic = () => {
     if (!newTopic.trim()) return
+    const newOrder = Math.max(...topics.map(t => t.order), -1) + 1
     setTopics([...topics, {
       id: newTopic.toLowerCase().replace(/\s+/g, '_'),
       label: newTopic,
       emoji: newEmoji,
+      isPrivate: false,
+      order: newOrder,
     }])
     setNewTopic('')
     setNewEmoji('✨')
@@ -52,6 +58,54 @@ export default function TopicsPage() {
 
   const removeTopic = (id: string) => {
     setTopics(topics.filter(t => t.id !== id))
+  }
+
+  const togglePrivate = (id: string) => {
+    setTopics(topics.map(t => 
+      t.id === id ? { ...t, isPrivate: !t.isPrivate } : t
+    ))
+  }
+
+  const startEdit = (id: string, label: string) => {
+    setEditingId(id)
+    setEditingLabel(label)
+  }
+
+  const saveEdit = (id: string) => {
+    if (!editingLabel.trim()) {
+      setEditingId(null)
+      return
+    }
+    setTopics(topics.map(t => 
+      t.id === id ? { ...t, label: editingLabel } : t
+    ))
+    setEditingId(null)
+  }
+
+  const handleDragStart = (index: number) => {
+    setDraggedItem(index)
+  }
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    if (draggedItem === null || draggedItem === index) return
+
+    const newTopics = [...topics]
+    const draggedTopic = newTopics[draggedItem]
+    newTopics.splice(draggedItem, 1)
+    newTopics.splice(index, 0, draggedTopic)
+    
+    // Update order values
+    newTopics.forEach((topic, i) => {
+      topic.order = i
+    })
+    
+    setTopics(newTopics)
+    setDraggedItem(index)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedItem(null)
   }
 
   if (checking) {
@@ -170,28 +224,105 @@ export default function TopicsPage() {
       {/* Topics List */}
       <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
         <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-          {topics.map(topic => (
+          {topics.map((topic, index) => (
             <div
               key={topic.id}
-              className="p-4 flex items-center justify-between hover:bg-gray-50 transition-smooth"
+              draggable
+              onDragStart={() => handleDragStart(index)}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDragEnd={handleDragEnd}
+              className="p-4 flex items-center justify-between hover:bg-gray-50 transition-smooth cursor-move"
+              style={{
+                opacity: draggedItem === index ? 0.5 : 1,
+                backgroundColor: draggedItem === index ? '#f0f0f0' : 'transparent'
+              }}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-1">
+                <span style={{ color: '#999', cursor: 'grab', fontSize: '18px' }} title="Drag to reorder">⋮⋮</span>
                 <span className="text-2xl">{topic.emoji}</span>
-                <div>
-                  <p className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>
-                    {topic.label}
-                  </p>
-                  <p className="text-xs" style={{ color: 'var(--slate)' }}>
-                    #{topic.id}
-                  </p>
-                </div>
+                {editingId === topic.id ? (
+                  <input
+                    type="text"
+                    value={editingLabel}
+                    onChange={(e) => setEditingLabel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveEdit(topic.id)
+                      if (e.key === 'Escape') setEditingId(null)
+                    }}
+                    onBlur={() => saveEdit(topic.id)}
+                    autoFocus
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border)',
+                      fontSize: '14px'
+                    }}
+                  />
+                ) : (
+                  <div>
+                    <p className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>
+                      {topic.label}
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--slate)' }}>
+                      #{topic.id}
+                    </p>
+                  </div>
+                )}
               </div>
-              <button
-                onClick={() => removeTopic(topic.id)}
-                className="px-3 py-1.5 rounded-lg text-sm font-medium border transition-smooth press-effect text-red-600"
-                style={{ borderColor: '#fca5a5' }}>
-                Delete
-              </button>
+              
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => togglePrivate(topic.id)}
+                  title={topic.isPrivate ? 'Click to make public' : 'Click to make private'}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    background: 'transparent',
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer',
+                    color: topic.isPrivate ? '#dc2626' : '#666',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '12px'
+                  }}
+                >
+                  {topic.isPrivate ? <IconLock /> : <IconUnlock />}
+                </button>
+                
+                <button
+                  onClick={() => startEdit(topic.id, topic.label)}
+                  title="Edit topic"
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    background: 'transparent',
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer',
+                    color: '#666',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <IconPencil />
+                </button>
+                
+                <button
+                  onClick={() => removeTopic(topic.id)}
+                  title="Delete topic"
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    background: 'transparent',
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer',
+                    color: '#dc2626'
+                  }}
+                >
+                  <IconTrash />
+                </button>
+              </div>
             </div>
           ))}
         </div>
