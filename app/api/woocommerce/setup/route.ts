@@ -40,17 +40,22 @@ export async function POST(req: NextRequest) {
         process.env.SUPABASE_SERVICE_ROLE_KEY || ''
       )
       
-      const { data: existing } = await sb
+      const { data: existing, error: fetchError } = await sb
         .from('woocommerce_integrations')
         .select('consumer_key, consumer_secret')
         .eq('company_id', companyId)
-        .single()
+        .maybeSingle()
       
-      if (existing) {
-        keysToUse = {
-          consumerKey: consumerKey || existing.consumer_key,
-          consumerSecret: consumerSecret || existing.consumer_secret
-        }
+      if (!existing) {
+        return NextResponse.json(
+          { error: 'WooCommerce integration not found. Please configure it first.' },
+          { status: 400 }
+        )
+      }
+      
+      keysToUse = {
+        consumerKey: consumerKey || existing.consumer_key,
+        consumerSecret: consumerSecret || existing.consumer_secret
       }
     }
 

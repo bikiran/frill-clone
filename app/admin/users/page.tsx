@@ -145,9 +145,28 @@ export default function UsersPage() {
           Users & Customers
         </h1>
         <p style={{ fontSize: '14px', color: '#666', margin: '0' }}>
-          Manage team members and view WooCommerce customers
+          {hasWooCommerce ? 'Manage team members and view WooCommerce customers' : 'Manage team members'}
         </p>
       </div>
+
+      {!hasWooCommerce && (
+        <div style={{
+          padding: '16px',
+          borderRadius: '8px',
+          background: '#fef3c7',
+          border: '1px solid #fcd34d',
+          marginBottom: '24px',
+          fontSize: '13px',
+          color: '#92400e',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <strong>WooCommerce Not Connected</strong> — Connect your WooCommerce store in <a href={`/admin/integrations/woocommerce?slug=${slug}`} style={{ color: '#92400e', textDecoration: 'underline', cursor: 'pointer' }}>Settings → Integrations</a> to import customers.
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input

@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-
 
 const DEFAULT_TOPICS = [
   { id: 'welcome', label: 'Welcome', emoji: '👋' },
@@ -24,6 +23,8 @@ export default function TopicsPage() {
   const [topicLimit, setTopicLimit] = useState(3)
   const [topicPermission, setTopicPermission] = useState<'everybody' | 'members'>('everybody')
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const slug = searchParams.get('slug') || ''
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -81,7 +82,7 @@ export default function TopicsPage() {
         <p className="text-sm mb-3" style={{ color: '#1e40af' }}>
           Private Topics are part of the Privacy Add-on. They will be converted to normal Topics at the end of your trial unless you purchase the Growth plan or Privacy Add-on.
         </p>
-        <a href="https://colvy.com/settings/company/upgrade" className="text-sm font-medium hover:underline" style={{ color: '#3b82f6' }}>
+        <a href={`/admin/settings/billing?slug=${slug}`} className="text-sm font-medium hover:underline" style={{ color: '#3b82f6' }}>
           Compare plans →
         </a>
       </div>

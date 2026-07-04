@@ -66,9 +66,14 @@ export default function WooCommerceIntegration() {
         // Pre-populate form fields for editing
         setStoreUrl(result.data.store_url || '')
         // Note: We don't pre-populate secrets for security
+      } else {
+        setIntegration(null)
+        setStoreUrl('')
       }
     } catch (err) {
       console.error('Failed to fetch integration:', err)
+      setIntegration(null)
+      setStoreUrl('')
     }
   }
 
@@ -79,6 +84,13 @@ export default function WooCommerceIntegration() {
     setSuccess('')
 
     try {
+      // Validate company ID
+      if (!companyId || companyId.trim() === '') {
+        setError('Company not found')
+        setConfiguring(false)
+        return
+      }
+
       // Validate Store URL is always required
       if (!storeUrl || storeUrl.trim() === '') {
         setError('Store URL is required')
@@ -99,10 +111,10 @@ export default function WooCommerceIntegration() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyId,
+          companyId: companyId.trim(),
           storeUrl: storeUrl.trim(),
-          consumerKey: consumerKey || undefined,
-          consumerSecret: consumerSecret || undefined,
+          consumerKey: consumerKey && consumerKey.trim() ? consumerKey.trim() : undefined,
+          consumerSecret: consumerSecret && consumerSecret.trim() ? consumerSecret.trim() : undefined,
           isUpdate
         })
       })
@@ -115,11 +127,16 @@ export default function WooCommerceIntegration() {
       }
 
       setSuccess(editing ? 'WooCommerce configuration updated!' : 'WooCommerce integration configured successfully!')
-      setStoreUrl('')
-      setConsumerKey('')
-      setConsumerSecret('')
       setEditing(false)
+      
+      // Wait for integration to be fetched
       await fetchIntegration(companyId)
+      
+      // Clear form only after fetching new integration data
+      setTimeout(() => {
+        setConsumerKey('')
+        setConsumerSecret('')
+      }, 500)
     } catch (err: any) {
       setError(err.message || 'Configuration failed')
     } finally {
