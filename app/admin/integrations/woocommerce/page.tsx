@@ -25,6 +25,7 @@ export default function WooCommerceIntegration() {
 
   // Integration status
   const [integration, setIntegration] = useState<any>(null)
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -60,7 +61,12 @@ export default function WooCommerceIntegration() {
     try {
       const res = await fetch(`/api/woocommerce/setup?companyId=${cid}`)
       const result = await res.json()
-      setIntegration(result.data)
+      if (result.data) {
+        setIntegration(result.data)
+        // Pre-populate form fields for editing
+        setStoreUrl(result.data.store_url || '')
+        // Note: We don't pre-populate secrets for security
+      }
     } catch (err) {
       console.error('Failed to fetch integration:', err)
     }
@@ -91,10 +97,11 @@ export default function WooCommerceIntegration() {
         return
       }
 
-      setSuccess('WooCommerce integration configured successfully!')
+      setSuccess(editing ? 'WooCommerce configuration updated!' : 'WooCommerce integration configured successfully!')
       setStoreUrl('')
       setConsumerKey('')
       setConsumerSecret('')
+      setEditing(false)
       await fetchIntegration(companyId)
     } catch (err: any) {
       setError(err.message || 'Configuration failed')
@@ -191,7 +198,7 @@ export default function WooCommerceIntegration() {
         </div>
       )}
 
-      {!integration ? (
+      {(!integration || editing) ? (
         <form onSubmit={handleConfigure} style={{
           borderRadius: '12px',
           border: '1px solid var(--border)',
@@ -199,7 +206,7 @@ export default function WooCommerceIntegration() {
           background: '#fff'
         }}>
           <h2 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--ink)' }}>
-            Configure WooCommerce
+            {editing ? 'Update WooCommerce Configuration' : 'Configure WooCommerce'}
           </h2>
 
           <div style={{ marginBottom: '16px' }}>
@@ -302,8 +309,31 @@ export default function WooCommerceIntegration() {
                 opacity: configuring ? 0.6 : 1
               }}
             >
-              {configuring ? 'Configuring...' : 'Connect WooCommerce'}
+              {configuring ? 'Configuring...' : editing ? 'Update Configuration' : 'Connect WooCommerce'}
             </button>
+            {editing && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(false)
+                  setStoreUrl(integration.store_url || '')
+                  setConsumerKey('')
+                  setConsumerSecret('')
+                }}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border)',
+                  background: '#fff',
+                  color: 'var(--slate)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+            )}
           </div>
 
           <p style={{ fontSize: '12px', color: '#999', marginTop: '16px', lineHeight: 1.5 }}>
@@ -342,12 +372,13 @@ export default function WooCommerceIntegration() {
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button
               onClick={handleSync}
               disabled={syncing}
               style={{
                 flex: 1,
+                minWidth: '120px',
                 padding: '10px 16px',
                 borderRadius: '8px',
                 border: '1px solid var(--coral)',
@@ -363,14 +394,37 @@ export default function WooCommerceIntegration() {
             </button>
 
             <button
-              onClick={handleDisconnect}
+              onClick={() => {
+                setEditing(true)
+                setConsumerKey('')
+                setConsumerSecret('')
+              }}
               style={{
                 flex: 1,
+                minWidth: '120px',
                 padding: '10px 16px',
                 borderRadius: '8px',
                 border: '1px solid #e5e5e5',
                 background: '#fff',
                 color: '#666',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              ✎ Edit Configuration
+            </button>
+
+            <button
+              onClick={handleDisconnect}
+              style={{
+                flex: 1,
+                minWidth: '120px',
+                padding: '10px 16px',
+                borderRadius: '8px',
+                border: '1px solid #fecaca',
+                background: '#fff',
+                color: '#dc2626',
                 fontSize: '13px',
                 fontWeight: 600,
                 cursor: 'pointer'

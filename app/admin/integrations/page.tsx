@@ -224,10 +224,12 @@ export default function IntegrationsPage() {
           .from('woocommerce_integrations')
           .select('is_active')
           .eq('company_id', cid)
-          .single()
+          .maybeSingle()
         
-        if (wooData) {
-          enb['woocommerce'] = wooData.is_active || false
+        if (wooData && wooData.is_active) {
+          enb['woocommerce'] = true
+        } else {
+          enb['woocommerce'] = false
         }
       }
 
