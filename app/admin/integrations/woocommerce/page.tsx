@@ -30,6 +30,12 @@ export default function WooCommerceIntegration() {
   useEffect(() => {
     const init = async () => {
       try {
+        if (!slug) {
+          setError('Company not found. Missing slug in URL.')
+          setLoading(false)
+          return
+        }
+
         // Lazy load Supabase client
         const sb = createClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -37,18 +43,30 @@ export default function WooCommerceIntegration() {
         )
         setSupabase(sb)
 
-        const { data: company } = await sb
+        const { data: company, error: companyError } = await sb
           .from('companies')
           .select('id')
           .eq('slug', slug)
-          .single()
+          .maybeSingle()
 
-        if (company) {
-          setCompanyId(company.id)
-          await fetchIntegration(company.id)
+        if (companyError) {
+          console.error('Company lookup error:', companyError)
+          setError(`Failed to load company: ${companyError.message}`)
+          setLoading(false)
+          return
         }
-      } catch (err) {
+
+        if (!company) {
+          setError(`Company not found with slug: ${slug}`)
+          setLoading(false)
+          return
+        }
+
+        setCompanyId(company.id)
+        await fetchIntegration(company.id)
+      } catch (err: any) {
         console.error('Init error:', err)
+        setError(err.message || 'Failed to load page')
       } finally {
         setLoading(false)
       }
@@ -195,6 +213,25 @@ export default function WooCommerceIntegration() {
 
   if (loading) {
     return <div style={{ padding: '24px', color: '#666' }}>Loading...</div>
+  }
+
+  if (!companyId) {
+    return (
+      <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px' }}>
+        <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '8px', color: 'var(--ink)' }}>
+          WooCommerce Integration
+        </h1>
+        <div style={{
+          padding: '16px',
+          borderRadius: '8px',
+          background: '#fee2e2',
+          color: '#991b1b',
+          fontSize: '13px'
+        }}>
+          {error || 'Company not found. Make sure you have the correct URL with company slug.'}
+        </div>
+      </div>
+    )
   }
 
   return (

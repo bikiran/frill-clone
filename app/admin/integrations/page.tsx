@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-
 
 const INTEGRATIONS = [
   {
@@ -161,6 +160,9 @@ const CATEGORIES = ['All', ...Array.from(new Set(INTEGRATIONS.map(i => i.categor
 
 export default function IntegrationsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const slug = searchParams.get('slug') || ''
+  
   const [user, setUser] = useState<any>(null)
   const [configs, setConfigs] = useState<Record<string, any>>({})
   const [enabled, setEnabled] = useState<Record<string, boolean>>({})
@@ -295,7 +297,7 @@ export default function IntegrationsPage() {
           {filtered.map(intg => (
             <button key={intg.id} onClick={() => {
               if ((intg as any).isDedicated) {
-                router.push(`/admin/integrations/${intg.id}?slug=${new URLSearchParams(window.location.search).get('slug') || ''}`)
+                router.push(`/admin/integrations/${intg.id}?slug=${slug}`)
               } else {
                 setSelected(intg.id)
               }
@@ -338,7 +340,7 @@ export default function IntegrationsPage() {
               {filtered.map(intg => (
                 <button key={intg.id} onClick={() => {
                   if ((intg as any).isDedicated) {
-                    router.push(`/admin/integrations/${intg.id}?slug=${new URLSearchParams(window.location.search).get('slug') || ''}`)
+                    router.push(`/admin/integrations/${intg.id}?slug=${slug}`)
                   } else {
                     setSelected(intg.id)
                   }
