@@ -37,61 +37,53 @@ export default function WooCommerceIntegration() {
         )
         setSupabase(sb)
 
-        let foundCompanyId: string | null = null
+        let companyId: string | null = null
+        let companySlug = slug
 
-        // Strategy 1: If slug in URL, use it
-        if (slug) {
+        // If slug provided, use it to look up company
+        if (companySlug) {
           const { data: company } = await sb
             .from('companies')
             .select('id')
-            .eq('slug', slug)
+            .eq('slug', companySlug)
             .maybeSingle()
 
           if (company) {
-            foundCompanyId = company.id
+            companyId = company.id
           }
         }
 
-        // Strategy 2: Get from user's session if no slug match
-        if (!foundCompanyId) {
+        // If no company found by slug, try to get from user's session
+        if (!companyId) {
           const { data: { session } } = await sb.auth.getSession()
           
-          if (session?.user?.id) {
-            // Try team_members first
-            const { data: teamMembers } = await sb
+          if (session?.user) {
+            // Get user's first company membership
+            const { data: teamMember } = await sb
               .from('team_members')
               .select('company_id')
               .eq('user_id', session.user.id)
               .limit(1)
+              .single()
 
-            if (teamMembers && teamMembers.length > 0) {
-              foundCompanyId = teamMembers[0].company_id
-            } else {
-              // Try owned companies
-              const { data: ownedCompanies } = await sb
-                .from('companies')
-                .select('id')
-                .eq('owner_id', session.user.id)
-                .limit(1)
-
-              if (ownedCompanies && ownedCompanies.length > 0) {
-                foundCompanyId = ownedCompanies[0].id
-              }
+            if (teamMember?.company_id) {
+              companyId = teamMember.company_id
             }
           }
         }
 
-        if (!foundCompanyId) {
+        if (!companyId) {
           setError('Company not found. Please sign in and try again.')
           setLoading(false)
           return
         }
 
-        setCompanyId(foundCompanyId)
-        await fetchIntegration(foundCompanyId)
+        setCompanyId(companyId)
+        setError('')  // Clear any previous errors
+        await fetchIntegration(companyId)
       } catch (err: any) {
         console.error('Init error:', err)
-        setError(err.message || 'Failed to load WooCommerce settings')
+        setError(err.message || 'Failed to load page')
         setLoading(false)
       }
     }
