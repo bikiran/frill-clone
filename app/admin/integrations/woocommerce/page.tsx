@@ -30,12 +30,6 @@ export default function WooCommerceIntegration() {
   useEffect(() => {
     const init = async () => {
       try {
-        if (!slug) {
-          setError('Company not found. Missing slug in URL.')
-          setLoading(false)
-          return
-        }
-
         // Lazy load Supabase client
         const sb = createClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -43,31 +37,53 @@ export default function WooCommerceIntegration() {
         )
         setSupabase(sb)
 
-        const { data: company, error: companyError } = await sb
-          .from('companies')
-          .select('id')
-          .eq('slug', slug)
-          .maybeSingle()
+        let companyId: string | null = null
+        let companySlug = slug
 
-        if (companyError) {
-          console.error('Company lookup error:', companyError)
-          setError(`Failed to load company: ${companyError.message}`)
+        // If slug provided, use it to look up company
+        if (companySlug) {
+          const { data: company } = await sb
+            .from('companies')
+            .select('id')
+            .eq('slug', companySlug)
+            .maybeSingle()
+
+          if (company) {
+            companyId = company.id
+          }
+        }
+
+        // If no company found by slug, try to get from user's session
+        if (!companyId) {
+          const { data: { session } } = await sb.auth.getSession()
+          
+          if (session?.user) {
+            // Get user's first company membership
+            const { data: teamMember } = await sb
+              .from('team_members')
+              .select('company_id')
+              .eq('user_id', session.user.id)
+              .limit(1)
+              .single()
+
+            if (teamMember?.company_id) {
+              companyId = teamMember.company_id
+            }
+          }
+        }
+
+        if (!companyId) {
+          setError('Company not found. Please sign in and try again.')
           setLoading(false)
           return
         }
 
-        if (!company) {
-          setError(`Company not found with slug: ${slug}`)
-          setLoading(false)
-          return
-        }
-
-        setCompanyId(company.id)
-        await fetchIntegration(company.id)
+        setCompanyId(companyId)
+        setError('')  // Clear any previous errors
+        await fetchIntegration(companyId)
       } catch (err: any) {
         console.error('Init error:', err)
         setError(err.message || 'Failed to load page')
-      } finally {
         setLoading(false)
       }
     }
@@ -212,10 +228,10 @@ export default function WooCommerceIntegration() {
   }
 
   if (loading) {
-    return <div style={{ padding: '24px', color: '#666' }}>Loading...</div>
+    return <div style={{ padding: '24px', color: '#666' }}>Loading WooCommerce integration...</div>
   }
 
-  if (!companyId) {
+  if (!companyId && error) {
     return (
       <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '8px', color: 'var(--ink)' }}>
@@ -228,7 +244,7 @@ export default function WooCommerceIntegration() {
           color: '#991b1b',
           fontSize: '13px'
         }}>
-          {error || 'Company not found. Make sure you have the correct URL with company slug.'}
+          {error}
         </div>
       </div>
     )
