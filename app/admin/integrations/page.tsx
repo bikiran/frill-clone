@@ -8,6 +8,17 @@ import Link from 'next/link'
 
 const INTEGRATIONS = [
   {
+    id: 'woocommerce',
+    name: 'WooCommerce',
+    desc: 'Sync your WooCommerce customers and orders directly into Colvy for better customer insights.',
+    icon: '🛍️',
+    color: '#96588A',
+    bg: '#f3e8ff',
+    logo: '/logos/woocommerce.svg',
+    category: 'E-Commerce',
+    isDedicated: true, // Special flag for custom page
+  },
+  {
     id: 'slack',
     name: 'Slack',
     desc: 'Post to a Slack channel when ideas are submitted, voted on, or change status.',
@@ -188,6 +199,15 @@ export default function IntegrationsPage() {
 
   const loadIntegrations = async () => {
     try {
+      // Get company ID first
+      const slug = new URLSearchParams(window.location.search).get('slug')
+      let cid = null
+      if (slug) {
+        const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).single()
+        cid = co?.id
+      }
+
+      // Load standard integrations
       const { data } = await (supabase as any).from('integration_configs').select('*')
       const cfgs: Record<string, any> = {}
       const enb: Record<string, boolean> = {}
@@ -197,6 +217,20 @@ export default function IntegrationsPage() {
         enb[row.integration_id] = row.enabled || false
         evts[row.integration_id] = row.events || []
       })
+
+      // Check for WooCommerce integration
+      if (cid) {
+        const { data: wooData } = await (supabase as any)
+          .from('woocommerce_integrations')
+          .select('is_active')
+          .eq('company_id', cid)
+          .single()
+        
+        if (wooData) {
+          enb['woocommerce'] = wooData.is_active || false
+        }
+      }
+
       setConfigs(cfgs)
       setEnabled(enb)
       setEvents(evts)
@@ -257,7 +291,13 @@ export default function IntegrationsPage() {
         </div>
         <div className="flex-1 overflow-y-auto py-2 px-2">
           {filtered.map(intg => (
-            <button key={intg.id} onClick={() => setSelected(intg.id)}
+            <button key={intg.id} onClick={() => {
+              if ((intg as any).isDedicated) {
+                router.push(`/admin/integrations/${intg.id}?slug=${new URLSearchParams(window.location.search).get('slug') || ''}`)
+              } else {
+                setSelected(intg.id)
+              }
+            }}
               className="w-full text-left px-3 py-2.5 rounded-lg transition-all hover:bg-gray-50 cursor-pointer mb-0.5"
               style={{ background: selected === intg.id ? 'var(--peach)' : 'transparent', borderLeft: selected === intg.id ? '2px solid var(--coral)' : '2px solid transparent' }}>
               <div className="flex items-center justify-between">
@@ -294,7 +334,13 @@ export default function IntegrationsPage() {
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.map(intg => (
-                <button key={intg.id} onClick={() => setSelected(intg.id)}
+                <button key={intg.id} onClick={() => {
+                  if ((intg as any).isDedicated) {
+                    router.push(`/admin/integrations/${intg.id}?slug=${new URLSearchParams(window.location.search).get('slug') || ''}`)
+                  } else {
+                    setSelected(intg.id)
+                  }
+                }}
                   className="bg-white rounded-2xl border p-5 text-left hover:shadow-md transition-all cursor-pointer group relative"
                   style={{ borderColor: enabled[intg.id] ? '#10b981' : 'var(--border)' }}>
                   {enabled[intg.id] && (

@@ -53,26 +53,44 @@ export class WooCommerceService {
   }
 
   /**
-   * Fetch all customers from WooCommerce
+   * Fetch all customers from WooCommerce (with pagination - no limit)
    */
   async getCustomers(): Promise<WooCommerceCustomer[]> {
     try {
-      const response = await fetch(
-        `${this.config.storeUrl}/wp-json/wc/v3/customers?per_page=100`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Basic ${this.basicAuth}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      )
+      const allCustomers: WooCommerceCustomer[] = []
+      let page = 1
+      let hasMore = true
+      const perPage = 100
 
-      if (!response.ok) {
-        throw new Error(`WooCommerce API error: ${response.statusText}`)
+      while (hasMore) {
+        const response = await fetch(
+          `${this.config.storeUrl}/wp-json/wc/v3/customers?per_page=${perPage}&page=${page}`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': `Basic ${this.basicAuth}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        )
+
+        if (!response.ok) {
+          throw new Error(`WooCommerce API error: ${response.statusText}`)
+        }
+
+        const customers = await response.json()
+        allCustomers.push(...customers)
+
+        // Check if there are more pages
+        const totalPages = response.headers.get('x-wp-totalpages')
+        if (totalPages && page < parseInt(totalPages)) {
+          page++
+        } else {
+          hasMore = false
+        }
       }
 
-      return await response.json()
+      return allCustomers
     } catch (error) {
       console.error('Failed to fetch WooCommerce customers:', error)
       throw error
@@ -106,26 +124,44 @@ export class WooCommerceService {
   }
 
   /**
-   * Fetch all orders for a customer
+   * Fetch all orders for a customer (with pagination - no limit)
    */
   async getCustomerOrders(customerId: number): Promise<WooCommerceOrder[]> {
     try {
-      const response = await fetch(
-        `${this.config.storeUrl}/wp-json/wc/v3/orders?customer=${customerId}&per_page=100`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Basic ${this.basicAuth}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      )
+      const allOrders: WooCommerceOrder[] = []
+      let page = 1
+      let hasMore = true
+      const perPage = 100
 
-      if (!response.ok) {
-        throw new Error(`WooCommerce API error: ${response.statusText}`)
+      while (hasMore) {
+        const response = await fetch(
+          `${this.config.storeUrl}/wp-json/wc/v3/orders?customer=${customerId}&per_page=${perPage}&page=${page}`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': `Basic ${this.basicAuth}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        )
+
+        if (!response.ok) {
+          throw new Error(`WooCommerce API error: ${response.statusText}`)
+        }
+
+        const orders = await response.json()
+        allOrders.push(...orders)
+
+        // Check if there are more pages
+        const totalPages = response.headers.get('x-wp-totalpages')
+        if (totalPages && page < parseInt(totalPages)) {
+          page++
+        } else {
+          hasMore = false
+        }
       }
 
-      return await response.json()
+      return allOrders
     } catch (error) {
       console.error('Failed to fetch customer orders:', error)
       throw error
