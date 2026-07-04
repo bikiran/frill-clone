@@ -79,14 +79,31 @@ export default function WooCommerceIntegration() {
     setSuccess('')
 
     try {
+      // Validate Store URL is always required
+      if (!storeUrl || storeUrl.trim() === '') {
+        setError('Store URL is required')
+        setConfiguring(false)
+        return
+      }
+
+      // For new integrations, both keys are required
+      // For updates (editing), at least one key should be provided
+      const isUpdate = editing && integration
+      if (!isUpdate && (!consumerKey || !consumerSecret)) {
+        setError('Consumer Key and Secret are required for new integrations')
+        setConfiguring(false)
+        return
+      }
+
       const res = await fetch('/api/woocommerce/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId,
-          storeUrl,
-          consumerKey,
-          consumerSecret
+          storeUrl: storeUrl.trim(),
+          consumerKey: consumerKey || undefined,
+          consumerSecret: consumerSecret || undefined,
+          isUpdate
         })
       })
 
@@ -235,14 +252,14 @@ export default function WooCommerceIntegration() {
 
           <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--ink)' }}>
-              Consumer Key
+              Consumer Key {editing ? '(optional)' : ''}
             </label>
             <input
               type={showSecrets ? 'text' : 'password'}
               value={consumerKey}
               onChange={e => setConsumerKey(e.target.value)}
               placeholder="ck_..."
-              required
+              required={!editing}
               style={{
                 width: '100%',
                 padding: '10px 12px',
@@ -252,18 +269,23 @@ export default function WooCommerceIntegration() {
                 fontFamily: 'monospace'
               }}
             />
+            {editing && (
+              <p style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
+                Leave blank to keep existing value
+              </p>
+            )}
           </div>
 
           <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--ink)' }}>
-              Consumer Secret
+              Consumer Secret {editing ? '(optional)' : ''}
             </label>
             <input
               type={showSecrets ? 'text' : 'password'}
               value={consumerSecret}
               onChange={e => setConsumerSecret(e.target.value)}
               placeholder="cs_..."
-              required
+              required={!editing}
               style={{
                 width: '100%',
                 padding: '10px 12px',
@@ -273,6 +295,11 @@ export default function WooCommerceIntegration() {
                 fontFamily: 'monospace'
               }}
             />
+            {editing && (
+              <p style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
+                Leave blank to keep existing value
+              </p>
+            )}
           </div>
 
           <label style={{

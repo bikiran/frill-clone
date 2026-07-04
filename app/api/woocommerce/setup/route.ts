@@ -8,11 +8,21 @@ import { WooCommerceService } from '@/lib/woocommerce-service'
  */
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, storeUrl, consumerKey, consumerSecret } = await req.json()
+    const { companyId, storeUrl, consumerKey, consumerSecret, isUpdate } = await req.json()
 
-    if (!companyId || !storeUrl || !consumerKey || !consumerSecret) {
+    // Always require company ID and store URL
+    if (!companyId || !storeUrl) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: 'Missing company ID or store URL' },
+        { status: 400 }
+      )
+    }
+
+    // For new integrations, require both keys
+    // For updates, only test if new keys are provided
+    if (!isUpdate && (!consumerKey || !consumerSecret)) {
+      return NextResponse.json(
+        { error: 'Consumer Key and Secret are required for new integrations' },
         { status: 400 }
       )
     }
@@ -20,11 +30,35 @@ export async function POST(req: NextRequest) {
     // Normalize store URL (remove trailing slash)
     const normalizedUrl = storeUrl.replace(/\/$/, '')
 
+    // If updating credentials, test with new ones; otherwise fetch existing
+    let keysToUse = { consumerKey, consumerSecret }
+    
+    if (isUpdate && (!consumerKey || !consumerSecret)) {
+      // Updating but not changing credentials - fetch existing ones
+      const sb = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+      )
+      
+      const { data: existing } = await sb
+        .from('woocommerce_integrations')
+        .select('consumer_key, consumer_secret')
+        .eq('company_id', companyId)
+        .single()
+      
+      if (existing) {
+        keysToUse = {
+          consumerKey: consumerKey || existing.consumer_key,
+          consumerSecret: consumerSecret || existing.consumer_secret
+        }
+      }
+    }
+
     // Test the credentials
     const woo = new WooCommerceService({
       storeUrl: normalizedUrl,
-      consumerKey,
-      consumerSecret,
+      consumerKey: keysToUse.consumerKey,
+      consumerSecret: keysToUse.consumerSecret,
       companyId
     })
 
@@ -42,17 +76,22 @@ export async function POST(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY || ''
     )
 
+    // Build update payload - only include provided fields
+    const updatePayload: any = {
+      company_id: companyId,
+      store_url: normalizedUrl,
+      is_active: true
+    }
+
+    // Only update credentials if provided
+    if (consumerKey) updatePayload.consumer_key = consumerKey
+    if (consumerSecret) updatePayload.consumer_secret = consumerSecret
+
     // Save integration settings
     const { data, error } = await supabase
       .from('woocommerce_integrations')
       .upsert(
-        {
-          company_id: companyId,
-          store_url: normalizedUrl,
-          consumer_key: consumerKey,
-          consumer_secret: consumerSecret,
-          is_active: true
-        },
+        updatePayload,
         { onConflict: 'company_id' }
       )
       .select()
