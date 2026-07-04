@@ -1,193 +1,288 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { createClient } from '@supabase/supabase-js'
 
-type Member = {
+interface TeamMember {
   id: string
+  type: 'team'
   email: string
-  user_id: string | null
+  username?: string
   role: string
   status: string
-  created_at: string
 }
 
-const ROLES = [
-  { value: 'viewer', label: 'Viewer', desc: 'Can vote, comment, and submit ideas' },
-  { value: 'editor', label: 'Editor', desc: 'Can also manage ideas and content' },
-  { value: 'admin', label: 'Admin', desc: 'Full access, including team management' },
-]
-
-function getCompanyId(): Promise<{ id: string; owner_id: string; name: string } | null> {
-  return new Promise((resolve) => {
-    if (typeof window === 'undefined') return resolve(null)
-    const h = window.location.hostname
-    if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com' && !h.includes('localhost')) {
-      const slug = h.replace('.colvy.com', '')
-      supabase.from('companies').select('id, owner_id, name').eq('slug', slug).maybeSingle().then(({ data }) => {
-        resolve((data as any) || null)
-      })
-    } else {
-      // localhost/vercel — fall back to the signed-in user's own company
-      supabase.auth.getSession().then(async ({ data }) => {
-        const uid = data.session?.user?.id
-        if (!uid) return resolve(null)
-        const { data: co } = await (supabase as any).from('companies').select('id, owner_id, name').eq('owner_id', uid).maybeSingle()
-        resolve(co || null)
-      })
-    }
-  })
+interface Customer {
+  id: string
+  type: 'customer'
+  email: string
+  first_name: string
+  last_name: string
+  phone?: string
+  total_spend: number
+  total_orders: number
+  woo_customer_id: number
 }
 
-export default function BoardUsersPage() {
-  const [company, setCompany] = useState<{ id: string; owner_id: string; name: string } | null>(null)
-  const [ownerEmail, setOwnerEmail] = useState('')
-  const [members, setMembers] = useState<Member[]>([])
+type User = TeamMember | Customer
+
+export default function UsersPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const slug = searchParams.get('slug') || ''
+
+  const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [savingId, setSavingId] = useState<string | null>(null)
-  const [msg, setMsg] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterType, setFilterType] = useState<'all' | 'team' | 'customer'>('all')
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const sb = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+        )
 
-  const load = async () => {
-    setLoading(true)
-    const co = await getCompanyId()
-    setCompany(co)
-    if (co) {
-      const { data: sess } = await supabase.auth.getSession()
-      if (sess.session?.user?.id === co.owner_id) setOwnerEmail(sess.session.user.email || '')
-      const { data } = await (supabase as any)
-        .from('team_members')
-        .select('*')
-        .eq('company_id', co.id)
-        .order('created_at', { ascending: false })
-      setMembers(data || [])
+        const { data: company } = await sb
+          .from('companies')
+          .select('id')
+          .eq('slug', slug)
+          .single()
+
+        if (!company) return
+
+        const { data: teamMembers } = await sb
+          .from('team_members')
+          .select('*')
+          .eq('company_id', company.id)
+
+        const { data: customers } = await sb
+          .from('woocommerce_customers')
+          .select('*')
+          .eq('company_id', company.id)
+          .order('total_spend', { ascending: false })
+
+        const allUsers: User[] = [
+          ...(teamMembers || []).map(m => ({
+            id: m.id,
+            type: 'team' as const,
+            email: m.email,
+            username: m.username,
+            role: m.role,
+            status: m.status
+          })),
+          ...(customers || []).map(c => ({
+            id: c.id,
+            type: 'customer' as const,
+            email: c.email,
+            first_name: c.first_name,
+            last_name: c.last_name,
+            phone: c.phone,
+            total_spend: c.total_spend,
+            total_orders: c.total_orders,
+            woo_customer_id: c.woo_customer_id
+          }))
+        ]
+
+        setUsers(allUsers)
+      } catch (err) {
+        console.error('Failed to load users:', err)
+      } finally {
+        setLoading(false)
+      }
     }
-    setLoading(false)
-  }
 
-  const showMsg = (text: string) => {
-    setMsg(text)
-    setTimeout(() => setMsg(''), 3000)
-  }
+    loadUsers()
+  }, [slug])
 
-  const updateRole = async (member: Member, role: string) => {
-    setSavingId(member.id)
-    const { error } = await (supabase as any).from('team_members').update({ role }).eq('id', member.id)
-    if (!error) {
-      setMembers(prev => prev.map(m => m.id === member.id ? { ...m, role } : m))
-      showMsg('Permission updated')
-    } else {
-      showMsg('Failed to update permission')
-    }
-    setSavingId(null)
-  }
-
-  const filtered = members.filter(m => !search || m.email.toLowerCase().includes(search.toLowerCase()))
+  const filteredUsers = users.filter(user => {
+    const matchesType = filterType === 'all' || user.type === filterType
+    const matchesSearch =
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (user.type === 'customer' && `${user.first_name} ${user.last_name}`.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (user.type === 'team' && user.username?.toLowerCase().includes(searchTerm.toLowerCase()))
+    return matchesType && matchesSearch
+  })
 
   if (loading) {
-    return (
-      <div className="max-w-5xl mx-auto px-6 py-8">
-        <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
-      </div>
-    )
+    return <div style={{ padding: '24px', color: '#666' }}>Loading users...</div>
   }
 
-  if (!company) {
-    return (
-      <div className="max-w-5xl mx-auto px-6 py-8">
-        <p style={{ color: 'var(--slate)' }}>Could not determine your board. Please refresh.</p>
-      </div>
-    )
-  }
+  const totalSpend = users.filter(u => u.type === 'customer').reduce((sum, u) => sum + (u.type === 'customer' ? u.total_spend : 0), 0)
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8">
-      <div className="flex items-center justify-between mb-2">
-        <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Users</h1>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
+      <div style={{ marginBottom: '32px' }}>
+        <h1 style={{ fontSize: '28px', fontWeight: 700, marginBottom: '8px', color: 'var(--ink)' }}>
+          Users & Customers
+        </h1>
+        <p style={{ fontSize: '14px', color: '#666', margin: '0' }}>
+          Manage team members and view WooCommerce customers
+        </p>
       </div>
-      <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>
-        Everyone who has signed up on <strong>{company.name}</strong>'s board. Update their permissions below.
-      </p>
 
-      {msg && (
-        <div className="mb-4 px-4 py-2.5 rounded-lg text-sm font-medium animate-fade-in-up" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
-          {msg}
-        </div>
-      )}
-
-      <div className="mb-4">
+      <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input
           type="text"
-          placeholder="Search by email…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full max-w-sm px-4 py-2.5 rounded-xl border text-sm focus:outline-none"
-          style={{ borderColor: 'var(--border)' }}
+          placeholder="Search by name, email, or username..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{ flex: 1, minWidth: '200px', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '13px' }}
         />
-      </div>
 
-      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead style={{ background: 'var(--canvas)', borderBottom: '1px solid var(--border)' }}>
-              <tr>
-                <th className="px-6 py-3 text-left font-semibold" style={{ color: 'var(--ink)' }}>Email</th>
-                <th className="px-6 py-3 text-left font-semibold" style={{ color: 'var(--ink)' }}>Permission</th>
-                <th className="px-6 py-3 text-left font-semibold" style={{ color: 'var(--ink)' }}>Status</th>
-                <th className="px-6 py-3 text-left font-semibold" style={{ color: 'var(--ink)' }}>Joined</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Owner row — pinned at top, not editable */}
-              {ownerEmail && (
-                <tr className="border-t" style={{ borderColor: 'var(--border)', background: 'var(--peach)' }}>
-                  <td className="px-6 py-4 font-medium" style={{ color: 'var(--ink)' }}>{ownerEmail}</td>
-                  <td className="px-6 py-4">
-                    <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: 'var(--coral)', color: 'white' }}>Owner</span>
-                  </td>
-                  <td className="px-6 py-4" style={{ color: 'var(--slate)' }}>Active</td>
-                  <td className="px-6 py-4" style={{ color: 'var(--slate)' }}>—</td>
-                </tr>
-              )}
-
-              {filtered.length === 0 ? (
-                <tr><td colSpan={4} className="px-6 py-10 text-center" style={{ color: 'var(--slate)' }}>
-                  {members.length === 0 ? 'No one has signed up on your board yet.' : 'No users match your search.'}
-                </td></tr>
-              ) : (
-                filtered.map(m => (
-                  <tr key={m.id} className="border-t hover:bg-gray-50" style={{ borderColor: 'var(--border)' }}>
-                    <td className="px-6 py-4" style={{ color: 'var(--ink)' }}>{m.email}</td>
-                    <td className="px-6 py-4">
-                      <select
-                        value={m.role}
-                        disabled={savingId === m.id}
-                        onChange={e => updateRole(m, e.target.value)}
-                        className="px-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer focus:outline-none"
-                        style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                        {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-6 py-4" style={{ color: 'var(--slate)' }}>
-                      {m.status === 'active' ? 'Active' : m.status ? m.status.charAt(0).toUpperCase() + m.status.slice(1) : '—'}
-                    </td>
-                    <td className="px-6 py-4" style={{ color: 'var(--slate)' }}>
-                      {new Date(m.created_at).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {(['all', 'team', 'customer'] as const).map(type => (
+            <button
+              key={type}
+              onClick={() => setFilterType(type)}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '6px',
+                border: filterType === type ? 'none' : '1px solid var(--border)',
+                background: filterType === type ? 'var(--coral)' : '#fff',
+                color: filterType === type ? '#fff' : 'var(--ink)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              {type === 'all' && `All (${users.length})`}
+              {type === 'team' && `Team (${users.filter(u => u.type === 'team').length})`}
+              {type === 'customer' && `Customers (${users.filter(u => u.type === 'customer').length})`}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-3 text-xs" style={{ color: 'var(--slate)' }}>
-        {ROLES.map(r => (
-          <span key={r.value}><strong style={{ color: 'var(--ink)' }}>{r.label}:</strong> {r.desc}</span>
-        ))}
+      <div style={{ borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden', background: '#fff' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--peach)' }}>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600, color: 'var(--ink)' }}>
+                Name / Email
+              </th>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600, color: 'var(--ink)' }}>
+                Type
+              </th>
+              <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 600, color: 'var(--ink)' }}>
+                Details
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredUsers.length > 0 ? (
+              filteredUsers.map(user => (
+                <tr
+                  key={user.id}
+                  onClick={() => {
+                    if (user.type === 'customer') {
+                      router.push(`/admin/customers/profile?slug=${slug}&id=${user.id}`)
+                    }
+                  }}
+                  style={{
+                    borderBottom: '1px solid var(--border)',
+                    cursor: user.type === 'customer' ? 'pointer' : 'default',
+                    background: user.type === 'customer' ? 'rgba(255, 122, 107, 0.05)' : '#fff',
+                    transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (user.type === 'customer') {
+                      (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(255, 122, 107, 0.1)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (user.type === 'customer') {
+                      (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(255, 122, 107, 0.05)'
+                    }
+                  }}
+                >
+                  <td style={{ padding: '12px 16px', color: 'var(--ink)', fontWeight: 500 }}>
+                    {user.type === 'team' ? (
+                      <div>
+                        <p style={{ margin: '0', fontWeight: 600 }}>{user.username || user.email}</p>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#666' }}>{user.email}</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p style={{ margin: '0', fontWeight: 600 }}>
+                          {user.first_name} {user.last_name}
+                        </p>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#666' }}>{user.email}</p>
+                      </div>
+                    )}
+                  </td>
+
+                  <td style={{ padding: '12px 16px', color: '#666', fontSize: '12px' }}>
+                    {user.type === 'team' ? (
+                      <span style={{ display: 'inline-block', padding: '4px 8px', borderRadius: '4px', background: '#dcfce7', color: '#166534', fontWeight: 600 }}>
+                        Team Member
+                      </span>
+                    ) : (
+                      <span style={{ display: 'inline-block', padding: '4px 8px', borderRadius: '4px', background: 'var(--peach)', color: 'var(--coral)', fontWeight: 600 }}>
+                        Customer
+                      </span>
+                    )}
+                  </td>
+
+                  <td style={{ textAlign: 'right', padding: '12px 16px', color: '#666' }}>
+                    {user.type === 'team' ? (
+                      <span style={{ fontSize: '12px', fontWeight: 600, textTransform: 'capitalize' }}>
+                        {user.role}
+                      </span>
+                    ) : (
+                      <div style={{ fontSize: '12px', textAlign: 'right' }}>
+                        <p style={{ margin: '0', fontWeight: 600, color: 'var(--ink)' }}>
+                          ${user.total_spend.toFixed(0)}
+                        </p>
+                        <p style={{ margin: '2px 0 0 0', color: '#999' }}>
+                          {user.total_orders} orders
+                        </p>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={3} style={{ padding: '32px', textAlign: 'center', color: '#999' }}>
+                  No users found
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginTop: '32px' }}>
+        <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
+          <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Total Users</p>
+          <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
+            {users.length}
+          </p>
+        </div>
+
+        <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
+          <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Team Members</p>
+          <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
+            {users.filter(u => u.type === 'team').length}
+          </p>
+        </div>
+
+        <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
+          <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Synced Customers</p>
+          <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--coral)' }}>
+            {users.filter(u => u.type === 'customer').length}
+          </p>
+        </div>
+
+        <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
+          <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Total Customer Spend</p>
+          <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
+            ${totalSpend.toFixed(0)}
+          </p>
+        </div>
       </div>
     </div>
   )
