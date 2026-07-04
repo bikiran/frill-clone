@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { IconEdit, IconLink, IconView, IconDelete } from '@/components/SvgIcons'
 
 
 const SEED_ARTICLES = [
@@ -270,22 +271,22 @@ export default function HelpAdminPage() {
                     <Link href={`/admin/help/new?edit=${selected.id}`}
                       className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium hover:bg-gray-50 cursor-pointer"
                       style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      ✏️ Edit Article
+                      <IconEdit /> Edit Article
                     </Link>
                     <button onClick={() => copyLink(selected.id)}
                       className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium hover:bg-gray-50 cursor-pointer"
                       style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      🔗 Copy Link
+                      <IconLink /> Copy Link
                     </button>
                     <Link href={`/help/${selected.id}`} target="_blank"
                       className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium hover:bg-gray-50 cursor-pointer"
                       style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      👁️ View Live
+                      <IconView /> View Live
                     </Link>
                     <button onClick={() => deleteArticle(selected.id)}
                       className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium hover:bg-red-50 cursor-pointer"
                       style={{ borderColor: '#fca5a5', color: '#dc2626' }}>
-                      🗑️ Delete
+                      <IconDelete /> Delete
                     </button>
                   </div>
                 </div>

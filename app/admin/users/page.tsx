@@ -36,6 +36,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState<'all' | 'team' | 'customer'>('all')
+  const [hasWooCommerce, setHasWooCommerce] = useState(false)
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -53,16 +54,19 @@ export default function UsersPage() {
 
         if (!company) return
 
+        // Check if WooCommerce integration exists
+        const { data: wooIntegration } = await sb
+          .from('woocommerce_integrations')
+          .select('id')
+          .eq('company_id', company.id)
+          .single()
+
+        setHasWooCommerce(!!wooIntegration)
+
         const { data: teamMembers } = await sb
           .from('team_members')
           .select('*')
           .eq('company_id', company.id)
-
-        const { data: customers } = await sb
-          .from('woocommerce_customers')
-          .select('*')
-          .eq('company_id', company.id)
-          .order('total_spend', { ascending: false })
 
         const allUsers: User[] = [
           ...(teamMembers || []).map(m => ({
@@ -72,19 +76,31 @@ export default function UsersPage() {
             username: m.username,
             role: m.role,
             status: m.status
-          })),
-          ...(customers || []).map(c => ({
-            id: c.id,
-            type: 'customer' as const,
-            email: c.email,
-            first_name: c.first_name,
-            last_name: c.last_name,
-            phone: c.phone,
-            total_spend: c.total_spend,
-            total_orders: c.total_orders,
-            woo_customer_id: c.woo_customer_id
           }))
         ]
+
+        // Only load customers if WooCommerce is integrated
+        if (wooIntegration) {
+          const { data: customers } = await sb
+            .from('woocommerce_customers')
+            .select('*')
+            .eq('company_id', company.id)
+            .order('total_spend', { ascending: false })
+
+          allUsers.push(
+            ...(customers || []).map(c => ({
+              id: c.id,
+              type: 'customer' as const,
+              email: c.email,
+              first_name: c.first_name,
+              last_name: c.last_name,
+              phone: c.phone,
+              total_spend: c.total_spend,
+              total_orders: c.total_orders,
+              woo_customer_id: c.woo_customer_id
+            }))
+          )
+        }
 
         setUsers(allUsers)
       } catch (err) {
@@ -97,8 +113,11 @@ export default function UsersPage() {
     loadUsers()
   }, [slug])
 
+  // Reset filter if no WooCommerce and trying to filter by customer
+  const effectiveFilterType = !hasWooCommerce && filterType === 'customer' ? 'all' : filterType
+
   const filteredUsers = users.filter(user => {
-    const matchesType = filterType === 'all' || user.type === filterType
+    const matchesType = effectiveFilterType === 'all' || user.type === effectiveFilterType
     const matchesSearch =
       user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (user.type === 'customer' && `${user.first_name} ${user.last_name}`.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -133,10 +152,10 @@ export default function UsersPage() {
         />
 
         <div style={{ display: 'flex', gap: '8px' }}>
-          {(['all', 'team', 'customer'] as const).map(type => (
+          {(['all', 'team', ...(hasWooCommerce ? ['customer'] : [])] as const).map(type => (
             <button
               key={type}
-              onClick={() => setFilterType(type)}
+              onClick={() => setFilterType(type as any)}
               style={{
                 padding: '8px 16px',
                 borderRadius: '6px',
@@ -205,11 +224,19 @@ export default function UsersPage() {
                         <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#666' }}>{user.email}</p>
                       </div>
                     ) : (
-                      <div>
-                        <p style={{ margin: '0', fontWeight: 600 }}>
-                          {user.first_name} {user.last_name}
-                        </p>
-                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#666' }}>{user.email}</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="1.5" style={{ flexShrink: 0 }}>
+                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                            <path d="M12 8v8M16 12H8"/>
+                          </svg>
+                          <div>
+                            <p style={{ margin: '0', fontWeight: 600 }}>
+                              {user.first_name} {user.last_name}
+                            </p>
+                            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#666' }}>{user.email}</p>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </td>
@@ -255,6 +282,24 @@ export default function UsersPage() {
         </table>
       </div>
 
+      {!hasWooCommerce && (
+        <div style={{
+          borderRadius: '12px',
+          border: '1px solid #fbbf24',
+          background: '#fef3c7',
+          padding: '16px',
+          marginTop: '24px',
+          marginBottom: '24px'
+        }}>
+          <p style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 600, color: '#92400e' }}>
+            🔗 WooCommerce Not Connected
+          </p>
+          <p style={{ margin: '0', fontSize: '13px', color: '#b45309' }}>
+            Connect your WooCommerce store in <strong>Settings → Integrations</strong> to see synced customers here.
+          </p>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginTop: '32px' }}>
         <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
           <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Total Users</p>
@@ -270,19 +315,23 @@ export default function UsersPage() {
           </p>
         </div>
 
-        <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
-          <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Synced Customers</p>
-          <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--coral)' }}>
-            {users.filter(u => u.type === 'customer').length}
-          </p>
-        </div>
+        {hasWooCommerce && (
+          <>
+            <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
+              <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Synced Customers</p>
+              <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--coral)' }}>
+                {users.filter(u => u.type === 'customer').length}
+              </p>
+            </div>
 
-        <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
-          <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Total Customer Spend</p>
-          <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
-            ${totalSpend.toFixed(0)}
-          </p>
-        </div>
+            <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
+              <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Total Customer Spend</p>
+              <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
+                ${totalSpend.toFixed(0)}
+              </p>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
