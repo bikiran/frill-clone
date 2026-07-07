@@ -309,17 +309,26 @@ export default function SettingsPage() {
           if (s.navAnnouncements !== undefined) setNavAnnouncements(s.navAnnouncements)
         } catch {}
       }
+      // Settings are now fully loaded — auto-save may run from here on.
+      // Small delay lets React flush the loaded values before the gate opens.
+      setTimeout(() => { settingsLoadedRef.current = true }, 300)
     }
     init()
   }, [])
 
   // Auto-save: debounced — fires 1.2s after the user stops typing/changing settings
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null)
+  const settingsLoadedRef = useRef(false)
   const isFirstRender = useRef(true)
   useEffect(() => {
     // Skip auto-save on initial mount (before data loads)
     if (isFirstRender.current) { isFirstRender.current = false; return }
     if (!loadedCompany) return
+    // CRITICAL: never auto-save until the saved settings have fully loaded.
+    // The load itself triggers many state changes across renders; auto-saving
+    // mid-load wrote default values (e.g. navOrder) over the saved settings,
+    // which is why navigation kept reverting.
+    if (!settingsLoadedRef.current) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(() => {
       handleSave()

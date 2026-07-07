@@ -4,6 +4,13 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 
+const WooLogo = ({ size = 40 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" style={{ borderRadius: 10, flexShrink: 0 }}>
+    <rect width="256" height="256" rx="48" fill="#7f54b3" />
+    <path fill="#fff" d="M37 86c3.5-8 11-13 20-13 13 0 20 9 22 25 3 22 5 39 7 55 6-12 12-25 17-38 6-14 10-27 12-36 2-8 7-13 15-13 10 0 17 6 18 16 1 6 3 18 6 33 2 14 5 26 7 37 3-17 7-35 12-55 4-16 8-26 12-31 4-4 9-6 15-6 6 1 11 3 14 8 3 4 4 9 3 15 0 4-2 10-4 18-6 22-12 44-17 66-3 13-6 22-9 28-4 7-9 10-16 10-6 0-11-3-14-8-2-4-4-10-6-19-3-16-6-32-9-49-8 18-15 33-21 45-7 15-12 24-16 27-4 4-9 5-14 4-6-1-10-5-12-11-2-5-4-14-6-27-3-22-6-44-8-66-1-6 0-11 2-15z"/>
+  </svg>
+)
+
 export default function WooCommerceIntegration() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -104,6 +111,9 @@ export default function WooCommerceIntegration() {
         setCompanyId(companyId)
         setError('')  // Clear any previous errors
         await fetchIntegration(companyId)
+        // Done loading — this was missing, leaving the page stuck on
+        // "Loading WooCommerce integration..." forever on the success path
+        setLoading(false)
       } catch (err: any) {
         console.error('Init error:', err)
         setError(err.message || 'Failed to load page')
@@ -251,15 +261,23 @@ export default function WooCommerceIntegration() {
   }
 
   if (loading) {
-    return <div style={{ padding: '24px', color: '#666' }}>Loading WooCommerce integration...</div>
+    return (
+      <div style={{ padding: '24px', display: 'flex', alignItems: 'center', gap: 12, color: '#666' }}>
+        <WooLogo size={32} />
+        Loading WooCommerce integration...
+      </div>
+    )
   }
 
   if (!companyId && error) {
     return (
       <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '8px', color: 'var(--ink)' }}>
-          WooCommerce Integration
-        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: '8px' }}>
+          <WooLogo size={36} />
+          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
+            WooCommerce Integration
+          </h1>
+        </div>
         <div style={{
           padding: '16px',
           borderRadius: '8px',
@@ -275,12 +293,18 @@ export default function WooCommerceIntegration() {
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px' }}>
-      <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '8px', color: 'var(--ink)' }}>
-        WooCommerce Integration
-      </h1>
-      <p style={{ color: '#666', marginBottom: '24px', fontSize: '14px' }}>
-        Connect your WooCommerce store to sync customer data, orders, and purchase history.
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: '8px' }}>
+        <WooLogo size={44} />
+        <div>
+          <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--ink)', lineHeight: 1.2 }}>
+            WooCommerce Integration
+          </h1>
+          <p style={{ color: '#666', fontSize: '14px', marginTop: 2 }}>
+            Connect your WooCommerce store to sync customer data, orders, and purchase history.
+          </p>
+        </div>
+      </div>
+      <div style={{ marginBottom: '24px' }} />
 
       {error && (
         <div style={{

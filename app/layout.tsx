@@ -144,8 +144,8 @@ export default function RootLayout({
         // Load settings for this specific company
         let q = (supabase as any).from('site_settings').select('*').eq('key', 'general')
         if (slug) {
-          // For subdomains, get the company first then its settings
-          const { data: co } = await (supabase as any).from('companies').select('id,accent_color').eq('slug', slug).single()
+          // For subdomains, get the company first then its settings — maybeSingle never throws
+          const { data: co } = await (supabase as any).from('companies').select('id,accent_color').eq('slug', slug).maybeSingle()
           if (co) {
             // Apply company accent color from DB (source of truth)
             if (co.accent_color && typeof document !== 'undefined') {
@@ -162,7 +162,9 @@ export default function RootLayout({
           q = q.is('company_id', null)
         }
 
-        const { data } = await q.maybeSingle()
+        // Array query + newest row — never breaks if duplicate settings rows exist
+        const { data: rows } = await q.order('updated_at', { ascending: false }).limit(1)
+        const data = rows?.[0] || null
         if (data?.value) {
           applySettings(data.value)
           if (typeof window !== 'undefined') {
@@ -200,6 +202,49 @@ export default function RootLayout({
     }
     window.addEventListener('colvy-nav-update', handleNavUpdate)
     return () => window.removeEventListener('colvy-nav-update', handleNavUpdate)
+  }, [pathname])
+
+  // Browser tab title: "<Company>'s <Page Name>" on company boards
+  // e.g. "nePlay's Idea Board", "nePlay's Help Center", "nePlay's Roadmap"
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return
+    const h = window.location.hostname
+    const isSubdomain = h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com'
+    if (!isSubdomain) return
+    const slug = h.replace('.colvy.com', '')
+
+    const pageName = (() => {
+      const p = pathname || '/'
+      if (p.startsWith('/roadmap')) return 'Roadmap'
+      if (p.startsWith('/announcements')) return 'Announcements'
+      if (p.startsWith('/help')) return 'Help Center'
+      if (p.startsWith('/admin/settings')) return 'Settings'
+      if (p.startsWith('/admin')) return 'Admin'
+      if (p.startsWith('/polls')) return 'Polls'
+      if (p.startsWith('/surveys')) return 'Surveys'
+      if (p.startsWith('/forms')) return 'Forms'
+      if (p.startsWith('/profile')) return 'Profile'
+      if (p.startsWith('/signin')) return 'Sign In'
+      if (p.startsWith('/signup')) return 'Sign Up'
+      return 'Idea Board'
+    })()
+
+    const applyTitle = (name: string) => { document.title = `${name}'s ${pageName}` }
+
+    // Use cached company name immediately, then confirm from the DB
+    let cachedName: string | null = null
+    try {
+      const cached = localStorage.getItem(`company_${slug}`)
+      if (cached) cachedName = JSON.parse(cached)?.name || null
+    } catch {}
+    applyTitle(cachedName || slug.charAt(0).toUpperCase() + slug.slice(1))
+
+    ;(async () => {
+      try {
+        const { data: co } = await (supabase as any).from('companies').select('name').eq('slug', slug).maybeSingle()
+        if (co?.name) applyTitle(co.name)
+      } catch {}
+    })()
   }, [pathname])
 
   // Auth — real-time, no hard refresh needed

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import ImageViewer from './ImageViewer'
 import { supabase } from '@/lib/supabase'
 import { getRandomName } from '@/lib/randomNames'
 import { useToast } from '@/components/ToastProvider'
@@ -41,6 +42,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   const [isPrivate, setIsPrivate] = useState(idea.is_private || false)
   const [showOnRoadmap, setShowOnRoadmap] = useState(idea.show_on_roadmap !== false)
   const [coverImageUrl, setCoverImageUrl] = useState(idea.cover_image_url || '')
+  const [ideaImageViewerSrc, setIdeaImageViewerSrc] = useState<string | null>(null)
   
   // Priority sliders
   const [voteScore, setVoteScore] = useState(100)
@@ -1042,6 +1044,31 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                   </p>
                 )
               )}
+
+              {/* Idea images — image_url (board submissions) + attachments (widget submissions).
+                  Small thumbnails; click any to open the full viewer with annotate. */}
+              {(() => {
+                const imgs: string[] = []
+                if (idea.image_url) imgs.push(idea.image_url)
+                let att: any = idea.attachments
+                if (typeof att === 'string') { try { att = JSON.parse(att) } catch { att = null } }
+                if (Array.isArray(att)) att.forEach((a: any) => { const u = typeof a === 'string' ? a : a?.url; if (u && !imgs.includes(u)) imgs.push(u) })
+                if (imgs.length === 0) return null
+                return (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+                    {imgs.map((src, i) => (
+                      <img
+                        key={i}
+                        src={src}
+                        alt={`Attachment ${i + 1}`}
+                        title="Click to view full size & annotate"
+                        onClick={() => setIdeaImageViewerSrc(src)}
+                        style={{ height: 96, width: 'auto', maxWidth: 200, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--border)', cursor: 'zoom-in', display: 'block' }}
+                      />
+                    ))}
+                  </div>
+                )
+              })()}
             </div>
 
             {/* Topics Selector (Edit Mode) */}
@@ -1517,6 +1544,11 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
             onClick={(e) => e.stopPropagation()}
           />
         </div>
+      )}
+
+      {/* Full view + annotate for idea images */}
+      {ideaImageViewerSrc && (
+        <ImageViewer imageSrc={ideaImageViewerSrc} onClose={() => setIdeaImageViewerSrc(null)} />
       )}
     </>
   )

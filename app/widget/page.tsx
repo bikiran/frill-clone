@@ -957,8 +957,14 @@ function WidgetContent() {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(60px, 1fr))', gap: 8, marginBottom: 12 }}>
                     {attachments.map((img, idx) => (
                       <div key={idx} style={{ position: 'relative', aspectRatio: '1', borderRadius: 8, overflow: 'hidden', border: `1px solid #e5e5e5` }}>
-                        <img src={img} alt="attachment" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        <button onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))} style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                        <img
+                          src={img}
+                          alt="attachment"
+                          title="Click to view full size & annotate"
+                          onClick={() => { setViewerImage(img); setShowImageViewer(true) }}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }}
+                        />
+                        <button onClick={(e) => { e.stopPropagation(); setAttachments(prev => prev.filter((_, i) => i !== idx)) }} style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
                       </div>
                     ))}
                   </div>

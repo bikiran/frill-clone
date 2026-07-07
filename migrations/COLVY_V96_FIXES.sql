@@ -45,4 +45,13 @@ WHERE sub.idea_id = i.id
 UPDATE help_articles SET status = 'draft'     WHERE status IS NULL;
 UPDATE announcements SET status = 'published' WHERE status IS NULL; -- legacy rows were public
 
+-- 5. SITE SETTINGS: remove duplicate rows per (key, company_id), keeping the
+--    newest. Duplicates from older save paths made navigation settings load
+--    inconsistently (appearing to "revert").
+DELETE FROM site_settings a
+USING site_settings b
+WHERE a.key = b.key
+  AND a.company_id IS NOT DISTINCT FROM b.company_id
+  AND a.updated_at < b.updated_at;
+
 -- Done.

@@ -75,7 +75,7 @@ export default function AnnouncementsPage() {
       const slug = h.endsWith('.colvy.com') ? h.replace('.colvy.com','') : null
       if (slug) {
         const coName = document.querySelector('meta[name="company-name"]')?.getAttribute('content') || slug
-        document.title = `${coName}'s Announcements — Colvy`
+        // Tab title is set centrally by app/layout.tsx
       }
     }
     setLoading(false)
@@ -87,7 +87,7 @@ export default function AnnouncementsPage() {
           const cached = localStorage.getItem(`company_${slug}`)
           const co = cached ? JSON.parse(cached) : null
           const name = co?.name || slug.charAt(0).toUpperCase() + slug.slice(1)
-          document.title = `${name}'s Updates — Colvy`
+          // Tab title is set centrally by app/layout.tsx
         }
       }
   }

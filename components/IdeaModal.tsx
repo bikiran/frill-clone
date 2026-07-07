@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import ImageViewer from './ImageViewer'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/ToastProvider'
 import { SurveyQuestionBuilder, type SurveyQuestion } from '@/components/SurveyQuestionBuilder'
@@ -30,6 +31,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   const [error, setError]               = useState('')
   const [authed, setAuthed]             = useState<boolean | null>(null)
   const [imageFile, setImageFile]       = useState<File | null>(null)
+  const [showImagePreviewViewer, setShowImagePreviewViewer] = useState(false)
   const [imagePreview, setImagePreview] = useState<string>('')
   const [submitted, setSubmitted]       = useState(false)
   const [attachedPoll, setAttachedPoll] = useState<string | null>(null)
@@ -661,19 +663,32 @@ export default function IdeaModal({ onClose, onSubmitted }: {
           </div>
 
           {imagePreview && (
-            <div className="relative rounded-xl overflow-hidden">
-              <img src={imagePreview} alt="Preview" className="w-full h-48 object-cover rounded-xl" />
-              <button
-                type="button"
-                onClick={() => {
-                  setImageFile(null)
-                  setImagePreview('')
-                }}
-                className="absolute top-2 right-2 px-2 py-1 bg-red-500 text-white text-xs rounded-lg press-effect"
-              >
-                Remove
-              </button>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <div style={{ position: 'relative', display: 'inline-block', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  title="Click to view full size"
+                  onClick={() => setShowImagePreviewViewer(true)}
+                  style={{ height: 96, width: 'auto', maxWidth: 220, objectFit: 'cover', display: 'block', cursor: 'zoom-in' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImageFile(null)
+                    setImagePreview('')
+                  }}
+                  title="Remove image"
+                  style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, background: 'rgba(0,0,0,0.65)', border: 'none', borderRadius: '50%', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}
+                >
+                  ×
+                </button>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 4 }}>Click image to enlarge</p>
             </div>
+          )}
+          {showImagePreviewViewer && imagePreview && (
+            <ImageViewer imageSrc={imagePreview} onClose={() => setShowImagePreviewViewer(false)} />
           )}
 
           <div>

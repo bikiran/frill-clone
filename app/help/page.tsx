@@ -92,7 +92,7 @@ export default function HelpCentrePage() {
           const cached = localStorage.getItem(`company_${slug}`)
           const co = cached ? JSON.parse(cached) : null
           const name = co?.name || slug.charAt(0).toUpperCase() + slug.slice(1)
-          document.title = `${name}'s Help Centre — Colvy`
+          // Tab title is set centrally by app/layout.tsx
         }
       }
   }
