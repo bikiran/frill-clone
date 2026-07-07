@@ -147,6 +147,12 @@ export default function IdeaCard({ idea, hasVoted, onVote, onClick, onStatusChan
             <span>•</span>
             <span title={new Date(idea.created_at).toLocaleString()}>{getRelativeTime(idea.created_at)}</span>
           </div>
+          {idea.status && !onStatusChange && (
+            <span className="px-2 py-0.5 rounded-full inline-flex items-center"
+              style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
+              {String(idea.status).replace('_', ' ')}
+            </span>
+          )}
           {idea.status && onStatusChange && (
             <div className="relative">
               <button

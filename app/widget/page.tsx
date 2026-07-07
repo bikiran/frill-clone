@@ -35,6 +35,9 @@ function WidgetContent() {
   const [captureInProgress, setCaptureInProgress] = useState(false)
   const [showImageViewer, setShowImageViewer] = useState(false)
   const [viewerImage, setViewerImage] = useState('')
+  // Annotation is only allowed for images still being composed (not yet posted)
+  const [viewerAllowAnnotate, setViewerAllowAnnotate] = useState(false)
+  const [viewerAttachmentIdx, setViewerAttachmentIdx] = useState<number | null>(null)
   const [animatingVotes, setAnimatingVotes] = useState<Set<string>>(new Set())
   const [helpSearch, setHelpSearch] = useState('')
   const [helpCategory, setHelpCategory] = useState<string | null>(null)
@@ -822,7 +825,15 @@ function WidgetContent() {
       {showImageViewer && (
         <ImageViewer
           imageSrc={viewerImage}
-          onClose={() => setShowImageViewer(false)}
+          onClose={() => { setShowImageViewer(false); setViewerAllowAnnotate(false); setViewerAttachmentIdx(null) }}
+          allowAnnotate={viewerAllowAnnotate}
+          onAnnotationSave={(dataUrl) => {
+            if (viewerAttachmentIdx !== null) {
+              setAttachments(prev => prev.map((img, i) => i === viewerAttachmentIdx ? dataUrl : img))
+            }
+            setViewerAllowAnnotate(false)
+            setViewerAttachmentIdx(null)
+          }}
         />
       )}
 
@@ -961,7 +972,7 @@ function WidgetContent() {
                           src={img}
                           alt="attachment"
                           title="Click to view full size & annotate"
-                          onClick={() => { setViewerImage(img); setShowImageViewer(true) }}
+                          onClick={() => { setViewerImage(img); setViewerAllowAnnotate(true); setViewerAttachmentIdx(idx); setShowImageViewer(true) }}
                           style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }}
                         />
                         <button onClick={(e) => { e.stopPropagation(); setAttachments(prev => prev.filter((_, i) => i !== idx)) }} style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>

@@ -688,7 +688,23 @@ export default function IdeaModal({ onClose, onSubmitted }: {
             </div>
           )}
           {showImagePreviewViewer && imagePreview && (
-            <ImageViewer imageSrc={imagePreview} onClose={() => setShowImagePreviewViewer(false)} />
+            <ImageViewer
+              imageSrc={imagePreview}
+              onClose={() => setShowImagePreviewViewer(false)}
+              allowAnnotate
+              onAnnotationSave={(dataUrl) => {
+                // Replace both the preview and the file that will be uploaded
+                setImagePreview(dataUrl)
+                try {
+                  const arr = dataUrl.split(',')
+                  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png'
+                  const bstr = atob(arr[1])
+                  const u8 = new Uint8Array(bstr.length)
+                  for (let i = 0; i < bstr.length; i++) u8[i] = bstr.charCodeAt(i)
+                  setImageFile(new File([u8], `annotated-${Date.now()}.png`, { type: mime }))
+                } catch {}
+              }}
+            />
           )}
 
           <div>
@@ -923,7 +939,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
               <label className="block text-sm font-bold" style={{ color: 'var(--ink)' }}>
                 Your name
               </label>
-              {name && (
+              {currentUser && name && (
                 <button type="button" onClick={() => setShowNameDropdown(!showNameDropdown)}
                   className="text-xs font-medium press-effect"
                   style={{ color: 'var(--coral)' }}>
@@ -931,7 +947,10 @@ export default function IdeaModal({ onClose, onSubmitted }: {
                 </button>
               )}
             </div>
-            {name && !showNameDropdown && (
+            {/* Signed-in users see the name card; guests always keep an editable input.
+                (Previously the input only rendered while name was empty, so it
+                unmounted after the first typed letter.) */}
+            {currentUser && name && !showNameDropdown && (
               <div className="px-4 py-3 rounded-xl bg-gray-50 border mb-3 flex items-center justify-between relative"
                 style={{ borderColor: 'var(--border)' }}>
                 <div className="flex items-center gap-3">
@@ -975,9 +994,10 @@ export default function IdeaModal({ onClose, onSubmitted }: {
                 </button>
               </div>
             )}
-            {!name && (
+            {!currentUser && (
               <input type="text" value={name} onChange={e => setName(e.target.value)}
                 placeholder="Leave blank to post anonymously"
+                autoComplete="off"
                 className="w-full px-4 py-3 border rounded-xl text-sm focus:outline-none transition-smooth"
                 style={{ borderColor: 'var(--border)', fontSize: '16px' }}
               />

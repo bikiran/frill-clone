@@ -117,12 +117,14 @@ export default function RoadmapPage() {
   })()
 
   const updateIdeaStatus = async (ideaId: string, newStatus: string) => {
+    if (!isCompanyAdmin) return
     await supabase.from('ideas').update({ status: newStatus }).eq('id', ideaId)
     fetchIdeas()
   }
 
   const isAdmin = isCompanyAdmin
-  const canDrag = !!user
+  // Only company admins may move ideas between statuses
+  const canDrag = isCompanyAdmin
 
   const handleDragStart = (e: React.DragEvent, idea: any) => {
     if (!canDrag) {

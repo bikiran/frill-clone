@@ -46,20 +46,50 @@ export default function UsersPage() {
           process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
         )
 
-        const { data: company } = await sb
-          .from('companies')
-          .select('id')
-          .eq('slug', slug)
-          .single()
+        // Resolve company: query slug → hostname slug → owner → team membership.
+        // Previously only ?slug= was used (with a throwing .single()), so on a
+        // subdomain without ?slug the page found no company and wrongly showed
+        // "WooCommerce Not Connected" and no users.
+        let companyId: string | null = null
 
-        if (!company) return
+        if (slug) {
+          const { data: co } = await sb.from('companies').select('id').eq('slug', slug).maybeSingle()
+          if (co) companyId = co.id
+        }
 
-        // Check if WooCommerce integration exists
+        if (!companyId && typeof window !== 'undefined') {
+          const h = window.location.hostname
+          if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
+            const hostSlug = h.replace('.colvy.com', '')
+            const { data: co } = await sb.from('companies').select('id').eq('slug', hostSlug).maybeSingle()
+            if (co) companyId = co.id
+          }
+        }
+
+        if (!companyId) {
+          const { data: { session } } = await sb.auth.getSession()
+          if (session?.user) {
+            const { data: ownCo } = await sb.from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
+            if (ownCo?.id) {
+              companyId = ownCo.id
+            } else {
+              const { data: memberships } = await sb
+                .from('team_members').select('company_id')
+                .eq('user_id', session.user.id).limit(1)
+              if (memberships && memberships.length > 0) companyId = memberships[0].company_id
+            }
+          }
+        }
+
+        if (!companyId) return
+        const company = { id: companyId }
+
+        // Check if WooCommerce integration exists — maybeSingle never throws
         const { data: wooIntegration } = await sb
           .from('woocommerce_integrations')
-          .select('id')
+          .select('id, is_active')
           .eq('company_id', company.id)
-          .single()
+          .maybeSingle()
 
         setHasWooCommerce(!!wooIntegration)
 

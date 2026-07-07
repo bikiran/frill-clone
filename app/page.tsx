@@ -336,6 +336,8 @@ export default function HomePage() {
   }
 
   const handleStatusChange = async (ideaId: string, newStatus: string) => {
+    // Defense in depth: only company admins may change idea status
+    if (!isCompanyAdmin) return
     try {
       const idea = ideas.find(i => i.id === ideaId)
       const oldStatus = idea?.status || 'new'
@@ -468,6 +470,8 @@ export default function HomePage() {
     
     return matchesSearch && matchesTopic && matchesStatus && matchesAdmin && matchesPrivacy
   }).sort((a, b) => {
+    // Pinned ideas always rise to the top, regardless of the chosen sort
+    if (!!a.is_pinned !== !!b.is_pinned) return a.is_pinned ? -1 : 1
     switch (sortBy) {
       case 'latest': return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       case 'oldest': return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -838,7 +842,7 @@ export default function HomePage() {
                   onVote={handleVote}
                   onLike={handleLike}
                   onSubscribe={handleSubscribe}
-                  onStatusChange={handleStatusChange}
+                  onStatusChange={isCompanyAdmin ? handleStatusChange : undefined}
                   onClick={() => {
                     handleViewIncrement(idea.id)
                     setSelectedIdea(idea)
