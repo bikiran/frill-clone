@@ -75,6 +75,30 @@ const features = [
       'REST API for custom workflows',
     ],
   },
+  {
+    icon: '📸',
+    title: 'Automated Screenshots',
+    subtitle: 'Always up-to-date visuals in your Help Center',
+    description: 'Your product changes every week. Colvy captures and refreshes screenshots of your app automatically, so your Help Center always matches what users actually see.',
+    bullets: [
+      'Schedule captures on any URL',
+      'Annotate with arrows, rectangles, and callouts',
+      'Auto-embed into help articles',
+      'Before/after diff view to spot stale screenshots instantly',
+    ],
+  },
+  {
+    icon: '🤖',
+    title: 'AI Writing Assistant',
+    subtitle: 'Better feedback and help articles, faster',
+    description: 'Built-in AI improves feedback quality at the source and helps your team write clear help articles in minutes.',
+    bullets: [
+      'Improve writing on submitted feedback before it posts',
+      'Auto-generate help article first drafts',
+      'Suggest related articles as users type',
+      'Tone and grammar polish in one click',
+    ],
+  },
 ]
 
 export default function Features() {

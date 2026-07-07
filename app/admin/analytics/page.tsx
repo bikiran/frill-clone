@@ -101,17 +101,42 @@ export default function AnalyticsPage() {
         .lte('created_at', end)
 
       const ideasList = ideas || []
-      const totalVotes = ideasList.reduce((sum: number, idea: any) => sum + (idea.votes || 0), 0)
       
-      // Get comments count - count rows in comments table where idea_id belongs to this company's ideas
+      // Total votes: count actual vote rows in the time window, scoped to this company's ideas.
+      // Summing ideas.votes would miss the date filter and double-count with the period picker.
       const ideaIds = ideasList.map((i: any) => i.id)
+      let totalVotes = 0
       let commentsCount = 0
       if (ideaIds.length > 0) {
+        // Votes in this period on this company's ideas
+        const { count: voteCount } = await (supabase as any)
+          .from('votes')
+          .select('*', { count: 'exact', head: true })
+          .in('idea_id', ideaIds)
+          .gte('created_at', start)
+          .lte('created_at', end)
+        totalVotes = voteCount || 0
+
+        // Comments in this period
         const { count } = await (supabase as any)
           .from('comments')
           .select('*', { count: 'exact', head: true })
           .in('idea_id', ideaIds)
+          .gte('created_at', start)
+          .lte('created_at', end)
         commentsCount = count || 0
+      }
+      
+      // For "All Time" — also show total accumulated votes on the ideas (includes guest votes)
+      // These are already stored on ideas.votes
+      if (timeRange === 'all') {
+        const { data: allIdeasForVotes } = await (supabase as any)
+          .from('ideas')
+          .select('votes')
+          .eq('company_id', cid)
+        const accum = (allIdeasForVotes || []).reduce((s: number, i: any) => s + (i.votes || 0), 0)
+        // Use the higher number — accumulated covers guest votes not in votes table
+        totalVotes = Math.max(totalVotes, accum)
       }
 
       const top = [...ideasList].sort((a: any, b: any) => (b.votes || 0) - (a.votes || 0)).slice(0, 5)
@@ -147,10 +172,23 @@ export default function AnalyticsPage() {
       const byStatus: Record<string, number> = {}
       ticketList.forEach((t: any) => { byStatus[t.status] = (byStatus[t.status] || 0) + 1 })
 
+      // help_article_views table may exist for accurate tracking
+      let helpViews = artList.reduce((s: number, a: any) => s + (a.views || 0), 0)
+      let helpLikes = artList.reduce((s: number, a: any) => s + (a.likes || 0), 0)
+      try {
+        const { count: viewCount } = await (supabase as any)
+          .from('help_article_views')
+          .select('*', { count: 'exact', head: true })
+          .in('article_id', artList.map((a: any) => a.id))
+          .gte('viewed_at', start)
+          .lte('viewed_at', end)
+        if (viewCount !== null) helpViews = viewCount
+      } catch {}
+
       setHelpStats({
         totalArticles: artList.length,
-        totalViews: artList.reduce((s: number, a: any) => s + (a.views || 0), 0),
-        totalLikes: artList.reduce((s: number, a: any) => s + (a.likes || 0), 0),
+        totalViews: helpViews,
+        totalLikes: helpLikes,
         totalTickets: ticketList.length,
         openTickets: byStatus['open'] || 0,
         topArticles: [...artList].sort((a: any, b: any) => (b.views || 0) - (a.views || 0)).slice(0, 5),

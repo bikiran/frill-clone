@@ -285,15 +285,18 @@ export default function ImageAnnotator({
         <canvas
           ref={canvasRef}
           onPointerDown={handlePointerDown}
+          onTouchStart={e => e.preventDefault()}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerUp}
           style={{
             maxWidth: '100%', maxHeight: '100%',
-            borderRadius: 12,
-            boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+            borderRadius: 8,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
             cursor: tool === 'text' ? 'text' : 'crosshair',
             touchAction: 'none',
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
           }}
         />
         {/* Inline text entry */}
@@ -314,19 +317,19 @@ export default function ImageAnnotator({
         )}
       </div>
 
-      {/* Bottom floating toolbar */}
+      {/* Bottom floating toolbar — stacks on very small screens */}
       <div style={{
         ...glass,
-        margin: '16px 0 22px',
-        borderRadius: 999,
-        padding: '8px 14px',
-        display: 'flex', alignItems: 'center', gap: 6,
-        flexWrap: 'wrap', justifyContent: 'center', maxWidth: 'calc(100vw - 32px)',
+        margin: '8px 8px 16px',
+        borderRadius: 16,
+        padding: '8px 10px',
+        display: 'flex', alignItems: 'center', gap: 4,
+        flexWrap: 'wrap', justifyContent: 'center', maxWidth: 'calc(100vw - 16px)',
       }}>
         {/* Tools */}
         {TOOLS.map(t => (
           <button type="button" key={t.id} onClick={() => setTool(t.id)} title={t.label} style={{
-            width: 36, height: 36, borderRadius: 999, border: 'none', cursor: 'pointer',
+            width: 32, height: 32, borderRadius: 999, border: 'none', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: tool === t.id ? 'rgba(10,132,255,0.22)' : 'transparent',
             transition: 'background 0.15s ease',

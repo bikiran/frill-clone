@@ -33,8 +33,13 @@ export default function UsersPage() {
   const slug = searchParams.get('slug') || ''
 
   const [users, setUsers] = useState<User[]>([])
+  const [customerPage, setCustomerPage] = useState(0) // 0-indexed
+  const [totalCustomers, setTotalCustomers] = useState(0)
+  const [totalSpendDb, setTotalSpendDb] = useState(0)
+  const PAGE_SIZE = 100
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [customerSearch, setCustomerSearch] = useState('')
   const [filterType, setFilterType] = useState<'all' | 'team' | 'customer'>('all')
   const [hasWooCommerce, setHasWooCommerce] = useState(false)
 
@@ -118,11 +123,26 @@ export default function UsersPage() {
             body: JSON.stringify({ companyId: company.id, force: false })
           }).catch(err => console.error('Auto-sync error:', err))
 
-          const { data: customers } = await sb
+          // Paginated fetch — Supabase caps at 1000 rows default; we fetch 100/page
+          const { data: customers, count: custCount } = await sb
             .from('woocommerce_customers')
-            .select('*')
+            .select('*', { count: 'exact' })
             .eq('company_id', company.id)
             .order('total_spend', { ascending: false })
+            .range(0, 99)
+
+          setTotalCustomers(custCount || 0)
+
+          // Aggregate total spend from DB (sum over all rows, not just the page)
+          const { data: spendData } = await (sb as any)
+            .from('woocommerce_customers')
+            .select('total_spend')
+            .eq('company_id', company.id)
+            .gt('total_spend', 0)
+            .limit(10000)  // covers up to 10K customers for the sum
+
+          const dbSpend = (spendData || []).reduce((s: number, r: any) => s + (parseFloat(r.total_spend) || 0), 0)
+          setTotalSpendDb(Math.round(dbSpend))
 
           allUsers.push(
             ...(customers || []).map(c => ({
@@ -166,7 +186,7 @@ export default function UsersPage() {
     return <div style={{ padding: '24px', color: '#666' }}>Loading users...</div>
   }
 
-  const totalSpend = users.filter(u => u.type === 'customer').reduce((sum, u) => sum + (u.type === 'customer' ? u.total_spend : 0), 0)
+  // totalSpend comes from DB aggregate (covers all pages, not just visible 100)
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
@@ -223,9 +243,9 @@ export default function UsersPage() {
                 cursor: 'pointer'
               }}
             >
-              {type === 'all' && `All (${users.length})`}
+              {type === 'all' && `All (${(users.filter(u => u.type === 'team').length + totalCustomers).toLocaleString()})`}
               {type === 'team' && `Team (${users.filter(u => u.type === 'team').length})`}
-              {type === 'customer' && `Customers (${users.filter(u => u.type === 'customer').length})`}
+              {type === 'customer' && `Customers (${totalCustomers.toLocaleString()})`}
             </button>
           ))}
         </div>
@@ -376,14 +396,14 @@ export default function UsersPage() {
             <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
               <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Synced Customers</p>
               <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--coral)' }}>
-                {users.filter(u => u.type === 'customer').length}
+                {totalCustomers.toLocaleString()}
               </p>
             </div>
 
             <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
               <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Total Customer Spend</p>
               <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
-                ${totalSpend.toFixed(0)}
+                ${totalSpendDb.toLocaleString()}
               </p>
             </div>
           </>

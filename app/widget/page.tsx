@@ -840,47 +840,58 @@ function WidgetContent() {
       <style>{`
         html, body { 
           width: 100%; 
-          height: 100%; 
+          height: 100%;
+          max-height: 100%;
           margin: 0; 
           padding: 0; 
           overflow: hidden;
           box-sizing: border-box;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior: none;
+          touch-action: pan-y;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #e5e5e5; border-radius: 2px; }
+        ::-webkit-scrollbar { width: 3px; } ::-webkit-scrollbar-thumb { background: #e5e5e5; border-radius: 2px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
         @keyframes voteBounce { 0% { transform: scale(1); } 40% { transform: scale(1.3) translateY(-4px); } 70% { transform: scale(0.95); } 100% { transform: scale(1); } }
         @keyframes voteRipple { 0% { box-shadow: 0 0 0 0 rgba(255, 122, 107, 0.4); } 100% { box-shadow: 0 0 0 20px rgba(255, 122, 107, 0); } }
-        .item-row { cursor: pointer; border-radius: 12px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; transition: background 0.15s; width: 100%; box-sizing: border-box; }
-        .item-row:hover { background: #f9f9f9; }
+        .item-row { cursor: pointer; border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; transition: background 0.15s; width: 100%; box-sizing: border-box; }
+        .item-row:hover, .item-row:active { background: #f5f5f5; }
         .vote-pill { display: flex; align-items: center; gap: 4px; min-width: 32px; flex-shrink: 0; }
         input[type="text"], input[type="email"], input[type="number"], textarea, select { 
           width: 100%; 
           box-sizing: border-box; 
           max-width: 100%;
-          font-size: 16px;
+          font-size: 16px !important;
         }
+        /* Mobile: prevent the widget going off-screen */
         @media (max-width: 480px) {
-          ::-webkit-scrollbar { width: 3px; }
-          .item-row { padding: 8px 10px; gap: 8px; }
-          html, body { width: 100vw; height: 100vh; }
+          html, body { 
+            position: fixed; 
+            width: 100%;
+            height: 100%;
+          }
+          .item-row { padding: 10px; gap: 8px; }
         }
       `}</style>
 
-      {/* Top Header with Logo and Name */}
-      <div style={{ padding: 'clamp(10px, 3vw, 14px) clamp(12px, 3vw, 16px)', flexShrink: 0, borderBottom: '1px solid var(--border)', width: '100%', boxSizing: 'border-box' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      {/* Top Header — company logo + name + board link */}
+      <div style={{ padding: '10px 14px 10px', flexShrink: 0, background: '#fff', borderBottom: '1px solid #f0f0f0', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {company?.logo_url ? (
-            <img src={company.logo_url} alt={company.name} style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover' }} />
+            <img src={company.logo_url} alt={company.name} style={{ width: 28, height: 28, borderRadius: 7, objectFit: 'cover', flexShrink: 0 }} />
           ) : (
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 800 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 7, background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>
               {(company?.name || slug)[0]?.toUpperCase()}
             </div>
           )}
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#0d0d0d' }}>{company?.name || slug}</span>
-          <a href={boardUrl} target="_blank" rel="noopener" style={{ marginLeft: 'auto', fontSize: 11, color: '#9ca3af', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#0d0d0d', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company?.name || slug}</span>
+          <a
+            href={`${boardUrl}?utm_source=widget&utm_medium=colvy_widget&utm_campaign=${encodeURIComponent(slug)}`}
+            target="_blank" rel="noopener"
+            style={{ fontSize: 11, color: '#9ca3af', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0, padding: '4px 8px', borderRadius: 6, border: '1px solid #e5e5e5' }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             Board
           </a>
         </div>
@@ -1293,27 +1304,40 @@ function WidgetContent() {
         )}
       </div>
 
+      {/* "Powered by Colvy" — with UTM tracking referral to the company */}
+      <div style={{ borderTop: '1px solid #f0f0f0', background: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '5px 8px 2px', flexShrink: 0 }}>
+        <a
+          href={`https://colvy.com/?utm_source=${encodeURIComponent(slug)}&utm_medium=widget&utm_campaign=powered_by&utm_content=${encodeURIComponent(company?.name || slug)}`}
+          target="_blank"
+          rel="noopener"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: '#9ca3af', fontSize: 10, fontWeight: 600, letterSpacing: 0.2 }}>
+          Powered by
+          {/* Colvy wordmark SVG */}
+          <svg height="12" viewBox="0 0 48 14" xmlns="http://www.w3.org/2000/svg" style={{ display: 'block' }}>
+            <text x="0" y="12" fontFamily="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" fontWeight="800" fontSize="13" fill="#6b7280">Colvy</text>
+          </svg>
+          {/* Arrow-up-right */}
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>
+          </svg>
+        </a>
+      </div>
+
       {/* Footer nav */}
-      <div style={{ background: '#fff', borderTop: '1px solid #f0f0f0', display: 'flex', padding: 'clamp(6px, 2vw, 10px) clamp(12px, 3vw, 16px)', gap: 'clamp(4px, 2vw, 8px)', flexShrink: 0, width: '100%', boxSizing: 'border-box', justifyContent: 'space-around' }}>
+      <div style={{ background: '#fff', display: 'flex', padding: '6px 8px 8px', flexShrink: 0, width: '100%', boxSizing: 'border-box', justifyContent: 'space-around', gap: 2 }}>
         {(['feedback', 'roadmap', 'updates', 'help', 'chat'] as const).map(t => {
-          const icons: Record<string, string> = {
-            feedback: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
-            roadmap: 'M22 12H18L15 21 9 3 6 12 2 12',
-            updates: 'M22 2L11 13 M22 2L15 22 11 13 2 9l20-7z',
-            help: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z',
-            chat: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
-          }
+          const isActive = tab === t
           return (
             <button key={t} onClick={() => { setTab(t); trackWidgetEvent(`view_${t}`) }}
-              style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', color: tab === t ? accentColor : '#9ca3af' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                {t === 'feedback' && <path d={icons.feedback}/>}
-                {t === 'roadmap' && <path d={icons.roadmap}/>}
+              style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', borderRadius: 8, transition: 'background 0.15s', color: isActive ? accentColor : '#9ca3af' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill={isActive ? accentColor + '22' : 'none'} stroke={isActive ? accentColor : '#9ca3af'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                {t === 'feedback' && <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>}
+                {t === 'roadmap' && <><path d="M22 12H18L15 21 9 3 6 12 2 12"/></>}
                 {t === 'updates' && <><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></>}
-                {t === 'help' && <circle cx="12" cy="12" r="10"/>}
-                {t === 'chat' && <path d={icons.chat}/>}
+                {t === 'help' && <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>}
+                {t === 'chat' && <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></>}
               </svg>
-              <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'capitalize' }}>
+              <span style={{ fontSize: 10, fontWeight: isActive ? 700 : 500, textTransform: 'capitalize', lineHeight: 1 }}>
                 {t === 'updates' ? 'Updates' : t === 'help' ? 'Help' : t.charAt(0).toUpperCase() + t.slice(1)}
               </span>
             </button>

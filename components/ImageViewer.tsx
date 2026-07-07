@@ -107,12 +107,12 @@ export default function ImageViewer({
         style={{
           ...glass,
           position: 'absolute',
-          top: 16, left: '50%', transform: 'translateX(-50%)',
-          display: 'flex', gap: 8, alignItems: 'center',
-          padding: '8px 12px',
+          top: 10, left: '50%', transform: 'translateX(-50%)',
+          display: 'flex', gap: 6, alignItems: 'center',
+          padding: '6px 10px',
           borderRadius: 999,
           zIndex: 10002,
-          maxWidth: 'calc(100vw - 32px)',
+          maxWidth: 'calc(100vw - 16px)',
           flexWrap: 'wrap', justifyContent: 'center',
         }}>
 
