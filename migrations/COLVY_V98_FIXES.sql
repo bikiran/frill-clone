@@ -68,9 +68,9 @@ CREATE TABLE IF NOT EXISTS woocommerce_orders (
 );
 CREATE INDEX IF NOT EXISTS idx_woo_orders_customer ON woocommerce_orders(company_id, woo_customer_id);
 
--- WIDGET ANALYTICS: ensure created_at exists (inserted as 'timestamp' before)
+-- WIDGET ANALYTICS: ensure created_at exists (the API previously only wrote a 'timestamp' column
+-- which doesn't exist on the DB table — so we just add created_at with a default)
 ALTER TABLE widget_analytics ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
-UPDATE widget_analytics SET created_at = (timestamp::timestamptz) WHERE created_at IS NULL AND timestamp IS NOT NULL;
 
 -- COMMENTS: store display name at post time
 ALTER TABLE comments ADD COLUMN IF NOT EXISTS user_name TEXT;

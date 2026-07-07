@@ -31,7 +31,6 @@ export async function POST(req: NextRequest) {
       company_id: company.id,
       event,
       tab,
-      timestamp: now,
       created_at: now,
       user_agent: req.headers.get('user-agent'),
       ip: req.headers.get('x-forwarded-for') || 'unknown',
