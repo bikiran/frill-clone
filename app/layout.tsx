@@ -214,26 +214,44 @@ export default function RootLayout({
       const onSubdomain = currentHost.endsWith('.colvy.com') && currentHost !== 'colvy.com' && currentHost !== 'www.colvy.com'
 
       try {
-        // Use maybeSingle() - won't throw if no company found
-        let { data } = await (supabase as any).from('companies').select('*').eq('owner_id', u.id).maybeSingle()
-        
-        // Fallback: look up by hostname slug + auto-repair owner_id
-        if (!data && onSubdomain) {
+        let data: any = null
+        let isTeamMember = false
+
+        if (onSubdomain) {
+          // On a company subdomain: the company shown is the SUBDOMAIN's company.
+          // The user is only an admin here if they actually own it or are an elevated team member.
           const h = typeof window !== 'undefined' ? window.location.hostname : ''
           const slug = h.replace('.colvy.com', '')
           const { data: coBySlug } = await (supabase as any).from('companies').select('*').eq('slug', slug).maybeSingle()
           if (coBySlug) {
-            // Auto-repair: set owner_id if it's missing
-            if (!coBySlug.owner_id) {
-              await (supabase as any).from('companies').update({ owner_id: u.id }).eq('id', coBySlug.id)
-              data = { ...coBySlug, owner_id: u.id }
-            } else if (coBySlug.owner_id === u.id) {
+            if (coBySlug.owner_id === u.id) {
               data = coBySlug
+            } else {
+              // Check elevated team membership (owner/admin/editor) — array query, never .single()
+              const { data: members } = await (supabase as any)
+                .from('team_members').select('role')
+                .eq('company_id', coBySlug.id).eq('user_id', u.id).limit(1)
+              if (members && members.length > 0 && ['owner', 'admin', 'editor'].includes((members[0].role || '').toLowerCase())) {
+                data = coBySlug
+                isTeamMember = true
+              }
+            }
+            // Always apply the subdomain company's branding, even for regular visitors
+            if (!data && coBySlug.accent_color) {
+              document.documentElement.style.setProperty('--coral', coBySlug.accent_color)
+              const r = parseInt(coBySlug.accent_color.slice(1,3),16)
+              const g = parseInt(coBySlug.accent_color.slice(3,5),16)
+              const b = parseInt(coBySlug.accent_color.slice(5,7),16)
+              document.documentElement.style.setProperty('--peach', `rgba(${r},${g},${b},0.1)`)
             }
           }
+        } else {
+          // Main domain: a user administers their own company
+          const { data: coByOwner } = await (supabase as any).from('companies').select('*').eq('owner_id', u.id).maybeSingle()
+          data = coByOwner
         }
-        
-        setIsCompanyOwner(!!data || u.email === SUPER_ADMIN || onSubdomain)
+
+        setIsCompanyOwner(!!data || u.email === SUPER_ADMIN)
         if (data) {
           setCompany(data)
           // Apply company accent color
@@ -246,7 +264,7 @@ export default function RootLayout({
           }
         }
       } catch {
-        setIsCompanyOwner(u.email === SUPER_ADMIN || onSubdomain)
+        setIsCompanyOwner(u.email === SUPER_ADMIN)
       }
     }
 

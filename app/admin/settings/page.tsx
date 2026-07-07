@@ -186,32 +186,29 @@ export default function SettingsPage() {
       if (!u) return
       setUser(u)
 
-      // Load company - try owner_id first, then slug from hostname as fallback
+      // Load company — hostname slug FIRST (this is THE board being administered),
+      // then owner_id as a fallback for the main domain / localhost.
+      // NOTE: `co` must live OUTSIDE this try block — it is used again below when
+      // loading site_settings. Declaring it inside made settings loading crash
+      // and silently fall back to unscoped (cross-company) settings.
+      let co: any = null
       try {
-        let co: any = null
-
-        // Primary: look up by owner_id
-        const { data: coByOwner } = await (supabase as any)
-          .from('companies').select('*').eq('owner_id', u.id).maybeSingle()
-        co = coByOwner
-
-        // Fallback: look up by hostname slug (e.g. funnynepal.colvy.com)
-        if (!co && typeof window !== 'undefined') {
+        // Primary: look up by hostname slug (e.g. funnynepal.colvy.com)
+        if (typeof window !== 'undefined') {
           const h = window.location.hostname
           if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
             const slug = h.replace('.colvy.com', '')
             const { data: coBySlug } = await (supabase as any)
               .from('companies').select('*').eq('slug', slug).maybeSingle()
-            if (coBySlug) {
-              // Fix owner_id if missing
-              if (!coBySlug.owner_id) {
-                await (supabase as any).from('companies').update({ owner_id: u.id }).eq('id', coBySlug.id)
-                co = { ...coBySlug, owner_id: u.id }
-              } else {
-                co = coBySlug
-              }
-            }
+            if (coBySlug) co = coBySlug
           }
+        }
+
+        // Fallback: the signed-in user's own company (main domain / localhost)
+        if (!co) {
+          const { data: coByOwner } = await (supabase as any)
+            .from('companies').select('*').eq('owner_id', u.id).maybeSingle()
+          co = coByOwner
         }
 
         if (co) {
@@ -238,9 +235,11 @@ export default function SettingsPage() {
           console.log('[SETTINGS LOAD] Query result:', { found: !!result.settings, error: result.error })
           settingsData = result.settings || null
         }
-        // Fallback: unscoped (legacy)
-        if (!settingsData) {
-          console.log('[SETTINGS LOAD] No company-scoped settings, trying fallback...')
+        // Fallback: unscoped (legacy) — ONLY when no company could be resolved.
+        // If a company IS resolved but has no scoped row yet, we must NOT load
+        // the unscoped row (it may belong to another company / the platform).
+        if (!settingsData && !co?.id) {
+          console.log('[SETTINGS LOAD] No company context, trying legacy fallback...')
           const { data: rows } = await (supabase as any).from('site_settings').select('*')
             .eq('key', 'general').is('company_id', null)
             .order('updated_at', { ascending: false })
@@ -538,7 +537,11 @@ export default function SettingsPage() {
           if (rows?.[0]?.value) Object.assign(currentSettings, rows[0].value)
         }
         currentSettings[settingKey] = publicUrl
-        await (supabase as any).from('site_settings').upsert({ key: 'general', company_id: cid || null, value: currentSettings, updated_at: new Date().toISOString() }, { onConflict: 'key,company_id' })
+        // Only save when scoped to a real company — writing with company_id null
+        // pollutes the shared legacy row and bleeds into other companies
+        if (cid) {
+          await (supabase as any).from('site_settings').upsert({ key: 'general', company_id: cid, value: currentSettings, updated_at: new Date().toISOString() }, { onConflict: 'key,company_id' })
+        }
         const slugKey = typeof window !== 'undefined' ? (window.location.hostname.replace('.colvy.com','') || 'colvy') : 'colvy'
         if (typeof window !== 'undefined') localStorage.setItem(`site_settings_${slugKey}`, JSON.stringify({ ...currentSettings }))
       } catch (saveErr: any) { console.warn('URL save error:', saveErr.message) }

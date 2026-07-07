@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
       .from('woocommerce_integrations')
       .select('sync_frequency_minutes, last_synced_at')
       .eq('company_id', companyId)
-      .single()
+      .maybeSingle()
 
     if (!integration) {
       return NextResponse.json(

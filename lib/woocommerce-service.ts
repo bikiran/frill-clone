@@ -250,7 +250,7 @@ export async function createWooCommerceService(
       .from('woocommerce_integrations')
       .select('*')
       .eq('company_id', companyId)
-      .single()
+      .maybeSingle()
 
     if (error || !data) {
       throw new Error('WooCommerce integration not configured')

@@ -40,7 +40,7 @@ export default function WooCommerceIntegration() {
         let companyId: string | null = null
         let companySlug = slug
 
-        // If slug provided, use it to look up company
+        // Strategy 1: slug from the ?slug= query param
         if (companySlug) {
           const { data: company } = await sb
             .from('companies')
@@ -53,21 +53,44 @@ export default function WooCommerceIntegration() {
           }
         }
 
-        // If no company found by slug, try to get from user's session
+        // Strategy 2: slug from the hostname (e.g. funnynepal.colvy.com)
+        if (!companyId && typeof window !== 'undefined') {
+          const h = window.location.hostname
+          if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
+            const hostSlug = h.replace('.colvy.com', '')
+            const { data: coByHost } = await sb
+              .from('companies')
+              .select('id')
+              .eq('slug', hostSlug)
+              .maybeSingle()
+            if (coByHost) companyId = coByHost.id
+          }
+        }
+
+        // Strategy 3: the signed-in user's own company (owner_id)
         if (!companyId) {
           const { data: { session } } = await sb.auth.getSession()
-          
-          if (session?.user) {
-            // Get user's first company membership
-            const { data: teamMember } = await sb
-              .from('team_members')
-              .select('company_id')
-              .eq('user_id', session.user.id)
-              .limit(1)
-              .single()
 
-            if (teamMember?.company_id) {
-              companyId = teamMember.company_id
+          if (session?.user) {
+            const { data: ownCo } = await sb
+              .from('companies')
+              .select('id')
+              .eq('owner_id', session.user.id)
+              .maybeSingle()
+            if (ownCo?.id) {
+              companyId = ownCo.id
+            } else {
+              // Strategy 4: team membership — array query with .length check,
+              // never .single() (throws when the user has no membership rows)
+              const { data: memberships } = await sb
+                .from('team_members')
+                .select('company_id')
+                .eq('user_id', session.user.id)
+                .limit(1)
+
+              if (memberships && memberships.length > 0 && memberships[0].company_id) {
+                companyId = memberships[0].company_id
+              }
             }
           }
         }

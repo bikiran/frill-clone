@@ -73,11 +73,14 @@ export default function HelpCentrePage() {
       let q = (supabase as any).from('help_articles').select('*')
       if (companyId) {
         q = q.eq('company_id', companyId)
-      } else {
-        q = q.eq('status', 'published')
       }
       const { data } = await q.order('created_at', { ascending: false })
-      setArticles(data?.length ? data : (companyId ? [] : DEMO_ARTICLES))
+      // Only company admins may see drafts/private articles; the public sees published only
+      const { isCompanyAdminUser } = await import('@/lib/board')
+      const { data: { session } } = await supabase.auth.getSession()
+      const admin = session?.user ? await isCompanyAdminUser(session.user) : false
+      const visible = (data || []).filter((a: any) => admin || a.status === 'published')
+      setArticles(visible.length ? visible : (companyId ? [] : DEMO_ARTICLES))
     } catch { setArticles(DEMO_ARTICLES) }
 
     setLoading(false)

@@ -112,13 +112,28 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
     supabase.from('statuses').select('*').order('order_index', { ascending: true }).then(({ data }) => {
       if (data) setDbStatuses(data)
     })
-    // Fetch available polls and surveys
-    supabase.from('polls').select('*').then(({ data }) => {
-      if (data) setAvailablePolls(data)
-    })
-    supabase.from('surveys').select('*').then(({ data }) => {
-      if (data) setAvailableSurveys(data)
-    })
+    // Fetch available polls and surveys — scoped to THIS idea's company only.
+    // An unscoped fetch leaked every company's polls/surveys into the panel.
+    ;(async () => {
+      let cid: string | null = idea.company_id || null
+      if (!cid && typeof window !== 'undefined') {
+        const h = window.location.hostname
+        if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com' && !h.includes('localhost')) {
+          const slug = h.replace('.colvy.com', '')
+          const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+          if (data?.id) cid = data.id
+        }
+      }
+      if (cid) {
+        const { data: pollData } = await (supabase as any).from('polls').select('*').eq('company_id', cid)
+        setAvailablePolls(pollData || [])
+        const { data: surveyData } = await (supabase as any).from('surveys').select('*').eq('company_id', cid)
+        setAvailableSurveys(surveyData || [])
+      } else {
+        setAvailablePolls([])
+        setAvailableSurveys([])
+      }
+    })()
 
     const commentsChannel = supabase
       .channel(`comments-${idea.id}`)
@@ -316,8 +331,15 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
         } catch {}
       }
     }
-    setVoteCount(voters.length || idea.votes || 0)
+    // voteCount tracks the ideas.votes counter (the single source of truth, which
+    // also includes guest votes that have no row in the votes table). Using
+    // voters.length here would drop guest votes and disagree with the summary card.
   }, [voters, user, idea.id])
+
+  // Keep voteCount in sync when the idea prop refreshes
+  useEffect(() => {
+    setVoteCount(idea.votes || 0)
+  }, [idea.id, idea.votes])
 
   const toggleVote = async () => {
     if (!user) {
@@ -331,10 +353,15 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
       await supabase.from('votes').delete().eq('idea_id', idea.id).eq('user_id', user.id)
       setHasVoted(false)
       setVoteCount((prev: number) => Math.max(0, prev - 1))
+      // Keep the ideas.votes counter (shown on summary cards) in sync
+      const { data: cur } = await (supabase as any).from('ideas').select('votes').eq('id', idea.id).maybeSingle()
+      await supabase.from('ideas').update({ votes: Math.max(0, (cur?.votes || 0) - 1) }).eq('id', idea.id)
     } else {
       await supabase.from('votes').insert({ idea_id: idea.id, user_id: user.id })
       setHasVoted(true)
       setVoteCount((prev: number) => prev + 1)
+      const { data: cur } = await (supabase as any).from('ideas').select('votes').eq('id', idea.id).maybeSingle()
+      await supabase.from('ideas').update({ votes: (cur?.votes || 0) + 1 }).eq('id', idea.id)
     }
     fetchVoters()
   }

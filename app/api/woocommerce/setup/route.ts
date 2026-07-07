@@ -146,7 +146,7 @@ export async function GET(req: NextRequest) {
       .from('woocommerce_integrations')
       .select('id, company_id, store_url, is_active, last_synced_at, sync_frequency_minutes')
       .eq('company_id', companyId)
-      .single()
+      .maybeSingle()
 
     if (error) {
       return NextResponse.json({ data: null }, { status: 200 })

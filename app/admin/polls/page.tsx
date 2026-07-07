@@ -51,8 +51,14 @@ export default function PollsAdmin() {
   const fetchPolls = async () => {
     try {
       const companyId = await getMyCompanyId()
+      if (!companyId) {
+        // No company context — never show other companies' polls
+        setPolls([])
+        setLoading(false)
+        return
+      }
       let q = supabase.from('polls').select('*').order('created_at', { ascending: false })
-      if (companyId) q = (q as any).eq('company_id', companyId)
+      q = (q as any).eq('company_id', companyId)
       const { data } = await q
       if (data) setPolls(data)
     } catch {}
@@ -64,12 +70,15 @@ export default function PollsAdmin() {
       alert('Please add a question and at least 2 options')
       return
     }
+    // Attach the poll to THIS company — without company_id polls leak across boards
+    const companyId = await getMyCompanyId()
     const { error } = await supabase.from('polls').insert({
       question: question.trim(),
       description: description.trim() || null,
       image_url: pollImage || null,
       options: options.filter(o => o.text.trim()),
       is_active: true,
+      company_id: companyId,
     })
     if (error) {
       alert('Failed to create poll. Run DATABASE_SETUP.sql\n' + error.message)

@@ -136,21 +136,51 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           return
         }
 
-        // Subdomain exists but belongs to someone else — redirect user to their own company
+        // Elevated team members (owner/admin/editor) may also access the admin panel.
+        // Viewers (regular users who signed up on this board) may NOT.
+        // Array query with .length check — never .single() (may return no rows).
+        const { data: members } = await (supabase as any)
+          .from('team_members').select('role')
+          .eq('company_id', subdomainCo.id).eq('user_id', u.id).limit(1)
+        const role = members && members.length > 0 ? (members[0].role || '').toLowerCase() : null
+        if (role && ['owner', 'admin', 'editor'].includes(role)) {
+          setCompany(subdomainCo)
+          setAuthed(true)
+          return
+        }
+
+        // Regular user (viewer or not a member) on someone else's board.
+        // If they own their OWN company, send them to their own admin; otherwise back to the board.
         const userCo = await getCompanyByOwner(u.id)
         if (userCo?.slug) {
           window.location.href = `https://${userCo.slug}.colvy.com/admin`
         } else {
-          // User owns no company — deny access
+          // User owns no company — deny access, back to the public board
           router.push('/')
         }
         return
       }
 
-      // On localhost/vercel.app/colvy.com — load user's own company if they have one
+      // On localhost/vercel.app/colvy.com — user must own a company (or be an elevated team member somewhere)
       const userCo = await getCompanyByOwner(u.id)
-      setCompany(userCo)
-      setAuthed(true)
+      if (userCo) {
+        setCompany(userCo)
+        setAuthed(true)
+        return
+      }
+      // No owned company — allow only elevated team members; plain viewers are denied
+      const { data: anyMemberships } = await (supabase as any)
+        .from('team_members').select('role, company_id')
+        .eq('user_id', u.id).limit(5)
+      const elevated = (anyMemberships || []).find((m: any) => ['owner', 'admin', 'editor'].includes((m.role || '').toLowerCase()))
+      if (elevated) {
+        const { data: memberCo } = await (supabase as any).from('companies').select('*').eq('id', elevated.company_id).maybeSingle()
+        setCompany(memberCo || null)
+        setAuthed(true)
+        return
+      }
+      // Not an admin of anything — deny
+      router.push('/')
     })
   }, [])
 

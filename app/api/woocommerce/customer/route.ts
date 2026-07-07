@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
       .select('*')
       .eq('company_id', companyId)
       .eq('email', email)
-      .single()
+      .maybeSingle()
 
     if (customerError || !customer) {
       return NextResponse.json(

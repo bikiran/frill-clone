@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       .from('woocommerce_integrations')
       .select('*')
       .eq('company_id', companyId)
-      .single()
+      .maybeSingle()
 
     if (integrationError || !integration) {
       return NextResponse.json(

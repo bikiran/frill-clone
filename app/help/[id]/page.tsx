@@ -148,8 +148,19 @@ export default function HelpArticlePage() {
       return
     }
     try {
-      const { data } = await (supabase as any).from('help_articles').select('*').eq('id', articleId).single()
+      const { data } = await (supabase as any).from('help_articles').select('*').eq('id', articleId).maybeSingle()
       if (data) {
+        // Unpublished articles are only visible to company admins, even via direct URL
+        if (data.status !== 'published') {
+          const { isCompanyAdminUser } = await import('@/lib/board')
+          const { data: { session } } = await supabase.auth.getSession()
+          const admin = session?.user ? await isCompanyAdminUser(session.user) : false
+          if (!admin) {
+            setArticle(null)
+            setLoading(false)
+            return
+          }
+        }
         setArticle(data)
         const likedStr = localStorage.getItem('help_likes') || '[]'
         setLiked(JSON.parse(likedStr).includes(articleId))

@@ -251,7 +251,8 @@ export default function RoadmapPage() {
   }
 
   const grouped = allStatuses.map(s => {
-    let columnIdeas = ideas.filter(i => i.status === s.key)
+    // Private ideas are only visible to company admins
+    let columnIdeas = ideas.filter(i => i.status === s.key && (!i.is_private || isCompanyAdmin))
     if (filterTopic === 'no-topic') {
       columnIdeas = columnIdeas.filter(i => !i.topics || i.topics.length === 0)
     } else if (filterTopic === 'private') {

@@ -70,16 +70,42 @@ export default function IdeaModal({ onClose, onSubmitted }: {
 
   useEffect(() => {
     setTimeout(() => titleRef.current?.focus(), 100)
-    // Resolve the current board's company_id from the subdomain so new ideas attach to it
-    if (typeof window !== 'undefined') {
-      const h = window.location.hostname
-      if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com' && !h.includes('localhost')) {
-        const slug = h.replace('.colvy.com', '')
-        supabase.from('companies').select('id').eq('slug', slug).maybeSingle().then(({ data }) => {
-          if (data?.id) setCompanyId(data.id)
-        })
+
+    // Resolve the current board's company_id, then fetch ONLY that company's polls/surveys.
+    // Fetching unscoped here leaked every company's polls, surveys and forms into the idea panel.
+    const resolveCompanyAndFetch = async () => {
+      let cid: string | null = null
+      if (typeof window !== 'undefined') {
+        const h = window.location.hostname
+        if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com' && !h.includes('localhost')) {
+          const slug = h.replace('.colvy.com', '')
+          const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+          if (data?.id) cid = data.id
+        }
+      }
+      // Main domain / localhost: fall back to the signed-in user's own company
+      if (!cid) {
+        const { data: sess } = await supabase.auth.getSession()
+        if (sess.session?.user) {
+          const { data: own } = await (supabase as any).from('companies').select('id').eq('owner_id', sess.session.user.id).maybeSingle()
+          if (own?.id) cid = own.id
+        }
+      }
+      if (cid) setCompanyId(cid)
+
+      // Scoped fetch — only this company's polls/surveys appear in the idea panel
+      if (cid) {
+        const { data: pollData } = await (supabase as any).from('polls').select('*').eq('company_id', cid)
+        setAvailablePolls(pollData || [])
+        const { data: surveyData } = await (supabase as any).from('surveys').select('*').eq('company_id', cid)
+        setAvailableSurveys(surveyData || [])
+      } else {
+        setAvailablePolls([])
+        setAvailableSurveys([])
       }
     }
+    resolveCompanyAndFetch()
+
     supabase.auth.getSession().then(async ({ data }) => {
       setAuthed(!!data.session)
       const user = data.session?.user
@@ -87,23 +113,13 @@ export default function IdeaModal({ onClose, onSubmitted }: {
         setCurrentUser(user)
         const displayName = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Anonymous'
         setName(displayName)
-        
-        // Check if user is admin
-        const SUPER_ADMIN = 'bishalstha76@gmail.com'
-        if (user.email === SUPER_ADMIN) {
-          setIsCompanyAdmin(true)
-        } else {
-          const { data: company } = await (supabase as any).from('companies').select('*').eq('owner_id', user.id).maybeSingle()
-          setIsCompanyAdmin(!!company)
-        }
+
+        // Check if user administers THIS board (owner / elevated team member / super admin)
+        try {
+          const { isCompanyAdminUser } = await import('@/lib/board')
+          setIsCompanyAdmin(await isCompanyAdminUser(user))
+        } catch {}
       }
-    })
-    // Fetch available polls and surveys
-    supabase.from('polls').select('*').then(({ data }) => {
-      if (data) setAvailablePolls(data)
-    })
-    supabase.from('surveys').select('*').then(({ data }) => {
-      if (data) setAvailableSurveys(data)
     })
     const handleKey = (e: KeyboardEvent) => { 
       if (e.key === 'Escape') {
@@ -147,6 +163,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
         poll_type: newPollType,
         options: newPollType !== 'rating' ? newPollOptions.filter(o => o.trim()) : null,
         status: 'active',
+        company_id: companyId,
       }).select().single()
       
       if (error) throw error
@@ -172,6 +189,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
         title: newSurveyTitle,
         questions: surveyQuestions,
         status: 'active',
+        company_id: companyId,
       }).select().single()
       
       if (error) throw error
@@ -232,6 +250,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
         fields: formFields,
         display_style: 'modal',
         status: 'active',
+        company_id: companyId,
       }).select().single()
       
       if (error) throw error

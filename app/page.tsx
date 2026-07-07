@@ -125,18 +125,10 @@ export default function HomePage() {
       setUser(data.session?.user)
       if (data.session?.user.id) {
         fetchUserVotes(data.session.user.id)
-        // Determine if this user is the admin of THIS company (any signed-up user owns their own company)
+        // Determine if this user is an admin of THIS company (owner, elevated team member, or super admin)
         try {
-          const SUPER_ADMIN = 'bishalstha76@gmail.com'
-          if (data.session.user.email === SUPER_ADMIN) {
-            setIsCompanyAdmin(true)
-          } else {
-            const companyId = await getCompanyId()
-            if (companyId) {
-              const { data: co } = await (supabase as any).from('companies').select('owner_id').eq('id', companyId).maybeSingle()
-              setIsCompanyAdmin(co?.owner_id === data.session.user.id)
-            }
-          }
+          const { isCompanyAdminUser } = await import('@/lib/board')
+          setIsCompanyAdmin(await isCompanyAdminUser(data.session.user))
         } catch {}
       }
     })
@@ -269,14 +261,18 @@ export default function HomePage() {
     const { data: sess } = await supabase.auth.getSession()
     
     if (sess.session?.user.id) {
-      // Authenticated user
-      const { data: existingVote } = await supabase
-        .from('votes').select('*').eq('idea_id', ideaId).eq('user_id', sess.session.user.id).single()
-      
+      // Authenticated user — maybeSingle() never throws when the user hasn't voted yet
+      const { data: existingVote } = await (supabase as any)
+        .from('votes').select('*').eq('idea_id', ideaId).eq('user_id', sess.session.user.id).maybeSingle()
+
+      const idea = ideas.find(i => i.id === ideaId)
       if (existingVote) {
         await supabase.from('votes').delete().eq('id', existingVote.id)
+        // Keep the ideas.votes counter in sync — this is what summary cards & detail view display
+        await supabase.from('ideas').update({ votes: Math.max((idea?.votes || 0) - 1, 0) }).eq('id', ideaId)
       } else {
         await supabase.from('votes').insert({ idea_id: ideaId, user_id: sess.session.user.id })
+        await supabase.from('ideas').update({ votes: (idea?.votes || 0) + 1 }).eq('id', ideaId)
       }
       await fetchUserVotes(sess.session.user.id)
     } else {

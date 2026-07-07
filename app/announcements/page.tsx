@@ -55,11 +55,16 @@ export default function AnnouncementsPage() {
       const companyId = await getCompanyId()
       let q = (supabase as any).from('announcements').select('*')
       if (companyId) q = q.eq('company_id', companyId)
-      else q = q.eq('status', 'published')
       const { data } = await q.order('created_at', { ascending: false })
 
-      setAnnouncements(data || [])
-      if (data?.[0] && !selectedId) setSelectedId(data[0].id)
+      // Only company admins may see drafts; the public sees published only
+      const { isCompanyAdminUser } = await import('@/lib/board')
+      const { data: { session } } = await supabase.auth.getSession()
+      const admin = session?.user ? await isCompanyAdminUser(session.user) : false
+      const visible = (data || []).filter((a: any) => admin || a.status === 'published')
+
+      setAnnouncements(visible)
+      if (visible?.[0] && !selectedId) setSelectedId(visible[0].id)
     } catch (err) {
       console.error(err)
     }

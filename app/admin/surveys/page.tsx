@@ -57,8 +57,14 @@ export default function SurveysAdmin() {
   const fetchSurveys = async () => {
     try {
       const companyId = await getMyCompanyId()
+      if (!companyId) {
+        // No company context — never show other companies' surveys
+        setSurveys([])
+        setLoading(false)
+        return
+      }
       let q = supabase.from('surveys').select('*').order('created_at', { ascending: false })
-      if (companyId) q = (q as any).eq('company_id', companyId)
+      q = (q as any).eq('company_id', companyId)
       const { data, error } = await q
       if (!error && data) setSurveys(data)
     } catch {}
@@ -68,11 +74,14 @@ export default function SurveysAdmin() {
   const createSurvey = async () => {
     if (!newTitle.trim()) return
     const defaultQuestion = selectedType === 'nps' ? 'How likely are you to recommend us?' : 'How would you rate your experience?'
+    // Attach the survey to THIS company — without company_id surveys leak across boards
+    const companyId = await getMyCompanyId()
     const { error } = await supabase.from('surveys').insert({
       title: newTitle.trim(),
       type: selectedType,
       question: defaultQuestion,
       is_active: true,
+      company_id: companyId,
     })
     if (error) {
       alert('Failed to create survey. Make sure DATABASE_SETUP.sql has been run.\n' + error.message)
