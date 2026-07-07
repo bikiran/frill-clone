@@ -38,12 +38,51 @@ export default function HelpCentrePage() {
   const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [showSearchDropdown, setShowSearchDropdown] = useState(false)
+  const [accessLocked, setAccessLocked] = useState(false)
+  const [darkMode, setDarkMode] = useState(false)
+  const [cid, setCid] = useState<string | null>(null)
   const searchRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => setUser(data?.session?.user))
     fetchArticles()
+    // ?theme=dark → dark mode (used by the admin preview and shareable links)
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('theme') === 'dark') setDarkMode(true)
+    }
+    // Access control: locked help centers require sign-in
+    ;(async () => {
+      const companyId = await getCompanyId()
+      setCid(companyId)
+      if (!companyId) return
+      const { data: rows } = await (supabase as any).from('site_settings').select('value')
+        .eq('key', 'general').eq('company_id', companyId)
+        .order('updated_at', { ascending: false }).limit(1)
+      if (rows?.[0]?.value?.helpAccess === 'locked') {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) setAccessLocked(true)
+      }
+    })()
   }, [])
+
+  // Track searches (debounced) for help center analytics
+  const searchTrackTimer = useRef<any>(null)
+  useEffect(() => {
+    if (!search.trim() || !cid) return
+    if (searchTrackTimer.current) clearTimeout(searchTrackTimer.current)
+    searchTrackTimer.current = setTimeout(async () => {
+      try {
+        await (supabase as any).from('help_searches').insert({
+          company_id: cid,
+          query: search.trim(),
+          results_count: searchResults.length,
+          source: 'help_center',
+        })
+      } catch {}
+    }, 1200)
+    return () => { if (searchTrackTimer.current) clearTimeout(searchTrackTimer.current) }
+  }, [search, cid])
 
   // Live search
   useEffect(() => {
@@ -61,7 +100,7 @@ export default function HelpCentrePage() {
     const h = window.location.hostname
     if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
       const slug = h.replace('.colvy.com', '')
-      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).single()
+      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
       return data?.id || null
     }
     return null
@@ -113,7 +152,23 @@ export default function HelpCentrePage() {
   })).filter(g => g.items.length > 0)
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
+    <div className="min-h-screen" style={{ background: darkMode ? '#111214' : 'var(--canvas)', filter: darkMode ? 'invert(0.92) hue-rotate(180deg)' : 'none' }}>
+      {/* Locked help center: require sign-in */}
+      {accessLocked && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--canvas)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ maxWidth: 380, textAlign: 'center', background: '#fff', borderRadius: 18, border: '1px solid var(--border)', padding: '40px 32px', boxShadow: '0 20px 60px rgba(0,0,0,0.08)' }}>
+            <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--peach)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)', margin: '0 0 8px 0' }}>This help center is private</h2>
+            <p style={{ fontSize: 14, color: 'var(--slate)', margin: '0 0 22px 0' }}>Sign in to browse articles and documentation.</p>
+            <a href={`/signin?redirect=${encodeURIComponent('/help')}`}
+              style={{ display: 'inline-block', padding: '11px 32px', borderRadius: 12, background: 'var(--coral)', color: '#fff', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
+              Sign in
+            </a>
+          </div>
+        </div>
+      )}
       {/* Hero */}
       <div className="py-16 px-6 text-center" style={{ background: 'var(--peach)' }}>
         <div className="mb-3 flex justify-center" style={{ color: "var(--coral)" }}><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>

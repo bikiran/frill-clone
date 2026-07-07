@@ -165,6 +165,16 @@ export default function HelpArticlePage() {
         const likedStr = localStorage.getItem('help_likes') || '[]'
         setLiked(JSON.parse(likedStr).includes(articleId))
         await (supabase as any).from('help_articles').update({ views: (data.views || 0) + 1 }).eq('id', articleId)
+        // Log a row for help center analytics (daily views chart)
+        try {
+          if (data.company_id) {
+            await (supabase as any).from('help_article_views').insert({
+              article_id: articleId,
+              company_id: data.company_id,
+              source: 'help_center',
+            })
+          }
+        } catch {}
         const { data: rel } = await (supabase as any).from('help_articles').select('id, title, category').eq('category', data.category).eq('status', 'published').neq('id', articleId).limit(4)
         setRelated(rel || [])
       }
@@ -188,6 +198,17 @@ export default function HelpArticlePage() {
     setFeedback(vote)
     if (!article.id.startsWith('demo-')) {
       await (supabase as any).from('help_articles').update({ likes: (article.likes || 0) + (vote === 'helpful' ? 1 : 0) }).eq('id', article.id)
+      // Log the reaction for help center analytics
+      try {
+        if (article.company_id) {
+          await (supabase as any).from('help_article_feedback').insert({
+            article_id: article.id,
+            company_id: article.company_id,
+            helpful: vote === 'helpful',
+            comment: feedbackNote.trim() || null,
+          })
+        }
+      } catch {}
     }
   }
 

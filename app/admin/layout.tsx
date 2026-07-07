@@ -66,6 +66,8 @@ const NAV_GROUPS = [
     label: 'Support',
     items: [
       { label: 'Help Centre', href: '/admin/help', icon: 'help' },
+      { label: 'Help Reporting', href: '/admin/help/analytics', icon: 'analytics' },
+      { label: 'Help Settings', href: '/admin/help/settings', icon: 'settings' },
       { label: 'Support', href: '/admin/support', icon: 'support' },
     ],
   },
@@ -87,6 +89,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter()
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [company, setCompany] = useState<any>(null)
+  const [showWorkspaces, setShowWorkspaces] = useState(false)
+  const [workspaces, setWorkspaces] = useState<any[]>([])
+
+  // All companies this user can administer (owned + elevated team memberships)
+  const loadWorkspaces = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user) return
+      const list: any[] = []
+      const { data: owned } = await (supabase as any).from('companies')
+        .select('id, name, slug, logo_url, accent_color').eq('owner_id', session.user.id)
+      ;(owned || []).forEach((c: any) => list.push(c))
+      const { data: memberships } = await (supabase as any).from('team_members')
+        .select('company_id, role').eq('user_id', session.user.id)
+      const elevated = (memberships || []).filter((m: any) => ['owner', 'admin', 'editor'].includes((m.role || '').toLowerCase()))
+      for (const m of elevated) {
+        if (list.find(c => c.id === m.company_id)) continue
+        const { data: co } = await (supabase as any).from('companies')
+          .select('id, name, slug, logo_url, accent_color').eq('id', m.company_id).maybeSingle()
+        if (co) list.push(co)
+      }
+      setWorkspaces(list)
+    } catch {}
+  }
   const [user, setUser] = useState<any>(null)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
@@ -246,19 +272,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         flexDirection: 'column',
         flexShrink: 0,
       }}>
-        {/* Company info */}
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Company info — workspace switcher */}
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', position: 'relative' }}>
+          <button type="button" onClick={() => { setShowWorkspaces(v => !v); if (!workspaces.length) loadWorkspaces() }}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
             {company?.logo_url ? (
               <img src={company.logo_url} alt={company.name}
                 style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
                 onError={(e: any) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }} />
             ) : null}
             <div style={{ width: 32, height: 32, borderRadius: 8, background: company?.accent_color || 'var(--coral)', display: company?.logo_url ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
-              {/* Show first letter of company name, fallback to first letter of user email */}
               {(company?.name?.[0] || user?.email?.[0] || '?').toUpperCase()}
             </div>
-            <div style={{ minWidth: 0 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
               <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {company?.name || user?.email?.split('@')[0] || 'My Board'}
               </p>
@@ -266,7 +292,38 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 {company ? `${company.slug}.colvy.com` : typeof window !== 'undefined' ? window.location.hostname : 'colvy.com'}
               </p>
             </div>
-          </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, transform: showWorkspaces ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9" /></svg>
+          </button>
+
+          {/* Workspace switcher dropdown */}
+          {showWorkspaces && (
+            <div style={{ position: 'absolute', top: '92%', left: 12, right: 12, background: '#fff', borderRadius: 14, border: '1px solid var(--border)', boxShadow: '0 16px 48px rgba(0,0,0,0.14)', zIndex: 90, overflow: 'hidden' }}>
+              <p style={{ margin: 0, padding: '12px 16px 6px', fontSize: 12, fontWeight: 600, color: '#9ca3af' }}>Workspaces</p>
+              {workspaces.map(w => (
+                <button key={w.id} type="button"
+                  onClick={() => {
+                    setShowWorkspaces(false)
+                    if (w.slug && company?.slug !== w.slug) window.location.href = `https://${w.slug}.colvy.com/admin`
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '9px 16px', border: 'none', background: 'none', cursor: 'pointer' }}>
+                  {w.logo_url ? (
+                    <img src={w.logo_url} alt={w.name} style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'cover' }} />
+                  ) : (
+                    <span style={{ width: 24, height: 24, borderRadius: 6, background: w.accent_color || 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700 }}>{(w.name?.[0] || '?').toUpperCase()}</span>
+                  )}
+                  <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</span>
+                  {company?.id === w.id && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}
+                </button>
+              ))}
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: 4 }}>
+                <a href="/admin/create-company"
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', textDecoration: 'none' }}>
+                  <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--canvas)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', fontSize: 15, fontWeight: 600 }}>+</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>Create Workspace</span>
+                </a>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Nav groups */}

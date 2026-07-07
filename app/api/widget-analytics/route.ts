@@ -27,14 +27,16 @@ export async function POST(req: NextRequest) {
 
     // Store analytics in a simple way - create a widget_analytics table
     const now = new Date().toISOString()
-    await (supabase as any).from('widget_analytics').insert({
-      company_id: company.id,
-      event,
-      tab,
-      created_at: now,
-      user_agent: req.headers.get('user-agent'),
-      ip: req.headers.get('x-forwarded-for') || 'unknown',
-    }).catch(() => {}) // Silently fail if table doesn't exist
+    try {
+      await (supabase as any).from('widget_analytics').insert({
+        company_id: company.id,
+        event,
+        tab,
+        created_at: now,
+        user_agent: req.headers.get('user-agent'),
+        ip: req.headers.get('x-forwarded-for') || 'unknown',
+      })
+    } catch {} // Silently fail if table doesn't exist
 
     return NextResponse.json({ ok: true }, {
       headers: { 'Access-Control-Allow-Origin': '*' }

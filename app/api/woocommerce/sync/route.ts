@@ -150,7 +150,10 @@ export async function POST(req: NextRequest) {
         billing: o.billing || {},
       })).filter((r: any) => r.woo_customer_id) // skip guest orders without customer id
       if (orderRows.length > 0) {
-        await supabase.from('woocommerce_orders').upsert(orderRows, { onConflict: 'company_id,woo_order_id' }).catch(() => {})
+        // NOTE: supabase query builders are thenable but have no .catch — must try/await
+        try {
+          await supabase.from('woocommerce_orders').upsert(orderRows, { onConflict: 'company_id,woo_order_id' })
+        } catch {}
       }
 
       // 2. Aggregate this page's orders per customer
