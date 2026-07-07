@@ -260,7 +260,7 @@ export default function ImageAnnotator({
         width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '14px 20px',
       }}>
-        <button onClick={onClose} style={{
+        <button type="button" onClick={onClose} style={{
           ...glass, color: 'rgba(255,255,255,0.9)', border: '1px solid rgba(255,255,255,0.14)',
           padding: '8px 18px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer',
         }}>
@@ -269,7 +269,7 @@ export default function ImageAnnotator({
         <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, fontWeight: 500, letterSpacing: 0.2 }}>
           Markup
         </span>
-        <button
+        <button type="button"
           onClick={() => { const c = canvasRef.current; if (c) onSave(c.toDataURL('image/png')) }}
           style={{
             background: '#0A84FF', color: '#fff', border: 'none',
@@ -325,7 +325,7 @@ export default function ImageAnnotator({
       }}>
         {/* Tools */}
         {TOOLS.map(t => (
-          <button key={t.id} onClick={() => setTool(t.id)} title={t.label} style={{
+          <button type="button" key={t.id} onClick={() => setTool(t.id)} title={t.label} style={{
             width: 36, height: 36, borderRadius: 999, border: 'none', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: tool === t.id ? 'rgba(10,132,255,0.22)' : 'transparent',
@@ -339,7 +339,7 @@ export default function ImageAnnotator({
 
         {/* Colors */}
         {COLORS.map(c => (
-          <button key={c} onClick={() => setColor(c)} title={c} style={{
+          <button type="button" key={c} onClick={() => setColor(c)} title={c} style={{
             width: 22, height: 22, borderRadius: 999, cursor: 'pointer',
             background: c,
             border: c === '#FFFFFF' ? '1px solid rgba(255,255,255,0.4)' : '1px solid rgba(0,0,0,0.2)',
@@ -363,7 +363,7 @@ export default function ImageAnnotator({
         <div style={{ width: 1, height: 22, background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
 
         {/* Undo / Clear */}
-        <button onClick={handleUndo} disabled={!canUndo} title="Undo (⌘Z)" style={{
+        <button type="button" onClick={handleUndo} disabled={!canUndo} title="Undo (⌘Z)" style={{
           width: 36, height: 36, borderRadius: 999, border: 'none', cursor: canUndo ? 'pointer' : 'default',
           display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent',
           opacity: canUndo ? 1 : 0.35,
@@ -372,7 +372,7 @@ export default function ImageAnnotator({
             <polyline points="9 14 4 9 9 4" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" />
           </svg>
         </button>
-        <button onClick={handleClear} title="Clear all annotations" style={{
+        <button type="button" onClick={handleClear} title="Clear all annotations" style={{
           width: 36, height: 36, borderRadius: 999, border: 'none', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent',
         }}>

@@ -25,32 +25,52 @@ export default function CustomerProfilePage() {
   useEffect(() => {
     const init = async () => {
       try {
-        if (!slug || !customerId) {
-          setError('Missing slug or customer ID')
+        if (!customerId) {
+          setError('Missing customer ID')
           return
         }
 
-        // Get company
-        const { data: company } = await supabase
-          .from('companies')
-          .select('id')
-          .eq('slug', slug)
-          .single()
+        // Resolve company: ?slug= → hostname slug → owner. The ?slug= param is
+        // often empty when navigating from the Users page on a subdomain.
+        let resolvedCompanyId: string | null = null
 
-        if (!company) {
+        if (slug) {
+          const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+          if (co) resolvedCompanyId = co.id
+        }
+
+        if (!resolvedCompanyId && typeof window !== 'undefined') {
+          const h = window.location.hostname
+          if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
+            const hostSlug = h.replace('.colvy.com', '')
+            const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', hostSlug).maybeSingle()
+            if (co) resolvedCompanyId = co.id
+          }
+        }
+
+        if (!resolvedCompanyId) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.user) {
+            const { data: ownCo } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
+            if (ownCo?.id) resolvedCompanyId = ownCo.id
+          }
+        }
+
+        if (!resolvedCompanyId) {
           setError('Company not found')
           return
         }
 
-        setCompanyId(company.id)
+        setCompanyId(resolvedCompanyId)
+        const company = { id: resolvedCompanyId }
 
-        // Get customer
-        const { data: customerData } = await supabase
+        // Get customer — maybeSingle never throws
+        const { data: customerData } = await (supabase as any)
           .from('woocommerce_customers')
           .select('*')
           .eq('company_id', company.id)
           .eq('id', customerId)
-          .single()
+          .maybeSingle()
 
         if (!customerData) {
           setError('Customer not found')

@@ -271,8 +271,22 @@ export default function HomePage() {
         // Keep the ideas.votes counter in sync — this is what summary cards & detail view display
         await supabase.from('ideas').update({ votes: Math.max((idea?.votes || 0) - 1, 0) }).eq('id', ideaId)
       } else {
-        await supabase.from('votes').insert({ idea_id: ideaId, user_id: sess.session.user.id })
+        const um = sess.session.user.user_metadata || {}
+        await supabase.from('votes').insert({
+          idea_id: ideaId,
+          user_id: sess.session.user.id,
+          user_name: um.display_name || sess.session.user.email?.split('@')[0] || null,
+          user_avatar: um.avatar_url || null,
+        })
         await supabase.from('ideas').update({ votes: (idea?.votes || 0) + 1 }).eq('id', ideaId)
+        // Notify the idea owner about the new vote (not for self-votes)
+        try {
+          if (idea?.user_id && idea.user_id !== sess.session.user.id) {
+            const { createNotification } = await import('@/lib/notifications')
+            const actorName = um.display_name || sess.session.user.email?.split('@')[0] || 'Someone'
+            await createNotification(idea.user_id, 'vote', ideaId, `${actorName} voted on "${idea.title}"`, actorName, sess.session.user.email)
+          }
+        } catch {}
       }
       await fetchUserVotes(sess.session.user.id)
     } else {

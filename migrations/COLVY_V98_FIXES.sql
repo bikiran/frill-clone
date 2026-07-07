@@ -32,3 +32,8 @@ END $$;
 ALTER TABLE ideas ADD COLUMN IF NOT EXISTS priority TEXT;
 
 -- Done.
+
+-- VOTES: store the voter's display name + avatar at vote time so the idea
+-- detail view can show real profile icons instead of generic tick marks.
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS user_name TEXT;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS user_avatar TEXT;

@@ -43,6 +43,8 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   const [showOnRoadmap, setShowOnRoadmap] = useState(idea.show_on_roadmap !== false)
   const [coverImageUrl, setCoverImageUrl] = useState(idea.cover_image_url || '')
   const [ideaImageViewerSrc, setIdeaImageViewerSrc] = useState<string | null>(null)
+  const [companyName, setCompanyName] = useState('')
+  const [showBodyStatusMenu, setShowBodyStatusMenu] = useState(false)
   
   // Priority sliders
   const [voteScore, setVoteScore] = useState(100)
@@ -110,6 +112,11 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
     fetchVoters()
     fetchComments()
     fetchActivity()
+    // Company name — used as the fallback initial on voter avatars
+    if (idea.company_id) {
+      ;(supabase as any).from('companies').select('name').eq('id', idea.company_id).maybeSingle()
+        .then(({ data }: any) => { if (data?.name) setCompanyName(data.name) })
+    }
     // Fetch custom statuses
     supabase.from('statuses').select('*').order('order_index', { ascending: true }).then(({ data }) => {
       if (data) setDbStatuses(data)
@@ -212,6 +219,25 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
     if (error) {
       alert('Failed to post comment: ' + error.message)
     } else {
+      // Notify: idea owner about the comment; parent comment author about the reply.
+      // Never for private notes, never notify yourself.
+      try {
+        if (!isPrivateNote) {
+          const actorName = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Someone'
+          const preview = newComment.trim().slice(0, 120)
+          if (replyingTo) {
+            const parent = comments.find(c => c.id === replyingTo)
+            if (parent?.user_id && parent.user_id !== user.id) {
+              const { createNotification } = await import('@/lib/notifications')
+              await createNotification(parent.user_id, 'reply', idea.id, `${actorName} replied on "${idea.title}": ${preview}`, actorName, user.email)
+            }
+          }
+          if (idea.user_id && idea.user_id !== user.id) {
+            const { createNotification } = await import('@/lib/notifications')
+            await createNotification(idea.user_id, 'comment', idea.id, `${actorName} commented on "${idea.title}": ${preview}`, actorName, user.email)
+          }
+        }
+      } catch {}
       setNewComment('')
       setIsPrivateNote(false)
       setCommentImageUrl(null)
@@ -359,18 +385,90 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
       const { data: cur } = await (supabase as any).from('ideas').select('votes').eq('id', idea.id).maybeSingle()
       await supabase.from('ideas').update({ votes: Math.max(0, (cur?.votes || 0) - 1) }).eq('id', idea.id)
     } else {
-      await supabase.from('votes').insert({ idea_id: idea.id, user_id: user.id })
+      const um = user.user_metadata || {}
+      await supabase.from('votes').insert({
+        idea_id: idea.id,
+        user_id: user.id,
+        user_name: um.display_name || user.email?.split('@')[0] || null,
+        user_avatar: um.avatar_url || null,
+      })
       setHasVoted(true)
       setVoteCount((prev: number) => prev + 1)
       const { data: cur } = await (supabase as any).from('ideas').select('votes').eq('id', idea.id).maybeSingle()
       await supabase.from('ideas').update({ votes: (cur?.votes || 0) + 1 }).eq('id', idea.id)
+      // Notify the idea owner about the new vote (not for self-votes)
+      try {
+        if (idea.user_id && idea.user_id !== user.id) {
+          const { createNotification } = await import('@/lib/notifications')
+          const actorName = um.display_name || user.email?.split('@')[0] || 'Someone'
+          await createNotification(idea.user_id, 'vote', idea.id, `${actorName} voted on "${idea.title}"`, actorName, user.email)
+        }
+      } catch {}
     }
     fetchVoters()
   }
 
   const fetchAllIdeas = async () => {
-    const { data } = await supabase.from('ideas').select('id, title, votes').neq('id', idea.id).order('created_at', { ascending: false }).limit(20)
+    let q = (supabase as any).from('ideas').select('id, title, votes').neq('id', idea.id)
+    if (idea.company_id) q = q.eq('company_id', idea.company_id)
+    const { data } = await q.order('created_at', { ascending: false }).limit(20)
     setAllIdeas(data || [])
+  }
+
+  // Real merge: moves this idea's comments/votes/subscriptions into the target,
+  // combines vote counters (deduping users who voted on both), records the merge,
+  // and archives this idea. Previously this was only an alert() — nothing happened.
+  const performMerge = async (target: any) => {
+    if (!confirm(`Merge "${idea.title}" into "${target.title}"?\n\nComments and votes will move to "${target.title}" and this idea will be archived.`)) return
+    try {
+      // 1. Move comments
+      await supabase.from('comments').update({ idea_id: target.id }).eq('idea_id', idea.id)
+
+      // 2. Move votes, deduping users who voted on both ideas
+      const { data: targetVotes } = await (supabase as any).from('votes').select('user_id').eq('idea_id', target.id)
+      const targetVoterIds = new Set((targetVotes || []).map((v: any) => v.user_id))
+      const { data: sourceVotes } = await (supabase as any).from('votes').select('id, user_id').eq('idea_id', idea.id)
+      let duplicates = 0
+      for (const v of sourceVotes || []) {
+        if (targetVoterIds.has(v.user_id)) {
+          await supabase.from('votes').delete().eq('id', v.id)
+          duplicates++
+        } else {
+          await supabase.from('votes').update({ idea_id: target.id }).eq('id', v.id)
+        }
+      }
+
+      // 3. Combine counters (source counter includes guest votes)
+      const { data: freshTarget } = await (supabase as any).from('ideas').select('votes').eq('id', target.id).maybeSingle()
+      const combined = Math.max(0, (freshTarget?.votes || 0) + (idea.votes || 0) - duplicates)
+      await supabase.from('ideas').update({ votes: combined }).eq('id', target.id)
+
+      // 4. Move subscriptions if the table exists (ignore errors when it doesn't)
+      try { await (supabase as any).from('idea_subscriptions').update({ idea_id: target.id }).eq('idea_id', idea.id) } catch {}
+
+      // 5. Archive the source and note where it went
+      await supabase.from('ideas').update({
+        is_archived: true,
+        description: `${idea.description || ''}\n\n[Merged into: ${target.title}]`.trim(),
+      }).eq('id', idea.id)
+
+      // 6. Log the merge on the target's activity
+      if (user) {
+        await supabase.from('activity').insert({
+          idea_id: target.id,
+          user_id: user.id,
+          action: 'merged',
+          old_value: idea.title,
+          new_value: target.title,
+        })
+      }
+
+      setShowMergeDropdown(false)
+      alert(`Merged "${idea.title}" into "${target.title}".`)
+      onClose()
+    } catch (e: any) {
+      alert('Merge failed: ' + (e.message || 'unknown error'))
+    }
   }
 
   const updateIdea = async (updates: any) => {
@@ -390,6 +488,14 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
           old_value: idea.status || 'new',
           new_value: updates.status,
         })
+        // Notify the idea owner that the status changed (not when changing your own)
+        try {
+          if (idea.user_id && idea.user_id !== user.id) {
+            const actorName = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Someone'
+            const { createNotification } = await import('@/lib/notifications')
+            await createNotification(idea.user_id, 'status_change', idea.id, `"${idea.title}" status changed to ${String(updates.status).replace('_', ' ')}`, actorName, user.email)
+          }
+        } catch {}
       }
       
       // Apply optimistic update to local idea object so re-opening shows the new values
@@ -611,7 +717,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                           />
                         </div>
                         {allIdeas.filter(i => i.title.toLowerCase().includes(mergeSearchQuery.toLowerCase())).map(i => (
-                          <button key={i.id} onClick={() => { alert(`Merged "${idea.title}" into "${i.title}"`); setShowMergeDropdown(false) }} className="w-full px-3 py-2 text-left text-xs hover:bg-gray-50 transition-smooth cursor-pointer border-b" style={{ color: 'var(--ink)', borderColor: 'var(--border)' }}>
+                          <button key={i.id} onClick={() => performMerge(i)} className="w-full px-3 py-2 text-left text-xs hover:bg-gray-50 transition-smooth cursor-pointer border-b" style={{ color: 'var(--ink)', borderColor: 'var(--border)' }}>
                             <p className="font-medium line-clamp-1">{i.title}</p>
                             <p className="mt-0.5" style={{ color: 'var(--slate)' }}>{i.votes || 0} votes</p>
                           </button>
@@ -1135,11 +1241,18 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
               <span>{new Date(idea.created_at).toLocaleDateString()}</span>
               {voters.length > 0 && (
                 <>
-                  <div className="flex -space-x-2">
-                    {voters.slice(0, 3).map((v, i) => (
-                      <div key={i} className="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold" style={{ background: 'var(--coral)' }}>
-                        ✓
-                      </div>
+                  <div className="flex -space-x-2" title={voters.map((v: any) => v.user_name || 'Voter').join(', ')}>
+                    {voters.slice(0, 3).map((v: any, i) => (
+                      v.user_avatar ? (
+                        <img key={i} src={v.user_avatar} alt={v.user_name || 'Voter'}
+                          style={{ width: 24, height: 24, borderRadius: '50%', border: '2px solid white', objectFit: 'cover', display: 'block' }} />
+                      ) : (
+                        <div key={i}
+                          title={v.user_name || companyName || 'Voter'}
+                          style={{ width: 24, height: 24, borderRadius: '50%', border: '2px solid white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 11, fontWeight: 700, background: 'var(--coral)' }}>
+                          {(v.user_name || companyName || 'V').charAt(0).toUpperCase()}
+                        </div>
+                      )
                     ))}
                   </div>
                   {voters.length > 3 && <span>+{voters.length - 3}</span>}
@@ -1148,16 +1261,47 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
             </div>
 
             {/* Tags */}
-            {idea.topics && idea.topics.length > 0 && (
-              <div className="ml-16 flex flex-wrap gap-2 mb-8">
-                {idea.topics.map((t: string) => (
+            {(idea.topics?.length > 0 || true) && (
+              <div className="ml-16 flex flex-wrap gap-2 mb-8 items-center">
+                {(idea.topics || []).map((t: string) => (
                   <span key={t} className="text-xs px-2 py-1 rounded font-medium" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
                     #{t}
                   </span>
                 ))}
-                <span className="text-xs px-2 py-1 rounded font-medium" style={{ background: currentStatus.bg, color: currentStatus.color }}>
-                  {currentStatus.label}
-                </span>
+                {/* Status pill — clickable dropdown for admins/editors, read-only for everyone else */}
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                  <button
+                    type="button"
+                    onClick={() => { if (canEditStatus) setShowBodyStatusMenu(v => !v) }}
+                    className="text-xs px-2 py-1 rounded font-medium inline-flex items-center gap-1"
+                    style={{ background: currentStatus.bg, color: currentStatus.color, border: 'none', cursor: canEditStatus ? 'pointer' : 'default' }}
+                    title={canEditStatus ? 'Change status' : ''}>
+                    {currentStatus.label}
+                    {canEditStatus && (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+                    )}
+                  </button>
+                  {showBodyStatusMenu && canEditStatus && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 6, width: 200, background: 'white', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.14)', border: '1px solid var(--border)', zIndex: 60, overflow: 'hidden' }}>
+                      {(() => {
+                        const defaultKeys = new Set(Object.keys(STATUS_CONFIG))
+                        const extras = dbStatuses.filter(s => !defaultKeys.has(s.key)).map(s => [s.key, { label: s.label, color: s.color, bg: s.bg || '#f3f4f6' }] as [string, { label: string; color: string; bg: string }])
+                        const allEntries = [...Object.entries(STATUS_CONFIG), ...extras]
+                        return allEntries.map(([key, cfg]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => { setStatus(key); updateIdea({ status: key }); setShowBodyStatusMenu(false) }}
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 transition-smooth flex items-center gap-2"
+                            style={{ color: status === key ? cfg.color : 'var(--slate)', fontWeight: status === key ? 700 : 500, background: status === key ? cfg.bg : 'white', border: 'none', cursor: 'pointer' }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+                            {cfg.label}
+                          </button>
+                        ))
+                      })()}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1249,9 +1393,10 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
               </div>
             )}
 
-            {/* Poll & Survey section - Bottom Editor Footer */}
+            {/* Poll & Survey section — full-width strip between comments and activity.
+                (The old -mb-6 negative margin pulled the Activity heading up INTO this row.) */}
             {isAdmin && (
-              <div className="mt-6 -mx-6 -mb-6 px-6 py-3 border-t flex items-center gap-3 flex-wrap" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+              <div className="mt-6 mb-6 -mx-6 px-6 py-3 border-t border-b flex items-center gap-3 flex-wrap" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
                 <div className="flex items-center gap-2">
                   {idea.poll_id ? (
                     <button onClick={() => updateIdea({ poll_id: null })} className="text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-smooth cursor-pointer" style={{ background: '#e0f2fe', color: '#0369a1' }}>

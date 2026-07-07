@@ -130,22 +130,43 @@ export default function ProfilePage() {
       <div className="bg-white border-b" style={{ borderColor: 'var(--border)' }}>
         <div className="max-w-4xl mx-auto px-6 py-8">
           <div className="flex items-center gap-6 mb-4">
-            <div className="relative group">
+            <div style={{ position: 'relative', width: 84, height: 84, flexShrink: 0 }}
+              onMouseEnter={(e) => { const o = e.currentTarget.querySelector('[data-avatar-overlay]') as HTMLElement; if (o) o.style.opacity = '1' }}
+              onMouseLeave={(e) => { const o = e.currentTarget.querySelector('[data-avatar-overlay]') as HTMLElement; if (o) o.style.opacity = '0' }}>
               {avatarUrl ? (
-                <img src={avatarUrl} alt="Avatar" className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-lg" />
+                <img src={avatarUrl} alt="Avatar" style={{ width: 84, height: 84, borderRadius: '50%', objectFit: 'cover', border: '4px solid white', boxShadow: '0 4px 14px rgba(0,0,0,0.12)', display: 'block' }} />
               ) : (
-                <div className="w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl font-bold border-4 border-white shadow-lg" style={{ background: 'var(--coral)' }}>
+                <div style={{ width: 84, height: 84, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 30, fontWeight: 700, border: '4px solid white', boxShadow: '0 4px 14px rgba(0,0,0,0.12)', background: 'var(--coral)' }}>
                   {(displayName || user.email)?.charAt(0).toUpperCase()}
                 </div>
               )}
-              <button onClick={() => fileInputRef.current?.click()} disabled={saving}
-                className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer" title="Upload photo">
+              {/* Hover overlay: camera — inline styles so positioning can never break */}
+              <button onClick={() => fileInputRef.current?.click()} disabled={saving} title="Upload photo"
+                data-avatar-overlay
+                style={{
+                  position: 'absolute', inset: 0, borderRadius: '50%',
+                  background: 'rgba(0,0,0,0.45)', border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  opacity: 0, transition: 'opacity 0.18s ease',
+                }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
               </button>
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
               {avatarUrl && (
-                <button onClick={handleDeleteAvatar}
-                  className="absolute -top-1 -right-1 w-7 h-7 rounded-full bg-red-500 text-white text-xs flex items-center justify-center hover:bg-red-600 transition-colors cursor-pointer shadow-md" title="Remove photo">×</button>
+                <button onClick={handleDeleteAvatar} title="Remove photo"
+                  style={{
+                    position: 'absolute', top: -2, right: -2, width: 24, height: 24,
+                    borderRadius: '50%', background: '#ef4444', color: '#fff',
+                    border: '2px solid white', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 13, fontWeight: 700, lineHeight: 1,
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+                  }}>×</button>
+              )}
+              {saving && (
+                <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: 22, height: 22, border: '2px solid var(--border)', borderTopColor: 'var(--coral)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                </div>
               )}
             </div>
             <div className="flex-1">

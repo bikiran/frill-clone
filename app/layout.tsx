@@ -44,6 +44,7 @@ export default function RootLayout({
   const [notifications, setNotifications] = useState<any[]>([])
   const [notificationFilter, setNotificationFilter] = useState<'unread' | 'all'>('unread')
   const [loadingNotifications, setLoadingNotifications] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const [freshContent] = useState({ ideas: false, roadmap: false, updates: false, help: false })
   const pathname = usePathname()
   const [user, setUser] = useState<any>(null)
@@ -98,6 +99,12 @@ export default function RootLayout({
           Updates: s.navAnnouncements !== false,
           Help: s.navHelp !== false,
         })
+        // Apply the saved navigation ORDER too (this was only applied by the
+        // live-update event before, so page loads ignored the saved order)
+        if (s.navOrder && Array.isArray(s.navOrder)) {
+          const norm = (l: string) => l === 'Help Centre' ? 'Help' : l === 'Announcements' ? 'Updates' : l
+          setNavOrder(s.navOrder.map(norm))
+        }
         // Default homepage — where the logo link goes
         const homeMap: Record<string, string> = { ideas: '/', roadmap: '/roadmap', announcements: '/announcements', help: '/help' }
         setHomePath(homeMap[s.defaultHomepage] || '/')
@@ -398,6 +405,31 @@ export default function RootLayout({
     }
   }
 
+  // Unread count for the bell dot — fetched on load and kept fresh via realtime
+  const fetchUnreadCount = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user.id) { setUnreadCount(0); return }
+      const { count } = await (supabase as any)
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', session.user.id)
+        .eq('is_read', false)
+      setUnreadCount(count || 0)
+    } catch { setUnreadCount(0) }
+  }
+
+  useEffect(() => {
+    if (!user) { setUnreadCount(0); return }
+    fetchUnreadCount()
+    // Realtime: new notifications light the dot immediately
+    const ch = supabase
+      .channel(`notifications-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => fetchUnreadCount())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [user])
+
   const markAllAsRead = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -411,6 +443,7 @@ export default function RootLayout({
       
       // Refetch notifications
       await fetchNotifications()
+      setUnreadCount(0)
     } catch (err) {
       console.error('Error marking as read:', err)
     }
@@ -427,6 +460,7 @@ export default function RootLayout({
       setNotifications(notifications.map(n => 
         n.id === notificationId ? { ...n, is_read: true } : n
       ))
+      setUnreadCount(c => Math.max(0, c - 1))
     } catch (err) {
       console.error('Error marking notification as read:', err)
     }
@@ -560,7 +594,9 @@ export default function RootLayout({
                       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                       <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                     </svg>
-                    <div className="absolute top-1 right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }}></div>
+                    {unreadCount > 0 && (
+                      <div className="absolute top-1 right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }}></div>
+                    )}
                   </button>
                   
                   {showNotifications && (
@@ -620,7 +656,14 @@ export default function RootLayout({
                                     }} />
                                     <div className="flex-1 min-w-0">
                                       <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
-                                        {notification.title}
+                                        {notification.title || ({
+                                          vote: 'New vote on your idea',
+                                          comment: 'New comment on your idea',
+                                          reply: 'New reply to your comment',
+                                          status_change: 'Idea status updated',
+                                          mention: 'You were mentioned',
+                                          assignment: 'You were assigned',
+                                        } as Record<string, string>)[notification.type] || 'Notification'}
                                       </p>
                                       <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--slate)' }}>
                                         {notification.message}

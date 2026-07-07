@@ -736,14 +736,17 @@ export default function IdeaModal({ onClose, onSubmitted }: {
             <button
               type="button"
               onClick={() => setIsPrivate(!isPrivate)}
-              className="relative w-10 h-6 rounded-full transition-all"
-              style={{ background: isPrivate ? 'var(--coral)' : '#d1d5db' }}>
-              <div className="absolute top-1 transition-transform" style={{ 
-                left: isPrivate ? '20px' : '2px',
-                width: '20px',
-                height: '20px',
+              aria-pressed={isPrivate}
+              className="relative rounded-full transition-all"
+              style={{ background: isPrivate ? 'var(--coral)' : '#d1d5db', width: 44, height: 26, flexShrink: 0, border: 'none', cursor: 'pointer', padding: 0 }}>
+              <div className="absolute transition-all" style={{
+                top: 3,
+                left: isPrivate ? 21 : 3,
+                width: 20,
+                height: 20,
                 background: 'white',
-                borderRadius: '50%'
+                borderRadius: '50%',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
               }} />
             </button>
             <div>

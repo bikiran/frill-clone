@@ -217,20 +217,32 @@ export default function WooCommerceIntegration() {
     setSuccess('')
 
     try {
-      const res = await fetch('/api/woocommerce/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId })
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        setError(data.error || 'Sync failed')
-        return
+      const runPhase = async (mode: 'customers' | 'orders', label: string) => {
+        let page = 1
+        let totalPages = 1
+        let processed = 0
+        do {
+          const res = await fetch('/api/woocommerce/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, mode, page })
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error || 'Sync failed')
+          totalPages = data.totalPages || 1
+          processed += data.syncedCount || data.updated || 0
+          setSuccess(`${label}: page ${page}/${totalPages}…`)
+          page++
+        } while (page <= totalPages)
+        return processed
       }
 
-      setSuccess(`Synced ${data.syncedCount} customers from WooCommerce`)
+      // Phase 1: all customers, 100 per request (resumable — no more timeouts at 100)
+      const customerCount = await runPhase('customers', 'Syncing customers')
+      // Phase 2: all orders, aggregated into per-customer stats
+      await runPhase('orders', 'Calculating order stats')
+
+      setSuccess(`Synced ${customerCount} customers from WooCommerce (with full order stats)`)
       await fetchIntegration(companyId)
     } catch (err: any) {
       setError(err.message || 'Sync failed')

@@ -116,12 +116,12 @@ export default function ImageViewer({
           flexWrap: 'wrap', justifyContent: 'center',
         }}>
 
-        <button onClick={() => setScale(prev => Math.max(prev - 0.2, 0.5))} style={pillBtn} title="Zoom out">−</button>
+        <button type="button" onClick={() => setScale(prev => Math.max(prev - 0.2, 0.5))} style={pillBtn} title="Zoom out">−</button>
         <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, minWidth: 44, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
           {Math.round(scale * 100)}%
         </span>
-        <button onClick={() => setScale(prev => Math.min(prev + 0.2, 5))} style={pillBtn} title="Zoom in">+</button>
-        <button onClick={() => { setScale(1); setPosition({ x: 0, y: 0 }) }} style={pillBtn} title="Reset view">
+        <button type="button" onClick={() => setScale(prev => Math.min(prev + 0.2, 5))} style={pillBtn} title="Zoom in">+</button>
+        <button type="button" onClick={() => { setScale(1); setPosition({ x: 0, y: 0 }) }} style={pillBtn} title="Reset view">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
           </svg>
@@ -131,7 +131,7 @@ export default function ImageViewer({
         {allowAnnotate && (
           <>
             <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.15)' }} />
-            <button
+            <button type="button"
               onClick={() => setShowAnnotator(true)}
               style={{
                 ...pillBtn,
@@ -150,7 +150,7 @@ export default function ImageViewer({
         )}
 
         <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.15)' }} />
-        <button onClick={onClose} style={pillBtn} title="Close (Esc)">✕</button>
+        <button type="button" onClick={onClose} style={pillBtn} title="Close (Esc)">✕</button>
       </div>
 
       {/* Hint */}
