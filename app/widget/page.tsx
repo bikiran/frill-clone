@@ -808,8 +808,10 @@ function WidgetContent() {
   return (
     <div style={{ 
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', 
-      height: '100vh', 
-      width: '100vw',
+      height: '100%', 
+      maxHeight: '100vh',
+      width: '100%',
+      maxWidth: '100vw',
       display: 'flex', 
       flexDirection: 'column', 
       background: '#fff', 
@@ -818,6 +820,8 @@ function WidgetContent() {
       position: 'fixed',
       top: 0,
       left: 0,
+      right: 0,
+      bottom: 0,
       margin: 0,
       padding: 0,
     }}>
@@ -898,7 +902,7 @@ function WidgetContent() {
       </div>
 
       {/* Scrollable content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 'clamp(8px, 3vw, 16px)', paddingBottom: '100px', width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 'clamp(8px, 3vw, 14px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)', width: '100%', boxSizing: 'border-box', WebkitOverflowScrolling: 'touch' }}>
 
         {tab === 'feedback' && (
           <div style={{ animation: 'fadeIn 0.2s ease both' }}>

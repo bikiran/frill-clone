@@ -209,9 +209,11 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
     if ((!newComment.trim() && !commentImageUrl) || !user) return
     setLoadingComment(true)
     const content = commentImageUrl ? `${newComment.trim()}\n<img src="${commentImageUrl}" />` : newComment.trim()
+    const displayName = user.user_metadata?.display_name || (user as any).user_metadata?.full_name || user.email?.split('@')[0] || 'Anonymous'
     const { error } = await supabase.from('comments').insert({
       idea_id: idea.id,
       user_id: user.id,
+      user_name: displayName,
       content,
       is_private: isPrivateNote,
       parent_id: replyingTo || null,
@@ -1483,7 +1485,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                         <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background: 'var(--coral)' }}>
                           U
                         </div>
-                        <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{getRandomName(comment.user_id)}</span>
+                        <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{comment.user_name || comment.created_by_name || (comment.is_private ? 'Team' : 'Anonymous')}</span>
                         <span className="text-xs" style={{ color: 'var(--slate)' }}>•</span>
                         <span className="text-xs" style={{ color: 'var(--slate)' }}>{new Date(comment.created_at).toLocaleDateString()}</span>
                         {comment.is_private && (

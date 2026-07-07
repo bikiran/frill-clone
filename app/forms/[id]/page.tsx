@@ -17,6 +17,7 @@ export default function PublicForm() {
   const [answers, setAnswers] = useState<Record<string, any>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  useEffect(() => { (window as any).__formStartTime = Date.now() }, [])
   const [formStatus, setFormStatus] = useState<'active' | 'coming-soon' | 'closed'>('active')
   const [showConfetti, setShowConfetti] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
@@ -85,9 +86,18 @@ export default function PublicForm() {
   const handleSubmit = async () => {
     setSubmitting(true)
     try {
+      // Collect submission metadata for form analytics
+      const startTime = (window as any).__formStartTime || Date.now()
+      const responseTimeSec = Math.round((Date.now() - startTime) / 1000)
       await (supabase as any).from('form_responses').insert({
         form_id: formId,
         answers,
+        user_agent: navigator.userAgent,
+        language: navigator.language,
+        screen_width: window.screen?.width,
+        screen_height: window.screen?.height,
+        response_time_seconds: responseTimeSec,
+        referrer: document.referrer || null,
       })
       
       // Trigger email notification to form admin

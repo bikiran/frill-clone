@@ -284,12 +284,12 @@ export default function FormResults() {
             <button onClick={exportToExcel} disabled={responses.length === 0 || exporting !== null}
               className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
               style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: exporting === 'excel' ? 'var(--canvas)' : '#fff', opacity: responses.length === 0 ? 0.5 : 1 }}>
-              {exporting === 'excel' ? '↓ Exporting...' : '📊 Export to Excel'}
+              {exporting === 'excel' ? '↓ Exporting...' : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline', marginRight: 5 }}><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>Export to Excel</>}
             </button>
             <button onClick={exportToPDF} disabled={responses.length === 0 || exporting !== null}
               className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
               style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: exporting === 'pdf' ? 'var(--canvas)' : '#fff', opacity: responses.length === 0 ? 0.5 : 1 }}>
-              {exporting === 'pdf' ? '↓ Exporting...' : '📄 Export to PDF'}
+              {exporting === 'pdf' ? '↓ Exporting...' : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline', marginRight: 5 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Export to PDF</>}
             </button>
           </div>
         </div>
@@ -465,6 +465,35 @@ export default function FormResults() {
               <button onClick={() => setSelectedResponse(null)} className="text-2xl cursor-pointer" style={{ color: 'var(--slate)' }}>×</button>
             </div>
             <div className="p-6 space-y-4">
+              {/* Submission metadata */}
+              {(selectedResponse.response_time_seconds || selectedResponse.language || selectedResponse.screen_width || selectedResponse.referrer) && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: '10px 12px', background: 'var(--canvas)', borderRadius: 8, fontSize: 12, color: '#666' }}>
+                  {selectedResponse.response_time_seconds && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      {selectedResponse.response_time_seconds}s
+                    </span>
+                  )}
+                  {selectedResponse.language && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                      {selectedResponse.language}
+                    </span>
+                  )}
+                  {selectedResponse.screen_width && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                      {selectedResponse.screen_width}×{selectedResponse.screen_height}
+                    </span>
+                  )}
+                  {selectedResponse.referrer && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                      {selectedResponse.referrer}
+                    </span>
+                  )}
+                </div>
+              )}
               {questions.map((q: any) => {
                 const answer = selectedResponse.answers?.[q.id]
                 const isFileUpload = q.type === 'file_upload'

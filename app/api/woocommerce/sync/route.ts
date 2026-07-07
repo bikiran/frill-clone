@@ -130,7 +130,30 @@ export async function POST(req: NextRequest) {
 
       const { data: orders, totalPages, total } = await wcFetch(`orders?per_page=${perPage}&page=${page}&orderby=id&order=asc&status=any`)
 
-      // Aggregate this page's orders per customer
+      // 1. Upsert individual order rows for the order history view
+      const orderRows = (orders as any[]).map((o: any) => ({
+        company_id: companyId,
+        woo_order_id: o.id,
+        woo_customer_id: o.customer_id,
+        customer_email: o.billing?.email || '',
+        status: o.status,
+        total: parseFloat(o.total || '0') || 0,
+        currency: o.currency || 'AUD',
+        order_date: o.date_created,
+        line_items: (o.line_items || []).map((li: any) => ({
+          product_id: li.product_id,
+          name: li.name,
+          quantity: li.quantity,
+          total: li.total,
+          image: li.image?.src || null,
+        })),
+        billing: o.billing || {},
+      })).filter((r: any) => r.woo_customer_id) // skip guest orders without customer id
+      if (orderRows.length > 0) {
+        await supabase.from('woocommerce_orders').upsert(orderRows, { onConflict: 'company_id,woo_order_id' }).catch(() => {})
+      }
+
+      // 2. Aggregate this page's orders per customer
       const agg: Record<number, { spend: number; orders: number; items: number; lastDate: string | null; firstDate: string | null }> = {}
       for (const o of orders as any[]) {
         const cid = o.customer_id

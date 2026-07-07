@@ -32,7 +32,10 @@ export default function ProfilePage() {
       setUser(session.user)
       setEditEmail(session.user.email || '')
       const meta = session.user.user_metadata || {}
-      setDisplayName(meta.display_name || getRandomName(session.user.id))
+      // Only generate a random name if the user has NO display name at all
+      // (never override an existing display name with a random one)
+      const stored = meta.display_name || (meta as any).full_name || session.user.email?.split('@')[0] || null
+      setDisplayName(stored || '')
       setBio(meta.bio || '')
       setAvatarUrl(meta.avatar_url || '')
       setEditName(meta.display_name || '')

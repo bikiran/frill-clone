@@ -50,7 +50,13 @@ export default function PrioritiesPage() {
   const [user, setUser] = useState<any>(null)
   const [ideas, setIdeas] = useState<Idea[]>([])
   const [loading, setLoading] = useState(true)
-  const [view, setView] = useState<'matrix' | 'table' | 'rice'>('matrix')
+  const [view, setView] = useState<'matrix' | 'table' | 'rice' | 'settings'>('matrix')
+  const [benefitFactors, setBenefitFactors] = useState([{ name: 'Votes', type: 'Vote Count', weight: 20 }, { name: 'Reward', type: 'Percentage', weight: 100 }])
+  const [costFactors, setCostFactors] = useState([{ name: 'Effort', type: '0-5', weight: 100 }])
+  const [showPriorityScore, setShowPriorityScore] = useState(true)
+  const [normalizeScores, setNormalizeScores] = useState(true)
+  const [scorePublic, setScorePublic] = useState(false)
+  const [settingsSaved, setSettingsSaved] = useState(false)
   const [selected, setSelected] = useState<Idea | null>(null)
   const [hoveredIdea, setHoveredIdea] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
@@ -144,6 +150,7 @@ export default function PrioritiesPage() {
                 { key: 'matrix', label: '⊞ Matrix' },
                 { key: 'table',  label: '≡ Table' },
                 { key: 'rice',   label: '⚡ RICE' },
+                { key: 'settings', label: '⚙ Settings' },
               ].map(v => (
                 <button key={v.key} onClick={() => setView(v.key as any)}
                   className="px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer transition-all"
@@ -388,6 +395,98 @@ export default function PrioritiesPage() {
                     )
                   })}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Prioritization Settings View */}
+          {view === 'settings' && (
+            <div style={{ maxWidth: 700 }}>
+              {/* Benefit Factors */}
+              <div style={{ marginBottom: 28, borderRadius: 14, border: '1px solid var(--border)', background: '#fff', overflow: 'hidden' }}>
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+                    <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)', margin: 0 }}>Benefit Factors</h3>
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>Benefits can include customer value, strategic value, revenue potential and cost reduction.</p>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead><tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--canvas)' }}>
+                    <th style={{ textAlign: 'left', padding: '10px 16px', fontWeight: 600, color: 'var(--slate)' }}>Benefit Factor</th>
+                    <th style={{ textAlign: 'left', padding: '10px 16px', fontWeight: 600, color: 'var(--slate)' }}>Type</th>
+                    <th style={{ textAlign: 'left', padding: '10px 16px', fontWeight: 600, color: 'var(--slate)' }}>Weight</th>
+                    <th style={{ width: 40 }} />
+                  </tr></thead>
+                  <tbody>
+                    {benefitFactors.map((f, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '10px 16px' }}><input value={f.name} onChange={e => { const n=[...benefitFactors]; n[i]={...n[i],name:e.target.value}; setBenefitFactors(n) }} style={{ border:'1px solid var(--border)', borderRadius:6, padding:'5px 8px', fontSize:13, outline:'none', width:'100%' }} /></td>
+                        <td style={{ padding: '10px 16px' }}><select value={f.type} onChange={e => { const n=[...benefitFactors]; n[i]={...n[i],type:e.target.value}; setBenefitFactors(n) }} style={{ border:'1px solid var(--border)', borderRadius:6, padding:'5px 8px', fontSize:13, outline:'none' }}>{['Vote Count','Percentage','1-5','0-10','Currency'].map(t => <option key={t}>{t}</option>)}</select></td>
+                        <td style={{ padding: '10px 16px' }}><select value={f.weight} onChange={e => { const n=[...benefitFactors]; n[i]={...n[i],weight:parseInt(e.target.value)}; setBenefitFactors(n) }} style={{ border:'1px solid var(--border)', borderRadius:6, padding:'5px 8px', fontSize:13, outline:'none' }}>{[10,20,25,33,50,75,100].map(w => <option key={w} value={w}>{w}%</option>)}</select></td>
+                        <td style={{ padding: '0 8px' }}><button type="button" onClick={() => setBenefitFactors(benefitFactors.filter((_,j)=>j!==i))} style={{ color:'#ef4444', background:'none', border:'none', cursor:'pointer', fontSize:18 }}>×</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{ padding: '12px 16px' }}><button type="button" onClick={() => setBenefitFactors([...benefitFactors, { name: 'New Factor', type: 'Percentage', weight: 100 }])} style={{ fontSize:13, color:'var(--coral)', background:'none', border:'none', cursor:'pointer', fontWeight:600 }}>+ Add a new factor</button></div>
+              </div>
+
+              {/* Cost Factors */}
+              <div style={{ marginBottom: 28, borderRadius: 14, border: '1px solid var(--border)', background: '#fff', overflow: 'hidden' }}>
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>
+                    <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)', margin: 0 }}>Cost Factors</h3>
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>Costs encompass how hard or expensive it is to build an Idea. Common examples: Effort, Developer difficulty, Person months.</p>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead><tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--canvas)' }}>
+                    <th style={{ textAlign: 'left', padding: '10px 16px', fontWeight: 600, color: 'var(--slate)' }}>Cost Factor</th>
+                    <th style={{ textAlign: 'left', padding: '10px 16px', fontWeight: 600, color: 'var(--slate)' }}>Type</th>
+                    <th style={{ textAlign: 'left', padding: '10px 16px', fontWeight: 600, color: 'var(--slate)' }}>Weight</th>
+                    <th style={{ width: 40 }} />
+                  </tr></thead>
+                  <tbody>
+                    {costFactors.map((f, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '10px 16px' }}><input value={f.name} onChange={e => { const n=[...costFactors]; n[i]={...n[i],name:e.target.value}; setCostFactors(n) }} style={{ border:'1px solid var(--border)', borderRadius:6, padding:'5px 8px', fontSize:13, outline:'none', width:'100%' }} /></td>
+                        <td style={{ padding: '10px 16px' }}><select value={f.type} onChange={e => { const n=[...costFactors]; n[i]={...n[i],type:e.target.value}; setCostFactors(n) }} style={{ border:'1px solid var(--border)', borderRadius:6, padding:'5px 8px', fontSize:13, outline:'none' }}>{['0-5','1-5','Percentage','Hours','Days'].map(t => <option key={t}>{t}</option>)}</select></td>
+                        <td style={{ padding: '10px 16px' }}><select value={f.weight} onChange={e => { const n=[...costFactors]; n[i]={...n[i],weight:parseInt(e.target.value)}; setCostFactors(n) }} style={{ border:'1px solid var(--border)', borderRadius:6, padding:'5px 8px', fontSize:13, outline:'none' }}>{[10,20,25,33,50,75,100].map(w => <option key={w} value={w}>{w}%</option>)}</select></td>
+                        <td style={{ padding: '0 8px' }}><button type="button" onClick={() => setCostFactors(costFactors.filter((_,j)=>j!==i))} style={{ color:'#ef4444', background:'none', border:'none', cursor:'pointer', fontSize:18 }}>×</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{ padding: '12px 16px' }}><button type="button" onClick={() => setCostFactors([...costFactors, { name: 'New Factor', type: '0-5', weight: 100 }])} style={{ fontSize:13, color:'var(--coral)', background:'none', border:'none', cursor:'pointer', fontWeight:600 }}>+ Add a new factor</button></div>
+              </div>
+
+              {/* Display Options */}
+              <div style={{ marginBottom: 28, borderRadius: 14, border: '1px solid var(--border)', background: '#fff', padding: '16px 20px' }}>
+                <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)', margin: '0 0 14px 0' }}>Display Options</h3>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 14, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+                  <div><p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Priority score display</p><p style={{ fontSize: 12, color: 'var(--slate)', margin: '2px 0 0 0' }}>Choose how to display the priority score</p></div>
+                  <select style={{ border:'1px solid var(--border)', borderRadius:8, padding:'6px 10px', fontSize:13, outline:'none' }}><option>Score &amp; label</option><option>Score only</option><option>Label only</option></select>
+                </div>
+                {[
+                  { label: 'Show priority score', desc: 'Show/hide priority scores in your Board & Roadmap', state: showPriorityScore, set: setShowPriorityScore },
+                  { label: 'Normalize priority scores', desc: 'Normalize priority scores (0-100)', state: normalizeScores, set: setNormalizeScores },
+                  { label: 'Make priority scores public', desc: 'Show priority scores to users on the public board', state: scorePublic, set: setScorePublic },
+                ].map(tog => (
+                  <div key={tog.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 14, marginBottom: 14, borderBottom: '1px solid var(--border)' }}>
+                    <div><p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{tog.label}</p><p style={{ fontSize: 12, color: 'var(--slate)', margin: '2px 0 0 0' }}>{tog.desc}</p></div>
+                    <button type="button" onClick={() => tog.set(!tog.state)} style={{ width:40, height:22, borderRadius:11, background: tog.state ? 'var(--coral)' : '#d1d5db', border:'none', cursor:'pointer', position:'relative', transition:'background 0.2s', flexShrink:0 }}>
+                      <span style={{ position:'absolute', top:3, left: tog.state ? 21 : 3, width:16, height:16, background:'#fff', borderRadius:'50%', transition:'left 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.2)' }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 32 }}>
+                <button type="button" onClick={() => { setSettingsSaved(true); setTimeout(()=>setSettingsSaved(false), 2000) }} style={{ padding:'10px 24px', borderRadius:10, background:'var(--coral)', color:'#fff', border:'none', fontSize:14, fontWeight:700, cursor:'pointer' }}>
+                  {settingsSaved ? '✓ Saved!' : 'Save changes'}
+                </button>
               </div>
             </div>
           )}

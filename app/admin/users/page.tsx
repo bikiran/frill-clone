@@ -43,6 +43,46 @@ export default function UsersPage() {
   const [filterType, setFilterType] = useState<'all' | 'team' | 'customer'>('all')
   const [hasWooCommerce, setHasWooCommerce] = useState(false)
 
+  const loadCustomerPage = async (page: number) => {
+    try {
+      const sb = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+      )
+      let companyId2: string | null = null
+      if (typeof window !== 'undefined') {
+        const h = window.location.hostname
+        if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+          const { data: co } = await sb.from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
+          if (co) companyId2 = co.id
+        }
+      }
+      if (!companyId2) {
+        const { data: { session } } = await sb.auth.getSession()
+        if (session?.user) {
+          const { data: ownCo } = await sb.from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
+          if (ownCo?.id) companyId2 = ownCo.id
+        }
+      }
+      if (!companyId2) return
+      const from = page * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+      const { data: customers } = await (sb as any)
+        .from('woocommerce_customers').select('*')
+        .eq('company_id', companyId2)
+        .order('total_spend', { ascending: false })
+        .range(from, to)
+      setUsers(prev => {
+        const teams = prev.filter(u => u.type === 'team')
+        return [...teams, ...(customers || []).map((c: any) => ({ id: c.id, type: 'customer' as const, email: c.email, first_name: c.first_name, last_name: c.last_name, phone: c.phone, total_spend: c.total_spend, total_orders: c.total_orders, woo_customer_id: c.woo_customer_id }))]
+      })
+    } catch {}
+  }
+
+  useEffect(() => {
+    if (customerPage > 0) { loadCustomerPage(customerPage) }
+  }, [customerPage])
+
   useEffect(() => {
     const loadUsers = async () => {
       try {
@@ -409,6 +449,31 @@ export default function UsersPage() {
           </>
         )}
       </div>
+      {/* Customer pagination */}
+      {hasWooCommerce && totalCustomers > PAGE_SIZE && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, padding: '0 4px' }}>
+          <p style={{ fontSize: 13, color: '#666', margin: 0 }}>
+            Showing {customerPage * PAGE_SIZE + 1}–{Math.min((customerPage + 1) * PAGE_SIZE, totalCustomers)} of {totalCustomers.toLocaleString()} customers
+          </p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => setCustomerPage(p => Math.max(0, p - 1))}
+              disabled={customerPage === 0}
+              style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: customerPage === 0 ? '#f9f9f9' : '#fff', color: customerPage === 0 ? '#ccc' : 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: customerPage === 0 ? 'default' : 'pointer' }}>
+              ← Previous
+            </button>
+            <span style={{ padding: '8px 12px', fontSize: 13, color: '#666' }}>
+              Page {customerPage + 1} of {Math.ceil(totalCustomers / PAGE_SIZE)}
+            </span>
+            <button
+              onClick={() => setCustomerPage(p => p + 1)}
+              disabled={(customerPage + 1) * PAGE_SIZE >= totalCustomers}
+              style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: (customerPage + 1) * PAGE_SIZE >= totalCustomers ? '#f9f9f9' : 'var(--coral)', color: (customerPage + 1) * PAGE_SIZE >= totalCustomers ? '#ccc' : '#fff', fontSize: 13, fontWeight: 600, cursor: (customerPage + 1) * PAGE_SIZE >= totalCustomers ? 'default' : 'pointer' }}>
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -37,3 +37,40 @@ ALTER TABLE ideas ADD COLUMN IF NOT EXISTS priority TEXT;
 -- detail view can show real profile icons instead of generic tick marks.
 ALTER TABLE votes ADD COLUMN IF NOT EXISTS user_name TEXT;
 ALTER TABLE votes ADD COLUMN IF NOT EXISTS user_avatar TEXT;
+
+-- FORM RESPONSES: add metadata columns for geo/device detection
+ALTER TABLE form_responses ADD COLUMN IF NOT EXISTS ip_address TEXT;
+ALTER TABLE form_responses ADD COLUMN IF NOT EXISTS user_agent TEXT;
+ALTER TABLE form_responses ADD COLUMN IF NOT EXISTS city TEXT;
+ALTER TABLE form_responses ADD COLUMN IF NOT EXISTS country TEXT;
+ALTER TABLE form_responses ADD COLUMN IF NOT EXISTS timezone TEXT;
+ALTER TABLE form_responses ADD COLUMN IF NOT EXISTS language TEXT;
+ALTER TABLE form_responses ADD COLUMN IF NOT EXISTS screen_width INTEGER;
+ALTER TABLE form_responses ADD COLUMN IF NOT EXISTS screen_height INTEGER;
+ALTER TABLE form_responses ADD COLUMN IF NOT EXISTS response_time_seconds INTEGER;
+ALTER TABLE form_responses ADD COLUMN IF NOT EXISTS referrer TEXT;
+
+-- WOOCOMMERCE ORDERS: table for storing individual order history
+CREATE TABLE IF NOT EXISTS woocommerce_orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
+  woo_order_id INTEGER,
+  woo_customer_id INTEGER,
+  customer_email TEXT,
+  status TEXT,
+  total NUMERIC(10,2) DEFAULT 0,
+  currency TEXT DEFAULT 'USD',
+  order_date TIMESTAMPTZ,
+  line_items JSONB DEFAULT '[]',
+  billing JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(company_id, woo_order_id)
+);
+CREATE INDEX IF NOT EXISTS idx_woo_orders_customer ON woocommerce_orders(company_id, woo_customer_id);
+
+-- WIDGET ANALYTICS: ensure created_at exists (inserted as 'timestamp' before)
+ALTER TABLE widget_analytics ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+UPDATE widget_analytics SET created_at = (timestamp::timestamptz) WHERE created_at IS NULL AND timestamp IS NOT NULL;
+
+-- COMMENTS: store display name at post time
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS user_name TEXT;
