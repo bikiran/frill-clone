@@ -136,7 +136,15 @@ function SignUpForm() {
     setLoading(true)
     try {
       // 1. Sign up user
-      const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+      // Redirect must go through the main domain (colvy.com/auth/callback) since
+    // Supabase only allows whitelisted redirect URLs. Subdomains are handled
+    // by the callback route which then redirects to the company's board.
+    const baseUrl = typeof window !== 'undefined'
+      ? (window.location.hostname.includes('localhost') || window.location.hostname.includes('vercel.app')
+        ? window.location.origin
+        : 'https://colvy.com')
+      : 'https://colvy.com'
+
       const { data, error: authErr } = await supabase.auth.signUp({
         email, password,
         options: {
@@ -312,7 +320,12 @@ function SignUpForm() {
   const handleResend = async () => {
     setResendLoading(true)
     setResendSuccess('')
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+    setError('')
+    const baseUrl = typeof window !== 'undefined'
+      ? (window.location.hostname.includes('localhost') || window.location.hostname.includes('vercel.app')
+        ? window.location.origin
+        : 'https://colvy.com')
+      : 'https://colvy.com'
     const redirectTo = companyContext
       ? `${baseUrl}/auth/callback?company_id=${companyContext.id}`
       : `${baseUrl}/auth/callback?slug=${encodeURIComponent(slug)}&name=${encodeURIComponent(companyName)}&industry=${encodeURIComponent(industry)}`
@@ -323,9 +336,13 @@ function SignUpForm() {
     })
     setResendLoading(false)
     if (error) {
-      setError(error.message)
+      // If resend fails, try signing up again (handles cases where the user
+      // record wasn't created properly the first time)
+      console.error('Resend error:', error.message)
+      setResendSuccess('')
+      setError(`Resend failed: ${error.message}. Try the "Use a different email" button and sign up again.`)
     } else {
-      setResendSuccess('Email resent! Check your inbox.')
+      setResendSuccess('✓ Confirmation email sent! Check your inbox and spam folder.')
       setResendCountdown(60)
     }
   }

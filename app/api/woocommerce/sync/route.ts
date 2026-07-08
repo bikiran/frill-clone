@@ -76,6 +76,12 @@ export async function POST(req: NextRequest) {
       const res = await fetch(`${integration.store_url}/wp-json/wc/v3/${path}`, {
         headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' }
       })
+      if (res.status === 429) {
+        // Pass the 429 back to the client so it can back off and retry
+        const err = new Error('WooCommerce API rate limit hit — will retry') as any
+        err.status = 429
+        throw err
+      }
       if (!res.ok) throw new Error(`WooCommerce API error: ${res.statusText}`)
       const totalPages = parseInt(res.headers.get('x-wp-totalpages') || '1') || 1
       const total = parseInt(res.headers.get('x-wp-total') || '0') || 0
@@ -247,9 +253,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Unknown sync mode: ${mode}` }, { status: 400 })
   } catch (error: any) {
     console.error('[WooCommerce Sync] Error:', error)
+    const status = error.status === 429 ? 429 : 500
     return NextResponse.json(
       { error: error.message || 'Sync failed' },
-      { status: 500 }
+      { status }
     )
   }
 }

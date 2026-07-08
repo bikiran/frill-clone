@@ -216,23 +216,51 @@ export default function WooCommerceIntegration() {
     setError('')
     setSuccess('')
 
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
     try {
       const runPhase = async (mode: 'customers' | 'orders', label: string) => {
         let page = 1
         let totalPages = 1
         let processed = 0
+        let retries = 0
+
         do {
-          const res = await fetch('/api/woocommerce/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ companyId, mode, page })
-          })
-          const data = await res.json()
-          if (!res.ok) throw new Error(data.error || 'Sync failed')
-          totalPages = data.totalPages || 1
-          processed += data.syncedCount || data.updated || 0
-          setSuccess(`${label}: page ${page}/${totalPages}…`)
-          page++
+          try {
+            const res = await fetch('/api/woocommerce/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ companyId, mode, page })
+            })
+            const data = await res.json()
+
+            if (!res.ok) {
+              // 429 Too Many Requests — back off and retry
+              if (res.status === 429 || (data.error || '').includes('Too Many Requests')) {
+                retries++
+                if (retries > 5) throw new Error(`WooCommerce rate limit exceeded. Try again in a few minutes.`)
+                const wait = retries * 5000 // 5s, 10s, 15s, 20s, 25s
+                setSuccess(`${label}: rate limited — waiting ${retries * 5}s before retry… (page ${page}/${totalPages})`)
+                await sleep(wait)
+                continue // retry same page
+              }
+              throw new Error(data.error || 'Sync failed')
+            }
+
+            retries = 0 // reset on success
+            totalPages = data.totalPages || 1
+            processed += data.syncedCount || data.updated || 0
+            setSuccess(`${label}: page ${page}/${totalPages}…`)
+            page++
+
+            // Polite delay between pages — 300ms avoids hammering the WooCommerce API
+            if (page <= totalPages) await sleep(300)
+          } catch (fetchErr: any) {
+            if (fetchErr.message?.includes('rate limit')) throw fetchErr
+            retries++
+            if (retries > 3) throw fetchErr
+            await sleep(2000)
+          }
         } while (page <= totalPages)
         return processed
       }
