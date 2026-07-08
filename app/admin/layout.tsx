@@ -63,12 +63,21 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Inbox & CRM',
+    items: [
+      { label: 'Inbox', href: '/admin/inbox', icon: 'support' },
+      { label: 'Contacts', href: '/admin/contacts', icon: 'users' },
+      { label: 'Reviews', href: '/admin/reviews', icon: 'analytics' },
+      { label: 'Scheduled', href: '/admin/scheduled', icon: 'roadmap' },
+    ],
+  },
+  {
     label: 'Support',
     items: [
       { label: 'Help Centre', href: '/admin/help', icon: 'help' },
       { label: 'Help Reporting', href: '/admin/help/analytics', icon: 'analytics' },
       { label: 'Help Settings', href: '/admin/help/settings', icon: 'settings' },
-      { label: 'Support', href: '/admin/support', icon: 'support' },
+      { label: 'Old Support', href: '/admin/support', icon: 'support' },
     ],
   },
   {

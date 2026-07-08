@@ -13,6 +13,13 @@ function WidgetContent() {
   const slug = params.get('slug') || ''
 
   const [tab, setTab] = useState<'feedback' | 'roadmap' | 'updates' | 'help' | 'chat'>('feedback')
+  const [chatConvId, setChatConvId] = useState<string | null>(null)
+  const [chatMessages2, setChatMessages2] = useState<any[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatSending, setChatSending] = useState(false)
+  const [chatName, setChatName] = useState('')
+  const [chatEmail, setChatEmail] = useState('')
+  const [chatStep, setChatStep] = useState<'form' | 'chat'>('form')
   const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement' | 'help'; id: string } | null>(null)
   const [company, setCompany] = useState<any>(null)
   const [ideas, setIdeas] = useState<any[]>([])
@@ -35,9 +42,6 @@ function WidgetContent() {
   }, [selectedItem?.id])
   const [feedback, setFeedback] = useState('')
   const [chatMessages, setChatMessages] = useState<any[]>([])
-  const [chatName, setChatName] = useState('')
-  const [chatEmail, setChatEmail] = useState('')
-  const [chatInput, setChatInput] = useState('')
   const [attachments, setAttachments] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -1277,8 +1281,144 @@ function WidgetContent() {
         )}
 
         {tab === 'chat' && (
-          <div style={{ animation: 'fadeIn 0.2s ease both', padding: '16px', textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
-            Chat support coming soon. Use feedback tab to reach out!
+          <div style={{ animation: 'fadeIn 0.2s ease both', display: 'flex', flexDirection: 'column', height: '100%', padding: 0 }}>
+            {chatStep === 'form' ? (
+              <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ textAlign: 'center', paddingBottom: 12 }}>
+                  <div style={{ width: 48, height: 48, borderRadius: '50%', background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', fontSize: 20 }}>💬</div>
+                  <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#0d0d0d' }}>Chat with us</h3>
+                  <p style={{ margin: 0, fontSize: 13, color: '#9ca3af' }}>We're online and ready to help</p>
+                </div>
+                <input value={chatName} onChange={e => setChatName(e.target.value)} placeholder="Your name"
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
+                <input value={chatEmail} onChange={e => setChatEmail(e.target.value)} placeholder="Your email (optional)" type="email"
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
+                <button type="button"
+                  onClick={async () => {
+                    if (!chatName.trim()) return
+                    // Create a contact or look up existing
+                    let contactId: string | null = null
+                    try {
+                      if (chatEmail) {
+                        const { data: existingContact } = await (supabase as any).from('contacts').select('id').eq('company_id', company?.id).eq('email', chatEmail).maybeSingle()
+                        if (existingContact) {
+                          contactId = existingContact.id
+                        } else {
+                          const { data: newContact } = await (supabase as any).from('contacts').insert({ company_id: company?.id, name: chatName, email: chatEmail, source: 'widget' }).select('id').maybeSingle()
+                          if (newContact) contactId = newContact.id
+                        }
+                      }
+                      // Create conversation
+                      const visitorId = `widget-${Date.now()}-${Math.random().toString(36).slice(2)}`
+                      const { data: conv } = await (supabase as any).from('conversations').insert({
+                        company_id: company?.id,
+                        contact_id: contactId,
+                        channel: 'widget',
+                        status: 'open',
+                        subject: chatName,
+                        visitor_id: visitorId,
+                        page_url: typeof window !== 'undefined' ? window.location.href : null,
+                        page_title: typeof document !== 'undefined' ? document.title : null,
+                        page_history: [{ url: typeof window !== 'undefined' ? window.location.href : null, title: typeof document !== 'undefined' ? document.title : null, ts: new Date().toISOString() }],
+                        last_message_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                      }).select('id').maybeSingle()
+                      if (conv) {
+                        setChatConvId(conv.id)
+                        // Insert a system greeting
+                        await (supabase as any).from('messages').insert({
+                          conversation_id: conv.id,
+                          company_id: company?.id,
+                          sender_type: 'system',
+                          content: `${chatName} started a chat`,
+                        })
+                        setChatMessages2([])
+                      }
+                    } catch {}
+                    setChatStep('chat')
+                  }}
+                  style={{ width: '100%', padding: '13px 0', borderRadius: 12, background: accentColor, color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: chatName.trim() ? 'pointer' : 'default', opacity: chatName.trim() ? 1 : 0.5 }}>
+                  Start Chat
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                {/* Messages */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '8px 0' }}>
+                    <span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>Chat started • We'll reply as soon as we can</span>
+                  </div>
+                  {chatMessages2.map((msg: any, i) => {
+                    const isAgent = msg.sender_type === 'agent'
+                    const isSystem = msg.sender_type === 'system'
+                    if (isSystem) return <div key={i} style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af' }}><span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>{msg.content}</span></div>
+                    return (
+                      <div key={i} style={{ display: 'flex', justifyContent: isAgent ? 'flex-start' : 'flex-end' }}>
+                        <div style={{
+                          maxWidth: '80%', padding: '10px 13px', borderRadius: isAgent ? '14px 14px 14px 4px' : '14px 14px 4px 14px',
+                          background: isAgent ? '#f3f4f6' : accentColor,
+                          color: isAgent ? '#0d0d0d' : '#fff', fontSize: 13, lineHeight: 1.5,
+                        }}>
+                          {isAgent && <p style={{ margin: '0 0 3px', fontSize: 11, fontWeight: 700, color: '#6b7280' }}>{msg.sender_name}</p>}
+                          {msg.content}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                {/* Input */}
+                <div style={{ padding: '10px 12px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                  <textarea value={chatInput} onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={async e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        if (!chatInput.trim() || !chatConvId || chatSending) return
+                        setChatSending(true)
+                        const content = chatInput.trim()
+                        setChatInput('')
+                        const newMsg = { sender_type: 'visitor', sender_name: chatName, content, created_at: new Date().toISOString() }
+                        setChatMessages2(prev => [...prev, newMsg])
+                        try {
+                          await (supabase as any).from('messages').insert({
+                            conversation_id: chatConvId,
+                            company_id: company?.id,
+                            sender_type: 'visitor',
+                            sender_name: chatName,
+                            sender_email: chatEmail || null,
+                            content,
+                          })
+                          await (supabase as any).from('conversations').update({
+                            last_message: content,
+                            last_message_at: new Date().toISOString(),
+                            is_unread: true,
+                            unread_count: 1,
+                            updated_at: new Date().toISOString(),
+                          }).eq('id', chatConvId)
+                        } catch {}
+                        setChatSending(false)
+                      }
+                    }}
+                    placeholder="Type a message…" rows={2}
+                    style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1px solid #e5e5e5', fontSize: 14, resize: 'none', outline: 'none', fontFamily: 'inherit' }} />
+                  <button type="button"
+                    onClick={async () => {
+                      if (!chatInput.trim() || !chatConvId || chatSending) return
+                      setChatSending(true)
+                      const content = chatInput.trim()
+                      setChatInput('')
+                      setChatMessages2(prev => [...prev, { sender_type: 'visitor', sender_name: chatName, content, created_at: new Date().toISOString() }])
+                      try {
+                        await (supabase as any).from('messages').insert({ conversation_id: chatConvId, company_id: company?.id, sender_type: 'visitor', sender_name: chatName, sender_email: chatEmail || null, content })
+                        await (supabase as any).from('conversations').update({ last_message: content, last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, updated_at: new Date().toISOString() }).eq('id', chatConvId)
+                      } catch {}
+                      setChatSending(false)
+                    }}
+                    style={{ width: 38, height: 38, borderRadius: '50%', background: chatInput.trim() ? accentColor : '#e5e5e5', border: 'none', cursor: chatInput.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
