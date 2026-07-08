@@ -20,6 +20,8 @@ function WidgetContent() {
   const [chatName, setChatName] = useState('')
   const [chatEmail, setChatEmail] = useState('')
   const [chatStep, setChatStep] = useState<'form' | 'chat'>('form')
+  const [chatCreating, setChatCreating] = useState(false)
+  const [chatCreateError, setChatCreateError] = useState('')
   const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement' | 'help'; id: string } | null>(null)
   const [company, setCompany] = useState<any>(null)
   const [ideas, setIdeas] = useState<any[]>([])
@@ -39,6 +41,26 @@ function WidgetContent() {
     setHelpFeedbackNote('')
     setHelpFeedbackEmail('')
     setHelpFeedbackDone(false)
+
+    // Track the view for help-center analytics (previously only the standalone
+    // /help page logged views — widget opens were never counted, so "Article
+    // views" always showed 0 for widget traffic)
+    if (selectedItem?.type === 'help' && company?.id) {
+      ;(async () => {
+        try {
+          await (supabase as any).from('help_article_views').insert({
+            article_id: selectedItem.id,
+            company_id: company.id,
+            source: 'widget',
+          })
+          // Keep the legacy counter column in sync too
+          const article = helpArticles.find(a => a.id === selectedItem.id)
+          if (article) {
+            await (supabase as any).from('help_articles').update({ views: (article.views || 0) + 1 }).eq('id', selectedItem.id)
+          }
+        } catch {}
+      })()
+    }
   }, [selectedItem?.id])
 
   // Subscribe to agent replies on the active chat conversation
@@ -1308,9 +1330,16 @@ function WidgetContent() {
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
                 <input value={chatEmail} onChange={e => setChatEmail(e.target.value)} placeholder="Your email (optional)" type="email"
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
-                <button type="button"
+                {chatCreateError && (
+                  <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fef2f2', color: '#dc2626', fontSize: 12, fontWeight: 600 }}>
+                    {chatCreateError}
+                  </div>
+                )}
+                <button type="button" disabled={chatCreating}
                   onClick={async () => {
                     if (!chatName.trim()) return
+                    setChatCreating(true)
+                    setChatCreateError('')
                     // Create a contact or look up existing
                     let contactId: string | null = null
                     try {
@@ -1348,16 +1377,29 @@ function WidgetContent() {
                           content: `${chatName} started a chat`,
                         })
                         setChatMessages2([])
+                        setChatStep('chat')
+                      } else {
+                        // Insert returned no row — surface this instead of silently
+                        // advancing to a chat screen where Send can never work
+                        setChatCreateError('Could not start chat. Please try again in a moment.')
                       }
-                    } catch {}
-                    setChatStep('chat')
+                    } catch (err: any) {
+                      console.error('Widget chat start error:', err)
+                      setChatCreateError('Could not start chat — please try again.')
+                    }
+                    setChatCreating(false)
                   }}
-                  style={{ width: '100%', padding: '13px 0', borderRadius: 12, background: accentColor, color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: chatName.trim() ? 'pointer' : 'default', opacity: chatName.trim() ? 1 : 0.5 }}>
-                  Start Chat
+                  style={{ width: '100%', padding: '13px 0', borderRadius: 12, background: accentColor, color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: (chatName.trim() && !chatCreating) ? 'pointer' : 'default', opacity: (chatName.trim() && !chatCreating) ? 1 : 0.5 }}>
+                  {chatCreating ? 'Starting…' : 'Start Chat'}
                 </button>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                {chatCreateError && (
+                  <div style={{ padding: '8px 14px', background: '#fef2f2', color: '#dc2626', fontSize: 12, fontWeight: 600, textAlign: 'center' }}>
+                    {chatCreateError}
+                  </div>
+                )}
                 {/* Messages */}
                 <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '8px 0' }}>
@@ -1394,7 +1436,7 @@ function WidgetContent() {
                         const newMsg = { sender_type: 'visitor', sender_name: chatName, content, created_at: new Date().toISOString() }
                         setChatMessages2(prev => [...prev, newMsg])
                         try {
-                          await (supabase as any).from('messages').insert({
+                          const { error: msgErr } = await (supabase as any).from('messages').insert({
                             conversation_id: chatConvId,
                             company_id: company?.id,
                             sender_type: 'visitor',
@@ -1402,6 +1444,7 @@ function WidgetContent() {
                             sender_email: chatEmail || null,
                             content,
                           })
+                          if (msgErr) throw msgErr
                           await (supabase as any).from('conversations').update({
                             last_message: content,
                             last_message_at: new Date().toISOString(),
@@ -1409,7 +1452,10 @@ function WidgetContent() {
                             unread_count: 1,
                             updated_at: new Date().toISOString(),
                           }).eq('id', chatConvId)
-                        } catch {}
+                        } catch (err) {
+                          console.error('Widget message send error:', err)
+                          setChatCreateError('Message could not be sent. Please try again.')
+                        }
                         setChatSending(false)
                       }
                     }}
@@ -1423,9 +1469,13 @@ function WidgetContent() {
                       setChatInput('')
                       setChatMessages2(prev => [...prev, { sender_type: 'visitor', sender_name: chatName, content, created_at: new Date().toISOString() }])
                       try {
-                        await (supabase as any).from('messages').insert({ conversation_id: chatConvId, company_id: company?.id, sender_type: 'visitor', sender_name: chatName, sender_email: chatEmail || null, content })
+                        const { error: msgErr } = await (supabase as any).from('messages').insert({ conversation_id: chatConvId, company_id: company?.id, sender_type: 'visitor', sender_name: chatName, sender_email: chatEmail || null, content })
+                        if (msgErr) throw msgErr
                         await (supabase as any).from('conversations').update({ last_message: content, last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, updated_at: new Date().toISOString() }).eq('id', chatConvId)
-                      } catch {}
+                      } catch (err) {
+                        console.error('Widget message send error:', err)
+                        setChatCreateError('Message could not be sent. Please try again.')
+                      }
                       setChatSending(false)
                     }}
                     style={{ width: 38, height: 38, borderRadius: '50%', background: chatInput.trim() ? accentColor : '#e5e5e5', border: 'none', cursor: chatInput.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

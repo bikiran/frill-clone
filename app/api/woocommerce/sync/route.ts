@@ -91,16 +91,23 @@ export async function POST(req: NextRequest) {
     if (mode === 'customers') {
       const { data: customers, totalPages, total } = await wcFetch(`customers?per_page=${perPage}&page=${page}&orderby=id&order=asc`)
 
-      const rows = (customers as any[]).map(c => ({
-        company_id: companyId,
-        woo_customer_id: c.id,
-        email: c.email,
-        first_name: c.first_name,
-        last_name: c.last_name,
-        phone: c.billing?.phone || '',
-        address: c.billing,
-        synced_at: new Date().toISOString(),
-      }))
+      const rows = (customers as any[])
+        // Some WooCommerce customers (e.g. guest/incomplete accounts) have no
+        // email — the DB requires one, so fall back to a placeholder built
+        // from the billing name / customer id rather than failing the whole page.
+        .map(c => {
+          const email = c.email?.trim() || c.billing?.email?.trim() || `woo-customer-${c.id}@no-email.colvy.internal`
+          return {
+            company_id: companyId,
+            woo_customer_id: c.id,
+            email,
+            first_name: c.first_name || c.billing?.first_name || '',
+            last_name: c.last_name || c.billing?.last_name || '',
+            phone: c.billing?.phone || '',
+            address: c.billing,
+            synced_at: new Date().toISOString(),
+          }
+        })
 
       let syncedCount = 0
       if (rows.length > 0) {

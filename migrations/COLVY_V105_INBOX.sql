@@ -135,3 +135,8 @@ DROP POLICY IF EXISTS "Anyone can manage scheduled_messages" ON scheduled_messag
 CREATE POLICY "Anyone can manage scheduled_messages" ON scheduled_messages FOR ALL USING (true);
 
 -- Done.
+
+-- ANNOUNCEMENTS: notification settings + subscriber notify tracking
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS notify_subscribers BOOLEAN DEFAULT true;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS segmentation TEXT DEFAULT 'all';
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS notified_at TIMESTAMPTZ;

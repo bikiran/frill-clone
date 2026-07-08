@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS guest_interactions (
 ALTER TABLE guest_interactions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anyone can log guest interactions" ON guest_interactions;
 DROP POLICY IF EXISTS "Anyone can log guest interactions" ON guest_interactions;
+DROP POLICY IF EXISTS "Anyone can log guest interactions" ON guest_interactions;
 CREATE POLICY "Anyone can log guest interactions" ON guest_interactions FOR ALL USING (true);
 
 -- Audit log table
@@ -252,13 +253,17 @@ DROP POLICY IF EXISTS "Comments are viewable by everyone" ON comments;
 -- IDEAS policies
 DROP POLICY IF EXISTS "Ideas are viewable by everyone" ON ideas;
 DROP POLICY IF EXISTS "Ideas are viewable by everyone" ON ideas;
+DROP POLICY IF EXISTS "Ideas are viewable by everyone" ON ideas;
 CREATE POLICY "Ideas are viewable by everyone" ON ideas FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can insert ideas" ON ideas;
 DROP POLICY IF EXISTS "Anyone can insert ideas" ON ideas;
 DROP POLICY IF EXISTS "Anyone can insert ideas" ON ideas;
 CREATE POLICY "Anyone can insert ideas" ON ideas FOR INSERT WITH CHECK (true);
 DROP POLICY IF EXISTS "Anyone can update ideas" ON ideas;
 DROP POLICY IF EXISTS "Anyone can update ideas" ON ideas;
+DROP POLICY IF EXISTS "Anyone can update ideas" ON ideas;
 CREATE POLICY "Anyone can update ideas" ON ideas FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Anyone can delete ideas" ON ideas;
 DROP POLICY IF EXISTS "Anyone can delete ideas" ON ideas;
 DROP POLICY IF EXISTS "Anyone can delete ideas" ON ideas;
 CREATE POLICY "Anyone can delete ideas" ON ideas FOR DELETE USING (true);
@@ -266,10 +271,13 @@ CREATE POLICY "Anyone can delete ideas" ON ideas FOR DELETE USING (true);
 -- VOTES policies
 DROP POLICY IF EXISTS "Votes are viewable by everyone" ON votes;
 DROP POLICY IF EXISTS "Votes are viewable by everyone" ON votes;
+DROP POLICY IF EXISTS "Votes are viewable by everyone" ON votes;
 CREATE POLICY "Votes are viewable by everyone" ON votes FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Users can insert their own votes" ON votes;
 DROP POLICY IF EXISTS "Users can insert their own votes" ON votes;
+DROP POLICY IF EXISTS "Users can insert their own votes" ON votes;
 CREATE POLICY "Users can insert their own votes" ON votes FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can delete their own votes" ON votes;
 DROP POLICY IF EXISTS "Users can delete their own votes" ON votes;
 DROP POLICY IF EXISTS "Users can delete their own votes" ON votes;
 CREATE POLICY "Users can delete their own votes" ON votes FOR DELETE USING (auth.uid() = user_id);
@@ -277,13 +285,17 @@ CREATE POLICY "Users can delete their own votes" ON votes FOR DELETE USING (auth
 -- ANNOUNCEMENTS policies
 DROP POLICY IF EXISTS "Announcements are viewable by everyone" ON announcements;
 DROP POLICY IF EXISTS "Announcements are viewable by everyone" ON announcements;
+DROP POLICY IF EXISTS "Announcements are viewable by everyone" ON announcements;
 CREATE POLICY "Announcements are viewable by everyone" ON announcements FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can insert announcements" ON announcements;
 DROP POLICY IF EXISTS "Anyone can insert announcements" ON announcements;
 DROP POLICY IF EXISTS "Anyone can insert announcements" ON announcements;
 CREATE POLICY "Anyone can insert announcements" ON announcements FOR INSERT WITH CHECK (true);
 DROP POLICY IF EXISTS "Anyone can update announcements" ON announcements;
 DROP POLICY IF EXISTS "Anyone can update announcements" ON announcements;
+DROP POLICY IF EXISTS "Anyone can update announcements" ON announcements;
 CREATE POLICY "Anyone can update announcements" ON announcements FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Anyone can delete announcements" ON announcements;
 DROP POLICY IF EXISTS "Anyone can delete announcements" ON announcements;
 DROP POLICY IF EXISTS "Anyone can delete announcements" ON announcements;
 CREATE POLICY "Anyone can delete announcements" ON announcements FOR DELETE USING (true);
@@ -291,10 +303,13 @@ CREATE POLICY "Anyone can delete announcements" ON announcements FOR DELETE USIN
 -- COMMENTS policies
 DROP POLICY IF EXISTS "Comments are viewable by everyone" ON comments;
 DROP POLICY IF EXISTS "Comments are viewable by everyone" ON comments;
+DROP POLICY IF EXISTS "Comments are viewable by everyone" ON comments;
 CREATE POLICY "Comments are viewable by everyone" ON comments FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Users can insert comments" ON comments;
 DROP POLICY IF EXISTS "Users can insert comments" ON comments;
+DROP POLICY IF EXISTS "Users can insert comments" ON comments;
 CREATE POLICY "Users can insert comments" ON comments FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can delete their own comments" ON comments;
 DROP POLICY IF EXISTS "Users can delete their own comments" ON comments;
 DROP POLICY IF EXISTS "Users can delete their own comments" ON comments;
 CREATE POLICY "Users can delete their own comments" ON comments FOR DELETE USING (auth.uid() = user_id);
@@ -302,7 +317,9 @@ CREATE POLICY "Users can delete their own comments" ON comments FOR DELETE USING
 -- STATUSES policies
 DROP POLICY IF EXISTS "Statuses are viewable by everyone" ON statuses;
 DROP POLICY IF EXISTS "Statuses are viewable by everyone" ON statuses;
+DROP POLICY IF EXISTS "Statuses are viewable by everyone" ON statuses;
 CREATE POLICY "Statuses are viewable by everyone" ON statuses FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can manage statuses" ON statuses;
 DROP POLICY IF EXISTS "Anyone can manage statuses" ON statuses;
 DROP POLICY IF EXISTS "Anyone can manage statuses" ON statuses;
 CREATE POLICY "Anyone can manage statuses" ON statuses FOR ALL USING (true);
@@ -310,7 +327,9 @@ CREATE POLICY "Anyone can manage statuses" ON statuses FOR ALL USING (true);
 -- SURVEYS policies
 DROP POLICY IF EXISTS "Surveys are viewable by everyone" ON surveys;
 DROP POLICY IF EXISTS "Surveys are viewable by everyone" ON surveys;
+DROP POLICY IF EXISTS "Surveys are viewable by everyone" ON surveys;
 CREATE POLICY "Surveys are viewable by everyone" ON surveys FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can manage surveys" ON surveys;
 DROP POLICY IF EXISTS "Anyone can manage surveys" ON surveys;
 DROP POLICY IF EXISTS "Anyone can manage surveys" ON surveys;
 CREATE POLICY "Anyone can manage surveys" ON surveys FOR ALL USING (true);
@@ -318,7 +337,9 @@ CREATE POLICY "Anyone can manage surveys" ON surveys FOR ALL USING (true);
 -- SURVEY RESPONSES policies
 DROP POLICY IF EXISTS "Survey responses are viewable by everyone" ON survey_responses;
 DROP POLICY IF EXISTS "Survey responses are viewable by everyone" ON survey_responses;
+DROP POLICY IF EXISTS "Survey responses are viewable by everyone" ON survey_responses;
 CREATE POLICY "Survey responses are viewable by everyone" ON survey_responses FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can submit responses" ON survey_responses;
 DROP POLICY IF EXISTS "Anyone can submit responses" ON survey_responses;
 DROP POLICY IF EXISTS "Anyone can submit responses" ON survey_responses;
 CREATE POLICY "Anyone can submit responses" ON survey_responses FOR INSERT WITH CHECK (true);
@@ -326,7 +347,9 @@ CREATE POLICY "Anyone can submit responses" ON survey_responses FOR INSERT WITH 
 -- POLLS policies
 DROP POLICY IF EXISTS "Polls are viewable by everyone" ON polls;
 DROP POLICY IF EXISTS "Polls are viewable by everyone" ON polls;
+DROP POLICY IF EXISTS "Polls are viewable by everyone" ON polls;
 CREATE POLICY "Polls are viewable by everyone" ON polls FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can manage polls" ON polls;
 DROP POLICY IF EXISTS "Anyone can manage polls" ON polls;
 DROP POLICY IF EXISTS "Anyone can manage polls" ON polls;
 CREATE POLICY "Anyone can manage polls" ON polls FOR ALL USING (true);
@@ -334,7 +357,9 @@ CREATE POLICY "Anyone can manage polls" ON polls FOR ALL USING (true);
 -- POLL VOTES policies
 DROP POLICY IF EXISTS "Poll votes are viewable by everyone" ON poll_votes;
 DROP POLICY IF EXISTS "Poll votes are viewable by everyone" ON poll_votes;
+DROP POLICY IF EXISTS "Poll votes are viewable by everyone" ON poll_votes;
 CREATE POLICY "Poll votes are viewable by everyone" ON poll_votes FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can vote in polls" ON poll_votes;
 DROP POLICY IF EXISTS "Anyone can vote in polls" ON poll_votes;
 DROP POLICY IF EXISTS "Anyone can vote in polls" ON poll_votes;
 CREATE POLICY "Anyone can vote in polls" ON poll_votes FOR INSERT WITH CHECK (true);
@@ -342,7 +367,9 @@ CREATE POLICY "Anyone can vote in polls" ON poll_votes FOR INSERT WITH CHECK (tr
 -- SEGMENTS policies
 DROP POLICY IF EXISTS "Segments are viewable by everyone" ON segments;
 DROP POLICY IF EXISTS "Segments are viewable by everyone" ON segments;
+DROP POLICY IF EXISTS "Segments are viewable by everyone" ON segments;
 CREATE POLICY "Segments are viewable by everyone" ON segments FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can manage segments" ON segments;
 DROP POLICY IF EXISTS "Anyone can manage segments" ON segments;
 DROP POLICY IF EXISTS "Anyone can manage segments" ON segments;
 CREATE POLICY "Anyone can manage segments" ON segments FOR ALL USING (true);
@@ -350,7 +377,9 @@ CREATE POLICY "Anyone can manage segments" ON segments FOR ALL USING (true);
 -- ACTIVITY policies
 DROP POLICY IF EXISTS "Activity is viewable by everyone" ON activity;
 DROP POLICY IF EXISTS "Activity is viewable by everyone" ON activity;
+DROP POLICY IF EXISTS "Activity is viewable by everyone" ON activity;
 CREATE POLICY "Activity is viewable by everyone" ON activity FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can log activity" ON activity;
 DROP POLICY IF EXISTS "Anyone can log activity" ON activity;
 DROP POLICY IF EXISTS "Anyone can log activity" ON activity;
 CREATE POLICY "Anyone can log activity" ON activity FOR ALL USING (true);
@@ -358,7 +387,9 @@ CREATE POLICY "Anyone can log activity" ON activity FOR ALL USING (true);
 -- REACTIONS policies
 DROP POLICY IF EXISTS "Reactions are viewable by everyone" ON reactions;
 DROP POLICY IF EXISTS "Reactions are viewable by everyone" ON reactions;
+DROP POLICY IF EXISTS "Reactions are viewable by everyone" ON reactions;
 CREATE POLICY "Reactions are viewable by everyone" ON reactions FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can manage reactions" ON reactions;
 DROP POLICY IF EXISTS "Anyone can manage reactions" ON reactions;
 DROP POLICY IF EXISTS "Anyone can manage reactions" ON reactions;
 CREATE POLICY "Anyone can manage reactions" ON reactions FOR ALL USING (true);
@@ -366,7 +397,9 @@ CREATE POLICY "Anyone can manage reactions" ON reactions FOR ALL USING (true);
 -- TEAM_MEMBERS policies
 DROP POLICY IF EXISTS "Team members are viewable by everyone" ON team_members;
 DROP POLICY IF EXISTS "Team members are viewable by everyone" ON team_members;
+DROP POLICY IF EXISTS "Team members are viewable by everyone" ON team_members;
 CREATE POLICY "Team members are viewable by everyone" ON team_members FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can manage team members" ON team_members;
 DROP POLICY IF EXISTS "Anyone can manage team members" ON team_members;
 DROP POLICY IF EXISTS "Anyone can manage team members" ON team_members;
 CREATE POLICY "Anyone can manage team members" ON team_members FOR ALL USING (true);
@@ -458,20 +491,26 @@ ALTER TABLE idea_subscriptions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Likes viewable by everyone" ON idea_likes;
 DROP POLICY IF EXISTS "Likes viewable by everyone" ON idea_likes;
+DROP POLICY IF EXISTS "Likes viewable by everyone" ON idea_likes;
 CREATE POLICY "Likes viewable by everyone" ON idea_likes FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Anyone can like" ON idea_likes;
 DROP POLICY IF EXISTS "Anyone can like" ON idea_likes;
+DROP POLICY IF EXISTS "Anyone can like" ON idea_likes;
 CREATE POLICY "Anyone can like" ON idea_likes FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Anyone can unlike" ON idea_likes;
 DROP POLICY IF EXISTS "Anyone can unlike" ON idea_likes;
 DROP POLICY IF EXISTS "Anyone can unlike" ON idea_likes;
 CREATE POLICY "Anyone can unlike" ON idea_likes FOR DELETE USING (true);
 
 DROP POLICY IF EXISTS "Subs viewable by everyone" ON idea_subscriptions;
 DROP POLICY IF EXISTS "Subs viewable by everyone" ON idea_subscriptions;
+DROP POLICY IF EXISTS "Subs viewable by everyone" ON idea_subscriptions;
 CREATE POLICY "Subs viewable by everyone" ON idea_subscriptions FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Anyone can subscribe" ON idea_subscriptions;
 DROP POLICY IF EXISTS "Anyone can subscribe" ON idea_subscriptions;
+DROP POLICY IF EXISTS "Anyone can subscribe" ON idea_subscriptions;
 CREATE POLICY "Anyone can subscribe" ON idea_subscriptions FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Anyone can unsubscribe" ON idea_subscriptions;
 DROP POLICY IF EXISTS "Anyone can unsubscribe" ON idea_subscriptions;
 DROP POLICY IF EXISTS "Anyone can unsubscribe" ON idea_subscriptions;
 CREATE POLICY "Anyone can unsubscribe" ON idea_subscriptions FOR DELETE USING (true);
@@ -535,7 +574,9 @@ CREATE TABLE IF NOT EXISTS idea_images (
 ALTER TABLE idea_images ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anyone can view idea images" ON idea_images;
 DROP POLICY IF EXISTS "Anyone can view idea images" ON idea_images;
+DROP POLICY IF EXISTS "Anyone can view idea images" ON idea_images;
 CREATE POLICY "Anyone can view idea images" ON idea_images FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Users can create idea images" ON idea_images;
 DROP POLICY IF EXISTS "Users can create idea images" ON idea_images;
 DROP POLICY IF EXISTS "Users can create idea images" ON idea_images;
 CREATE POLICY "Users can create idea images" ON idea_images FOR INSERT WITH CHECK (true);
@@ -554,7 +595,9 @@ CREATE TABLE IF NOT EXISTS idea_assignments (
 ALTER TABLE idea_assignments ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anyone can view assignments" ON idea_assignments;
 DROP POLICY IF EXISTS "Anyone can view assignments" ON idea_assignments;
+DROP POLICY IF EXISTS "Anyone can view assignments" ON idea_assignments;
 CREATE POLICY "Anyone can view assignments" ON idea_assignments FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Team can create assignments" ON idea_assignments;
 DROP POLICY IF EXISTS "Team can create assignments" ON idea_assignments;
 DROP POLICY IF EXISTS "Team can create assignments" ON idea_assignments;
 CREATE POLICY "Team can create assignments" ON idea_assignments FOR INSERT WITH CHECK (true);
@@ -568,6 +611,7 @@ CREATE TABLE IF NOT EXISTS idea_internal_notes (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 ALTER TABLE idea_internal_notes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admin only internal notes" ON idea_internal_notes;
 DROP POLICY IF EXISTS "Admin only internal notes" ON idea_internal_notes;
 DROP POLICY IF EXISTS "Admin only internal notes" ON idea_internal_notes;
 CREATE POLICY "Admin only internal notes" ON idea_internal_notes FOR ALL USING (auth.jwt() ->> 'email' = 'bishalstha76@gmail.com');
@@ -593,7 +637,9 @@ CREATE TABLE IF NOT EXISTS custom_fields (
 ALTER TABLE custom_fields ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anyone can view custom fields" ON custom_fields;
 DROP POLICY IF EXISTS "Anyone can view custom fields" ON custom_fields;
+DROP POLICY IF EXISTS "Anyone can view custom fields" ON custom_fields;
 CREATE POLICY "Anyone can view custom fields" ON custom_fields FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Admin can manage fields" ON custom_fields;
 DROP POLICY IF EXISTS "Admin can manage fields" ON custom_fields;
 DROP POLICY IF EXISTS "Admin can manage fields" ON custom_fields;
 CREATE POLICY "Admin can manage fields" ON custom_fields FOR ALL USING (auth.jwt() ->> 'email' = 'bishalstha76@gmail.com');
@@ -610,7 +656,9 @@ CREATE TABLE IF NOT EXISTS idea_custom_values (
 ALTER TABLE idea_custom_values ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anyone can view custom values" ON idea_custom_values;
 DROP POLICY IF EXISTS "Anyone can view custom values" ON idea_custom_values;
+DROP POLICY IF EXISTS "Anyone can view custom values" ON idea_custom_values;
 CREATE POLICY "Anyone can view custom values" ON idea_custom_values FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Users can update custom values" ON idea_custom_values;
 DROP POLICY IF EXISTS "Users can update custom values" ON idea_custom_values;
 DROP POLICY IF EXISTS "Users can update custom values" ON idea_custom_values;
 CREATE POLICY "Users can update custom values" ON idea_custom_values FOR ALL WITH CHECK (true);
@@ -633,6 +681,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view own notifications" ON notifications;
 DROP POLICY IF EXISTS "Users can view own notifications" ON notifications;
+DROP POLICY IF EXISTS "Users can view own notifications" ON notifications;
 CREATE POLICY "Users can view own notifications" ON notifications FOR SELECT USING (user_id = auth.uid());
 
 CREATE TABLE IF NOT EXISTS notification_preferences (
@@ -649,7 +698,9 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
 ALTER TABLE notification_preferences ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view own preferences" ON notification_preferences;
 DROP POLICY IF EXISTS "Users can view own preferences" ON notification_preferences;
+DROP POLICY IF EXISTS "Users can view own preferences" ON notification_preferences;
 CREATE POLICY "Users can view own preferences" ON notification_preferences FOR SELECT USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "Users can update own preferences" ON notification_preferences;
 DROP POLICY IF EXISTS "Users can update own preferences" ON notification_preferences;
 DROP POLICY IF EXISTS "Users can update own preferences" ON notification_preferences;
 CREATE POLICY "Users can update own preferences" ON notification_preferences FOR ALL USING (user_id = auth.uid());
@@ -669,7 +720,9 @@ CREATE TABLE IF NOT EXISTS analytics_events (
 ALTER TABLE analytics_events ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anyone can log analytics" ON analytics_events;
 DROP POLICY IF EXISTS "Anyone can log analytics" ON analytics_events;
+DROP POLICY IF EXISTS "Anyone can log analytics" ON analytics_events;
 CREATE POLICY "Anyone can log analytics" ON analytics_events FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Admin can view analytics" ON analytics_events;
 DROP POLICY IF EXISTS "Admin can view analytics" ON analytics_events;
 DROP POLICY IF EXISTS "Admin can view analytics" ON analytics_events;
 CREATE POLICY "Admin can view analytics" ON analytics_events FOR SELECT USING (auth.jwt() ->> 'email' = 'bishalstha76@gmail.com');
@@ -689,6 +742,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Admin can manage API keys" ON api_keys;
 DROP POLICY IF EXISTS "Admin can manage API keys" ON api_keys;
+DROP POLICY IF EXISTS "Admin can manage API keys" ON api_keys;
 CREATE POLICY "Admin can manage API keys" ON api_keys FOR ALL USING (auth.jwt() ->> 'email' = 'bishalstha76@gmail.com');
 
 CREATE TABLE IF NOT EXISTS webhooks (
@@ -703,6 +757,7 @@ CREATE TABLE IF NOT EXISTS webhooks (
 ALTER TABLE webhooks ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Admin can manage webhooks" ON webhooks;
 DROP POLICY IF EXISTS "Admin can manage webhooks" ON webhooks;
+DROP POLICY IF EXISTS "Admin can manage webhooks" ON webhooks;
 CREATE POLICY "Admin can manage webhooks" ON webhooks FOR ALL USING (auth.jwt() ->> 'email' = 'bishalstha76@gmail.com');
 
 CREATE TABLE IF NOT EXISTS slack_integrations (
@@ -715,6 +770,7 @@ CREATE TABLE IF NOT EXISTS slack_integrations (
   created_at TIMESTAMP DEFAULT NOW()
 );
 ALTER TABLE slack_integrations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admin can manage slack" ON slack_integrations;
 DROP POLICY IF EXISTS "Admin can manage slack" ON slack_integrations;
 DROP POLICY IF EXISTS "Admin can manage slack" ON slack_integrations;
 CREATE POLICY "Admin can manage slack" ON slack_integrations FOR ALL USING (auth.jwt() ->> 'email' = 'bishalstha76@gmail.com');
@@ -739,7 +795,9 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view own subscription" ON subscriptions;
 DROP POLICY IF EXISTS "Users can view own subscription" ON subscriptions;
+DROP POLICY IF EXISTS "Users can view own subscription" ON subscriptions;
 CREATE POLICY "Users can view own subscription" ON subscriptions FOR SELECT USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "Admin can manage subscriptions" ON subscriptions;
 DROP POLICY IF EXISTS "Admin can manage subscriptions" ON subscriptions;
 DROP POLICY IF EXISTS "Admin can manage subscriptions" ON subscriptions;
 CREATE POLICY "Admin can manage subscriptions" ON subscriptions FOR ALL USING (auth.jwt() ->> 'email' = 'bishalstha76@gmail.com');
@@ -756,6 +814,7 @@ CREATE TABLE IF NOT EXISTS feature_usage (
 ALTER TABLE feature_usage ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can track own features" ON feature_usage;
 DROP POLICY IF EXISTS "Users can track own features" ON feature_usage;
+DROP POLICY IF EXISTS "Users can track own features" ON feature_usage;
 CREATE POLICY "Users can track own features" ON feature_usage FOR ALL USING (user_id = auth.uid());
 
 -- Stripe events log
@@ -768,6 +827,7 @@ CREATE TABLE IF NOT EXISTS stripe_events (
   created_at TIMESTAMP DEFAULT NOW()
 );
 ALTER TABLE stripe_events ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admin can view stripe events" ON stripe_events;
 DROP POLICY IF EXISTS "Admin can view stripe events" ON stripe_events;
 DROP POLICY IF EXISTS "Admin can view stripe events" ON stripe_events;
 CREATE POLICY "Admin can view stripe events" ON stripe_events FOR SELECT USING (auth.jwt() ->> 'email' = 'bishalstha76@gmail.com');
@@ -791,7 +851,9 @@ CREATE TABLE IF NOT EXISTS help_articles (
 
 ALTER TABLE help_articles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anyone can view help articles" ON help_articles;
+DROP POLICY IF EXISTS "Anyone can view help articles" ON help_articles;
 CREATE POLICY "Anyone can view help articles" ON help_articles FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Admin can manage help articles" ON help_articles;
 DROP POLICY IF EXISTS "Admin can manage help articles" ON help_articles;
 CREATE POLICY "Admin can manage help articles" ON help_articles FOR ALL USING (true);
 
@@ -809,7 +871,9 @@ CREATE TABLE IF NOT EXISTS support_tickets (
 );
 ALTER TABLE support_tickets ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anyone can submit tickets" ON support_tickets;
+DROP POLICY IF EXISTS "Anyone can submit tickets" ON support_tickets;
 CREATE POLICY "Anyone can submit tickets" ON support_tickets FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Admin can view tickets" ON support_tickets;
 DROP POLICY IF EXISTS "Admin can view tickets" ON support_tickets;
 CREATE POLICY "Admin can view tickets" ON support_tickets FOR SELECT USING (true);
 
@@ -826,6 +890,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at TIMESTAMP DEFAULT NOW()
 );
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can send chat messages" ON chat_messages;
 DROP POLICY IF EXISTS "Anyone can send chat messages" ON chat_messages;
 CREATE POLICY "Anyone can send chat messages" ON chat_messages FOR ALL USING (true);
 
@@ -869,6 +934,7 @@ CREATE TABLE IF NOT EXISTS integration_configs (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 ALTER TABLE integration_configs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admin can manage integrations" ON integration_configs;
 DROP POLICY IF EXISTS "Admin can manage integrations" ON integration_configs;
 CREATE POLICY "Admin can manage integrations" ON integration_configs FOR ALL USING (true);
 
@@ -914,11 +980,15 @@ CREATE INDEX IF NOT EXISTS companies_owner_idx ON companies (owner_id);
 
 ALTER TABLE companies DISABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Companies are viewable by everyone" ON companies;
+DROP POLICY IF EXISTS "Companies are viewable by everyone" ON companies;
 CREATE POLICY "Companies are viewable by everyone" ON companies FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Owners can update their company" ON companies;
 DROP POLICY IF EXISTS "Owners can update their company" ON companies;
 CREATE POLICY "Owners can update their company" ON companies FOR UPDATE USING (auth.uid() = owner_id);
 DROP POLICY IF EXISTS "Users can create a company" ON companies;
+DROP POLICY IF EXISTS "Users can create a company" ON companies;
 CREATE POLICY "Users can create a company" ON companies FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+DROP POLICY IF EXISTS "Owners can delete their company" ON companies;
 DROP POLICY IF EXISTS "Owners can delete their company" ON companies;
 CREATE POLICY "Owners can delete their company" ON companies FOR DELETE USING (auth.uid() = owner_id);
 
@@ -949,12 +1019,14 @@ ALTER TABLE votes ADD COLUMN IF NOT EXISTS company_id UUID;
 
 -- Allow anonymous votes (no user required)
 DROP POLICY IF EXISTS "Anyone can vote" ON votes;
+DROP POLICY IF EXISTS "Anyone can vote" ON votes;
 CREATE POLICY "Anyone can vote" ON votes FOR ALL USING (true);
 
 -- Add plan column to companies (used by platform admin)
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free';
 
 -- Platform admin can update plans
+DROP POLICY IF EXISTS "Platform admin can update companies" ON companies;
 DROP POLICY IF EXISTS "Platform admin can update companies" ON companies;
 CREATE POLICY "Platform admin can update companies" ON companies FOR UPDATE USING (true);
 
@@ -1011,7 +1083,9 @@ CREATE TABLE IF NOT EXISTS forms (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 ALTER TABLE forms ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can read published forms" ON forms;
 CREATE POLICY "Anyone can read published forms" ON forms FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Authenticated users can manage forms" ON forms;
 CREATE POLICY "Authenticated users can manage forms" ON forms FOR ALL USING (true);
 
 CREATE TABLE IF NOT EXISTS form_responses (
@@ -1021,7 +1095,9 @@ CREATE TABLE IF NOT EXISTS form_responses (
   created_at TIMESTAMP DEFAULT NOW()
 );
 ALTER TABLE form_responses ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can submit form responses" ON form_responses;
 CREATE POLICY "Anyone can submit form responses" ON form_responses FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Form owners can read responses" ON form_responses;
 CREATE POLICY "Form owners can read responses" ON form_responses FOR SELECT USING (true);
 
 -- Poll/Survey rich media (already added previously, included here for completeness)

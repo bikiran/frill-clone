@@ -134,128 +134,44 @@ function SignUpForm() {
 
     setLoading(true)
     try {
-      // 1. Sign up user
-      // Redirect must go through the main domain (colvy.com/auth/callback) since
-    // Supabase only allows whitelisted redirect URLs. Subdomains are handled
-    // by the callback route which then redirects to the company's board.
-    const baseUrl = typeof window !== 'undefined'
-      ? (window.location.hostname.includes('localhost') || window.location.hostname.includes('vercel.app')
-        ? window.location.origin
-        : 'https://colvy.com')
-      : 'https://colvy.com'
-
-      const { data, error: authErr } = await supabase.auth.signUp({
-        email, password,
-        options: {
-          data: { 
-            display_name: companyContext?.name || companyName,
-            company: companyContext?.name || companyName,
-            industry: companyContext ? 'N/A' : industry
-          },
-          emailRedirectTo: companyContext
-            ? `${baseUrl}/auth/callback?company_id=${companyContext.id}`
-            : `${baseUrl}/auth/callback?slug=${encodeURIComponent(slug)}&name=${encodeURIComponent(companyName)}&industry=${encodeURIComponent(industry)}`,
-        },
-      })
-      if (authErr) throw authErr
-      if (!data.user) throw new Error('Signup failed — please try again')
-
-      // Trigger our own email via Resend (bypasses Supabase's 2/hour rate limit)
-      // Run in background — don't block the UI on email send success
-      fetch('/api/auth/send-confirmation', {
+      // Server-side signup: creates the user (unconfirmed) AND sends the
+      // confirmation email via Resend in one atomic call. This avoids both
+      // Supabase's client-side email rate limit (2/hour) and the "user
+      // already exists" error that happened when generateLink() ran after
+      // a separate client-side signUp() call.
+      const signupRes = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
+          email, password,
+          name: companyContext ? null : companyName.trim(),
           slug: companyContext ? null : slug.toLowerCase(),
-          name: companyContext ? null : companyName,
+          industry: companyContext ? null : industry,
           companyId: companyContext?.id || null,
-          type: 'signup',
         }),
-      }).then(r => { if (!r.ok) r.json().then(e => console.warn('Custom email send failed:', e.error)) })
-        .catch(e => console.warn('Custom email send error:', e))
+      })
+      const signupData = await signupRes.json()
+      if (!signupRes.ok) throw new Error(signupData.error || 'Signup failed')
 
-      const userId = data.user.id
+      const userId = signupData.userId
+
+      if (!signupData.emailSent) {
+        console.warn('Confirmation email may not have sent — user can use the Resend button')
+      }
 
       if (companyContext) {
-        // Company subdomain signup — add as viewer
-        if (data.session) {
-          // Email confirm is OFF
-          await fetch('/api/team-members', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId,
-              companyId: companyContext.id,
-              role: 'viewer', // Viewers can vote, share ideas, see roadmap (read-only), get notifications
-              email
-            }),
-          })
-          
-          // Redirect to the company board
-          const hostname = window.location.hostname
-          const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
-          if (!isLocal) {
-            window.location.href = `https://${companyContext.slug}.colvy.com/`
-          } else {
-            router.push('/')
-          }
-        } else {
-          // Email confirm is ON
-          localStorage.setItem('pending_company_join', JSON.stringify({
-            userId,
-            companyId: companyContext.id,
-            email,
-            role: 'viewer'
-          }))
-          setNeedsConfirmation(true)
-        }
+        // Company subdomain signup — store pending join, then confirm via email
+        localStorage.setItem('pending_company_join', JSON.stringify({
+          userId, companyId: companyContext.id, email, role: 'viewer',
+        }))
       } else {
-        // Regular signup — create new company
-        // Store company info for post-email-confirm retrieval
-        if (!data.session) {
-          localStorage.setItem('pending_company', JSON.stringify({
-            slug: slug.toLowerCase(),
-            name: companyName.trim(),
-            industry: industry || '',
-          }))
-        }
-
-        if (data.session) {
-          // Email confirm is OFF — user is logged in immediately
-          const res = await fetch('/api/companies', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, slug: slug.toLowerCase(), name: companyName.trim(), industry, accentColor: '#ff7a6b' }),
-          })
-          const result = await res.json()
-          if (result.error && !result.error.includes('duplicate')) throw new Error(result.error)
-
-          // Auto-register subdomain in Vercel so slug.colvy.com works immediately
-          try {
-            await fetch('/api/domains', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ domain: `${slug.toLowerCase()}.colvy.com` }),
-            })
-          } catch {} // Non-fatal
-          
-          // Redirect to their subdomain onboarding
-          const hostname = window.location.hostname
-          const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
-          if (!isLocal) {
-            window.location.href = `https://${slug.toLowerCase()}.colvy.com/onboarding`
-          } else {
-            router.push('/onboarding')
-          }
-        } else {
-          // Email confirm is ON
-          localStorage.setItem('pending_company', JSON.stringify({
-            userId, slug: slug.toLowerCase(), name: companyName.trim(), industry
-          }))
-          setNeedsConfirmation(true)
-        }
+        // New company signup — store pending company creation, then confirm via email
+        localStorage.setItem('pending_company', JSON.stringify({
+          userId, slug: slug.toLowerCase(), name: companyName.trim(), industry,
+        }))
       }
+
+      setNeedsConfirmation(true)
     } catch (err: any) {
       setError(err.message || 'Sign up failed')
     }

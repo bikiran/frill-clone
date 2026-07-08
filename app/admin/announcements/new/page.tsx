@@ -48,7 +48,7 @@ export default function NewAnnouncementPage() {
   const [boostBlurb, setBoostBlurb] = useState('')
   const [boostImage, setBoostImage] = useState('')
   const [segmentation, setSegmentation] = useState('all')
-  const [notifySubscribers, setNotifySubscribers] = useState(false)
+  const [notifySubscribers, setNotifySubscribers] = useState(true)
   const [images, setImages] = useState<string[]>([])
 
   useEffect(() => {
@@ -140,6 +140,8 @@ export default function NewAnnouncementPage() {
         description: description.trim(),
         tag, 
         status,
+        segmentation,
+        notify_subscribers: notifySubscribers,
         boost_enabled: boostEnabled,
         boost_type: boostType, 
         boost_until: boostUntil, 
@@ -152,20 +154,39 @@ export default function NewAnnouncementPage() {
       
       console.log('[ANN PUBLISH] Payload to save:', payload)
       
+      let savedId = editId
+      // Only notify when actually publishing (not saving as draft) and the
+      // announcement wasn't already sent before (avoid re-notifying on every edit)
+      let shouldNotify = false
+
       if (editId) {
         console.log('[ANN PUBLISH] Updating announcement:', editId)
+        const { data: prev } = await (supabase as any).from('announcements').select('status, notified_at').eq('id', editId).maybeSingle()
         const { data, error } = await (supabase as any).from('announcements').update(payload).eq('id', editId)
         console.log('[ANN PUBLISH] Update result:', { data, error })
         if (error) throw error
+        // Notify only on the transition draft → published, and only once
+        shouldNotify = notifySubscribers && status === 'published' && prev?.status !== 'published' && !prev?.notified_at
       } else {
         console.log('[ANN PUBLISH] Inserting new announcement')
-        const { data, error } = await (supabase as any).from('announcements').insert({ ...payload, views: 0, impressions: 0 })
+        const { data, error } = await (supabase as any).from('announcements').insert({ ...payload, views: 0, impressions: 0 }).select().maybeSingle()
         console.log('[ANN PUBLISH] Insert result:', { data, error })
         if (error) throw error
+        savedId = data?.id
+        shouldNotify = notifySubscribers && status === 'published'
+      }
+
+      // Fire subscriber notifications (in-app + email) in the background
+      if (shouldNotify && savedId) {
+        fetch('/api/announcements/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ announcementId: savedId, companyId: company.id }),
+        }).catch(e => console.warn('Notify request failed:', e))
       }
       
       console.log('[ANN PUBLISH] ✅ Successfully saved!')
-      alert('Announcement published successfully!')
+      alert(editId ? 'Announcement updated successfully!' : 'Announcement published successfully!')
       router.push('/admin/announcements')
     } catch (err: any) { 
       console.error('[ANN PUBLISH] ❌ Error:', err)
@@ -195,7 +216,7 @@ export default function NewAnnouncementPage() {
             className="px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
             style={{ background: 'var(--coral)' }}
           >
-            {saving ? 'Saving...' : 'Publish'}
+            {saving ? 'Saving...' : editId ? 'Update' : 'Publish'}
           </button>
         </div>
       </div>
