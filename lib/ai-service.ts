@@ -1,12 +1,15 @@
 // lib/ai-service.ts
-// Lazy-load Anthropic SDK to prevent build failures if not installed
+// AI SDK is optional — only loads when ANTHROPIC_API_KEY is set at runtime.
+// Using eval to prevent bundler from trying to resolve '@anthropic-ai/sdk' at build time.
 let Anthropic: any = null
 
-try {
-  // This will only fail at runtime if SDK isn't installed
-  Anthropic = require('@anthropic-ai/sdk').default
-} catch (e) {
-  console.warn('Anthropic SDK not installed. AI features will not work. Run: npm install @anthropic-ai/sdk')
+if (typeof process !== 'undefined' && process.env.ANTHROPIC_API_KEY) {
+  try {
+    // eslint-disable-next-line no-eval
+    Anthropic = eval("require('@anthropic-ai/sdk')")?.default || eval("require('@anthropic-ai/sdk')")
+  } catch {
+    // SDK not installed — AI features disabled
+  }
 }
 
 export type AIProvider = 'claude' | 'openai' | 'gemini'
