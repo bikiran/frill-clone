@@ -55,3 +55,40 @@ DROP POLICY IF EXISTS "Anyone can read feedback" ON help_article_feedback;
 CREATE POLICY "Anyone can read feedback" ON help_article_feedback FOR SELECT USING (true);
 
 -- Done.
+
+-- ============================================================
+-- NOTIFICATIONS FIX — the table only had a SELECT policy, so RLS
+-- silently rejected every INSERT (creating notifications for others)
+-- and every UPDATE (marking as read). This is why notifications
+-- never appeared.
+-- ============================================================
+DROP POLICY IF EXISTS "Authenticated users can create notifications" ON notifications;
+CREATE POLICY "Authenticated users can create notifications" ON notifications
+  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS "Users can update own notifications" ON notifications;
+CREATE POLICY "Users can update own notifications" ON notifications
+  FOR UPDATE USING (user_id = auth.uid());
+
+-- WOOCOMMERCE CUSTOMERS: ensure items_purchased is JSONB (a product list).
+-- Older sync code may have written numbers into it; normalize the column.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'woocommerce_customers' AND column_name = 'items_purchased'
+      AND data_type NOT IN ('jsonb', 'json')
+  ) THEN
+    ALTER TABLE woocommerce_customers ALTER COLUMN items_purchased DROP DEFAULT;
+    ALTER TABLE woocommerce_customers ALTER COLUMN items_purchased TYPE JSONB USING
+      CASE
+        WHEN items_purchased IS NULL THEN '[]'::jsonb
+        WHEN items_purchased::text ~ '^\[' THEN items_purchased::text::jsonb
+        ELSE '[]'::jsonb
+      END;
+    ALTER TABLE woocommerce_customers ALTER COLUMN items_purchased SET DEFAULT '[]'::jsonb;
+  END IF;
+END $$;
+-- Clean any numeric junk left behind
+UPDATE woocommerce_customers SET items_purchased = '[]'::jsonb
+WHERE jsonb_typeof(items_purchased) IS DISTINCT FROM 'array';

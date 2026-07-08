@@ -21,6 +21,18 @@ function WidgetContent() {
   const [polls, setPolls] = useState<any[]>([])
   const [surveys, setSurveys] = useState<any[]>([])
   const [helpArticles, setHelpArticles] = useState<any[]>([])
+  const [helpFeedbackVote, setHelpFeedbackVote] = useState<'up' | 'down' | null>(null)
+  const [helpFeedbackNote, setHelpFeedbackNote] = useState('')
+  const [helpFeedbackEmail, setHelpFeedbackEmail] = useState('')
+  const [helpFeedbackDone, setHelpFeedbackDone] = useState(false)
+
+  // Reset article feedback state whenever a different item opens
+  useEffect(() => {
+    setHelpFeedbackVote(null)
+    setHelpFeedbackNote('')
+    setHelpFeedbackEmail('')
+    setHelpFeedbackDone(false)
+  }, [selectedItem?.id])
   const [feedback, setFeedback] = useState('')
   const [chatMessages, setChatMessages] = useState<any[]>([])
   const [chatName, setChatName] = useState('')
@@ -623,9 +635,42 @@ function WidgetContent() {
                     )}
 
                     <div style={{ color: 'var(--ink)', lineHeight: 1.7, fontSize: 13, marginBottom: 12 }}>
-                      {item.content?.split('\n').filter(Boolean).map((line, i) => (
-                        <p key={i} style={{ margin: '0 0 12px 0', wordBreak: 'break-word' }}>{line}</p>
-                      ))}
+                      {(() => {
+                        // Lightweight markdown rendering: headings, bold, inline code, code blocks, lists
+                        const lines = (item.content || '').split('\n')
+                        const out: any[] = []
+                        let inCode = false
+                        let codeBuf: string[] = []
+                        const inline = (t: string) => {
+                          const parts = t.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
+                          return parts.map((p, pi) => {
+                            if (p.startsWith('**') && p.endsWith('**')) return <strong key={pi}>{p.slice(2, -2)}</strong>
+                            if (p.startsWith('`') && p.endsWith('`')) return <code key={pi} style={{ background: 'var(--canvas)', padding: '1px 5px', borderRadius: 4, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}>{p.slice(1, -1)}</code>
+                            return p
+                          })
+                        }
+                        lines.forEach((line, i) => {
+                          if (line.trim().startsWith('```')) {
+                            if (inCode) {
+                              out.push(<pre key={`c${i}`} style={{ background: '#1c1c1e', color: '#e5e5e5', padding: '12px 14px', borderRadius: 10, fontSize: 12, overflowX: 'auto', margin: '0 0 12px 0', fontFamily: 'ui-monospace, monospace', lineHeight: 1.6 }}>{codeBuf.join('\n')}</pre>)
+                              codeBuf = []
+                            }
+                            inCode = !inCode
+                            return
+                          }
+                          if (inCode) { codeBuf.push(line); return }
+                          const t = line.trim()
+                          if (!t) return
+                          if (t.startsWith('### ')) out.push(<h4 key={i} style={{ fontSize: 13.5, fontWeight: 700, margin: '16px 0 8px 0' }}>{t.slice(4)}</h4>)
+                          else if (t.startsWith('## ')) out.push(<h3 key={i} style={{ fontSize: 14.5, fontWeight: 700, margin: '18px 0 8px 0' }}>{t.slice(3)}</h3>)
+                          else if (t.startsWith('# ')) out.push(<h2 key={i} style={{ fontSize: 15.5, fontWeight: 800, margin: '18px 0 10px 0' }}>{t.slice(2)}</h2>)
+                          else if (/^[-*] /.test(t)) out.push(<div key={i} style={{ display: 'flex', gap: 8, margin: '0 0 6px 0' }}><span style={{ color: accentColor }}>•</span><span style={{ flex: 1 }}>{inline(t.slice(2))}</span></div>)
+                          else if (/^\d+\. /.test(t)) out.push(<div key={i} style={{ display: 'flex', gap: 8, margin: '0 0 6px 0' }}><span style={{ color: accentColor, fontWeight: 700 }}>{t.match(/^\d+/)?.[0]}.</span><span style={{ flex: 1 }}>{inline(t.replace(/^\d+\. /, ''))}</span></div>)
+                          else if (t === '---') out.push(<div key={i} style={{ height: 1, background: 'var(--border)', margin: '14px 0' }} />)
+                          else out.push(<p key={i} style={{ margin: '0 0 12px 0', wordBreak: 'break-word' }}>{inline(t)}</p>)
+                        })
+                        return out
+                      })()}
                     </div>
                     
                     {/* Parse and display images in content */}
@@ -672,60 +717,104 @@ function WidgetContent() {
                   {/* Divider */}
                   <div style={{ height: 1, background: 'var(--border)', margin: '20px 0' }} />
 
-                  {/* Helpful Feedback Section */}
+                  {/* Helpful Feedback — same design as the help center */}
                   <div style={{ marginBottom: 20 }}>
-                    <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>Did this article help solve your problem?</h3>
-                    <p style={{ fontSize: 12, color: 'var(--slate)', marginBottom: 12, margin: '0 0 12px 0' }}>Your feedback helps us improve our documentation.</p>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        onClick={() => trackWidgetEvent('help_feedback_yes')}
-                        style={{
-                          flex: 1,
-                          padding: '10px 12px',
-                          borderRadius: 8,
-                          border: '1px solid var(--border)',
-                          background: '#fff',
-                          cursor: 'pointer',
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: 'var(--ink)',
-                          transition: 'all 0.2s',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = '#f0fdf4'
-                          e.currentTarget.style.borderColor = '#22c55e'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = '#fff'
-                          e.currentTarget.style.borderColor = 'var(--border)'
-                        }}>
-                        Yes, it helped!
-                      </button>
-                      <button
-                        onClick={() => trackWidgetEvent('help_feedback_no')}
-                        style={{
-                          flex: 1,
-                          padding: '10px 12px',
-                          borderRadius: 8,
-                          border: '1px solid var(--border)',
-                          background: '#fff',
-                          cursor: 'pointer',
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: 'var(--ink)',
-                          transition: 'all 0.2s',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = '#fef2f2'
-                          e.currentTarget.style.borderColor = '#ef4444'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = '#fff'
-                          e.currentTarget.style.borderColor = 'var(--border)'
-                        }}>
-                        Not really
-                      </button>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                      <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)' }}>Was this helpful?</span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (helpFeedbackVote) return
+                            setHelpFeedbackVote('up')
+                            trackWidgetEvent('help_feedback_yes')
+                            try {
+                              if (item.company_id || company?.id) {
+                                await (supabase as any).from('help_article_feedback').insert({
+                                  article_id: item.id, company_id: item.company_id || company.id, helpful: true,
+                                })
+                              }
+                            } catch {}
+                          }}
+                          style={{
+                            width: 42, height: 38, borderRadius: 10, cursor: helpFeedbackVote ? 'default' : 'pointer',
+                            border: helpFeedbackVote === 'up' ? '1.5px solid #86b34d' : '1.5px solid #e5e5e5',
+                            background: helpFeedbackVote === 'up' ? 'linear-gradient(135deg, #f2f8e8, #e5f2d3)' : '#fff',
+                            boxShadow: helpFeedbackVote === 'up' ? '0 0 0 3px rgba(134,179,77,0.12)' : 'none',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                            transform: helpFeedbackVote === 'up' ? 'scale(1.06)' : 'scale(1)',
+                          }}>
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill={helpFeedbackVote === 'up' ? '#6f9c3d' : 'none'} stroke={helpFeedbackVote === 'up' ? '#4d6e28' : '#9ca3af'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (helpFeedbackVote) return
+                            setHelpFeedbackVote('down')
+                            trackWidgetEvent('help_feedback_no')
+                          }}
+                          style={{
+                            width: 42, height: 38, borderRadius: 10, cursor: helpFeedbackVote ? 'default' : 'pointer',
+                            border: helpFeedbackVote === 'down' ? '1.5px solid #d97706' : '1.5px solid #e5e5e5',
+                            background: helpFeedbackVote === 'down' ? 'linear-gradient(135deg, #fdf3e7, #fae5cc)' : '#fff',
+                            boxShadow: helpFeedbackVote === 'down' ? '0 0 0 3px rgba(217,119,6,0.12)' : 'none',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                            transform: helpFeedbackVote === 'down' ? 'scale(1.06)' : 'scale(1)',
+                          }}>
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill={helpFeedbackVote === 'down' ? '#c2701e' : 'none'} stroke={helpFeedbackVote === 'down' ? '#8a4f13' : '#9ca3af'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7 7h2.67A2.31 2.31 0 0 0 22 20v-7a2.31 2.31 0 0 0-2.33-2H17"/>
+                          </svg>
+                        </button>
+                      </div>
                     </div>
+
+                    {helpFeedbackVote === 'up' && (
+                      <div style={{ marginTop: 12, padding: '11px 14px', borderRadius: 10, background: 'linear-gradient(135deg, #f2f8e8, #eaf4dc)', display: 'flex', alignItems: 'center', gap: 9 }}>
+                        <span style={{ width: 20, height: 20, borderRadius: '50%', border: '1.6px solid #6f9c3d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4d6e28" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        </span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#4d6e28' }}>Thank you for your feedback!</span>
+                      </div>
+                    )}
+
+                    {helpFeedbackVote === 'down' && !helpFeedbackDone && (
+                      <div style={{ marginTop: 12 }}>
+                        <textarea value={helpFeedbackNote} onChange={e => setHelpFeedbackNote(e.target.value)}
+                          placeholder="How can we improve?"
+                          rows={3}
+                          style={{ width: '100%', padding: '11px 13px', borderRadius: 12, border: 'none', background: '#f5f5f5', fontSize: 13, outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 8, fontFamily: 'inherit' }} />
+                        <input value={helpFeedbackEmail} onChange={e => setHelpFeedbackEmail(e.target.value)}
+                          type="email" placeholder="Your email (optional)"
+                          style={{ width: '100%', padding: '11px 13px', borderRadius: 12, border: 'none', background: '#f5f5f5', fontSize: 13, outline: 'none', boxSizing: 'border-box', marginBottom: 10 }} />
+                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                          <button type="button"
+                            onClick={async () => {
+                              try {
+                                if (item.company_id || company?.id) {
+                                  await (supabase as any).from('help_article_feedback').insert({
+                                    article_id: item.id, company_id: item.company_id || company.id, helpful: false,
+                                    comment: helpFeedbackNote.trim() ? `${helpFeedbackNote.trim()}${helpFeedbackEmail ? ` — ${helpFeedbackEmail}` : ''}` : null,
+                                  })
+                                }
+                              } catch {}
+                              setHelpFeedbackDone(true)
+                            }}
+                            style={{ padding: '10px 20px', borderRadius: 12, border: '1px solid #e5e5e5', background: '#fff', fontSize: 13, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer' }}>
+                            Submit Feedback
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {helpFeedbackVote === 'down' && helpFeedbackDone && (
+                      <div style={{ marginTop: 12, padding: '11px 14px', borderRadius: 10, background: accentColor + '15', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: accentColor }}>Thanks — we'll use this to improve the article.</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Divider */}

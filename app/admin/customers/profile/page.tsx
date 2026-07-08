@@ -91,11 +91,25 @@ export default function CustomerProfilePage() {
 
   // Products: items_purchased can be string[] or object[] from WooCommerce line items
   const rawItems: any[] = (() => {
-    const ip = customer.items_purchased
+    let ip: any = customer.items_purchased
     if (!ip) return []
-    if (typeof ip === 'string') { try { return JSON.parse(ip) } catch { return ip.split(',').map((s: string) => ({ name: s.trim() })) } }
-    if (Array.isArray(ip)) return ip.map((x: any) => typeof x === 'string' ? { name: x } : x)
-    return []
+    // May arrive as a JSON string, a comma-joined string, or a JSONB array
+    if (typeof ip === 'string') {
+      try { ip = JSON.parse(ip) } catch { ip = ip.split(',').map((s: string) => s.trim()) }
+    }
+    if (!Array.isArray(ip)) return []
+    return ip
+      .map((x: any) => {
+        if (x == null) return null
+        if (typeof x === 'string') return x.trim() ? { name: x.trim() } : null
+        if (typeof x === 'object') {
+          const name = x.name || x.product_name || x.title || x.label || ''
+          if (!name && Object.keys(x).length === 0) return null
+          return { ...x, name: name || 'Unnamed product' }
+        }
+        return { name: String(x) }
+      })
+      .filter(Boolean)
   })()
 
   const filteredProducts = rawItems.filter((item: any) => {
@@ -216,7 +230,7 @@ export default function CustomerProfilePage() {
                       if (isOpen) next.delete(idx); else next.add(idx)
                       setExpandedProducts(next)
                     }}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', minHeight: 52, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
                     {image ? (
                       <img src={image} alt={name} style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} onError={(e: any) => { e.target.style.display = 'none' }} />
                     ) : (

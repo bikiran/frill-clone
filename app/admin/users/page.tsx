@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 
@@ -82,6 +82,57 @@ export default function UsersPage() {
   useEffect(() => {
     if (customerPage > 0) { loadCustomerPage(customerPage) }
   }, [customerPage])
+
+  // Server-side search across ALL customers (not just the loaded page).
+  // Debounced ilike query on name/email; clearing the search restores page view.
+  const searchTimer = useRef<any>(null)
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(async () => {
+      const term = searchTerm.trim()
+      if (!term) {
+        // restore normal paged view
+        if (customerPage === 0) return
+        setCustomerPage(0)
+        loadCustomerPage(0)
+        return
+      }
+      try {
+        const sb = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+        )
+        let cid2: string | null = null
+        if (typeof window !== 'undefined') {
+          const h = window.location.hostname
+          if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
+            const { data: co } = await sb.from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
+            if (co) cid2 = co.id
+          }
+        }
+        if (!cid2) {
+          const { data: { session } } = await sb.auth.getSession()
+          if (session?.user) {
+            const { data: ownCo } = await sb.from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
+            if (ownCo?.id) cid2 = ownCo.id
+          }
+        }
+        if (!cid2) return
+        const like = `%${term}%`
+        const { data: matches } = await (sb as any)
+          .from('woocommerce_customers').select('*')
+          .eq('company_id', cid2)
+          .or(`email.ilike.${like},first_name.ilike.${like},last_name.ilike.${like}`)
+          .order('total_spend', { ascending: false })
+          .limit(100)
+        setUsers(prev => {
+          const teams = prev.filter(u => u.type === 'team')
+          return [...teams, ...(matches || []).map((c: any) => ({ id: c.id, type: 'customer' as const, email: c.email, first_name: c.first_name, last_name: c.last_name, phone: c.phone, total_spend: c.total_spend, total_orders: c.total_orders, woo_customer_id: c.woo_customer_id }))]
+        })
+      } catch {}
+    }, 400)
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current) }
+  }, [searchTerm])
 
   useEffect(() => {
     const loadUsers = async () => {

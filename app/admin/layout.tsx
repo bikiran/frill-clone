@@ -222,7 +222,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const isActive = (href: string) => {
     if (href === '/admin') return pathname === '/admin'
-    return pathname?.startsWith(href)
+    if (!pathname?.startsWith(href)) return false
+    // Only the LONGEST matching nav item is active — prevents /admin/help
+    // lighting up when /admin/help/analytics is the current page.
+    const allHrefs = NAV_GROUPS.flatMap(g => g.items.map(i => i.href))
+    const longestMatch = allHrefs
+      .filter(h => h !== '/admin' && pathname?.startsWith(h))
+      .sort((a, b) => b.length - a.length)[0]
+    return href === longestMatch
   }
 
   return (

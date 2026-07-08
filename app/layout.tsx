@@ -151,9 +151,13 @@ export default function RootLayout({
         // Load settings for this specific company
         let q = (supabase as any).from('site_settings').select('*').eq('key', 'general')
         if (slug) {
-          // For subdomains, get the company first then its settings — maybeSingle never throws
-          const { data: co } = await (supabase as any).from('companies').select('id,accent_color').eq('slug', slug).maybeSingle()
+          // For subdomains, get the company first then its settings — maybeSingle never throws.
+          // Also fetch name + logo so the header brand works in incognito / new
+          // browsers where the localStorage cache doesn't exist yet.
+          const { data: co } = await (supabase as any).from('companies').select('id,name,slug,logo_url,accent_color').eq('slug', slug).maybeSingle()
           if (co) {
+            setCompany(co)
+            try { localStorage.setItem(`company_${slug}`, JSON.stringify(co)) } catch {}
             // Apply company accent color from DB (source of truth)
             if (co.accent_color && typeof document !== 'undefined') {
               document.documentElement.style.setProperty('--coral', co.accent_color)

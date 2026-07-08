@@ -1,7 +1,15 @@
 export const getRelativeTime = (date: string | Date): string => {
   const now = new Date()
-  const time = new Date(date)
-  const secondsAgo = Math.floor((now.getTime() - time.getTime()) / 1000)
+  // Naive DB timestamps ("2026-07-08 08:00:00") parse as LOCAL time in JS,
+  // making just-posted ideas show "10 hours ago" in UTC+10. Treat them as UTC.
+  let time: Date
+  if (typeof date === 'string') {
+    const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(date)
+    time = new Date(hasTz ? date : date.replace(' ', 'T') + 'Z')
+  } else {
+    time = new Date(date)
+  }
+  const secondsAgo = Math.max(0, Math.floor((now.getTime() - time.getTime()) / 1000))
 
   if (secondsAgo < 30) return 'a few moments ago'
   if (secondsAgo < 60) return 'a few seconds ago'

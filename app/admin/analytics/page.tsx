@@ -195,23 +195,17 @@ export default function AnalyticsPage() {
         ticketsByStatus: byStatus,
       })
 
-      // Widget analytics — the insert uses both 'timestamp' and 'created_at' columns
-      // Try created_at first, fall back to timestamp column
+      // Widget analytics — created_at is the tracked timestamp column
       let widgetEvents: any[] = []
       try {
         const { data: we1 } = await (supabase as any)
           .from('widget_analytics')
-          .select('tab, event, created_at, timestamp')
+          .select('tab, event, created_at')
           .eq('company_id', cid)
-          .or(`created_at.gte.${start},timestamp.gte.${start}`)
+          .gte('created_at', start)
+          .lte('created_at', end)
         widgetEvents = we1 || []
-      } catch {
-        const { data: we2 } = await (supabase as any)
-          .from('widget_analytics')
-          .select('tab, event')
-          .eq('company_id', cid)
-        widgetEvents = we2 || []
-      }
+      } catch { widgetEvents = [] }
 
       const events = widgetEvents
       const viewEvents = events.filter((e: any) => e.event === 'view')

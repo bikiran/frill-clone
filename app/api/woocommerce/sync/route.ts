@@ -120,15 +120,17 @@ export async function POST(req: NextRequest) {
     }
 
     if (mode === 'orders') {
-      // On the first orders page, reset previously aggregated stats so re-syncs don't double count
+      // Fetch FIRST — only reset stats after a successful fetch, so a failed
+      // API call can never leave every customer wiped to $0 (which is what
+      // happened when the old code reset then crashed).
+      const { data: orders, totalPages, total } = await wcFetch(`orders?per_page=${perPage}&page=${page}&orderby=id&order=asc&status=any`)
+
       if (page === 1) {
         await supabase
           .from('woocommerce_customers')
-          .update({ total_spend: 0, total_orders: 0, average_order_value: 0, items_purchased: 0 })
+          .update({ total_spend: 0, total_orders: 0, average_order_value: 0, items_purchased: [] })
           .eq('company_id', companyId)
       }
-
-      const { data: orders, totalPages, total } = await wcFetch(`orders?per_page=${perPage}&page=${page}&orderby=id&order=asc&status=any`)
 
       // 1. Upsert individual order rows for the order history view
       const orderRows = (orders as any[]).map((o: any) => ({
@@ -156,15 +158,25 @@ export async function POST(req: NextRequest) {
         } catch {}
       }
 
-      // 2. Aggregate this page's orders per customer
-      const agg: Record<number, { spend: number; orders: number; items: number; lastDate: string | null; firstDate: string | null }> = {}
+      // 2. Aggregate this page's orders per customer — including the actual
+      // PRODUCT LIST from line items (name/image/qty/price), which the
+      // customer profile displays. (Writing a numeric count here corrupted
+      // the products list into blank rows.)
+      const agg: Record<number, { spend: number; orders: number; items: any[]; lastDate: string | null; firstDate: string | null }> = {}
       for (const o of orders as any[]) {
         const cid = o.customer_id
         if (!cid) continue
-        if (!agg[cid]) agg[cid] = { spend: 0, orders: 0, items: 0, lastDate: null, firstDate: null }
+        if (!agg[cid]) agg[cid] = { spend: 0, orders: 0, items: [], lastDate: null, firstDate: null }
         agg[cid].spend += parseFloat(o.total || '0') || 0
         agg[cid].orders += 1
-        agg[cid].items += (o.line_items || []).reduce((n: number, li: any) => n + (li.quantity || 0), 0)
+        for (const li of (o.line_items || [])) {
+          agg[cid].items.push({
+            name: li.name || 'Unnamed product',
+            quantity: li.quantity || 1,
+            price: li.total || null,
+            image: li.image?.src || null,
+          })
+        }
         const d = o.date_created
         if (d) {
           if (!agg[cid].lastDate || d > agg[cid].lastDate!) agg[cid].lastDate = d
@@ -186,13 +198,22 @@ export async function POST(req: NextRequest) {
           const a = agg[row.woo_customer_id]
           const totalOrders = (row.total_orders || 0) + a.orders
           const totalSpend = (parseFloat(row.total_spend) || 0) + a.spend
+          // Merge product lists: existing (array) + this page's items, deduped by name
+          let existingItems: any[] = []
+          const ei = row.items_purchased
+          if (Array.isArray(ei)) existingItems = ei.filter((x: any) => x && typeof x === 'object' && x.name)
+          const seen = new Set(existingItems.map((x: any) => x.name))
+          for (const item of a.items) {
+            if (!seen.has(item.name)) { existingItems.push(item); seen.add(item.name) }
+          }
+          if (existingItems.length > 300) existingItems = existingItems.slice(0, 300)
           return {
             id: row.id,
             company_id: companyId,
             woo_customer_id: row.woo_customer_id,
             total_spend: Math.round(totalSpend * 100) / 100,
             total_orders: totalOrders,
-            items_purchased: (row.items_purchased || 0) + a.items,
+            items_purchased: existingItems,
             average_order_value: totalOrders > 0 ? Math.round((totalSpend / totalOrders) * 100) / 100 : 0,
             last_order_date: [row.last_order_date, a.lastDate].filter(Boolean).sort().pop() || null,
             first_order_date: [row.first_order_date, a.firstDate].filter(Boolean).sort().shift() || null,
