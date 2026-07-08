@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
 import { redirectToUserAdmin } from '@/lib/redirect'
 
 function useInView(threshold = 0.1) {
@@ -191,7 +190,7 @@ export default function LandingPage() {
       <nav className="fixed top-0 left-0 right-0 z-50" style={{ background: navBg, borderBottom: `1px solid ${navBorder}`, backdropFilter: scrollY > 40 ? 'blur(20px)' : 'none', transition: 'all 0.3s' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           {/* Logo */}
-          <Link href="/landing" style={{ fontWeight: 800, fontSize: 20, color: '#ff7a6b', textDecoration: 'none' }}>Colvy</Link>
+          <a href="/" style={{ fontWeight: 800, fontSize: 20, color: '#ff7a6b', textDecoration: 'none' }}>Colvy</a>
 
           {/* Desktop Nav — hide Features/Pricing for logged-in users */}
           <div className="hidden md:flex" style={{ alignItems: 'center', gap: 4 }}>
@@ -203,11 +202,11 @@ export default function LandingPage() {
               { label: 'Import', href: '/features/import' },
               { label: 'Pricing', href: '/pricing' },
             ].map(n => (
-              <Link key={n.label} href={n.href} style={{ padding: '8px 14px', borderRadius: 10, fontSize: 14, fontWeight: 500, color: textMuted, textDecoration: 'none', transition: 'all 0.2s' }}
+              <a key={n.label} href={n.href} style={{ padding: '8px 14px', borderRadius: 10, fontSize: 14, fontWeight: 500, color: textMuted, textDecoration: 'none', transition: 'all 0.2s' }}
                 onMouseEnter={e => (e.currentTarget.style.background = dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                 {n.label}
-              </Link>
+              </a>
             ))}
             {user && (
               <span style={{ fontSize: 14, color: textMuted }}>Welcome back!</span>
@@ -230,12 +229,11 @@ export default function LandingPage() {
               </button>
             ) : (
               <>
-                <Link href="/signin" className="hidden md:block" style={{ fontSize: 14, fontWeight: 500, color: textMuted, textDecoration: 'none' }}>Sign in</Link>
-                <Link href="/signup"
-                  className="btn-main"
+                <a href="/signin" style={{ fontSize: 14, fontWeight: 500, color: textMuted, textDecoration: 'none' }}>Sign in</a>
+                <a href="/signup"
                   style={{ padding: '9px 20px', borderRadius: 12, background: '#ff7a6b', color: '#fff', fontWeight: 700, fontSize: 14, textDecoration: 'none', display: 'inline-block' }}>
                   Get started free
-                </Link>
+                </a>
               </>
             )}
 
@@ -257,12 +255,12 @@ export default function LandingPage() {
               { label: 'Knowledgebase', href: '/features/knowledgebase' },
               { label: 'Import', href: '/features/import' },
               { label: 'Pricing', href: '/pricing' },
-              { label: 'Sign in', href: '/signin' },
+              { label: 'Sign in', href: '/signin', external: true },
             ].map(n => (
-              <Link key={n.label} href={n.href} onClick={() => setMobileOpen(false)}
+              <a key={n.label} href={n.href} onClick={() => setMobileOpen(false)}
                 style={{ display: 'block', padding: '12px 0', fontSize: 16, fontWeight: 500, color: text, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` }}>
                 {n.label}
-              </Link>
+              </a>
             ))}
             <button onClick={handleDashboard} style={{ marginTop: 16, width: '100%', padding: '14px', borderRadius: 12, background: '#ff7a6b', color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer', border: 'none' }}>
               {user ? 'Dashboard →' : 'Get started free'}
@@ -304,9 +302,9 @@ export default function LandingPage() {
                 {user ? 'Go to Dashboard →' : 'Start free — no credit card'}
               </button>
               {!user && (
-                <Link href="#features" style={{ padding: '14px 28px', borderRadius: 16, border: `1px solid ${cardBorder}`, background: cardBg, color: text, fontWeight: 600, fontSize: 15, textDecoration: 'none', transition: 'all 0.2s' }}>
+                <a href="#features" style={{ padding: '14px 28px', borderRadius: 16, border: `1px solid ${cardBorder}`, background: cardBg, color: text, fontWeight: 600, fontSize: 15, textDecoration: 'none', transition: 'all 0.2s' }}>
                   See how it works ↓
-                </Link>
+                </a>
               )}
             </div>
 
@@ -357,7 +355,7 @@ export default function LandingPage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 20 }}>
             {FEATURES.map(({ Icon, title, href, color, desc }, i) => (
-              <Link key={title} href={href} className="feat-card" style={{ padding: 28, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none', display: 'block', opacity: featV ? 1 : 0, transform: featV ? 'none' : 'translateY(30px)', transition: `all 0.6s cubic-bezier(0.16,1,0.3,1) ${0.05 * i}s` }}>
+              <a key={title} href={href} className="feat-card" style={{ padding: 28, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none', display: 'block', opacity: featV ? 1 : 0, transform: featV ? 'none' : 'translateY(30px)', transition: `all 0.6s cubic-bezier(0.16,1,0.3,1) ${0.05 * i}s` }}>
                 <div className="feat-icon" style={{ width: 48, height: 48, borderRadius: 14, background: color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, color }}>
                   <Icon />
                 </div>
@@ -366,7 +364,7 @@ export default function LandingPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color }}>
                   Learn more <ArrowRightIcon />
                 </div>
-              </Link>
+              </a>
             ))}
           </div>
         </div>
@@ -455,9 +453,9 @@ export default function LandingPage() {
               style={{ padding: '14px 36px', borderRadius: 16, background: 'linear-gradient(135deg,#ff7a6b,#ff5247)', color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer', border: 'none' }}>
               {user ? 'Go to Dashboard →' : "Get started — it's free"}
             </button>
-            {!user && <Link href="/pricing" style={{ padding: '14px 24px', borderRadius: 16, border: `1px solid ${cardBorder}`, background: 'transparent', color: textMuted, fontWeight: 600, fontSize: 14, textDecoration: 'none' }}>
+            {!user && <a href="/pricing" style={{ padding: '14px 24px', borderRadius: 16, border: `1px solid ${cardBorder}`, background: 'transparent', color: textMuted, fontWeight: 600, fontSize: 14, textDecoration: 'none' }}>
               See all plans →
-            </Link>}
+            </a>}
           </div>
         </div>
       </section>
@@ -583,7 +581,7 @@ export default function LandingPage() {
               <div key={col.title}>
                 <h4 style={{ fontSize: 13, fontWeight: 700, color: text, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{col.title}</h4>
                 {col.links.map(lk => (
-                  <Link key={lk.l} href={lk.h} style={{ display: 'block', fontSize: 14, color: textMuted, textDecoration: 'none', marginBottom: 8 }}>{lk.l}</Link>
+                  <a key={lk.l} href={lk.h} style={{ display: 'block', fontSize: 14, color: textMuted, textDecoration: 'none', marginBottom: 8 }}>{lk.l}</a>
                 ))}
               </div>
             ))}

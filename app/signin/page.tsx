@@ -2,7 +2,6 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 
@@ -142,10 +141,10 @@ function SignInForm() {
       {/* LEFT — form */}
       <div className="sf-form-col" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '48px clamp(24px, 8vw, 96px)' }}>
         <div style={{ maxWidth: 380, width: '100%', margin: '0 auto' }}>
-          <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 40, textDecoration: 'none' }}>
+          <a href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 40, textDecoration: 'none' }}>
             <img src="/logo.png" alt="Colvy" style={{ height: 28, width: 'auto' }} onError={(e: any) => e.target.style.display = 'none'} />
             <span style={{ fontWeight: 800, fontSize: 18, color: '#ff7a6b' }}>Colvy</span>
-          </Link>
+          </a>
 
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0d0d0d', marginBottom: 6, letterSpacing: '-0.01em' }}>Welcome back</h1>
           <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 28 }}>Sign in to manage your board.</p>
@@ -183,7 +182,7 @@ function SignInForm() {
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                 <label style={{ fontSize: 13, fontWeight: 600, color: '#0d0d0d' }}>Password</label>
-                <Link href="/forgot-password" style={{ fontSize: 12, color: '#ff7a6b', textDecoration: 'none' }}>Forgot password?</Link>
+                <a href="/forgot-password" style={{ fontSize: 12, color: '#ff7a6b', textDecoration: 'none' }}>Forgot password?</a>
               </div>
               <div style={{ position: 'relative' }}>
                 <input
@@ -208,7 +207,7 @@ function SignInForm() {
           </form>
 
           <p style={{ textAlign: 'center', fontSize: 13, color: '#6b6b70', marginTop: 24 }}>
-            Don't have an account? <Link href="/signup" style={{ color: '#ff7a6b', fontWeight: 600, textDecoration: 'none' }}>Sign up free</Link>
+            Don't have an account? <a href="/signup" style={{ color: '#ff7a6b', fontWeight: 600, textDecoration: 'none' }}>Sign up free</a>
           </p>
         </div>
       </div>

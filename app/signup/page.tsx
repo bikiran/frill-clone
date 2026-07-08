@@ -6,7 +6,6 @@ import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 import { isValidSlug, isSlugAvailable } from '@/lib/board'
 import { redirectToUserAdmin } from '@/lib/redirect'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 
 const INDUSTRIES = ['SaaS', 'E-commerce', 'Healthcare', 'Education', 'Finance',
   'Logistics', 'Manufacturing', 'Media & Entertainment', 'Travel & Hospitality',
@@ -160,6 +159,21 @@ function SignUpForm() {
       })
       if (authErr) throw authErr
       if (!data.user) throw new Error('Signup failed — please try again')
+
+      // Trigger our own email via Resend (bypasses Supabase's 2/hour rate limit)
+      // Run in background — don't block the UI on email send success
+      fetch('/api/auth/send-confirmation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          slug: companyContext ? null : slug.toLowerCase(),
+          name: companyContext ? null : companyName,
+          companyId: companyContext?.id || null,
+          type: 'signup',
+        }),
+      }).then(r => { if (!r.ok) r.json().then(e => console.warn('Custom email send failed:', e.error)) })
+        .catch(e => console.warn('Custom email send error:', e))
 
       const userId = data.user.id
 
@@ -329,21 +343,31 @@ function SignUpForm() {
     const redirectTo = companyContext
       ? `${baseUrl}/auth/callback?company_id=${companyContext.id}`
       : `${baseUrl}/auth/callback?slug=${encodeURIComponent(slug)}&name=${encodeURIComponent(companyName)}&industry=${encodeURIComponent(industry)}`
-    const { error } = await supabase.auth.resend({
-      type: 'signup',
-      email,
-      options: { emailRedirectTo: redirectTo },
+    // Try our custom Resend route first (no rate limits)
+    const customRes = await fetch('/api/auth/send-confirmation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, slug: slug || null, name: companyName || null, companyId: companyContext?.id || null, type: 'signup' }),
     })
-    setResendLoading(false)
-    if (error) {
-      // If resend fails, try signing up again (handles cases where the user
-      // record wasn't created properly the first time)
-      console.error('Resend error:', error.message)
-      setResendSuccess('')
-      setError(`Resend failed: ${error.message}. Try the "Use a different email" button and sign up again.`)
-    } else {
+
+    if (customRes.ok) {
+      setResendLoading(false)
       setResendSuccess('✓ Confirmation email sent! Check your inbox and spam folder.')
       setResendCountdown(60)
+    } else {
+      // Fallback to Supabase resend
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: { emailRedirectTo: redirectTo },
+      })
+      setResendLoading(false)
+      if (error) {
+        setError(`Could not resend: ${error.message}. Check your spam folder or try a different email.`)
+      } else {
+        setResendSuccess('✓ Confirmation email sent! Check your inbox and spam folder.')
+        setResendCountdown(60)
+      }
     }
   }
 
@@ -406,10 +430,10 @@ function SignUpForm() {
       {/* LEFT — form */}
       <div className="su-form-col" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '40px clamp(24px, 7vw, 80px)', overflowY: 'auto' }}>
         <div style={{ maxWidth: 400, width: '100%', margin: '0 auto' }}>
-          <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 28, textDecoration: 'none' }}>
+          <a href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 28, textDecoration: 'none' }}>
             <img src="/logo.png" alt="Colvy" style={{ height: 26, width: 'auto' }} onError={(e: any) => e.target.style.display = 'none'} />
             <span style={{ fontWeight: 800, fontSize: 17, color: '#ff7a6b' }}>Colvy</span>
-          </Link>
+          </a>
 
           {/* Step indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
@@ -539,7 +563,7 @@ function SignUpForm() {
           )}
 
           <p style={{ textAlign: 'center', fontSize: 13, color: '#6b6b70', marginTop: 24 }}>
-            Already have an account? <Link href="/signin" style={{ color: '#ff7a6b', fontWeight: 600, textDecoration: 'none' }}>Sign in</Link>
+            Already have an account? <a href="/signin" style={{ color: '#ff7a6b', fontWeight: 600, textDecoration: 'none' }}>Sign in</a>
           </p>
         </div>
       </div>
