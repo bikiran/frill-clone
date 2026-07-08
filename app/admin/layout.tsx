@@ -1,5 +1,6 @@
 'use client'
 
+import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -10,7 +11,7 @@ import { useRouter } from 'next/navigation'
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
 // SVG icon components
-const icons: Record<string, JSX.Element> = {
+const icons: Record<string, React.JSX.Element> = {
   dashboard: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>,
   ideas: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.76-1.58 5.16-3.9 6.37L15 17H9l-.1-1.63A7 7 0 0 1 5 9a7 7 0 0 1 7-7z"/><line x1="9" y1="21" x2="15" y2="21"/><line x1="9.5" y1="17" x2="14.5" y2="17"/></svg>,
   roadmap: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
@@ -77,7 +78,7 @@ const NAV_GROUPS = [
       { label: 'Help Centre', href: '/admin/help', icon: 'help' },
       { label: 'Help Reporting', href: '/admin/help/analytics', icon: 'analytics' },
       { label: 'Help Settings', href: '/admin/help/settings', icon: 'settings' },
-      { label: 'Old Support', href: '/admin/support', icon: 'support' },
+
     ],
   },
   {
@@ -126,7 +127,28 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }: any) => {
+    const initAuth = async () => {
+      // When redirected from colvy.com sign-in, the session tokens may be in
+      // the URL hash fragment (#access_token=...&refresh_token=...).
+      // Supabase's detectSessionInUrl will exchange them automatically,
+      // but we need to wait for onAuthStateChange to fire first.
+      if (typeof window !== 'undefined' && window.location.hash.includes('access_token')) {
+        // Let Supabase process the hash
+        await new Promise<void>(resolve => {
+          const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || session) {
+              subscription.unsubscribe()
+              // Clean the hash from URL without reloading
+              window.history.replaceState(null, '', window.location.pathname)
+              resolve()
+            }
+          })
+          // Timeout fallback in case the event doesn't fire
+          setTimeout(resolve, 2000)
+        })
+      }
+
+      supabase.auth.getSession().then(async ({ data }: any) => {
       const u = data?.session?.user
       if (!u) { router.push('/signin'); return }
       setUser(u)
@@ -217,6 +239,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       // Not an admin of anything — deny
       router.push('/')
     })
+    } // end initAuth
+    initAuth()
   }, [])
 
   if (authed === null) {

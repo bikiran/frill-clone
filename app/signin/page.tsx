@@ -64,15 +64,40 @@ function SignInForm() {
     return () => clearInterval(t)
   }, [])
 
-  const getRedirectUrl = () => {
+  const getRedirectUrl = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    const user = session?.user
+
+    // Always try to find the user's own company first (they should land on their admin)
+    if (user) {
+      const { data: ownCo } = await (supabase as any).from('companies').select('slug').eq('owner_id', user.id).maybeSingle()
+      if (ownCo?.slug) {
+        const hostname = window.location.hostname
+        const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
+        if (!isLocal) {
+          // Pass the session tokens in the URL so the subdomain can pick them up
+          // without requiring a second sign-in. Supabase's detectSessionInUrl:true
+          // will exchange these automatically.
+          const accessToken = session?.access_token
+          const refreshToken = session?.refresh_token
+          const base = `https://${ownCo.slug}.colvy.com/admin`
+          if (accessToken && refreshToken) {
+            return `${base}#access_token=${accessToken}&refresh_token=${refreshToken}&type=recovery`
+          }
+          return base
+        }
+        return '/admin'
+      }
+    }
+
+    // Signing in on a company subdomain — return to the board
     if (companyContext) {
       const hostname = window.location.hostname
       const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
-      if (!isLocal) {
-        return `https://${companyContext.slug}.colvy.com/`
-      }
+      if (!isLocal) return `https://${companyContext.slug}.colvy.com/`
       return '/'
     }
+
     return '/admin'
   }
 
@@ -82,7 +107,7 @@ function SignInForm() {
     setError('')
     const { error: err } = await supabase.auth.signInWithPassword({ email, password })
     if (err) { setError(err.message); setLoading(false); return }
-    const redirect = params.get('redirect') || getRedirectUrl()
+    const redirect = params.get('redirect') || await getRedirectUrl()
     window.location.href = redirect
   }
 

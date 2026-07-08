@@ -40,6 +40,21 @@ function WidgetContent() {
     setHelpFeedbackEmail('')
     setHelpFeedbackDone(false)
   }, [selectedItem?.id])
+
+  // Subscribe to agent replies on the active chat conversation
+  useEffect(() => {
+    if (!chatConvId) return
+    const ch = supabase.channel(`widget-chat-${chatConvId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${chatConvId}` }, (payload: any) => {
+        const msg = payload.new
+        // Only add agent/system messages (visitor ones are optimistically added already)
+        if (msg.sender_type !== 'visitor') {
+          setChatMessages2(prev => [...prev, msg])
+        }
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [chatConvId])
   const [feedback, setFeedback] = useState('')
   const [chatMessages, setChatMessages] = useState<any[]>([])
   const [attachments, setAttachments] = useState<string[]>([])
