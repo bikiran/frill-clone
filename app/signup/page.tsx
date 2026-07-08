@@ -36,6 +36,9 @@ function SignUpForm() {
   const [oauthLoading, setOAuthLoading] = useState('')
   const [error, setError] = useState('')
   const [needsConfirmation, setNeedsConfirmation] = useState(false)
+  const [resendCountdown, setResendCountdown] = useState(0)
+  const [resendLoading, setResendLoading] = useState(false)
+  const [resendSuccess, setResendSuccess] = useState('')
 
   useEffect(() => {
     // Check if user is already signed in
@@ -237,8 +240,29 @@ function SignUpForm() {
     setLoading(false)
   }
 
-  const handleGoogle = async () => { setOAuthLoading('google'); await signInWithGoogle() }
-  const handleGitHub = async () => { setOAuthLoading('github'); await signInWithGitHub() }
+  const handleGoogle = async () => {
+    // Validation: for new company signup, require company details before OAuth
+    if (!companyContext) {
+      if (!companyName.trim()) { setError('Please enter your company name before signing up with Google'); return }
+      if (slugStatus !== 'available') { setError('Please choose a valid, available board URL before signing up with Google'); return }
+    }
+    setOAuthLoading('google')
+    await signInWithGoogle(companyContext
+      ? { companyId: companyContext.id }
+      : { slug: slug.toLowerCase(), name: companyName.trim(), industry: industry || 'saas' }
+    )
+  }
+  const handleGitHub = async () => {
+    if (!companyContext) {
+      if (!companyName.trim()) { setError('Please enter your company name before signing up with GitHub'); return }
+      if (slugStatus !== 'available') { setError('Please choose a valid, available board URL before signing up with GitHub'); return }
+    }
+    setOAuthLoading('github')
+    await signInWithGitHub(companyContext
+      ? { companyId: companyContext.id }
+      : { slug: slug.toLowerCase(), name: companyName.trim(), industry: industry || 'saas' }
+    )
+  }
 
   const slugStatusColor: any = { idle: 'var(--slate)', checking: '#f59e0b', available: '#10b981', taken: '#ef4444', invalid: '#ef4444' }
   const slugStatusMsg: any = { idle: '', checking: 'Checking...', available: '✓ Available', taken: '✗ Already taken', invalid: '✗ Use lowercase letters, numbers and hyphens (3–30 chars)' }
@@ -278,23 +302,78 @@ function SignUpForm() {
   }
 
   // Email confirmation screen
+  // Countdown timer effect
+  useEffect(() => {
+    if (resendCountdown <= 0) return
+    const t = setTimeout(() => setResendCountdown(c => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [resendCountdown])
+
+  const handleResend = async () => {
+    setResendLoading(true)
+    setResendSuccess('')
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+    const redirectTo = companyContext
+      ? `${baseUrl}/auth/callback?company_id=${companyContext.id}`
+      : `${baseUrl}/auth/callback?slug=${encodeURIComponent(slug)}&name=${encodeURIComponent(companyName)}&industry=${encodeURIComponent(industry)}`
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: redirectTo },
+    })
+    setResendLoading(false)
+    if (error) {
+      setError(error.message)
+    } else {
+      setResendSuccess('Email resent! Check your inbox.')
+      setResendCountdown(60)
+    }
+  }
+
   if (needsConfirmation) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: '#fff' }}>
-        <div style={{ maxWidth: 420, width: '100%', textAlign: 'center' }}>
-          <div style={{ width: 64, height: 64, borderRadius: 18, background: '#fff4f1', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff7a6b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        <div style={{ maxWidth: 440, width: '100%', textAlign: 'center' }}>
+          <div style={{ width: 68, height: 68, borderRadius: 18, background: '#fff4f1', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ff7a6b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0d0d0d', marginBottom: 8 }}>Check your email</h1>
-          <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 4 }}>We sent a confirmation link to <strong>{email}</strong></p>
-          <p style={{ fontSize: 13, color: '#6b6b70', marginBottom: 24 }}>Click the link to activate your account and board.</p>
-          <div style={{ background: '#fafafa', borderRadius: 16, border: '1px solid #e5e5e5', padding: 18, marginBottom: 16 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#0d0d0d', marginBottom: 4 }}>Your board will be at:</p>
-            <p style={{ fontWeight: 700, color: '#ff7a6b' }}>{slug}.colvy.com</p>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', marginBottom: 10 }}>Check your email</h1>
+          <p style={{ fontSize: 15, color: '#6b6b70', marginBottom: 4 }}>We sent a confirmation link to</p>
+          <p style={{ fontSize: 15, fontWeight: 700, color: '#0d0d0d', marginBottom: 6 }}>{email}</p>
+          <p style={{ fontSize: 13, color: '#9ca3af', marginBottom: 24 }}>Click the link to activate your account and board. Check your spam folder if you don't see it.</p>
+          {!companyContext && slug && (
+            <div style={{ background: '#fafafa', borderRadius: 14, border: '1px solid #e5e5e5', padding: 16, marginBottom: 24 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: '#6b6b70', margin: '0 0 4px' }}>Your board will be at:</p>
+              <p style={{ fontWeight: 800, color: '#ff7a6b', fontSize: 15, margin: 0 }}>{slug}.colvy.com</p>
+            </div>
+          )}
+          {resendSuccess && (
+            <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 10, padding: '10px 16px', marginBottom: 16, fontSize: 13, fontWeight: 600, color: '#059669' }}>
+              ✓ {resendSuccess}
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button
+              onClick={handleResend}
+              disabled={resendLoading || resendCountdown > 0}
+              style={{
+                width: '100%', padding: '13px 0', borderRadius: 12,
+                background: resendCountdown > 0 ? '#f3f4f6' : '#ff7a6b',
+                color: resendCountdown > 0 ? '#9ca3af' : '#fff',
+                border: 'none', fontWeight: 700, fontSize: 14,
+                cursor: resendCountdown > 0 ? 'default' : 'pointer',
+                transition: 'all 0.2s',
+              }}>
+              {resendLoading ? 'Sending…' : resendCountdown > 0 ? `Resend email (${resendCountdown}s)` : 'Resend confirmation email'}
+            </button>
+            <button
+              onClick={() => { setNeedsConfirmation(false); setResendSuccess('') }}
+              style={{ width: '100%', padding: '13px 0', borderRadius: 12, background: '#fff', color: '#6b6b70', border: '1px solid #e5e5e5', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+              ← Use a different email
+            </button>
           </div>
-          <p style={{ fontSize: 12, color: '#9ca3af' }}>
-            Didn't receive it?{' '}
-            <button onClick={() => setNeedsConfirmation(false)} style={{ color: '#ff7a6b', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>try again</button>
+          <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 20, lineHeight: 1.5 }}>
+            If the email is in your spam folder, mark it as &ldquo;not spam&rdquo; to ensure future emails arrive in your inbox.
           </p>
         </div>
       </div>
