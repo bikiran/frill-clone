@@ -1,0 +1,107 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+function admin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+}
+
+// Single webhook endpoint for Telnyx — handles inbound SMS and call status events.
+// Configure this URL in the Telnyx Messaging Profile and Voice Connection:
+//   https://<your-domain>/api/telnyx/webhook
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const event = body?.data
+    const eventType: string = event?.event_type || ''
+    const db = admin()
+
+    // ── Inbound SMS ──────────────────────────────────────────────────────────
+    if (eventType === 'message.received') {
+      const payload = event.payload
+      const from = payload?.from?.phone_number
+      const to = Array.isArray(payload?.to) ? payload.to[0]?.phone_number : payload?.to?.phone_number
+      const text = payload?.text || ''
+
+      // Which company owns the receiving number?
+      const { data: integ } = await db.from('telnyx_integrations').select('company_id').eq('phone_number', to).maybeSingle()
+      const companyId = integ?.company_id
+      if (!companyId) return NextResponse.json({ ok: true }) // not ours
+
+      // Find an existing conversation for this mobile, else create one
+      let { data: conv } = await db.from('conversations')
+        .select('*').eq('company_id', companyId).eq('sms_number', from)
+        .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+
+      if (!conv) {
+        const { data: newConv } = await db.from('conversations').insert({
+          company_id: companyId,
+          channel: 'sms',
+          subject: from,
+          sms_number: from,
+          sms_enabled: true,
+          channel_number: to,
+          status: 'open',
+          is_unread: true,
+          unread_count: 1,
+          last_message: text,
+          last_message_at: new Date().toISOString(),
+        }).select().maybeSingle()
+        conv = newConv
+      }
+
+      if (conv) {
+        await db.from('messages').insert({
+          conversation_id: conv.id,
+          company_id: companyId,
+          sender_type: 'visitor',
+          sender_name: from,
+          content: text,
+          delivery_channel: 'sms',
+          telnyx_message_id: payload?.id || null,
+        })
+        await db.from('conversations').update({
+          last_message: text,
+          last_message_at: new Date().toISOString(),
+          is_unread: true,
+          unread_count: (conv.unread_count || 0) + 1,
+          updated_at: new Date().toISOString(),
+        }).eq('id', conv.id)
+      }
+      return NextResponse.json({ ok: true })
+    }
+
+    // ── Call status events ───────────────────────────────────────────────────
+    if (eventType.startsWith('call.')) {
+      const payload = event.payload
+      const callControlId = payload?.call_control_id
+      const sessionId = payload?.call_session_id
+      if (callControlId || sessionId) {
+        const statusMap: Record<string, string> = {
+          'call.initiated': 'initiated',
+          'call.ringing': 'ringing',
+          'call.answered': 'answered',
+          'call.hangup': 'completed',
+        }
+        const status = statusMap[eventType] || eventType.replace('call.', '')
+        const update: any = { status }
+        if (eventType === 'call.hangup') {
+          update.ended_at = new Date().toISOString()
+          if (payload?.call_duration_secs) update.duration_seconds = payload.call_duration_secs
+        }
+        // Match by call_control_id or session id
+        await db.from('calls').update(update).or(`telnyx_call_control_id.eq.${callControlId},telnyx_call_session_id.eq.${sessionId}`)
+      }
+      return NextResponse.json({ ok: true })
+    }
+
+    return NextResponse.json({ ok: true })
+  } catch (err: any) {
+    console.error('Telnyx webhook error:', err)
+    // Always 200 so Telnyx doesn't retry-storm us
+    return NextResponse.json({ ok: true })
+  }
+}

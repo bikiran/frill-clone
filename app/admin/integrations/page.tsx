@@ -18,6 +18,17 @@ const INTEGRATIONS = [
     isDedicated: true, // Special flag for custom page
   },
   {
+    id: 'telnyx',
+    name: 'Telnyx — Voice & SMS',
+    desc: 'Call customers from your browser and continue live chats over SMS to their mobile.',
+    icon: '📞',
+    color: '#00c08b',
+    bg: '#e6faf4',
+    logo: '',
+    category: 'Communication',
+    isDedicated: true,
+  },
+  {
     id: 'slack',
     name: 'Slack',
     desc: 'Post to a Slack channel when ideas are submitted, voted on, or change status.',
@@ -233,6 +244,14 @@ export default function IntegrationsPage() {
         } else {
           enb['woocommerce'] = false
         }
+
+        // Check for Telnyx integration
+        const { data: telnyxData } = await (supabase as any)
+          .from('telnyx_integrations')
+          .select('is_active')
+          .eq('company_id', cid)
+          .maybeSingle()
+        enb['telnyx'] = !!(telnyxData && telnyxData.is_active)
       }
 
       setConfigs(cfgs)

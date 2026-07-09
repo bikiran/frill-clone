@@ -21,6 +21,8 @@ function WidgetContent() {
   const chatFileRef = useRef<HTMLInputElement>(null)
   const [chatName, setChatName] = useState('')
   const [chatEmail, setChatEmail] = useState('')
+  const [chatMobile, setChatMobile] = useState('')
+  const [smsOptIn, setSmsOptIn] = useState(false)
   const [chatStep, setChatStep] = useState<'form' | 'chat'>('form')
   const [chatCreating, setChatCreating] = useState(false)
   const [chatCreateError, setChatCreateError] = useState('')
@@ -1408,6 +1410,14 @@ function WidgetContent() {
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
                 <input value={chatEmail} onChange={e => setChatEmail(e.target.value)} placeholder="Your email (optional)" type="email"
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
+                <input value={chatMobile} onChange={e => setChatMobile(e.target.value)} placeholder="Mobile number (optional)" type="tel"
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
+                {chatMobile.trim() && (
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12.5, color: '#6b7280', cursor: 'pointer', lineHeight: 1.4 }}>
+                    <input type="checkbox" checked={smsOptIn} onChange={e => setSmsOptIn(e.target.checked)} style={{ marginTop: 2 }} />
+                    Continue this conversation by text — get our replies as SMS if you leave the chat.
+                  </label>
+                )}
                 {chatCreateError && (
                   <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fef2f2', color: '#dc2626', fontSize: 12, fontWeight: 600 }}>
                     {chatCreateError}
@@ -1420,15 +1430,21 @@ function WidgetContent() {
                     setChatCreateError('')
                     // Create a contact or look up existing
                     let contactId: string | null = null
+                    const normalizedMobile = chatMobile.trim() ? (chatMobile.trim().startsWith('+') ? chatMobile.replace(/[^\d+]/g, '') : chatMobile.replace(/[^\d]/g, '').replace(/^0/, '+61').replace(/^61/, '+61')) : null
                     try {
                       if (chatEmail) {
                         const { data: existingContact } = await (supabase as any).from('contacts').select('id').eq('company_id', company?.id).eq('email', chatEmail).maybeSingle()
                         if (existingContact) {
                           contactId = existingContact.id
+                          if (normalizedMobile) await (supabase as any).from('contacts').update({ phone: normalizedMobile }).eq('id', existingContact.id)
                         } else {
-                          const { data: newContact } = await (supabase as any).from('contacts').insert({ company_id: company?.id, name: chatName, email: chatEmail, source: 'widget' }).select('id').maybeSingle()
+                          const { data: newContact } = await (supabase as any).from('contacts').insert({ company_id: company?.id, name: chatName, email: chatEmail, phone: normalizedMobile, source: 'widget' }).select('id').maybeSingle()
                           if (newContact) contactId = newContact.id
                         }
+                      } else if (normalizedMobile) {
+                        // No email but a mobile — still create a contact
+                        const { data: newContact } = await (supabase as any).from('contacts').insert({ company_id: company?.id, name: chatName, phone: normalizedMobile, source: 'widget' }).select('id').maybeSingle()
+                        if (newContact) contactId = newContact.id
                       }
                       // Create conversation
                       const visitorId = `widget-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -1439,6 +1455,8 @@ function WidgetContent() {
                         status: 'open',
                         subject: chatName,
                         visitor_id: visitorId,
+                        sms_number: normalizedMobile,
+                        sms_enabled: !!(normalizedMobile && smsOptIn),
                         page_url: typeof window !== 'undefined' ? window.location.href : null,
                         page_title: typeof document !== 'undefined' ? document.title : null,
                         page_history: [{ url: typeof window !== 'undefined' ? window.location.href : null, title: typeof document !== 'undefined' ? document.title : null, ts: new Date().toISOString() }],

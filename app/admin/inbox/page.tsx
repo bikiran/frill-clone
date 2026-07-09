@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import CallBar from '@/components/CallBar'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -103,6 +104,7 @@ export default function InboxPage() {
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [replyChannel, setReplyChannel] = useState<'chat' | 'sms'>('chat')
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'assigned' | 'resolved'>('open')
   const [showAssignMenu, setShowAssignMenu] = useState(false)
   const [showContactEdit, setShowContactEdit] = useState(false)
@@ -507,21 +509,46 @@ export default function InboxPage() {
   const sendReply = async () => {
     if (!reply.trim() || !selected || !user) return
     setSending(true)
+    const content = reply.trim()
+    const senderName = user.user_metadata?.display_name || user.email?.split('@')[0]
+
+    // Send over SMS if the agent picked the SMS channel (visitor has a mobile)
+    if (replyChannel === 'sms' && (selected as any).sms_number) {
+      try {
+        const res = await fetch('/api/telnyx/sms/send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId, conversationId: selected.id, to: (selected as any).sms_number, text: content, senderName }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'SMS failed')
+        setReply(''); setReplyTo(null); setSending(false)
+        // Reload messages (the send route logged it server-side)
+        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+        setMessages(msgs || [])
+        scrollBottom()
+      } catch (e: any) {
+        alert('SMS send failed: ' + e.message)
+        setSending(false)
+      }
+      return
+    }
+
     const msg = {
       conversation_id: selected.id,
       company_id: companyId,
       sender_type: 'agent',
       sender_id: user.id,
-      sender_name: user.user_metadata?.display_name || user.email?.split('@')[0],
+      sender_name: senderName,
       sender_email: user.email,
-      content: reply.trim(),
+      content,
       attachments: [],
       metadata: {},
       reply_to: replyTo?.id || null,
+      delivery_channel: 'chat',
     }
     await (supabase as any).from('messages').insert(msg)
     await (supabase as any).from('conversations').update({
-      last_message: reply.trim(),
+      last_message: content,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }).eq('id', selected.id)
@@ -716,6 +743,18 @@ export default function InboxPage() {
                 </p>
                 {selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {selected.page_title}</p>}
               </div>
+
+              {/* Browser calling (Telnyx WebRTC) */}
+              {(contact?.phone || (selected as any).sms_number) && (
+                <CallBar
+                  companyId={companyId}
+                  toNumber={contact?.phone || (selected as any).sms_number}
+                  contactName={contact?.name}
+                  contactId={contact?.id}
+                  conversationId={selected.id}
+                  agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+                />
+              )}
 
               {/* Sentiment picker */}
               <div style={{ display: 'flex', gap: 2 }}>
@@ -1013,6 +1052,15 @@ export default function InboxPage() {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {/* Channel toggle — appears when the visitor gave a mobile number */}
+                  {(selected as any).sms_number && (
+                    <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginRight: 4 }}>
+                      <button type="button" onClick={() => setReplyChannel('chat')}
+                        style={{ padding: '6px 10px', border: 'none', background: replyChannel === 'chat' ? 'var(--coral)' : '#fff', color: replyChannel === 'chat' ? '#fff' : 'var(--slate)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>💬 Chat</button>
+                      <button type="button" onClick={() => setReplyChannel('sms')}
+                        style={{ padding: '6px 10px', border: 'none', background: replyChannel === 'sms' ? 'var(--coral)' : '#fff', color: replyChannel === 'sms' ? '#fff' : 'var(--slate)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>📱 SMS</button>
+                    </div>
+                  )}
                   {/* Attach */}
                   <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} title="Attach file"
                     style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
