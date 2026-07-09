@@ -14,7 +14,9 @@ async function getCompanyId(): Promise<string | null> {
   if (h === 'colvy.com' || h === 'www.colvy.com' || h.includes('localhost') || h.includes('vercel.app')) return null
   if (h.endsWith('.colvy.com')) {
     const slug = h.replace('.colvy.com', '')
-    const { data } = await (supabase as any).from('companies').select('id,name,accent_color,logo_url').eq('slug', slug).single()
+    // maybeSingle never throws on no-rows (unlike .single which caused this to
+    // return null and leak every company's data onto the board)
+    const { data } = await (supabase as any).from('companies').select('id,name,accent_color,logo_url').eq('slug', slug).maybeSingle()
     if (data?.accent_color) {
       document.documentElement.style.setProperty('--coral', data.accent_color)
       document.documentElement.style.setProperty('--peach', data.accent_color + '15')
@@ -22,6 +24,14 @@ async function getCompanyId(): Promise<string | null> {
     return data?.id || null
   }
   return null
+}
+
+// True when we're on a company subdomain (so we must ALWAYS scope to that
+// company — even if the lookup momentarily fails, never show all-company data)
+function isOnCompanySubdomain(): boolean {
+  if (typeof window === 'undefined') return false
+  const h = window.location.hostname
+  return h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com'
 }
 
 const ADMIN_FILTERS = [
@@ -395,21 +405,25 @@ export default function HomePage() {
     }
 
     let q = supabase.from('ideas').select('*') as any
-    if (companyId) q = q.eq('company_id', companyId)
+    if (companyId) {
+      q = q.eq('company_id', companyId)
+    } else if (isOnCompanySubdomain()) {
+      setIdeas([]); setLoading(false); return
+    }
     const { data } = await q
-    if (data && data.length === 0) {
-      // Seed sample ideas on first load
+    if (data && data.length === 0 && companyId) {
+      // Seed sample ideas on first load — scoped to this company
       const samples = [
-        { title: '[Start here] Welcome to YourApp', description: 'This is your feedback board! Upvote ideas you like, add comments, and submit your own feature requests.', created_by_name: 'YourApp Team', votes: 7, status: 'new', topics: ['welcome'], show_on_roadmap: true },
-        { title: '[Example Idea] Pabbly Connect Integration', description: 'Adding Pabbly would make it much easier to connect a whole host of apps without any technical knowledge. Similar to Zapier and Integromat.', created_by_name: 'YourApp Team', votes: 0, status: 'planned', topics: ['improvement', 'integrations'], show_on_roadmap: true },
-        { title: '[Example Idea] More colour options', description: 'Would love to see more colour palette options for customizing the look and feel.', created_by_name: 'YourApp Team', votes: 3, status: 'planned', topics: ['improvement', 'styling'], show_on_roadmap: true },
-        { title: '[Read Me] We\'ve created a few example ideas for you', description: 'These example ideas show you what your feedback board can look like. Feel free to delete them when you\'re ready!', created_by_name: 'YourApp Team', votes: 0, status: 'new', topics: ['welcome'], show_on_roadmap: true },
-        { title: '[Read Me] Change your Topics', description: 'Did you know that you can set your own Topics right here? Topics are a great way to categorise ideas so your customers can see where an idea belongs in your business.', created_by_name: 'YourApp Team', votes: 0, status: 'new', topics: ['welcome'], show_on_roadmap: true },
+        { title: '[Start here] Welcome to YourApp', description: 'This is your feedback board! Upvote ideas you like, add comments, and submit your own feature requests.', created_by_name: 'YourApp Team', votes: 7, status: 'new', topics: ['welcome'], show_on_roadmap: true, company_id: companyId },
+        { title: '[Example Idea] Pabbly Connect Integration', description: 'Adding Pabbly would make it much easier to connect a whole host of apps without any technical knowledge. Similar to Zapier and Integromat.', created_by_name: 'YourApp Team', votes: 0, status: 'planned', topics: ['improvement', 'integrations'], show_on_roadmap: true, company_id: companyId },
+        { title: '[Example Idea] More colour options', description: 'Would love to see more colour palette options for customizing the look and feel.', created_by_name: 'YourApp Team', votes: 3, status: 'planned', topics: ['improvement', 'styling'], show_on_roadmap: true, company_id: companyId },
+        { title: '[Read Me] We\'ve created a few example ideas for you', description: 'These example ideas show you what your feedback board can look like. Feel free to delete them when you\'re ready!', created_by_name: 'YourApp Team', votes: 0, status: 'new', topics: ['welcome'], show_on_roadmap: true, company_id: companyId },
+        { title: '[Read Me] Change your Topics', description: 'Did you know that you can set your own Topics right here? Topics are a great way to categorise ideas so your customers can see where an idea belongs in your business.', created_by_name: 'YourApp Team', votes: 0, status: 'new', topics: ['welcome'], show_on_roadmap: true, company_id: companyId },
       ]
       for (const sample of samples) {
         await supabase.from('ideas').insert(sample)
       }
-      const { data: newData } = await supabase.from('ideas').select('*')
+      const { data: newData } = await supabase.from('ideas').select('*').eq('company_id', companyId)
       if (newData) setIdeas(newData)
     } else if (data) {
       setIdeas(data)

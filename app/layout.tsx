@@ -150,15 +150,13 @@ export default function RootLayout({
 
         // Load settings for this specific company
         let q = (supabase as any).from('site_settings').select('*').eq('key', 'general')
+        let resolvedCompanyId: string | null = null
         if (slug) {
-          // For subdomains, get the company first then its settings — maybeSingle never throws.
-          // Also fetch name + logo so the header brand works in incognito / new
-          // browsers where the localStorage cache doesn't exist yet.
           const { data: co } = await (supabase as any).from('companies').select('id,name,slug,logo_url,accent_color').eq('slug', slug).maybeSingle()
           if (co) {
+            resolvedCompanyId = co.id
             setCompany(co)
             try { localStorage.setItem(`company_${slug}`, JSON.stringify(co)) } catch {}
-            // Apply company accent color from DB (source of truth)
             if (co.accent_color && typeof document !== 'undefined') {
               document.documentElement.style.setProperty('--coral', co.accent_color)
               const r = parseInt(co.accent_color.slice(1,3), 16)
@@ -167,6 +165,10 @@ export default function RootLayout({
               document.documentElement.style.setProperty('--peach', `rgba(${r},${g},${b},0.1)`)
             }
             q = q.eq('company_id', co.id)
+          } else {
+            // On a subdomain but company not found — do NOT load unscoped
+            // settings (that would show another company's nav/logo/favicon)
+            return
           }
         } else {
           // On colvy.com, don't apply any company color
@@ -369,7 +371,13 @@ export default function RootLayout({
 
   // Pages that use their own full-page layout (no nav wrapper)
   const isEmbed = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('embed') === '1'
-  const isFullPage = isEmbed || ['/landing', '/pricing', '/features', '/platform-admin', '/forms/', '/widget'].some(p => pathname?.startsWith(p))
+  // On colvy.com the proxy rewrites "/" → "/landing", but usePathname() still
+  // reports "/". Detect the root of the marketing domain so we don't render the
+  // app nav on top of the landing page's own nav (the "mixed up menu" bug).
+  const isMarketingRoot = typeof window !== 'undefined'
+    && (window.location.hostname === 'colvy.com' || window.location.hostname === 'www.colvy.com')
+    && (pathname === '/' || pathname === '/landing')
+  const isFullPage = isEmbed || isMarketingRoot || ['/landing', '/pricing', '/features', '/platform-admin', '/forms/', '/widget'].some(p => pathname?.startsWith(p))
 
   if (isFullPage) {
     return (

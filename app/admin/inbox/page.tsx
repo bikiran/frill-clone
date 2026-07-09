@@ -37,9 +37,27 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   closed:   { bg: '#f3f4f6', color: '#6b7280' },
 }
 function timeAgo(d: string) {
-  const s = Math.max(0, Math.floor((Date.now() - new Date(d.endsWith('Z') ? d : d + 'Z').getTime()) / 1000))
+  if (!d) return ''
+  const parsed = new Date(d.endsWith?.('Z') ? d : d + 'Z')
+  if (isNaN(parsed.getTime())) return ''
+  const s = Math.max(0, Math.floor((Date.now() - parsed.getTime()) / 1000))
   if (s < 60) return 'now'; if (s < 3600) return `${Math.floor(s/60)}m`
   if (s < 86400) return `${Math.floor(s/3600)}h`; return `${Math.floor(s/86400)}d`
+}
+
+// Safe time formatter — handles null, undefined, and non-ISO timestamps
+function fmtTime(d: string | undefined | null) {
+  if (!d) return ''
+  const s = typeof d === 'string' ? d : String(d)
+  const parsed = new Date(s.endsWith?.('Z') ? s : s + 'Z')
+  if (isNaN(parsed.getTime())) return ''
+  return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+function fmtDateTime(d: string | undefined | null) {
+  if (!d) return ''
+  const parsed = new Date(d)
+  if (isNaN(parsed.getTime())) return ''
+  return parsed.toLocaleString()
 }
 
 // Simple AI extraction — looks for phone, email, address patterns in message
@@ -53,6 +71,7 @@ function extractFromText(text: string) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function InboxPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [companyInfo, setCompanyInfo] = useState<any>(null)
   const [user, setUser] = useState<any>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selected, setSelected] = useState<Conversation | null>(null)
@@ -94,6 +113,9 @@ export default function InboxPage() {
       }
       if (!cid) return
       setCompanyId(cid)
+      // Load company logo/name/accent for agent message avatars
+      const { data: ci } = await (supabase as any).from('companies').select('name, logo_url, accent_color, slug').eq('id', cid).maybeSingle()
+      if (ci) setCompanyInfo(ci)
       loadTeam(cid)
       loadConversations(cid)
       setLoading(false)
@@ -112,6 +134,17 @@ export default function InboxPage() {
 
   useEffect(() => { loadConversations() }, [statusFilter, loadConversations])
 
+  // Close the assign dropdown when clicking anywhere else
+  useEffect(() => {
+    if (!showAssignMenu) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-assign-menu]')) setShowAssignMenu(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showAssignMenu])
+
   // Realtime subscription to new messages / conversation updates
   useEffect(() => {
     if (!companyId) return
@@ -120,19 +153,50 @@ export default function InboxPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `company_id=eq.${companyId}` }, () => loadConversations())
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `company_id=eq.${companyId}` }, (payload: any) => {
         if (selected?.id === payload.new.conversation_id) {
-          setMessages(prev => [...prev, payload.new])
+          setMessages(prev => {
+            if (prev.some((m: any) => m.id === payload.new.id)) return prev
+            return [...prev, payload.new]
+          })
           scrollBottom()
         }
         loadConversations()
       })
       .subscribe()
     channelRef.current = ch
-    return () => { supabase.removeChannel(ch) }
+
+    // Polling fallback — refresh the open thread every 4s in case realtime
+    // isn't enabled on the messages table. Guarantees new messages appear
+    // without a manual reload.
+    const poll = setInterval(async () => {
+      loadConversations()
+      if (selected?.id) {
+        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+        if (msgs) setMessages(prev => msgs.length !== prev.length ? msgs : prev)
+      }
+    }, 4000)
+
+    return () => { supabase.removeChannel(ch); clearInterval(poll) }
   }, [companyId, selected?.id])
 
   const loadTeam = async (cid: string) => {
+    const members: TeamMember[] = []
+    // Company owner
+    const { data: co } = await (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle()
+    if (co?.owner_id) {
+      members.push({ id: co.owner_id, user_id: co.owner_id, name: co.name ? `${co.name} (Owner)` : 'Owner', role: 'owner' })
+    }
+    // Team members
     const { data } = await (supabase as any).from('team_members').select('*').eq('company_id', cid)
-    if (data) setTeamMembers(data)
+    for (const m of data || []) {
+      if (members.some(x => x.user_id === m.user_id)) continue
+      members.push({
+        id: m.id,
+        user_id: m.user_id,
+        name: m.name || m.display_name || m.email?.split('@')[0] || 'Team member',
+        role: m.role || 'member',
+      })
+    }
+    setTeamMembers(members)
   }
 
   // ── Select conversation ────────────────────────────────────────────────────
@@ -335,7 +399,7 @@ export default function InboxPage() {
                 </select>
               </div>
               {/* Assign button */}
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative' }} data-assign-menu>
                 <button type="button" onClick={() => setShowAssignMenu(v => !v)}
                   style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>
                   {selected.assigned_name ? `👤 ${selected.assigned_name}` : '+ Assign'}
@@ -428,13 +492,17 @@ export default function InboxPage() {
                         border: isAgent ? 'none' : '1px solid var(--border)',
                       }}>{msg.content}</div>
                       <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af', textAlign: isAgent ? 'right' : 'left' }}>
-                        {new Date(msg.created_at.endsWith('Z') ? msg.created_at : msg.created_at + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {fmtTime(msg.created_at)}
                       </p>
                     </div>
                     {isAgent && (
-                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-                        {(msg.sender_name || 'A')[0].toUpperCase()}
-                      </div>
+                      companyInfo?.logo_url ? (
+                        <img src={companyInfo.logo_url} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} onError={(e: any) => { e.target.style.display = 'none' }} />
+                      ) : (
+                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: companyInfo?.accent_color || 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                          {(companyInfo?.name || msg.sender_name || 'A')[0].toUpperCase()}
+                        </div>
+                      )
                     )}
                   </div>
                 )
@@ -553,7 +621,7 @@ export default function InboxPage() {
                     </div>
                     <div>
                       <p style={{ margin: '0 0 2px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Started</p>
-                      <p style={{ margin: 0, fontSize: 12, color: 'var(--ink)' }}>{new Date(selected.updated_at).toLocaleString()}</p>
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--ink)' }}>{fmtDateTime(selected.updated_at)}</p>
                     </div>
                     {selected.assigned_name && (
                       <div>
@@ -578,7 +646,7 @@ export default function InboxPage() {
                         {i === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>Current</span>}
                         <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.title || 'Untitled'}</p>
                         <a href={h.url} target="_blank" rel="noopener" style={{ fontSize: 11, color: 'var(--coral)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{h.url}</a>
-                        <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af' }}>{h.ts ? new Date(h.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                        <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af' }}>{fmtTime(h.ts)}</p>
                       </div>
                     ))}
                   </div>

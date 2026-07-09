@@ -95,6 +95,11 @@ export default function HelpCentrePage() {
     setShowSearchDropdown(results.length > 0)
   }, [search, articles])
 
+  const isOnCompanySubdomain = () => {
+    if (typeof window === 'undefined') return false
+    const h = window.location.hostname
+    return h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com'
+  }
   const getCompanyId = async () => {
     if (typeof window === 'undefined') return null
     const h = window.location.hostname
@@ -112,6 +117,8 @@ export default function HelpCentrePage() {
       let q = (supabase as any).from('help_articles').select('*')
       if (companyId) {
         q = q.eq('company_id', companyId)
+      } else if (isOnCompanySubdomain()) {
+        setArticles([]); setLoading(false); return
       }
       const { data } = await q.order('created_at', { ascending: false })
       // Only company admins may see drafts/private articles; the public sees published only

@@ -59,12 +59,17 @@ export default function RoadmapPage() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
+  const isOnCompanySubdomain = () => {
+    if (typeof window === 'undefined') return false
+    const h = window.location.hostname
+    return h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com'
+  }
   const getCompanyId = async () => {
     if (typeof window === 'undefined') return null
     const h = window.location.hostname
     if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
       const slug = h.replace('.colvy.com', '')
-      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).single()
+      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
       return data?.id || null
     }
     return null
@@ -75,6 +80,8 @@ export default function RoadmapPage() {
     let q = (supabase as any).from('ideas').select('*')
     if (companyId) {
       q = q.eq('company_id', companyId)
+    } else if (isOnCompanySubdomain()) {
+      setIdeas([]); setLoading(false); return
     }
     const { data } = await q.order('votes', { ascending: false })
     if (data) setIdeas(data)
@@ -98,6 +105,7 @@ export default function RoadmapPage() {
       const companyId = await getCompanyId()
       let q = (supabase as any).from('statuses').select('*').order('order_index', { ascending: true })
       if (companyId) q = q.eq('company_id', companyId)
+      else if (isOnCompanySubdomain()) { setLoading(false); return }
       const { data, error } = await q
       if (!error && data && data.length > 0) setCustomStatuses(data)
     } catch {}

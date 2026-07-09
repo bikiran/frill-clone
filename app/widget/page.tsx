@@ -63,19 +63,72 @@ function WidgetContent() {
     }
   }, [selectedItem?.id])
 
+  // Restore a saved chat session on load so a page reload doesn't lose the
+  // conversation (previously the visitor had to re-enter name/email every time)
+  useEffect(() => {
+    if (!slug || typeof window === 'undefined') return
+    try {
+      const saved = localStorage.getItem(`colvy-chat-${slug}`)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed.convId && parsed.name) {
+          setChatConvId(parsed.convId)
+          setChatName(parsed.name)
+          setChatEmail(parsed.email || '')
+          setChatStep('chat')
+          // Load existing messages for this conversation
+          ;(async () => {
+            const { data: msgs } = await (supabase as any)
+              .from('messages').select('*')
+              .eq('conversation_id', parsed.convId)
+              .order('created_at', { ascending: true })
+            if (msgs) setChatMessages2(msgs)
+          })()
+        }
+      }
+    } catch {}
+  }, [slug])
+
   // Subscribe to agent replies on the active chat conversation
   useEffect(() => {
     if (!chatConvId) return
+    // Load latest messages when a conversation becomes active (catches anything
+    // sent while the subscription was reconnecting)
+    ;(async () => {
+      const { data: msgs } = await (supabase as any)
+        .from('messages').select('*')
+        .eq('conversation_id', chatConvId)
+        .order('created_at', { ascending: true })
+      if (msgs && msgs.length > 0) setChatMessages2(msgs)
+    })()
+
     const ch = supabase.channel(`widget-chat-${chatConvId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${chatConvId}` }, (payload: any) => {
         const msg = payload.new
-        // Only add agent/system messages (visitor ones are optimistically added already)
-        if (msg.sender_type !== 'visitor') {
-          setChatMessages2(prev => [...prev, msg])
-        }
+        // Dedupe: skip if we already have this message id (optimistic visitor sends)
+        setChatMessages2(prev => {
+          if (prev.some((m: any) => m.id === msg.id)) return prev
+          // Skip visitor messages without an id match only if content+time matches an optimistic one
+          if (msg.sender_type === 'visitor') {
+            const dupe = prev.some((m: any) => !m.id && m.content === msg.content && m.sender_type === 'visitor')
+            if (dupe) return prev.map((m: any) => (!m.id && m.content === msg.content && m.sender_type === 'visitor') ? msg : m)
+          }
+          return [...prev, msg]
+        })
       })
       .subscribe()
-    return () => { supabase.removeChannel(ch) }
+
+    // Polling fallback — refresh messages every 4s in case realtime isn't
+    // enabled on the table, so agent replies show without a manual reload
+    const poll = setInterval(async () => {
+      const { data: msgs } = await (supabase as any)
+        .from('messages').select('*')
+        .eq('conversation_id', chatConvId)
+        .order('created_at', { ascending: true })
+      if (msgs) setChatMessages2(prev => msgs.length !== prev.length ? msgs : prev)
+    }, 4000)
+
+    return () => { supabase.removeChannel(ch); clearInterval(poll) }
   }, [chatConvId])
   const [feedback, setFeedback] = useState('')
   const [chatMessages, setChatMessages] = useState<any[]>([])
@@ -1369,6 +1422,10 @@ function WidgetContent() {
                       }).select('id').maybeSingle()
                       if (conv) {
                         setChatConvId(conv.id)
+                        // Persist so a page reload restores this chat
+                        try {
+                          localStorage.setItem(`colvy-chat-${slug}`, JSON.stringify({ convId: conv.id, name: chatName, email: chatEmail }))
+                        } catch {}
                         // Insert a system greeting
                         await (supabase as any).from('messages').insert({
                           conversation_id: conv.id,

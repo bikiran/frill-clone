@@ -39,12 +39,17 @@ export default function AnnouncementsPage() {
     fetchAnnouncements()
   }, [])
 
+  const isOnCompanySubdomain = () => {
+    if (typeof window === 'undefined') return false
+    const h = window.location.hostname
+    return h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com'
+  }
   const getCompanyId = async () => {
     if (typeof window === 'undefined') return null
     const h = window.location.hostname
     if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
       const slug = h.replace('.colvy.com', '')
-      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).single()
+      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
       return data?.id || null
     }
     return null
@@ -55,6 +60,7 @@ export default function AnnouncementsPage() {
       const companyId = await getCompanyId()
       let q = (supabase as any).from('announcements').select('*')
       if (companyId) q = q.eq('company_id', companyId)
+      else if (isOnCompanySubdomain()) { setLoading(false); return }
       const { data } = await q.order('created_at', { ascending: false })
 
       // Only company admins may see drafts; the public sees published only

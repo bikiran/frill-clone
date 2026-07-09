@@ -356,7 +356,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 </button>
               ))}
               <div style={{ borderTop: '1px solid var(--border)', marginTop: 4 }}>
-                <a href="/admin/create-company"
+                <a href="/admin/new-workspace"
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', textDecoration: 'none' }}>
                   <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--canvas)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', fontSize: 15, fontWeight: 600 }}>+</span>
                   <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>Create Workspace</span>
@@ -404,7 +404,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <p style={{ padding: '0 10px', marginBottom: 4, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--slate)' }}>
                 Super Admin
               </p>
-              <Link href="/admin/create-company"
+              <Link href="/admin/new-workspace"
                 style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px', borderRadius: 8, fontSize: 13, textDecoration: 'none', color: 'var(--slate)', background: 'transparent' }}>
                 <span style={{ flexShrink: 0, display: 'flex', opacity: 0.65 }}>{icons.company}</span>
                 Create Company
