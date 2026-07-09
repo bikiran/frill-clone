@@ -21,7 +21,7 @@ async function sendEmailNotification(adminEmail: string, formTitle: string, resp
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: 'notifications@colvy.com',
+          from: 'Colvy <notifications@updates.colvy.com>',
           to: adminEmail,
           subject: `New response to "${formTitle}" • ${companyName}`,
           html: `

@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Colvy <noreply@colvy.com>',
+        from: 'Colvy <noreply@updates.colvy.com>',
         to: [email],
         subject: 'Confirm your email address — Colvy',
         html: `

@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
 
       for (const chunk of chunks) {
         const emails = chunk.map(c => ({
-          from: `${companyName} <noreply@colvy.com>`,
+          from: `${companyName} <noreply@updates.colvy.com>`,
           to: [c.email],
           subject: `${companyName}: ${announcement.title}`,
           html: `

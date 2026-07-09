@@ -77,12 +77,13 @@ export async function POST(req: NextRequest) {
     // 3. Send the confirmation email via Resend
     const RESEND_KEY = process.env.RESEND_API_KEY
     let emailSent = false
+    let emailError: string | null = null
     if (RESEND_KEY) {
       const resendRes = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          from: 'Colvy <noreply@colvy.com>',
+          from: 'Colvy <noreply@updates.colvy.com>',
           to: [email],
           subject: 'Confirm your email address — Colvy',
           html: `
@@ -114,12 +115,14 @@ export async function POST(req: NextRequest) {
       } else {
         const err = await resendRes.json().catch(() => ({}))
         console.error('Resend send error:', err)
+        emailError = err?.message || err?.error || JSON.stringify(err)
       }
     } else {
       console.warn('RESEND_API_KEY not set — confirmation email was not sent')
+      emailError = 'RESEND_API_KEY not configured on the server'
     }
 
-    return NextResponse.json({ ok: true, userId: user.id, emailSent })
+    return NextResponse.json({ ok: true, userId: user.id, emailSent, emailError })
   } catch (err: any) {
     console.error('Server signup error:', err)
     return NextResponse.json({ error: err.message || 'Signup failed' }, { status: 500 })

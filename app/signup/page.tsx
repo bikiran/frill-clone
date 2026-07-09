@@ -156,7 +156,7 @@ function SignUpForm() {
       const userId = signupData.userId
 
       if (!signupData.emailSent) {
-        console.warn('Confirmation email may not have sent — user can use the Resend button')
+        console.warn('Confirmation email may not have sent. Reason:', signupData.emailError || 'unknown')
       }
 
       if (companyContext) {
