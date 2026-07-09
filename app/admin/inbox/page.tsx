@@ -67,6 +67,19 @@ function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: st
   const chan = channel ? channel.charAt(0).toUpperCase() + channel.slice(1) : ''
   return `${label} ${time} | ${date}${!isAgent && chan ? ` | ${chan}` : ''}`
 }
+// Returns "Today" / "Yesterday" / "12 Jul 2026" for a date divider
+function dayLabel(d: string | undefined | null) {
+  if (!d) return ''
+  const s = typeof d === 'string' ? d : String(d)
+  const parsed = new Date(s.endsWith?.('Z') ? s : s + 'Z')
+  if (isNaN(parsed.getTime())) return ''
+  const today = new Date()
+  const yest = new Date(); yest.setDate(today.getDate() - 1)
+  const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString()
+  if (sameDay(parsed, today)) return 'Today'
+  if (sameDay(parsed, yest)) return 'Yesterday'
+  return parsed.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 function fmtDateTime(d: string | undefined | null) {
   if (!d) return ''
   const parsed = new Date(d)
@@ -370,25 +383,26 @@ export default function InboxPage() {
     setUploading(true)
     try {
       for (const file of Array.from(files)) {
-        const path = `${companyId}/${selected.id}/${Date.now()}-${file.name}`
-        const { error: upErr } = await supabase.storage.from('chat-attachments').upload(path, file, { upsert: true })
-        if (upErr) { console.error('Upload error:', upErr); continue }
-        const { data: pub } = supabase.storage.from('chat-attachments').getPublicUrl(path)
-        const url = pub.publicUrl
-        const kind = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file'
+        const fd = new FormData()
+        fd.append('file', file)
+        fd.append('companyId', companyId)
+        fd.append('conversationId', selected.id)
+        const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+        const data = await res.json()
+        if (!res.ok) { alert('Attachment failed: ' + (data.error || 'upload error')); continue }
         const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
         await (supabase as any).from('messages').insert({
           conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
           sender_id: user.id, sender_name: me, sender_email: user.email,
-          content: kind === 'file' ? `📎 ${file.name}` : '',
-          attachments: [{ url, name: file.name, type: file.type, kind }],
+          content: data.kind === 'file' ? `📎 ${data.name}` : '',
+          attachments: [{ url: data.url, name: data.name, type: data.type, kind: data.kind }],
         })
       }
       await (supabase as any).from('conversations').update({ last_message: '📎 Attachment', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
       const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
       setMessages(msgs || [])
       scrollBottom()
-    } catch (e) { console.error(e) }
+    } catch (e: any) { alert('Attachment failed: ' + e.message) }
     setUploading(false)
   }
 
@@ -513,34 +527,46 @@ export default function InboxPage() {
     const content = reply.trim()
     const senderName = user.user_metadata?.display_name || user.email?.split('@')[0]
 
-    // Send over SMS if the agent picked the SMS channel (visitor has a mobile)
-    if (replyChannel === 'sms' && (selected as any).sms_number) {
+    // Auto-route: send via chat by default. If the visitor gave a mobile and
+    // isn't currently online (no activity in the last 2 minutes), also deliver
+    // over SMS so they get the reply on their phone.
+    const smsNumber = (selected as any).sms_number
+    const lastSeen = (selected as any).visitor_last_seen || (selected as any).last_message_at
+    const visitorOnline = lastSeen ? (Date.now() - new Date(String(lastSeen).endsWith('Z') ? lastSeen : lastSeen + 'Z').getTime()) < 120000 : false
+    const shouldSms = smsNumber && !visitorOnline
+
+    if (shouldSms) {
       try {
         const res = await fetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId, conversationId: selected.id, to: (selected as any).sms_number, text: content, senderName }),
+          body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: content, senderName }),
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'SMS failed')
         setReply(''); setReplyTo(null); setSending(false)
-        // Reload messages (the send route logged it server-side)
         const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
         setMessages(msgs || [])
         scrollBottom()
       } catch (e: any) {
-        alert('SMS send failed: ' + e.message)
-        setSending(false)
+        // Fall back to chat if SMS fails
+        console.warn('SMS failed, delivering via chat:', e.message)
+        await deliverChat(content, senderName)
       }
       return
     }
 
+    await deliverChat(content, senderName)
+  }
+
+  const deliverChat = async (content: string, senderName: string) => {
+    if (!selected) return
     const msg = {
       conversation_id: selected.id,
       company_id: companyId,
       sender_type: 'agent',
-      sender_id: user.id,
+      sender_id: user!.id,
       sender_name: senderName,
-      sender_email: user.email,
+      sender_email: user!.email,
       content,
       attachments: [],
       metadata: {},
@@ -637,6 +663,7 @@ export default function InboxPage() {
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--slate)' }}>Loading inbox…</div>
 
   const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', fontFamily: 'inherit' }
+  const fieldBtn = (color: string): React.CSSProperties => ({ width: 24, height: 24, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 })
 
   return (
     <div style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -808,19 +835,19 @@ export default function InboxPage() {
                   <div style={{ position: 'absolute', top: '110%', right: 0, width: 190, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
                     <button type="button" onClick={() => { setShowActions(false); setShowSnooze(true) }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                      💤 Snooze
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Snooze
                     </button>
                     <button type="button" onClick={() => { copyChatLink(); setShowActions(false) }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                      🔗 {linkCopied ? 'Copied!' : 'Copy chat link'}
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> {linkCopied ? 'Copied!' : 'Copy chat link'}
                     </button>
                     <button type="button" onClick={() => { setShowActions(false); alert('Select another conversation to merge into this one — coming from the list soon.') }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                      🔀 Merge conversation
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8L22 12L18 16"/><path d="M2 12H22"/><path d="M6 8L2 12L6 16"/></svg> Merge conversation
                     </button>
                     <button type="button" onClick={() => { generateAiSummary(); setActivePanel('info'); setShowActions(false) }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', borderTop: '1px solid var(--border)' }}>
-                      ✨ AI summary & to-dos
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z"/></svg> AI summary & to-dos
                     </button>
                   </div>
                 )}
@@ -895,12 +922,26 @@ export default function InboxPage() {
 
             {/* Messages */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {(msgSearch ? messages.filter(m => (m.content || '').toLowerCase().includes(msgSearch.toLowerCase())) : messages).map(msg => {
+              {(() => {
+                const list = msgSearch ? messages.filter(m => (m.content || '').toLowerCase().includes(msgSearch.toLowerCase())) : messages
+                let lastDay = ''
+                return list.map(msg => {
+                const thisDay = dayLabel(msg.created_at)
+                const showDivider = thisDay && thisDay !== lastDay
+                if (thisDay) lastDay = thisDay
                 const isAgent = msg.sender_type === 'agent'
                 const isSystem = msg.sender_type === 'system'
+                const dateDivider = showDivider ? (
+                  <div key={`div-${msg.id}`} style={{ textAlign: 'center', margin: '10px 0 4px' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', background: '#eef0f2', padding: '3px 12px', borderRadius: 20 }}>{thisDay}</span>
+                  </div>
+                ) : null
                 if (isSystem) return (
-                  <div key={msg.id} style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '4px 0' }}>
-                    <span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>{msg.content}</span>
+                  <div key={msg.id}>
+                    {dateDivider}
+                    <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '4px 0' }}>
+                      <span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>{msg.content}</span>
+                    </div>
                   </div>
                 )
                 const reactions = Array.isArray((msg as any).reactions) ? (msg as any).reactions : []
@@ -911,7 +952,9 @@ export default function InboxPage() {
                 const reactionCounts: Record<string, number> = {}
                 reactions.forEach((r: any) => { reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1 })
                 return (
-                  <div key={msg.id} className="chat-msg-row" style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start', gap: 8, alignItems: 'flex-end', position: 'relative' }}>
+                  <div key={msg.id}>
+                    {dateDivider}
+                    <div className="chat-msg-row" style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start', gap: 8, alignItems: 'flex-end', position: 'relative' }}>
                     {!isAgent && (
                       <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--peach)', border: '2px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--coral)', flexShrink: 0 }}>
                         {(contact?.name || msg.sender_name || 'V')[0].toUpperCase()}
@@ -1012,8 +1055,10 @@ export default function InboxPage() {
                       )
                     )}
                   </div>
+                  </div>
                 )
-              })}
+              })
+              })()}
               <div ref={messagesEndRef} />
             </div>
 
@@ -1054,15 +1099,6 @@ export default function InboxPage() {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                  {/* Channel toggle — appears when the visitor gave a mobile number */}
-                  {(selected as any).sms_number && (
-                    <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginRight: 4 }}>
-                      <button type="button" onClick={() => setReplyChannel('chat')}
-                        style={{ padding: '6px 10px', border: 'none', background: replyChannel === 'chat' ? 'var(--coral)' : '#fff', color: replyChannel === 'chat' ? '#fff' : 'var(--slate)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>💬 Chat</button>
-                      <button type="button" onClick={() => setReplyChannel('sms')}
-                        style={{ padding: '6px 10px', border: 'none', background: replyChannel === 'sms' ? 'var(--coral)' : '#fff', color: replyChannel === 'sms' ? '#fff' : 'var(--slate)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>📱 SMS</button>
-                    </div>
-                  )}
                   {/* Attach */}
                   <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} title="Attach file"
                     style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
@@ -1074,7 +1110,7 @@ export default function InboxPage() {
                   {/* Review request */}
                   <button type="button" onClick={sendReviewRequest} title="Send review request"
                     style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    ⭐ Review
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Review
                   </button>
                   {/* Resolve */}
                   <button type="button" onClick={() => setStatus('resolved')}
@@ -1145,12 +1181,36 @@ export default function InboxPage() {
                   </div>
                 ) : contact ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                    {[['👤 Name', contact.name], ['✉️ Email', contact.email], ['📱 Phone', contact.phone], ['📍 Address', [contact.address, contact.city, contact.country].filter(Boolean).join(', ')]]
-                      .filter(([, v]) => v)
-                      .map(([label, value]) => (
-                        <div key={label as string}>
-                          <p style={{ margin: '0 0 2px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>{label as string}</p>
-                          <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)' }}>{value as string}</p>
+                    {([
+                      ['name', 'Name', contact.name],
+                      ['email', 'Email', contact.email],
+                      ['phone', 'Phone', contact.phone],
+                      ['address', 'Address', [contact.address, contact.city, contact.country].filter(Boolean).join(', ')],
+                    ] as [string, string, string][])
+                      .filter(([, , v]) => v)
+                      .map(([field, label, value]) => (
+                        <div key={field} className="contact-field-row" style={{ position: 'relative' }}>
+                          <p style={{ margin: '0 0 2px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>{label}</p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', flex: 1, wordBreak: 'break-word' }}>{value}</p>
+                            <div className="contact-field-actions" style={{ display: 'flex', gap: 3, opacity: 0, transition: 'opacity 0.12s' }}>
+                              {field === 'phone' && (
+                                <button type="button" title="Call" onClick={() => { const bar = document.querySelector('[data-callbar-btn]') as HTMLButtonElement; bar?.click() }}
+                                  style={fieldBtn('#059669')}>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                                </button>
+                              )}
+                              <button type="button" title="Edit" onClick={() => { setShowContactEdit(true); setEditContact(contact) }} style={fieldBtn('var(--slate)')}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              </button>
+                              <button type="button" title="Copy" onClick={() => { navigator.clipboard.writeText(value); }} style={fieldBtn('var(--slate)')}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                              </button>
+                              <button type="button" title="Delete" onClick={async () => { if (confirm(`Clear ${label.toLowerCase()}?`)) { await (supabase as any).from('contacts').update({ [field]: null }).eq('id', contact.id); setContact((c: any) => ({ ...c, [field]: null })) } }} style={fieldBtn('#dc2626')}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       ))
                     }
@@ -1160,6 +1220,7 @@ export default function InboxPage() {
                       style={{ fontSize: 12, color: 'var(--coral)', fontWeight: 600, textDecoration: 'none' }}>
                       View full profile →
                     </Link>
+                    <style>{`.contact-field-row:hover .contact-field-actions { opacity: 1 !important; }`}</style>
                   </div>
                 ) : (
                   <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>No contact linked yet. Click &ldquo;+ Create&rdquo; to create one.</p>

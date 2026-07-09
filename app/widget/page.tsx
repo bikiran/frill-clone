@@ -18,6 +18,9 @@ function WidgetContent() {
   const [chatInput, setChatInput] = useState('')
   const [chatSending, setChatSending] = useState(false)
   const [chatUploading, setChatUploading] = useState(false)
+  const [widgetReplyTo, setWidgetReplyTo] = useState<any>(null)
+  const [widgetReactPicker, setWidgetReactPicker] = useState<number | null>(null)
+  const WIDGET_EMOJIS = ['👍', '❤️', '😊', '🎉', '🙏', '😂']
   const chatFileRef = useRef<HTMLInputElement>(null)
   const [chatName, setChatName] = useState('')
   const [chatEmail, setChatEmail] = useState('')
@@ -346,18 +349,31 @@ function WidgetContent() {
     })
   }
 
+  const widgetReact = async (msg: any, emoji: string) => {
+    if (!msg.id) return
+    const reactions = Array.isArray(msg.reactions) ? msg.reactions : []
+    const existing = reactions.findIndex((r: any) => r.emoji === emoji && r.by === 'visitor')
+    let updated
+    if (existing >= 0) updated = reactions.filter((_: any, i: number) => i !== existing)
+    else updated = [...reactions, { emoji, by: 'visitor', at: new Date().toISOString() }]
+    setChatMessages2(prev => prev.map((m: any) => m.id === msg.id ? { ...m, reactions: updated } : m))
+    setWidgetReactPicker(null)
+    try { await (supabase as any).from('messages').update({ reactions: updated }).eq('id', msg.id) } catch {}
+  }
+
   const uploadChatFile = async (file: File | undefined) => {
     if (!file || !chatConvId || !company?.id) return
     setChatUploading(true)
     try {
-      const path = `${company.id}/${chatConvId}/${Date.now()}-${file.name}`
-      const { error: upErr } = await supabase.storage.from('chat-attachments').upload(path, file, { upsert: true })
-      if (upErr) { console.error('Widget upload error:', upErr); setChatUploading(false); return }
-      const { data: pub } = supabase.storage.from('chat-attachments').getPublicUrl(path)
-      const url = pub.publicUrl
-      const kind = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file'
-      const att = { url, name: file.name, type: file.type, kind }
-      const newMsg: any = { sender_type: 'visitor', sender_name: chatName, content: kind === 'file' ? `📎 ${file.name}` : '', attachments: [att], created_at: new Date().toISOString() }
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('companyId', company.id)
+      fd.append('conversationId', chatConvId)
+      const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) { alert('Attachment failed: ' + (data.error || 'upload error')); setChatUploading(false); return }
+      const att = { url: data.url, name: data.name, type: data.type, kind: data.kind }
+      const newMsg: any = { sender_type: 'visitor', sender_name: chatName, content: data.kind === 'file' ? `📎 ${data.name}` : '', attachments: [att], created_at: new Date().toISOString() }
       setChatMessages2(prev => [...prev, newMsg])
       await (supabase as any).from('messages').insert({
         conversation_id: chatConvId, company_id: company.id, sender_type: 'visitor',
@@ -365,7 +381,7 @@ function WidgetContent() {
         content: newMsg.content, attachments: [att],
       })
       await (supabase as any).from('conversations').update({ last_message: '📎 Attachment', last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, updated_at: new Date().toISOString() }).eq('id', chatConvId)
-    } catch (e) { console.error(e) }
+    } catch (e: any) { alert('Attachment failed: ' + e.message) }
     setChatUploading(false)
   }
 
@@ -1519,11 +1535,20 @@ function WidgetContent() {
                       return isNaN(p.getTime()) ? '' : p.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
                     }
                     return (
-                      <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: isAgent ? 'flex-start' : 'flex-end' }}>
+                      <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: isAgent ? 'flex-start' : 'flex-end', position: 'relative' }}
+                        onMouseLeave={() => setWidgetReactPicker(null)}>
+                        {msg.reply_to && (() => {
+                          const rep = chatMessages2.find((m: any) => m.id === msg.reply_to)
+                          return rep ? (
+                            <div style={{ fontSize: 10, color: '#9ca3af', borderLeft: `2px solid ${accentColor}`, padding: '1px 6px', marginBottom: 2, maxWidth: '75%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              ↩ {rep.content?.slice(0, 40)}
+                            </div>
+                          ) : null
+                        })()}
                         <div style={{
                           maxWidth: '80%', padding: atts.length && atts[0].kind !== 'file' ? 4 : '10px 13px', borderRadius: isAgent ? '14px 14px 14px 4px' : '14px 14px 4px 14px',
                           background: isAgent ? '#f3f4f6' : accentColor,
-                          color: isAgent ? '#0d0d0d' : '#fff', fontSize: 13, lineHeight: 1.5,
+                          color: isAgent ? '#0d0d0d' : '#fff', fontSize: 13, lineHeight: 1.5, position: 'relative',
                         }}>
                           {isAgent && msg.sender_name && <p style={{ margin: '0 0 3px', fontSize: 11, fontWeight: 700, color: '#6b7280', padding: atts.length ? '6px 9px 0' : 0 }}>{msg.sender_name}</p>}
                           {atts.map((a: any, ai: number) => (
@@ -1538,11 +1563,27 @@ function WidgetContent() {
                             </div>
                           ))}
                           {msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '0 9px 4px' : 0 }}>{msg.content}</div>}
+                          {/* React + reply actions (only on messages that have an id) */}
+                          {msg.id && (
+                            <div style={{ position: 'absolute', top: -12, [isAgent ? 'right' : 'left']: 4, display: 'flex', gap: 2 } as any}>
+                              <button type="button" onClick={() => setWidgetReactPicker(widgetReactPicker === i ? null : i)}
+                                style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid #e5e5e5', background: '#fff', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>😊</button>
+                              <button type="button" onClick={() => setWidgetReplyTo(msg)}
+                                style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid #e5e5e5', background: '#fff', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>↩</button>
+                            </div>
+                          )}
+                          {widgetReactPicker === i && (
+                            <div style={{ position: 'absolute', top: -40, [isAgent ? 'left' : 'right']: 0, display: 'flex', gap: 1, background: '#fff', borderRadius: 20, boxShadow: '0 4px 14px rgba(0,0,0,0.15)', padding: '4px 6px', zIndex: 10 } as any}>
+                              {WIDGET_EMOJIS.map(e => (
+                                <button key={e} type="button" onClick={() => widgetReact(msg, e)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 15, padding: 1 }}>{e}</button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         {Object.keys(reactionCounts).length > 0 && (
                           <div style={{ display: 'flex', gap: 3, marginTop: 2 }}>
                             {Object.entries(reactionCounts).map(([emoji, count]) => (
-                              <span key={emoji} style={{ fontSize: 11, background: '#fff', border: '1px solid #e5e5e5', borderRadius: 20, padding: '0 6px' }}>{emoji} {count > 1 ? count : ''}</span>
+                              <span key={emoji} onClick={() => widgetReact(msg, emoji)} style={{ fontSize: 11, background: '#fff', border: '1px solid #e5e5e5', borderRadius: 20, padding: '0 6px', cursor: 'pointer' }}>{emoji} {count > 1 ? count : ''}</span>
                             ))}
                           </div>
                         )}
@@ -1551,6 +1592,12 @@ function WidgetContent() {
                     )
                   })}
                 </div>
+                {widgetReplyTo && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: '#f9f9f9', borderTop: '1px solid #f0f0f0', fontSize: 11, color: '#6b7280' }}>
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↩ Replying: {widgetReplyTo.content?.slice(0, 40)}</span>
+                    <button type="button" onClick={() => setWidgetReplyTo(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af' }}>✕</button>
+                  </div>
+                )}
                 {/* Input */}
                 <div style={{ padding: '10px 12px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                   <input ref={chatFileRef} type="file" accept="image/*,video/*,.pdf,.doc,.docx,.txt" style={{ display: 'none' }}
@@ -1578,7 +1625,9 @@ function WidgetContent() {
                             sender_name: chatName,
                             sender_email: chatEmail || null,
                             content,
+                            reply_to: widgetReplyTo?.id || null,
                           })
+                          setWidgetReplyTo(null)
                           if (msgErr) throw msgErr
                           await (supabase as any).from('conversations').update({
                             last_message: content,
@@ -1604,7 +1653,7 @@ function WidgetContent() {
                       setChatInput('')
                       setChatMessages2(prev => [...prev, { sender_type: 'visitor', sender_name: chatName, content, created_at: new Date().toISOString() }])
                       try {
-                        const { error: msgErr } = await (supabase as any).from('messages').insert({ conversation_id: chatConvId, company_id: company?.id, sender_type: 'visitor', sender_name: chatName, sender_email: chatEmail || null, content })
+                        const { error: msgErr } = await (supabase as any).from('messages').insert({ conversation_id: chatConvId, company_id: company?.id, sender_type: 'visitor', sender_name: chatName, sender_email: chatEmail || null, content, reply_to: widgetReplyTo?.id || null }); const _wr = widgetReplyTo; setWidgetReplyTo(null)
                         if (msgErr) throw msgErr
                         await (supabase as any).from('conversations').update({ last_message: content, last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, updated_at: new Date().toISOString() }).eq('id', chatConvId)
                       } catch (err) {

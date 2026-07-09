@@ -99,6 +99,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname()
   const router = useRouter()
   const [authed, setAuthed] = useState<boolean | null>(null)
+  const [adminCollapsed, setAdminCollapsed] = useState(false)
   const [company, setCompany] = useState<any>(null)
   const [showWorkspaces, setShowWorkspaces] = useState(false)
   const [workspaces, setWorkspaces] = useState<any[]>([])
@@ -303,16 +304,29 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         position: 'fixed',
         top: 56,
         left: 0,
-        width: 220,
+        width: adminCollapsed ? 60 : 220,
         height: 'calc(100vh - 56px)',
         background: '#fff',
         borderRight: '1px solid var(--border)',
         overflowY: 'auto',
+        overflowX: 'hidden',
         zIndex: 30,
         display: 'flex',
         flexDirection: 'column',
         flexShrink: 0,
+        transition: 'width 0.2s ease',
       }}>
+        {/* Collapse toggle — arrow with a T */}
+        <button type="button" onClick={() => setAdminCollapsed(v => !v)} title={adminCollapsed ? 'Expand' : 'Collapse'}
+          className="admin-collapse-btn"
+          style={{ position: 'absolute', top: 12, right: 8, width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', zIndex: 5, padding: 0 }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {/* Arrow */}
+            <polyline points={adminCollapsed ? '9 6 15 12 9 18' : '15 6 9 12 15 18'} />
+            {/* The 'T' bar */}
+            <line x1={adminCollapsed ? '19' : '5'} y1="5" x2={adminCollapsed ? '19' : '5'} y2="19" />
+          </svg>
+        </button>
         {/* Company info — workspace switcher */}
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', position: 'relative' }}>
           <button type="button" onClick={() => { setShowWorkspaces(v => !v); if (!workspaces.length) loadWorkspaces() }}
@@ -371,7 +385,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <nav style={{ flex: 1, padding: '10px 8px' }}>
           {NAV_GROUPS.map((group, gi) => (
             <div key={gi} style={{ marginBottom: 20 }}>
-              {group.label && (
+              {group.label && !adminCollapsed && (
                 <p style={{ padding: '0 10px', marginBottom: 4, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--slate)' }}>
                   {group.label}
                 </p>
@@ -381,6 +395,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 return (
                   <Link key={item.href + item.label} href={item.href}
                     onClick={() => setMobileSidebarOpen(false)}
+                    title={adminCollapsed ? item.label : undefined}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px',
                       borderRadius: 8, fontSize: 13, textDecoration: 'none', marginBottom: 1,
@@ -388,11 +403,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       color: active ? 'var(--coral)' : 'var(--slate)',
                       fontWeight: active ? 600 : 400,
                       transition: 'all 0.15s',
+                      justifyContent: adminCollapsed ? 'center' : 'flex-start',
                     }}>
                     <span style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65 }}>
                       {icons[item.icon]}
                     </span>
-                    {item.label}
+                    {!adminCollapsed && item.label}
                   </Link>
                 )
               })}
@@ -428,7 +444,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main content — offset by sidebar width on desktop, full width on mobile */}
-      <div className="admin-main" style={{ marginLeft: 220, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)' }}>
+      <div className="admin-main" style={{ marginLeft: adminCollapsed ? 60 : 220, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', transition: 'margin-left 0.2s ease' }}>
         {children}
       </div>
     </div>

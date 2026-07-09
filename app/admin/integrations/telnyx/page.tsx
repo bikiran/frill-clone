@@ -32,6 +32,23 @@ export default function TelnyxIntegration() {
       }
       setCompanyId(cid)
       if (cid) await loadIntegration(cid)
+      // Returned from Stripe checkout — poll until the webhook provisions the number
+      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('provisioning') === '1') {
+        setSuccess('Payment received — setting up your number, this takes a few seconds…')
+        let tries = 0
+        const poll = setInterval(async () => {
+          tries++
+          const res = await fetch(`/api/telnyx/setup?companyId=${cid}`)
+          const d = await res.json()
+          if (d.integration?.phone_number) {
+            setIntegration(d.integration)
+            setSuccess(`🎉 Your business number ${d.integration.phone_number} is live!`)
+            clearInterval(poll)
+          } else if (tries > 15) {
+            clearInterval(poll)
+          }
+        }, 2000)
+      }
       setLoading(false)
     }
     init()
@@ -61,17 +78,22 @@ export default function TelnyxIntegration() {
     if (!companyId) return
     setBuying(true); setError(''); setSuccess('')
     try {
-      const res = await fetch('/api/telnyx/number', {
+      // Get the user's email for the checkout
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/telnyx/number-checkout', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, phoneNumber }),
+        body: JSON.stringify({ companyId, email: session?.user?.email, phoneNumber, numberType }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Could not buy number')
-      setSuccess(`🎉 Your business number ${data.phoneNumber} is live! You can now call and text customers from Colvy.`)
-      setAvailable([])
-      await loadIntegration(companyId)
-    } catch (e: any) { setError(e.message) }
-    setBuying(false)
+      if (!res.ok) throw new Error(data.error || 'Could not start checkout')
+      if (data.url) {
+        // Redirect to Stripe checkout; the number is provisioned by the webhook
+        // once the $2/month subscription is confirmed.
+        window.location.href = data.url
+        return
+      }
+      throw new Error('No checkout URL returned')
+    } catch (e: any) { setError(e.message); setBuying(false) }
   }
 
   const fmtNumber = (n: string) => {

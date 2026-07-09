@@ -134,6 +134,22 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
           conversation_id: conversationId, company_id: companyId, sender_type: 'system',
           content: `📞 Call ${seconds > 0 ? `— ${fmtDuration(seconds)}` : '(no answer)'}`,
         })
+        // Post an admin-only AI summary note into the timeline (visible to
+        // agents only — the visitor never sees conversation_notes)
+        if (seconds > 5 && callRowId.current) {
+          fetch('/api/telnyx/call-summary', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ callId: callRowId.current }),
+          }).then(r => r.json()).then(async (d) => {
+            if (d?.summary && d.summary !== 'No transcript available for this call yet.') {
+              await (supabase as any).from('conversation_notes').insert({
+                conversation_id: conversationId, company_id: companyId,
+                author_name: 'AI (call summary)',
+                content: `📞 Call summary: ${d.summary}${(d.todos && d.todos.length) ? '\n\nTo-dos:\n' + d.todos.map((t: string) => `• ${t}`).join('\n') : ''}`,
+              })
+            }
+          }).catch(() => {})
+        }
       } catch {}
     }
     setState('ended')
@@ -156,7 +172,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   // Idle → show a call button
   if (state === 'idle') {
     return (
-      <button type="button" onClick={startCall}
+      <button type="button" onClick={startCall} data-callbar-btn
         style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 10, border: '1px solid #059669', background: '#dcfce7', color: '#059669', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
         Call

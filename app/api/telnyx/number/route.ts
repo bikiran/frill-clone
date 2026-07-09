@@ -19,7 +19,7 @@ const PLATFORM_CONNECTION = process.env.TELNYX_CONNECTION_ID
 // GET: search available AU numbers to show the user before they buy
 export async function GET(req: NextRequest) {
   try {
-    if (!PLATFORM_KEY) return NextResponse.json({ error: 'Number provisioning not available' }, { status: 503 })
+    if (!PLATFORM_KEY) return NextResponse.json({ error: 'Number provisioning is not configured yet. The platform admin needs to set TELNYX_MASTER_API_KEY, TELNYX_MESSAGING_PROFILE_ID and TELNYX_CONNECTION_ID in the environment.' }, { status: 503 })
     const type = (req.nextUrl.searchParams.get('type') as any) || 'local'
     const areaCode = req.nextUrl.searchParams.get('areaCode') || undefined
     const svc = new TelnyxService(PLATFORM_KEY)
@@ -39,8 +39,8 @@ export async function GET(req: NextRequest) {
 // POST: buy a number and assign it to the company
 export async function POST(req: NextRequest) {
   try {
-    if (!PLATFORM_KEY) return NextResponse.json({ error: 'Number provisioning not available' }, { status: 503 })
-    const { companyId, phoneNumber } = await req.json()
+    if (!PLATFORM_KEY) return NextResponse.json({ error: 'Number provisioning is not configured yet. The platform admin needs to set TELNYX_MASTER_API_KEY, TELNYX_MESSAGING_PROFILE_ID and TELNYX_CONNECTION_ID in the environment.' }, { status: 503 })
+    const { companyId, phoneNumber, stripeSubscriptionId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
       provisioned_at: new Date().toISOString(),
       is_active: true,
       updated_at: new Date().toISOString(),
+      ...(stripeSubscriptionId ? { stripe_subscription_id: stripeSubscriptionId } : {}),
     }
     const { data: existing } = await db.from('telnyx_integrations').select('id').eq('company_id', companyId).maybeSingle()
     if (existing) await db.from('telnyx_integrations').update(payload).eq('company_id', companyId)

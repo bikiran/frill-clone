@@ -553,8 +553,16 @@ export default function RootLayout({
         {/* Header */}
         <header className="sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)' }}>
           <nav className="h-14 px-6 flex items-center justify-between">
-            {/* Logo */}
-            <Link href={isSubdomain ? homePath : '/'} className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
+            {/* Left: mobile hamburger + logo */}
+            <div className="flex items-center gap-2">
+              <button
+                className="md:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 transition-smooth cursor-pointer"
+                onClick={() => setShowDrawer(!showDrawer)}
+                aria-label="Menu">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              </button>
+              {/* Logo */}
+              <Link href={isSubdomain ? homePath : '/'} className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
               {/* On subdomains show company branding; on colvy.com show Colvy */}
               {isSubdomain && company ? (
                 <>
@@ -573,6 +581,7 @@ export default function RootLayout({
                 </>
               )}
             </Link>
+            </div>
 
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-1">
@@ -587,9 +596,8 @@ export default function RootLayout({
                   const isMarketingItem = item.label === 'Features' || item.label === 'Product'
                   if (!isOnBoard && isBoardItem) return false
                   if (isOnBoard && isMarketingItem) return false
-                  return true
-                  if (!isOnBoard && isBoardItem) return false
-                  if (isOnBoard && isMarketingItem) return false
+                  // Pricing is unnecessary once the user is logged in
+                  if (item.label === 'Pricing' && user) return false
                   return true
                 }).map(item => (
                 <Link
@@ -805,16 +813,6 @@ export default function RootLayout({
                 </>
               )}
 
-              {/* Mobile menu */}
-              <button
-                className="md:hidden p-2 rounded-lg hover:bg-gray-100 transition-smooth cursor-pointer"
-                onClick={() => setShowDrawer(!showDrawer)}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="3" y1="6" x2="21" y2="6" />
-                  <line x1="3" y1="12" x2="21" y2="12" />
-                  <line x1="3" y1="18" x2="21" y2="18" />
-                </svg>
-              </button>
             </div>
           </nav>
         </header>

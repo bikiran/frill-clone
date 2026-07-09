@@ -73,3 +73,24 @@ ALTER TABLE calls ADD COLUMN IF NOT EXISTS caller_name TEXT;
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS answered_by TEXT;
 
 NOTIFY pgrst, 'reload schema';
+ALTER TABLE telnyx_integrations ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
+NOTIFY pgrst, 'reload schema';
+
+-- Short links for SMS attachments (avoid MMS size/quality limits)
+CREATE TABLE IF NOT EXISTS short_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code TEXT UNIQUE NOT NULL,
+  company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
+  target_url TEXT NOT NULL,
+  label TEXT,
+  clicks INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_short_links_code ON short_links(code);
+ALTER TABLE short_links ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can read short_links" ON short_links;
+CREATE POLICY "Anyone can read short_links" ON short_links FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Anyone can manage short_links" ON short_links;
+CREATE POLICY "Anyone can manage short_links" ON short_links FOR ALL USING (true);
+
+NOTIFY pgrst, 'reload schema';

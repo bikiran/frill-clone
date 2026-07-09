@@ -33,7 +33,8 @@ export async function POST(req: NextRequest) {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object
-        const { userId, tier } = session.metadata || {}
+        const meta = session.metadata || {}
+        const { userId, tier } = meta
         if (userId && tier) {
           await (supabase as any).from('subscriptions').upsert({
             user_id: userId,
@@ -44,6 +45,22 @@ export async function POST(req: NextRequest) {
             current_period_start: new Date().toISOString(),
             current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
           }, { onConflict: 'user_id' })
+        }
+        // Phone number purchase — provision the number now that payment is set up
+        if (meta.kind === 'phone_number' && meta.companyId) {
+          try {
+            const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+            await fetch(`${origin}/api/telnyx/number`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                companyId: meta.companyId,
+                phoneNumber: meta.phoneNumber || undefined,
+                stripeSubscriptionId: session.subscription,
+              }),
+            })
+          } catch (e) {
+            console.error('Post-payment number provisioning failed:', e)
+          }
         }
         break
       }

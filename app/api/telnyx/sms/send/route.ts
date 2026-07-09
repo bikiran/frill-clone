@@ -11,10 +11,12 @@ function admin() {
 }
 
 // Send an SMS to a conversation's visitor and log it in the thread.
+// Attachments are sent as short Colvy links (not raw MMS media) so large
+// videos aren't rejected and images aren't downscaled by the carrier.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId, to, text, senderName } = await req.json()
-    if (!companyId || !text) return NextResponse.json({ error: 'Missing companyId or text' }, { status: 400 })
+    const { companyId, conversationId, to, text, senderName, attachments } = await req.json()
+    if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
     const { data: integ } = await db.from('telnyx_integrations').select('*').eq('company_id', companyId).maybeSingle()
@@ -31,11 +33,31 @@ export async function POST(req: NextRequest) {
     const e164 = toE164(dest || '')
     if (!e164) return NextResponse.json({ error: 'No valid destination mobile number' }, { status: 400 })
 
+    // Build the message body — append short links for any attachments
+    let body = text || ''
+    const atts = Array.isArray(attachments) ? attachments : []
+    if (atts.length > 0) {
+      const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+      const links: string[] = []
+      for (const a of atts) {
+        // Create a short link row that redirects to the file
+        try {
+          const code = Math.random().toString(36).slice(2, 8)
+          await db.from('short_links').insert({ code, company_id: companyId, target_url: a.url, label: a.name })
+          links.push(`${origin}/l/${code}`)
+        } catch {
+          links.push(a.url) // fall back to the raw URL if shortlink table missing
+        }
+      }
+      body = (body ? body + '\n' : '') + links.join('\n')
+    }
+    if (!body.trim()) return NextResponse.json({ error: 'Nothing to send' }, { status: 400 })
+
     const svc = new TelnyxService(integ.api_key)
     const result = await svc.sendSMS({
       from: integ.phone_number,
       to: e164,
-      text,
+      text: body,
       messaging_profile_id: integ.messaging_profile_id || undefined,
     })
 
@@ -46,12 +68,13 @@ export async function POST(req: NextRequest) {
         company_id: companyId,
         sender_type: 'agent',
         sender_name: senderName || 'Agent',
-        content: text,
+        content: text || (atts.length ? '📎 Sent attachment link' : ''),
+        attachments: atts,
         delivery_channel: 'sms',
         telnyx_message_id: result?.data?.id || null,
       })
       await db.from('conversations').update({
-        last_message: text,
+        last_message: text || '📎 Attachment',
         last_message_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq('id', conversationId)
