@@ -253,6 +253,9 @@ export async function POST(req: NextRequest) {
             id: row.id,
             company_id: companyId,
             woo_customer_id: row.woo_customer_id,
+            // Always include email — upsert's insert path requires it (NOT NULL).
+            // These are existing rows so email is present; fall back defensively.
+            email: row.email || `woo-customer-${row.woo_customer_id}@no-email.colvy.internal`,
             total_spend: Math.round(totalSpend * 100) / 100,
             total_orders: totalOrders,
             items_purchased: existingItems,

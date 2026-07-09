@@ -17,6 +17,7 @@ export default function CustomerProfilePage() {
 
   const [customer, setCustomer] = useState<any>(null)
   const [orders, setOrders] = useState<any[]>([])
+  const [calls, setCalls] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [productSearch, setProductSearch] = useState('')
@@ -117,6 +118,19 @@ export default function CustomerProfilePage() {
           ordersData.sort((a: any, b: any) => (b.order_date || '').localeCompare(a.order_date || ''))
           setOrders(ordersData)
         } catch { setOrders([]) }
+
+        // Load call history for this contact
+        try {
+          const cid = customerData.is_contact_only ? customerData.id : customerData.contact_id
+          if (cid) {
+            const { data: callData } = await (supabase as any)
+              .from('calls').select('*')
+              .eq('company_id', resolvedCompanyId)
+              .eq('contact_id', cid)
+              .order('created_at', { ascending: false }).limit(20)
+            setCalls(callData || [])
+          }
+        } catch { setCalls([]) }
       } catch (err: any) {
         setError(err.message || 'Failed to load customer')
       } finally {
@@ -315,6 +329,54 @@ export default function CustomerProfilePage() {
                     <div style={{ padding: '0 12px 12px 58px', fontSize: 13, color: '#555', lineHeight: 1.5, borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 0 }}>
                       {description.replace(/<[^>]+>/g, '')}
                     </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Call History */}
+      {calls.length > 0 && (
+        <div style={{ borderRadius: 12, border: '1px solid var(--border)', padding: 20, background: '#fff', marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 16px 0', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>
+            Call History ({calls.length})
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {calls.map((call: any) => {
+              const dur = call.duration_seconds || 0
+              const durStr = dur > 0 ? `${Math.floor(dur / 60)}m ${dur % 60}s` : (call.status === 'completed' ? 'No answer' : call.status)
+              return (
+                <div key={call.id} style={{ borderRadius: 8, border: '1px solid var(--border)', padding: '12px 14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 15 }}>{call.direction === 'inbound' ? '📥' : '📤'}</span>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
+                          {call.direction === 'inbound' ? 'Incoming' : 'Outgoing'} call · {durStr}
+                        </p>
+                        <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>
+                          {call.created_at ? new Date(call.created_at).toLocaleString('en-AU') : ''}
+                          {call.agent_name ? ` · ${call.agent_name}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600, background: call.status === 'answered' || call.status === 'completed' ? '#dcfce7' : '#fef3c7', color: call.status === 'answered' || call.status === 'completed' ? '#059669' : '#d97706', textTransform: 'capitalize' }}>{call.status}</span>
+                  </div>
+                  {call.ai_summary && (
+                    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: '#faf5ff', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5 }}>
+                      ✨ {call.ai_summary}
+                    </div>
+                  )}
+                  {call.recording_url && !call.ai_summary && (
+                    <button onClick={async () => {
+                      const res = await fetch('/api/telnyx/call-summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callId: call.id }) })
+                      const d = await res.json()
+                      if (d.summary) setCalls(cs => cs.map(c => c.id === call.id ? { ...c, ai_summary: d.summary } : c))
+                    }} style={{ marginTop: 8, fontSize: 12, color: '#7c3aed', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                      ✨ Generate AI summary
+                    </button>
                   )}
                 </div>
               )

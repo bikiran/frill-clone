@@ -61,3 +61,15 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivery_channel TEXT DEFAULT 'cha
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS telnyx_message_id TEXT;
 
 NOTIFY pgrst, 'reload schema';
+
+-- Self-serve provisioning: track numbers Colvy buys on behalf of companies
+ALTER TABLE telnyx_integrations ADD COLUMN IF NOT EXISTS provisioned_by_colvy BOOLEAN DEFAULT false;
+ALTER TABLE telnyx_integrations ADD COLUMN IF NOT EXISTS number_order_id TEXT;
+ALTER TABLE telnyx_integrations ADD COLUMN IF NOT EXISTS monthly_cost NUMERIC DEFAULT 2;
+ALTER TABLE telnyx_integrations ADD COLUMN IF NOT EXISTS provisioned_at TIMESTAMPTZ;
+
+-- Inbound call context: allow calls table to store caller info snapshot
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS caller_name TEXT;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS answered_by TEXT;
+
+NOTIFY pgrst, 'reload schema';

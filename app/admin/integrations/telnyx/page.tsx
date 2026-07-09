@@ -6,17 +6,15 @@ import { supabase } from '@/lib/supabase'
 export default function TelnyxIntegration() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [integration, setIntegration] = useState<any>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [integration, setIntegration] = useState<any>(null)
-  const [editing, setEditing] = useState(false)
 
-  const [apiKey, setApiKey] = useState('')
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [messagingProfileId, setMessagingProfileId] = useState('')
-  const [connectionId, setConnectionId] = useState('')
-  const [outboundVoiceProfileId, setOutboundVoiceProfileId] = useState('')
+  const [numberType, setNumberType] = useState<'local' | 'mobile'>('local')
+  const [available, setAvailable] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
+  const [buying, setBuying] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -43,134 +41,141 @@ export default function TelnyxIntegration() {
     try {
       const res = await fetch(`/api/telnyx/setup?companyId=${cid}`)
       const data = await res.json()
-      if (data.integration) {
-        setIntegration(data.integration)
-        setApiKey(data.integration.api_key || '')
-        setPhoneNumber(data.integration.phone_number || '')
-        setMessagingProfileId(data.integration.messaging_profile_id || '')
-        setConnectionId(data.integration.connection_id || '')
-        setOutboundVoiceProfileId(data.integration.outbound_voice_profile_id || '')
-      } else {
-        setEditing(true)
-      }
+      if (data.integration) setIntegration(data.integration)
     } catch {}
   }
 
-  const save = async () => {
-    if (!companyId) return
-    setSaving(true); setError(''); setSuccess('')
+  const searchNumbers = async () => {
+    setSearching(true); setError(''); setAvailable([])
     try {
-      const res = await fetch('/api/telnyx/setup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId, apiKey, phoneNumber, messagingProfileId, connectionId, outboundVoiceProfileId,
-          isUpdate: !!integration,
-        }),
-      })
+      const res = await fetch(`/api/telnyx/number?type=${numberType}`)
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to save')
-      setSuccess('Telnyx connected successfully!')
-      setEditing(false)
-      await loadIntegration(companyId)
+      if (!res.ok) throw new Error(data.error || 'Could not search numbers')
+      setAvailable(data.numbers || [])
+      if ((data.numbers || []).length === 0) setError('No numbers available right now — try mobile, or check back shortly.')
     } catch (e: any) { setError(e.message) }
-    setSaving(false)
+    setSearching(false)
   }
 
-  const webhookUrl = typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname.includes('localhost') ? window.location.host : 'colvy.com'}/api/telnyx/webhook`
-    : ''
+  const buyNumber = async (phoneNumber?: string) => {
+    if (!companyId) return
+    setBuying(true); setError(''); setSuccess('')
+    try {
+      const res = await fetch('/api/telnyx/number', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, phoneNumber }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not buy number')
+      setSuccess(`🎉 Your business number ${data.phoneNumber} is live! You can now call and text customers from Colvy.`)
+      setAvailable([])
+      await loadIntegration(companyId)
+    } catch (e: any) { setError(e.message) }
+    setBuying(false)
+  }
 
-  const inp: React.CSSProperties = { width: '100%', padding: '11px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }
-  const label: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }
-  const hint: React.CSSProperties = { fontSize: 11.5, color: 'var(--slate)', margin: '4px 0 0' }
+  const fmtNumber = (n: string) => {
+    if (!n) return n
+    const d = n.replace('+61', '')
+    if (d.startsWith('4') && d.length === 9) return `+61 ${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}`
+    if (d.length === 9) return `+61 ${d.slice(0, 1)} ${d.slice(1, 5)} ${d.slice(5)}`
+    return n
+  }
 
   if (loading) return <div style={{ padding: 24, color: 'var(--slate)' }}>Loading…</div>
 
+  const hasNumber = integration?.phone_number
+
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '28px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 10, background: '#00c08b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 20 }}>T</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 10, background: '#00c08b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 22 }}>📞</div>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Telnyx — Voice & SMS</h1>
-          <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '2px 0 0' }}>Browser calling and SMS continuation of live chat.</p>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Calls & SMS</h1>
+          <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '2px 0 0' }}>Call customers from your browser and text them from the inbox.</p>
         </div>
-        {integration?.is_active && !editing && (
-          <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#059669', padding: '4px 12px', borderRadius: 20 }}>● Connected</span>
-        )}
+        {hasNumber && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#059669', padding: '4px 12px', borderRadius: 20 }}>● Active</span>}
       </div>
 
       {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '11px 15px', margin: '16px 0', fontSize: 13, color: '#dc2626' }}>{error}</div>}
       {success && <div style={{ background: '#dcfce7', border: '1px solid #86efac', borderRadius: 10, padding: '11px 15px', margin: '16px 0', fontSize: 13, color: '#059669' }}>{success}</div>}
 
-      {!editing && integration ? (
-        <div style={{ marginTop: 20, border: '1px solid var(--border)', borderRadius: 14, padding: 20, background: '#fff' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <Field label="API Key" value={integration.api_key} />
-            <Field label="Phone Number" value={integration.phone_number} />
-            <Field label="Messaging Profile" value={integration.messaging_profile_id || '—'} />
-            <Field label="Voice Connection" value={integration.connection_id || '—'} />
+      {hasNumber ? (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 16, padding: 24, background: '#fff' }}>
+          <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>Your business number</p>
+          <p style={{ margin: '0 0 12px', fontSize: 28, fontWeight: 800, color: 'var(--ink)' }}>{fmtNumber(integration.phone_number)}</p>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, color: 'var(--slate)' }}>
+            <span>✓ Browser calling</span>
+            <span>✓ SMS from inbox</span>
+            <span>✓ Inbound calls & texts</span>
+            {integration.provisioned_by_colvy && <span>💳 ${integration.monthly_cost || 2}/month</span>}
           </div>
-          <button onClick={() => setEditing(true)}
-            style={{ marginTop: 18, padding: '10px 18px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>
-            Edit configuration
-          </button>
         </div>
       ) : (
-        <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div>
-            <label style={label}>Telnyx API Key (V2)</label>
-            <input value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="KEYxxxxxxxxxxxxxxxxxxxxxxxx" style={inp} />
-            <p style={hint}>Telnyx Portal → API Keys → Create API Key. Stored encrypted, server-side only.</p>
-          </div>
-          <div>
-            <label style={label}>Your Telnyx Phone Number</label>
-            <input value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} placeholder="+61XXXXXXXXX" style={inp} />
-            <p style={hint}>In E.164 format. Buy an Australian local or mobile number in the Telnyx Portal → Numbers.</p>
-          </div>
-          <div>
-            <label style={label}>Messaging Profile ID <span style={{ color: 'var(--slate)', fontWeight: 400 }}>(for SMS)</span></label>
-            <input value={messagingProfileId} onChange={e => setMessagingProfileId(e.target.value)} placeholder="Optional — Messaging → Messaging Profiles" style={inp} />
-          </div>
-          <div>
-            <label style={label}>Voice Connection ID <span style={{ color: 'var(--slate)', fontWeight: 400 }}>(for browser calling)</span></label>
-            <input value={connectionId} onChange={e => setConnectionId(e.target.value)} placeholder="Credential Connection ID — Voice → Connections" style={inp} />
-            <p style={hint}>Create a <strong>Credential Connection</strong> in Telnyx for WebRTC browser calls, and assign your number's outbound voice profile to it.</p>
-          </div>
-          <div>
-            <label style={label}>Outbound Voice Profile ID <span style={{ color: 'var(--slate)', fontWeight: 400 }}>(optional)</span></label>
-            <input value={outboundVoiceProfileId} onChange={e => setOutboundVoiceProfileId(e.target.value)} placeholder="Voice → Outbound Voice Profiles" style={inp} />
+        <div style={{ border: '2px solid var(--coral)', borderRadius: 16, padding: 24, background: 'linear-gradient(135deg, #fff9f8, #fff)' }}>
+          <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>Get a business number</h2>
+          <p style={{ margin: '0 0 20px', fontSize: 14, color: 'var(--slate)', lineHeight: 1.5 }}>
+            Colvy sets up an Australian phone number for you instantly — no separate accounts, no setup. Call and text your customers right from the inbox.
+          </p>
+
+          <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
+            {([['local', 'Landline', 'e.g. 02, 03, 07, 08'], ['mobile', 'Mobile', 'e.g. 04XX']] as const).map(([t, name, eg]) => (
+              <button key={t} onClick={() => setNumberType(t)}
+                style={{ flex: 1, padding: '12px 14px', borderRadius: 12, border: numberType === t ? '2px solid var(--coral)' : '1px solid var(--border)', background: numberType === t ? 'var(--peach)' : '#fff', cursor: 'pointer', textAlign: 'left' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{name}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{eg}</div>
+              </button>
+            ))}
           </div>
 
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={save} disabled={saving}
-              style={{ padding: '12px 24px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-              {saving ? 'Verifying…' : 'Save & connect'}
-            </button>
-            {integration && (
-              <button onClick={() => setEditing(false)} style={{ padding: '12px 24px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', fontSize: 14, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>Cancel</button>
-            )}
-          </div>
+          {available.length === 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderRadius: 12, background: '#fff', border: '1px solid var(--border)', flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>$2<span style={{ fontSize: 14, fontWeight: 500, color: 'var(--slate)' }}>/month</span></div>
+                <div style={{ fontSize: 12.5, color: 'var(--slate)' }}>Australian {numberType} number · cancel anytime</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={searchNumbers} disabled={searching}
+                  style={{ padding: '11px 18px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
+                  {searching ? 'Searching…' : 'Choose a number'}
+                </button>
+                <button onClick={() => buyNumber()} disabled={buying}
+                  style={{ padding: '11px 22px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+                  {buying ? 'Setting up…' : 'Buy Australian Number'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Pick your number:</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {available.map(n => (
+                  <div key={n.phone_number} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff' }}>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{fmtNumber(n.phone_number)}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{n.region} · ${n.monthly}/month</div>
+                    </div>
+                    <button onClick={() => buyNumber(n.phone_number)} disabled={buying}
+                      style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                      {buying ? '…' : 'Buy'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setAvailable([])} style={{ marginTop: 10, fontSize: 12.5, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>← Back</button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Webhook setup */}
-      <div style={{ marginTop: 28, padding: 18, borderRadius: 12, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
-        <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Webhook URL</h3>
-        <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--slate)' }}>
-          Paste this into your Telnyx <strong>Messaging Profile</strong> (inbound SMS) and <strong>Voice Connection</strong> (call events):
-        </p>
-        <code style={{ display: 'block', padding: '10px 12px', background: '#fff', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, color: 'var(--ink)', wordBreak: 'break-all' }}>{webhookUrl}</code>
-      </div>
-    </div>
-  )
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p style={{ margin: '0 0 3px', fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>{label}</p>
-      <p style={{ margin: 0, fontSize: 14, color: 'var(--ink)', wordBreak: 'break-all' }}>{value}</p>
+      <button onClick={() => setShowAdvanced(v => !v)} style={{ marginTop: 20, fontSize: 12.5, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>
+        {showAdvanced ? '▾' : '▸'} Advanced: use your own Telnyx account
+      </button>
+      {showAdvanced && (
+        <div style={{ marginTop: 12, padding: 16, borderRadius: 12, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+          Already have a Telnyx account? You can connect your own API key and number instead of buying through Colvy. Contact support to enable BYO mode for your workspace.
+        </div>
+      )}
     </div>
   )
 }

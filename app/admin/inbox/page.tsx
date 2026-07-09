@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
+import IncomingCallListener from '@/components/IncomingCallListener'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -639,6 +640,7 @@ export default function InboxPage() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+      <IncomingCallListener companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
 
       {/* ── LEFT: Conversation list ─────────────────────────────────────────── */}
       {sidebarCollapsed ? (

@@ -79,6 +79,38 @@ export async function POST(req: NextRequest) {
       const payload = event.payload
       const callControlId = payload?.call_control_id
       const sessionId = payload?.call_session_id
+      const direction = payload?.direction // 'incoming' | 'outgoing'
+      const fromNum = payload?.from
+      const toNum = payload?.to
+
+      // Inbound call just started — create a call row + link the caller's contact
+      if (eventType === 'call.initiated' && direction === 'incoming') {
+        const { data: integ } = await db.from('telnyx_integrations').select('company_id').eq('phone_number', toNum).maybeSingle()
+        const companyId = integ?.company_id
+        if (companyId) {
+          // Match caller to an existing contact by phone
+          let contactId: string | null = null
+          let callerName: string | null = null
+          const { data: contacts } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).limit(500)
+          const digitsOf = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
+          const match = (contacts || []).find((c: any) => c.phone && digitsOf(c.phone) === digitsOf(fromNum))
+          if (match) { contactId = match.id; callerName = match.name }
+
+          await db.from('calls').insert({
+            company_id: companyId,
+            contact_id: contactId,
+            direction: 'inbound',
+            from_number: fromNum,
+            to_number: toNum,
+            status: 'ringing',
+            telnyx_call_control_id: callControlId,
+            telnyx_call_session_id: sessionId,
+            caller_name: callerName,
+          })
+        }
+        return NextResponse.json({ ok: true })
+      }
+
       if (callControlId || sessionId) {
         const statusMap: Record<string, string> = {
           'call.initiated': 'initiated',
@@ -92,7 +124,6 @@ export async function POST(req: NextRequest) {
           update.ended_at = new Date().toISOString()
           if (payload?.call_duration_secs) update.duration_seconds = payload.call_duration_secs
         }
-        // Match by call_control_id or session id
         await db.from('calls').update(update).or(`telnyx_call_control_id.eq.${callControlId},telnyx_call_session_id.eq.${sessionId}`)
       }
       return NextResponse.json({ ok: true })

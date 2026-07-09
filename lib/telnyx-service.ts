@@ -67,6 +67,42 @@ export class TelnyxService {
       ...(params.webhook_url ? { webhook_url: params.webhook_url } : {}),
     })
   }
+
+  // ── Self-serve number provisioning ─────────────────────────────────────────
+
+  // Search available numbers by country + type
+  async searchAvailableNumbers(params: { country?: string; type?: 'local' | 'mobile' | 'toll_free'; limit?: number; areaCode?: string }) {
+    const q = new URLSearchParams()
+    q.set('filter[country_code]', params.country || 'AU')
+    q.set('filter[phone_number_type]', params.type || 'local')
+    q.set('filter[limit]', String(params.limit || 5))
+    q.set('filter[features]', 'sms,voice')
+    if (params.areaCode) q.set('filter[national_destination_code]', params.areaCode)
+    const data = await this.req(`/available_phone_numbers?${q.toString()}`, 'GET')
+    return data.data || []
+  }
+
+  // Order a specific number
+  async orderNumber(phoneNumber: string, opts?: { messaging_profile_id?: string; connection_id?: string }) {
+    const body: any = { phone_numbers: [{ phone_number: phoneNumber }] }
+    if (opts?.messaging_profile_id) body.messaging_profile_id = opts.messaging_profile_id
+    if (opts?.connection_id) body.connection_id = opts.connection_id
+    return this.req('/number_orders', 'POST', body)
+  }
+
+  // Configure a purchased number (assign messaging profile + voice connection)
+  async configureNumber(phoneNumberId: string, opts: { messaging_profile_id?: string; connection_id?: string }) {
+    return this.req(`/phone_numbers/${phoneNumberId}`, 'PATCH', {
+      ...(opts.messaging_profile_id ? { messaging_profile_id: opts.messaging_profile_id } : {}),
+      ...(opts.connection_id ? { connection_id: opts.connection_id } : {}),
+    })
+  }
+
+  // Look up the phone_number record id (needed to configure it after ordering)
+  async getPhoneNumberId(phoneNumber: string) {
+    const data = await this.req(`/phone_numbers?filter[phone_number]=${encodeURIComponent(phoneNumber)}`, 'GET')
+    return data.data?.[0]?.id || null
+  }
 }
 
 // Normalize a phone number to E.164, defaulting to Australia (+61).
