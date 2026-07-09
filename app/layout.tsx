@@ -345,10 +345,28 @@ export default function RootLayout({
       setIsSubdomain(sub)
     }
 
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       const u = data.session?.user ?? null
-      setUser(u)
-      checkOwner(u)
+      if (u) {
+        // getSession() reads a possibly-stale token from localStorage. If the
+        // user signed out on another subdomain, that token is revoked server
+        // side but still cached here — validate it with getUser() (which hits
+        // the server) so colvy.com doesn't show "Welcome back" for a
+        // signed-out user.
+        const { data: verified, error } = await supabase.auth.getUser()
+        if (error || !verified?.user) {
+          // Stale/invalid session — clear it locally and treat as logged out
+          try { await supabase.auth.signOut() } catch {}
+          setUser(null)
+          checkOwner(null)
+          return
+        }
+        setUser(verified.user)
+        checkOwner(verified.user)
+      } else {
+        setUser(null)
+        checkOwner(null)
+      }
     })
     // Subscribe to all auth changes (sign-in, sign-out, token refresh)
     // Close user dropdown on outside click

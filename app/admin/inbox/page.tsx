@@ -53,6 +53,18 @@ function fmtTime(d: string | undefined | null) {
   if (isNaN(parsed.getTime())) return ''
   return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
+// Formats like "Received 7:18 PM | 08 Jul | Instagram" / "Delivered 2:03 PM | 09 Jul"
+function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: string) {
+  if (!d) return ''
+  const s = typeof d === 'string' ? d : String(d)
+  const parsed = new Date(s.endsWith?.('Z') ? s : s + 'Z')
+  if (isNaN(parsed.getTime())) return ''
+  const time = parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const date = parsed.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' })
+  const label = isAgent ? 'Delivered' : 'Received'
+  const chan = channel ? channel.charAt(0).toUpperCase() + channel.slice(1) : ''
+  return `${label} ${time} | ${date}${!isAgent && chan ? ` | ${chan}` : ''}`
+}
 function fmtDateTime(d: string | undefined | null) {
   if (!d) return ''
   const parsed = new Date(d)
@@ -62,9 +74,16 @@ function fmtDateTime(d: string | undefined | null) {
 
 // Simple AI extraction — looks for phone, email, address patterns in message
 function extractFromText(text: string) {
-  const phone = text.match(/(\+?[\d\s\-().]{7,15}\d)/)?.[1]?.replace(/\s+/g, ' ').trim()
-  const email = text.match(/[\w.+-]+@[\w-]+\.\w+/)?.[0]
-  const address = text.match(/\d+\s+[A-Za-z0-9\s,.]+(Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Place|Pl|Court|Ct|Way|Boulevard|Blvd)[A-Za-z0-9\s,.]*/i)?.[0]
+  // Phone: Australian mobiles (0435 844 469 / 0435844469 / +61 435 844 469),
+  // landlines (02 1234 5678), international. Requires 8-15 digits total.
+  let phone: string | null = null
+  const phoneCandidates = text.match(/(?:\+?\d[\d\s\-().]{6,18}\d)/g) || []
+  for (const cand of phoneCandidates) {
+    const digits = cand.replace(/\D/g, '')
+    if (digits.length >= 8 && digits.length <= 15) { phone = cand.replace(/\s+/g, ' ').trim(); break }
+  }
+  const email = text.match(/[\w.+-]+@[\w-]+\.\w+/)?.[0] || null
+  const address = text.match(/\d+[A-Za-z]?[/-]?\d*\s+[A-Za-z0-9\s,.'-]+?(Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Place|Pl|Court|Ct|Way|Boulevard|Blvd|Crescent|Cres|Terrace|Tce|Parade|Pde|Close|Cl|Highway|Hwy)\b[A-Za-z0-9\s,.'-]*/i)?.[0]?.trim() || null
   return { phone: phone || null, email: email || null, address: address || null }
 }
 
@@ -81,13 +100,18 @@ export default function InboxPage() {
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [msgSearch, setMsgSearch] = useState('')
+  const [showMsgSearch, setShowMsgSearch] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'assigned' | 'resolved'>('open')
   const [showAssignMenu, setShowAssignMenu] = useState(false)
   const [showContactEdit, setShowContactEdit] = useState(false)
   const [editContact, setEditContact] = useState<Partial<Contact>>({})
   const [aiDetected, setAiDetected] = useState<{ phone?: string | null; email?: string | null; address?: string | null } | null>(null)
   const [savingContact, setSavingContact] = useState(false)
-  const [activePanel, setActivePanel] = useState<'info' | 'timeline'>('info')
+  const [activePanel, setActivePanel] = useState<'info' | 'timeline' | 'orders'>('info')
+  const [wooCustomer, setWooCustomer] = useState<any>(null)
+  const [wooOrders, setWooOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   // New chat features
   const [replyTo, setReplyTo] = useState<Message | null>(null)
@@ -256,12 +280,36 @@ export default function InboxPage() {
     }
     // Load timeline events, notes, tasks
     loadConversationExtras(conv.id)
+    // Load WooCommerce data if the contact's email matches an order
+    loadWooData(conv.contact_id)
     // Scan messages for AI-detected info
     setTimeout(() => {
       const allText = (msgs || []).filter((m: Message) => m.sender_type === 'visitor').map((m: Message) => m.content).join(' ')
       const extracted = extractFromText(allText)
       if (extracted.phone || extracted.email || extracted.address) setAiDetected(extracted)
     }, 300)
+  }
+
+  const loadWooData = async (contactId: string | null) => {
+    setWooCustomer(null)
+    setWooOrders([])
+    if (!companyId) return
+    // Resolve the contact's email
+    let email: string | null = null
+    if (contactId) {
+      const { data: c } = await (supabase as any).from('contacts').select('email').eq('id', contactId).maybeSingle()
+      email = c?.email || null
+    }
+    if (!email) return
+    // Match WooCommerce customer by email
+    const { data: woo } = await (supabase as any).from('woocommerce_customers')
+      .select('*').eq('company_id', companyId).ilike('email', email).maybeSingle()
+    if (woo) setWooCustomer(woo)
+    // Orders by email (covers guest orders too)
+    const { data: orders } = await (supabase as any).from('woocommerce_orders')
+      .select('*').eq('company_id', companyId).ilike('customer_email', email)
+      .order('order_date', { ascending: false }).limit(50)
+    setWooOrders(orders || [])
   }
 
   const loadConversationExtras = async (convId: string) => {
@@ -434,6 +482,25 @@ export default function InboxPage() {
     setGeneratingAi(false)
   }
 
+  // Re-scan messages for AI-detectable contact info whenever they change
+  // (so a phone/address sent mid-conversation is picked up, not just on open)
+  useEffect(() => {
+    if (messages.length === 0) return
+    const allText = messages.filter(m => m.sender_type === 'visitor').map(m => m.content).join(' ')
+    const extracted = extractFromText(allText)
+    // Only surface fields the contact doesn't already have
+    const showPhone = extracted.phone && !contact?.phone
+    const showEmail = extracted.email && !contact?.email
+    const showAddress = extracted.address && !(contact as any)?.address
+    if (showPhone || showEmail || showAddress) {
+      setAiDetected({
+        phone: showPhone ? extracted.phone : null,
+        email: showEmail ? extracted.email : null,
+        address: showAddress ? extracted.address : null,
+      })
+    }
+  }, [messages, contact])
+
   const scrollBottom = () => setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
 
   // ── Send reply ─────────────────────────────────────────────────────────────
@@ -513,6 +580,21 @@ export default function InboxPage() {
     if (contact?.id) {
       await (supabase as any).from('contacts').update({ [field]: value, updated_at: new Date().toISOString() }).eq('id', contact.id)
       setContact(c => c ? { ...c, [field]: value } : c)
+    } else if (selected && companyId) {
+      // No contact record yet — create one so the detected field is saved
+      const contactName = selected.subject || messages.find(m => m.sender_type === 'visitor')?.sender_name || 'Visitor'
+      const { data: newContact } = await (supabase as any).from('contacts').insert({
+        company_id: companyId,
+        name: contactName,
+        [field]: value,
+      }).select().maybeSingle()
+      if (newContact) {
+        setContact(newContact)
+        setEditContact(newContact)
+        // Link the conversation to the new contact
+        await (supabase as any).from('conversations').update({ contact_id: newContact.id }).eq('id', selected.id)
+        setSelected(s => s ? { ...s, contact_id: newContact.id } as any : s)
+      }
     }
     setAiDetected(prev => prev ? { ...prev, [field]: null } : null)
   }
@@ -532,14 +614,33 @@ export default function InboxPage() {
     <div style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
 
       {/* ── LEFT: Conversation list ─────────────────────────────────────────── */}
+      {sidebarCollapsed ? (
+        <div style={{ width: 48, flexShrink: 0, borderRight: '1px solid var(--border)', background: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 14 }}>
+          <button type="button" onClick={() => setSidebarCollapsed(false)} title="Expand sidebar"
+            style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          {conversations.filter(c => c.is_unread).length > 0 && (
+            <span style={{ marginTop: 10, fontSize: 10, fontWeight: 700, background: 'var(--coral)', color: '#fff', width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {conversations.filter(c => c.is_unread).length}
+            </span>
+          )}
+        </div>
+      ) : (
       <div style={{ width: 300, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#fff' }}>
         {/* Header */}
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--ink)' }}>Inbox</h2>
-            <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--peach)', color: 'var(--coral)', padding: '2px 8px', borderRadius: 20 }}>
-              {conversations.filter(c => c.is_unread).length} unread
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--peach)', color: 'var(--coral)', padding: '2px 8px', borderRadius: 20 }}>
+                {conversations.filter(c => c.is_unread).length} unread
+              </span>
+              <button type="button" onClick={() => setSidebarCollapsed(true)} title="Collapse sidebar"
+                style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+            </div>
           </div>
           <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search conversations…"
             style={{ ...inp, background: 'var(--canvas)' }} />
@@ -584,6 +685,7 @@ export default function InboxPage() {
           ))}
         </div>
       </div>
+      )}
 
       {/* ── MIDDLE: Chat thread ─────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f9f9f9', minWidth: 0 }}>
@@ -597,6 +699,11 @@ export default function InboxPage() {
             {/* Thread header */}
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 16 }}>{CHANNEL_ICON[selected.channel]}</span>
+              {/* Search messages toggle */}
+              <button type="button" onClick={() => { setShowMsgSearch(v => !v); setMsgSearch('') }} title="Search messages"
+                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: showMsgSearch ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', order: -1 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </button>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
                   {contact?.name || selected.subject || 'Visitor'}
@@ -731,9 +838,23 @@ export default function InboxPage() {
               </div>
             )}
 
+            {/* Message search bar */}
+            {showMsgSearch && (
+              <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--canvas)' }}>
+                <input autoFocus value={msgSearch} onChange={e => setMsgSearch(e.target.value)}
+                  placeholder="Search in this conversation…"
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
+                {msgSearch && (
+                  <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--slate)' }}>
+                    {messages.filter(m => (m.content || '').toLowerCase().includes(msgSearch.toLowerCase())).length} match(es)
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Messages */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {messages.map(msg => {
+              {(msgSearch ? messages.filter(m => (m.content || '').toLowerCase().includes(msgSearch.toLowerCase())) : messages).map(msg => {
                 const isAgent = msg.sender_type === 'agent'
                 const isSystem = msg.sender_type === 'system'
                 if (isSystem) return (
@@ -807,7 +928,7 @@ export default function InboxPage() {
 
                       {/* Timestamp + read receipt */}
                       <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af', textAlign: isAgent ? 'right' : 'left', display: 'flex', gap: 5, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start' }}>
-                        {fmtTime(msg.created_at)}
+                        {fmtReceipt(msg.created_at, isAgent, selected.channel)}
                         {/* Read-by avatars on visitor messages */}
                         {!isAgent && readBy.length > 0 && (
                           <span style={{ display: 'inline-flex', gap: 2, marginLeft: 2 }}>
@@ -932,10 +1053,10 @@ export default function InboxPage() {
         <div style={{ width: 280, flexShrink: 0, borderLeft: '1px solid var(--border)', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Panel tabs */}
           <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
-            {(['info', 'timeline'] as const).map(p => (
+            {(['info', 'timeline', ...(wooCustomer || wooOrders.length > 0 ? ['orders' as const] : [])] as const).map(p => (
               <button key={p} type="button" onClick={() => setActivePanel(p)}
-                style={{ flex: 1, padding: '11px 0', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: activePanel === p ? 700 : 500, color: activePanel === p ? 'var(--coral)' : 'var(--slate)', borderBottom: activePanel === p ? '2px solid var(--coral)' : '2px solid transparent', textTransform: 'capitalize' }}>
-                {p === 'info' ? 'Information' : 'Timeline'}
+                style={{ flex: 1, padding: '11px 0', border: 'none', background: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: activePanel === p ? 700 : 500, color: activePanel === p ? 'var(--coral)' : 'var(--slate)', borderBottom: activePanel === p ? '2px solid var(--coral)' : '2px solid transparent', textTransform: 'capitalize' }}>
+                {p === 'info' ? 'Information' : p === 'timeline' ? 'Timeline' : '🛒 Orders'}
               </button>
             ))}
           </div>
@@ -1141,6 +1262,69 @@ export default function InboxPage() {
                     </div>
                   )}
                 </div>
+              </>
+            )}
+
+            {activePanel === 'orders' && (
+              <>
+                {/* WooCommerce customer summary */}
+                {wooCustomer && (
+                  <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)', border: '1px solid #ddd6fe' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                      <span style={{ fontSize: 16 }}>🛒</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#6d28d9' }}>WooCommerce Customer</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Total Spend</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>
+                          {(() => {
+                            const spend = (parseFloat(wooCustomer.total_spend) || 0) || wooOrders.reduce((s, o) => s + (parseFloat(o.total) || 0), 0)
+                            return spend > 0 ? `$${spend.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A'
+                          })()}
+                        </p>
+                      </div>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Orders</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>{wooCustomer.total_orders || wooOrders.length || 0}</p>
+                      </div>
+                    </div>
+                    {contact?.id && (
+                      <a href={`/admin/customers/profile?id=${contact.id}`} style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#6d28d9', fontWeight: 600, textDecoration: 'none' }}>
+                        View full profile →
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {/* Order history */}
+                <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Order History ({wooOrders.length})</h3>
+                {wooOrders.length === 0 ? (
+                  <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>No orders found for this customer's email.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {wooOrders.map(o => (
+                      <div key={o.id} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>#{o.woo_order_id}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>${(parseFloat(o.total) || 0).toFixed(2)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: o.status === 'completed' ? '#dcfce7' : '#fef3c7', color: o.status === 'completed' ? '#059669' : '#d97706', fontWeight: 600, textTransform: 'capitalize' }}>{o.status}</span>
+                          <span style={{ fontSize: 11, color: '#9ca3af' }}>{o.order_date ? new Date(o.order_date).toLocaleDateString('en-AU') : ''}</span>
+                        </div>
+                        {Array.isArray(o.line_items) && o.line_items.length > 0 && (
+                          <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                            {o.line_items.slice(0, 3).map((li: any, i: number) => (
+                              <p key={i} style={{ margin: '2px 0', fontSize: 11, color: 'var(--slate)' }}>{li.quantity}× {li.name}</p>
+                            ))}
+                            {o.line_items.length > 3 && <p style={{ margin: '2px 0', fontSize: 11, color: '#9ca3af' }}>+{o.line_items.length - 3} more</p>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </>
             )}
           </div>

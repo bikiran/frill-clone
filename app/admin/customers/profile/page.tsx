@@ -49,21 +49,73 @@ export default function CustomerProfilePage() {
         }
         if (!resolvedCompanyId) { setError('Company not found'); return }
 
-        const { data: customerData } = await (supabase as any)
+        // The id param may be a woocommerce_customers.id OR a contacts.id
+        // (the inbox links with the contact id). Try both, then fall back to
+        // matching by email.
+        let customerData: any = null
+
+        // 1. Direct woocommerce_customers lookup
+        const { data: byId } = await (supabase as any)
           .from('woocommerce_customers').select('*')
           .eq('company_id', resolvedCompanyId).eq('id', customerId).maybeSingle()
+        if (byId) customerData = byId
+
+        // 2. Maybe it's a contact id — resolve the email, then find the woo customer
+        let contactEmail: string | null = null
+        if (!customerData) {
+          const { data: contact } = await (supabase as any)
+            .from('contacts').select('*').eq('id', customerId).maybeSingle()
+          if (contact) {
+            contactEmail = contact.email
+            if (contact.email) {
+              const { data: byEmail } = await (supabase as any)
+                .from('woocommerce_customers').select('*')
+                .eq('company_id', resolvedCompanyId).ilike('email', contact.email).maybeSingle()
+              if (byEmail) customerData = byEmail
+            }
+            // No matching woo customer — show the contact as a minimal customer
+            if (!customerData) {
+              customerData = {
+                id: contact.id, email: contact.email,
+                first_name: (contact.name || '').split(' ')[0] || '',
+                last_name: (contact.name || '').split(' ').slice(1).join(' ') || '',
+                phone: contact.phone, total_orders: 0, total_spend: 0,
+                items_purchased: [], is_contact_only: true,
+              }
+            }
+          }
+        }
 
         if (!customerData) { setError('Customer not found'); return }
         setCustomer(customerData)
 
-        // Load order history — woocommerce_orders may not exist yet
+        // Load order history — match by woo_customer_id OR email (guest orders
+        // often have customer_id 0 but the same billing email)
         try {
-          const { data: ordersData } = await (supabase as any)
-            .from('woocommerce_orders').select('*')
-            .eq('company_id', resolvedCompanyId)
-            .eq('woo_customer_id', customerData.woo_customer_id)
-            .order('order_date', { ascending: false })
-          setOrders(ordersData || [])
+          const email = customerData.email || contactEmail
+          let ordersData: any[] = []
+          if (customerData.woo_customer_id) {
+            const { data: byCust } = await (supabase as any)
+              .from('woocommerce_orders').select('*')
+              .eq('company_id', resolvedCompanyId)
+              .eq('woo_customer_id', customerData.woo_customer_id)
+              .order('order_date', { ascending: false })
+            ordersData = byCust || []
+          }
+          if (email) {
+            const { data: byEmailOrders } = await (supabase as any)
+              .from('woocommerce_orders').select('*')
+              .eq('company_id', resolvedCompanyId)
+              .ilike('customer_email', email)
+              .order('order_date', { ascending: false })
+            // Merge, dedupe by woo_order_id
+            const seen = new Set(ordersData.map((o: any) => o.woo_order_id))
+            for (const o of byEmailOrders || []) {
+              if (!seen.has(o.woo_order_id)) { ordersData.push(o); seen.add(o.woo_order_id) }
+            }
+          }
+          ordersData.sort((a: any, b: any) => (b.order_date || '').localeCompare(a.order_date || ''))
+          setOrders(ordersData)
         } catch { setOrders([]) }
       } catch (err: any) {
         setError(err.message || 'Failed to load customer')
@@ -121,6 +173,12 @@ export default function CustomerProfilePage() {
 
   const addr = customer.address || {}
 
+  // Order-based fallback stats (used when aggregated totals are missing/zero)
+  const computedOrders = orders.length
+  const displayOrders = customer.total_orders || computedOrders || 0
+  const displayAov = displayOrders > 0 ? displaySpend / displayOrders : 0
+  const orderItems: any[] = orders.flatMap((o: any) => Array.isArray(o.line_items) ? o.line_items : [])
+
   const stat = (label: string, value: string, color?: string) => (
     <div style={{ borderRadius: 12, border: '1px solid var(--border)', padding: 16, background: '#fff' }}>
       <p style={{ margin: '0 0 6px 0', fontSize: 12, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</p>
@@ -148,8 +206,8 @@ export default function CustomerProfilePage() {
           <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{rfmCategory}</p>
         </div>
         {stat('Total Spend', displaySpend > 0 ? `$${displaySpend.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A')}
-        {stat('Total Orders', String(customer.total_orders || orders.length || 0))}
-        {stat('Avg Order Value', customer.average_order_value > 0 ? `$${parseFloat(customer.average_order_value).toFixed(2)}` : (orders.length > 0 ? `$${(ordersSpendTotal / orders.length).toFixed(2)}` : 'N/A'))}
+        {stat('Total Orders', String(displayOrders))}
+        {stat('Avg Order Value', displayAov > 0 ? `$${displayAov.toFixed(2)}` : 'N/A')}
       </div>
 
       {/* Contact Information */}
@@ -171,8 +229,13 @@ export default function CustomerProfilePage() {
           {(addr.address_1 || addr.city) && (
             <div>
               <p style={{ margin: '0 0 3px 0', fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase' }}>Address</p>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>
-                {[addr.address_1, addr.address_2, addr.city, addr.state, addr.postcode, addr.country].filter(Boolean).join(', ')}
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.5 }}>
+                {/* Australian standard: street lines, then SUBURB STATE POSTCODE, then country */}
+                {[addr.address_1, addr.address_2].filter(Boolean).join(', ')}
+                {(addr.address_1 || addr.address_2) && <br />}
+                {[addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' ')}
+                {(addr.city || addr.state || addr.postcode) && addr.country && <br />}
+                {addr.country}
               </p>
             </div>
           )}

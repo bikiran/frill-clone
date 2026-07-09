@@ -172,51 +172,80 @@ export async function POST(req: NextRequest) {
       }
 
       // 2. Aggregate this page's orders per customer — including the actual
-      // PRODUCT LIST from line items (name/image/qty/price), which the
-      // customer profile displays. (Writing a numeric count here corrupted
-      // the products list into blank rows.)
+      // 2. Aggregate this page's orders per customer by customer_id AND email.
+      // Many WooCommerce orders are guest checkouts (customer_id 0) that still
+      // have the registered customer's billing email — matching only on
+      // customer_id missed all of these, leaving totals at 0.
       const agg: Record<number, { spend: number; orders: number; items: any[]; lastDate: string | null; firstDate: string | null }> = {}
-      for (const o of orders as any[]) {
-        const cid = o.customer_id
-        if (!cid) continue
-        if (!agg[cid]) agg[cid] = { spend: 0, orders: 0, items: [], lastDate: null, firstDate: null }
-        agg[cid].spend += parseFloat(o.total || '0') || 0
-        agg[cid].orders += 1
+      const aggByEmail: Record<string, { spend: number; orders: number; items: any[]; lastDate: string | null; firstDate: string | null }> = {}
+      const mkEntry = () => ({ spend: 0, orders: 0, items: [] as any[], lastDate: null as string | null, firstDate: null as string | null })
+      const addToEntry = (entry: any, o: any) => {
+        entry.spend += parseFloat(o.total || '0') || 0
+        entry.orders += 1
         for (const li of (o.line_items || [])) {
-          agg[cid].items.push({
-            name: li.name || 'Unnamed product',
-            quantity: li.quantity || 1,
-            price: li.total || null,
-            image: li.image?.src || null,
-          })
+          entry.items.push({ name: li.name || 'Unnamed product', quantity: li.quantity || 1, price: li.total || null, image: li.image?.src || null })
         }
         const d = o.date_created
         if (d) {
-          if (!agg[cid].lastDate || d > agg[cid].lastDate!) agg[cid].lastDate = d
-          if (!agg[cid].firstDate || d < agg[cid].firstDate!) agg[cid].firstDate = d
+          if (!entry.lastDate || d > entry.lastDate) entry.lastDate = d
+          if (!entry.firstDate || d < entry.firstDate) entry.firstDate = d
+        }
+      }
+      for (const o of orders as any[]) {
+        const cid = o.customer_id
+        const email = (o.billing?.email || '').toLowerCase().trim()
+        if (cid) {
+          if (!agg[cid]) agg[cid] = mkEntry()
+          addToEntry(agg[cid], o)
+        } else if (email) {
+          if (!aggByEmail[email]) aggByEmail[email] = mkEntry()
+          addToEntry(aggByEmail[email], o)
         }
       }
 
       const wooIds = Object.keys(agg).map(Number)
       let updated = 0
+      // Combine customer-id matches and email matches into one set of updates.
+      // Fetch customers matched by woo_customer_id OR by email.
+      const emails = Object.keys(aggByEmail)
+      let existing: any[] = []
       if (wooIds.length > 0) {
-        // Read current totals, add this page's contribution, write back
-        const { data: existing } = await supabase
+        const { data } = await supabase
           .from('woocommerce_customers')
-          .select('id, woo_customer_id, total_spend, total_orders, items_purchased, last_order_date, first_order_date')
+          .select('id, woo_customer_id, email, total_spend, total_orders, items_purchased, last_order_date, first_order_date')
           .eq('company_id', companyId)
           .in('woo_customer_id', wooIds)
+        existing = existing.concat(data || [])
+      }
+      if (emails.length > 0) {
+        const { data } = await supabase
+          .from('woocommerce_customers')
+          .select('id, woo_customer_id, email, total_spend, total_orders, items_purchased, last_order_date, first_order_date')
+          .eq('company_id', companyId)
+          .in('email', emails)
+        // Avoid duplicates already fetched by woo_customer_id
+        const seenIds = new Set(existing.map((r: any) => r.id))
+        for (const r of data || []) if (!seenIds.has(r.id)) existing.push(r)
+      }
 
-        const updates = (existing || []).map((row: any) => {
+      if (existing.length > 0) {
+        const updates = existing.map((row: any) => {
+          // Contribution from customer_id match and/or email match
           const a = agg[row.woo_customer_id]
-          const totalOrders = (row.total_orders || 0) + a.orders
-          const totalSpend = (parseFloat(row.total_spend) || 0) + a.spend
-          // Merge product lists: existing (array) + this page's items, deduped by name
+          const b = row.email ? aggByEmail[(row.email || '').toLowerCase().trim()] : null
+          const contribOrders = (a?.orders || 0) + (b?.orders || 0)
+          const contribSpend = (a?.spend || 0) + (b?.spend || 0)
+          const contribItems = [...(a?.items || []), ...(b?.items || [])]
+          const contribLast = [a?.lastDate, b?.lastDate].filter(Boolean).sort().pop() || null
+          const contribFirst = [a?.firstDate, b?.firstDate].filter(Boolean).sort().shift() || null
+
+          const totalOrders = (row.total_orders || 0) + contribOrders
+          const totalSpend = (parseFloat(row.total_spend) || 0) + contribSpend
           let existingItems: any[] = []
           const ei = row.items_purchased
           if (Array.isArray(ei)) existingItems = ei.filter((x: any) => x && typeof x === 'object' && x.name)
           const seen = new Set(existingItems.map((x: any) => x.name))
-          for (const item of a.items) {
+          for (const item of contribItems) {
             if (!seen.has(item.name)) { existingItems.push(item); seen.add(item.name) }
           }
           if (existingItems.length > 300) existingItems = existingItems.slice(0, 300)
@@ -228,8 +257,8 @@ export async function POST(req: NextRequest) {
             total_orders: totalOrders,
             items_purchased: existingItems,
             average_order_value: totalOrders > 0 ? Math.round((totalSpend / totalOrders) * 100) / 100 : 0,
-            last_order_date: [row.last_order_date, a.lastDate].filter(Boolean).sort().pop() || null,
-            first_order_date: [row.first_order_date, a.firstDate].filter(Boolean).sort().shift() || null,
+            last_order_date: [row.last_order_date, contribLast].filter(Boolean).sort().pop() || null,
+            first_order_date: [row.first_order_date, contribFirst].filter(Boolean).sort().shift() || null,
             synced_at: new Date().toISOString(),
           }
         })

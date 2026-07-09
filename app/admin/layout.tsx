@@ -86,6 +86,7 @@ const NAV_GROUPS = [
     items: [
       { label: 'Team', href: '/admin/team', icon: 'team' },
       { label: 'Users', href: '/admin/users', icon: 'users' },
+      { label: 'Locations', href: '/admin/locations', icon: 'settings' },
       { label: 'Integrations', href: '/admin/integrations', icon: 'integrations' },
       { label: 'Import Data', href: '/admin/import', icon: 'import_data' },
       { label: 'Settings', href: '/admin/settings', icon: 'settings' },

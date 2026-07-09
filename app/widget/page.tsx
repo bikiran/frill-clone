@@ -1,7 +1,7 @@
 'use client'
 
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -17,6 +17,8 @@ function WidgetContent() {
   const [chatMessages2, setChatMessages2] = useState<any[]>([])
   const [chatInput, setChatInput] = useState('')
   const [chatSending, setChatSending] = useState(false)
+  const [chatUploading, setChatUploading] = useState(false)
+  const chatFileRef = useRef<HTMLInputElement>(null)
   const [chatName, setChatName] = useState('')
   const [chatEmail, setChatEmail] = useState('')
   const [chatStep, setChatStep] = useState<'form' | 'chat'>('form')
@@ -340,6 +342,29 @@ function WidgetContent() {
       }
       reader.readAsDataURL(file)
     })
+  }
+
+  const uploadChatFile = async (file: File | undefined) => {
+    if (!file || !chatConvId || !company?.id) return
+    setChatUploading(true)
+    try {
+      const path = `${company.id}/${chatConvId}/${Date.now()}-${file.name}`
+      const { error: upErr } = await supabase.storage.from('chat-attachments').upload(path, file, { upsert: true })
+      if (upErr) { console.error('Widget upload error:', upErr); setChatUploading(false); return }
+      const { data: pub } = supabase.storage.from('chat-attachments').getPublicUrl(path)
+      const url = pub.publicUrl
+      const kind = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file'
+      const att = { url, name: file.name, type: file.type, kind }
+      const newMsg: any = { sender_type: 'visitor', sender_name: chatName, content: kind === 'file' ? `📎 ${file.name}` : '', attachments: [att], created_at: new Date().toISOString() }
+      setChatMessages2(prev => [...prev, newMsg])
+      await (supabase as any).from('messages').insert({
+        conversation_id: chatConvId, company_id: company.id, sender_type: 'visitor',
+        sender_name: chatName, sender_email: chatEmail || null,
+        content: newMsg.content, attachments: [att],
+      })
+      await (supabase as any).from('conversations').update({ last_message: '📎 Attachment', last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, updated_at: new Date().toISOString() }).eq('id', chatConvId)
+    } catch (e) { console.error(e) }
+    setChatUploading(false)
   }
 
   const submitFeedback = async () => {
@@ -1466,22 +1491,57 @@ function WidgetContent() {
                     const isAgent = msg.sender_type === 'agent'
                     const isSystem = msg.sender_type === 'system'
                     if (isSystem) return <div key={i} style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af' }}><span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>{msg.content}</span></div>
+                    const atts = Array.isArray(msg.attachments) ? msg.attachments : []
+                    const reactions = Array.isArray(msg.reactions) ? msg.reactions : []
+                    const reactionCounts: Record<string, number> = {}
+                    reactions.forEach((r: any) => { reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1 })
+                    const fmtT = (d: string) => {
+                      if (!d) return ''
+                      const p = new Date(d.endsWith?.('Z') ? d : d + 'Z')
+                      return isNaN(p.getTime()) ? '' : p.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                    }
                     return (
-                      <div key={i} style={{ display: 'flex', justifyContent: isAgent ? 'flex-start' : 'flex-end' }}>
+                      <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: isAgent ? 'flex-start' : 'flex-end' }}>
                         <div style={{
-                          maxWidth: '80%', padding: '10px 13px', borderRadius: isAgent ? '14px 14px 14px 4px' : '14px 14px 4px 14px',
+                          maxWidth: '80%', padding: atts.length && atts[0].kind !== 'file' ? 4 : '10px 13px', borderRadius: isAgent ? '14px 14px 14px 4px' : '14px 14px 4px 14px',
                           background: isAgent ? '#f3f4f6' : accentColor,
                           color: isAgent ? '#0d0d0d' : '#fff', fontSize: 13, lineHeight: 1.5,
                         }}>
-                          {isAgent && <p style={{ margin: '0 0 3px', fontSize: 11, fontWeight: 700, color: '#6b7280' }}>{msg.sender_name}</p>}
-                          {msg.content}
+                          {isAgent && msg.sender_name && <p style={{ margin: '0 0 3px', fontSize: 11, fontWeight: 700, color: '#6b7280', padding: atts.length ? '6px 9px 0' : 0 }}>{msg.sender_name}</p>}
+                          {atts.map((a: any, ai: number) => (
+                            <div key={ai} style={{ marginBottom: a.kind !== 'file' && msg.content ? 6 : 0 }}>
+                              {a.kind === 'image' ? (
+                                <img src={a.url} alt={a.name} style={{ maxWidth: 200, maxHeight: 200, borderRadius: 10, display: 'block', cursor: 'pointer' }} onClick={() => window.open(a.url, '_blank')} />
+                              ) : a.kind === 'video' ? (
+                                <video src={a.url} controls style={{ maxWidth: 200, borderRadius: 10, display: 'block' }} />
+                              ) : (
+                                <a href={a.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 6, color: isAgent ? accentColor : '#fff', textDecoration: 'none', fontSize: 12, fontWeight: 600 }}>📎 {a.name}</a>
+                              )}
+                            </div>
+                          ))}
+                          {msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '0 9px 4px' : 0 }}>{msg.content}</div>}
                         </div>
+                        {Object.keys(reactionCounts).length > 0 && (
+                          <div style={{ display: 'flex', gap: 3, marginTop: 2 }}>
+                            {Object.entries(reactionCounts).map(([emoji, count]) => (
+                              <span key={emoji} style={{ fontSize: 11, background: '#fff', border: '1px solid #e5e5e5', borderRadius: 20, padding: '0 6px' }}>{emoji} {count > 1 ? count : ''}</span>
+                            ))}
+                          </div>
+                        )}
+                        <p style={{ margin: '2px 4px 0', fontSize: 9, color: '#b0b0b0' }}>{fmtT(msg.created_at)}</p>
                       </div>
                     )
                   })}
                 </div>
                 {/* Input */}
                 <div style={{ padding: '10px 12px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                  <input ref={chatFileRef} type="file" accept="image/*,video/*,.pdf,.doc,.docx,.txt" style={{ display: 'none' }}
+                    onChange={e => { uploadChatFile(e.target.files?.[0]); e.target.value = '' }} />
+                  <button type="button" onClick={() => chatFileRef.current?.click()} disabled={chatUploading || !chatConvId}
+                    title="Attach file"
+                    style={{ width: 36, height: 36, borderRadius: '50%', border: '1px solid #e5e5e5', background: '#fff', cursor: chatConvId ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', flexShrink: 0 }}>
+                    {chatUploading ? '⏳' : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
+                  </button>
                   <textarea value={chatInput} onChange={e => setChatInput(e.target.value)}
                     onKeyDown={async e => {
                       if (e.key === 'Enter' && !e.shiftKey) {

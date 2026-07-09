@@ -69,3 +69,25 @@ VALUES ('chat-attachments', 'chat-attachments', true)
 ON CONFLICT (id) DO NOTHING;
 
 NOTIFY pgrst, 'reload schema';
+
+-- Multiple workspace locations (Australian address format)
+CREATE TABLE IF NOT EXISTS company_locations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
+  label TEXT,                    -- e.g. "Head Office", "Warehouse"
+  unit TEXT,                     -- unit/suite number
+  street_address TEXT,           -- e.g. "123 Collins Street"
+  suburb TEXT,                   -- e.g. "Melbourne"
+  state TEXT,                    -- VIC, NSW, QLD, etc.
+  postcode TEXT,                 -- 4-digit AU postcode
+  country TEXT DEFAULT 'Australia',
+  phone TEXT,
+  is_primary BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_company_locations ON company_locations(company_id);
+ALTER TABLE company_locations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can manage company_locations" ON company_locations;
+CREATE POLICY "Anyone can manage company_locations" ON company_locations FOR ALL USING (true);
+
+NOTIFY pgrst, 'reload schema';
