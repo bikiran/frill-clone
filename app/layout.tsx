@@ -15,7 +15,17 @@ const NAV_ITEMS = [
   { href: '/roadmap', label: 'Roadmap', icon: 'roadmap' },
   { href: '/announcements', label: 'Updates', icon: 'updates' },
   { href: '/help', label: 'Help', icon: 'help' },
+  { href: '/features/ideas', label: 'Product', icon: 'features' },
   { href: '/features', label: 'Features', icon: 'features' },
+  { href: '/pricing', label: 'Pricing', icon: 'pricing' },
+]
+
+// Marketing-context nav (colvy.com, signin, signup) — real pages that exist
+const MARKETING_NAV = [
+  { href: '/features/ideas', label: 'Ideas', icon: 'ideas' },
+  { href: '/features/roadmap', label: 'Roadmap', icon: 'roadmap' },
+  { href: '/features/announcements', label: 'Announcements', icon: 'updates' },
+  { href: '/features/knowledgebase', label: 'Knowledgebase', icon: 'help' },
   { href: '/pricing', label: 'Pricing', icon: 'pricing' },
 ]
 
@@ -377,7 +387,7 @@ export default function RootLayout({
   const isMarketingRoot = typeof window !== 'undefined'
     && (window.location.hostname === 'colvy.com' || window.location.hostname === 'www.colvy.com')
     && (pathname === '/' || pathname === '/landing')
-  const isFullPage = isEmbed || isMarketingRoot || ['/landing', '/pricing', '/features', '/platform-admin', '/forms/', '/widget'].some(p => pathname?.startsWith(p))
+  const isFullPage = isEmbed || isMarketingRoot || ['/landing', '/pricing', '/features', '/platform-admin', '/forms/', '/widget', '/auth/handoff'].some(p => pathname?.startsWith(p))
 
   if (isFullPage) {
     return (
@@ -548,21 +558,18 @@ export default function RootLayout({
 
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-1">
-              {[...NAV_ITEMS]
-                .sort((a, b) => {
-                  const ai = navOrder.indexOf(a.label)
-                  const bi = navOrder.indexOf(b.label)
-                  if (ai === -1 && bi === -1) return 0
-                  if (ai === -1) return 1
-                  if (bi === -1) return -1
-                  return ai - bi
-                })
+              {(() => {
+                const isOnBoard = isSubdomain || isCompanyOwner
+                // On colvy.com show the full marketing menu; on boards show board nav
+                const items = isOnBoard ? NAV_ITEMS : MARKETING_NAV
+                return items
                 .filter(item => {
-                  if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
-                  const isBoardItem = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)
-                  const isMarketingItem = item.label === 'Features' || item.label === 'Pricing'
-                  // On company boards (subdomain OR any logged-in company owner), show board nav
-                  const isOnBoard = isSubdomain || isCompanyOwner
+                  if (isOnBoard && navVisibility[item.label as keyof typeof navVisibility] === false) return false
+                  const isBoardItem = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label) && item.href.startsWith('/') && !item.href.startsWith('/features')
+                  const isMarketingItem = item.label === 'Features' || item.label === 'Product'
+                  if (!isOnBoard && isBoardItem) return false
+                  if (isOnBoard && isMarketingItem) return false
+                  return true
                   if (!isOnBoard && isBoardItem) return false
                   if (isOnBoard && isMarketingItem) return false
                   return true
@@ -590,7 +597,8 @@ export default function RootLayout({
                     <div className="absolute bottom-0 left-0 right-0 h-1 rounded-t-lg" style={{ background: 'var(--coral)' }} />
                   )}
                 </Link>
-              ))}
+              ))
+              })()}
             </div>
 
             {/* Right side */}

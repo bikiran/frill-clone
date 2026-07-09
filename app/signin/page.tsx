@@ -37,10 +37,10 @@ function SignInForm() {
   const [companyContext, setCompanyContext] = useState<any>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }: any) => {
+    supabase.auth.getSession().then(async ({ data }: any) => {
       if (data?.session?.user) {
         const redirect = params.get('redirect')
-        window.location.href = redirect || getRedirectUrl()
+        window.location.href = redirect || await getRedirectUrl()
       }
     })
 
@@ -74,16 +74,16 @@ function SignInForm() {
         const hostname = window.location.hostname
         const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
         if (!isLocal) {
-          // Pass the session tokens in the URL so the subdomain can pick them up
-          // without requiring a second sign-in. Supabase's detectSessionInUrl:true
-          // will exchange these automatically.
+          // Hand the session tokens to the subdomain via a dedicated handoff
+          // page that explicitly calls setSession() — more reliable than
+          // relying on Supabase's implicit-flow hash detection, which was
+          // leaving users stuck on the sign-in page.
           const accessToken = session?.access_token
           const refreshToken = session?.refresh_token
-          const base = `https://${ownCo.slug}.colvy.com/admin`
           if (accessToken && refreshToken) {
-            return `${base}#access_token=${accessToken}&refresh_token=${refreshToken}&type=recovery`
+            return `https://${ownCo.slug}.colvy.com/auth/handoff#access_token=${encodeURIComponent(accessToken)}&refresh_token=${encodeURIComponent(refreshToken)}&next=${encodeURIComponent('/admin')}`
           }
-          return base
+          return `https://${ownCo.slug}.colvy.com/admin`
         }
         return '/admin'
       }

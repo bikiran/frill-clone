@@ -87,11 +87,30 @@ export default function InboxPage() {
   const [editContact, setEditContact] = useState<Partial<Contact>>({})
   const [aiDetected, setAiDetected] = useState<{ phone?: string | null; email?: string | null; address?: string | null } | null>(null)
   const [savingContact, setSavingContact] = useState(false)
-  const [activePanel, setActivePanel] = useState<'info' | 'history'>('info')
+  const [activePanel, setActivePanel] = useState<'info' | 'timeline'>('info')
   const [loading, setLoading] = useState(true)
+  // New chat features
+  const [replyTo, setReplyTo] = useState<Message | null>(null)
+  const [showEmoji, setShowEmoji] = useState(false)
+  const [showReactPicker, setShowReactPicker] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [events, setEvents] = useState<any[]>([])
+  const [notes, setNotes] = useState<any[]>([])
+  const [tasks, setTasks] = useState<any[]>([])
+  const [newNote, setNewNote] = useState('')
+  const [newTask, setNewTask] = useState('')
+  const [aiSummary, setAiSummary] = useState('')
+  const [aiTodos, setAiTodos] = useState<any[]>([])
+  const [generatingAi, setGeneratingAi] = useState(false)
+  const [showSnooze, setShowSnooze] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const [showActions, setShowActions] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const channelRef = useRef<any>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const EMOJIS = ['👍', '❤️', '😊', '🎉', '🙏', '😂', '🔥', '👀', '✅', '😢', '😮', '💯']
 
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -134,16 +153,28 @@ export default function InboxPage() {
 
   useEffect(() => { loadConversations() }, [statusFilter, loadConversations])
 
-  // Close the assign dropdown when clicking anywhere else
+  // Deep-link: open a conversation from ?conversation=<id> (copy chat link)
   useEffect(() => {
-    if (!showAssignMenu) return
+    if (conversations.length === 0 || selected) return
+    if (typeof window === 'undefined') return
+    const convId = new URLSearchParams(window.location.search).get('conversation')
+    if (convId) {
+      const found = conversations.find(c => c.id === convId)
+      if (found) selectConversation(found)
+    }
+  }, [conversations])
+
+  // Close the assign dropdown / actions menu when clicking elsewhere
+  useEffect(() => {
+    if (!showAssignMenu && !showActions) return
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (!target.closest('[data-assign-menu]')) setShowAssignMenu(false)
+      if (!target.closest('[data-actions-menu]')) setShowActions(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [showAssignMenu])
+  }, [showAssignMenu, showActions])
 
   // Realtime subscription to new messages / conversation updates
   useEffect(() => {
@@ -204,12 +235,16 @@ export default function InboxPage() {
     setSelected(conv)
     setAiDetected(null)
     setShowContactEdit(false)
+    setReplyTo(null)
+    setAiSummary((conv as any).ai_summary || '')
+    setAiTodos((conv as any).ai_todos || [])
     // Load messages
     const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', conv.id).order('created_at', { ascending: true })
     setMessages(msgs || [])
     scrollBottom()
-    // Mark read
+    // Mark read + stamp read receipt on visitor messages
     await (supabase as any).from('conversations').update({ is_unread: false, unread_count: 0 }).eq('id', conv.id)
+    markMessagesRead(conv.id, msgs || [])
     // Load contact
     if (conv.contact_id) {
       const { data: c } = await (supabase as any).from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
@@ -219,12 +254,184 @@ export default function InboxPage() {
       setContact(null)
       setEditContact({})
     }
+    // Load timeline events, notes, tasks
+    loadConversationExtras(conv.id)
     // Scan messages for AI-detected info
     setTimeout(() => {
       const allText = (msgs || []).filter((m: Message) => m.sender_type === 'visitor').map((m: Message) => m.content).join(' ')
       const extracted = extractFromText(allText)
       if (extracted.phone || extracted.email || extracted.address) setAiDetected(extracted)
     }, 300)
+  }
+
+  const loadConversationExtras = async (convId: string) => {
+    const [{ data: evts }, { data: nts }, { data: tsks }] = await Promise.all([
+      (supabase as any).from('conversation_events').select('*').eq('conversation_id', convId).order('created_at', { ascending: false }),
+      (supabase as any).from('conversation_notes').select('*').eq('conversation_id', convId).order('created_at', { ascending: false }),
+      (supabase as any).from('conversation_tasks').select('*').eq('conversation_id', convId).order('created_at', { ascending: false }),
+    ])
+    setEvents(evts || [])
+    setNotes(nts || [])
+    setTasks(tsks || [])
+  }
+
+  const logEvent = async (eventType: string, detail: string) => {
+    if (!selected || !companyId) return
+    const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    await (supabase as any).from('conversation_events').insert({
+      conversation_id: selected.id, company_id: companyId, event_type: eventType, actor_name: actorName, detail,
+    })
+    loadConversationExtras(selected.id)
+  }
+
+  const markMessagesRead = async (convId: string, msgs: Message[]) => {
+    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const initial = me[0]?.toUpperCase() || 'A'
+    // Stamp read_by on visitor messages that this agent hasn't marked yet
+    for (const m of msgs) {
+      if (m.sender_type !== 'visitor') continue
+      const readBy = Array.isArray((m as any).read_by) ? (m as any).read_by : []
+      if (readBy.some((r: any) => r.name === me)) continue
+      const updated = [...readBy, { name: me, initial, at: new Date().toISOString() }]
+      await (supabase as any).from('messages').update({ read_by: updated, is_read: true }).eq('id', m.id)
+    }
+  }
+
+  // ── Reactions ──────────────────────────────────────────────────────────────
+  const reactToMessage = async (msg: Message, emoji: string) => {
+    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const reactions = Array.isArray((msg as any).reactions) ? (msg as any).reactions : []
+    const existing = reactions.findIndex((r: any) => r.emoji === emoji && r.by === me)
+    let updated
+    if (existing >= 0) {
+      updated = reactions.filter((_: any, i: number) => i !== existing)
+    } else {
+      updated = [...reactions, { emoji, by: me, at: new Date().toISOString() }]
+    }
+    setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: updated } as any : m))
+    setShowReactPicker(null)
+    await (supabase as any).from('messages').update({ reactions: updated }).eq('id', msg.id)
+  }
+
+  // ── File upload ────────────────────────────────────────────────────────────
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0 || !selected || !companyId) return
+    setUploading(true)
+    try {
+      for (const file of Array.from(files)) {
+        const path = `${companyId}/${selected.id}/${Date.now()}-${file.name}`
+        const { error: upErr } = await supabase.storage.from('chat-attachments').upload(path, file, { upsert: true })
+        if (upErr) { console.error('Upload error:', upErr); continue }
+        const { data: pub } = supabase.storage.from('chat-attachments').getPublicUrl(path)
+        const url = pub.publicUrl
+        const kind = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file'
+        const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+        await (supabase as any).from('messages').insert({
+          conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+          sender_id: user.id, sender_name: me, sender_email: user.email,
+          content: kind === 'file' ? `📎 ${file.name}` : '',
+          attachments: [{ url, name: file.name, type: file.type, kind }],
+        })
+      }
+      await (supabase as any).from('conversations').update({ last_message: '📎 Attachment', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
+      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+      setMessages(msgs || [])
+      scrollBottom()
+    } catch (e) { console.error(e) }
+    setUploading(false)
+  }
+
+  // ── Notes & Tasks ──────────────────────────────────────────────────────────
+  const addNote = async () => {
+    if (!newNote.trim() || !selected || !companyId) return
+    const author = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    await (supabase as any).from('conversation_notes').insert({ conversation_id: selected.id, company_id: companyId, author_name: author, content: newNote.trim() })
+    setNewNote('')
+    loadConversationExtras(selected.id)
+  }
+  const addTask = async () => {
+    if (!newTask.trim() || !selected || !companyId) return
+    await (supabase as any).from('conversation_tasks').insert({ conversation_id: selected.id, company_id: companyId, text: newTask.trim(), done: false })
+    setNewTask('')
+    loadConversationExtras(selected.id)
+  }
+  const toggleTask = async (task: any) => {
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, done: !t.done } : t))
+    await (supabase as any).from('conversation_tasks').update({ done: !task.done }).eq('id', task.id)
+  }
+
+  // ── Sentiment ──────────────────────────────────────────────────────────────
+  const setSentiment = async (sentiment: string) => {
+    if (!selected) return
+    setSelected(s => s ? { ...s, sentiment } as any : s)
+    await (supabase as any).from('conversations').update({ sentiment }).eq('id', selected.id)
+  }
+
+  // ── Snooze ─────────────────────────────────────────────────────────────────
+  const snoozeConversation = async (until: Date) => {
+    if (!selected) return
+    await (supabase as any).from('conversations').update({ snoozed_until: until.toISOString(), status: 'open' }).eq('id', selected.id)
+    setShowSnooze(false)
+    logEvent('snoozed', `Snoozed until ${until.toLocaleString()}`)
+    loadConversations()
+  }
+
+  // ── Copy chat link ─────────────────────────────────────────────────────────
+  const copyChatLink = () => {
+    if (!selected) return
+    const url = `${window.location.origin}/admin/inbox?conversation=${selected.id}`
+    navigator.clipboard.writeText(url)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2000)
+  }
+
+  // ── Send & close ───────────────────────────────────────────────────────────
+  const sendAndClose = async () => {
+    await sendReply()
+    await setStatus('closed')
+  }
+
+  // ── Review request ─────────────────────────────────────────────────────────
+  const sendReviewRequest = async () => {
+    if (!selected || !companyId) return
+    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    await (supabase as any).from('messages').insert({
+      conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+      sender_id: user.id, sender_name: me,
+      content: "We'd love your feedback! Could you take a moment to leave us a review? ⭐",
+    })
+    await (supabase as any).from('conversations').update({ review_requested: true, last_message_at: new Date().toISOString() }).eq('id', selected.id)
+    logEvent('review_request', 'Review request sent')
+    const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+    setMessages(msgs || [])
+    scrollBottom()
+  }
+
+  // ── AI summary & todos ─────────────────────────────────────────────────────
+  const generateAiSummary = async () => {
+    if (!selected || messages.length === 0) return
+    setGeneratingAi(true)
+    try {
+      const res = await fetch('/api/inbox/ai-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: selected.id,
+          messages: messages.filter(m => m.sender_type !== 'system').map(m => ({ role: m.sender_type, content: m.content })),
+        }),
+      })
+      const data = await res.json()
+      if (data.summary) {
+        setAiSummary(data.summary)
+        setAiTodos(data.todos || [])
+        await (supabase as any).from('conversations').update({ ai_summary: data.summary, ai_todos: data.todos || [] }).eq('id', selected.id)
+      } else if (data.error) {
+        setAiSummary('AI summary unavailable: ' + data.error)
+      }
+    } catch (e: any) {
+      setAiSummary('Could not generate summary.')
+    }
+    setGeneratingAi(false)
   }
 
   const scrollBottom = () => setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
@@ -243,6 +450,7 @@ export default function InboxPage() {
       content: reply.trim(),
       attachments: [],
       metadata: {},
+      reply_to: replyTo?.id || null,
     }
     await (supabase as any).from('messages').insert(msg)
     await (supabase as any).from('conversations').update({
@@ -251,6 +459,7 @@ export default function InboxPage() {
       updated_at: new Date().toISOString(),
     }).eq('id', selected.id)
     setReply('')
+    setReplyTo(null)
     setSending(false)
     scrollBottom()
   }
@@ -265,6 +474,8 @@ export default function InboxPage() {
     }).eq('id', selected.id)
     setSelected(s => s ? { ...s, assigned_to: member?.user_id || null, assigned_name: member?.name || null, status: member ? 'assigned' : 'open' } : s)
     setShowAssignMenu(false)
+    if (member) logEvent('assigned', `Conversation assigned to ${member.name}`)
+    else logEvent('assigned', 'Conversation unassigned')
     loadConversations()
   }
 
@@ -273,6 +484,7 @@ export default function InboxPage() {
     if (!selected) return
     await (supabase as any).from('conversations').update({ status }).eq('id', selected.id)
     setSelected(s => s ? { ...s, status } : s)
+    logEvent('status_change', `Status changed to ${status}`)
     loadConversations()
   }
 
@@ -386,11 +598,26 @@ export default function InboxPage() {
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 16 }}>{CHANNEL_ICON[selected.channel]}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
                   {contact?.name || selected.subject || 'Visitor'}
+                  {/* Sentiment badge */}
+                  {(selected as any).sentiment && (
+                    <span style={{ fontSize: 14 }} title={`${(selected as any).sentiment} experience`}>
+                      {(selected as any).sentiment === 'positive' ? '😊' : (selected as any).sentiment === 'negative' ? '😞' : '😐'}
+                    </span>
+                  )}
                 </p>
                 {selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {selected.page_title}</p>}
               </div>
+
+              {/* Sentiment picker */}
+              <div style={{ display: 'flex', gap: 2 }}>
+                {[['positive', '😊'], ['neutral', '😐'], ['negative', '😞']].map(([s, e]) => (
+                  <button key={s} type="button" onClick={() => setSentiment(s)} title={`Mark ${s}`}
+                    style={{ width: 28, height: 28, borderRadius: 7, border: (selected as any).sentiment === s ? '1.5px solid var(--coral)' : '1px solid var(--border)', background: (selected as any).sentiment === s ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 14, padding: 0 }}>{e}</button>
+                ))}
+              </div>
+
               {/* Status pill */}
               <div style={{ position: 'relative' }}>
                 <select value={selected.status} onChange={e => setStatus(e.target.value)}
@@ -424,6 +651,46 @@ export default function InboxPage() {
                   </div>
                 )}
               </div>
+
+              {/* More actions: snooze, copy link, merge */}
+              <div style={{ position: 'relative' }} data-actions-menu>
+                <button type="button" onClick={() => setShowActions(v => !v)} title="More actions"
+                  style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, lineHeight: 1 }}>⋯</button>
+                {showActions && (
+                  <div style={{ position: 'absolute', top: '110%', right: 0, width: 190, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
+                    <button type="button" onClick={() => { setShowActions(false); setShowSnooze(true) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                      💤 Snooze
+                    </button>
+                    <button type="button" onClick={() => { copyChatLink(); setShowActions(false) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                      🔗 {linkCopied ? 'Copied!' : 'Copy chat link'}
+                    </button>
+                    <button type="button" onClick={() => { setShowActions(false); alert('Select another conversation to merge into this one — coming from the list soon.') }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                      🔀 Merge conversation
+                    </button>
+                    <button type="button" onClick={() => { generateAiSummary(); setActivePanel('info'); setShowActions(false) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', borderTop: '1px solid var(--border)' }}>
+                      ✨ AI summary & to-dos
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Snooze menu */}
+              {showSnooze && (
+                <div style={{ position: 'absolute', top: 54, right: 16, width: 200, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden' }}>
+                  <p style={{ margin: 0, padding: '10px 14px 6px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Snooze until</p>
+                  {[['1 hour', 1], ['3 hours', 3], ['Tomorrow', 24], ['Next week', 168]].map(([label, hrs]) => (
+                    <button key={label as string} type="button" onClick={() => snoozeConversation(new Date(Date.now() + (hrs as number) * 3600000))}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                      {label}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => setShowSnooze(false)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', borderTop: '1px solid var(--border)', background: 'none', cursor: 'pointer', fontSize: 13, color: '#9ca3af' }}>Cancel</button>
+                </div>
+              )}
             </div>
 
             {/* AI detection banner */}
@@ -465,7 +732,7 @@ export default function InboxPage() {
             )}
 
             {/* Messages */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
               {messages.map(msg => {
                 const isAgent = msg.sender_type === 'agent'
                 const isSystem = msg.sender_type === 'system'
@@ -474,26 +741,104 @@ export default function InboxPage() {
                     <span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>{msg.content}</span>
                   </div>
                 )
+                const reactions = Array.isArray((msg as any).reactions) ? (msg as any).reactions : []
+                const readBy = Array.isArray((msg as any).read_by) ? (msg as any).read_by : []
+                const atts = Array.isArray(msg.attachments) ? msg.attachments : []
+                const repliedMsg = (msg as any).reply_to ? messages.find(m => m.id === (msg as any).reply_to) : null
+                // Group reactions by emoji
+                const reactionCounts: Record<string, number> = {}
+                reactions.forEach((r: any) => { reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1 })
                 return (
-                  <div key={msg.id} style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start', gap: 8, alignItems: 'flex-end' }}>
+                  <div key={msg.id} className="chat-msg-row" style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start', gap: 8, alignItems: 'flex-end', position: 'relative' }}>
                     {!isAgent && (
                       <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--peach)', border: '2px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--coral)', flexShrink: 0 }}>
                         {(contact?.name || msg.sender_name || 'V')[0].toUpperCase()}
                       </div>
                     )}
-                    <div style={{ maxWidth: '70%' }}>
+                    <div style={{ maxWidth: '70%', position: 'relative' }}
+                      onMouseEnter={() => setShowReactPicker(null)}>
                       {!isAgent && <p style={{ margin: '0 0 3px 4px', fontSize: 10, color: '#9ca3af' }}>{msg.sender_name || 'Visitor'}</p>}
+
+                      {/* Reply-to quote */}
+                      {repliedMsg && (
+                        <div style={{ fontSize: 11, color: '#6b7280', borderLeft: '3px solid var(--coral)', padding: '2px 8px', marginBottom: 3, background: 'var(--canvas)', borderRadius: 4, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          ↩ {repliedMsg.sender_name}: {repliedMsg.content.slice(0, 50)}
+                        </div>
+                      )}
+
                       <div style={{
-                        padding: '10px 14px', borderRadius: isAgent ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                        padding: atts.length && atts[0].kind !== 'file' ? 4 : '10px 14px',
+                        borderRadius: isAgent ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
                         background: isAgent ? 'var(--coral)' : '#fff',
                         color: isAgent ? '#fff' : 'var(--ink)',
                         fontSize: 13, lineHeight: 1.5,
                         boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                         border: isAgent ? 'none' : '1px solid var(--border)',
-                      }}>{msg.content}</div>
-                      <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af', textAlign: isAgent ? 'right' : 'left' }}>
+                        position: 'relative',
+                      }}>
+                        {/* Attachments */}
+                        {atts.map((a: any, ai: number) => (
+                          <div key={ai} style={{ marginBottom: a.kind !== 'file' && msg.content ? 6 : 0 }}>
+                            {a.kind === 'image' ? (
+                              <img src={a.url} alt={a.name} style={{ maxWidth: 240, maxHeight: 240, borderRadius: 10, display: 'block', cursor: 'pointer' }} onClick={() => window.open(a.url, '_blank')} />
+                            ) : a.kind === 'video' ? (
+                              <video src={a.url} controls style={{ maxWidth: 240, borderRadius: 10, display: 'block' }} />
+                            ) : (
+                              <a href={a.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 8, color: isAgent ? '#fff' : 'var(--coral)', textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
+                                📎 {a.name}
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                        {msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0 }}>{msg.content}</div>}
+                      </div>
+
+                      {/* Reactions */}
+                      {Object.keys(reactionCounts).length > 0 && (
+                        <div style={{ display: 'flex', gap: 4, marginTop: 3, justifyContent: isAgent ? 'flex-end' : 'flex-start' }}>
+                          {Object.entries(reactionCounts).map(([emoji, count]) => (
+                            <span key={emoji} onClick={() => reactToMessage(msg, emoji)}
+                              style={{ fontSize: 12, background: '#fff', border: '1px solid var(--border)', borderRadius: 20, padding: '1px 7px', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
+                              {emoji} {count > 1 ? count : ''}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Timestamp + read receipt */}
+                      <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af', textAlign: isAgent ? 'right' : 'left', display: 'flex', gap: 5, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start' }}>
                         {fmtTime(msg.created_at)}
+                        {/* Read-by avatars on visitor messages */}
+                        {!isAgent && readBy.length > 0 && (
+                          <span style={{ display: 'inline-flex', gap: 2, marginLeft: 2 }}>
+                            {readBy.slice(0, 3).map((r: any, ri: number) => (
+                              <span key={ri} title={`Read by ${r.name}`} style={{ width: 14, height: 14, borderRadius: '50%', background: 'var(--coral)', color: '#fff', fontSize: 8, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {r.initial}
+                              </span>
+                            ))}
+                          </span>
+                        )}
                       </p>
+
+                      {/* Hover actions: react + reply */}
+                      <div className="chat-msg-actions" style={{ position: 'absolute', top: -10, [isAgent ? 'left' : 'right']: -8, display: 'flex', gap: 2, background: '#fff', borderRadius: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.12)', padding: '2px 4px', opacity: 0, transition: 'opacity 0.12s', pointerEvents: 'none' } as any}>
+                        <button type="button" onClick={() => setShowReactPicker(showReactPicker === msg.id ? null : msg.id)}
+                          style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }} title="React">😊</button>
+                        <button type="button" onClick={() => { setReplyTo(msg); textareaRef.current?.focus() }}
+                          style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 12, padding: '2px 4px' }} title="Reply">↩</button>
+                      </div>
+
+                      {/* Reaction picker */}
+                      {showReactPicker === msg.id && (
+                        <div data-react-picker style={{ position: 'absolute', top: -44, [isAgent ? 'right' : 'left']: 0, display: 'flex', gap: 2, background: '#fff', borderRadius: 24, boxShadow: '0 4px 16px rgba(0,0,0,0.16)', padding: '5px 8px', zIndex: 20 } as any}>
+                          {EMOJIS.slice(0, 8).map(e => (
+                            <button key={e} type="button" onClick={() => reactToMessage(msg, e)}
+                              style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 17, padding: 2, borderRadius: 6 }}
+                              onMouseEnter={(ev: any) => ev.currentTarget.style.background = 'var(--canvas)'}
+                              onMouseLeave={(ev: any) => ev.currentTarget.style.background = 'none'}>{e}</button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     {isAgent && (
                       companyInfo?.logo_url ? (
@@ -510,28 +855,72 @@ export default function InboxPage() {
               <div ref={messagesEndRef} />
             </div>
 
+            <style>{`.chat-msg-row:hover .chat-msg-actions { opacity: 1 !important; pointer-events: auto !important; }`}</style>
+
             {/* Reply box */}
-            <div style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)' }}>
+            <div style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)', position: 'relative' }}>
+              {/* Reply-to preview */}
+              {replyTo && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--canvas)', borderRadius: 8, marginBottom: 8, borderLeft: '3px solid var(--coral)' }}>
+                  <span style={{ fontSize: 12, color: '#6b7280', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    ↩ Replying to {replyTo.sender_name}: {replyTo.content.slice(0, 50)}
+                  </span>
+                  <button type="button" onClick={() => setReplyTo(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 14 }}>✕</button>
+                </div>
+              )}
+
+              {/* Emoji picker */}
+              {showEmoji && (
+                <div style={{ position: 'absolute', bottom: '100%', left: 14, marginBottom: 8, display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4, background: '#fff', borderRadius: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', padding: 10, zIndex: 30 }}>
+                  {EMOJIS.map(e => (
+                    <button key={e} type="button" onClick={() => { setReply(r => r + e); setShowEmoji(false) }}
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 20, padding: 4, borderRadius: 6 }}
+                      onMouseEnter={(ev: any) => ev.currentTarget.style.background = 'var(--canvas)'}
+                      onMouseLeave={(ev: any) => ev.currentTarget.style.background = 'none'}>{e}</button>
+                  ))}
+                </div>
+              )}
+
               <textarea ref={textareaRef} value={reply} onChange={e => setReply(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply() } }}
                 placeholder="Type a reply… (Enter to send, Shift+Enter for new line)"
                 rows={3}
                 style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: 8 }}>
+
+              <input ref={fileInputRef} type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" style={{ display: 'none' }}
+                onChange={e => { handleFileUpload(e.target.files); e.target.value = '' }} />
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {/* Attach */}
+                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} title="Attach file"
+                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                    {uploading ? '⏳' : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
+                  </button>
+                  {/* Emoji */}
+                  <button type="button" onClick={() => setShowEmoji(v => !v)} title="Emoji"
+                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 15 }}>😊</button>
+                  {/* Review request */}
+                  <button type="button" onClick={sendReviewRequest} title="Send review request"
+                    style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    ⭐ Review
+                  </button>
+                  {/* Resolve */}
                   <button type="button" onClick={() => setStatus('resolved')}
-                    style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #059669', background: '#dcfce7', color: '#059669', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid #059669', background: '#dcfce7', color: '#059669', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                     ✓ Resolve
                   </button>
-                  <button type="button" onClick={() => setStatus('closed')}
-                    style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--canvas)', color: 'var(--slate)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                    Close
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button type="button" onClick={sendAndClose} disabled={sending || !reply.trim()}
+                    style={{ padding: '8px 14px', borderRadius: 10, background: '#fff', color: reply.trim() ? 'var(--ink)' : '#9ca3af', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: reply.trim() ? 'pointer' : 'default' }}>
+                    Send & Close
+                  </button>
+                  <button type="button" onClick={sendReply} disabled={sending || !reply.trim()}
+                    style={{ padding: '8px 20px', borderRadius: 10, background: reply.trim() ? 'var(--coral)' : '#e5e7eb', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: reply.trim() ? 'pointer' : 'default', transition: 'all 0.15s' }}>
+                    {sending ? 'Sending…' : 'Send →'}
                   </button>
                 </div>
-                <button type="button" onClick={sendReply} disabled={sending || !reply.trim()}
-                  style={{ padding: '8px 20px', borderRadius: 10, background: reply.trim() ? 'var(--coral)' : '#e5e7eb', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: reply.trim() ? 'pointer' : 'default', transition: 'all 0.15s' }}>
-                  {sending ? 'Sending…' : 'Send →'}
-                </button>
               </div>
             </div>
           </>
@@ -543,10 +932,10 @@ export default function InboxPage() {
         <div style={{ width: 280, flexShrink: 0, borderLeft: '1px solid var(--border)', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Panel tabs */}
           <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
-            {(['info', 'history'] as const).map(p => (
+            {(['info', 'timeline'] as const).map(p => (
               <button key={p} type="button" onClick={() => setActivePanel(p)}
                 style={{ flex: 1, padding: '11px 0', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: activePanel === p ? 700 : 500, color: activePanel === p ? 'var(--coral)' : 'var(--slate)', borderBottom: activePanel === p ? '2px solid var(--coral)' : '2px solid transparent', textTransform: 'capitalize' }}>
-                {p === 'info' ? 'Information' : 'Page History'}
+                {p === 'info' ? 'Information' : 'Timeline'}
               </button>
             ))}
           </div>
@@ -634,23 +1023,124 @@ export default function InboxPage() {
               </>
             )}
 
-            {activePanel === 'history' && (
+            {activePanel === 'timeline' && (
               <>
-                <h3 style={{ margin: '0 0 12px 0', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Page History</h3>
-                {(!selected.page_history || selected.page_history.length === 0) ? (
-                  <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>No page history recorded yet.</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {[...selected.page_history].reverse().map((h: any, i: number) => (
-                      <div key={i} style={{ padding: '9px 12px', borderRadius: 8, background: 'var(--canvas)', border: i === 0 ? '1.5px solid var(--coral)' : '1px solid var(--border)' }}>
-                        {i === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>Current</span>}
-                        <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.title || 'Untitled'}</p>
-                        <a href={h.url} target="_blank" rel="noopener" style={{ fontSize: 11, color: 'var(--coral)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{h.url}</a>
-                        <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af' }}>{fmtTime(h.ts)}</p>
-                      </div>
-                    ))}
+                {/* AI Summary & To-dos */}
+                <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 10, background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)', border: '1px solid #e9d5ff' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#7c3aed' }}>✨ AI Summary</h3>
+                    <button type="button" onClick={generateAiSummary} disabled={generatingAi}
+                      style={{ fontSize: 11, color: '#7c3aed', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                      {generatingAi ? 'Thinking…' : aiSummary ? 'Regenerate' : 'Generate'}
+                    </button>
                   </div>
-                )}
+                  {aiSummary ? (
+                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5 }}>{aiSummary}</p>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: 12, color: '#9ca3af' }}>Generate a summary and action items for this conversation.</p>
+                  )}
+                  {aiTodos.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase' }}>To-dos</p>
+                      {aiTodos.map((t: any, i: number) => (
+                        <label key={i} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 12, color: 'var(--ink)', marginBottom: 4, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={!!t.done} onChange={() => {
+                            const upd = aiTodos.map((x: any, xi: number) => xi === i ? { ...x, done: !x.done } : x)
+                            setAiTodos(upd)
+                            ;(supabase as any).from('conversations').update({ ai_todos: upd }).eq('id', selected.id)
+                          }} style={{ marginTop: 2 }} />
+                          <span style={{ textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.6 : 1 }}>{t.text}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Timeline events */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Timeline</h3>
+                  <span style={{ fontSize: 11, color: '#9ca3af' }}>Showing: All</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 18, position: 'relative' }}>
+                  {/* Quick actions */}
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 12, marginTop: 6, flexWrap: 'wrap' }}>
+                    <button type="button" onClick={sendReviewRequest} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontWeight: 600 }}>⭐ Send review request</button>
+                  </div>
+                  {events.length === 0 ? (
+                    <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>No timeline events yet.</p>
+                  ) : (
+                    events.map((ev, i) => {
+                      const d = new Date(ev.created_at)
+                      return (
+                        <div key={ev.id} style={{ display: 'flex', gap: 10, paddingBottom: 14, position: 'relative' }}>
+                          {/* Timeline dot + line */}
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+                            <div style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--coral)', marginTop: 3 }} />
+                            {i < events.length - 1 && <div style={{ width: 1.5, flex: 1, background: 'var(--border)', marginTop: 2 }} />}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 10, color: '#9ca3af' }}>{d.toLocaleDateString([], { month: 'short', day: 'numeric' })} · {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                            <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--ink)' }}>{ev.detail}</p>
+                            {ev.actor_name && <p style={{ margin: '1px 0 0', fontSize: 11, color: '#9ca3af' }}>by {ev.actor_name}</p>}
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+
+                {/* Notes */}
+                <div style={{ marginBottom: 18 }}>
+                  <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Notes</h3>
+                  {notes.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No notes.</p>}
+                  {notes.map(n => (
+                    <div key={n.id} style={{ padding: '8px 10px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', marginBottom: 6 }}>
+                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)' }}>{n.content}</p>
+                      <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af' }}>{n.author_name} · {new Date(n.created_at).toLocaleDateString()}</p>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                    <input value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addNote() }}
+                      placeholder="Add a note…" style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, outline: 'none' }} />
+                    <button type="button" onClick={addNote} style={{ padding: '7px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
+                  </div>
+                </div>
+
+                {/* Tasks */}
+                <div style={{ marginBottom: 18 }}>
+                  <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Tasks</h3>
+                  {tasks.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No tasks.</p>}
+                  {tasks.map(t => (
+                    <label key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, marginBottom: 6, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={t.done} onChange={() => toggleTask(t)} style={{ marginTop: 2 }} />
+                      <span style={{ textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.6 : 1, color: 'var(--ink)' }}>{t.text}</span>
+                    </label>
+                  ))}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                    <input value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTask() }}
+                      placeholder="Add a task…" style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, outline: 'none' }} />
+                    <button type="button" onClick={addTask} style={{ padding: '7px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
+                  </div>
+                </div>
+
+                {/* Page history */}
+                <div>
+                  <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Page History</h3>
+                  {(!selected.page_history || selected.page_history.length === 0) ? (
+                    <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>No page history recorded yet.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {[...selected.page_history].reverse().map((h: any, i: number) => (
+                        <div key={i} style={{ padding: '9px 12px', borderRadius: 8, background: 'var(--canvas)', border: i === 0 ? '1.5px solid var(--coral)' : '1px solid var(--border)' }}>
+                          {i === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>Current</span>}
+                          <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.title || 'Untitled'}</p>
+                          <a href={h.url} target="_blank" rel="noopener" style={{ fontSize: 11, color: 'var(--coral)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{h.url}</a>
+                          <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af' }}>{fmtTime(h.ts)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
