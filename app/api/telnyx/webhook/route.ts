@@ -77,6 +77,11 @@ export async function POST(req: NextRequest) {
           unread_count: (conv.unread_count || 0) + 1,
           updated_at: new Date().toISOString(),
         }).eq('id', conv.id)
+        // Alert agents' phones
+        try {
+          const origin = req.headers.get('host') ? `${req.headers.get('x-forwarded-proto') || 'https'}://${req.headers.get('host')}` : (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com')
+          fetch(`${origin}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `New SMS from ${from}`, body: text, conversationId: conv.id }) })
+        } catch {}
       }
       return NextResponse.json({ ok: true })
     }
