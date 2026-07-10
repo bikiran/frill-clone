@@ -36,7 +36,32 @@ export default function HelpCategoriesPage() {
           .select('*')
           .eq('company_id', co.id)
           .order('position', { ascending: true })
-        setCategories(cats || [])
+
+        if (cats && cats.length > 0) {
+          setCategories(cats)
+        } else {
+          // No rows in help_categories yet — the existing articles carry their
+          // category as a plain string (e.g. "Getting Started"). Backfill the
+          // table from those distinct strings so they show up here and can be
+          // managed, instead of showing an empty "No categories yet" state.
+          const { data: articles } = await (supabase as any)
+            .from('help_articles')
+            .select('category')
+            .eq('company_id', co.id)
+          const distinct = Array.from(new Set((articles || [])
+            .map((a: any) => (a.category || '').trim())
+            .filter((c: string) => c.length > 0)))
+          if (distinct.length > 0) {
+            const rows = distinct.map((name, i) => ({ company_id: co.id, name, position: i }))
+            const { data: inserted } = await (supabase as any)
+              .from('help_categories')
+              .insert(rows)
+              .select()
+            setCategories(inserted || rows)
+          } else {
+            setCategories([])
+          }
+        }
       }
       setLoading(false)
     }

@@ -22,8 +22,9 @@ export async function GET(req: NextRequest) {
     if (!PLATFORM_KEY) return NextResponse.json({ error: 'Number provisioning is not configured yet. The platform admin needs to set TELNYX_MASTER_API_KEY, TELNYX_MESSAGING_PROFILE_ID and TELNYX_CONNECTION_ID in the environment.' }, { status: 503 })
     const type = (req.nextUrl.searchParams.get('type') as any) || 'local'
     const areaCode = req.nextUrl.searchParams.get('areaCode') || undefined
+    const city = req.nextUrl.searchParams.get('city') || undefined
     const svc = new TelnyxService(PLATFORM_KEY)
-    const raw = await svc.searchAvailableNumbers({ country: 'AU', type, limit: 12, areaCode })
+    const raw = await svc.searchAvailableNumbers({ country: 'AU', type, limit: 12, areaCode, locality: city })
     // Only return complete, dial-able E.164 AU numbers. Telnyx sometimes returns
     // reserved/partial entries (especially for mobile) that render as
     // "+61 468 --- ---" — filter those out so the buyer never sees a blank.
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
         region: n.region_information?.find((r: any) => r.region_type === 'location')?.region_name
           || n.region_information?.[0]?.region_name
           || (n.phone_number.replace(/^\+61/, '').startsWith('4') ? 'MOBILE' : 'AU'),
-        monthly: 2, // Colvy's flat price to the customer
+        monthly: parseFloat(process.env.COLVY_NUMBER_PRICE_AUD || '15'), // Colvy's price to the customer (configurable)
       }))
     if (numbers.length === 0) {
       return NextResponse.json({ numbers: [], error: type === 'mobile'

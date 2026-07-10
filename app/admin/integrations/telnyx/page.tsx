@@ -11,6 +11,7 @@ export default function TelnyxIntegration() {
   const [success, setSuccess] = useState('')
 
   const [numberType, setNumberType] = useState<'local' | 'mobile'>('local')
+  const [numberCity, setNumberCity] = useState('Melbourne')
   const [available, setAvailable] = useState<any[]>([])
   const [searching, setSearching] = useState(false)
   const [buying, setBuying] = useState(false)
@@ -83,7 +84,7 @@ export default function TelnyxIntegration() {
   const searchNumbers = async () => {
     setSearching(true); setError(''); setAvailable([])
     try {
-      const res = await fetch(`/api/telnyx/number?type=${numberType}`)
+      const res = await fetch(`/api/telnyx/number?type=${numberType}${numberType === 'local' ? `&city=${encodeURIComponent(numberCity)}` : ''}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not search numbers')
       // Belt-and-braces: drop anything that isn't a complete number so a blank
@@ -167,8 +168,8 @@ export default function TelnyxIntegration() {
           </p>
 
           <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
-            {([['local', 'Landline', 'e.g. 02, 03, 07, 08'], ['mobile', 'Mobile', 'e.g. 04XX']] as const).map(([t, name, eg]) => (
-              <button key={t} onClick={() => setNumberType(t)}
+            {([['local', 'Landline', 'Local area code'], ['mobile', 'Mobile', 'e.g. 04XX']] as const).map(([t, name, eg]) => (
+              <button key={t} onClick={() => { setNumberType(t); setAvailable([]) }}
                 style={{ flex: 1, padding: '12px 14px', borderRadius: 12, border: numberType === t ? '2px solid var(--coral)' : '1px solid var(--border)', background: numberType === t ? 'var(--peach)' : '#fff', cursor: 'pointer', textAlign: 'left' }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{name}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{eg}</div>
@@ -176,10 +177,35 @@ export default function TelnyxIntegration() {
             ))}
           </div>
 
+          {/* Landline is region-specific — let the user pick a city so a Melbourne
+              business gets an 03 number, not a Gold Coast 07 one. */}
+          {numberType === 'local' && (
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
+                Number location
+              </label>
+              <select value={numberCity} onChange={e => { setNumberCity(e.target.value); setAvailable([]) }}
+                style={{ width: '100%', padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, background: '#fff' }}>
+                <option value="Melbourne">Melbourne (03)</option>
+                <option value="Sydney">Sydney (02)</option>
+                <option value="Brisbane">Brisbane (07)</option>
+                <option value="Gold Coast">Gold Coast (07)</option>
+                <option value="Perth">Perth (08)</option>
+                <option value="Adelaide">Adelaide (08)</option>
+                <option value="Canberra">Canberra (02)</option>
+                <option value="Hobart">Hobart (03)</option>
+                <option value="Darwin">Darwin (08)</option>
+              </select>
+              <p style={{ margin: '5px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
+                Customers see a local number for your area. Landlines handle both calls and SMS.
+              </p>
+            </div>
+          )}
+
           {available.length === 0 ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderRadius: 12, background: '#fff', border: '1px solid var(--border)', flexWrap: 'wrap', gap: 12 }}>
               <div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>$2<span style={{ fontSize: 14, fontWeight: 500, color: 'var(--slate)' }}>/month</span></div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>${available[0]?.monthly || 15}<span style={{ fontSize: 14, fontWeight: 500, color: 'var(--slate)' }}>/month</span></div>
                 <div style={{ fontSize: 12.5, color: 'var(--slate)' }}>Australian {numberType} number · cancel anytime</div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>

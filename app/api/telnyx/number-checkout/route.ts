@@ -23,7 +23,9 @@ export async function POST(req: NextRequest) {
         price_data: {
           currency: 'aud',
           product_data: { name: 'Colvy Business Number', description: 'Australian phone number for calls & SMS' },
-          unit_amount: 200, // $2.00 AUD
+          // Price to the customer. Telnyx charges Colvy ~USD5/mo (~AUD7.50) plus
+          // upfront per number, so keep this above cost. Configurable via env.
+          unit_amount: Math.round(parseFloat(process.env.COLVY_NUMBER_PRICE_AUD || '15') * 100),
           recurring: { interval: 'month' },
         },
         quantity: 1,

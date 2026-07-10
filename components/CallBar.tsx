@@ -34,6 +34,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const callRef = useRef<any>(null)
   const timerRef = useRef<any>(null)
   const callRowId = useRef<string | null>(null)
+  const hangupCause = useRef<string | null>(null)
 
   useEffect(() => () => { cleanup() }, [])
 
@@ -97,6 +98,15 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
           updateCallRow({ status: 'answered' })
         }
         if (s === 'hangup' || s === 'destroy') {
+          // Capture WHY the call ended — Telnyx puts a cause on the call object
+          // (e.g. CALL_REJECTED, NORMAL_CLEARING, USER_BUSY, or an outbound-
+          // permission/routing error). Surfacing this is the key to diagnosing
+          // "ringing then cancelled with no audio".
+          const cause = call.cause || call.causeCode || call.hangupCause || null
+          hangupCause.current = cause
+          if (seconds === 0 && cause && cause !== 'NORMAL_CLEARING') {
+            setErrorMsg(`Call ended: ${cause}`)
+          }
           endCall(false)
         }
       })
@@ -126,13 +136,18 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const endCall = async (userInitiated = true) => {
     if (timerRef.current) clearInterval(timerRef.current)
     if (userInitiated) { try { callRef.current?.hangup?.() } catch {} }
-    updateCallRow({ status: 'completed', ended_at: new Date().toISOString(), duration_seconds: seconds })
-    // Log a note into the conversation thread
-    if (conversationId && companyId && state !== 'idle') {
+    const cause = hangupCause.current
+    updateCallRow({ status: seconds > 0 ? 'completed' : 'failed', cause: cause || null, ended_at: new Date().toISOString(), duration_seconds: seconds })
+    // Log the call outcome into the conversation thread — ALWAYS, even if the
+    // call never connected, so there's a record and the cause is visible.
+    if (conversationId && companyId) {
       try {
+        const outcome = seconds > 0
+          ? `📞 Call — ${fmtDuration(seconds)}`
+          : `📞 Call not connected${cause && cause !== 'NORMAL_CLEARING' ? ` (${cause})` : ''}`
         await (supabase as any).from('messages').insert({
           conversation_id: conversationId, company_id: companyId, sender_type: 'system',
-          content: `📞 Call ${seconds > 0 ? `— ${fmtDuration(seconds)}` : '(no answer)'}`,
+          content: outcome,
         })
         // Post an admin-only AI summary note into the timeline (visible to
         // agents only — the visitor never sees conversation_notes)

@@ -73,14 +73,11 @@ export class TelnyxService {
   // Search available numbers by country + type. Tries progressively looser
   // filters because AU inventory varies — a strict features filter often
   // returns "No coverage found".
-  async searchAvailableNumbers(params: { country?: string; type?: 'local' | 'mobile' | 'toll_free' | 'national'; limit?: number; areaCode?: string }) {
+  async searchAvailableNumbers(params: { country?: string; type?: 'local' | 'mobile' | 'toll_free' | 'national'; limit?: number; areaCode?: string; locality?: string }) {
     const country = params.country || 'AU'
     const limit = params.limit || 5
     const attempts: string[] = []
     const t = params.type || 'local'
-    // Request extra results (we filter to complete numbers upstream) and disable
-    // best-effort so Telnyx returns actual dial-able numbers, not partial ranges
-    // (the cause of "+61 468 --- ---" blanks for AU mobile).
     const big = Math.max(limit * 3, 20)
     if (t === 'mobile') {
       // AU mobile numbers in Telnyx inventory typically list NO features and
@@ -91,13 +88,27 @@ export class TelnyxService {
       attempts.push(`filter[country_code]=${country}&filter[national_destination_code]=468&filter[best_effort]=true&filter[limit]=${big}`)
       attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=national&filter[best_effort]=true&filter[limit]=${big}`)
     } else {
-      // 1) requested type + sms/voice features
-      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[features]=sms,voice&filter[limit]=${big}`)
-      // 2) requested type, voice only (many AU landlines lack SMS)
-      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[features]=voice&filter[limit]=${big}`)
-      // 3) requested type, no feature filter
-      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[limit]=${big}`)
-      // 4) national type (AU numbers are often classified national), no features
+      // Landline: AU area codes are region-specific. Map the chosen city to its
+      // National Destination Code so a Melbourne business gets an 03 number
+      // rather than whatever's first in inventory (e.g. a Gold Coast 07).
+      const cityToNdc: Record<string, string> = {
+        'Melbourne': '3', 'Hobart': '3', 'Geelong': '3',
+        'Sydney': '2', 'Canberra': '2', 'Newcastle': '2', 'Wollongong': '2',
+        'Brisbane': '7', 'Gold Coast': '7', 'Cairns': '7', 'Townsville': '7',
+        'Perth': '8', 'Adelaide': '8', 'Darwin': '8',
+      }
+      const ndc = params.areaCode || (params.locality ? cityToNdc[params.locality] : undefined)
+      const loc = params.locality ? `&filter[locality]=${encodeURIComponent(params.locality)}` : ''
+      const ndcF = ndc ? `&filter[national_destination_code]=${ndc}` : ''
+      // 1) exact locality + area code
+      if (loc || ndcF) attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=local${loc}${ndcF}&filter[limit]=${big}`)
+      // 2) area code only (Telnyx rate-center names don't always match city names)
+      if (ndcF) attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=local${ndcF}&filter[limit]=${big}`)
+      // 3) local + sms/voice
+      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=local&filter[features]=sms,voice&filter[limit]=${big}`)
+      // 4) local, no features
+      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=local&filter[limit]=${big}`)
+      // 5) national type
       attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=national&filter[limit]=${big}`)
     }
     // final fallback: any number in the country

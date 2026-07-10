@@ -1883,7 +1883,13 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
         kind, ref_id: payload.ref_id, respondent, response,
       })
       // Also post the answer as a visitor message so the agent sees it
-      const summary = typeof response === 'string' ? response : (response.label || JSON.stringify(response))
+      // Build a human-readable summary instead of dumping JSON into the chat.
+      let summary: string
+      if (typeof response === 'string') summary = response
+      else if (response.label) summary = response.label
+      else if (response.answers && typeof response.answers === 'object') {
+        summary = Object.entries(response.answers).map(([k, v]) => `${k}: ${v}`).join(' · ')
+      } else summary = JSON.stringify(response)
       await (supabase as any).from('messages').insert({
         conversation_id: conversationId, company_id: companyId, sender_type: 'visitor',
         sender_name: respondent, content: `✅ Responded: ${summary}`,
@@ -1908,17 +1914,74 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
           {typeof opt === 'string' ? opt : opt.label || opt.text}
         </button>
       ))}
-      {/* Form/survey: simple question inputs */}
+      {/* Form/survey: render each question with its real title and input type */}
       {(kind === 'form' || kind === 'survey') && (
         <div>
-          {(questions.length ? questions : [{ label: item.question || 'Your answer', id: 'a' }]).map((q: any, i: number) => (
-            <div key={i} style={{ marginBottom: 8 }}>
-              <label style={{ fontSize: 12, color: '#6b7280', display: 'block', marginBottom: 3 }}>{q.label || q.question || `Question ${i + 1}`}</label>
-              <input onChange={e => setAnswers((a: any) => ({ ...a, [q.id || i]: e.target.value }))}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13, boxSizing: 'border-box' }} />
-            </div>
-          ))}
-          <button onClick={() => submit({ answers })} style={{ width: '100%', padding: '9px 0', borderRadius: 8, background: accentColor, color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Submit</button>
+          {(questions.length ? questions : [{ title: item.question || 'Your answer', id: 'a', type: 'text' }]).map((q: any, i: number) => {
+            const qLabel = q.title || q.label || q.question || `Question ${i + 1}`
+            const qId = q.id || String(i)
+            const setA = (v: any) => setAnswers((a: any) => ({ ...a, [qId]: v }))
+            const qOpts: any[] = q.options || []
+            return (
+              <div key={qId} style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12.5, color: '#0d0d0d', fontWeight: 600, display: 'block', marginBottom: 5 }}>
+                  {qLabel}{q.required ? <span style={{ color: '#ef4444' }}> *</span> : null}
+                </label>
+                {/* Choice types render as tappable pills */}
+                {(q.type === 'multiple_choice' || q.type === 'picture_choice') ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {qOpts.map((opt: any, oi: number) => {
+                      const label = typeof opt === 'string' ? opt : opt.label || opt.text
+                      const sel = answers[qId] === label
+                      return (
+                        <button key={oi} type="button" onClick={() => setA(label)}
+                          style={{ padding: '7px 14px', borderRadius: 20, border: sel ? `1.5px solid ${accentColor}` : '1px solid #e5e5e5', background: sel ? accentColor : '#fff', color: sel ? '#fff' : '#0d0d0d', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : q.type === 'yes_no' ? (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {['Yes', 'No'].map(v => {
+                      const sel = answers[qId] === v
+                      return <button key={v} type="button" onClick={() => setA(v)} style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: sel ? `1.5px solid ${accentColor}` : '1px solid #e5e5e5', background: sel ? accentColor : '#fff', color: sel ? '#fff' : '#0d0d0d', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{v}</button>
+                    })}
+                  </div>
+                ) : q.type === 'dropdown' ? (
+                  <select onChange={e => setA(e.target.value)} style={{ width: '100%', padding: '9px 10px', borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13, background: '#fff' }}>
+                    <option value="">Select…</option>
+                    {qOpts.map((opt: any, oi: number) => { const l = typeof opt === 'string' ? opt : opt.label || opt.text; return <option key={oi} value={l}>{l}</option> })}
+                  </select>
+                ) : (q.type === 'rating' || q.type === 'opinion_scale' || q.type === 'nps') ? (
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {Array.from({ length: q.type === 'nps' ? 11 : (q.type === 'opinion_scale' ? 10 : 5) }).map((_, ri) => {
+                      const val = q.type === 'nps' ? ri : ri + 1
+                      const sel = answers[qId] === val
+                      return <button key={ri} type="button" onClick={() => setA(val)} style={{ width: 34, height: 34, borderRadius: 8, border: sel ? `1.5px solid ${accentColor}` : '1px solid #e5e5e5', background: sel ? accentColor : '#fff', color: sel ? '#fff' : '#0d0d0d', fontSize: q.type === 'rating' ? 16 : 12, fontWeight: 700, cursor: 'pointer' }}>{q.type === 'rating' ? '★' : val}</button>
+                    })}
+                  </div>
+                ) : (q.type === 'long_text') ? (
+                  <textarea onChange={e => setA(e.target.value)} rows={3} placeholder={q.placeholder || 'Type your answer…'}
+                    style={{ width: '100%', padding: '9px 10px', borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13, boxSizing: 'border-box', resize: 'vertical' }} />
+                ) : (
+                  <input
+                    onChange={e => setA(e.target.value)}
+                    placeholder={q.placeholder || (q.type === 'email' ? 'you@email.com' : q.type === 'phone' ? '04XX XXX XXX' : 'Type your answer…')}
+                    style={{ width: '100%', padding: '9px 10px', borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13, boxSizing: 'border-box' }} />
+                )}
+              </div>
+            )
+          })}
+          <button onClick={() => {
+            // Build a readable answer map keyed by question title
+            const readable: Record<string, any> = {}
+            ;(questions.length ? questions : [{ title: 'Answer', id: 'a' }]).forEach((q: any, i: number) => {
+              const qId = q.id || String(i)
+              if (answers[qId] !== undefined) readable[q.title || q.label || `Q${i + 1}`] = answers[qId]
+            })
+            submit({ answers: readable })
+          }} style={{ width: '100%', padding: '10px 0', borderRadius: 8, background: accentColor, color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', marginTop: 4 }}>Submit</button>
         </div>
       )}
     </div>
