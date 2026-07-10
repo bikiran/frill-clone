@@ -38,9 +38,6 @@ const SIDEBAR_ITEMS = [
     { label: 'Webhooks', tab: 'webhooks' },
     { label: 'API', tab: 'api' },
   ]},
-  { section: 'Help Center', items: [
-    { label: 'Categories', href: '/admin/settings/help-categories' },
-  ]},
   { section: 'Site Navigation', items: [
     { label: 'Navigation', tab: 'nav' },
     { label: 'Terminology', tab: 'terminology' },

@@ -165,6 +165,22 @@ export default function HelpArticlePage() {
         setArticle(data)
         const likedStr = localStorage.getItem('help_likes') || '[]'
         setLiked(JSON.parse(likedStr).includes(articleId))
+        // Restore this person's previous feedback so it's remembered
+        try {
+          const cached = localStorage.getItem(`colvy-help-fb-${articleId}`)
+          if (cached === 'helpful' || cached === 'not_helpful') {
+            setFeedback(cached as any)
+            if (cached === 'helpful') setFeedbackSubmitted(true)
+          }
+          const { data: { user } } = await supabase.auth.getUser()
+          let q = (supabase as any).from('help_article_feedback').select('helpful').eq('article_id', articleId)
+          if (user) q = q.eq('user_id', user.id)
+          else { const vk = localStorage.getItem('colvy-visitor-key'); if (vk) q = q.eq('visitor_key', vk); else q = null }
+          if (q) {
+            const { data: fb } = await q.maybeSingle()
+            if (fb) { const v = fb.helpful ? 'helpful' : 'not_helpful'; setFeedback(v as any); if (fb.helpful) setFeedbackSubmitted(true) }
+          }
+        } catch {}
         await (supabase as any).from('help_articles').update({ views: (data.views || 0) + 1 }).eq('id', articleId)
         // Log a row for help center analytics (daily views chart)
         try {
@@ -200,19 +216,23 @@ export default function HelpArticlePage() {
     if (vote === 'helpful') setFeedbackSubmitted(true)
     if (!article.id.startsWith('demo-')) {
       await (supabase as any).from('help_articles').update({ likes: (article.likes || 0) + (vote === 'helpful' ? 1 : 0) }).eq('id', article.id)
-      // Log helpful reactions instantly; downvotes are logged when the
-      // "Submit Feedback" form is sent (avoids double counting)
-      if (vote === 'helpful') {
-        try {
-          if (article.company_id) {
-            await (supabase as any).from('help_article_feedback').insert({
-              article_id: article.id,
-              company_id: article.company_id,
-              helpful: true,
-            })
-          }
-        } catch {}
-      }
+      // Remember this person's feedback so it persists across visits — keyed by
+      // logged-in user id, or by an anonymous browser key for guests.
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        let visitorKey: string | null = null
+        if (!user) {
+          try {
+            visitorKey = localStorage.getItem('colvy-visitor-key')
+            if (!visitorKey) { visitorKey = 'v_' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('colvy-visitor-key', visitorKey) }
+          } catch {}
+        }
+        const row: any = { article_id: article.id, company_id: article.company_id || null, helpful: vote === 'helpful', updated_at: new Date().toISOString() }
+        if (user) row.user_id = user.id; else row.visitor_key = visitorKey
+        // Upsert on the appropriate unique key
+        await (supabase as any).from('help_article_feedback').upsert(row, { onConflict: user ? 'article_id,user_id' : 'article_id,visitor_key' })
+        try { localStorage.setItem(`colvy-help-fb-${article.id}`, vote) } catch {}
+      } catch {}
     }
   }
 

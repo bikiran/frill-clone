@@ -70,6 +70,8 @@ export async function POST(req: NextRequest) {
     // ============================================================
     const mode = body.mode || 'customers'
     const page = Math.max(1, parseInt(body.page) || 1)
+    // Incremental sync: only fetch records modified after this ISO timestamp.
+    const modifiedAfter = body.modifiedAfter ? `&modified_after=${encodeURIComponent(body.modifiedAfter)}` : ''
     const perPage = 100
     const auth = Buffer.from(`${integration.consumer_key}:${integration.consumer_secret}`).toString('base64')
     const wcFetch = async (path: string) => {
@@ -89,7 +91,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (mode === 'customers') {
-      const { data: customers, totalPages, total } = await wcFetch(`customers?per_page=${perPage}&page=${page}&orderby=id&order=asc`)
+      const { data: customers, totalPages, total } = await wcFetch(`customers?per_page=${perPage}&page=${page}&orderby=id&order=asc${modifiedAfter}`)
 
       const rows = (customers as any[])
         // Some WooCommerce customers (e.g. guest/incomplete accounts) have no
@@ -136,7 +138,7 @@ export async function POST(req: NextRequest) {
       // Fetch FIRST — only reset stats after a successful fetch, so a failed
       // API call can never leave every customer wiped to $0 (which is what
       // happened when the old code reset then crashed).
-      const { data: orders, totalPages, total } = await wcFetch(`orders?per_page=${perPage}&page=${page}&orderby=id&order=asc&status=any`)
+      const { data: orders, totalPages, total } = await wcFetch(`orders?per_page=${perPage}&page=${page}&orderby=id&order=asc&status=any${modifiedAfter}`)
 
       if (page === 1) {
         await supabase

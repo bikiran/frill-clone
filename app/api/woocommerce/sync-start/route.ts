@@ -10,7 +10,10 @@ function admin() {
 }
 
 function origin(req: NextRequest) {
-  return process.env.NEXT_PUBLIC_SITE_URL || req.headers.get('origin') || 'https://colvy.com'
+  const proto = req.headers.get('x-forwarded-proto') || 'https'
+  const host = req.headers.get('host')
+  if (host) return `${proto}://${host}`
+  return process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 }
 
 // Starts a background sync: creates a job and kicks off the first batch.
@@ -18,7 +21,7 @@ function origin(req: NextRequest) {
 // the user closes their browser / laptop.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId } = await req.json()
+    const { companyId, incremental } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
 
@@ -28,9 +31,17 @@ export async function POST(req: NextRequest) {
       .order('started_at', { ascending: false }).limit(1).maybeSingle()
     if (running) return NextResponse.json({ ok: true, jobId: running.id, alreadyRunning: true })
 
+    // For incremental syncs, only fetch records changed since the last full sync
+    let modifiedAfter: string | null = null
+    if (incremental) {
+      const { data: integ } = await db.from('woocommerce_integrations').select('last_full_sync_at').eq('company_id', companyId).maybeSingle()
+      modifiedAfter = integ?.last_full_sync_at || null
+    }
+
     const { data: job } = await db.from('woo_sync_jobs').insert({
       company_id: companyId, status: 'running', phase: 'customers', current_page: 1,
-      message: 'Starting sync…',
+      modified_after: modifiedAfter,
+      message: incremental ? 'Checking for updates…' : 'Starting sync…',
     }).select().maybeSingle()
 
     // Fire-and-forget the first batch (don't await — returns immediately)

@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getCompanyByOwner } from '@/lib/board'
 import { useRouter } from 'next/navigation'
+import FeedbackButton from '@/components/FeedbackButton'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -76,6 +77,7 @@ const NAV_GROUPS = [
     label: 'Support',
     items: [
       { label: 'Help Centre', href: '/admin/help', icon: 'help' },
+      { label: 'Help Categories', href: '/admin/settings/help-categories', icon: 'topics' },
       { label: 'Help Reporting', href: '/admin/help/analytics', icon: 'analytics' },
       { label: 'Help Settings', href: '/admin/help/settings', icon: 'settings' },
 
@@ -152,6 +154,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
   const [user, setUser] = useState<any>(null)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+
+  // The top-bar hamburger (in the root layout) fires this event on admin pages
+  // so the single top-left hamburger opens the admin sidebar.
+  useEffect(() => {
+    const open = () => setMobileSidebarOpen(v => !v)
+    window.addEventListener('colvy:toggle-admin-sidebar', open)
+    return () => window.removeEventListener('colvy:toggle-admin-sidebar', open)
+  }, [])
 
   useEffect(() => {
     const initAuth = async () => {
@@ -299,17 +309,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           .admin-sidebar { transform: translateX(-100%); transition: transform 0.25s ease; box-shadow: 0 0 0 transparent; }
           .admin-sidebar.open { transform: translateX(0); box-shadow: 8px 0 32px rgba(0,0,0,0.18); }
           .admin-main { margin-left: 0 !important; }
-          .admin-mobile-trigger { display: flex !important; }
           .admin-mobile-overlay.open { display: block !important; }
         }
       `}</style>
 
-      {/* Mobile hamburger trigger */}
+      {/* Mobile hamburger trigger — hidden; the top-bar hamburger now opens
+          this sidebar via the colvy:toggle-admin-sidebar event. */}
       <button
         onClick={() => setMobileSidebarOpen(true)}
         className="admin-mobile-trigger"
         style={{
-          display: 'none', position: 'fixed', top: 68, left: 14, zIndex: 35,
+          display: 'none !important' as any, position: 'fixed', top: 68, left: 14, zIndex: 35,
           width: 38, height: 38, borderRadius: 10, background: '#fff',
           border: '1px solid var(--border)', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
@@ -480,6 +490,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="admin-main" style={{ marginLeft: adminCollapsed ? 60 : 220, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', transition: 'margin-left 0.2s ease' }}>
         {children}
       </div>
+
+      <FeedbackButton companyId={company?.id} />
     </div>
   )
 }

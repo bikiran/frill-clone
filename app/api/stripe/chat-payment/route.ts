@@ -31,15 +31,22 @@ export async function POST(req: NextRequest) {
 
     const db = admin()
     const { data: company } = await db.from('companies').select('*').eq('id', companyId).maybeSingle()
-    if (!company?.stripe_account_id || !company.stripe_connected) {
-      return NextResponse.json({ error: 'Connect your Stripe account first (Integrations → Stripe).' }, { status: 400 })
+
+    // Two modes: (1) Connect — charge on the connected account with the platform
+    // key; (2) Keys — the business supplied their own Stripe secret key.
+    const useOwnKeys = company?.stripe_mode === 'keys' && company?.stripe_secret_key
+    if (!useOwnKeys && (!company?.stripe_account_id || !company.stripe_connected)) {
+      return NextResponse.json({ error: 'Connect your Stripe account first (Integrations → Stripe), or add your Stripe keys.' }, { status: 400 })
     }
 
-    const s = stripe()
+    const s = useOwnKeys
+      ? new Stripe((company.stripe_secret_key || '').trim(), { apiVersion: '2024-06-20' as any })
+      : stripe()
     const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
-    // Optional platform fee (Colvy takes a small application fee). Set to 0 for none.
-    const feePct = parseFloat(process.env.COLVY_PAYMENT_FEE_PCT || '0')
+    // Optional platform fee (only applies to Connect mode; not when the
+    // business uses their own keys — the money is already theirs).
+    const feePct = useOwnKeys ? 0 : parseFloat(process.env.COLVY_PAYMENT_FEE_PCT || '0')
     const applicationFee = feePct > 0 ? Math.round(cents * (feePct / 100)) : 0
 
     const session = await s.checkout.sessions.create({
@@ -57,7 +64,7 @@ export async function POST(req: NextRequest) {
       success_url: `${origin}/pay/success?cs={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/pay/cancelled`,
       metadata: { kind: 'chat_payment', companyId, conversationId },
-    }, { stripeAccount: company.stripe_account_id })
+    }, useOwnKeys ? undefined : { stripeAccount: company.stripe_account_id })
 
     // Post the payment message into the chat
     const { data: msg } = await db.from('messages').insert({

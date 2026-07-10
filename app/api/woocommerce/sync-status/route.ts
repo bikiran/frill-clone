@@ -29,7 +29,9 @@ export async function GET(req: NextRequest) {
     if (job.status === 'running') {
       const stale = Date.now() - new Date(job.updated_at).getTime() > 90000
       if (stale) {
-        const origin = process.env.NEXT_PUBLIC_SITE_URL || req.headers.get('origin') || 'https://colvy.com'
+        const origin = req.headers.get('host')
+          ? `${req.headers.get('x-forwarded-proto') || 'https'}://${req.headers.get('host')}`
+          : (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com')
         fetch(`${origin}/api/woocommerce/sync-run`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ jobId: job.id }),

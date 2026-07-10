@@ -24,3 +24,9 @@ DROP POLICY IF EXISTS "Anyone can manage woo_sync_jobs" ON woo_sync_jobs;
 CREATE POLICY "Anyone can manage woo_sync_jobs" ON woo_sync_jobs FOR ALL USING (true);
 
 NOTIFY pgrst, 'reload schema';
+
+-- Incremental sync support
+ALTER TABLE woo_sync_jobs ADD COLUMN IF NOT EXISTS modified_after TIMESTAMPTZ;
+ALTER TABLE woocommerce_integrations ADD COLUMN IF NOT EXISTS last_full_sync_at TIMESTAMPTZ;
+
+NOTIFY pgrst, 'reload schema';

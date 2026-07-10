@@ -217,7 +217,7 @@ export default function WooCommerceIntegration() {
     }
   }
 
-  const handleSync = async () => {
+  const handleSync = async (incremental = false) => {
     setSyncing(true)
     setError('')
     setSuccess('')
@@ -226,7 +226,7 @@ export default function WooCommerceIntegration() {
       // you close this tab or your laptop).
       const res = await fetch('/api/woocommerce/sync-start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId }),
+        body: JSON.stringify({ companyId, incremental }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not start sync')
@@ -543,7 +543,7 @@ export default function WooCommerceIntegration() {
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button
-              onClick={handleSync}
+              onClick={() => handleSync(false)}
               disabled={syncing}
               style={{
                 flex: 1,
@@ -559,7 +559,20 @@ export default function WooCommerceIntegration() {
                 opacity: syncing ? 0.6 : 1
               }}
             >
-              {syncing ? 'Syncing...' : '🔄 Sync Now'}
+              {syncing ? 'Syncing...' : '🔄 Full Sync'}
+            </button>
+
+            <button
+              onClick={() => handleSync(true)}
+              disabled={syncing}
+              title="Only fetch customers and orders changed since your last sync — much faster."
+              style={{
+                flex: 1, minWidth: '120px', padding: '10px 16px', borderRadius: '8px',
+                border: '1px solid var(--border)', background: 'var(--coral)', color: '#fff',
+                fontSize: '13px', fontWeight: 600, cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1,
+              }}
+            >
+              ⚡ Quick Update
             </button>
 
             <button

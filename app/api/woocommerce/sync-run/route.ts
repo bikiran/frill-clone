@@ -11,9 +11,23 @@ function admin() {
   )
 }
 function origin(req: NextRequest) {
-  return process.env.NEXT_PUBLIC_SITE_URL || req.headers.get('origin') || 'https://colvy.com'
+  // Prefer the request's own host so self-invocation always hits the API
+  // (a misconfigured NEXT_PUBLIC_SITE_URL previously sent calls to the
+  // marketing page, whose HTML broke JSON.parse with "Infinite feedback…").
+  const proto = req.headers.get('x-forwarded-proto') || 'https'
+  const host = req.headers.get('host')
+  if (host) return `${proto}://${host}`
+  return process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+// Safely parse a fetch response as JSON; if it's HTML/text (e.g. an error
+// page), surface a clean error instead of throwing an opaque JSON parse error.
+async function safeJson(res: Response, label: string) {
+  const text = await res.text()
+  try { return JSON.parse(text) }
+  catch { throw new Error(`${label} returned a non-JSON response (${res.status}). First chars: ${text.slice(0, 40)}`) }
+}
 
 // Processes a few pages of the current phase, updates the job, then fires the
 // next batch (fire-and-forget) so the whole sync runs server-side in the
@@ -30,23 +44,33 @@ export async function POST(req: NextRequest) {
     if (!job || job.status !== 'running') return NextResponse.json({ ok: true, stopped: true })
 
     const companyId = job.company_id
-    const PAGES_PER_BATCH = 8   // pages processed before self-chaining
+    // Auto batch size: start conservative, grow if pages are fast. Capped so a
+    // single batch stays well under the serverless time limit.
+    const batchStart = Date.now()
+    const MAX_BATCH_MS = 45000        // stop chaining a batch after ~45s of work
+    const MIN_PAGES = 2
+    const MAX_PAGES = 12
+    const modifiedAfter = job.modified_after || null   // incremental cutoff
     let phase = job.phase as 'customers' | 'orders'
     let page = job.current_page || 1
     let customersSynced = job.customers_synced || 0
     let ordersSynced = job.orders_synced || 0
     let totalPages = job.total_pages || 1
+    let pagesThisBatch = 0
 
-    for (let i = 0; i < PAGES_PER_BATCH; i++) {
+    for (let i = 0; i < MAX_PAGES; i++) {
+      // Stop this batch if we're approaching the time budget (auto-sizing)
+      if (pagesThisBatch >= MIN_PAGES && Date.now() - batchStart > MAX_BATCH_MS) break
+      pagesThisBatch++
       let attempt = 0
       let data: any = null
       // Per-page call to the existing sync endpoint, with 429 backoff
       while (true) {
         const res = await fetch(`${origin(req)}/api/woocommerce/sync`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId, mode: phase, page }),
+          body: JSON.stringify({ companyId, mode: phase, page, modifiedAfter }),
         })
-        data = await res.json()
+        data = await safeJson(res, `sync/${phase}`)
         if (res.ok) break
         if ((res.status === 429 || (data.error || '').includes('Too Many Requests')) && attempt < 5) {
           attempt++; await sleep(attempt * 4000); continue
@@ -79,6 +103,8 @@ export async function POST(req: NextRequest) {
             message: `Done — ${customersSynced} customers, ${ordersSynced} order updates`,
             updated_at: new Date().toISOString(),
           }).eq('id', jobId)
+          // Stamp the integration so future syncs can run incrementally
+          try { await db.from('woocommerce_integrations').update({ last_full_sync_at: new Date().toISOString() }).eq('company_id', companyId) } catch {}
           return NextResponse.json({ ok: true, done: true })
         }
       }

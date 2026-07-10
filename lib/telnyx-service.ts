@@ -70,16 +70,38 @@ export class TelnyxService {
 
   // ── Self-serve number provisioning ─────────────────────────────────────────
 
-  // Search available numbers by country + type
-  async searchAvailableNumbers(params: { country?: string; type?: 'local' | 'mobile' | 'toll_free'; limit?: number; areaCode?: string }) {
-    const q = new URLSearchParams()
-    q.set('filter[country_code]', params.country || 'AU')
-    q.set('filter[phone_number_type]', params.type || 'local')
-    q.set('filter[limit]', String(params.limit || 5))
-    q.set('filter[features]', 'sms,voice')
-    if (params.areaCode) q.set('filter[national_destination_code]', params.areaCode)
-    const data = await this.req(`/available_phone_numbers?${q.toString()}`, 'GET')
-    return data.data || []
+  // Search available numbers by country + type. Tries progressively looser
+  // filters because AU inventory varies — a strict features filter often
+  // returns "No coverage found".
+  async searchAvailableNumbers(params: { country?: string; type?: 'local' | 'mobile' | 'toll_free' | 'national'; limit?: number; areaCode?: string }) {
+    const country = params.country || 'AU'
+    const limit = params.limit || 5
+    const attempts: string[] = []
+    // 1) requested type + sms/voice features
+    const t = params.type || 'local'
+    attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[features]=sms,voice&filter[limit]=${limit}`)
+    // 2) requested type, voice only (many AU landlines lack SMS)
+    attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[features]=voice&filter[limit]=${limit}`)
+    // 3) requested type, no feature filter
+    attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[limit]=${limit}`)
+    // 4) national type (AU numbers are often classified national), no features
+    attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=national&filter[limit]=${limit}`)
+    // 5) any type in the country
+    attempts.push(`filter[country_code]=${country}&filter[limit]=${limit}`)
+
+    for (const q of attempts) {
+      try {
+        const data = await this.req(`/available_phone_numbers?${q}`, 'GET')
+        if (data.data && data.data.length > 0) return data.data
+      } catch (e: any) {
+        // "No coverage" comes back as an error on some filter combos — keep trying
+        if (!/coverage|not found|no results/i.test(e.message || '')) {
+          // a real error (auth, etc.) — rethrow
+          if (/authenticate|unauthorized|invalid api|forbidden/i.test(e.message || '')) throw e
+        }
+      }
+    }
+    return []
   }
 
   // Order a specific number

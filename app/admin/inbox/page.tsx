@@ -124,6 +124,9 @@ export default function InboxPage() {
   const [pickerItems, setPickerItems] = useState<any[]>([])
   const [payAmount, setPayAmount] = useState('')
   const [payDesc, setPayDesc] = useState('')
+  const [toast, setToast] = useState('')
+  const [editField, setEditField] = useState<string | null>(null)
+  const [editFieldValue, setEditFieldValue] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'assigned' | 'resolved'>('open')
   const [showAssignMenu, setShowAssignMenu] = useState(false)
   const [showContactEdit, setShowContactEdit] = useState(false)
@@ -699,6 +702,30 @@ export default function InboxPage() {
   }
 
   // ── Accept AI-detected info ────────────────────────────────────────────────
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2200) }
+
+  const copyField = (value: string) => {
+    try { navigator.clipboard.writeText(value); showToast('Copied to your clipboard') } catch {}
+  }
+
+  // Save a single contact field (inline row edit), also syncing to WooCommerce
+  const saveSingleField = async (field: string, value: string) => {
+    if (!contact?.id) return
+    await (supabase as any).from('contacts').update({ [field]: value, updated_at: new Date().toISOString() }).eq('id', contact.id)
+    setContact((c: any) => ({ ...c, [field]: value }))
+    setEditField(null)
+    showToast('Saved')
+    // Push the change back to WooCommerce if this contact matches a woo customer
+    try {
+      if (companyId && contact.email) {
+        fetch('/api/woocommerce/update-customer', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId, email: contact.email, field, value }),
+        })
+      }
+    } catch {}
+  }
+
   const acceptAiField = async (field: string, value: string) => {
     const updated = { ...editContact, [field]: value }
     setEditContact(updated)
@@ -739,6 +766,14 @@ export default function InboxPage() {
   return (
     <div style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <IncomingCallListener companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
+
+      {/* Toast */}
+      {toast && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#0d0d0d', color: '#fff', padding: '10px 20px', borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 9999, boxShadow: '0 8px 24px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          {toast}
+        </div>
+      )}
 
       {/* Interactive send picker modal */}
       {sendPicker && (
@@ -1305,10 +1340,18 @@ export default function InboxPage() {
                 {/* Contact card */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Contact</h3>
-                  <button type="button" onClick={() => { setShowContactEdit(v => !v); setEditContact(contact || {}) }}
-                    style={{ fontSize: 11, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
-                    {showContactEdit ? 'Cancel' : (contact ? 'Edit' : '+ Create')}
-                  </button>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    {contact && !showContactEdit && (
+                      <button type="button" title="Edit all details" onClick={() => { setShowContactEdit(true); setEditContact(contact) }}
+                        style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                    )}
+                    <button type="button" onClick={() => { setShowContactEdit(v => !v); setEditContact(contact || {}) }}
+                      style={{ fontSize: 11, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                      {showContactEdit ? 'Cancel' : (contact ? '' : '+ Create')}
+                    </button>
+                  </div>
                 </div>
 
                 {showContactEdit ? (
@@ -1343,6 +1386,19 @@ export default function InboxPage() {
                       .map(([field, label, value]) => (
                         <div key={field} className="contact-field-row" style={{ position: 'relative' }}>
                           <p style={{ margin: '0 0 2px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>{label}</p>
+                          {editField === field ? (
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                              <input autoFocus value={editFieldValue} onChange={e => setEditFieldValue(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') saveSingleField(field, editFieldValue); if (e.key === 'Escape') setEditField(null) }}
+                                style={{ ...inp, fontSize: 12, padding: '5px 8px' }} />
+                              <button type="button" onClick={() => saveSingleField(field, editFieldValue)} style={fieldBtn('#059669')} title="Save">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                              </button>
+                              <button type="button" onClick={() => setEditField(null)} style={fieldBtn('var(--slate)')} title="Cancel">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                              </button>
+                            </div>
+                          ) : (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', flex: 1, wordBreak: 'break-word' }}>{value}</p>
                             <div className="contact-field-actions" style={{ display: 'flex', gap: 3, opacity: 0, transition: 'opacity 0.12s' }}>
@@ -1352,17 +1408,18 @@ export default function InboxPage() {
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                                 </button>
                               )}
-                              <button type="button" title="Edit" onClick={() => { setShowContactEdit(true); setEditContact(contact) }} style={fieldBtn('var(--slate)')}>
+                              <button type="button" title="Edit" onClick={() => { setEditField(field); setEditFieldValue(value) }} style={fieldBtn('var(--slate)')}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                               </button>
-                              <button type="button" title="Copy" onClick={() => { navigator.clipboard.writeText(value); }} style={fieldBtn('var(--slate)')}>
+                              <button type="button" title="Copy" onClick={() => copyField(value)} style={fieldBtn('var(--slate)')}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                               </button>
-                              <button type="button" title="Delete" onClick={async () => { if (confirm(`Clear ${label.toLowerCase()}?`)) { await (supabase as any).from('contacts').update({ [field]: null }).eq('id', contact.id); setContact((c: any) => ({ ...c, [field]: null })) } }} style={fieldBtn('#dc2626')}>
+                              <button type="button" title="Delete" onClick={async () => { if (confirm(`Clear ${label.toLowerCase()}?`)) { await (supabase as any).from('contacts').update({ [field]: null }).eq('id', contact.id); setContact((c: any) => ({ ...c, [field]: null })); showToast('Cleared') } }} style={fieldBtn('#dc2626')}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                               </button>
                             </div>
                           </div>
+                          )}
                         </div>
                       ))
                     }

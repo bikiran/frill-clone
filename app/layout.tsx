@@ -557,7 +557,15 @@ export default function RootLayout({
             <div className="flex items-center gap-2">
               <button
                 className="md:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 transition-smooth cursor-pointer"
-                onClick={() => setShowDrawer(!showDrawer)}
+                onClick={() => {
+                  // On admin pages this hamburger should open the admin sidebar,
+                  // not the marketing drawer.
+                  if (pathname?.startsWith('/admin')) {
+                    window.dispatchEvent(new CustomEvent('colvy:toggle-admin-sidebar'))
+                  } else {
+                    setShowDrawer(!showDrawer)
+                  }
+                }}
                 aria-label="Menu">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
               </button>

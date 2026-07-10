@@ -88,6 +88,11 @@ export default function StripeIntegration() {
         </div>
       )}
 
+      {/* Alternative: use your own Stripe API keys */}
+      <div style={{ marginTop: 20, padding: 20, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
+        <StripeKeysOption companyId={companyId} />
+      </div>
+
       {/* Security note */}
       <div style={{ marginTop: 24, padding: 18, borderRadius: 12, background: 'var(--canvas)', border: '1px solid var(--border)', display: 'flex', gap: 12 }}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -100,6 +105,72 @@ export default function StripeIntegration() {
       </div>
 
       <p style={{ marginTop: 20, fontSize: 12, color: 'var(--slate)' }}>Coming soon: create orders and quotes with Prexty.</p>
+    </div>
+  )
+}
+
+// Lets a business paste their own Stripe secret/publishable keys as an
+// alternative to Connect. Keys are stored server-side and used to create
+// Checkout sessions directly on their account.
+function StripeKeysOption({ companyId }: { companyId: string | null }) {
+  const [open, setOpen] = useState(false)
+  const [secret, setSecret] = useState('')
+  const [publishable, setPublishable] = useState('')
+  const [mode, setMode] = useState<'connect' | 'keys'>('connect')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      const { data } = await (supabase as any).from('companies').select('stripe_mode, stripe_publishable_key').eq('id', companyId).maybeSingle()
+      if (data?.stripe_mode) setMode(data.stripe_mode)
+      if (data?.stripe_publishable_key) setPublishable(data.stripe_publishable_key)
+    })()
+  }, [companyId])
+
+  const save = async () => {
+    if (!companyId) return
+    setErr('')
+    if (!secret.trim().startsWith('sk_')) { setErr('Secret key should start with "sk_".'); return }
+    setSaving(true)
+    try {
+      await (supabase as any).from('companies').update({
+        stripe_mode: 'keys',
+        stripe_secret_key: secret.trim(),
+        stripe_publishable_key: publishable.trim() || null,
+        stripe_connected: true, // keys mode counts as connected for payments
+      }).eq('id', companyId)
+      setMode('keys'); setSaved(true); setSecret(''); setTimeout(() => setSaved(false), 2500)
+    } catch (e: any) { setErr(e.message) } finally { setSaving(false) }
+  }
+
+  return (
+    <div>
+      <button onClick={() => setOpen(v => !v)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: 'var(--ink)', padding: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="9 18 15 12 9 6"/></svg>
+        Prefer to use your own Stripe API keys?
+      </button>
+      {open && (
+        <div style={{ marginTop: 14 }}>
+          <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '0 0 12px', lineHeight: 1.5 }}>
+            Instead of Connect, you can paste your own Stripe keys (from your Stripe Dashboard → Developers → API keys). Payments then go straight to your account. {mode === 'keys' && <strong style={{ color: '#059669' }}>Currently active.</strong>}
+          </p>
+          {err && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', margin: '0 0 10px', fontSize: 12.5, color: '#dc2626' }}>{err}</div>}
+          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', display: 'block', marginBottom: 5 }}>Secret key</label>
+          <input type="password" value={secret} onChange={e => setSecret(e.target.value)} placeholder="sk_live_…"
+            style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', marginBottom: 10 }} />
+          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', display: 'block', marginBottom: 5 }}>Publishable key (optional)</label>
+          <input value={publishable} onChange={e => setPublishable(e.target.value)} placeholder="pk_live_…"
+            style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', marginBottom: 12 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button onClick={save} disabled={saving} style={{ padding: '9px 18px', borderRadius: 9, background: '#635BFF', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{saving ? 'Saving…' : 'Save keys'}</button>
+            {saved && <span style={{ fontSize: 12.5, color: '#059669', fontWeight: 600 }}>✓ Saved</span>}
+          </div>
+          <p style={{ fontSize: 11, color: '#9ca3af', margin: '10px 0 0' }}>Your secret key is stored securely and never shown in the browser again.</p>
+        </div>
+      )}
     </div>
   )
 }
