@@ -127,6 +127,150 @@ export class WooCommerceService {
     }
   }
 
+  // ── Create Order support ───────────────────────────────────────────────
+
+  // Live product search: name / SKU. Returns normalized products with stock,
+  // price, tax status, image, and any variations.
+  async searchProducts(query: string, limit = 12): Promise<any[]> {
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/products?search=${encodeURIComponent(query)}&per_page=${limit}&status=publish`, { headers: this.wcHeaders() })
+      if (!res.ok) return []
+      const products = await res.json()
+      return (products || []).map((p: any) => ({
+        id: p.id, name: p.name, sku: p.sku, type: p.type,
+        price: p.price, regular_price: p.regular_price, sale_price: p.sale_price,
+        tax_status: p.tax_status, tax_class: p.tax_class,
+        stock_status: p.stock_status, stock_quantity: p.stock_quantity, manage_stock: p.manage_stock,
+        image: p.images?.[0]?.src || null,
+        has_variations: p.type === 'variable' && (p.variations?.length || 0) > 0,
+        variation_ids: p.variations || [],
+      }))
+    } catch { return [] }
+  }
+
+  // Fetch the variations of a variable product (exact variation IDs + attributes).
+  async getProductVariations(productId: number): Promise<any[]> {
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/products/${productId}/variations?per_page=50`, { headers: this.wcHeaders() })
+      if (!res.ok) return []
+      const vars = await res.json()
+      return (vars || []).map((v: any) => ({
+        id: v.id, sku: v.sku, price: v.price, regular_price: v.regular_price,
+        stock_status: v.stock_status, stock_quantity: v.stock_quantity, manage_stock: v.manage_stock,
+        image: v.image?.src || null,
+        attributes: (v.attributes || []).map((a: any) => `${a.name}: ${a.option}`).join(', '),
+      }))
+    } catch { return [] }
+  }
+
+  // Re-fetch a single product or variation to recheck price/stock right before
+  // submitting (another sale may have happened while the panel was open).
+  async getProductOrVariation(productId: number, variationId?: number): Promise<any | null> {
+    try {
+      const url = variationId
+        ? `${this.config.storeUrl}/wp-json/wc/v3/products/${productId}/variations/${variationId}`
+        : `${this.config.storeUrl}/wp-json/wc/v3/products/${productId}`
+      const res = await fetch(url, { headers: this.wcHeaders() })
+      if (!res.ok) return null
+      const p = await res.json()
+      return { id: p.id, price: p.price, stock_status: p.stock_status, stock_quantity: p.stock_quantity, manage_stock: p.manage_stock, name: p.name }
+    } catch { return null }
+  }
+
+  // Validate a coupon against WooCommerce's own record. Returns the checks the
+  // panel needs: existence, expiry, minimum spend, usage limit, product scope.
+  async validateCoupon(code: string, opts: { subtotal?: number; email?: string; productIds?: number[] } = {}): Promise<{ ok: boolean; error?: string; coupon?: any }> {
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/coupons?code=${encodeURIComponent(code)}`, { headers: this.wcHeaders() })
+      if (!res.ok) return { ok: false, error: `Coupon lookup failed (${res.status})` }
+      const list = await res.json()
+      const c = (list || [])[0]
+      if (!c) return { ok: false, error: 'Coupon code does not exist.' }
+
+      // Expiry
+      if (c.date_expires) {
+        const exp = new Date(c.date_expires)
+        if (!isNaN(exp.getTime()) && exp.getTime() < Date.now()) return { ok: false, error: 'This coupon has expired.' }
+      }
+      // Usage limit
+      if (c.usage_limit != null && c.usage_count != null && c.usage_count >= c.usage_limit) {
+        return { ok: false, error: 'This coupon has reached its usage limit.' }
+      }
+      // Minimum spend
+      if (c.minimum_amount && parseFloat(c.minimum_amount) > 0 && opts.subtotal != null && opts.subtotal < parseFloat(c.minimum_amount)) {
+        return { ok: false, error: `Minimum spend of $${c.minimum_amount} not met for this coupon.` }
+      }
+      // Maximum spend
+      if (c.maximum_amount && parseFloat(c.maximum_amount) > 0 && opts.subtotal != null && opts.subtotal > parseFloat(c.maximum_amount)) {
+        return { ok: false, error: `This coupon only applies below $${c.maximum_amount}.` }
+      }
+      // Email restriction
+      if (Array.isArray(c.email_restrictions) && c.email_restrictions.length > 0 && opts.email) {
+        const allowed = c.email_restrictions.map((e: string) => e.toLowerCase())
+        if (!allowed.includes(opts.email.toLowerCase())) return { ok: false, error: 'This coupon is restricted to a different customer.' }
+      }
+      // Product include/exclude
+      if (opts.productIds && opts.productIds.length) {
+        if (Array.isArray(c.product_ids) && c.product_ids.length > 0) {
+          const anyIncluded = opts.productIds.some(id => c.product_ids.includes(id))
+          if (!anyIncluded) return { ok: false, error: 'This coupon does not apply to the items in this order.' }
+        }
+        if (Array.isArray(c.excluded_product_ids) && c.excluded_product_ids.length > 0) {
+          const anyExcluded = opts.productIds.some(id => c.excluded_product_ids.includes(id))
+          if (anyExcluded) return { ok: false, error: 'This coupon excludes one of the items in this order.' }
+        }
+      }
+      return { ok: true, coupon: { code: c.code, discount_type: c.discount_type, amount: c.amount, id: c.id } }
+    } catch (e: any) {
+      return { ok: false, error: e.message }
+    }
+  }
+
+  // Find an existing customer by email (WooCommerce customer id).
+  async findCustomerByEmail(email: string): Promise<any | null> {
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/customers?email=${encodeURIComponent(email)}`, { headers: this.wcHeaders() })
+      if (!res.ok) return null
+      const list = await res.json()
+      return (list || [])[0] || null
+    } catch { return null }
+  }
+
+  async createCustomer(params: { email: string; first_name?: string; last_name?: string; phone?: string; billing?: any; shipping?: any }): Promise<{ ok: boolean; customer?: any; error?: string }> {
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/customers`, {
+        method: 'POST', headers: this.wcHeaders(),
+        body: JSON.stringify({ email: params.email, first_name: params.first_name, last_name: params.last_name, billing: params.billing, shipping: params.shipping }),
+      })
+      const data = await res.json()
+      if (!res.ok) return { ok: false, error: data?.message || `Customer creation failed (${res.status})` }
+      return { ok: true, customer: data }
+    } catch (e: any) { return { ok: false, error: e.message } }
+  }
+
+  // Create an order. Caller passes fully-formed line_items, shipping_lines,
+  // fee_lines, coupon_lines, billing/shipping, status and set_paid.
+  async createOrder(payload: any): Promise<{ ok: boolean; order?: any; error?: string }> {
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders`, {
+        method: 'POST', headers: this.wcHeaders(), body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (!res.ok) return { ok: false, error: data?.message || `Order creation failed (${res.status})` }
+      return { ok: true, order: data }
+    } catch (e: any) { return { ok: false, error: e.message } }
+  }
+
+  // Add an internal (or customer) note to an order after creation.
+  async addOrderNote(orderId: number, note: string, customerNote = false): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders/${orderId}/notes`, {
+        method: 'POST', headers: this.wcHeaders(), body: JSON.stringify({ note, customer_note: customerNote }),
+      })
+      return res.ok
+    } catch { return false }
+  }
+
   async getCustomers(): Promise<WooCommerceCustomer[]> {
     try {
       const allCustomers: WooCommerceCustomer[] = []

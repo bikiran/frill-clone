@@ -1585,6 +1585,18 @@ function WidgetContent() {
                               </div>
                             </div>
                           )}
+                          {msg.message_type === 'order' && msg.message_payload && (
+                            <div style={{ marginTop: 6, padding: 12, borderRadius: 12, background: '#fff', border: '1px solid #e5e5e5', color: '#0d0d0d', minWidth: 210 }}>
+                              <p style={{ margin: '0 0 2px', fontSize: 11, color: '#6b7280', fontWeight: 600 }}>🛒 ORDER #{msg.message_payload.order_number}</p>
+                              <p style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 800 }}>${msg.message_payload.total} <span style={{ fontSize: 12, color: '#9ca3af' }}>{msg.message_payload.currency || 'AUD'}</span></p>
+                              {msg.message_payload.pay_link && msg.message_payload.status !== 'completed' && msg.message_payload.status !== 'processing' && (
+                                <a href={msg.message_payload.pay_link} target="_blank" rel="noopener"
+                                  style={{ display: 'block', textAlign: 'center', padding: '10px 0', borderRadius: 8, background: accentColor, color: '#fff', textDecoration: 'none', fontSize: 13.5, fontWeight: 700 }}>
+                                  Pay for this order
+                                </a>
+                              )}
+                            </div>
+                          )}
                           {/* Interactive poll/survey/form */}
                           {['poll', 'survey', 'form'].includes(msg.message_type) && msg.message_payload && (
                             <WidgetInteractive msg={msg} companyId={company?.id} conversationId={chatConvId} respondent={chatName} accentColor={accentColor} />

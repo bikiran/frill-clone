@@ -6,6 +6,7 @@ import Link from 'next/link'
 import CallBar from '@/components/CallBar'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import DoaPanel from '@/components/DoaPanel'
+import CreateOrderPanel from '@/components/CreateOrderPanel'
 import IncomingCallListener from '@/components/IncomingCallListener'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -131,6 +132,7 @@ export default function InboxPage() {
   const [convActions, setConvActions] = useState<Record<string, any>>({})
   const [showActionMenu, setShowActionMenu] = useState(false)
   const [showTicketPanel, setShowTicketPanel] = useState(false)
+  const [showCreateOrder, setShowCreateOrder] = useState(false)
   const [ticketSubject, setTicketSubject] = useState('')
   const [ticketDesc, setTicketDesc] = useState('')
   const [ticketPriority, setTicketPriority] = useState('normal')
@@ -628,6 +630,22 @@ export default function InboxPage() {
     setPickerItems(data || [])
   }
 
+  const updateOrderStatus = async (payload: any, status: string) => {
+    if (!companyId || !payload?.order_id) return
+    const verb = status === 'cancelled' ? 'cancel' : 'mark paid'
+    if (!confirm(`Are you sure you want to ${verb} order #${payload.order_number}?${status !== 'cancelled' ? ' This records payment and reduces stock in WooCommerce.' : ''}`)) return
+    try {
+      const res = await fetch('/api/orders/status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, orderId: payload.order_id, status, conversationId: selected?.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not update order')
+      showToast(`Order #${payload.order_number} updated`)
+      if (selected) selectConversation(selected)
+    } catch (e: any) { showToast(e.message || 'Failed to update order') }
+  }
+
   const createTicket = async () => {
     if (!companyId || !ticketSubject.trim()) return
     setTicketSaving(true)
@@ -934,6 +952,19 @@ export default function InboxPage() {
           contact={contact}
           onClose={() => setShowDoa(false)}
           onDone={() => { if (selected) selectConversation(selected) }}
+        />
+      )}
+
+      {showCreateOrder && selected && companyId && (
+        <CreateOrderPanel
+          companyId={companyId}
+          conversationId={selected.id}
+          contactId={contact?.id}
+          contact={contact}
+          staffName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+          staffId={user?.id}
+          onClose={() => setShowCreateOrder(false)}
+          onCreated={() => { if (selected) selectConversation(selected) }}
         />
       )}
 
@@ -1438,6 +1469,28 @@ export default function InboxPage() {
                             📎 Interactive {msg.message_type} sent — the customer can respond in the widget.
                           </div>
                         )}
+                        {msg.message_type === 'order' && msg.message_payload && (
+                          <div style={{ marginTop: 6, padding: '12px 14px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', color: 'var(--ink)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <span style={{ fontSize: 14 }}>🛒</span>
+                              <span style={{ fontSize: 13.5, fontWeight: 700 }}>Order #{msg.message_payload.order_number}</span>
+                              <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: '#eef2ff', color: '#4f46e5', textTransform: 'uppercase' }}>{msg.message_payload.status}</span>
+                            </div>
+                            <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--slate)' }}>{msg.message_payload.currency || 'AUD'} ${msg.message_payload.total}</p>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              <a href={`${msg.message_payload.store_url}/wp-admin/post.php?post=${msg.message_payload.order_id}&action=edit`} target="_blank" rel="noopener"
+                                style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)', textDecoration: 'none', padding: '5px 10px', border: '1px solid var(--border)', borderRadius: 7 }}>View order</a>
+                              {msg.message_payload.pay_link && (
+                                <button type="button" onClick={() => { navigator.clipboard?.writeText(msg.message_payload.pay_link); showToast('Payment link copied') }}
+                                  style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', background: '#fff', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Copy payment link</button>
+                              )}
+                              <button type="button" onClick={() => updateOrderStatus(msg.message_payload, 'completed')}
+                                style={{ fontSize: 12, fontWeight: 600, color: '#059669', background: '#fff', border: '1px solid #bbf7d0', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Mark paid</button>
+                              <button type="button" onClick={() => updateOrderStatus(msg.message_payload, 'cancelled')}
+                                style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', background: '#fff', border: '1px solid #fecaca', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Cancel order</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Reactions */}
@@ -1638,6 +1691,7 @@ export default function InboxPage() {
                           onClick={async () => {
                             setShowActionMenu(false)
                             if (key === 'doa' || key === 'return_refund') setShowDoa(true)
+                            else if (key === 'create_order') setShowCreateOrder(true)
                             else if (key === 'support_ticket') { setTicketSubject(selected?.subject || ''); setTicketDesc(''); setTicketPriority('normal'); setShowTicketPanel(true) }
                             else if (cfg.form_id) {
                               const { data: form } = await (supabase as any).from('forms').select('*').eq('id', cfg.form_id).maybeSingle()
