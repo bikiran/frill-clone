@@ -132,6 +132,17 @@ export default function InboxPage() {
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // On phones we show one pane at a time: the conversation list, the open
+  // thread, or the contact panel. Desktop shows all three side by side.
+  const [mobilePane, setMobilePane] = useState<'list' | 'thread' | 'contact'>('list')
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const check = () => setIsMobile(typeof window !== 'undefined' && window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
   const [replyChannel, setReplyChannel] = useState<'chat' | 'sms'>('chat')
   const [showSendMenu, setShowSendMenu] = useState(false)
   const [sendPicker, setSendPicker] = useState<'poll' | 'survey' | 'form' | 'payment' | null>(null)
@@ -317,6 +328,7 @@ export default function InboxPage() {
   const selectConversation = async (conv: Conversation) => {
     setSelected(conv)
     selectedRef.current = conv
+    setMobilePane('thread')
     setAiDetected(null)
     setShowContactEdit(false)
     setReplyTo(null)
@@ -838,7 +850,31 @@ export default function InboxPage() {
   const fieldBtn = (color: string): React.CSSProperties => ({ width: 24, height: 24, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 })
 
   return (
-    <div style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div className={`inbox-root inbox-pane-${mobilePane}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+      <style>{`
+        /* ── Inbox mobile responsiveness ─────────────────────────────── */
+        @media (max-width: 767px) {
+          /* One pane at a time on phones */
+          .inbox-root .inbox-col-list,
+          .inbox-root .inbox-col-thread,
+          .inbox-root .inbox-col-contact { display: none !important; }
+          .inbox-root .inbox-col-list { width: 100% !important; flex: 1 1 100% !important; }
+          .inbox-root .inbox-col-thread { width: 100% !important; flex: 1 1 100% !important; }
+          .inbox-root .inbox-col-contact { width: 100% !important; flex: 1 1 100% !important; border-left: none !important; }
+
+          .inbox-pane-list .inbox-col-list { display: flex !important; }
+          .inbox-pane-thread .inbox-col-thread { display: flex !important; }
+          .inbox-pane-contact .inbox-col-contact { display: flex !important; }
+
+          /* The collapsed-sidebar rail is desktop-only */
+          .inbox-root .inbox-collapsed-rail { display: none !important; }
+          /* Back / nav buttons only on mobile */
+          .inbox-mobile-only { display: flex !important; }
+        }
+        @media (min-width: 768px) {
+          .inbox-mobile-only { display: none !important; }
+        }
+      `}</style>
       <IncomingCallListener companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
 
       {/* Merge picker */}
@@ -922,8 +958,8 @@ export default function InboxPage() {
       )}
 
       {/* ── LEFT: Conversation list ─────────────────────────────────────────── */}
-      {sidebarCollapsed ? (
-        <div style={{ width: 48, flexShrink: 0, borderRight: '1px solid var(--border)', background: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 14 }}>
+      {sidebarCollapsed && !isMobile ? (
+        <div className="inbox-collapsed-rail" style={{ width: 48, flexShrink: 0, borderRight: '1px solid var(--border)', background: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 14 }}>
           <button type="button" onClick={() => setSidebarCollapsed(false)} title="Expand sidebar"
             style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
@@ -935,7 +971,7 @@ export default function InboxPage() {
           )}
         </div>
       ) : (
-      <div style={{ width: 300, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#fff' }}>
+      <div className="inbox-col-list" style={{ width: 300, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#fff' }}>
         {/* Header */}
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 }}>
@@ -1001,7 +1037,7 @@ export default function InboxPage() {
       )}
 
       {/* ── MIDDLE: Chat thread ─────────────────────────────────────────────── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f9f9f9', minWidth: 0 }}>
+      <div className="inbox-col-thread" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f9f9f9', minWidth: 0 }}>
         {!selected ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -1011,6 +1047,11 @@ export default function InboxPage() {
           <>
             {/* Thread header */}
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              {/* Mobile: back to conversation list */}
+              <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('list')} title="Back"
+                style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', order: -2 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
               <span style={{ fontSize: 16 }}>{CHANNEL_ICON[selected.channel]}</span>
               {/* Search messages toggle */}
               <button type="button" onClick={() => { setShowMsgSearch(v => !v); setMsgSearch('') }} title="Search messages"
@@ -1041,6 +1082,12 @@ export default function InboxPage() {
                   agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
                 />
               )}
+
+              {/* Mobile: open contact panel */}
+              <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('contact')} title="Contact info"
+                style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a8.38 8.38 0 0 1 13 0"/></svg>
+              </button>
 
               {/* Sentiment picker */}
               <div style={{ display: 'flex', gap: 2 }}>
@@ -1423,7 +1470,13 @@ export default function InboxPage() {
 
       {/* ── RIGHT: Contact info + Page history ─────────────────────────────── */}
       {selected && (
-        <div style={{ width: 280, flexShrink: 0, borderLeft: '1px solid var(--border)', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="inbox-col-contact" style={{ width: 280, flexShrink: 0, borderLeft: '1px solid var(--border)', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Mobile: back to thread */}
+          <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('thread')}
+            style={{ display: 'none', alignItems: 'center', gap: 6, padding: '10px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 13, fontWeight: 600 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Back to conversation
+          </button>
           {/* Panel tabs */}
           <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
             {(['info', 'timeline', ...(wooCustomer || wooOrders.length > 0 ? ['orders' as const] : [])] as const).map(p => (

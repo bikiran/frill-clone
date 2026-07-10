@@ -39,9 +39,21 @@ export default function CrmSettingsLayout({ children }: { children: React.ReactN
         </Link>
       </div>
 
-      <div style={{ display: 'flex', minHeight: 'calc(100vh - 108px)' }}>
+      <div className="crm-settings-body" style={{ display: 'flex', minHeight: 'calc(100vh - 108px)' }}>
+        <style>{`
+          @media (max-width: 767px) {
+            .crm-settings-body { flex-direction: column !important; }
+            .crm-settings-nav {
+              width: 100% !important; flex-shrink: 0 !important;
+              border-right: none !important; border-bottom: 1px solid var(--border) !important;
+              display: flex !important; flex-direction: row !important; overflow-x: auto !important;
+              white-space: nowrap !important; padding: 8px !important; gap: 6px !important;
+            }
+            .crm-settings-nav a { display: inline-block !important; margin-bottom: 0 !important; flex-shrink: 0 !important; }
+          }
+        `}</style>
         {/* Settings sidebar */}
-        <div style={{ width: 230, flexShrink: 0, borderRight: '1px solid var(--border)', background: '#fafafa', padding: '12px 8px', overflowY: 'auto' }}>
+        <div className="crm-settings-nav" style={{ width: 230, flexShrink: 0, borderRight: '1px solid var(--border)', background: '#fafafa', padding: '12px 8px', overflowY: 'auto' }}>
           {NAV.map(n => {
             const active = pathname?.includes(`/crm-settings/${n.slug}`)
             return (
