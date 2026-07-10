@@ -7,6 +7,7 @@ const NAV = [
   { slug: 'profile', label: 'Your Settings' },
   { slug: 'business', label: 'Business' },
   { slug: 'channels', label: 'Channels' },
+  { slug: 'conversation-actions', label: 'Conversation Actions' },
   { slug: 'custom-fields', label: 'Custom Fields' },
   { slug: 'power-ups', label: 'Time Savers' },
   { slug: 'ai', label: 'AI' },

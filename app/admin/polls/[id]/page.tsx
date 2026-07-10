@@ -21,7 +21,7 @@ export default function PollDetailPage() {
   }, [pollId, router])
 
   const fetchData = async () => {
-    const { data: p } = await supabase.from('polls').select('*').eq('id', pollId).single()
+    const { data: p } = await supabase.from('polls').select('*').eq("id", pollId).maybeSingle()
     if (p) {
       // Parse options if stored as string
       let opts = p.options

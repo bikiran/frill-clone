@@ -24,7 +24,7 @@ export default function PollPage() {
 
   const fetchPoll = async () => {
     try {
-      const { data, error } = await supabase.from('polls').select('*').eq('id', pollId).single()
+      const { data, error } = await supabase.from('polls').select('*').eq("id", pollId).maybeSingle()
       if (error) {
         console.error('Poll fetch error:', error)
         setLoading(false)

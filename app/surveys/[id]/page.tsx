@@ -19,7 +19,7 @@ export default function PublicSurveyPage() {
   }, [surveyId])
 
   const fetchSurvey = async () => {
-    const { data } = await supabase.from('surveys').select('*').eq('id', surveyId).single()
+    const { data } = await supabase.from('surveys').select('*').eq('id', surveyId).maybeSingle()
     setSurvey(data)
     setLoading(false)
   }

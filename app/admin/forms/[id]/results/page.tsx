@@ -26,7 +26,7 @@ export default function FormResults() {
   useEffect(() => {
     ;(async () => {
       const [formRes, responsesRes, companyRes] = await Promise.all([
-        (supabase as any).from('forms').select('*').eq('id', formId).single(),
+        (supabase as any).from('forms').select('*').eq('id', formId).maybeSingle(),
         (supabase as any).from('form_responses').select('*').eq('form_id', formId).order('created_at', { ascending: false }),
         // Load company data for branding
         (async () => {

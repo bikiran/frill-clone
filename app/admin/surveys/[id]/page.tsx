@@ -22,7 +22,7 @@ export default function SurveyDetailPage() {
 
   const fetchData = async () => {
     try {
-      const { data: s } = await supabase.from('surveys').select('*').eq('id', surveyId).single()
+      const { data: s } = await supabase.from('surveys').select('*').eq('id', surveyId).maybeSingle()
       setSurvey(s)
       const { data: r } = await supabase.from('survey_responses').select('*').eq('survey_id', surveyId).order('created_at', { ascending: false })
       setResponses(r || [])

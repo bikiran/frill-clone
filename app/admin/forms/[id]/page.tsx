@@ -154,7 +154,7 @@ export default function FormBuilder() {
 
   useEffect(() => {
     const init = async () => {
-      const { data, error } = await (supabase as any).from('forms').select('*').eq('id', formId).single()
+      const { data, error } = await (supabase as any).from('forms').select('*').eq('id', formId).maybeSingle()
       if (error || !data) { router.push('/admin/forms'); return }
       setForm(data)
       setTitle(data.title || 'Untitled Form')

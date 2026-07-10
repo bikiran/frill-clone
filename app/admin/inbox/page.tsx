@@ -128,6 +128,8 @@ export default function InboxPage() {
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
   const [showDoa, setShowDoa] = useState(false)
   const [doaMatch, setDoaMatch] = useState(false)
+  const [convActions, setConvActions] = useState<Record<string, any>>({})
+  const [showActionMenu, setShowActionMenu] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [contact, setContact] = useState<Contact | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -211,8 +213,8 @@ export default function InboxPage() {
       if (!cid) return
       setCompanyId(cid)
       // Load company logo/name/accent for agent message avatars
-      const { data: ci } = await (supabase as any).from('companies').select('name, logo_url, accent_color, slug').eq('id', cid).maybeSingle()
-      if (ci) setCompanyInfo(ci)
+      const { data: ci } = await (supabase as any).from('companies').select('name, logo_url, accent_color, slug, conversation_actions').eq('id', cid).maybeSingle()
+      if (ci) { setCompanyInfo(ci); setConvActions(ci.conversation_actions || {}) }
       loadTeam(cid)
       loadConversations(cid)
       setLoading(false)
@@ -894,13 +896,7 @@ export default function InboxPage() {
       `}</style>
       <IncomingCallListener companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
 
-      {/* DOA claim slide-in shortcut — shows when the chat contact matches an order */}
-      {doaMatch && selected && !showDoa && (
-        <button onClick={() => setShowDoa(true)}
-          style={{ position: 'fixed', right: 0, top: '38%', transform: 'translateY(-50%)', zIndex: 40, background: 'var(--coral)', color: '#fff', border: 'none', borderRadius: '10px 0 0 10px', padding: '12px 14px', fontSize: 13, fontWeight: 800, cursor: 'pointer', boxShadow: '-3px 3px 14px rgba(0,0,0,0.18)', display: 'flex', alignItems: 'center', gap: 8, animation: 'doaSlideIn 0.4s ease' }}>
-          <span style={{ fontSize: 16 }}>📦</span> DOA Claim
-        </button>
-      )}
+      {/* Conversation action panels */}
       <style>{`@keyframes doaSlideIn { from { transform: translate(100%, -50%); } to { transform: translate(0, -50%); } }`}</style>
 
       {showDoa && selected && companyId && (
@@ -1551,6 +1547,55 @@ export default function InboxPage() {
               </button>
             ))}
           </div>
+
+          {/* + Action button — shows enabled conversation actions */}
+          {(() => {
+            const enabledActions = Object.entries(convActions).filter(([, v]: any) => v?.enabled)
+            if (enabledActions.length === 0) return null
+            const ACTION_META: Record<string, { label: string; icon: string }> = {
+              doa: { label: 'DOA Claim', icon: '📦' },
+              warranty: { label: 'Warranty Claim', icon: '🛡️' },
+              return_refund: { label: 'Return / Refund', icon: '↩️' },
+              create_order: { label: 'Create Order', icon: '🛒' },
+              booking: { label: 'Booking', icon: '📅' },
+              support_ticket: { label: 'Support Ticket', icon: '🎫' },
+              custom_form: { label: 'Custom Form', icon: '📝' },
+            }
+            return (
+              <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', position: 'relative' }}>
+                <button type="button" onClick={() => setShowActionMenu(v => !v)}
+                  style={{ width: '100%', padding: '9px 0', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  + Action
+                </button>
+                {showActionMenu && (
+                  <div style={{ position: 'absolute', top: '100%', left: 14, right: 14, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', zIndex: 20, overflow: 'hidden', marginTop: 2 }}>
+                    {enabledActions.map(([key, cfg]: any) => {
+                      const meta = ACTION_META[key] || { label: key, icon: '•' }
+                      return (
+                        <button key={key} type="button"
+                          onClick={async () => {
+                            setShowActionMenu(false)
+                            if (key === 'doa' || key === 'return_refund') setShowDoa(true)
+                            else if (cfg.form_id) {
+                              const { data: form } = await (supabase as any).from('forms').select('*').eq('id', cfg.form_id).maybeSingle()
+                              if (form) sendInteractive('form', form)
+                              else showToast('The linked form was not found.')
+                            }
+                            else showToast(`"${meta.label}" isn't configured yet — set it up in Settings → Conversation Actions.`)
+                          }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13.5, color: 'var(--ink)', textAlign: 'left' }}>
+                          <span style={{ fontSize: 16 }}>{meta.icon}</span> {meta.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                {doaMatch && convActions.doa?.enabled && (
+                  <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--coral)', fontWeight: 600 }}>💡 This customer matches an order — DOA claim available.</p>
+                )}
+              </div>
+            )
+          })()}
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px' }}>
             {activePanel === 'info' && (
