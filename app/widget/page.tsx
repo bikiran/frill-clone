@@ -1556,7 +1556,7 @@ function WidgetContent() {
                           {atts.map((a: any, ai: number) => (
                             <div key={ai} style={{ marginBottom: a.kind !== 'file' && msg.content ? 6 : 0 }}>
                               {a.kind === 'image' ? (
-                                <img src={a.url} alt={a.name} style={{ maxWidth: 200, maxHeight: 200, borderRadius: 10, display: 'block', cursor: 'pointer' }} onClick={() => window.open(a.url, '_blank')} />
+                                <img src={a.url} alt={a.name} style={{ maxWidth: 200, maxHeight: 200, borderRadius: 10, display: 'block', cursor: 'pointer' }} onClick={() => { setViewerImage(a.url); setShowImageViewer(true) }} />
                               ) : a.kind === 'video' ? (
                                 <video src={a.url} controls style={{ maxWidth: 200, borderRadius: 10, display: 'block' }} />
                               ) : (

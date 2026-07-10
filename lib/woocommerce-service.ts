@@ -55,6 +55,78 @@ export class WooCommerceService {
   /**
    * Fetch all customers from WooCommerce (with pagination - no limit)
    */
+  // ── DOA / refund support ───────────────────────────────────────────────
+
+  private wcHeaders() {
+    return { 'Authorization': `Basic ${this.basicAuth}`, 'Content-Type': 'application/json' }
+  }
+
+  // Look up a single order by its number/id. Returns the full order (line items,
+  // totals, billing/shipping) or null if not found.
+  async getOrderByNumber(orderNumber: string | number): Promise<any | null> {
+    // Order number usually equals the order id in WooCommerce.
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders/${orderNumber}`, { headers: this.wcHeaders() })
+      if (res.ok) return await res.json()
+      // Fall back to searching by the "number" field (some stores use sequential-order plugins)
+      const search = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders?search=${encodeURIComponent(String(orderNumber))}&per_page=5`, { headers: this.wcHeaders() })
+      if (search.ok) {
+        const list = await search.json()
+        const match = (list || []).find((o: any) => String(o.number) === String(orderNumber) || String(o.id) === String(orderNumber))
+        return match || list?.[0] || null
+      }
+    } catch (e) {
+      console.error('getOrderByNumber failed', e)
+    }
+    return null
+  }
+
+  // Create a refund on an order. With Stripe, api_refund=true refunds the actual
+  // card. `lineItems` optionally refunds specific items; `amount` refunds a total.
+  async createRefund(orderId: number, params: { amount?: string; reason?: string; lineItems?: any[]; refundPayment?: boolean }): Promise<{ ok: boolean; refund?: any; error?: string }> {
+    try {
+      const body: any = {
+        reason: params.reason || 'DOA claim',
+        api_refund: params.refundPayment !== false, // true = refund via gateway (Stripe)
+      }
+      if (params.amount) body.amount = params.amount
+      if (params.lineItems && params.lineItems.length) body.line_items = params.lineItems
+
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders/${orderId}/refunds`, {
+        method: 'POST', headers: this.wcHeaders(), body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) return { ok: false, error: data?.message || `Refund failed (${res.status})` }
+      return { ok: true, refund: data }
+    } catch (e: any) {
+      return { ok: false, error: e.message }
+    }
+  }
+
+  // Create a single-use coupon restricted to one customer email.
+  async createCoupon(params: { code: string; amount: string; email: string; description?: string }): Promise<{ ok: boolean; coupon?: any; error?: string }> {
+    try {
+      const body = {
+        code: params.code,
+        discount_type: 'fixed_cart',
+        amount: params.amount,
+        individual_use: true,
+        email_restrictions: [params.email],
+        usage_limit: 1,
+        usage_limit_per_user: 1,
+        description: params.description || 'DOA store credit',
+      }
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/coupons`, {
+        method: 'POST', headers: this.wcHeaders(), body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) return { ok: false, error: data?.message || `Coupon creation failed (${res.status})` }
+      return { ok: true, coupon: data }
+    } catch (e: any) {
+      return { ok: false, error: e.message }
+    }
+  }
+
   async getCustomers(): Promise<WooCommerceCustomer[]> {
     try {
       const allCustomers: WooCommerceCustomer[] = []

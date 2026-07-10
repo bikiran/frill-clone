@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
+import MediaGallery, { MediaItem } from '@/components/MediaGallery'
+import DoaPanel from '@/components/DoaPanel'
 import IncomingCallListener from '@/components/IncomingCallListener'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -123,6 +125,9 @@ export default function InboxPage() {
   const [selected, setSelected] = useState<Conversation | null>(null)
   const selectedRef = useRef<Conversation | null>(null)
   const [showMergePicker, setShowMergePicker] = useState(false)
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
+  const [showDoa, setShowDoa] = useState(false)
+  const [doaMatch, setDoaMatch] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [contact, setContact] = useState<Contact | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -342,10 +347,22 @@ export default function InboxPage() {
     await (supabase as any).from('conversations').update({ is_unread: false, unread_count: 0 }).eq('id', conv.id)
     markMessagesRead(conv.id, msgs || [])
     // Load contact
+    setShowDoa(false); setDoaMatch(false)
     if (conv.contact_id) {
       const { data: c } = await (supabase as any).from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
       setContact(c || null)
       setEditContact(c || {})
+      // Does this contact match a WooCommerce order? If so, offer the DOA shortcut.
+      if (c && (c.email || c.phone) && companyId) {
+        try {
+          const params = new URLSearchParams({ companyId })
+          if (c.email) params.set('email', c.email)
+          if (c.phone) params.set('phone', c.phone)
+          const res = await fetch(`/api/doa/match?${params.toString()}`)
+          const data = await res.json()
+          if (data.match) setDoaMatch(true)
+        } catch {}
+      }
     } else {
       setContact(null)
       setEditContact({})
@@ -877,6 +894,36 @@ export default function InboxPage() {
       `}</style>
       <IncomingCallListener companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
 
+      {/* DOA claim slide-in shortcut — shows when the chat contact matches an order */}
+      {doaMatch && selected && !showDoa && (
+        <button onClick={() => setShowDoa(true)}
+          style={{ position: 'fixed', right: 0, top: '38%', transform: 'translateY(-50%)', zIndex: 40, background: 'var(--coral)', color: '#fff', border: 'none', borderRadius: '10px 0 0 10px', padding: '12px 14px', fontSize: 13, fontWeight: 800, cursor: 'pointer', boxShadow: '-3px 3px 14px rgba(0,0,0,0.18)', display: 'flex', alignItems: 'center', gap: 8, animation: 'doaSlideIn 0.4s ease' }}>
+          <span style={{ fontSize: 16 }}>📦</span> DOA Claim
+        </button>
+      )}
+      <style>{`@keyframes doaSlideIn { from { transform: translate(100%, -50%); } to { transform: translate(0, -50%); } }`}</style>
+
+      {showDoa && selected && companyId && (
+        <DoaPanel
+          companyId={companyId}
+          conversationId={selected.id}
+          contactId={contact?.id}
+          contact={contact}
+          onClose={() => setShowDoa(false)}
+          onDone={() => { if (selected) selectConversation(selected) }}
+        />
+      )}
+
+      {/* Media gallery / lightbox */}
+      {galleryIndex !== null && (() => {
+        const media: MediaItem[] = []
+        messages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
+          if (a.kind === 'image' || a.kind === 'video') media.push({ url: a.url, name: a.name, kind: a.kind })
+        }))
+        return <MediaGallery items={media} index={galleryIndex} onClose={() => setGalleryIndex(null)} onIndex={setGalleryIndex} />
+      })()}
+
+
       {/* Merge picker */}
       {showMergePicker && selected && (
         <div onClick={() => setShowMergePicker(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -1228,6 +1275,19 @@ export default function InboxPage() {
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
               {(() => {
                 const list = msgSearch ? messages.filter(m => (m.content || '').toLowerCase().includes(msgSearch.toLowerCase())) : messages
+                // Flat list of all images/videos in the thread (for the gallery),
+                // with a lookup from a message's attachment to its gallery index.
+                const galleryMedia: MediaItem[] = []
+                const mediaIndexOf: Record<string, number> = {}
+                messages.forEach(m => {
+                  const ma = Array.isArray(m.attachments) ? m.attachments : []
+                  ma.forEach((a: any) => {
+                    if (a.kind === 'image' || a.kind === 'video') {
+                      mediaIndexOf[a.url] = galleryMedia.length
+                      galleryMedia.push({ url: a.url, name: a.name, kind: a.kind })
+                    }
+                  })
+                })
                 let lastDay = ''
                 return list.map(msg => {
                 const thisDay = dayLabel(msg.created_at)
@@ -1289,9 +1349,14 @@ export default function InboxPage() {
                         {atts.map((a: any, ai: number) => (
                           <div key={ai} style={{ marginBottom: a.kind !== 'file' && msg.content ? 6 : 0 }}>
                             {a.kind === 'image' ? (
-                              <img src={a.url} alt={a.name} style={{ maxWidth: 240, maxHeight: 240, borderRadius: 10, display: 'block', cursor: 'pointer' }} onClick={() => window.open(a.url, '_blank')} />
+                              <img src={a.url} alt={a.name} style={{ maxWidth: 240, maxHeight: 240, borderRadius: 10, display: 'block', cursor: 'pointer' }} onClick={() => setGalleryIndex(mediaIndexOf[a.url] ?? 0)} />
                             ) : a.kind === 'video' ? (
-                              <video src={a.url} controls style={{ maxWidth: 240, borderRadius: 10, display: 'block' }} />
+                              <div style={{ position: 'relative', cursor: 'pointer', maxWidth: 240 }} onClick={() => setGalleryIndex(mediaIndexOf[a.url] ?? 0)}>
+                                <video src={a.url} style={{ maxWidth: 240, borderRadius: 10, display: 'block', pointerEvents: 'none' }} />
+                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <div style={{ width: 44, height: 44, borderRadius: 22, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>▶</div>
+                                </div>
+                              </div>
                             ) : (
                               <a href={a.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 8, color: isAgent ? '#fff' : 'var(--coral)', textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
                                 📎 {a.name}
