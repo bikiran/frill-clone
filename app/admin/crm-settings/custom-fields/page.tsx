@@ -21,7 +21,18 @@ export default function CustomFieldsSettings() {
   const save = async () => {
     if (!companyId || !editing?.title) return
     setSaving(true)
-    const payload: any = { company_id: companyId, title: editing.title, field_type: editing.field_type || 'text', options: editing.options || [] }
+    // Write both the new columns (title/options) and the legacy NOT NULL
+    // columns from the original custom_fields table (field_name/field_label)
+    // so inserts satisfy existing constraints.
+    const payload: any = {
+      company_id: companyId,
+      title: editing.title,
+      field_type: editing.field_type || 'text',
+      options: editing.options || [],
+      field_name: editing.title,
+      field_label: editing.title,
+      dropdown_options: editing.options || [],
+    }
     if (editing.id) await (supabase as any).from('custom_fields').update(payload).eq('id', editing.id)
     else await (supabase as any).from('custom_fields').insert(payload)
     setSaving(false); setEditing(null); await load()
@@ -73,11 +84,11 @@ export default function CustomFieldsSettings() {
           {fields.map(f => (
             <div key={f.id} style={{ ...S.card, marginBottom: 0, padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{f.title}</p>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{f.title || f.field_label || f.field_name}</p>
                 <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--slate)', textTransform: 'capitalize' }}>Type: {f.field_type}</p>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => setEditing(f)} style={{ ...S.btnGhost, padding: '6px 14px', fontSize: 12.5 }}>Edit</button>
+                <button onClick={() => setEditing({ ...f, title: f.title || f.field_label || f.field_name })} style={{ ...S.btnGhost, padding: '6px 14px', fontSize: 12.5 }}>Edit</button>
                 <button onClick={() => remove(f.id)} style={{ padding: '6px 14px', borderRadius: 8, background: '#fff', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
               </div>
             </div>
