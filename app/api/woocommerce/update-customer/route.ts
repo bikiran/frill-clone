@@ -17,13 +17,16 @@ export async function POST(req: NextRequest) {
     if (!companyId || !email || !field) return NextResponse.json({ error: 'Missing params' }, { status: 400 })
 
     const db = admin()
-    const { data: integ } = await db.from('woocommerce_integrations').select('*').eq('company_id', companyId).maybeSingle()
-    if (!integ?.is_active || !integ.store_url || !integ.consumer_key || !integ.consumer_secret) {
+    // With multiple stores, pick the first active one (best-effort push-back).
+    const { data: integs } = await db.from('woocommerce_integrations').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true })
+    const integ = integs?.[0]
+    if (!integ?.store_url || !integ.consumer_key || !integ.consumer_secret) {
       return NextResponse.json({ ok: true, skipped: 'woo not configured' })
     }
 
     // Find the matching WooCommerce customer id
-    const { data: wooCust } = await db.from('woocommerce_customers').select('woo_customer_id').eq('company_id', companyId).ilike('email', email).maybeSingle()
+    const { data: wooCustRows } = await db.from('woocommerce_customers').select('woo_customer_id').eq('company_id', companyId).ilike('email', email).limit(1)
+    const wooCust = wooCustRows?.[0]
     if (!wooCust?.woo_customer_id) return NextResponse.json({ ok: true, skipped: 'no matching woo customer' })
 
     // Map Colvy fields → WooCommerce fields

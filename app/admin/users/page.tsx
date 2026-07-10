@@ -181,12 +181,13 @@ export default function UsersPage() {
         if (!companyId) return
         const company = { id: companyId }
 
-        // Check if WooCommerce integration exists — maybeSingle never throws
-        const { data: wooIntegration } = await sb
+        // Check if any WooCommerce integration exists (a company can have several)
+        const { data: wooRows } = await sb
           .from('woocommerce_integrations')
           .select('id, is_active')
           .eq('company_id', company.id)
-          .maybeSingle()
+          .limit(1)
+        const wooIntegration = wooRows?.[0]
 
         setHasWooCommerce(!!wooIntegration)
 

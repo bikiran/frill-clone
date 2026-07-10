@@ -32,6 +32,8 @@ export default function WooCommerceIntegration() {
 
   // Integration status
   const [integration, setIntegration] = useState<any>(null)
+  const [stores, setStores] = useState<any[]>([])
+  const [addingStore, setAddingStore] = useState(false)
   const [editing, setEditing] = useState(false)
 
   useEffect(() => {
@@ -134,6 +136,7 @@ export default function WooCommerceIntegration() {
     try {
       const res = await fetch(`/api/woocommerce/setup?companyId=${cid}`)
       const result = await res.json()
+      setStores(result.stores || [])
       if (result.data) {
         setIntegration(result.data)
         // Pre-populate form fields for editing
@@ -199,8 +202,10 @@ export default function WooCommerceIntegration() {
         return
       }
 
-      setSuccess(editing ? 'WooCommerce configuration updated!' : 'WooCommerce integration configured successfully!')
+      setSuccess(editing ? 'WooCommerce configuration updated!' : 'Store connected successfully!')
       setEditing(false)
+      setAddingStore(false)
+      setStoreUrl('')
       
       // Wait for integration to be fetched
       await fetchIntegration(companyId)
@@ -217,7 +222,7 @@ export default function WooCommerceIntegration() {
     }
   }
 
-  const handleSync = async (incremental = false) => {
+  const handleSync = async (incremental = false, integrationId?: string) => {
     setSyncing(true)
     setError('')
     setSuccess('')
@@ -226,7 +231,7 @@ export default function WooCommerceIntegration() {
       // you close this tab or your laptop).
       const res = await fetch('/api/woocommerce/sync-start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, incremental }),
+        body: JSON.stringify({ companyId, incremental, integrationId }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not start sync')
@@ -262,6 +267,19 @@ export default function WooCommerceIntegration() {
       }
     }
     tick()
+  }
+
+  const disconnectStore = async (integrationId: string) => {
+    if (!confirm('Remove this store? Its synced customers stay, but it will stop syncing.')) return
+    try {
+      await fetch('/api/woocommerce/setup', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, integrationId }),
+      })
+      if (companyId) await fetchIntegration(companyId)
+    } catch (err: any) {
+      setError(err.message || 'Failed to remove store')
+    }
   }
 
   const handleDisconnect = async () => {
@@ -357,15 +375,21 @@ export default function WooCommerceIntegration() {
         </div>
       )}
 
-      {(!integration || editing) ? (
+      {(stores.length === 0 || editing || addingStore) ? (
         <form onSubmit={handleConfigure} style={{
           borderRadius: '12px',
           border: '1px solid var(--border)',
           padding: '24px',
           background: '#fff'
         }}>
+          {addingStore && (
+            <button type="button" onClick={() => { setAddingStore(false); setStoreUrl(''); setEditing(false) }}
+              style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', marginBottom: 12, padding: 0 }}>
+              ← Back to my stores
+            </button>
+          )}
           <h2 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--ink)' }}>
-            {editing ? 'Update WooCommerce Configuration' : 'Configure WooCommerce'}
+            {editing ? 'Update store' : addingStore ? 'Add another store' : 'Configure WooCommerce'}
           </h2>
 
           <div style={{ marginBottom: '16px' }}>
@@ -516,29 +540,37 @@ export default function WooCommerceIntegration() {
           padding: '24px',
           background: 'var(--peach)'
         }}>
-          <h2 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', color: 'var(--ink)' }}>
-            ✓ Connected to WooCommerce
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0, color: 'var(--ink)' }}>
+              ✓ Connected {stores.length > 1 ? `— ${stores.length} stores` : 'to WooCommerce'}
+            </h2>
+            <button type="button" onClick={() => { setAddingStore(true); setStoreUrl(''); setEditing(false) }}
+              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--coral)', background: '#fff', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              + Add another store
+            </button>
+          </div>
 
-          <div style={{
-            padding: '16px',
-            background: '#fff',
-            borderRadius: '8px',
-            marginBottom: '16px'
-          }}>
-            <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Store URL</p>
-            <p style={{ margin: '0', fontSize: '13px', fontWeight: 500, color: 'var(--ink)' }}>
-              {integration.store_url}
-            </p>
-
-            {integration.last_synced_at && (
-              <>
-                <p style={{ margin: '12px 0 8px 0', fontSize: '12px', color: '#666' }}>Last Synced</p>
-                <p style={{ margin: '0', fontSize: '13px', color: 'var(--ink)' }}>
-                  {new Date(integration.last_synced_at).toLocaleString()}
-                </p>
-              </>
-            )}
+          {/* All connected stores */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+            {stores.map((s: any) => (
+              <div key={s.id} style={{ padding: '14px 16px', background: '#fff', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>
+                      🛒 {s.store_name || (() => { try { return new URL(s.store_url).hostname.replace(/^www\./, '') } catch { return s.store_url } })()}
+                    </p>
+                    <p style={{ margin: '2px 0 0', fontSize: 12, color: '#888' }}>{s.store_url}</p>
+                    {s.last_synced_at && <p style={{ margin: '4px 0 0', fontSize: 11.5, color: '#999' }}>Last synced {new Date(s.last_synced_at).toLocaleString()}</p>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => handleSync(false, s.id)} disabled={syncing}
+                      style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Sync</button>
+                    <button onClick={() => disconnectStore(s.id)}
+                      style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove</button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>

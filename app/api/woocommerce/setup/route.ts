@@ -88,16 +88,28 @@ export async function POST(req: NextRequest) {
       is_active: true
     }
 
+    // Try to read the store's display name (blogname) so we can label it nicely.
+    try {
+      const info = await woo.getStoreInfo?.()
+      if (info?.name) updatePayload.store_name = info.name
+    } catch {}
+    if (!updatePayload.store_name) {
+      // Fall back to the domain as a readable label
+      try { updatePayload.store_name = new URL(normalizedUrl).hostname.replace(/^www\./, '') } catch {}
+    }
+
     // Only update credentials if provided
     if (consumerKey) updatePayload.consumer_key = consumerKey
     if (consumerSecret) updatePayload.consumer_secret = consumerSecret
 
-    // Save integration settings
+    // Save integration settings — keyed on (company_id, store_url) so a company
+    // can connect multiple different stores, but re-saving the same store URL
+    // updates it rather than duplicating.
     const { data, error } = await supabase
       .from('woocommerce_integrations')
       .upsert(
         updatePayload,
-        { onConflict: 'company_id' }
+        { onConflict: 'company_id,store_url' }
       )
       .select()
       .single()
@@ -142,17 +154,19 @@ export async function GET(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY || ''
     )
 
-    const { data, error } = await supabase
+    const { data: stores, error } = await supabase
       .from('woocommerce_integrations')
-      .select('id, company_id, store_url, is_active, last_synced_at, sync_frequency_minutes')
+      .select('id, company_id, store_url, store_name, is_active, last_synced_at, last_full_sync_at, sync_frequency_minutes')
       .eq('company_id', companyId)
-      .maybeSingle()
+      .order('created_at', { ascending: true })
 
     if (error) {
-      return NextResponse.json({ data: null }, { status: 200 })
+      return NextResponse.json({ data: null, stores: [] }, { status: 200 })
     }
 
-    return NextResponse.json({ data })
+    // `data` (singular) kept for backward compatibility with existing callers;
+    // `stores` is the full list for the multi-store UI.
+    return NextResponse.json({ data: stores?.[0] || null, stores: stores || [] })
   } catch (error: any) {
     console.error('[WooCommerce Setup] Error:', error)
     return NextResponse.json(
@@ -168,7 +182,7 @@ export async function GET(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    const { companyId } = await req.json()
+    const { companyId, integrationId } = await req.json()
 
     if (!companyId) {
       return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
@@ -180,10 +194,10 @@ export async function DELETE(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY || ''
     )
 
-    const { error } = await supabase
-      .from('woocommerce_integrations')
-      .delete()
-      .eq('company_id', companyId)
+    // Delete a specific store if an id is given, otherwise all of the company's.
+    let q = supabase.from('woocommerce_integrations').delete()
+    q = integrationId ? q.eq('id', integrationId).eq('company_id', companyId) : q.eq('company_id', companyId)
+    const { error } = await q
 
     if (error) {
       return NextResponse.json(

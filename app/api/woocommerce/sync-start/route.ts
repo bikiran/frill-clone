@@ -21,25 +21,35 @@ function origin(req: NextRequest) {
 // the user closes their browser / laptop.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, incremental } = await req.json()
+    const { companyId, incremental, integrationId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
 
-    // Don't start a second job if one is already running
+    // Resolve the target store: the given integrationId, or the company's first.
+    let integ: any = null
+    if (integrationId) {
+      const r = await db.from('woocommerce_integrations').select('id, last_full_sync_at').eq('id', integrationId).maybeSingle()
+      integ = r.data
+    } else {
+      const r = await db.from('woocommerce_integrations').select('id, last_full_sync_at').eq('company_id', companyId).order('created_at', { ascending: true }).limit(1)
+      integ = r.data?.[0] || null
+    }
+    if (!integ) return NextResponse.json({ error: 'No WooCommerce store found' }, { status: 404 })
+
+    // Don't start a second job for the SAME store if one is already running
     const { data: running } = await db.from('woo_sync_jobs')
-      .select('id').eq('company_id', companyId).eq('status', 'running')
+      .select('id').eq('company_id', companyId).eq('integration_id', integ.id).eq('status', 'running')
       .order('started_at', { ascending: false }).limit(1).maybeSingle()
     if (running) return NextResponse.json({ ok: true, jobId: running.id, alreadyRunning: true })
 
     // For incremental syncs, only fetch records changed since the last full sync
     let modifiedAfter: string | null = null
     if (incremental) {
-      const { data: integ } = await db.from('woocommerce_integrations').select('last_full_sync_at').eq('company_id', companyId).maybeSingle()
-      modifiedAfter = integ?.last_full_sync_at || null
+      modifiedAfter = integ.last_full_sync_at || null
     }
 
     const { data: job } = await db.from('woo_sync_jobs').insert({
-      company_id: companyId, status: 'running', phase: 'customers', current_page: 1,
+      company_id: companyId, integration_id: integ.id, status: 'running', phase: 'customers', current_page: 1,
       modified_after: modifiedAfter,
       message: incremental ? 'Checking for updates…' : 'Starting sync…',
     }).select().maybeSingle()

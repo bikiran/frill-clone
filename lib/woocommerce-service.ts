@@ -218,6 +218,26 @@ export class WooCommerceService {
   /**
    * Test API credentials
    */
+  // Reads the store's display name (WooCommerce exposes it via system_status
+  // → settings.title, or we fall back to the WordPress site name).
+  async getStoreInfo(): Promise<{ name?: string } | null> {
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/system_status`, {
+        method: 'GET',
+        headers: { 'Authorization': `Basic ${this.basicAuth}`, 'Content-Type': 'application/json' },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const name = data?.settings?.title || data?.environment?.site_title
+        if (name) return { name }
+      }
+      // Fall back to the WP root endpoint which returns the site name
+      const wp = await fetch(`${this.config.storeUrl}/wp-json`)
+      if (wp.ok) { const d = await wp.json(); if (d?.name) return { name: d.name } }
+    } catch {}
+    return null
+  }
+
   async testConnection(): Promise<boolean> {
     try {
       const response = await fetch(

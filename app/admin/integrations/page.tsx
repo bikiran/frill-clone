@@ -245,11 +245,13 @@ export default function IntegrationsPage() {
 
       // Check for WooCommerce integration
       if (cid) {
-        const { data: wooData } = await (supabase as any)
+        const { data: wooRows } = await (supabase as any)
           .from('woocommerce_integrations')
           .select('is_active')
           .eq('company_id', cid)
-          .maybeSingle()
+          .eq('is_active', true)
+          .limit(1)
+        const wooData = wooRows?.[0]
         
         if (wooData && wooData.is_active) {
           enb['woocommerce'] = true

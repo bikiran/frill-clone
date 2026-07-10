@@ -36,12 +36,17 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
       process.env.SUPABASE_SERVICE_ROLE_KEY || ''
     )
 
-    // Get WooCommerce integration settings
-    const { data: integration, error: integrationError } = await supabase
-      .from('woocommerce_integrations')
-      .select('*')
-      .eq('company_id', companyId)
-      .maybeSingle()
+    // Get WooCommerce integration settings. With multi-store support, prefer a
+    // specific integrationId; otherwise fall back to the company's first store.
+    let integration: any = null
+    let integrationError: any = null
+    if (body.integrationId) {
+      const r = await supabase.from('woocommerce_integrations').select('*').eq('id', body.integrationId).maybeSingle()
+      integration = r.data; integrationError = r.error
+    } else {
+      const r = await supabase.from('woocommerce_integrations').select('*').eq('company_id', companyId).order('created_at', { ascending: true }).limit(1)
+      integration = r.data?.[0] || null; integrationError = r.error
+    }
 
     if (integrationError || !integration) {
       return { status: 404, body: { error: 'WooCommerce integration not configured' } }
@@ -131,7 +136,7 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         await supabase
           .from('woocommerce_integrations')
           .update({ last_synced_at: new Date().toISOString() })
-          .eq('company_id', companyId)
+          .eq('id', integration.id)
       }
 
       return { status: 200, body: {
@@ -288,7 +293,7 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         await supabase
           .from('woocommerce_integrations')
           .update({ last_synced_at: new Date().toISOString() })
-          .eq('company_id', companyId)
+          .eq('id', integration.id)
       }
 
       return { status: 200, body: {

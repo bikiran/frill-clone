@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
       // so there's no chance of a Vercel 508 redirect loop. Retry on 429.
       while (true) {
         try {
-          const result = await syncPage({ companyId, mode: phase, page, modifiedAfter })
+          const result = await syncPage({ companyId, integrationId: job.integration_id || undefined, mode: phase, page, modifiedAfter })
           if (result.status === 200) { data = result.body; break }
           if (result.status === 429 && attempt < 5) { attempt++; await sleep(attempt * 4000); continue }
           throw new Error(result.body?.error || `Sync failed on ${phase} page ${page}`)
@@ -102,7 +102,11 @@ export async function POST(req: NextRequest) {
             updated_at: new Date().toISOString(),
           }).eq('id', jobId)
           // Stamp the integration so future syncs can run incrementally
-          try { await db.from('woocommerce_integrations').update({ last_full_sync_at: new Date().toISOString() }).eq('company_id', companyId) } catch {}
+          try {
+            const upd = db.from('woocommerce_integrations').update({ last_full_sync_at: new Date().toISOString() })
+            if (job.integration_id) await upd.eq('id', job.integration_id)
+            else await upd.eq('company_id', companyId)
+          } catch {}
           return NextResponse.json({ ok: true, done: true })
         }
       }
