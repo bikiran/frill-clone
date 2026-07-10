@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon } from '@/components/Icons'
+import { SkeletonList } from '@/components/Skeleton'
 
 
 const COLORS = [
@@ -65,7 +66,7 @@ export default function StatusesPage() {
     setConfirmDelete(null)
   }
 
-  if (loading || !user) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
+  if (loading || !user) return <SkeletonList rows={6} />
 
   return (
     <div className="max-w-4xl mx-auto px-4 md:px-6 py-8">

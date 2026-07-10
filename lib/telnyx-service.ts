@@ -58,6 +58,74 @@ export class TelnyxService {
     return (await res.text()).trim()
   }
 
+  // ── Regulatory requirements (AU numbers need these before activation) ────────
+
+  // Discover what a given AU number type requires (fields + documents), so the
+  // UI can render exactly the right form. Returns Telnyx's requirement list.
+  async getPhoneNumberRequirements(params: { country?: string; phoneNumberType?: string; action?: string }) {
+    const country = params.country || 'AU'
+    const type = params.phoneNumberType || 'local'
+    const action = params.action || 'ordering'
+    const data = await this.req(`/phone_number_regulatory_requirements?filter[country_code]=${country}&filter[phone_number_type]=${type}&filter[action]=${action}`, 'GET')
+    return data.data || []
+  }
+
+  // Create a Requirement Group — a reusable bundle of regulatory info for a
+  // specific (country, number type, action). Returns the group with its id.
+  async createRequirementGroup(params: { country?: string; phoneNumberType?: string; action?: string; customerReference?: string }) {
+    const body = {
+      country_code: params.country || 'AU',
+      phone_number_type: params.phoneNumberType || 'local',
+      action: params.action || 'ordering',
+      customer_reference: params.customerReference,
+    }
+    const data = await this.req('/requirement_groups', 'POST', body)
+    return data.data
+  }
+
+  // Fill a requirement group's fields. `values` is a map of
+  // requirement_id → value (text) — addresses/documents use document ids.
+  async updateRequirementGroup(groupId: string, regulatoryRequirements: { requirement_id: string; field_value: string }[]) {
+    const data = await this.req(`/requirement_groups/${groupId}`, 'PATCH', { regulatory_requirements: regulatoryRequirements })
+    return data.data
+  }
+
+  // Submit the group for validation once all fields are filled.
+  async submitRequirementGroup(groupId: string) {
+    const data = await this.req(`/requirement_groups/${groupId}/submit`, 'POST')
+    return data.data
+  }
+
+  // Upload a document (proof of address, ID) to Telnyx; returns a document id
+  // to reference in a requirement group field.
+  async uploadDocument(fileBuffer: ArrayBuffer, filename: string, customerReference?: string) {
+    const form = new FormData()
+    form.append('file', new Blob([fileBuffer]), filename)
+    if (customerReference) form.append('customer_reference', customerReference)
+    const res = await fetch(`${TELNYX_BASE}/documents`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${this.apiKey}` },
+      body: form as any,
+    })
+    if (!res.ok) throw new Error(`Telnyx document upload: ${res.status} ${await res.text()}`)
+    const data = await res.json()
+    return data.data // has .id
+  }
+
+  // Kick off Onfido ID verification for an AU MOBILE order. Per Telnyx docs,
+  // POST to the sub number order's external_requirements with the end user's
+  // name; the response contains an Onfido URL to send to the end user.
+  async createOnfidoVerification(subNumberOrderId: string, firstName: string, lastName: string) {
+    const data = await this.req(`/external_requirements/${subNumberOrderId}/sub_number_orders`, 'POST', {
+      first_name: firstName,
+      last_name: lastName,
+    })
+    // The verification URL is in requirement_action.value
+    const action = data?.data?.requirement_action || data?.requirement_action
+    return { url: action?.value || null, raw: data }
+  }
+
+
   // Outbound call via Call Control (used for mobile-app / server-dialed calls later)
   async dial(params: { connection_id: string; to: string; from: string; webhook_url?: string }) {
     return this.req('/calls', 'POST', {

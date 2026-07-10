@@ -89,16 +89,28 @@ function fmtDateTime(d: string | undefined | null) {
 
 // Simple AI extraction — looks for phone, email, address patterns in message
 function extractFromText(text: string) {
-  // Phone: Australian mobiles (0435 844 469 / 0435844469 / +61 435 844 469),
-  // landlines (02 1234 5678), international. Requires 8-15 digits total.
+  // Strip out anything that looks like a UUID or long hex id first — interactive
+  // form responses embed UUIDs (e.g. 848f5356-cfc5-4610-8076-89984eff0d9f) whose
+  // digit runs were being misdetected as phone numbers.
+  const cleaned = text
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ' ')
+    .replace(/\b[0-9a-f]{16,}\b/gi, ' ')
+  // Phone: Australian mobiles (0435 844 469 / +61 435 844 469), landlines.
+  // Requires the candidate to be a plausible standalone phone, not embedded in
+  // a longer alphanumeric token.
   let phone: string | null = null
-  const phoneCandidates = text.match(/(?:\+?\d[\d\s\-().]{6,18}\d)/g) || []
+  const phoneCandidates = cleaned.match(/(?:\+?\d[\d\s\-().]{6,18}\d)/g) || []
   for (const cand of phoneCandidates) {
     const digits = cand.replace(/\D/g, '')
-    if (digits.length >= 8 && digits.length <= 15) { phone = cand.replace(/\s+/g, ' ').trim(); break }
+    // AU numbers are 9 (landline w/o 0), 10 (04xx / 0x), or 11-12 (+61…). Reject
+    // the odd lengths that hex fragments produce.
+    if (digits.length < 8 || digits.length > 12) continue
+    // Reject if the surrounding text shows it's part of a hex/UUID token
+    if (/[a-f]/i.test(cand.replace(/[\s\-().+]/g, ''))) continue
+    phone = cand.replace(/\s+/g, ' ').trim(); break
   }
-  const email = text.match(/[\w.+-]+@[\w-]+\.\w+/)?.[0] || null
-  const address = text.match(/\d+[A-Za-z]?[/-]?\d*\s+[A-Za-z0-9\s,.'-]+?(Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Place|Pl|Court|Ct|Way|Boulevard|Blvd|Crescent|Cres|Terrace|Tce|Parade|Pde|Close|Cl|Highway|Hwy)\b[A-Za-z0-9\s,.'-]*/i)?.[0]?.trim() || null
+  const email = cleaned.match(/[\w.+-]+@[\w-]+\.\w+/)?.[0] || null
+  const address = cleaned.match(/\d+[A-Za-z]?[/-]?\d*\s+[A-Za-z0-9\s,.'-]+?(Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Place|Pl|Court|Ct|Way|Boulevard|Blvd|Crescent|Cres|Terrace|Tce|Parade|Pde|Close|Cl|Highway|Hwy)\b[A-Za-z0-9\s,.'-]*/i)?.[0]?.trim() || null
   return { phone: phone || null, email: email || null, address: address || null }
 }
 
@@ -109,6 +121,8 @@ export default function InboxPage() {
   const [user, setUser] = useState<any>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selected, setSelected] = useState<Conversation | null>(null)
+  const selectedRef = useRef<Conversation | null>(null)
+  const [showMergePicker, setShowMergePicker] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [contact, setContact] = useState<Contact | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -197,15 +211,10 @@ export default function InboxPage() {
     if (statusFilter !== 'all') q = q.eq('status', statusFilter)
     const { data } = await q.order('last_message_at', { ascending: false }).limit(50)
     setConversations(data || [])
-    // On first load (desktop), open the top conversation instead of a blank
-    // pane. Only auto-select when nothing is selected yet and we're not on a
-    // narrow screen (mobile shows the list first by design).
-    if (data && data.length > 0) {
-      setSelected(prev => {
-        if (prev) return prev
-        if (typeof window !== 'undefined' && window.innerWidth < 768) return prev
-        return data[0]
-      })
+    // On first load (desktop), OPEN the top conversation — including its messages
+    // and contact — instead of just highlighting it (which left the pane blank).
+    if (data && data.length > 0 && !selectedRef.current && typeof window !== 'undefined' && window.innerWidth >= 768) {
+      selectConversation(data[0])
     }
   }, [companyId, statusFilter])
 
@@ -289,8 +298,25 @@ export default function InboxPage() {
   }
 
   // ── Select conversation ────────────────────────────────────────────────────
+  const mergeConversation = async (sourceId: string) => {
+    // Merge the picked conversation INTO the currently selected one: move its
+    // messages over, then archive the source.
+    if (!selected?.id || sourceId === selected.id) return
+    try {
+      await (supabase as any).from('messages').update({ conversation_id: selected.id }).eq('conversation_id', sourceId)
+      await (supabase as any).from('conversations').update({ status: 'resolved', is_archived: true, merged_into: selected.id }).eq('id', sourceId)
+      setShowMergePicker(false)
+      showToast('Conversations merged')
+      await loadConversations()
+      selectConversation(selected)
+    } catch (e: any) {
+      showToast('Could not merge: ' + e.message)
+    }
+  }
+
   const selectConversation = async (conv: Conversation) => {
     setSelected(conv)
+    selectedRef.current = conv
     setAiDetected(null)
     setShowContactEdit(false)
     setReplyTo(null)
@@ -316,11 +342,24 @@ export default function InboxPage() {
     loadConversationExtras(conv.id)
     // Load WooCommerce data if the contact's email matches an order
     loadWooData(conv.contact_id)
-    // Scan messages for AI-detected info
+    // Scan messages for AI-detected info — only real visitor text, never
+    // system/interactive/payment messages (those contain UUIDs/JSON).
     setTimeout(() => {
-      const allText = (msgs || []).filter((m: Message) => m.sender_type === 'visitor').map((m: Message) => m.content).join(' ')
+      const allText = (msgs || [])
+        .filter((m: Message) => m.sender_type === 'visitor' && !(m as any).message_type)
+        .map((m: Message) => m.content).join(' ')
       const extracted = extractFromText(allText)
-      if (extracted.phone || extracted.email || extracted.address) setAiDetected(extracted)
+      // Honour anything the user already dismissed or saved for this conversation.
+      let dismissed: Record<string, string[]> = {}
+      try { dismissed = JSON.parse(localStorage.getItem('colvy-ai-dismissed') || '{}') } catch {}
+      const convDismissed = dismissed[conv.id] || []
+      const filtered: any = {}
+      ;(['phone', 'email', 'address'] as const).forEach(k => {
+        const v = (extracted as any)[k]
+        if (v && !convDismissed.includes(v)) filtered[k] = v
+      })
+      if (filtered.phone || filtered.email || filtered.address) setAiDetected(filtered)
+      else setAiDetected(null)
     }, 300)
   }
 
@@ -736,6 +775,31 @@ export default function InboxPage() {
     } catch {}
   }
 
+  const dismissAiField = (field: 'phone' | 'email' | 'address', value?: string | null) => {
+    // Remember this value as dismissed for this conversation so it won't be
+    // re-detected on the next open.
+    if (selected?.id && value) {
+      try {
+        const all = JSON.parse(localStorage.getItem('colvy-ai-dismissed') || '{}')
+        all[selected.id] = Array.from(new Set([...(all[selected.id] || []), value]))
+        localStorage.setItem('colvy-ai-dismissed', JSON.stringify(all))
+      } catch {}
+    }
+    setAiDetected(prev => prev ? { ...prev, [field]: null } : null)
+  }
+
+  const dismissAllAi = () => {
+    if (selected?.id && aiDetected) {
+      try {
+        const all = JSON.parse(localStorage.getItem('colvy-ai-dismissed') || '{}')
+        const vals = [aiDetected.phone, aiDetected.email, aiDetected.address].filter(Boolean) as string[]
+        all[selected.id] = Array.from(new Set([...(all[selected.id] || []), ...vals]))
+        localStorage.setItem('colvy-ai-dismissed', JSON.stringify(all))
+      } catch {}
+    }
+    setAiDetected(null)
+  }
+
   const acceptAiField = async (field: string, value: string) => {
     const updated = { ...editContact, [field]: value }
     setEditContact(updated)
@@ -758,7 +822,7 @@ export default function InboxPage() {
         setSelected(s => s ? { ...s, contact_id: newContact.id } as any : s)
       }
     }
-    setAiDetected(prev => prev ? { ...prev, [field]: null } : null)
+    dismissAiField(field as any, value)
   }
 
   const filteredConvs = conversations.filter(c => {
@@ -776,6 +840,31 @@ export default function InboxPage() {
   return (
     <div style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <IncomingCallListener companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
+
+      {/* Merge picker */}
+      {showMergePicker && selected && (
+        <div onClick={() => setShowMergePicker(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: 420, maxWidth: '100%', maxHeight: '70vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
+              <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Merge a conversation into this one</p>
+              <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Its messages move here; the other is archived.</p>
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {conversations.filter(c => c.id !== selected.id).map(c => (
+                <button key={c.id} type="button" onClick={() => mergeConversation(c.id)}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 18px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{c.subject || (c as any).sms_number || 'Visitor'}</div>
+                  <div style={{ fontSize: 12, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.last_message || 'No messages'}</div>
+                </button>
+              ))}
+              {conversations.filter(c => c.id !== selected.id).length === 0 && (
+                <p style={{ padding: 24, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>No other conversations to merge.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* Toast */}
       {toast && (
@@ -1009,7 +1098,7 @@ export default function InboxPage() {
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> {linkCopied ? 'Copied!' : 'Copy chat link'}
                     </button>
-                    <button type="button" onClick={() => { setShowActions(false); alert('Select another conversation to merge into this one — coming from the list soon.') }}
+                    <button type="button" onClick={() => { setShowActions(false); setShowMergePicker(true) }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8L22 12L18 16"/><path d="M2 12H22"/><path d="M6 8L2 12L6 16"/></svg> Merge conversation
                     </button>
@@ -1058,7 +1147,7 @@ export default function InboxPage() {
                     📍 {aiDetected.address} — click to save
                   </button>
                 )}
-                <button type="button" onClick={() => setAiDetected(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 14 }}>✕</button>
+                <button type="button" onClick={dismissAllAi} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 14 }}>✕</button>
               </div>
             )}
 
@@ -1389,11 +1478,11 @@ export default function InboxPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                     {([
                       ['name', 'Name', contact.name],
+                      ['company', 'Company', (contact as any).company],
                       ['email', 'Email', contact.email],
                       ['phone', 'Phone', contact.phone],
                       ['address', 'Address', [contact.address, contact.city, contact.country].filter(Boolean).join(', ')],
                     ] as [string, string, string][])
-                      .filter(([, , v]) => v)
                       .map(([field, label, value]) => (
                         <div key={field} className="contact-field-row" style={{ position: 'relative' }}>
                           <p style={{ margin: '0 0 2px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>{label}</p>
@@ -1411,7 +1500,10 @@ export default function InboxPage() {
                             </div>
                           ) : (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', flex: 1, wordBreak: 'break-word' }}>{value}</p>
+                            <p style={{ margin: 0, fontSize: 13, color: value ? 'var(--ink)' : '#c0c0c5', flex: 1, wordBreak: 'break-word', fontStyle: value ? 'normal' : 'italic', cursor: value ? 'default' : 'pointer' }}
+                               onClick={() => { if (!value) { setEditField(field); setEditFieldValue('') } }}>
+                              {value || `Add ${label.toLowerCase()}`}
+                            </p>
                             <div className="contact-field-actions" style={{ display: 'flex', gap: 3, opacity: 0, transition: 'opacity 0.12s' }}>
                               {field === 'phone' && (
                                 <button type="button" title="Call" onClick={() => { const bar = document.querySelector('[data-callbar-btn]') as HTMLButtonElement; bar?.click() }}

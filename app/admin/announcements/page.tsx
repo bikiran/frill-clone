@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { PlusIcon, TrashIcon } from '@/components/Icons'
+import { SkeletonList } from '@/components/Skeleton'
 
 
 const TAG_COLORS: any = {
@@ -85,7 +86,7 @@ export default function AnnouncementsAdmin() {
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
-  if (loading || !user) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
+  if (loading || !user) return <SkeletonList rows={6} />
 
   return (
     <div className="flex min-h-[calc(100vh-56px)]">

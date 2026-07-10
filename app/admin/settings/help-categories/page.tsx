@@ -52,12 +52,26 @@ export default function HelpCategoriesPage() {
             .map((a: any) => (a.category || '').trim())
             .filter((c: string) => c.length > 0)))
           if (distinct.length > 0) {
-            const rows = distinct.map((name, i) => ({ company_id: co.id, name, position: i }))
-            const { data: inserted } = await (supabase as any)
+            const rows = distinct.map((name: any, i: number) => ({
+              company_id: co.id,
+              name,
+              slug: String(name).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+              position: i,
+            }))
+            const { data: inserted, error: insErr } = await (supabase as any)
               .from('help_categories')
               .insert(rows)
               .select()
-            setCategories(inserted || rows)
+            // Only use rows that came back WITH real ids. If the insert failed,
+            // re-fetch rather than rendering id-less rows (which caused every
+            // row to share the same blank id and edit together).
+            if (inserted && inserted.length > 0) {
+              setCategories(inserted)
+            } else {
+              const { data: refetched } = await (supabase as any)
+                .from('help_categories').select('*').eq('company_id', co.id).order('position', { ascending: true })
+              setCategories(refetched || [])
+            }
           } else {
             setCategories([])
           }
@@ -206,7 +220,7 @@ export default function HelpCategoriesPage() {
                   opacity: draggedId === cat.id ? 0.5 : 1,
                 }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                {editingId === cat.id ? (
+                {editingId && editingId === cat.id ? (
                   <input
                     value={editName}
                     onChange={e => setEditName(e.target.value)}
@@ -217,7 +231,7 @@ export default function HelpCategoriesPage() {
                 ) : (
                   <div style={{ flex: 1 }}>
                     <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', margin: '0 0 2px 0' }}>{cat.name}</p>
-                    <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>ID: {cat.slug}</p>
+                    <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>{cat.slug || (cat.id ? cat.id.slice(0, 8) : '')}</p>
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 8 }}>

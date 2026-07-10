@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ConfirmModal from '@/components/ConfirmModal'
+import { SkeletonList } from '@/components/Skeleton'
 
 
 export default function TeamPage() {
@@ -109,7 +110,7 @@ export default function TeamPage() {
     fetchMembers()
   }
 
-  if (!user) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
+  if (!user) return <SkeletonList rows={6} />
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
@@ -168,7 +169,7 @@ export default function TeamPage() {
         </div>
 
         {loading ? (
-          <div className="p-8 text-center text-sm" style={{ color: 'var(--slate)' }}>Loading...</div>
+          <SkeletonList rows={5} />
         ) : members.length === 0 ? (
           <div className="p-10 text-center">
             <div className="text-4xl mb-3">👥</div>

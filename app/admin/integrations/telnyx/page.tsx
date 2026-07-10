@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import RegulatoryForm from '@/components/RegulatoryForm'
 
 export default function TelnyxIntegration() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -15,6 +16,9 @@ export default function TelnyxIntegration() {
   const [available, setAvailable] = useState<any[]>([])
   const [searching, setSearching] = useState(false)
   const [buying, setBuying] = useState(false)
+  const [showRegForm, setShowRegForm] = useState(false)
+  const [pendingNumber, setPendingNumber] = useState<string | undefined>(undefined)
+  const [regDone, setRegDone] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   useEffect(() => {
@@ -103,6 +107,18 @@ export default function TelnyxIntegration() {
 
   const buyNumber = async (phoneNumber?: string) => {
     if (!companyId) return
+    // AU numbers require a regulatory bundle before activation. Collect it
+    // first — the form must be completed before we start checkout.
+    if (!regDone) {
+      setPendingNumber(phoneNumber)
+      setShowRegForm(true)
+      return
+    }
+    await startCheckout(phoneNumber)
+  }
+
+  const startCheckout = async (phoneNumber?: string) => {
+    if (!companyId) return
     setBuying(true); setError(''); setSuccess('')
     try {
       // Get the user's email for the checkout
@@ -114,8 +130,6 @@ export default function TelnyxIntegration() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not start checkout')
       if (data.url) {
-        // Redirect to Stripe checkout; the number is provisioned by the webhook
-        // once the $2/month subscription is confirmed.
         window.location.href = data.url
         return
       }
@@ -137,6 +151,19 @@ export default function TelnyxIntegration() {
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '28px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+      {showRegForm && companyId && (
+        <RegulatoryForm
+          companyId={companyId}
+          numberType={numberType}
+          onCancel={() => setShowRegForm(false)}
+          onComplete={(_bundleId) => {
+            setShowRegForm(false)
+            setRegDone(true)
+            // Continue straight to checkout for the number they picked
+            startCheckout(pendingNumber)
+          }}
+        />
+      )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <div style={{ width: 44, height: 44, borderRadius: 10, background: '#00c08b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 22 }}>📞</div>
         <div>

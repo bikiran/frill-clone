@@ -31,7 +31,7 @@ const INTEGRATIONS = [
   },
   {
     id: 'telnyx',
-    name: 'Telnyx — Voice & SMS',
+    name: 'Calls & SMS',
     desc: 'Call customers from your browser and continue live chats over SMS to their mobile.',
     icon: '📞',
     color: '#00c08b',

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon, SurveyIcon } from '@/components/Icons'
+import { SkeletonList } from '@/components/Skeleton'
 
 
 const SURVEY_TYPES = [
@@ -98,7 +99,7 @@ export default function SurveysAdmin() {
     setConfirmDelete(null)
   }
 
-  if (loading || !user) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
+  if (loading || !user) return <SkeletonList rows={6} />
 
   return (
     <div className="min-h-screen">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { SkeletonList } from '@/components/Skeleton'
 
 // Terminology sections matching Frill's "Languages" page structure
 const SECTIONS = [
@@ -138,7 +139,7 @@ export default function TerminologyPage() {
 
   const hasChanges = section.keys.some(k => values[k] !== saved[k])
 
-  if (loading) return <div style={{ padding: 32, color: 'var(--slate)' }}>Loading...</div>
+  if (loading) return <SkeletonList rows={6} />
 
   return (
     <div style={{ display: 'flex', minHeight: '100%', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>

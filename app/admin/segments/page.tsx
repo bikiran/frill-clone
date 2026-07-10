@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon, SearchIcon } from '@/components/Icons'
+import { SkeletonList } from '@/components/Skeleton'
 
 
 type Segment = { id: string; name: string; conditions: any[]; match_type: string; created_at: string }
@@ -98,7 +99,7 @@ export default function SegmentsPage() {
     setConfirmDelete(null)
   }
 
-  if (loading || !user) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
+  if (loading || !user) return <SkeletonList rows={6} />
 
   return (
     <div className="flex min-h-[calc(100vh-56px)]">

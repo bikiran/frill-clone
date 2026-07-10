@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { SkeletonList } from '@/components/Skeleton'
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; address: string | null; city: string | null; country: string | null; source: string; tags: string[]; subscribed_to_marketing: boolean; created_at: string }
 
@@ -103,7 +104,7 @@ export default function ContactsPage() {
 
         <div style={{ flex: 1, overflowY: 'auto', background: '#fff' }}>
           {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>Loading…</div>
+            <SkeletonList rows={6} />
           ) : contacts.length === 0 ? (
             <div style={{ padding: 60, textAlign: 'center', color: '#9ca3af' }}>
               <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>No contacts yet</p>

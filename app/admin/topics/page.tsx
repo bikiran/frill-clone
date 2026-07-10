@@ -22,6 +22,9 @@ export default function TopicsPage() {
   const [checking, setChecking] = useState(true)
   const [topicLimit, setTopicLimit] = useState(3)
   const [topicPermission, setTopicPermission] = useState<'everybody' | 'members'>('everybody')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editLabel, setEditLabel] = useState('')
+  const [draggedId, setDraggedId] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
   const slug = searchParams.get('slug') || ''
@@ -54,6 +57,23 @@ export default function TopicsPage() {
     setTopics(topics.filter(t => t.id !== id))
   }
 
+  const saveEdit = (id: string) => {
+    if (!editLabel.trim()) { setEditingId(null); return }
+    setTopics(topics.map(t => t.id === id ? { ...t, label: editLabel.trim() } : t))
+    setEditingId(null); setEditLabel('')
+  }
+
+  const reorder = (fromId: string, toId: string) => {
+    if (fromId === toId) return
+    const arr = [...topics]
+    const from = arr.findIndex(t => t.id === fromId)
+    const to = arr.findIndex(t => t.id === toId)
+    if (from < 0 || to < 0) return
+    const [moved] = arr.splice(from, 1)
+    arr.splice(to, 0, moved)
+    setTopics(arr)
+  }
+
   if (checking) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -64,6 +84,7 @@ export default function TopicsPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
+      <style>{`.topic-row:hover .topic-actions { opacity: 1 !important; }`}</style>
       <div className="mb-8">
         <Link href="/" className="text-sm font-medium" style={{ color: 'var(--coral)' }}>
           ← Back to Ideas
@@ -173,25 +194,50 @@ export default function TopicsPage() {
           {topics.map(topic => (
             <div
               key={topic.id}
-              className="p-4 flex items-center justify-between hover:bg-gray-50 transition-smooth"
+              draggable
+              onDragStart={() => setDraggedId(topic.id)}
+              onDragOver={e => e.preventDefault()}
+              onDrop={() => { if (draggedId) reorder(draggedId, topic.id); setDraggedId(null) }}
+              className="topic-row p-4 flex items-center justify-between hover:bg-gray-50 transition-smooth"
+              style={{ cursor: 'grab', opacity: draggedId === topic.id ? 0.5 : 1 }}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3" style={{ flex: 1 }}>
+                <span style={{ color: 'var(--slate)', cursor: 'grab' }} title="Drag to reorder">⠿</span>
                 <span className="text-2xl">{topic.emoji}</span>
-                <div>
-                  <p className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>
-                    {topic.label}
-                  </p>
-                  <p className="text-xs" style={{ color: 'var(--slate)' }}>
-                    #{topic.id}
-                  </p>
-                </div>
+                {editingId === topic.id ? (
+                  <input
+                    value={editLabel}
+                    onChange={e => setEditLabel(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveEdit(topic.id); if (e.key === 'Escape') setEditingId(null) }}
+                    autoFocus
+                    style={{ flex: 1, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }}
+                  />
+                ) : (
+                  <div>
+                    <p className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>{topic.label}</p>
+                    <p className="text-xs" style={{ color: 'var(--slate)' }}>#{topic.id}</p>
+                  </div>
+                )}
               </div>
-              <button
-                onClick={() => removeTopic(topic.id)}
-                className="px-3 py-1.5 rounded-lg text-sm font-medium border transition-smooth press-effect text-red-600"
-                style={{ borderColor: '#fca5a5' }}>
-                Delete
-              </button>
+              {editingId === topic.id ? (
+                <div className="flex gap-2">
+                  <button onClick={() => saveEdit(topic.id)} className="px-3 py-1.5 rounded-lg text-sm font-medium" style={{ background: 'var(--coral)', color: '#fff' }}>Save</button>
+                  <button onClick={() => setEditingId(null)} className="px-3 py-1.5 rounded-lg text-sm font-medium border" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
+                </div>
+              ) : (
+                <div className="topic-actions flex gap-2" style={{ opacity: 0, transition: 'opacity 0.12s' }}>
+                  <button onClick={() => { setEditingId(topic.id); setEditLabel(topic.label) }}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium border transition-smooth press-effect"
+                    style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                    Edit
+                  </button>
+                  <button onClick={() => removeTopic(topic.id)}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium border transition-smooth press-effect text-red-600"
+                    style={{ borderColor: '#fca5a5' }}>
+                    Delete
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
