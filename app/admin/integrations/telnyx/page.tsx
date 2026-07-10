@@ -86,8 +86,16 @@ export default function TelnyxIntegration() {
       const res = await fetch(`/api/telnyx/number?type=${numberType}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not search numbers')
-      setAvailable(data.numbers || [])
-      if ((data.numbers || []).length === 0) setError('No numbers available right now — try mobile, or check back shortly.')
+      // Belt-and-braces: drop anything that isn't a complete number so a blank
+      // "+61 468 --- ---" can never render.
+      const clean = (data.numbers || []).filter((n: any) => {
+        const d = (n.phone_number || '').replace(/^\+61/, '').replace(/\D/g, '')
+        return d.length === 9
+      })
+      setAvailable(clean)
+      if (clean.length === 0) setError(data.error || (numberType === 'mobile'
+        ? 'No mobile numbers available from our provider right now — a landline number also handles calls and SMS.'
+        : 'No numbers available right now — please check back shortly.'))
     } catch (e: any) { setError(e.message) }
     setSearching(false)
   }

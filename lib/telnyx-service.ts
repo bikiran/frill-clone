@@ -77,26 +77,45 @@ export class TelnyxService {
     const country = params.country || 'AU'
     const limit = params.limit || 5
     const attempts: string[] = []
-    // 1) requested type + sms/voice features
     const t = params.type || 'local'
-    attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[features]=sms,voice&filter[limit]=${limit}`)
-    // 2) requested type, voice only (many AU landlines lack SMS)
-    attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[features]=voice&filter[limit]=${limit}`)
-    // 3) requested type, no feature filter
-    attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[limit]=${limit}`)
-    // 4) national type (AU numbers are often classified national), no features
-    attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=national&filter[limit]=${limit}`)
-    // 5) any type in the country
-    attempts.push(`filter[country_code]=${country}&filter[limit]=${limit}`)
+    // Request extra results (we filter to complete numbers upstream) and disable
+    // best-effort so Telnyx returns actual dial-able numbers, not partial ranges
+    // (the cause of "+61 468 --- ---" blanks for AU mobile).
+    const big = Math.max(limit * 3, 20)
+    if (t === 'mobile') {
+      // AU mobiles are classified differently across Telnyx inventory — try
+      // mobile, then national, then national with a 04 prefix.
+      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=mobile&filter[features]=sms,voice&filter[best_effort]=false&filter[limit]=${big}`)
+      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=mobile&filter[best_effort]=false&filter[limit]=${big}`)
+      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=national&filter[national_destination_code]=4&filter[limit]=${big}`)
+      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=mobile&filter[limit]=${big}`)
+    } else {
+      // 1) requested type + sms/voice features
+      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[features]=sms,voice&filter[limit]=${big}`)
+      // 2) requested type, voice only (many AU landlines lack SMS)
+      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[features]=voice&filter[limit]=${big}`)
+      // 3) requested type, no feature filter
+      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[limit]=${big}`)
+      // 4) national type (AU numbers are often classified national), no features
+      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=national&filter[limit]=${big}`)
+    }
+    // final fallback: any number in the country
+    attempts.push(`filter[country_code]=${country}&filter[limit]=${big}`)
+
+    // Return only complete E.164 numbers (9 national digits for AU).
+    const complete = (pn: string) => {
+      if (!pn) return false
+      const d = pn.replace(/^\+\d{1,3}/, '').replace(/\D/g, '')
+      return d.length >= 8
+    }
 
     for (const q of attempts) {
       try {
         const data = await this.req(`/available_phone_numbers?${q}`, 'GET')
-        if (data.data && data.data.length > 0) return data.data
+        const list = (data.data || []).filter((n: any) => complete(n.phone_number))
+        if (list.length > 0) return list
       } catch (e: any) {
-        // "No coverage" comes back as an error on some filter combos — keep trying
         if (!/coverage|not found|no results/i.test(e.message || '')) {
-          // a real error (auth, etc.) — rethrow
           if (/authenticate|unauthorized|invalid api|forbidden/i.test(e.message || '')) throw e
         }
       }

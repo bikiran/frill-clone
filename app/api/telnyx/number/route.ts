@@ -23,14 +23,31 @@ export async function GET(req: NextRequest) {
     const type = (req.nextUrl.searchParams.get('type') as any) || 'local'
     const areaCode = req.nextUrl.searchParams.get('areaCode') || undefined
     const svc = new TelnyxService(PLATFORM_KEY)
-    const numbers = await svc.searchAvailableNumbers({ country: 'AU', type, limit: 6, areaCode })
-    return NextResponse.json({
-      numbers: numbers.map((n: any) => ({
+    const raw = await svc.searchAvailableNumbers({ country: 'AU', type, limit: 12, areaCode })
+    // Only return complete, dial-able E.164 AU numbers. Telnyx sometimes returns
+    // reserved/partial entries (especially for mobile) that render as
+    // "+61 468 --- ---" — filter those out so the buyer never sees a blank.
+    const isComplete = (pn: string) => {
+      if (!pn) return false
+      const d = pn.replace(/^\+61/, '').replace(/\D/g, '')
+      return d.length === 9 // AU national numbers are 9 digits after +61
+    }
+    const numbers = raw
+      .filter((n: any) => isComplete(n.phone_number))
+      .slice(0, 6)
+      .map((n: any) => ({
         phone_number: n.phone_number,
-        region: n.region_information?.[0]?.region_name || n.cost_information?.currency || 'AU',
+        region: n.region_information?.find((r: any) => r.region_type === 'location')?.region_name
+          || n.region_information?.[0]?.region_name
+          || (n.phone_number.replace(/^\+61/, '').startsWith('4') ? 'MOBILE' : 'AU'),
         monthly: 2, // Colvy's flat price to the customer
-      })),
-    })
+      }))
+    if (numbers.length === 0) {
+      return NextResponse.json({ numbers: [], error: type === 'mobile'
+        ? 'No mobile numbers are available from our provider right now — landline numbers work for both calls and SMS, or try again shortly.'
+        : 'No numbers available right now — please try again shortly.' })
+    }
+    return NextResponse.json({ numbers })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
