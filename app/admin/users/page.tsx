@@ -43,6 +43,7 @@ export default function UsersPage() {
   const [customerSearch, setCustomerSearch] = useState('')
   const [filterType, setFilterType] = useState<'all' | 'team' | 'customer'>('all')
   const [hasWooCommerce, setHasWooCommerce] = useState(false)
+  const [hasShopify, setHasShopify] = useState(false)
 
   const loadCustomerPage = async (page: number) => {
     try {
@@ -191,6 +192,15 @@ export default function UsersPage() {
 
         setHasWooCommerce(!!wooIntegration)
 
+        // Check for a connected Shopify store too
+        const { data: shopRows } = await sb
+          .from('shopify_integrations')
+          .select('id')
+          .eq('company_id', company.id)
+          .eq('is_active', true)
+          .limit(1)
+        setHasShopify(!!(shopRows && shopRows.length > 0))
+
         const { data: teamMembers } = await sb
           .from('team_members')
           .select('*')
@@ -252,6 +262,30 @@ export default function UsersPage() {
           )
         }
 
+        // Also pull Shopify customers (independent of WooCommerce) so they show
+        // even for merchants who only use Shopify.
+        try {
+          const { data: shopCustomers } = await (sb as any)
+            .from('shopify_customers')
+            .select('*')
+            .eq('company_id', company.id)
+            .order('total_spend', { ascending: false })
+            .range(0, 99)
+          if (shopCustomers && shopCustomers.length > 0) {
+            allUsers.push(...shopCustomers.map((c: any) => ({
+              id: c.id,
+              type: 'customer' as const,
+              email: c.email,
+              first_name: c.first_name,
+              last_name: c.last_name,
+              phone: c.phone,
+              total_spend: c.total_spend,
+              total_orders: c.total_orders,
+              source: 'shopify',
+            })))
+          }
+        } catch {}
+
         setUsers(allUsers)
       } catch (err) {
         console.error('Failed to load users:', err)
@@ -264,7 +298,8 @@ export default function UsersPage() {
   }, [slug])
 
   // Reset filter if no WooCommerce and trying to filter by customer
-  const effectiveFilterType = !hasWooCommerce && filterType === 'customer' ? 'all' : filterType
+  const hasEcommerce = hasWooCommerce || hasShopify
+  const effectiveFilterType = !hasEcommerce && filterType === 'customer' ? 'all' : filterType
 
   const filteredUsers = users.filter(user => {
     const matchesType = effectiveFilterType === 'all' || user.type === effectiveFilterType
@@ -288,11 +323,11 @@ export default function UsersPage() {
           Users & Customers
         </h1>
         <p style={{ fontSize: '14px', color: '#666', margin: '0' }}>
-          {hasWooCommerce ? 'Manage team members and view WooCommerce customers' : 'Manage team members'}
+          {hasEcommerce ? 'Manage team members and view customers' : 'Manage team members'}
         </p>
       </div>
 
-      {!hasWooCommerce && (
+      {!hasEcommerce && (
         <div style={{
           padding: '16px',
           borderRadius: '8px',
@@ -321,7 +356,7 @@ export default function UsersPage() {
         />
 
         <div style={{ display: 'flex', gap: '8px' }}>
-          {(['all', 'team', ...(hasWooCommerce ? ['customer'] : [])] as const).map(type => (
+          {(['all', 'team', ...(hasEcommerce ? ['customer'] : [])] as const).map(type => (
             <button
               key={type}
               onClick={() => setFilterType(type as any)}
@@ -451,7 +486,7 @@ export default function UsersPage() {
         </table>
       </div>
 
-      {!hasWooCommerce && (
+      {!hasEcommerce && (
         <div style={{
           borderRadius: '12px',
           border: '1px solid #fbbf24',
@@ -484,7 +519,7 @@ export default function UsersPage() {
           </p>
         </div>
 
-        {hasWooCommerce && (
+        {hasEcommerce && (
           <>
             <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
               <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Synced Customers</p>

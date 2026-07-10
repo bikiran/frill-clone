@@ -19,6 +19,17 @@ const INTEGRATIONS = [
     isDedicated: true, // Special flag for custom page
   },
   {
+    id: 'shopify',
+    name: 'Shopify',
+    desc: 'Connect your Shopify store to sync customers into Colvy. Works with multiple stores.',
+    icon: '🛒',
+    color: '#95BF47',
+    bg: '#eefbe0',
+    logo: '',
+    category: 'E-Commerce',
+    isDedicated: true,
+  },
+  {
     id: 'stripe',
     name: 'Stripe Payments',
     desc: 'Take card payments and send invoices directly inside the chat. Connect your own Stripe account.',
@@ -258,6 +269,15 @@ export default function IntegrationsPage() {
         } else {
           enb['woocommerce'] = false
         }
+
+        // Check for a connected Shopify store
+        const { data: shopRows } = await (supabase as any)
+          .from('shopify_integrations')
+          .select('is_active')
+          .eq('company_id', cid)
+          .eq('is_active', true)
+          .limit(1)
+        enb['shopify'] = !!(shopRows && shopRows.length > 0)
 
         // Check for Telnyx integration
         const { data: telnyxData } = await (supabase as any)
