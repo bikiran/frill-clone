@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { syncPage } from '../sync/route'
 
 export const maxDuration = 60 // allow up to 60s per batch (Vercel Pro)
 
@@ -25,14 +26,6 @@ function origin(req: NextRequest) {
   return 'https://colvy.com'
 }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
-
-// Safely parse a fetch response as JSON; if it's HTML/text (e.g. an error
-// page), surface a clean error instead of throwing an opaque JSON parse error.
-async function safeJson(res: Response, label: string) {
-  const text = await res.text()
-  try { return JSON.parse(text) }
-  catch { throw new Error(`${label} returned a non-JSON response (${res.status}). First chars: ${text.slice(0, 40)}`) }
-}
 
 // Processes a few pages of the current phase, updates the job, then fires the
 // next batch (fire-and-forget) so the whole sync runs server-side in the
@@ -69,18 +62,18 @@ export async function POST(req: NextRequest) {
       pagesThisBatch++
       let attempt = 0
       let data: any = null
-      // Per-page call to the existing sync endpoint, with 429 backoff
+      // Call the per-page sync logic DIRECTLY (in-process) — no HTTP self-call,
+      // so there's no chance of a Vercel 508 redirect loop. Retry on 429.
       while (true) {
-        const res = await fetch(`${origin(req)}/api/woocommerce/sync`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-colvy-internal': '1' },
-          body: JSON.stringify({ companyId, mode: phase, page, modifiedAfter }),
-        })
-        data = await safeJson(res, `sync/${phase}`)
-        if (res.ok) break
-        if ((res.status === 429 || (data.error || '').includes('Too Many Requests')) && attempt < 5) {
-          attempt++; await sleep(attempt * 4000); continue
+        try {
+          const result = await syncPage({ companyId, mode: phase, page, modifiedAfter })
+          if (result.status === 200) { data = result.body; break }
+          if (result.status === 429 && attempt < 5) { attempt++; await sleep(attempt * 4000); continue }
+          throw new Error(result.body?.error || `Sync failed on ${phase} page ${page}`)
+        } catch (e: any) {
+          if (e.status === 429 && attempt < 5) { attempt++; await sleep(attempt * 4000); continue }
+          throw e
         }
-        throw new Error(data.error || `Sync failed on ${phase} page ${page}`)
       }
 
       totalPages = data.totalPages || 1

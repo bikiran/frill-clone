@@ -6,13 +6,28 @@ import { WooCommerceService } from '@/lib/woocommerce-service'
  * POST /api/woocommerce/sync
  * Manually trigger a sync of customers and orders from WooCommerce
  */
+// Thin HTTP wrapper — delegates to syncPage() so the same logic can be called
+// in-process by the background runner (no HTTP self-call, so no Vercel 508).
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
+    const result = await syncPage(body)
+    return NextResponse.json(result.body, { status: result.status || 200 })
+  } catch (error: any) {
+    console.error('[WooCommerce Sync] Error:', error)
+    const status = error.status === 429 ? 429 : 500
+    return NextResponse.json({ error: error.message || 'Sync failed' }, { status })
+  }
+}
+
+// Core per-page sync. Returns { status, body } instead of a Response so it can
+// be invoked directly. Throws on rate limit (err.status = 429) for the caller
+// to back off.
+export async function syncPage(body: any): Promise<{ status: number; body: any }> {
     const { companyId } = body
 
     if (!companyId) {
-      return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
+      return { status: 400, body: { error: 'Missing companyId' } }
     }
 
     // Lazy load Supabase inside handler
@@ -29,17 +44,11 @@ export async function POST(req: NextRequest) {
       .maybeSingle()
 
     if (integrationError || !integration) {
-      return NextResponse.json(
-        { error: 'WooCommerce integration not configured' },
-        { status: 404 }
-      )
+      return { status: 404, body: { error: 'WooCommerce integration not configured' } }
     }
 
     if (!integration.is_active) {
-      return NextResponse.json(
-        { error: 'WooCommerce integration is disabled' },
-        { status: 403 }
-      )
+      return { status: 403, body: { error: 'WooCommerce integration is disabled' } }
     }
 
     // Create WooCommerce service
@@ -53,10 +62,7 @@ export async function POST(req: NextRequest) {
     // Test connection
     const isConnected = await woo.testConnection()
     if (!isConnected) {
-      return NextResponse.json(
-        { error: 'Failed to connect to WooCommerce store' },
-        { status: 503 }
-      )
+      return { status: 503, body: { error: 'Failed to connect to WooCommerce store' } }
     }
 
     // ============================================================
@@ -128,10 +134,10 @@ export async function POST(req: NextRequest) {
           .eq('company_id', companyId)
       }
 
-      return NextResponse.json({
+      return { status: 200, body: {
         success: true, mode, page, totalPages, total, syncedCount, done,
         message: `Customers page ${page}/${totalPages} synced (${syncedCount})`,
-      })
+      } }
     }
 
     if (mode === 'orders') {
@@ -285,19 +291,11 @@ export async function POST(req: NextRequest) {
           .eq('company_id', companyId)
       }
 
-      return NextResponse.json({
+      return { status: 200, body: {
         success: true, mode, page, totalPages, total, updated, done,
         message: `Orders page ${page}/${totalPages} aggregated (${updated} customers updated)`,
-      })
+      } }
     }
 
-    return NextResponse.json({ error: `Unknown sync mode: ${mode}` }, { status: 400 })
-  } catch (error: any) {
-    console.error('[WooCommerce Sync] Error:', error)
-    const status = error.status === 429 ? 429 : 500
-    return NextResponse.json(
-      { error: error.message || 'Sync failed' },
-      { status }
-    )
-  }
+    return { status: 400, body: { error: `Unknown sync mode: ${mode}` } }
 }
