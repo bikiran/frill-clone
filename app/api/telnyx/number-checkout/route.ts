@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
         phoneNumber: phoneNumber || '',
         numberType: numberType || 'local',
       },
-      success_url: `${origin}/admin/integrations/telnyx?provisioning=1`,
+      success_url: `${origin}/admin/integrations/telnyx?provisioning=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/admin/integrations/telnyx`,
     })
 

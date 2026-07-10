@@ -32,22 +32,40 @@ export default function TelnyxIntegration() {
       }
       setCompanyId(cid)
       if (cid) await loadIntegration(cid)
-      // Returned from Stripe checkout — poll until the webhook provisions the number
+      // Returned from Stripe checkout — actively finalize (verify payment +
+      // provision the number directly, so it works even without a webhook).
       if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('provisioning') === '1') {
-        setSuccess('Payment received — setting up your number, this takes a few seconds…')
+        const sessionId = new URLSearchParams(window.location.search).get('session_id') || undefined
+        setSuccess('Payment received — setting up your number, this can take up to a minute…')
         let tries = 0
-        const poll = setInterval(async () => {
+        const attempt = async () => {
           tries++
-          const res = await fetch(`/api/telnyx/setup?companyId=${cid}`)
-          const d = await res.json()
-          if (d.integration?.phone_number) {
-            setIntegration(d.integration)
-            setSuccess(`🎉 Your business number ${d.integration.phone_number} is live!`)
-            clearInterval(poll)
-          } else if (tries > 15) {
-            clearInterval(poll)
+          try {
+            const res = await fetch('/api/telnyx/number-finalize', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ companyId: cid, sessionId }),
+            })
+            const d = await res.json()
+            if (res.ok && d.phoneNumber) {
+              const r2 = await fetch(`/api/telnyx/setup?companyId=${cid}`)
+              const s2 = await r2.json()
+              if (s2.integration) setIntegration(s2.integration)
+              setSuccess(`🎉 Your business number ${d.phoneNumber} is live!`)
+              return
+            }
+            if (res.status === 202 && tries < 12) { setTimeout(attempt, 3000); return } // payment still settling
+            if (!res.ok) {
+              if (tries < 4) { setTimeout(attempt, 3000); return }
+              setError(d.error || 'Could not set up your number automatically. Your payment is safe — please contact support or try again.')
+              setSuccess('')
+            }
+          } catch {
+            if (tries < 4) { setTimeout(attempt, 3000); return }
+            setError('Could not reach the server to finish setup. Your payment is safe — please refresh in a minute.')
+            setSuccess('')
           }
-        }, 2000)
+        }
+        attempt()
       }
       setLoading(false)
     }

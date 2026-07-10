@@ -111,6 +111,12 @@ export default function WooCommerceIntegration() {
         setCompanyId(companyId)
         setError('')  // Clear any previous errors
         await fetchIntegration(companyId)
+        // If a background sync is already running, resume showing progress
+        try {
+          const sres = await fetch(`/api/woocommerce/sync-status?companyId=${companyId}`)
+          const { job } = await sres.json()
+          if (job && job.status === 'running') { setSyncing(true); setSuccess(job.message || 'Syncing…'); pollSyncStatusFor(companyId) }
+        } catch {}
         // Done loading — this was missing, leaving the page stuck on
         // "Loading WooCommerce integration..." forever on the success path
         setLoading(false)
@@ -215,68 +221,47 @@ export default function WooCommerceIntegration() {
     setSyncing(true)
     setError('')
     setSuccess('')
-
-    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
-
     try {
-      const runPhase = async (mode: 'customers' | 'orders', label: string) => {
-        let page = 1
-        let totalPages = 1
-        let processed = 0
-        let retries = 0
-
-        do {
-          try {
-            const res = await fetch('/api/woocommerce/sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ companyId, mode, page })
-            })
-            const data = await res.json()
-
-            if (!res.ok) {
-              // 429 Too Many Requests — back off and retry
-              if (res.status === 429 || (data.error || '').includes('Too Many Requests')) {
-                retries++
-                if (retries > 5) throw new Error(`WooCommerce rate limit exceeded. Try again in a few minutes.`)
-                const wait = retries * 5000 // 5s, 10s, 15s, 20s, 25s
-                setSuccess(`${label}: rate limited — waiting ${retries * 5}s before retry… (page ${page}/${totalPages})`)
-                await sleep(wait)
-                continue // retry same page
-              }
-              throw new Error(data.error || 'Sync failed')
-            }
-
-            retries = 0 // reset on success
-            totalPages = data.totalPages || 1
-            processed += data.syncedCount || data.updated || 0
-            setSuccess(`${label}: page ${page}/${totalPages}…`)
-            page++
-
-            // Polite delay between pages — 300ms avoids hammering the WooCommerce API
-            if (page <= totalPages) await sleep(300)
-          } catch (fetchErr: any) {
-            if (fetchErr.message?.includes('rate limit')) throw fetchErr
-            retries++
-            if (retries > 3) throw fetchErr
-            await sleep(2000)
-          }
-        } while (page <= totalPages)
-        return processed
-      }
-
-      // Phase 1: all customers, 100 per request (resumable — no more timeouts at 100)
-      const customerCount = await runPhase('customers', 'Syncing customers')
-      // Phase 2: all orders, aggregated into per-customer stats
-      await runPhase('orders', 'Calculating order stats')
-
-      setSuccess(`Synced ${customerCount} customers from WooCommerce (with full order stats)`)
-      await fetchIntegration(companyId)
+      // Kick off the background sync job (runs server-side; keeps going even if
+      // you close this tab or your laptop).
+      const res = await fetch('/api/woocommerce/sync-start', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not start sync')
+      setSuccess('Sync started — this runs in the background. You can safely leave this page.')
+      pollSyncStatus()
     } catch (err: any) {
       setError(err.message || 'Sync failed')
-    } finally {
       setSyncing(false)
     }
+  }
+
+  const pollSyncStatus = () => pollSyncStatusFor(companyId)
+  const pollSyncStatusFor = (cid: string) => {
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/woocommerce/sync-status?companyId=${cid}`)
+        const { job } = await res.json()
+        if (!job) { setSyncing(false); return }
+        if (job.status === 'running') {
+          setSuccess(job.message || 'Syncing…')
+          setTimeout(tick, 3000)
+        } else if (job.status === 'completed') {
+          setSuccess(`✓ ${job.message || 'Sync complete'}`)
+          setSyncing(false)
+          await fetchIntegration(cid)
+        } else if (job.status === 'failed') {
+          setError(job.error || 'Sync failed')
+          setSuccess('')
+          setSyncing(false)
+        }
+      } catch {
+        setTimeout(tick, 5000) // network blip — keep polling
+      }
+    }
+    tick()
   }
 
   const handleDisconnect = async () => {

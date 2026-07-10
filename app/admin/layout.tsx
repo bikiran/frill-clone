@@ -101,6 +101,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [adminCollapsed, setAdminCollapsed] = useState(false)
   const [company, setCompany] = useState<any>(null)
+  const [inboxUnread, setInboxUnread] = useState(0)
+
+  // Poll unread conversation count for the Inbox badge
+  useEffect(() => {
+    if (!company?.id) return
+    let active = true
+    const load = async () => {
+      try {
+        const { count } = await (supabase as any)
+          .from('conversations')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', company.id)
+          .eq('is_unread', true)
+        if (active) setInboxUnread(count || 0)
+      } catch {}
+    }
+    load()
+    const iv = setInterval(load, 15000)
+    // Realtime: bump immediately on new/updated conversations
+    const ch = (supabase as any)
+      .channel(`inbox-badge-${company.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `company_id=eq.${company.id}` }, load)
+      .subscribe()
+    return () => { active = false; clearInterval(iv); try { (supabase as any).removeChannel(ch) } catch {} }
+  }, [company?.id])
   const [showWorkspaces, setShowWorkspaces] = useState(false)
   const [workspaces, setWorkspaces] = useState<any[]>([])
 
@@ -405,10 +430,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       transition: 'all 0.15s',
                       justifyContent: adminCollapsed ? 'center' : 'flex-start',
                     }}>
-                    <span style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65 }}>
+                    <span style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65, position: 'relative' }}>
                       {icons[item.icon]}
+                      {item.label === 'Inbox' && inboxUnread > 0 && adminCollapsed && (
+                        <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: '#ef4444', border: '1.5px solid #fff' }} />
+                      )}
                     </span>
                     {!adminCollapsed && item.label}
+                    {item.label === 'Inbox' && inboxUnread > 0 && !adminCollapsed && (
+                      <span style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#ef4444', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {inboxUnread > 99 ? '99+' : inboxUnread}
+                      </span>
+                    )}
                   </Link>
                 )
               })}

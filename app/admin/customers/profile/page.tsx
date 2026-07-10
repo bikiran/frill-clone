@@ -288,7 +288,7 @@ export default function CustomerProfilePage() {
             />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 480, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 520, overflowY: 'auto', paddingRight: 4 }}>
             {filteredProducts.length === 0 && <p style={{ color: '#888', fontSize: 13 }}>No products match your search.</p>}
             {filteredProducts.map((item: any, idx: number) => {
               const name = item.name || item.product_name || `Product ${idx + 1}`
@@ -297,9 +297,10 @@ export default function CustomerProfilePage() {
               const price = item.price || item.total || item.subtotal || ''
               const qty = item.quantity || item.qty || ''
               const description = item.description || item.short_description || ''
+              const sku = item.sku || ''
               const isOpen = expandedProducts.has(idx)
               return (
-                <div key={idx} style={{ borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden' }}>
+                <div key={idx} style={{ borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden', background: isOpen ? 'var(--canvas)' : '#fff' }}>
                   <button
                     type="button"
                     onClick={() => {
@@ -307,27 +308,33 @@ export default function CustomerProfilePage() {
                       if (isOpen) next.delete(idx); else next.add(idx)
                       setExpandedProducts(next)
                     }}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', minHeight: 52, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', minHeight: 60, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
                     {image ? (
-                      <img src={image} alt={name} style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} onError={(e: any) => { e.target.style.display = 'none' }} />
+                      <img src={image} alt={name} style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} onError={(e: any) => { e.target.style.display = 'none' }} />
                     ) : (
-                      <div style={{ width: 36, height: 36, borderRadius: 6, background: 'var(--peach)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                      <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--peach)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                       </div>
                     )}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
-                      {category && <p style={{ margin: '2px 0 0 0', fontSize: 11, color: '#888' }}>{category}</p>}
+                      <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
+                      {category && <p style={{ margin: '2px 0 0 0', fontSize: 11, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{category}</p>}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                      {qty && <span style={{ fontSize: 12, color: '#888' }}>×{qty}</span>}
-                      {price && <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>${parseFloat(price).toFixed(2)}</span>}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9"/></svg>
+                      {qty && <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>×{qty}</span>}
+                      {price !== '' && !isNaN(parseFloat(price)) && <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap' }}>${parseFloat(price).toFixed(2)}</span>}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}><polyline points="6 9 12 15 18 9"/></svg>
                     </div>
                   </button>
-                  {isOpen && description && (
-                    <div style={{ padding: '0 12px 12px 58px', fontSize: 13, color: '#555', lineHeight: 1.5, borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 0 }}>
-                      {description.replace(/<[^>]+>/g, '')}
+                  {isOpen && (
+                    <div style={{ padding: '10px 14px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: '#555', lineHeight: 1.5 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: description ? 10 : 0 }}>
+                        {qty && <div><span style={{ fontSize: 10.5, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>Quantity</span>{qty}</div>}
+                        {price !== '' && !isNaN(parseFloat(price)) && <div><span style={{ fontSize: 10.5, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>Price</span>${parseFloat(price).toFixed(2)}</div>}
+                        {category && <div><span style={{ fontSize: 10.5, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>Category</span>{category}</div>}
+                        {sku && <div><span style={{ fontSize: 10.5, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>SKU</span>{sku}</div>}
+                      </div>
+                      {description ? <p style={{ margin: 0 }}>{description.replace(/<[^>]+>/g, '')}</p> : (!qty && !price && !category && !sku && <p style={{ margin: 0, color: '#9ca3af' }}>No further details available for this product.</p>)}
                     </div>
                   )}
                 </div>
@@ -428,8 +435,17 @@ export default function CustomerProfilePage() {
           </div>
         ) : (
           <div style={{ padding: '24px 0', textAlign: 'center', color: '#888', fontSize: 13 }}>
-            <p style={{ margin: '0 0 6px 0' }}>No orders synced yet.</p>
-            <p style={{ margin: 0, fontSize: 12 }}>Run <strong>Sync Now</strong> in WooCommerce integration to load order history.</p>
+            {displayOrders > 0 ? (
+              <>
+                <p style={{ margin: '0 0 6px 0' }}>This customer has {displayOrders} orders, but the detailed order history hasn&rsquo;t finished syncing.</p>
+                <p style={{ margin: 0, fontSize: 12 }}>Run <strong>Sync Now</strong> in the WooCommerce integration — the order sync now runs in the background until it completes.</p>
+              </>
+            ) : (
+              <>
+                <p style={{ margin: '0 0 6px 0' }}>No orders synced yet.</p>
+                <p style={{ margin: 0, fontSize: 12 }}>Run <strong>Sync Now</strong> in WooCommerce integration to load order history.</p>
+              </>
+            )}
           </div>
         )}
       </div>
