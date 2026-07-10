@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { SkeletonCards } from '@/components/Skeleton'
 
 const INTEGRATIONS = [
   {
@@ -308,7 +309,7 @@ export default function IntegrationsPage() {
   const filtered = catFilter === 'All' ? INTEGRATIONS : INTEGRATIONS.filter(i => i.category === catFilter)
   const activeIntegration = INTEGRATIONS.find(i => i.id === selected)
 
-  if (!user || loading) return <div className="p-8">Loading...</div>
+  if (!user || loading) return <SkeletonCards cards={8} />
 
   return (
     <div className="flex min-h-[calc(100vh-56px)]">

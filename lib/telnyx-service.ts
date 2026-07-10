@@ -83,12 +83,13 @@ export class TelnyxService {
     // (the cause of "+61 468 --- ---" blanks for AU mobile).
     const big = Math.max(limit * 3, 20)
     if (t === 'mobile') {
-      // AU mobiles are classified differently across Telnyx inventory — try
-      // mobile, then national, then national with a 04 prefix.
-      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=mobile&filter[features]=sms,voice&filter[best_effort]=false&filter[limit]=${big}`)
-      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=mobile&filter[best_effort]=false&filter[limit]=${big}`)
-      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=national&filter[national_destination_code]=4&filter[limit]=${big}`)
+      // AU mobile numbers in Telnyx inventory typically list NO features and
+      // only surface with best_effort=true (confirmed in the Telnyx portal).
+      // Requiring sms/voice features or best_effort=false hides them all.
+      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=mobile&filter[best_effort]=true&filter[limit]=${big}`)
       attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=mobile&filter[limit]=${big}`)
+      attempts.push(`filter[country_code]=${country}&filter[national_destination_code]=468&filter[best_effort]=true&filter[limit]=${big}`)
+      attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=national&filter[best_effort]=true&filter[limit]=${big}`)
     } else {
       // 1) requested type + sms/voice features
       attempts.push(`filter[country_code]=${country}&filter[phone_number_type]=${t}&filter[features]=sms,voice&filter[limit]=${big}`)

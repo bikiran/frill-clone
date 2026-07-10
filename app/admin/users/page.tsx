@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
+import { SkeletonList } from '@/components/Skeleton'
 
 interface TeamMember {
   id: string
@@ -274,7 +275,7 @@ export default function UsersPage() {
   })
 
   if (loading) {
-    return <div style={{ padding: '24px', color: '#666' }}>Loading users...</div>
+    return <SkeletonList rows={6} />
   }
 
   // totalSpend comes from DB aggregate (covers all pages, not just visible 100)

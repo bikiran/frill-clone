@@ -11,13 +11,18 @@ function admin() {
   )
 }
 function origin(req: NextRequest) {
-  // Prefer the request's own host so self-invocation always hits the API
-  // (a misconfigured NEXT_PUBLIC_SITE_URL previously sent calls to the
-  // marketing page, whose HTML broke JSON.parse with "Infinite feedback…").
-  const proto = req.headers.get('x-forwarded-proto') || 'https'
+  // Call our own API on a canonical, non-rewriting origin. Using the incoming
+  // Host header directly can point at a company subdomain (e.g.
+  // neplay.colvy.com) whose proxy rewrites create a redirect cycle → Vercel
+  // 508 "Infinite loop detected". Prefer the explicit site URL, then the
+  // deployment's own VERCEL_URL, and only fall back to the request host.
+  const site = process.env.NEXT_PUBLIC_SITE_URL
+  if (site) return site.replace(/\/$/, '')
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
   const host = req.headers.get('host')
+  const proto = req.headers.get('x-forwarded-proto') || 'https'
   if (host) return `${proto}://${host}`
-  return process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+  return 'https://colvy.com'
 }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -67,7 +72,7 @@ export async function POST(req: NextRequest) {
       // Per-page call to the existing sync endpoint, with 429 backoff
       while (true) {
         const res = await fetch(`${origin(req)}/api/woocommerce/sync`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-colvy-internal': '1' },
           body: JSON.stringify({ companyId, mode: phase, page, modifiedAfter }),
         })
         data = await safeJson(res, `sync/${phase}`)

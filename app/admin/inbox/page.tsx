@@ -197,6 +197,16 @@ export default function InboxPage() {
     if (statusFilter !== 'all') q = q.eq('status', statusFilter)
     const { data } = await q.order('last_message_at', { ascending: false }).limit(50)
     setConversations(data || [])
+    // On first load (desktop), open the top conversation instead of a blank
+    // pane. Only auto-select when nothing is selected yet and we're not on a
+    // narrow screen (mobile shows the list first by design).
+    if (data && data.length > 0) {
+      setSelected(prev => {
+        if (prev) return prev
+        if (typeof window !== 'undefined' && window.innerWidth < 768) return prev
+        return data[0]
+      })
+    }
   }, [companyId, statusFilter])
 
   useEffect(() => { loadConversations() }, [statusFilter, loadConversations])
@@ -875,9 +885,10 @@ export default function InboxPage() {
           )}
           {filteredConvs.map(conv => (
             <button key={conv.id} type="button" onClick={() => selectConversation(conv)}
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === conv.id ? 'var(--peach)' : conv.is_unread ? '#fffbf0' : '#fff', transition: 'background 0.1s' }}>
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', paddingLeft: conv.is_unread && selected?.id !== conv.id ? 11 : 14, border: 'none', borderLeft: conv.is_unread && selected?.id !== conv.id ? '3px solid var(--coral)' : '3px solid transparent', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === conv.id ? 'var(--peach)' : conv.is_unread ? '#fff6f4' : '#fff', transition: 'background 0.1s' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {conv.is_unread && selected?.id !== conv.id && <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--coral)', flexShrink: 0 }} />}
                   <span style={{ fontSize: 14 }}>{CHANNEL_ICON[conv.channel] || '💬'}</span>
                   <span style={{ fontSize: 13, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {conv.subject || conv.visitor_id?.slice(0, 8) || 'Visitor'}
@@ -885,7 +896,7 @@ export default function InboxPage() {
                 </div>
                 <span style={{ fontSize: 10, color: '#9ca3af', flexShrink: 0 }}>{timeAgo(conv.last_message_at)}</span>
               </div>
-              <p style={{ margin: 0, fontSize: 12, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <p style={{ margin: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {conv.last_message || 'No messages yet'}
               </p>
               {conv.assigned_name && (
