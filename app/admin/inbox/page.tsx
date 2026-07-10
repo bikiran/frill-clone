@@ -119,6 +119,11 @@ export default function InboxPage() {
   const [showMsgSearch, setShowMsgSearch] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [replyChannel, setReplyChannel] = useState<'chat' | 'sms'>('chat')
+  const [showSendMenu, setShowSendMenu] = useState(false)
+  const [sendPicker, setSendPicker] = useState<'poll' | 'survey' | 'form' | 'payment' | null>(null)
+  const [pickerItems, setPickerItems] = useState<any[]>([])
+  const [payAmount, setPayAmount] = useState('')
+  const [payDesc, setPayDesc] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'assigned' | 'resolved'>('open')
   const [showAssignMenu, setShowAssignMenu] = useState(false)
   const [showContactEdit, setShowContactEdit] = useState(false)
@@ -521,6 +526,72 @@ export default function InboxPage() {
   const scrollBottom = () => setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
 
   // ── Send reply ─────────────────────────────────────────────────────────────
+  // Open a picker for poll/survey/form, loading the company's items
+  const openPicker = async (kind: 'poll' | 'survey' | 'form' | 'payment') => {
+    setShowSendMenu(false)
+    setSendPicker(kind)
+    setPickerItems([])
+    if (kind === 'payment') return
+    const table = kind === 'poll' ? 'polls' : kind === 'survey' ? 'surveys' : 'forms'
+    let q = (supabase as any).from(table).select('*').order('created_at', { ascending: false }).limit(30)
+    // forms/surveys are company-scoped; polls are global in this schema
+    if (kind !== 'poll' && companyId) q = q.eq('company_id', companyId)
+    const { data } = await q
+    setPickerItems(data || [])
+  }
+
+  // Send a poll/survey/form into the chat as an interactive message
+  const sendInteractive = async (kind: 'poll' | 'survey' | 'form', item: any) => {
+    if (!selected || !companyId) return
+    const senderName = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    const title = item.question || item.title || item.name || `${kind}`
+    const smsNumber = (selected as any).sms_number
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const link = `${origin.replace(/admin\..*/, '')}/widget?slug=${(selected as any).company_slug || ''}&conversation=${selected.id}`
+
+    await (supabase as any).from('messages').insert({
+      conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+      sender_id: user.id, sender_name: senderName,
+      content: `📋 ${title}`,
+      message_type: kind,
+      message_payload: { kind, ref_id: item.id, title, options: item.options || null },
+    })
+    await (supabase as any).from('conversations').update({ last_message: `📋 ${title}`, last_message_at: new Date().toISOString() }).eq('id', selected.id)
+
+    // For SMS conversations, also text a link to the widget + app download
+    if (smsNumber) {
+      const body = `${title}\nTap to respond: ${link}\n\nOr get our app: https://colvy.com/app`
+      try { await fetch('/api/telnyx/sms/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName }) }) } catch {}
+    }
+    setSendPicker(null)
+    const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+    setMessages(msgs || []); scrollBottom()
+  }
+
+  // Send a payment request into the chat
+  const sendPayment = async () => {
+    if (!selected || !companyId || !payAmount) return
+    const senderName = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    try {
+      const res = await fetch('/api/stripe/chat-payment', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName }),
+      })
+      const data = await res.json()
+      if (!res.ok) { alert(data.error || 'Could not create payment'); return }
+      // For SMS, text the pay link + app
+      const smsNumber = (selected as any).sms_number
+      if (smsNumber && data.checkoutUrl) {
+        const body = `Payment request: $${parseFloat(payAmount).toFixed(2)} AUD${payDesc ? ` — ${payDesc}` : ''}\nPay securely: ${data.checkoutUrl}`
+        try { await fetch('/api/telnyx/sms/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName }) }) } catch {}
+      }
+      setSendPicker(null); setPayAmount(''); setPayDesc('')
+      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+      setMessages(msgs || []); scrollBottom()
+    } catch (e: any) { alert('Payment error: ' + e.message) }
+  }
+
+  // Send the composer text (auto-routes chat vs SMS)
   const sendReply = async () => {
     if (!reply.trim() || !selected || !user) return
     setSending(true)
@@ -668,6 +739,53 @@ export default function InboxPage() {
   return (
     <div style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <IncomingCallListener companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
+
+      {/* Interactive send picker modal */}
+      {sendPicker && (
+        <div onClick={() => setSendPicker(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '100%', maxHeight: '80vh', overflowY: 'auto', background: '#fff', borderRadius: 16, padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--ink)', textTransform: 'capitalize' }}>
+                {sendPicker === 'payment' ? 'Request Payment' : `Send ${sendPicker}`}
+              </h3>
+              <button type="button" onClick={() => setSendPicker(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--slate)' }}>×</button>
+            </div>
+
+            {sendPicker === 'payment' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', display: 'block', marginBottom: 6 }}>Amount (AUD)</label>
+                  <input type="number" min="1" step="0.01" value={payAmount} onChange={e => setPayAmount(e.target.value)} placeholder="49.00" style={{ ...inp, fontSize: 15 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', display: 'block', marginBottom: 6 }}>Description (optional)</label>
+                  <input value={payDesc} onChange={e => setPayDesc(e.target.value)} placeholder="Deposit for booking" style={inp} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--slate)', background: 'var(--canvas)', padding: '8px 12px', borderRadius: 8 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  Secure payment via Stripe. Card details are never stored by Colvy.
+                </div>
+                <button type="button" onClick={sendPayment} disabled={!payAmount} style={{ padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                  Send payment request
+                </button>
+              </div>
+            ) : pickerItems.length === 0 ? (
+              <p style={{ fontSize: 13.5, color: 'var(--slate)', textAlign: 'center', padding: '24px 0' }}>
+                No {sendPicker}s found. Create one in the {sendPicker === 'poll' ? 'Polls' : sendPicker === 'survey' ? 'Surveys' : 'Forms'} section first.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {pickerItems.map(item => (
+                  <button key={item.id} type="button" onClick={() => sendInteractive(sendPicker as any, item)}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{item.question || item.title || item.name || 'Untitled'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── LEFT: Conversation list ─────────────────────────────────────────── */}
       {sidebarCollapsed ? (
@@ -1000,6 +1118,21 @@ export default function InboxPage() {
                           </div>
                         ))}
                         {msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0 }}>{msg.content}</div>}
+                        {msg.message_type === 'payment' && msg.message_payload && (
+                          <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', color: 'var(--ink)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={msg.message_payload.status === 'paid' ? '#059669' : '#635BFF'} strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                              <span style={{ fontSize: 13, fontWeight: 700 }}>${(msg.message_payload.amount_cents / 100).toFixed(2)} AUD</span>
+                              <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: msg.message_payload.status === 'paid' ? '#dcfce7' : '#ede9fe', color: msg.message_payload.status === 'paid' ? '#059669' : '#635BFF', textTransform: 'uppercase' }}>{msg.message_payload.status || 'pending'}</span>
+                            </div>
+                            {msg.message_payload.description && <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)' }}>{msg.message_payload.description}</p>}
+                          </div>
+                        )}
+                        {['poll', 'survey', 'form'].includes(msg.message_type) && (
+                          <div style={{ marginTop: 6, padding: '8px 12px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', color: 'var(--slate)', fontSize: 12 }}>
+                            📎 Interactive {msg.message_type} sent — the customer can respond in the widget.
+                          </div>
+                        )}
                       </div>
 
                       {/* Reactions */}
@@ -1103,6 +1236,21 @@ export default function InboxPage() {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {/* Send poll/survey/form/payment */}
+                  <div style={{ position: 'relative' }}>
+                    <button type="button" onClick={() => setShowSendMenu(v => !v)} title="Send poll, survey, form or payment"
+                      style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: showSendMenu ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    {showSendMenu && (
+                      <div style={{ position: 'absolute', bottom: '120%', left: 0, width: 180, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
+                        {[['poll', '📊 Send Poll'], ['survey', '📝 Send Survey'], ['form', '📋 Send Form'], ['payment', '💳 Request Payment']].map(([k, label]) => (
+                          <button key={k} type="button" onClick={() => openPicker(k as any)}
+                            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>{label}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   {/* Attach */}
                   <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} title="Attach file"
                     style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>

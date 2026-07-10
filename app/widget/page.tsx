@@ -1,7 +1,7 @@
 'use client'
 
 
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -1492,6 +1492,8 @@ function WidgetContent() {
                           sender_type: 'system',
                           content: `${chatName} started a chat`,
                         })
+                        // Fire the auto-reply (thank-you + contact-info prompt)
+                        try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id }) }) } catch {}
                         setChatMessages2([])
                         setChatStep('chat')
                       } else {
@@ -1563,6 +1565,30 @@ function WidgetContent() {
                             </div>
                           ))}
                           {msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '0 9px 4px' : 0 }}>{msg.content}</div>}
+                          {/* Payment request card */}
+                          {msg.message_type === 'payment' && msg.message_payload && (
+                            <div style={{ marginTop: 6, padding: 12, borderRadius: 12, background: '#fff', border: '1px solid #e5e5e5', color: '#0d0d0d', minWidth: 210 }}>
+                              <p style={{ margin: '0 0 2px', fontSize: 11, color: '#6b7280', fontWeight: 600 }}>PAYMENT REQUEST</p>
+                              <p style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 800 }}>${(msg.message_payload.amount_cents / 100).toFixed(2)} <span style={{ fontSize: 12, color: '#9ca3af' }}>AUD</span></p>
+                              {msg.message_payload.description && <p style={{ margin: '0 0 8px', fontSize: 12.5, color: '#6b7280' }}>{msg.message_payload.description}</p>}
+                              {msg.message_payload.status === 'paid' ? (
+                                <div style={{ padding: '8px 0', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#059669' }}>✓ Paid — receipt emailed</div>
+                              ) : (
+                                <a href={msg.message_payload.checkout_url} target="_blank" rel="noopener"
+                                  style={{ display: 'block', textAlign: 'center', padding: '10px 0', borderRadius: 8, background: '#635BFF', color: '#fff', textDecoration: 'none', fontSize: 13.5, fontWeight: 700 }}>
+                                  Pay securely
+                                </a>
+                              )}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 8, fontSize: 10.5, color: '#9ca3af' }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                Encrypted · card details never stored
+                              </div>
+                            </div>
+                          )}
+                          {/* Interactive poll/survey/form */}
+                          {['poll', 'survey', 'form'].includes(msg.message_type) && msg.message_payload && (
+                            <WidgetInteractive msg={msg} companyId={company?.id} conversationId={chatConvId} respondent={chatName} accentColor={accentColor} />
+                          )}
                           {/* React + reply actions (only on messages that have an id) */}
                           {msg.id && (
                             <div style={{ position: 'absolute', top: -12, [isAgent ? 'right' : 'left']: 4, display: 'flex', gap: 2 } as any}>
@@ -1826,6 +1852,73 @@ function WidgetContent() {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// Renders an interactive poll/survey/form inside the widget and captures the
+// customer's response into chat_interactions.
+function WidgetInteractive({ msg, companyId, conversationId, respondent, accentColor }: any) {
+  const [done, setDone] = React.useState(false)
+  const [item, setItem] = React.useState<any>(null)
+  const [answers, setAnswers] = React.useState<any>({})
+  const payload = msg.message_payload || {}
+  const kind = payload.kind
+
+  React.useEffect(() => {
+    ;(async () => {
+      if (!payload.ref_id) return
+      const table = kind === 'poll' ? 'polls' : kind === 'survey' ? 'surveys' : 'forms'
+      const { data } = await (supabase as any).from(table).select('*').eq('id', payload.ref_id).maybeSingle()
+      setItem(data)
+    })()
+  }, [payload.ref_id])
+
+  const submit = async (response: any) => {
+    try {
+      await (supabase as any).from('chat_interactions').insert({
+        company_id: companyId, conversation_id: conversationId, message_id: msg.id,
+        kind, ref_id: payload.ref_id, respondent, response,
+      })
+      // Also post the answer as a visitor message so the agent sees it
+      const summary = typeof response === 'string' ? response : (response.label || JSON.stringify(response))
+      await (supabase as any).from('messages').insert({
+        conversation_id: conversationId, company_id: companyId, sender_type: 'visitor',
+        sender_name: respondent, content: `✅ Responded: ${summary}`,
+      })
+      setDone(true)
+    } catch (e) { console.error(e) }
+  }
+
+  if (done) return <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 10, background: '#dcfce7', color: '#059669', fontSize: 12.5, fontWeight: 600 }}>✓ Thanks for your response!</div>
+  if (!item) return <div style={{ marginTop: 6, fontSize: 12, color: '#9ca3af' }}>Loading…</div>
+
+  const options = item.options || payload.options || []
+  const questions = item.questions || []
+
+  return (
+    <div style={{ marginTop: 6, padding: 12, borderRadius: 12, background: '#fff', border: '1px solid #e5e5e5', minWidth: 220 }}>
+      <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: '#0d0d0d' }}>{item.question || item.title || 'Respond'}</p>
+      {/* Poll: options as buttons */}
+      {kind === 'poll' && options.map((opt: any, i: number) => (
+        <button key={i} onClick={() => submit({ option_index: i, label: typeof opt === 'string' ? opt : opt.label || opt.text })}
+          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', marginBottom: 6, borderRadius: 8, border: '1px solid #e5e5e5', background: '#fff', cursor: 'pointer', fontSize: 13, color: '#0d0d0d' }}>
+          {typeof opt === 'string' ? opt : opt.label || opt.text}
+        </button>
+      ))}
+      {/* Form/survey: simple question inputs */}
+      {(kind === 'form' || kind === 'survey') && (
+        <div>
+          {(questions.length ? questions : [{ label: item.question || 'Your answer', id: 'a' }]).map((q: any, i: number) => (
+            <div key={i} style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 12, color: '#6b7280', display: 'block', marginBottom: 3 }}>{q.label || q.question || `Question ${i + 1}`}</label>
+              <input onChange={e => setAnswers((a: any) => ({ ...a, [q.id || i]: e.target.value }))}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #e5e5e5', fontSize: 13, boxSizing: 'border-box' }} />
+            </div>
+          ))}
+          <button onClick={() => submit({ answers })} style={{ width: '100%', padding: '9px 0', borderRadius: 8, background: accentColor, color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Submit</button>
+        </div>
+      )}
     </div>
   )
 }

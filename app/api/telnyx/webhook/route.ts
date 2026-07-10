@@ -51,6 +51,13 @@ export async function POST(req: NextRequest) {
           last_message_at: new Date().toISOString(),
         }).select().maybeSingle()
         conv = newConv
+        // Auto-reply for brand-new SMS conversations
+        if (newConv) {
+          try {
+            const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+            fetch(`${origin}/api/inbox/auto-reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: newConv.id }) })
+          } catch {}
+        }
       }
 
       if (conv) {

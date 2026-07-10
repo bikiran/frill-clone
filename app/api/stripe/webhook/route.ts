@@ -34,6 +34,29 @@ export async function POST(req: NextRequest) {
       case 'checkout.session.completed': {
         const session = event.data.object
         const meta = session.metadata || {}
+
+        // In-chat payment (on a connected account) — mark paid + confirm in chat
+        if (meta.kind === 'chat_payment' && meta.conversationId) {
+          const receiptUrl = session.receipt_url || null
+          await (supabase as any).from('chat_payments').update({
+            status: 'paid', paid_at: new Date().toISOString(),
+            stripe_payment_intent: session.payment_intent || null,
+            receipt_url: receiptUrl,
+          }).eq('stripe_session_id', session.id)
+          // Update the payment message's payload to 'paid'
+          const { data: pay } = await (supabase as any).from('chat_payments').select('message_id, amount_cents').eq('stripe_session_id', session.id).maybeSingle()
+          if (pay?.message_id) {
+            const { data: m } = await (supabase as any).from('messages').select('message_payload').eq('id', pay.message_id).maybeSingle()
+            await (supabase as any).from('messages').update({ message_payload: { ...(m?.message_payload || {}), status: 'paid' } }).eq('id', pay.message_id)
+          }
+          // Post a confirmation system message
+          await (supabase as any).from('messages').insert({
+            conversation_id: meta.conversationId, company_id: meta.companyId,
+            sender_type: 'system',
+            content: `✅ Payment received${pay?.amount_cents ? ` — $${(pay.amount_cents / 100).toFixed(2)} AUD` : ''}. A receipt has been emailed to the customer.`,
+          })
+          break
+        }
         const { userId, tier } = meta
         if (userId && tier) {
           await (supabase as any).from('subscriptions').upsert({

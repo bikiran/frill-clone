@@ -18,6 +18,17 @@ const INTEGRATIONS = [
     isDedicated: true, // Special flag for custom page
   },
   {
+    id: 'stripe',
+    name: 'Stripe Payments',
+    desc: 'Take card payments and send invoices directly inside the chat. Connect your own Stripe account.',
+    icon: '💳',
+    color: '#635BFF',
+    bg: '#f5f3ff',
+    logo: '',
+    category: 'Payments',
+    isDedicated: true,
+  },
+  {
     id: 'telnyx',
     name: 'Telnyx — Voice & SMS',
     desc: 'Call customers from your browser and continue live chats over SMS to their mobile.',
@@ -252,6 +263,10 @@ export default function IntegrationsPage() {
           .eq('company_id', cid)
           .maybeSingle()
         enb['telnyx'] = !!(telnyxData && telnyxData.is_active)
+
+        // Check for Stripe connection
+        const { data: co } = await (supabase as any).from('companies').select('stripe_connected').eq('id', cid).maybeSingle()
+        enb['stripe'] = !!co?.stripe_connected
       }
 
       setConfigs(cfgs)
