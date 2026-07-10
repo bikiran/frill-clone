@@ -130,6 +130,11 @@ export default function InboxPage() {
   const [doaMatch, setDoaMatch] = useState(false)
   const [convActions, setConvActions] = useState<Record<string, any>>({})
   const [showActionMenu, setShowActionMenu] = useState(false)
+  const [showTicketPanel, setShowTicketPanel] = useState(false)
+  const [ticketSubject, setTicketSubject] = useState('')
+  const [ticketDesc, setTicketDesc] = useState('')
+  const [ticketPriority, setTicketPriority] = useState('normal')
+  const [ticketSaving, setTicketSaving] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [contact, setContact] = useState<Contact | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -623,6 +628,28 @@ export default function InboxPage() {
     setPickerItems(data || [])
   }
 
+  const createTicket = async () => {
+    if (!companyId || !ticketSubject.trim()) return
+    setTicketSaving(true)
+    try {
+      const res = await fetch('/api/tickets', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId, conversationId: selected?.id, contactId: contact?.id,
+          subject: ticketSubject.trim(), description: ticketDesc.trim(), priority: ticketPriority,
+          createdBy: user?.id,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not create ticket')
+      setShowTicketPanel(false)
+      showToast(`Ticket ${data.ticket?.ticket_number} created`)
+      if (selected) selectConversation(selected)
+    } catch (e: any) {
+      showToast(e.message || 'Failed to create ticket')
+    } finally { setTicketSaving(false) }
+  }
+
   // Send a poll/survey/form into the chat as an interactive message
   const sendInteractive = async (kind: 'poll' | 'survey' | 'form', item: any) => {
     if (!selected || !companyId) return
@@ -908,6 +935,41 @@ export default function InboxPage() {
           onClose={() => setShowDoa(false)}
           onDone={() => { if (selected) selectConversation(selected) }}
         />
+      )}
+
+      {/* Create support ticket panel */}
+      {showTicketPanel && selected && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', justifyContent: 'flex-end' }} onClick={() => setShowTicketPanel(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: '100%', height: '100%', background: '#fff', overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>🎫 New Support Ticket</h2>
+              <button onClick={() => setShowTicketPanel(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Subject</label>
+              <input value={ticketSubject} onChange={e => setTicketSubject(e.target.value)} placeholder="Brief summary of the issue" autoFocus
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', marginBottom: 14 }} />
+
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Description</label>
+              <textarea value={ticketDesc} onChange={e => setTicketDesc(e.target.value)} placeholder="Details, context, what the customer needs…" rows={5}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', marginBottom: 14, resize: 'vertical', fontFamily: 'inherit' }} />
+
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Priority</label>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+                {['low', 'normal', 'high', 'urgent'].map(p => (
+                  <button key={p} onClick={() => setTicketPriority(p)}
+                    style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: ticketPriority === p ? '2px solid var(--coral)' : '1px solid var(--border)', background: ticketPriority === p ? 'var(--peach)' : '#fff', color: ticketPriority === p ? 'var(--coral)' : 'var(--slate)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize' }}>{p}</button>
+                ))}
+              </div>
+
+              <button onClick={createTicket} disabled={ticketSaving || !ticketSubject.trim()}
+                style={{ width: '100%', padding: '12px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: ticketSubject.trim() ? 'pointer' : 'not-allowed', opacity: ticketSubject.trim() ? 1 : 0.6 }}>
+                {ticketSaving ? 'Creating…' : 'Create ticket'}
+              </button>
+              <p style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 10, lineHeight: 1.5 }}>A ticket number and link will be posted into this conversation.</p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Media gallery / lightbox */}
@@ -1576,6 +1638,7 @@ export default function InboxPage() {
                           onClick={async () => {
                             setShowActionMenu(false)
                             if (key === 'doa' || key === 'return_refund') setShowDoa(true)
+                            else if (key === 'support_ticket') { setTicketSubject(selected?.subject || ''); setTicketDesc(''); setTicketPriority('normal'); setShowTicketPanel(true) }
                             else if (cfg.form_id) {
                               const { data: form } = await (supabase as any).from('forms').select('*').eq('id', cfg.form_id).maybeSingle()
                               if (form) sendInteractive('form', form)

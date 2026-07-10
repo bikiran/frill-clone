@@ -1654,7 +1654,7 @@ function WidgetContent() {
                             reply_to: widgetReplyTo?.id || null,
                           })
                           setWidgetReplyTo(null)
-                          try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}
+                          try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}
                           if (msgErr) throw msgErr
                           await (supabase as any).from('conversations').update({
                             last_message: content,
@@ -1681,7 +1681,7 @@ function WidgetContent() {
                       setChatMessages2(prev => [...prev, { sender_type: 'visitor', sender_name: chatName, content, created_at: new Date().toISOString() }])
                       try {
                         const { error: msgErr } = await (supabase as any).from('messages').insert({ conversation_id: chatConvId, company_id: company?.id, sender_type: 'visitor', sender_name: chatName, sender_email: chatEmail || null, content, reply_to: widgetReplyTo?.id || null }); const _wr = widgetReplyTo; setWidgetReplyTo(null)
-                        try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}
+                        try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}
                         if (msgErr) throw msgErr
                         await (supabase as any).from('conversations').update({ last_message: content, last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, updated_at: new Date().toISOString() }).eq('id', chatConvId)
                       } catch (err) {
@@ -1873,6 +1873,22 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
       const table = kind === 'poll' ? 'polls' : kind === 'survey' ? 'surveys' : 'forms'
       const { data } = await (supabase as any).from(table).select('*').eq('id', payload.ref_id).maybeSingle()
       setItem(data)
+      // Pre-fill fields when the smart trigger supplied known customer details.
+      if (data && payload.prefill && (kind === 'form' || kind === 'survey')) {
+        const qs = data.questions || data.options || []
+        const pf = payload.prefill
+        const init: any = {}
+        qs.forEach((q: any, i: number) => {
+          const label = (q.title || q.label || q.question || '').toLowerCase()
+          const qId = q.id || String(i)
+          if (label.includes('first name') && pf.first_name) init[qId] = pf.first_name
+          else if (label.includes('last name') && pf.last_name) init[qId] = pf.last_name
+          else if ((label.includes('full name') || label === 'name') && (pf.first_name || pf.last_name)) init[qId] = `${pf.first_name || ''} ${pf.last_name || ''}`.trim()
+          else if (label.includes('email') && pf.email) init[qId] = pf.email
+          else if (label.includes('phone') && pf.phone) init[qId] = pf.phone
+        })
+        if (Object.keys(init).length) setAnswers((a: any) => ({ ...init, ...a }))
+      }
     })()
   }, [payload.ref_id])
 

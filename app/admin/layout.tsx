@@ -76,6 +76,7 @@ const NAV_GROUPS = [
   {
     label: 'Support',
     items: [
+      { label: 'Tickets', href: '/admin/tickets', icon: 'support' },
       { label: 'Help Centre', href: '/admin/help', icon: 'help' },
       { label: 'Help Categories', href: '/admin/settings/help-categories', icon: 'topics' },
       { label: 'Help Reporting', href: '/admin/help/analytics', icon: 'analytics' },
