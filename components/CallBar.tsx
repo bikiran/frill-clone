@@ -56,7 +56,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       // 1. Get an ephemeral WebRTC token from our server
       const res = await fetch('/api/telnyx/token', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId }),
+        body: JSON.stringify({ companyId, conversationId }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not get call token')

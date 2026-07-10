@@ -8,6 +8,10 @@ export default function TelnyxIntegration() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [integration, setIntegration] = useState<any>(null)
+  const [numbers, setNumbers] = useState<any[]>([])
+  const [locations, setLocations] = useState<any[]>([])
+  const [addingNumber, setAddingNumber] = useState(false)
+  const [assignLocationId, setAssignLocationId] = useState<string>('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -37,6 +41,13 @@ export default function TelnyxIntegration() {
       }
       setCompanyId(cid)
       if (cid) await loadIntegration(cid)
+      // Deep-link from a location: open straight into "add a number" for it.
+      const buyForLoc = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('buyForLocation')
+      if (buyForLoc) {
+        setAddingNumber(true)
+        setAssignLocationId(buyForLoc)
+        setAvailable([])
+      }
       // Returned from Stripe checkout — actively finalize (verify payment +
       // provision the number directly, so it works even without a webhook).
       if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('provisioning') === '1') {
@@ -83,6 +94,34 @@ export default function TelnyxIntegration() {
       const data = await res.json()
       if (data.integration) setIntegration(data.integration)
     } catch {}
+    loadNumbers(cid)
+  }
+
+  const loadNumbers = async (cid: string) => {
+    try {
+      const res = await fetch(`/api/telnyx/numbers?companyId=${cid}`)
+      const data = await res.json()
+      setNumbers(data.numbers || [])
+      setLocations(data.locations || [])
+    } catch {}
+  }
+
+  const assignNumberToLocation = async (numberId: string, locationId: string) => {
+    if (!companyId) return
+    await fetch('/api/telnyx/numbers', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numberId, companyId, locationId: locationId || null }),
+    })
+    loadNumbers(companyId)
+  }
+
+  const makePrimary = async (numberId: string) => {
+    if (!companyId) return
+    await fetch('/api/telnyx/numbers', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numberId, companyId, isPrimary: true }),
+    })
+    loadNumbers(companyId)
   }
 
   const searchNumbers = async () => {
@@ -125,7 +164,7 @@ export default function TelnyxIntegration() {
       const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch('/api/telnyx/number-checkout', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, email: session?.user?.email, phoneNumber, numberType }),
+        body: JSON.stringify({ companyId, email: session?.user?.email, phoneNumber, numberType, locationId: assignLocationId || undefined }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not start checkout')
@@ -176,23 +215,83 @@ export default function TelnyxIntegration() {
       {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '11px 15px', margin: '16px 0', fontSize: 13, color: '#dc2626' }}>{error}</div>}
       {success && <div style={{ background: '#dcfce7', border: '1px solid #86efac', borderRadius: 10, padding: '11px 15px', margin: '16px 0', fontSize: 13, color: '#059669' }}>{success}</div>}
 
-      {hasNumber ? (
-        <div style={{ border: '1px solid var(--border)', borderRadius: 16, padding: 24, background: '#fff' }}>
-          <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>Your business number</p>
-          <p style={{ margin: '0 0 12px', fontSize: 28, fontWeight: 800, color: 'var(--ink)' }}>{fmtNumber(integration.phone_number)}</p>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, color: 'var(--slate)' }}>
-            <span>✓ Browser calling</span>
-            <span>✓ SMS from inbox</span>
-            <span>✓ Inbound calls & texts</span>
-            {integration.provisioned_by_colvy && <span>💳 ${integration.monthly_cost || 2}/month</span>}
+      {(numbers.length > 0 || hasNumber) && !addingNumber ? (
+        <div>
+          {/* All numbers this company owns */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>Your numbers</p>
+            <button onClick={() => { setAddingNumber(true); setAvailable([]); setAssignLocationId('') }}
+              style={{ padding: '7px 14px', borderRadius: 9, border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              + Add another number
+            </button>
           </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {(numbers.length > 0 ? numbers : [{ id: 'legacy', phone_number: integration.phone_number, is_primary: true, monthly_cost: integration.monthly_cost || 15, location_id: null }]).map((n: any) => (
+              <div key={n.id} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 18, background: '#fff' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>{fmtNumber(n.phone_number)}</p>
+                      {n.is_primary && <span style={{ fontSize: 10, fontWeight: 700, background: '#dcfce7', color: '#059669', padding: '2px 8px', borderRadius: 20 }}>PRIMARY</span>}
+                      {n.number_type === 'mobile' && <span style={{ fontSize: 10, fontWeight: 700, background: '#eef2ff', color: '#4f46e5', padding: '2px 8px', borderRadius: 20 }}>MOBILE</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--slate)', marginTop: 6 }}>
+                      <span>✓ Calls & SMS</span>
+                      {n.provisioned_by_colvy && <span>💳 ${n.monthly_cost || 15}/mo</span>}
+                    </div>
+                  </div>
+                  {!n.is_primary && n.id !== 'legacy' && (
+                    <button onClick={() => makePrimary(n.id)} style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer' }}>Make primary</button>
+                  )}
+                </div>
+
+                {/* Location assignment (only if the company has locations) */}
+                {locations.length > 0 && n.id !== 'legacy' && (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>📍 Location:</span>
+                    <select value={n.location_id || ''} onChange={e => assignNumberToLocation(n.id, e.target.value)}
+                      style={{ flex: 1, maxWidth: 260, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, background: '#fff' }}>
+                      <option value="">Unassigned (company-wide)</option>
+                      {locations.map((loc: any) => (
+                        <option key={loc.id} value={loc.id}>{loc.label || loc.suburb || 'Location'}{loc.state ? ` — ${loc.state}` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {locations.length === 0 && numbers.length > 0 && (
+            <p style={{ margin: '14px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>
+              💡 Add <a href="/admin/locations" style={{ color: 'var(--coral)', fontWeight: 600 }}>business locations</a> to assign specific numbers to each.
+            </p>
+          )}
         </div>
       ) : (
         <div style={{ border: '2px solid var(--coral)', borderRadius: 16, padding: 24, background: 'linear-gradient(135deg, #fff9f8, #fff)' }}>
-          <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>Get a business number</h2>
+          {addingNumber && (
+            <button onClick={() => setAddingNumber(false)} style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', marginBottom: 12, padding: 0 }}>← Back to my numbers</button>
+          )}
+          <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>{addingNumber ? 'Add another number' : 'Get a business number'}</h2>
           <p style={{ margin: '0 0 20px', fontSize: 14, color: 'var(--slate)', lineHeight: 1.5 }}>
             Colvy sets up an Australian phone number for you instantly — no separate accounts, no setup. Call and text your customers right from the inbox.
           </p>
+
+          {/* If the company has locations, let them assign the new number to one */}
+          {locations.length > 0 && (
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>Assign to location (optional)</label>
+              <select value={assignLocationId} onChange={e => setAssignLocationId(e.target.value)}
+                style={{ width: '100%', padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, background: '#fff' }}>
+                <option value="">Company-wide (no specific location)</option>
+                {locations.map((loc: any) => (
+                  <option key={loc.id} value={loc.id}>{loc.label || loc.suburb || 'Location'}{loc.state ? ` — ${loc.state}` : ''}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
             {([['local', 'Landline', 'Local area code'], ['mobile', 'Mobile', 'e.g. 04XX']] as const).map(([t, name, eg]) => (

@@ -14,7 +14,7 @@ function admin() {
 // The browser NEVER sees the API key — only this ephemeral JWT.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId } = await req.json()
+    const { companyId, conversationId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
@@ -37,7 +37,27 @@ export async function POST(req: NextRequest) {
     if (!credentialId) return NextResponse.json({ error: 'Could not create WebRTC credential' }, { status: 500 })
 
     const token = await svc.createCredentialToken(credentialId)
-    return NextResponse.json({ token, from: integ.phone_number })
+
+    // Pick the caller ID: if the conversation belongs to a location that has its
+    // own number, use it; else the company's primary number; else the legacy one.
+    let fromNumber: string | undefined = integ.phone_number
+    try {
+      const { data: primary } = await db.from('phone_numbers')
+        .select('phone_number, location_id, is_primary').eq('company_id', companyId).neq('status', 'released')
+      if (primary && primary.length > 0) {
+        let chosen = primary.find((n: any) => n.is_primary) || primary[0]
+        if (conversationId) {
+          const { data: conv } = await db.from('conversations').select('location_id').eq('id', conversationId).maybeSingle()
+          if (conv?.location_id) {
+            const forLoc = primary.find((n: any) => n.location_id === conv.location_id)
+            if (forLoc) chosen = forLoc
+          }
+        }
+        fromNumber = chosen.phone_number
+      }
+    } catch {}
+
+    return NextResponse.json({ token, from: fromNumber })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

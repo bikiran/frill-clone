@@ -8,6 +8,7 @@ const AU_STATES = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA']
 export default function LocationsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [locations, setLocations] = useState<any[]>([])
+  const [numbers, setNumbers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<any>(null)
   const [saving, setSaving] = useState(false)
@@ -38,6 +39,17 @@ export default function LocationsPage() {
   const loadLocations = async (cid: string) => {
     const { data } = await (supabase as any).from('company_locations').select('*').eq('company_id', cid).order('is_primary', { ascending: false })
     setLocations(data || [])
+    try {
+      const res = await fetch(`/api/telnyx/numbers?companyId=${cid}`)
+      const nd = await res.json()
+      setNumbers(nd.numbers || [])
+    } catch {}
+  }
+
+  // Send the user to the Calls page in "add a number" mode, pre-assigning this
+  // location so the purchased number is tied to it.
+  const buyForLocation = (locationId: string) => {
+    window.location.href = `/admin/integrations/telnyx?buyForLocation=${locationId}`
   }
 
   const save = async () => {
@@ -168,6 +180,18 @@ export default function LocationsPage() {
                 </div>
                 <p style={{ margin: 0, fontSize: 13.5, color: 'var(--slate)' }}>{fmtAddress(l)}</p>
                 {l.phone && <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--slate)' }}>📞 {l.phone}</p>}
+                {/* Colvy number assigned to this location */}
+                {(() => {
+                  const assigned = numbers.find((n: any) => n.location_id === l.id)
+                  return assigned ? (
+                    <p style={{ margin: '6px 0 0', fontSize: 13, fontWeight: 600, color: '#059669' }}>☎️ Colvy number: {assigned.phone_number}</p>
+                  ) : (
+                    <button onClick={() => buyForLocation(l.id)}
+                      style={{ marginTop: 8, padding: '6px 12px', borderRadius: 8, background: 'var(--peach)', border: '1px solid var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--coral)' }}>
+                      + Buy a number for this location
+                    </button>
+                  )
+                })()}
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => setEditing(l)} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>

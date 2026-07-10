@@ -5,7 +5,7 @@ import Stripe from 'stripe'
 // provisioned by the Stripe webhook once payment succeeds (see stripe/webhook).
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, email, phoneNumber, numberType } = await req.json()
+    const { companyId, email, phoneNumber, numberType, locationId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const secret = (process.env.STRIPE_SECRET_KEY || '').trim()
@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
         companyId,
         phoneNumber: phoneNumber || '',
         numberType: numberType || 'local',
+        locationId: locationId || '',
       },
       success_url: `${origin}/admin/integrations/telnyx?provisioning=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/admin/integrations/telnyx`,
