@@ -98,22 +98,23 @@ export default function RootLayout({
       setAvatarUrl(user.user_metadata.avatar_url)
     }
   }, [user])
-  const [company, setCompany] = useState<any>(() => {
-    // Try to restore from session cache for instant branding on first render
-    if (typeof window === 'undefined') return null
+  // Start with stable server-safe values, then hydrate from window/localStorage
+  // AFTER mount. Reading window in a useState initializer causes a server/client
+  // mismatch that can throw React #300 (hydration/hook mismatch).
+  const [company, setCompany] = useState<any>(null)
+  const [isSubdomain, setIsSubdomain] = useState(false)
+  useEffect(() => {
     try {
       const h = window.location.hostname
-      const slug = h.endsWith('.colvy.com') && h !== 'colvy.com' ? h.replace('.colvy.com', '') : null
-      if (!slug) return null
-      const cached = localStorage.getItem(`company_${slug}`)
-      return cached ? JSON.parse(cached) : null
-    } catch { return null }
-  })
-  const [isSubdomain, setIsSubdomain] = useState(() => {
-    if (typeof window === 'undefined') return false
-    const h = window.location.hostname
-    return h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com' && !h.includes('localhost')
-  })
+      const sub = h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com' && !h.includes('localhost')
+      setIsSubdomain(sub)
+      const slug = sub ? h.replace('.colvy.com', '') : null
+      if (slug) {
+        const cached = localStorage.getItem(`company_${slug}`)
+        if (cached) setCompany(JSON.parse(cached))
+      }
+    } catch {}
+  }, [])
   const [navVisibility, setNavVisibility] = useState({
     Ideas: true, Roadmap: true, Updates: true, Help: true,
   })
