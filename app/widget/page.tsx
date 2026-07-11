@@ -1174,6 +1174,8 @@ function WidgetContent() {
         @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
         @keyframes voteBounce { 0% { transform: scale(1); } 40% { transform: scale(1.3) translateY(-4px); } 70% { transform: scale(0.95); } 100% { transform: scale(1); } }
         @keyframes voteRipple { 0% { box-shadow: 0 0 0 0 rgba(255, 122, 107, 0.4); } 100% { box-shadow: 0 0 0 20px rgba(255, 122, 107, 0); } }
+        @keyframes colvyPulse { 0%,100% { transform: scale(1); opacity: 0.18; } 50% { transform: scale(1.25); opacity: 0.06; } }
+        @keyframes colvyWave { 0%,60%,100% { transform: rotate(0deg); } 70% { transform: rotate(14deg); } 80% { transform: rotate(-8deg); } 90% { transform: rotate(10deg); } }
         .item-row { cursor: pointer; border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; transition: background 0.15s; width: 100%; box-sizing: border-box; }
         .item-row:hover, .item-row:active { background: #f5f5f5; }
         .vote-pill { display: flex; align-items: center; gap: 4px; min-width: 32px; flex-shrink: 0; }
@@ -1506,9 +1508,26 @@ function WidgetContent() {
             {chatStep === 'form' ? (
               <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div style={{ textAlign: 'center', paddingBottom: 12 }}>
-                  <div style={{ width: 48, height: 48, borderRadius: '50%', background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', fontSize: 20 }}>💬</div>
-                  <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#0d0d0d' }}>Chat with us</h3>
-                  <p style={{ margin: 0, fontSize: 13, color: '#9ca3af' }}>We're online and ready to help</p>
+                  <div style={{ position: 'relative', width: 64, height: 64, margin: '0 auto 12px' }}>
+                    {/* Soft pulsing halo */}
+                    <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: accentColor, opacity: 0.18, animation: 'colvyPulse 2.2s ease-in-out infinite' }} />
+                    <div style={{ position: 'relative', width: 64, height: 64, borderRadius: '50%', background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 6px 18px ${accentColor}55` }}>
+                      {/* Friendly chat bubble with a little smile + waving hand */}
+                      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                        <path d="M6 7h20a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H13l-6 5v-5H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" fill="#fff"/>
+                        <circle cx="12" cy="14" r="1.6" fill={accentColor}/>
+                        <circle cx="20" cy="14" r="1.6" fill={accentColor}/>
+                        <path d="M12 17.5c1.2 1.2 2.5 1.8 4 1.8s2.8-.6 4-1.8" stroke={accentColor} strokeWidth="1.6" strokeLinecap="round"/>
+                        <g style={{ transformOrigin: '26px 8px', animation: 'colvyWave 2.4s ease-in-out infinite' }}>
+                          <text x="23" y="11" fontSize="11">👋</text>
+                        </g>
+                      </svg>
+                    </div>
+                    {/* Online status dot */}
+                    <span style={{ position: 'absolute', bottom: 2, right: 2, width: 14, height: 14, borderRadius: '50%', background: '#22c55e', border: '2.5px solid #fff', boxShadow: '0 0 0 2px #22c55e33' }} />
+                  </div>
+                  <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: '#0d0d0d' }}>Hi there! 👋</h3>
+                  <p style={{ margin: 0, fontSize: 13, color: '#6b7280' }}>We usually reply in a few minutes. How can we help?</p>
                 </div>
                 {(() => {
                   const ff = company?.widget_config?.chat_form_fields || { name: { show: true, required: true }, email: { show: true, required: false }, mobile: { show: true, required: false } }

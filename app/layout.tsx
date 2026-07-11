@@ -51,6 +51,25 @@ export default function RootLayout({
   const [showDrawer, setShowDrawer] = useState(false)
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
+
+  // If a user lands with an auth error hash (e.g. an expired invite/OTP link:
+  // #error=access_denied&error_code=otp_expired), Supabase's detectSessionInUrl
+  // would otherwise choke on it and the page renders a blank error. Strip the
+  // hash immediately and show a gentle notice instead of crashing.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const hash = window.location.hash || ''
+    if (hash.includes('error_code=') || hash.includes('error=access_denied')) {
+      const params = new URLSearchParams(hash.replace(/^#/, ''))
+      const code = params.get('error_code') || params.get('error') || 'error'
+      // Clean the URL so a reload doesn't re-trigger and nothing parses it.
+      try { window.history.replaceState(null, '', window.location.pathname + window.location.search) } catch {}
+      if (code === 'otp_expired' || code === 'access_denied') {
+        // Send them somewhere sensible with a friendly message.
+        try { window.location.replace('/signin?notice=link_expired') } catch {}
+      }
+    }
+  }, [])
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [notifications, setNotifications] = useState<any[]>([])
