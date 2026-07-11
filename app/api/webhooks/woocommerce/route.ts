@@ -131,12 +131,37 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
  * Automatically syncs customer and order data, and (optionally) starts a chat
  * with a status-appropriate message.
  */
+// WooCommerce sends a GET/ping-style request when you first save a webhook and
+// for health checks. Respond 200 so setup succeeds instead of showing an error.
+export async function GET(req: NextRequest) {
+  return NextResponse.json({ ok: true, service: 'colvy-woocommerce-webhook' })
+}
+
 export async function POST(req: NextRequest) {
   try {
     const payload = await req.text()
     const deliveryId = req.headers.get('x-wc-webhook-delivery-id') || ''
 
-    const data = JSON.parse(payload)
+    // WooCommerce's initial webhook save sends a ping with an empty or minimal
+    // body (e.g. {"webhook_id":123}). Parsing that as an order used to throw and
+    // return 500 — which WooCommerce reports as "Delivery URL returned 500".
+    // Treat a ping / empty body as a successful handshake.
+    const topic = req.headers.get('x-wc-webhook-topic') || ''
+    if (!payload || !payload.trim()) {
+      return NextResponse.json({ ok: true, ping: true })
+    }
+    let data: any
+    try {
+      data = JSON.parse(payload)
+    } catch {
+      // Non-JSON body (e.g. a raw ping) — acknowledge and move on.
+      return NextResponse.json({ ok: true, ping: true })
+    }
+    if (data.webhook_id && !data.id && !data.line_items) {
+      // This is the setup ping, not a real resource event.
+      return NextResponse.json({ ok: true, ping: true, webhook_id: data.webhook_id })
+    }
+
     const resource = data.resource || (data.line_items ? 'order' : undefined)
     const resourceId = data.id
 
@@ -145,6 +170,12 @@ export async function POST(req: NextRequest) {
     const companyId = req.headers.get('x-company-id') || req.nextUrl.searchParams.get('company')
     if (!companyId) {
       return NextResponse.json({ error: 'Missing company ID (header x-company-id or ?company=)' }, { status: 400 })
+    }
+
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      // Never 500 the webhook for a config issue — acknowledge and log.
+      console.error('[Webhook] SUPABASE_SERVICE_ROLE_KEY missing')
+      return NextResponse.json({ ok: true, warning: 'not fully configured' })
     }
 
     const supabase = createClient(
@@ -167,6 +198,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, message: 'Webhook processed', deliveryId })
   } catch (error: any) {
     console.error('[Webhook] Error:', error)
-    return NextResponse.json({ error: error.message || 'Webhook processing failed' }, { status: 500 })
+    // Return 200 so WooCommerce doesn't disable the webhook after repeated 500s.
+    // The error is logged for debugging; the event is effectively dropped.
+    return NextResponse.json({ ok: false, error: error.message || 'Webhook processing failed' })
   }
 }
