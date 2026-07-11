@@ -734,80 +734,75 @@ function FeatureFlagsPage({ data }: { data: any }) {
 }
 
 function SystemPage() {
-  const metrics = [
-    { label: 'API (p95 latency)', value: '48ms', status: 'healthy', note: 'Target < 200ms', spark: [38,45,41,52,44,48,46,48] },
-    { label: 'Database (p50)', value: '12ms', status: 'healthy', note: 'Target < 50ms', spark: [10,14,11,15,12,13,11,12] },
-    { label: 'Email delivery rate', value: '99.2%', status: 'healthy', note: '1,240 sent today', spark: [99,99,98,99,100,99,99,99] },
-    { label: 'Webhook success rate', value: '97.8%', status: 'healthy', note: '3 failures today', spark: [98,97,99,98,97,99,98,98] },
-    { label: 'Storage used', value: '34 GB / 100 GB', status: 'healthy', note: '34% capacity', spark: [28,29,30,31,32,33,33,34] },
-    { label: 'Queue depth', value: '12 jobs', status: 'healthy', note: 'Processing normally', spark: [45,20,8,15,30,10,5,12] },
-    { label: 'Database size', value: '2.4 GB', status: 'healthy', note: 'Growing ~50MB/day', spark: [2.0,2.1,2.1,2.2,2.2,2.3,2.3,2.4] },
-    { label: 'CDN cache hit rate', value: '94.3%', status: 'healthy', note: 'Images and assets', spark: [92,93,94,93,95,94,94,94] },
+  const [checks, setChecks] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    ;(async () => {
+      const results: any[] = []
+      // Real: database connectivity + latency (round-trip of a tiny query).
+      const t0 = performance.now()
+      try {
+        await (supabase as any).from('companies').select('id', { count: 'exact', head: true })
+        const ms = Math.round(performance.now() - t0)
+        results.push({ label: 'Database', value: `${ms}ms`, status: ms < 500 ? 'healthy' : 'warn', note: 'Live round-trip from your browser', real: true })
+      } catch {
+        results.push({ label: 'Database', value: 'unreachable', status: 'error', note: 'Query failed', real: true })
+      }
+      // Real: recent stripe events processed (a health signal for billing).
+      try {
+        const since = new Date(Date.now() - 86400000).toISOString()
+        const { count } = await (supabase as any).from('stripe_events').select('*', { count: 'exact', head: true }).gte('created_at', since)
+        results.push({ label: 'Stripe events (24h)', value: String(count || 0), status: 'healthy', note: 'Webhook deliveries received', real: true })
+      } catch {
+        results.push({ label: 'Stripe events (24h)', value: 'n/a', status: 'warn', note: 'Table not available', real: true })
+      }
+      // Real: total DB rows in key tables (rough size signal).
+      try {
+        const [{ count: convs }, { count: msgs }] = await Promise.all([
+          (supabase as any).from('conversations').select('*', { count: 'exact', head: true }),
+          (supabase as any).from('messages').select('*', { count: 'exact', head: true }),
+        ])
+        results.push({ label: 'Conversations', value: (convs || 0).toLocaleString(), status: 'healthy', note: 'Total records', real: true })
+        results.push({ label: 'Messages', value: (msgs || 0).toLocaleString(), status: 'healthy', note: 'Total records', real: true })
+      } catch {}
+      setChecks(results); setLoading(false)
+    })()
+  }, [])
+
+  // Infra metrics we can't measure from the app — shown honestly, not faked.
+  const notMonitored = [
+    { label: 'API latency (p95)', note: 'Use Vercel Analytics' },
+    { label: 'Email delivery', note: 'Use Resend dashboard' },
+    { label: 'Storage used', note: 'Use Supabase dashboard' },
+    { label: 'CDN cache hit rate', note: 'Use your CDN provider' },
   ]
+
   return (
     <div>
-      <SectionHeader title="System Health" sub="Real-time infrastructure and service status" />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
-        {metrics.map(m => (
+      <SectionHeader title="System Health" sub="Live checks from your data — infra metrics link out to their dashboards" />
+      <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '4px 0 10px' }}>Live checks</p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14, marginBottom: 26 }}>
+        {loading ? <p style={{ color: 'var(--sa-muted)' }}>Running checks…</p> : checks.map(m => (
           <div key={m.label} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={{ fontSize: 13, color: 'var(--sa-muted)' }}>{m.label}</span>
               <Badge status={m.status} />
             </div>
             <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--sa-text)', marginBottom: 4 }}>{m.value}</div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 11, color: 'var(--sa-muted)' }}>{m.note}</span>
-              <Spark data={m.spark} color="#10b981" h={28} />
-            </div>
+            <span style={{ fontSize: 11, color: 'var(--sa-muted)' }}>{m.note}</span>
           </div>
         ))}
       </div>
-    </div>
-  )
-}
 
-function AuditPage() {
-  const logs = [
-    { user: 'bishalstha76@gmail.com', action: 'Suspended company', target: 'spam-board', time: '2h ago', level: 'warn' },
-    { user: 'bishalstha76@gmail.com', action: 'Feature flag toggled', target: 'AI Assistant → prexty', time: '3h ago', level: 'info' },
-    { user: 'system', action: 'Auto-seeded company data', target: 'neplay', time: '4h ago', level: 'info' },
-    { user: 'bishalstha76@gmail.com', action: 'Created new company', target: 'roxy-aquarium', time: '6h ago', level: 'info' },
-    { user: 'system', action: 'Webhook delivery failed', target: 'acme.io → 3 events', time: '8h ago', level: 'error' },
-    { user: 'bishalstha76@gmail.com', action: 'Reactivated company', target: 'old-board', time: '1d ago', level: 'info' },
-    { user: 'system', action: 'Email bounce recorded', target: 'user@example.com', time: '1d ago', level: 'warn' },
-    { user: 'bishalstha76@gmail.com', action: 'Exported company data', target: 'prexty', time: '2d ago', level: 'info' },
-  ]
-  const levelColor: Record<string, string> = { info: '#6366f1', warn: '#f59e0b', error: '#ef4444' }
-  return (
-    <div>
-      <SectionHeader title="Audit Logs" sub="All admin actions and system events" />
-      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--sa-border)' }}>
-              {['Level', 'Actor', 'Action', 'Target', 'Time'].map(h => (
-                <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {logs.map((l, i) => (
-              <tr key={i} style={{ borderBottom: i < logs.length - 1 ? '1px solid var(--sa-border)' : 'none' }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'var(--sa-hover)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                <td style={{ padding: '11px 16px' }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: levelColor[l.level], display: 'inline-block' }} />
-                </td>
-                <td style={{ padding: '11px 16px', fontSize: 12, color: 'var(--sa-text)', fontWeight: 500 }}>{l.user}</td>
-                <td style={{ padding: '11px 16px', fontSize: 13, color: 'var(--sa-text)' }}>{l.action}</td>
-                <td style={{ padding: '11px 16px' }}>
-                  <code style={{ fontSize: 12, color: 'var(--sa-muted)', background: 'var(--sa-hover)', padding: '2px 7px', borderRadius: 5 }}>{l.target}</code>
-                </td>
-                <td style={{ padding: '11px 16px', fontSize: 12, color: 'var(--sa-muted)', whiteSpace: 'nowrap' as const }}>{l.time}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '4px 0 10px' }}>Not monitored here</p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+        {notMonitored.map(m => (
+          <div key={m.label} style={{ background: 'var(--sa-card)', border: '1px dashed var(--sa-border)', borderRadius: 14, padding: 18, opacity: 0.75 }}>
+            <span style={{ fontSize: 13, color: 'var(--sa-muted)' }}>{m.label}</span>
+            <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '6px 0 0' }}>{m.note}</p>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -1080,6 +1075,228 @@ function TicketsPage() {
   )
 }
 
+function LiveChatPage() {
+  const [convs, setConvs] = useState<any[]>([])
+  const [counts, setCounts] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch('/api/platform-admin/ops?view=chat', { headers: { 'Authorization': `Bearer ${session?.access_token}` } })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Could not load conversations')
+        setConvs(data.conversations || []); setCounts(data.counts || {})
+      } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+    })()
+  }, [])
+
+  const STATUS_COLOR: Record<string, string> = { open: '#f59e0b', assigned: '#6366f1', resolved: '#10b981', closed: '#9ca3af' }
+  const filtered = convs.filter(c => {
+    if (statusFilter !== 'all' && c.status !== statusFilter) return false
+    if (!search) return true
+    return [c.subject, c.last_message, c.company?.name].filter(Boolean).join(' ').toLowerCase().includes(search.toLowerCase())
+  })
+
+  return (
+    <div>
+      <SectionHeader title="Live Chat" sub={`All conversations across every company (${convs.length})`} />
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        {[['all', 'All', convs.length], ['open', 'Open', counts.open || 0], ['assigned', 'Assigned', counts.assigned || 0], ['resolved', 'Resolved', counts.resolved || 0], ['closed', 'Closed', counts.closed || 0]].map(([k, label, n]: any) => (
+          <button key={k} onClick={() => setStatusFilter(k)} style={{ padding: '8px 14px', borderRadius: 10, border: statusFilter === k ? '2px solid #ff7a6b' : '1px solid var(--sa-border)', background: statusFilter === k ? 'rgba(255,122,107,0.1)' : 'var(--sa-card)', color: statusFilter === k ? '#ff7a6b' : 'var(--sa-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{label} <span style={{ opacity: 0.7 }}>({n})</span></button>
+        ))}
+      </div>
+      <div style={{ marginBottom: 16 }}><SearchBar placeholder="Search conversations..." value={search} onChange={setSearch} /></div>
+      {err && <div style={{ padding: '10px 14px', borderRadius: 9, background: '#fee2e2', color: '#dc2626', fontSize: 13, marginBottom: 14 }}>{err}</div>}
+      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Conversation', 'Company', 'Channel', 'Last activity', 'Status'].map(h => <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {loading ? <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading...</td></tr>
+            : filtered.length === 0 ? <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>No conversations</td></tr>
+            : filtered.map((c, i) => (
+              <tr key={c.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--sa-border)' : 'none' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--sa-hover)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <td style={{ padding: '12px 16px', maxWidth: 320 }}>
+                  <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)' }}>{c.subject || 'Conversation'}{c.is_unread && <span style={{ marginLeft: 6, width: 7, height: 7, borderRadius: '50%', background: '#ff7a6b', display: 'inline-block' }} />}</p>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.last_message || '—'}</p>
+                </td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{c.company ? <button onClick={() => window.open(`https://${c.company.slug}.colvy.com/admin/inbox`, '_blank')} style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', fontSize: 12, padding: 0 }}>{c.company.name}</button> : '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)', textTransform: 'capitalize' }}>{c.channel}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{c.last_message_at ? new Date(c.last_message_at).toLocaleString() : '—'}</td>
+                <td style={{ padding: '12px 16px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: STATUS_COLOR[c.status] || '#6b7280', textTransform: 'capitalize' }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_COLOR[c.status] || '#6b7280' }} />{c.status}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function ModerationPage() {
+  const [spam, setSpam] = useState<any[]>([])
+  const [flaggedIdeas, setFlaggedIdeas] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
+
+  const load = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/ops?view=moderation', { headers: { 'Authorization': `Bearer ${session?.access_token}` } })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not load')
+      setSpam(data.spam || []); setFlaggedIdeas(data.flaggedIdeas || [])
+    } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [])
+
+  const act = async (action: string, id: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    await fetch('/api/platform-admin/ops', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ action, id }) })
+    if (action === 'unspam') setSpam(prev => prev.filter(s => s.id !== id))
+    if (action === 'unflag_idea') setFlaggedIdeas(prev => prev.filter(i => i.id !== id))
+  }
+
+  return (
+    <div>
+      <SectionHeader title="Moderation" sub="Spam-flagged conversations and reported content" action={<button onClick={load} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-muted)', fontSize: 13, cursor: 'pointer' }}>{I.refresh} Refresh</button>} />
+      {err && <div style={{ padding: '10px 14px', borderRadius: 9, background: '#fee2e2', color: '#dc2626', fontSize: 13, marginBottom: 14 }}>{err}</div>}
+
+      <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '8px 0 10px' }}>Spam conversations ({spam.length})</p>
+      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
+        {loading ? <p style={{ padding: 24, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading...</p>
+        : spam.length === 0 ? <p style={{ padding: 24, textAlign: 'center', color: 'var(--sa-muted)' }}>Nothing flagged as spam. </p>
+        : spam.map((s, i) => (
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < spam.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 12.5, color: 'var(--sa-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.last_message || s.subject || 'Conversation'}</p>
+              <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--sa-muted)' }}>{s.company?.name || '—'} · {s.channel}</p>
+            </div>
+            <button onClick={() => act('unspam', s.id)} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'transparent', color: '#10b981', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Not spam</button>
+          </div>
+        ))}
+      </div>
+
+      <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '8px 0 10px' }}>Flagged ideas ({flaggedIdeas.length})</p>
+      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'hidden' }}>
+        {flaggedIdeas.length === 0 ? <p style={{ padding: 24, textAlign: 'center', color: 'var(--sa-muted)' }}>No flagged ideas.</p>
+        : flaggedIdeas.map((it, i) => (
+          <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < flaggedIdeas.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 12.5, color: 'var(--sa-text)' }}>{it.title}</p>
+              <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--sa-muted)' }}>{it.company?.name || '—'}</p>
+            </div>
+            <button onClick={() => act('unflag_idea', it.id)} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'transparent', color: '#10b981', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Clear flag</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function BillingPage() {
+  const [pays, setPays] = useState<any[]>([])
+  const [paid, setPaid] = useState(0)
+  const [pending, setPending] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch('/api/platform-admin/ops?view=billing', { headers: { 'Authorization': `Bearer ${session?.access_token}` } })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Could not load')
+        setPays(data.payments || []); setPaid(data.paid || 0); setPending(data.pending || 0)
+      } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+    })()
+  }, [])
+
+  const STATUS_COLOR: Record<string, string> = { paid: '#10b981', pending: '#f59e0b', failed: '#ef4444', cancelled: '#9ca3af' }
+  return (
+    <div>
+      <SectionHeader title="Billing" sub="In-chat payments collected across all companies" />
+      {err && <div style={{ padding: '10px 14px', borderRadius: 9, background: '#fee2e2', color: '#dc2626', fontSize: 13, marginBottom: 14 }}>{err}</div>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14, marginBottom: 20 }}>
+        <KPI label="Collected" value={`$${paid.toLocaleString()}`} sub="paid via chat" color="#10b981" />
+        <KPI label="Pending" value={`$${pending.toLocaleString()}`} sub="awaiting payment" color="#f59e0b" />
+        <KPI label="Payments" value={pays.length.toLocaleString()} sub="total records" color="#6366f1" />
+      </div>
+      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Description', 'Company', 'Amount', 'Date', 'Status', ''].map(h => <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {loading ? <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading...</td></tr>
+            : pays.length === 0 ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>No chat payments yet.</td></tr>
+            : pays.map((p, i) => (
+              <tr key={p.id} style={{ borderBottom: i < pays.length - 1 ? '1px solid var(--sa-border)' : 'none' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--sa-hover)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <td style={{ padding: '12px 16px', fontSize: 12.5, color: 'var(--sa-text)' }}>{p.description || 'Payment'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{p.company?.name || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)' }}>{p.currency} ${p.amount.toLocaleString()}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}</td>
+                <td style={{ padding: '12px 16px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: STATUS_COLOR[p.status] || '#6b7280', textTransform: 'capitalize' }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_COLOR[p.status] || '#6b7280' }} />{p.status}</span></td>
+                <td style={{ padding: '12px 16px' }}>{p.receipt_url && <a href={p.receipt_url} target="_blank" rel="noopener" style={{ fontSize: 12, color: '#6366f1' }}>Receipt</a>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function SettingsPage() {
+  const [me, setMe] = useState<any>(null)
+  useEffect(() => { supabase.auth.getSession().then(({ data }: any) => setMe(data?.session?.user || null)) }, [])
+
+  const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 13, color: 'var(--sa-muted)' }}>{label}</span>
+      <span style={{ fontSize: 13, color: 'var(--sa-text)', fontWeight: 600 }}>{value}</span>
+    </div>
+  )
+
+  return (
+    <div>
+      <SectionHeader title="Settings" sub="Platform configuration" />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 6 }}>Super admin</p>
+          <Row label="Signed in as" value={me?.email || '—'} />
+          <Row label="Platform domain" value="colvy.com" />
+          <Row label="Admin panel" value="admin.colvy.com" />
+        </div>
+        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 6 }}>Plan pricing (MRR basis, AUD/mo)</p>
+          <Row label="Startup" value="$19" />
+          <Row label="Business" value="$49" />
+          <Row label="Growth" value="$149" />
+          <Row label="Enterprise" value="$399" />
+          <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', marginTop: 10 }}>Used only when a company has no live Stripe subscription. Real subscriptions use the actual billed amount. Edit these in <code>app/api/platform-admin/analytics/route.ts</code>.</p>
+        </div>
+        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 6 }}>Integrations status</p>
+          <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', lineHeight: 1.6 }}>Stripe, Telnyx, WooCommerce, Shopify and Resend keys are configured via Vercel environment variables. This panel doesn't expose secrets. Use the Subscriptions page's "Sync from Stripe" to verify Stripe connectivity.</p>
+        </div>
+        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 10 }}>Quick links</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <a href="https://colvy.com/admin" target="_blank" rel="noopener" style={{ fontSize: 13, color: '#6366f1' }}>Manage colvy.com →</a>
+            <a href="https://colvy.com/admin/create-company" target="_blank" rel="noopener" style={{ fontSize: 13, color: '#6366f1' }}>Create a company →</a>
+            <a href="https://dashboard.stripe.com" target="_blank" rel="noopener" style={{ fontSize: 13, color: '#6366f1' }}>Stripe dashboard →</a>
+            <a href="https://supabase.com/dashboard" target="_blank" rel="noopener" style={{ fontSize: 13, color: '#6366f1' }}>Supabase dashboard →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PlaceholderPage({ title, sub }: { title: string; sub: string }) {
   return (
     <div>
@@ -1277,11 +1494,11 @@ export default function SuperAdmin() {
           {page === 'roadmap'    && <CrossCompanyContent title="Roadmaps" sub="All roadmap items across all companies" table="ideas" statusFilter={['planned', 'in_progress', 'shipped']} extraCol={{ header: 'Votes', render: (r) => <span>{r.votes ?? 0}</span> }} />}
           {page === 'announce'   && <CrossCompanyContent title="Announcements" sub="All announcements and changelog posts" table="announcements" />}
           {page === 'help'       && <CrossCompanyContent title="Help Center" sub="Help articles across all companies" table="help_articles" extraCol={{ header: 'Views', render: (r) => <span>{r.views ?? 0}</span> }} />}
-          {page === 'chat'       && <PlaceholderPage title="Live Chat" sub="Global inbox for all live chat conversations" />}
+          {page === 'chat'       && <LiveChatPage />}
           {page === 'tickets'    && <TicketsPage />}
-          {page === 'moderation' && <PlaceholderPage title="Moderation" sub="Flagged content, spam and reported ideas" />}
-          {page === 'billing'    && <PlaceholderPage title="Billing" sub="Revenue, invoices, refunds and Stripe reconciliation" />}
-          {page === 'settings'   && <PlaceholderPage title="Settings" sub="Super admin configuration, API keys and integrations" />}
+          {page === 'moderation' && <ModerationPage />}
+          {page === 'billing'    && <BillingPage />}
+          {page === 'settings'   && <SettingsPage />}
         </div>
       </main>
     </div>
