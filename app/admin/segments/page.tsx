@@ -83,11 +83,13 @@ export default function SegmentsPage() {
       }
     }
 
-    // 1) Feedback board users (ideas)
-    try {
-      const { data: ideas } = await supabase.from('ideas').select('user_id, created_by_name, created_at')
-      ;(ideas || []).forEach((i: any) => { if (i.user_id) add(i.user_id, { id: i.user_id, name: i.created_by_name || 'Anonymous', last_seen: i.created_at }, 'feedback') })
-    } catch {}
+    // 1) Feedback board users (ideas) — scoped to THIS company only.
+    if (cid) {
+      try {
+        const { data: ideas } = await supabase.from('ideas').select('user_id, created_by_name, created_at').eq('company_id', cid)
+        ;(ideas || []).forEach((i: any) => { if (i.user_id) add(i.user_id, { id: i.user_id, name: i.created_by_name || 'Anonymous', last_seen: i.created_at }, 'feedback') })
+      } catch {}
+    }
 
     if (cid) {
       // 2) Chat contacts
