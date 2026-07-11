@@ -417,6 +417,36 @@ export default function RootLayout({
     window.location.href = '/'
   }
 
+  // Notifications unread count + realtime. MUST be declared before any early
+  // return (the isFullPage branch below) so the hook count is stable — otherwise
+  // React throws #300 ("rendered fewer hooks than expected") when isFullPage
+  // flips after mount on the marketing root.
+  useEffect(() => {
+    if (!user) { setUnreadCount(0); return }
+    const getCount = async () => {
+      try {
+        const { count } = await (supabase as any)
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('is_read', false)
+        setUnreadCount(count || 0)
+      } catch { setUnreadCount(0) }
+    }
+    getCount()
+    const ch = supabase
+      .channel(`notifications-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => getCount())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [user])
+
+  // Fetch notifications when dropdown opens. Also declared before any early
+  // return to keep the hook order stable (see #300 note above).
+  useEffect(() => {
+    if (showNotifications) fetchNotifications()
+  }, [showNotifications])
+
   const userInitial = user?.email?.[0].toUpperCase() || 'A'
 
   // Pages that use their own full-page layout (no nav wrapper).
@@ -486,17 +516,6 @@ export default function RootLayout({
       setUnreadCount(count || 0)
     } catch { setUnreadCount(0) }
   }
-
-  useEffect(() => {
-    if (!user) { setUnreadCount(0); return }
-    fetchUnreadCount()
-    // Realtime: new notifications light the dot immediately
-    const ch = supabase
-      .channel(`notifications-${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => fetchUnreadCount())
-      .subscribe()
-    return () => { supabase.removeChannel(ch) }
-  }, [user])
 
   const markAllAsRead = async () => {
     try {
@@ -570,13 +589,6 @@ export default function RootLayout({
       if (notification.conversation_id) router.push(`/admin/inbox?conversation=${notification.conversation_id}`)
     }
   }
-
-  // Fetch notifications when dropdown opens
-  useEffect(() => {
-    if (showNotifications) {
-      fetchNotifications()
-    }
-  }, [showNotifications])
 
   return (
     <html lang="en">
