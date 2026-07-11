@@ -27,30 +27,42 @@ export async function GET(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
 
-    // ── Resolve the visitor's location from their IP ──────────────────────────
-    // Vercel/proxies set x-forwarded-for; take the first hop.
-    const fwd = req.headers.get('x-forwarded-for') || ''
-    const ip = (fwd.split(',')[0] || '').trim() || req.headers.get('x-real-ip') || ''
-
     let state: string | null = null
     let vLat: number | null = null
     let vLon: number | null = null
-    try {
-      // ipapi.co is free for low volume and returns region_code (e.g. VIC) + lat/lng.
-      const geoRes = await fetch(`https://ipapi.co/${ip ? ip + '/' : ''}json/`, { headers: { 'User-Agent': 'Colvy/1.0' } })
-      const geo = await geoRes.json()
-      if (geo && geo.country_code === 'AU') {
-        state = (geo.region_code || '').toUpperCase() || null  // VIC, NSW, ...
-        vLat = typeof geo.latitude === 'number' ? geo.latitude : null
-        vLon = typeof geo.longitude === 'number' ? geo.longitude : null
-      } else if (geo && geo.region) {
-        // Fallback: map common region names to codes.
-        const map: Record<string, string> = { Victoria: 'VIC', 'New South Wales': 'NSW', Queensland: 'QLD', 'South Australia': 'SA', 'Western Australia': 'WA', Tasmania: 'TAS', 'Australian Capital Territory': 'ACT', 'Northern Territory': 'NT' }
-        state = map[geo.region] || null
-        vLat = typeof geo.latitude === 'number' ? geo.latitude : null
-        vLon = typeof geo.longitude === 'number' ? geo.longitude : null
-      }
-    } catch {}
+
+    // ── Preferred: Vercel's built-in geo headers (free, instant, no rate limit).
+    // On Vercel these are populated automatically from the edge network.
+    const vCountry = req.headers.get('x-vercel-ip-country') || ''
+    const vRegion = req.headers.get('x-vercel-ip-country-region') || '' // e.g. VIC
+    const vHeaderLat = req.headers.get('x-vercel-ip-latitude')
+    const vHeaderLon = req.headers.get('x-vercel-ip-longitude')
+    if (vCountry.toUpperCase() === 'AU' && vRegion) {
+      state = vRegion.toUpperCase()
+      if (vHeaderLat) vLat = parseFloat(vHeaderLat)
+      if (vHeaderLon) vLon = parseFloat(vHeaderLon)
+    }
+
+    // ── Fallback: ipapi.co (only if Vercel headers weren't present, e.g. local
+    // dev or a non-Vercel host).
+    if (!state) {
+      const fwd = req.headers.get('x-forwarded-for') || ''
+      const ip = (fwd.split(',')[0] || '').trim() || req.headers.get('x-real-ip') || ''
+      try {
+        const geoRes = await fetch(`https://ipapi.co/${ip ? ip + '/' : ''}json/`, { headers: { 'User-Agent': 'Colvy/1.0' } })
+        const geo = await geoRes.json()
+        if (geo && geo.country_code === 'AU') {
+          state = (geo.region_code || '').toUpperCase() || null
+          vLat = typeof geo.latitude === 'number' ? geo.latitude : vLat
+          vLon = typeof geo.longitude === 'number' ? geo.longitude : vLon
+        } else if (geo && geo.region) {
+          const map: Record<string, string> = { Victoria: 'VIC', 'New South Wales': 'NSW', Queensland: 'QLD', 'South Australia': 'SA', 'Western Australia': 'WA', Tasmania: 'TAS', 'Australian Capital Territory': 'ACT', 'Northern Territory': 'NT' }
+          state = map[geo.region] || null
+          vLat = typeof geo.latitude === 'number' ? geo.latitude : vLat
+          vLon = typeof geo.longitude === 'number' ? geo.longitude : vLon
+        }
+      } catch {}
+    }
 
     // Only offer outlet selection to Victorian visitors.
     if (state !== 'VIC') {
