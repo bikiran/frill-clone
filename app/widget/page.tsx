@@ -54,6 +54,21 @@ function WidgetContent() {
   const [helpFeedbackNote, setHelpFeedbackNote] = useState('')
   const [helpFeedbackEmail, setHelpFeedbackEmail] = useState('')
   const [helpFeedbackDone, setHelpFeedbackDone] = useState(false)
+  const [widgetIsOpen, setWidgetIsOpen] = useState(true)
+  const widgetIsOpenRef = useRef(true)
+  const [highlightMsgIds, setHighlightMsgIds] = useState<string[]>([])
+
+  // Track open/closed state reported by the embedding script.
+  useEffect(() => {
+    const onOpen = (e: MessageEvent) => {
+      const d: any = e.data
+      if (!d || !d.colvy || d.type !== 'widget_open') return
+      setWidgetIsOpen(!!d.open)
+      widgetIsOpenRef.current = !!d.open
+    }
+    window.addEventListener('message', onOpen)
+    return () => window.removeEventListener('message', onOpen)
+  }, [])
 
   // Receive live parent-page updates from the embedding script as the visitor
   // navigates the business site, and record them in Page History.
@@ -155,6 +170,19 @@ function WidgetContent() {
           }
           return [...prev, msg]
         })
+        // Agent/system reply: highlight it, and if the widget is closed, wake the
+        // bubble (badge + bounce) via the embedding script.
+        if (msg.sender_type === 'agent' || msg.sender_type === 'system') {
+          if (msg.id) {
+            setHighlightMsgIds(prev => [...prev, msg.id])
+            setTimeout(() => setHighlightMsgIds(prev => prev.filter(id => id !== msg.id)), 2600)
+          }
+          try {
+            if (!widgetIsOpenRef.current && typeof window !== 'undefined' && window.parent !== window) {
+              window.parent.postMessage({ colvy: true, type: 'new_message', count: 1 }, '*')
+            }
+          } catch {}
+        }
       })
       .subscribe()
 
@@ -165,7 +193,23 @@ function WidgetContent() {
         .from('messages').select('*')
         .eq('conversation_id', chatConvId)
         .order('created_at', { ascending: true })
-      if (msgs) setChatMessages2(prev => msgs.length !== prev.length ? msgs : prev)
+      if (msgs) setChatMessages2(prev => {
+        if (msgs.length === prev.length) return prev
+        // Find agent/system messages we didn't have before → wake + highlight.
+        const prevIds = new Set(prev.map((m: any) => m.id).filter(Boolean))
+        const fresh = msgs.filter((m: any) => m.id && !prevIds.has(m.id) && (m.sender_type === 'agent' || m.sender_type === 'system'))
+        if (fresh.length) {
+          const ids = fresh.map((m: any) => m.id)
+          setHighlightMsgIds(h => [...h, ...ids])
+          setTimeout(() => setHighlightMsgIds(h => h.filter(id => !ids.includes(id))), 2600)
+          try {
+            if (!widgetIsOpenRef.current && typeof window !== 'undefined' && window.parent !== window) {
+              window.parent.postMessage({ colvy: true, type: 'new_message', count: fresh.length }, '*')
+            }
+          } catch {}
+        }
+        return msgs
+      })
     }, 4000)
 
     return () => { supabase.removeChannel(ch); clearInterval(poll) }
@@ -1644,8 +1688,10 @@ function WidgetContent() {
                         })()}
                         <div style={{
                           maxWidth: '80%', padding: atts.length && atts[0].kind !== 'file' ? 4 : '10px 13px', borderRadius: isAgent ? '14px 14px 14px 4px' : '14px 14px 4px 14px',
-                          background: isAgent ? '#f3f4f6' : accentColor,
+                          background: isAgent ? (msg.id && highlightMsgIds.includes(msg.id) ? '#fff4f1' : '#f3f4f6') : accentColor,
                           color: isAgent ? '#0d0d0d' : '#fff', fontSize: 13, lineHeight: 1.5, position: 'relative',
+                          boxShadow: msg.id && highlightMsgIds.includes(msg.id) ? `0 0 0 2px ${accentColor}55` : 'none',
+                          transition: 'background 1.2s ease, box-shadow 1.2s ease',
                         }}>
                           {isAgent && msg.sender_name && <p style={{ margin: '0 0 3px', fontSize: 11, fontWeight: 700, color: '#6b7280', padding: atts.length ? '6px 9px 0' : 0 }}>{msg.sender_name}</p>}
                           {atts.map((a: any, ai: number) => (

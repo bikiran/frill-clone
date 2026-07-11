@@ -30,8 +30,18 @@ export async function POST(req: NextRequest) {
     }).select().maybeSingle()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
-    const link = `${origin}/u/${token}`
+    // Build the upload link on the company's own subdomain (e.g.
+    // roxyaquarium.colvy.com/u/<token>) so it feels like the business's own site.
+    // Falls back to the base Colvy domain if no slug or not a colvy.com host.
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+    let link = `${baseUrl}/u/${token}`
+    try {
+      const { data: company } = await db.from('companies').select('slug').eq('id', companyId).maybeSingle()
+      const u = new URL(baseUrl)
+      if (company?.slug && u.hostname.endsWith('colvy.com')) {
+        link = `${u.protocol}//${company.slug}.colvy.com/u/${token}`
+      }
+    } catch {}
 
     // Post the request into the conversation as an agent message.
     if (conversationId) {

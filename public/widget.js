@@ -91,10 +91,37 @@
   var open = false
   function toggle() {
     open = !open
-    if (open) { popup.classList.add('open'); renderBtn(true) }
-    else { popup.classList.remove('open'); renderBtn(false) }
+    if (open) { popup.classList.add('open'); renderBtn(true); clearBadge(); notifyOpen(true) }
+    else { popup.classList.remove('open'); renderBtn(false); notifyOpen(false) }
   }
   btn.addEventListener('click', toggle)
+
+  // Unread badge shown on the bubble when an agent replies while closed.
+  var badge = document.createElement('span')
+  badge.id = 'colvy-badge'
+  badge.style.cssText = 'position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#ef4444;color:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center;display:none;box-shadow:0 1px 4px rgba(0,0,0,0.3);font-family:-apple-system,sans-serif'
+  btn.style.position = btn.style.position || 'fixed'
+  btn.appendChild(badge)
+  var unread = 0
+  function showBadge(n) { unread = n; badge.textContent = n > 9 ? '9+' : String(n); badge.style.display = 'block' }
+  function clearBadge() { unread = 0; badge.style.display = 'none' }
+
+  function notifyOpen(isOpen) {
+    try { if (popup.contentWindow) popup.contentWindow.postMessage({ colvy: true, type: 'widget_open', open: isOpen }, BASE) } catch (e) {}
+  }
+
+  // Listen for signals from the widget iframe (new agent messages, etc).
+  window.addEventListener('message', function (e) {
+    var d = e.data
+    if (!d || !d.colvy) return
+    if (d.type === 'new_message' && !open) {
+      // Agent replied while the widget is closed: badge it and gently bounce.
+      showBadge((unread || 0) + (d.count || 1))
+      btn.animate ? btn.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.12)' }, { transform: 'scale(1)' }], { duration: 420 }) : null
+      if (d.autoOpen) { toggle() } // optional auto-open if the widget requests it
+    }
+    if (d.type === 'request_open' && !open) toggle()
+  })
 
   document.addEventListener('click', function (e) {
     if (open && !btn.contains(e.target) && !popup.contains(e.target)) {
