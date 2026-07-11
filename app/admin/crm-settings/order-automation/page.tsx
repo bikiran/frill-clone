@@ -18,6 +18,8 @@ export default function OrderAutomationSettings() {
   const [enabled, setEnabled] = useState(false)
   const [messages, setMessages] = useState<Record<string, string>>({})
   const [reviewUrl, setReviewUrl] = useState('')
+  const [alsoSms, setAlsoSms] = useState(false)
+  const [alsoEmail, setAlsoEmail] = useState(false)
   const [webhookUrl, setWebhookUrl] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -30,6 +32,8 @@ export default function OrderAutomationSettings() {
       setEnabled(!!cfg.enabled)
       setMessages(cfg.messages || {})
       setReviewUrl(cfg.review_url || '')
+      setAlsoSms(!!cfg.also_sms)
+      setAlsoEmail(!!cfg.also_email)
     })()
     if (typeof window !== 'undefined') {
       const origin = window.location.origin.replace(/[^.]+\.colvy/, 'colvy')
@@ -41,7 +45,7 @@ export default function OrderAutomationSettings() {
     if (!companyId) return
     setSaving(true)
     await (supabase as any).from('companies').update({
-      order_chat_automation: { enabled, review_url: reviewUrl, messages },
+      order_chat_automation: { enabled, review_url: reviewUrl, messages, also_sms: alsoSms, also_email: alsoEmail },
     }).eq('id', companyId)
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
@@ -73,6 +77,14 @@ export default function OrderAutomationSettings() {
                 <p style={S.hint}>{st.hint}</p>
               </div>
             ))}
+          </div>
+
+          <div style={S.card}>
+            <h2 style={S.h2}>Also notify the customer directly</h2>
+            <p style={{ ...S.hint, marginBottom: 12 }}>The message always posts into the chat. Optionally also send it as an SMS and/or email so the customer is notified immediately.</p>
+            <ToggleRow title="Also send as SMS" desc="Requires a Colvy number and the customer's mobile. Standard SMS rates apply." checked={alsoSms} onChange={setAlsoSms} />
+            <div style={{ height: 10 }} />
+            <ToggleRow title="Also send as email" desc="Sent from your verified Colvy email domain to the order's email address." checked={alsoEmail} onChange={setAlsoEmail} />
           </div>
 
           <div style={S.card}>

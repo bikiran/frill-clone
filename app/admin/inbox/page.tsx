@@ -138,6 +138,12 @@ export default function InboxPage() {
   const [editOrderData, setEditOrderData] = useState<any>(null)
   const [editOrderLoading, setEditOrderLoading] = useState(false)
   const [editOrderSaving, setEditOrderSaving] = useState(false)
+  const [showMediaPicker, setShowMediaPicker] = useState(false)
+  const [galleryFolders, setGalleryFolders] = useState<any[]>([])
+  const [galleryItems, setGalleryItems] = useState<any[]>([])
+  const [galleryFolder, setGalleryFolder] = useState<string | null>(null)
+  const [gallerySearch, setGallerySearch] = useState('')
+  const [gallerySelected, setGallerySelected] = useState<Set<string>>(new Set())
   const [couponAmount, setCouponAmount] = useState('')
   const [couponType, setCouponType] = useState<'fixed' | 'percent'>('fixed')
   const [couponCode, setCouponCode] = useState('')
@@ -507,6 +513,47 @@ export default function InboxPage() {
     await (supabase as any).from('messages').update({ reactions: updated }).eq('id', msg.id)
   }
 
+  const openMediaPicker = async () => {
+    if (!companyId) return
+    setGallerySelected(new Set()); setShowMediaPicker(true)
+    try {
+      const res = await fetch(`/api/media?companyId=${companyId}`)
+      const data = await res.json()
+      setGalleryFolders(data.folders || [])
+      setGalleryItems(data.items || [])
+    } catch {}
+  }
+
+  const loadGalleryFolder = async (folderId: string | null, q = '') => {
+    if (!companyId) return
+    setGalleryFolder(folderId)
+    const params = new URLSearchParams({ companyId })
+    if (folderId) params.set('folderId', folderId)
+    if (q.trim()) params.set('q', q.trim())
+    const res = await fetch(`/api/media?${params}`)
+    const data = await res.json()
+    setGalleryItems(data.items || [])
+  }
+
+  const sendGalleryMedia = async () => {
+    if (!companyId || !selected || gallerySelected.size === 0) return
+    const chosen = galleryItems.filter(it => gallerySelected.has(it.id))
+    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    try {
+      for (const item of chosen) {
+        await (supabase as any).from('messages').insert({
+          conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+          sender_id: user.id, sender_name: me, sender_email: user.email,
+          content: '', attachments: [{ url: item.url, name: item.title || 'media', type: item.kind === 'video' ? 'video/mp4' : 'image/jpeg', kind: item.kind, from_gallery: true }],
+        })
+      }
+      await (supabase as any).from('conversations').update({ last_message: '🖼️ Media', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
+      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+      setMessages(msgs || [])
+      setShowMediaPicker(false); scrollBottom()
+    } catch (e: any) { showToast('Could not send media') }
+  }
+
   // ── File upload ────────────────────────────────────────────────────────────
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0 || !selected || !companyId) return
@@ -736,6 +783,8 @@ export default function InboxPage() {
   }
 
   const miniBtn = (color: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 600, color, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' })
+
+  const folderBtnInbox = (active: boolean): React.CSSProperties => ({ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', borderRadius: 7, border: 'none', background: active ? 'var(--peach)' : 'transparent', color: active ? 'var(--coral)' : 'var(--ink)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer', marginBottom: 2 }) 
 
   const openOrderEditor = async (payload: any) => {
     if (!companyId || !payload?.order_id) return
@@ -1137,6 +1186,58 @@ export default function InboxPage() {
           onClose={() => setShowCreateOrder(false)}
           onCreated={() => { if (selected) selectConversation(selected) }}
         />
+      )}
+
+      {/* Media gallery picker */}
+      {showMediaPicker && selected && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowMediaPicker(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 720, maxWidth: '92vw', height: 560, maxHeight: '86vh', background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>🖼️ Send from gallery</h2>
+              <button onClick={() => setShowMediaPicker(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
+            </div>
+            <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+              <div style={{ width: 170, borderRight: '1px solid var(--border)', padding: 12, overflowY: 'auto', flexShrink: 0 }}>
+                <button onClick={() => loadGalleryFolder(null)} style={folderBtnInbox(galleryFolder === null)}>All media</button>
+                {galleryFolders.map(f => (
+                  <button key={f.id} onClick={() => loadGalleryFolder(f.id)} style={folderBtnInbox(galleryFolder === f.id)}>{f.name}</button>
+                ))}
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+                  <input value={gallerySearch} onChange={e => { setGallerySearch(e.target.value); loadGalleryFolder(galleryFolder, e.target.value) }} placeholder="Search media…" style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
+                  {galleryItems.length === 0 ? (
+                    <p style={{ color: 'var(--slate)', fontSize: 13, textAlign: 'center', paddingTop: 40 }}>No media here. Add some in the Gallery.</p>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 10 }}>
+                      {galleryItems.map(item => {
+                        const sel = gallerySelected.has(item.id)
+                        return (
+                          <div key={item.id} onClick={() => setGallerySelected(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n })}
+                            style={{ position: 'relative', paddingTop: '75%', borderRadius: 10, overflow: 'hidden', cursor: 'pointer', border: sel ? '3px solid var(--coral)' : '1px solid var(--border)', background: 'var(--canvas)' }}>
+                            {item.kind === 'video'
+                              ? <video src={item.url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                              : <img src={item.thumbnail_url || item.url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+                            {sel && <div style={{ position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>✓</div>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>{gallerySelected.size} selected</span>
+                  <button onClick={sendGalleryMedia} disabled={gallerySelected.size === 0}
+                    style={{ padding: '9px 20px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: gallerySelected.size ? 'pointer' : 'not-allowed', opacity: gallerySelected.size ? 1 : 0.5 }}>
+                    Send {gallerySelected.size > 0 ? gallerySelected.size : ''} to chat
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Order editor panel */}
@@ -1887,6 +1988,11 @@ export default function InboxPage() {
                     style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
                     {uploading ? '⏳' : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
                   </button>
+                  {/* Gallery */}
+                  <button type="button" onClick={openMediaPicker} title="Send from gallery"
+                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                  </button>
                   {/* Emoji */}
                   <button type="button" onClick={() => setShowEmoji(v => !v)} title="Emoji"
                     style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 15 }}>😊</button>
@@ -2118,6 +2224,30 @@ export default function InboxPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Shared Media — everything image/video shared in this conversation */}
+                {(() => {
+                  const media: any[] = []
+                  messages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
+                    if (a.kind === 'image' || a.kind === 'video') media.push(a)
+                  }))
+                  if (media.length === 0) return null
+                  return (
+                    <div style={{ marginTop: 18 }}>
+                      <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Shared Media ({media.length})</h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                        {media.map((a, i) => (
+                          <div key={i} onClick={() => setGalleryIndex(i)}
+                            style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', background: 'var(--canvas)' }}>
+                            {(a.kind === 'video' || String(a.type).startsWith('video'))
+                              ? <video src={a.url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                              : <img src={a.url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
               </>
             )}
 

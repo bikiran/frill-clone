@@ -95,6 +95,34 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
 
   await db.from('conversations').update({ last_message: body, last_message_at: new Date().toISOString(), is_unread: true }).eq('id', conv.id)
   await db.from('order_chat_events').insert({ ...dupeKey, conversation_id: conv.id })
+
+  // Optional direct notification: SMS and/or email.
+  const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+  if (cfg.also_sms && phone) {
+    try {
+      await fetch(`${origin}/api/telnyx/sms/send`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, conversationId: conv.id, to: phone, text: body, senderName: businessName }),
+      })
+    } catch (e) { console.error('[Order automation] SMS failed', e) }
+  }
+  if (cfg.also_email && email) {
+    try {
+      if (process.env.RESEND_API_KEY) {
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: `${businessName} <notifications@updates.colvy.com>`,
+            to: email,
+            subject: `Update on your order #${order.number || order.id}`,
+            text: body,
+            html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a"><p>${body.replace(/\n/g, '<br>')}</p></div>`,
+          }),
+        })
+      }
+    } catch (e) { console.error('[Order automation] email failed', e) }
+  }
 }
 
 /**

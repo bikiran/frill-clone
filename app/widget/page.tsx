@@ -19,6 +19,7 @@ function WidgetContent() {
   const [chatSending, setChatSending] = useState(false)
   const [chatUploading, setChatUploading] = useState(false)
   const [copiedCoupon, setCopiedCoupon] = useState<string | null>(null)
+  const [showSharedMedia, setShowSharedMedia] = useState(false)
   const [widgetReplyTo, setWidgetReplyTo] = useState<any>(null)
   const [widgetReactPicker, setWidgetReactPicker] = useState<number | null>(null)
   const WIDGET_EMOJIS = ['👍', '❤️', '😊', '🎉', '🙏', '😂']
@@ -1519,6 +1520,36 @@ function WidgetContent() {
                     {chatCreateError}
                   </div>
                 )}
+                {/* Shared Media bar */}
+                {(() => {
+                  const media: any[] = []
+                  chatMessages2.forEach((m: any) => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
+                    const url = typeof a === 'string' ? a : a?.url
+                    const kind = typeof a === 'string' ? 'image' : (a?.kind || (String(a?.type).startsWith('video') ? 'video' : 'image'))
+                    if (url) media.push({ url, kind })
+                  }))
+                  if (media.length === 0) return null
+                  return (
+                    <div style={{ borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
+                      <button onClick={() => setShowSharedMedia(v => !v)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#6b7280' }}>
+                        <span>🖼️ Shared Media ({media.length})</span>
+                        <span>{showSharedMedia ? '▲' : '▼'}</span>
+                      </button>
+                      {showSharedMedia && (
+                        <div style={{ display: 'flex', gap: 6, padding: '0 14px 10px', overflowX: 'auto' }}>
+                          {media.map((a, i) => (
+                            <div key={i} onClick={() => { setViewerImage(a.url); setShowImageViewer(true) }}
+                              style={{ width: 64, height: 64, borderRadius: 8, overflow: 'hidden', flexShrink: 0, cursor: 'pointer', background: '#eee' }}>
+                              {a.kind === 'video'
+                                ? <video src={a.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : <img src={a.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
                 {/* Messages */}
                 <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '8px 0' }}>
