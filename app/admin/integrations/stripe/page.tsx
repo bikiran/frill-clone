@@ -93,6 +93,11 @@ export default function StripeIntegration() {
         <StripeKeysOption companyId={companyId} />
       </div>
 
+      {/* Verified website domains — for payment return URLs */}
+      <div style={{ marginTop: 20, padding: 20, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
+        <WebsiteDomains companyId={companyId} />
+      </div>
+
       {/* Security note */}
       <div style={{ marginTop: 24, padding: 18, borderRadius: 12, background: 'var(--canvas)', border: '1px solid var(--border)', display: 'flex', gap: 12 }}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -171,6 +176,72 @@ function StripeKeysOption({ companyId }: { companyId: string | null }) {
           <p style={{ fontSize: 11, color: '#9ca3af', margin: '10px 0 0' }}>Your secret key is stored securely and never shown in the browser again.</p>
         </div>
       )}
+    </div>
+  )
+}
+
+// Lets a business list the website domain(s) where their chat widget is
+// embedded. Stripe Checkout success/cancel URLs return the customer to a
+// verified domain here rather than the Colvy tenant subdomain.
+function WebsiteDomains({ companyId }: { companyId: string | null }) {
+  const [domains, setDomains] = useState<string[]>([])
+  const [input, setInput] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      const { data } = await (supabase as any).from('companies').select('website_domains').eq('id', companyId).maybeSingle()
+      setDomains(Array.isArray(data?.website_domains) ? data.website_domains : [])
+    })()
+  }, [companyId])
+
+  const clean = (d: string) => d.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '')
+
+  const add = () => {
+    const d = clean(input)
+    if (!d || !d.includes('.')) return
+    if (!domains.includes(d)) setDomains([...domains, d])
+    setInput('')
+  }
+  const remove = (d: string) => setDomains(domains.filter(x => x !== d))
+
+  const save = async () => {
+    if (!companyId) return
+    setSaving(true)
+    try {
+      await (supabase as any).from('companies').update({ website_domains: domains }).eq('id', companyId)
+      setSaved(true); setTimeout(() => setSaved(false), 2500)
+    } catch {} finally { setSaving(false) }
+  }
+
+  return (
+    <div>
+      <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Your website domains</p>
+      <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+        The website(s) where your chat widget is embedded (e.g. <code>roxyaquarium.com.au</code>). After a customer pays, Stripe returns them to <code>/payment-success</code> or <code>/payment-cancelled</code> on the matching domain — not your Colvy address. Both www and non-www are accepted.
+      </p>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add() }}
+          placeholder="yourbusiness.com.au"
+          style={{ flex: 1, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14 }} />
+        <button onClick={add} style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Add</button>
+      </div>
+
+      {domains.length > 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+          {domains.map(d => (
+            <div key={d} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
+              <code style={{ fontSize: 13, color: 'var(--ink)' }}>{d}</code>
+              <button onClick={() => remove(d)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 16 }}>×</button>
+            </div>
+          ))}
+        </div>
+      ) : <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '0 0 14px' }}>No domains added yet — payments will return to a Colvy-hosted result page.</p>}
+
+      <button onClick={save} disabled={saving} style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>{saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save domains'}</button>
     </div>
   )
 }

@@ -22,7 +22,7 @@ function stripe() {
 // still feeling inline — the widget shows amount + a secure Pay button.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId, amount, description, senderName, orderId, integrationId } = await req.json()
+    const { companyId, conversationId, amount, description, senderName, orderId, integrationId, pageUrl } = await req.json()
     if (!companyId || !conversationId || !amount) {
       return NextResponse.json({ error: 'Missing companyId, conversationId or amount' }, { status: 400 })
     }
@@ -31,6 +31,11 @@ export async function POST(req: NextRequest) {
 
     const db = admin()
     const { data: company } = await db.from('companies').select('*').eq('id', companyId).maybeSingle()
+    // The customer's widget page URL is stored on the conversation when the chat
+    // started — that's the trustworthy origin (the agent initiates payment, so
+    // the request headers reflect the AGENT's location, not the customer's).
+    const { data: convRow } = await db.from('conversations').select('page_url').eq('id', conversationId).maybeSingle()
+    const convPageUrl = convRow?.page_url || null
 
     // Two modes: (1) Connect — charge on the connected account with the platform
     // key; (2) Keys — the business supplied their own Stripe secret key.
@@ -42,7 +47,38 @@ export async function POST(req: NextRequest) {
     const s = useOwnKeys
       ? new Stripe((company.stripe_secret_key || '').trim(), { apiVersion: '2024-06-20' as any })
       : stripe()
-    const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+
+    const colvyBase = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+
+    // ── Determine safe return URLs ──────────────────────────────────────────
+    // The customer is on the BUSINESS website (e.g. roxyaquarium.com.au) with an
+    // embedded widget. We must return them there after Checkout — NOT to the
+    // Colvy tenant subdomain. We only trust an origin that matches the tenant's
+    // configured & verified website_domains (both www and non-www).
+    const verified: string[] = Array.isArray(company?.website_domains) ? company.website_domains : []
+    const normalizeHost = (u: string | null): string | null => {
+      if (!u) return null
+      try { return new URL(u).hostname.replace(/^www\./, '').toLowerCase() } catch { return null }
+    }
+    // Candidate origin: prefer the explicit pageUrl the widget sends, else the
+    // request Origin/Referer header. Never trust it until matched to allowlist.
+    const candidate = normalizeHost(convPageUrl) || normalizeHost(pageUrl) || normalizeHost(req.headers.get('origin')) || normalizeHost(req.headers.get('referer'))
+    const isVerified = !!candidate && verified.some(d => (d || '').replace(/^www\./, '').toLowerCase() === candidate)
+
+    let successBase: string
+    let cancelUrl: string
+    if (isVerified && candidate) {
+      // Return to the real business website (support www + non-www — we send the
+      // bare host over https; the site can canonicalise as it wishes).
+      successBase = `https://${candidate}/payment-success`
+      cancelUrl = `https://${candidate}/payment-cancelled`
+    } else {
+      // Fallback: safe Colvy-hosted result pages (used when the payment wasn't
+      // initiated from a verified business site, e.g. the Colvy portal itself).
+      successBase = `${colvyBase}/pay/success`
+      cancelUrl = `${colvyBase}/pay/cancelled`
+    }
+    const successUrl = `${successBase}?session_id={CHECKOUT_SESSION_ID}`
 
     // Optional platform fee (only applies to Connect mode; not when the
     // business uses their own keys — the money is already theirs).
@@ -61,9 +97,15 @@ export async function POST(req: NextRequest) {
         quantity: 1,
       }],
       payment_intent_data: applicationFee > 0 ? { application_fee_amount: applicationFee } : undefined,
-      success_url: `${origin}/pay/success?cs={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/pay/cancelled`,
-      metadata: { kind: 'chat_payment', companyId, conversationId, orderId: orderId ? String(orderId) : '', integrationId: integrationId ? String(integrationId) : '' },
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata: {
+        kind: 'chat_payment', companyId, conversationId,
+        orderId: orderId ? String(orderId) : '',
+        integrationId: integrationId ? String(integrationId) : '',
+        originHost: candidate || '', originVerified: isVerified ? '1' : '0',
+        pageUrl: (pageUrl || '').slice(0, 400),
+      },
     }, useOwnKeys ? undefined : { stripeAccount: company.stripe_account_id })
 
     // Post the payment message into the chat

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WebhookService } from '@/lib/webhook-service'
+import { notifyCompany } from '@/lib/notify'
 
 const DEFAULT_MESSAGES: Record<string, string> = {
   processing: 'Thank you for placing an order with {business}. We have received it. If you have any questions, feel free to reply here.',
@@ -15,22 +16,19 @@ const DEFAULT_MESSAGES: Record<string, string> = {
 // status-appropriate message. De-duplicated per (order, status).
 async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const { data: company } = await db.from('companies').select('name, order_chat_automation').eq('id', companyId).maybeSingle()
-  const cfg = company?.order_chat_automation
-  if (!cfg?.enabled) return
+  const cfg = company?.order_chat_automation || {}
 
   const status = (order.status || '').toLowerCase()
   const messages = { ...DEFAULT_MESSAGES, ...(cfg.messages || {}) }
   const template = messages[status]
-  if (!template) return // no message configured for this status
 
   const email = order.billing?.email
   const phone = order.billing?.phone
   if (!email && !phone) return
 
-  // De-dup: only one message per (order, status).
+  // De-dup: only one automation message per (order, status). A separate key
+  // tracks whether we've already created the conversation for this order.
   const dupeKey = { company_id: companyId, order_id: order.id, status }
-  const { data: seen } = await db.from('order_chat_events').select('id').match(dupeKey).maybeSingle()
-  if (seen) return
 
   // Find-or-create contact by email (fallback phone).
   let contact: any = null
@@ -50,7 +48,9 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     contact = created
   }
 
-  // Find-or-create an open conversation for this contact.
+  // Find-or-create an open conversation for this contact. This ALWAYS happens
+  // for a new order (so it shows in the inbox), independent of whether the
+  // order-chat automation message is enabled/configured.
   let conv: any = null
   if (contact?.id) {
     const { data } = await db.from('conversations').select('*').eq('company_id', companyId).eq('contact_id', contact.id).order('last_message_at', { ascending: false }).limit(1)
@@ -58,6 +58,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   }
   const businessName = company?.name || 'us'
   const displayName = contact?.name || order.billing?.first_name || 'there'
+  const isNewConv = !conv
   if (!conv) {
     const { data: newConv } = await db.from('conversations').insert({
       company_id: companyId, channel: 'chat', subject: `Order #${order.number || order.id}`,
@@ -68,7 +69,24 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   }
   if (!conv) return
 
-  // Fill the template.
+  // Post a system event for the order once per (order, status) so a brand-new
+  // order is visible in the thread even with automation off.
+  const { data: seenEvent } = await db.from('order_chat_events').select('id').match(dupeKey).maybeSingle()
+  if (!seenEvent) {
+    await db.from('messages').insert({
+      conversation_id: conv.id, company_id: companyId, sender_type: 'system',
+      content: `Order #${order.number || order.id} — ${status || 'received'} · $${order.total}`,
+      metadata: { order_event: true, order_id: order.id, status },
+    })
+    try { await notifyCompany({ db, companyId, type: 'order', message: `New order #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
+    // Record the dedup marker now so repeated webhook deliveries for the same
+    // order+status don't re-post (whether or not automation is enabled).
+    await db.from('order_chat_events').insert({ ...dupeKey, conversation_id: conv.id })
+  }
+
+  // The configured automation message only sends if enabled AND a template
+  // exists for this status (and not already sent for this order+status).
+  if (cfg.enabled && template && !seenEvent) {
   const refundedAmount = order.refunds?.length ? `$${Math.abs(order.refunds.reduce((s: number, r: any) => s + (parseFloat(r.total) || 0), 0)).toFixed(2)}` : `$${order.total}`
   const body = template
     .replace(/\{business\}/g, businessName)
@@ -94,9 +112,8 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   }
 
   await db.from('conversations').update({ last_message: body, last_message_at: new Date().toISOString(), is_unread: true }).eq('id', conv.id)
-  await db.from('order_chat_events').insert({ ...dupeKey, conversation_id: conv.id })
 
-  // Optional direct notification: SMS and/or email.
+  // Optional direct notification: SMS and/or email (only with the automation msg).
   const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
   if (cfg.also_sms && phone) {
     try {
@@ -123,6 +140,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       }
     } catch (e) { console.error('[Order automation] email failed', e) }
   }
+  } // end automation-message block
 }
 
 /**

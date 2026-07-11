@@ -36,6 +36,7 @@ export async function notifyCompany(params: {
   actorName?: string
   actorEmail?: string
   excludeUserId?: string
+  conversationId?: string
   db?: any
 }) {
   try {
@@ -48,6 +49,7 @@ export async function notifyCompany(params: {
       message: params.message,
       actor_name: params.actorName || null,
       actor_email: params.actorEmail || null,
+      conversation_id: params.conversationId || null,
       is_read: false,
     }))
     await db.from('notifications').insert(rows)

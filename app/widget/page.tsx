@@ -33,6 +33,7 @@ function WidgetContent() {
   const [chatCreateError, setChatCreateError] = useState('')
   const [selectedItem, setSelectedItem] = useState<{ type: 'idea' | 'announcement' | 'help'; id: string } | null>(null)
   const [company, setCompany] = useState<any>(null)
+  const [widgetTabs, setWidgetTabs] = useState<any>(null)
   const [ideas, setIdeas] = useState<any[]>([])
   const [announcements, setAnnouncements] = useState<any[]>([])
   const [forms, setForms] = useState<any[]>([])
@@ -179,6 +180,15 @@ function WidgetContent() {
         console.log('[WIDGET FETCH] Full help articles array:', data.helpArticles)
         
         setCompany(data.company)
+        setWidgetTabs(data.widgetTabs || null)
+        // If the default 'feedback' tab is disabled, open on the first enabled one.
+        if (data.widgetTabs) {
+          const wt = data.widgetTabs
+          if (wt.feedback === false) {
+            const firstVisible = ['roadmap', 'updates', 'help', 'chat'].find(k => wt[k] !== false) || 'chat'
+            setTab(firstVisible as any)
+          }
+        }
         setIdeas(data.ideas || [])
         setAnnouncements(data.announcements || [])
         setForms(data.forms || [])
@@ -1913,10 +1923,24 @@ function WidgetContent() {
 
       {/* Footer nav */}
       <div style={{ background: '#fff', display: 'flex', padding: '6px 8px 8px', flexShrink: 0, width: '100%', boxSizing: 'border-box', justifyContent: 'space-around', gap: 2 }}>
-        {(['feedback', 'roadmap', 'updates', 'help', 'chat'] as const).map(t => {
+        {(() => {
+          // Map settings labels → widget tab keys.
+          const labelToKey: Record<string, string> = { 'Feedback': 'feedback', 'Ideas': 'feedback', 'Roadmap': 'roadmap', 'Updates': 'updates', 'Knowledge Base': 'help', 'Help Centre': 'help', 'Help': 'help' }
+          const allKeys = ['feedback', 'roadmap', 'updates', 'help', 'chat'] as const
+          // Visibility from settings (default: all shown).
+          const visible = (k: string) => !widgetTabs ? true : widgetTabs[k] !== false
+          // Order from settings if provided, else default; chat always last.
+          let ordered: string[] = allKeys.filter(k => k !== 'chat')
+          if (widgetTabs?.order && Array.isArray(widgetTabs.order)) {
+            const fromOrder = widgetTabs.order.map((l: string) => labelToKey[l]).filter(Boolean)
+            // keep only known non-chat keys, dedup, then append any missing
+            ordered = Array.from(new Set([...fromOrder, ...allKeys.filter(k => k !== 'chat')])).filter(k => k !== 'chat')
+          }
+          const finalTabs = [...ordered.filter(visible), 'chat'] as string[]
+          return finalTabs.map(t => {
           const isActive = tab === t
           return (
-            <button key={t} onClick={() => { setTab(t); trackWidgetEvent(`view_${t}`) }}
+            <button key={t} onClick={() => { setTab(t as any); trackWidgetEvent(`view_${t}`) }}
               style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', borderRadius: 8, transition: 'background 0.15s', color: isActive ? accentColor : '#9ca3af' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill={isActive ? accentColor + '22' : 'none'} stroke={isActive ? accentColor : '#9ca3af'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 {t === 'feedback' && <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>}
@@ -1930,7 +1954,7 @@ function WidgetContent() {
               </span>
             </button>
           )
-        })}
+        }) })()}
       </div>
 
       {/* "Powered by Colvy" — at the very bottom, below the menu items */}

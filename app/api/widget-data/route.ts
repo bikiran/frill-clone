@@ -67,8 +67,24 @@ export async function GET(req: NextRequest) {
       })
     }
 
+    // Widget tab visibility + order (saved in site_settings 'general').
+    let widgetTabs: any = null
+    try {
+      const { data: ss } = await (supabase as any).from('site_settings').select('value').eq('key', 'general').eq('company_id', company.id).order('updated_at', { ascending: false }).limit(1)
+      const v = ss?.[0]?.value || {}
+      widgetTabs = {
+        feedback: v.widgetFeedback !== false,
+        roadmap: v.widgetRoadmap !== false,
+        updates: v.widgetUpdates !== false,
+        help: v.widgetKnowledgeBase !== false,
+        chat: true, // chat is always available
+        order: v.widgetOrder || null,
+      }
+    } catch {}
+
     const responseData = {
       company,
+      widgetTabs,
       ideas: ideasRes.data || [],
       announcements: annRes.data || [],
       forms: formsRes.data || [],
