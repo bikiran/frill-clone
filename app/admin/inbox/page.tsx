@@ -429,6 +429,13 @@ export default function InboxPage() {
       const { data: c } = await (supabase as any).from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
       setContact(c || null)
       setEditContact(c || {})
+      // Source of truth for the AI badge is the contact's ai_saved_fields column
+      // (works across devices). Merge with any localStorage marks.
+      try {
+        const store = JSON.parse(localStorage.getItem('colvy-ai-saved') || '{}')
+        const local = store[conv.contact_id] || []
+        setAiSavedFields(new Set([...(c?.ai_saved_fields || []), ...local]))
+      } catch { setAiSavedFields(new Set(c?.ai_saved_fields || [])) }
       // Does this contact match a WooCommerce order? If so, offer the DOA shortcut.
       if (c && (c.email || c.phone) && companyId) {
         try {
@@ -1213,15 +1220,16 @@ export default function InboxPage() {
   const autoSaveAiField = async (conv: any, field: string, value: string) => {
     let contactId = conv.contact_id || conv.__contact?.id
     if (contactId) {
-      const { data: existing } = await (supabase as any).from('contacts').select(field).eq('id', contactId).maybeSingle()
+      const { data: existing } = await (supabase as any).from('contacts').select(`${field}, ai_saved_fields`).eq('id', contactId).maybeSingle()
       if (existing && existing[field]) return // already has a value — don't overwrite
-      await (supabase as any).from('contacts').update({ [field]: value, updated_at: new Date().toISOString() }).eq('id', contactId)
+      const marks = Array.from(new Set([...((existing?.ai_saved_fields as string[]) || []), field]))
+      await (supabase as any).from('contacts').update({ [field]: value, ai_saved_fields: marks, updated_at: new Date().toISOString() }).eq('id', contactId)
     } else if (companyId) {
       const contactName = conv.subject || 'Visitor'
-      const { data: newContact } = await (supabase as any).from('contacts').insert({ company_id: companyId, name: contactName, [field]: value }).select().maybeSingle()
+      const { data: newContact } = await (supabase as any).from('contacts').insert({ company_id: companyId, name: contactName, [field]: value, ai_saved_fields: [field] }).select().maybeSingle()
       if (newContact) { contactId = newContact.id; try { await (supabase as any).from('conversations').update({ contact_id: contactId }).eq('id', conv.id) } catch {} }
     }
-    // Mark AI-saved (persist per contact in localStorage so the badge survives reloads).
+    // Also keep a localStorage copy so the badge is instant even before reload.
     try {
       const store = JSON.parse(localStorage.getItem('colvy-ai-saved') || '{}')
       store[contactId] = Array.from(new Set([...(store[contactId] || []), field]))
