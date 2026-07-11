@@ -34,24 +34,17 @@ export async function GET(req: NextRequest) {
       sources.push({ platform: 'shopify', id: s.id, label: s.store_name || s.store_domain, unsupported: true })
     }
 
-    // Real shipping methods from the chosen (or first) WooCommerce store.
-    let shippingMethods: any[] = []
-    const activeWoo = integrationId ? (woo || []).find((w: any) => w.id === integrationId) : (woo || [])[0]
-    if (activeWoo?.store_url) {
-      try {
-        const wooSvc = new WooCommerceService({ storeUrl: activeWoo.store_url, consumerKey: activeWoo.consumer_key, consumerSecret: activeWoo.consumer_secret })
-        shippingMethods = await wooSvc.getShippingMethods()
-      } catch {}
-    }
-
-    // Colvy business locations (for pickup).
+    // NOTE: shipping methods are intentionally NOT fetched here — they require
+    // several WooCommerce API round-trips (zones → methods) and were making this
+    // route take ~10s, blocking the "store connected" check. The panel loads
+    // shipping separately via /api/orders/shipping once a store is known.
     let locations: any[] = []
     try {
       const { data: locs } = await db.from('company_locations').select('id, label, suburb, state, street_address').eq('company_id', companyId).order('is_primary', { ascending: false })
       locations = locs || []
     } catch {}
 
-    return NextResponse.json({ sources, shippingMethods, locations })
+    return NextResponse.json({ sources, locations })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

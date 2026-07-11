@@ -1651,6 +1651,16 @@ function WidgetContent() {
                               ) : null}
                             </div>
                           )}
+                          {msg.message_type === 'media_request' && msg.message_payload && (
+                            <div style={{ marginTop: 6, padding: 14, borderRadius: 14, background: '#fff', border: '1px solid #e5e5e5', minWidth: 210 }}>
+                              <p style={{ margin: '0 0 8px', fontSize: 13.5, color: '#0d0d0d' }}>{msg.message_payload.prompt}</p>
+                              <a href={msg.message_payload.link} target="_blank" rel="noopener"
+                                style={{ display: 'block', textAlign: 'center', padding: '10px 0', borderRadius: 9, background: accentColor, color: '#fff', textDecoration: 'none', fontSize: 13.5, fontWeight: 700 }}>
+                                Upload files
+                              </a>
+                              <p style={{ margin: '6px 0 0', fontSize: 10.5, color: '#9ca3af', textAlign: 'center' }}>Private · full quality</p>
+                            </div>
+                          )}
                           {msg.message_type === 'coupon' && msg.message_payload && (
                             <div style={{ marginTop: 6, padding: 16, borderRadius: 14, background: 'linear-gradient(135deg, #fff4f1, #ffffff)', border: `1.5px dashed ${accentColor}`, color: '#0d0d0d', minWidth: 220, textAlign: 'center' }}>
                               <p style={{ margin: '0 0 2px', fontSize: 11, fontWeight: 700, color: accentColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>🎟️ You've received a coupon</p>

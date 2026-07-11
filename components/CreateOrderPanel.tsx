@@ -77,15 +77,25 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
   const [result, setResult] = useState<any>(null)
   const [stockWarnings, setStockWarnings] = useState<string[]>([])
 
+  const [sourcesLoading, setSourcesLoading] = useState(true)
+
   useEffect(() => {
     ;(async () => {
-      const res = await fetch(`/api/orders/sources?companyId=${companyId}`)
-      const data = await res.json()
-      setSources(data.sources || [])
-      setShippingMethods(data.shippingMethods || [])
-      setLocations(data.locations || [])
-      const firstWoo = (data.sources || []).find((s: any) => s.platform === 'woocommerce')
-      setSource(firstWoo || (data.sources || [])[0] || null)
+      setSourcesLoading(true)
+      try {
+        const res = await fetch(`/api/orders/sources?companyId=${companyId}`)
+        const data = await res.json()
+        setSources(data.sources || [])
+        setLocations(data.locations || [])
+        const firstWoo = (data.sources || []).find((s: any) => s.platform === 'woocommerce')
+        const chosen = firstWoo || (data.sources || [])[0] || null
+        setSource(chosen)
+        // Fetch shipping methods in the background — don't block the panel.
+        if (chosen?.platform === 'woocommerce') {
+          fetch(`/api/orders/shipping?companyId=${companyId}&integrationId=${chosen.id}`)
+            .then(r => r.json()).then(d => setShippingMethods(d.shippingMethods || [])).catch(() => {})
+        }
+      } catch {} finally { setSourcesLoading(false) }
     })()
   }, [companyId])
 
@@ -238,6 +248,12 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
                 </div>
               )}
               <button onClick={onClose} style={{ marginTop: 18, padding: '10px 24px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'block', width: '100%' }}>Done</button>
+            </div>
+          ) : sourcesLoading ? (
+            <div style={{ textAlign: 'center', padding: '40px 6px', color: 'var(--slate)' }}>
+              <div style={{ width: 28, height: 28, border: '3px solid var(--border)', borderTopColor: 'var(--coral)', borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
+              <p style={{ fontSize: 13.5 }}>Loading your store…</p>
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
             </div>
           ) : !source ? (
             <p style={{ color: 'var(--slate)', fontSize: 13.5 }}>No e-commerce store connected. Connect WooCommerce first.</p>

@@ -35,6 +35,24 @@ type TeamMember = { id: string; user_id: string; name: string; role: string; ava
 const CHANNEL_ICON: Record<string, string> = {
   widget: '💬', email: '✉️', sms: '📱', facebook: '🟦', instagram: '🟣', whatsapp: '🟢'
 }
+
+// Inline SVG icons (replace emojis for a cleaner, consistent look).
+const svg = (path: React.ReactNode, size = 15) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>{path}</svg>
+)
+const Icon = {
+  cart: (s?: number) => svg(<><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></>, s),
+  poll: (s?: number) => svg(<><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></>, s),
+  survey: (s?: number) => svg(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></>, s),
+  form: (s?: number) => svg(<><path d="M9 11H3v10h6zM21 3h-6v18h6zM15 7H9v14h6z"/></>, s),
+  payment: (s?: number) => svg(<><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></>, s),
+  coupon: (s?: number) => svg(<><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></>, s),
+  ticket: (s?: number) => svg(<><path d="M3 5h18a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4V7a2 2 0 0 1 2-2z"/></>, s),
+  edit: (s?: number) => svg(<><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></>, s),
+  media: (s?: number) => svg(<><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></>, s),
+  star: (s?: number) => svg(<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>, s),
+  attach: (s?: number) => svg(<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>, s),
+}
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   open:     { bg: '#fef3c7', color: '#d97706' },
   assigned: { bg: '#dbeafe', color: '#2563eb' },
@@ -131,6 +149,12 @@ export default function InboxPage() {
   const [doaMatch, setDoaMatch] = useState(false)
   const [convActions, setConvActions] = useState<Record<string, any>>({})
   const [showActionMenu, setShowActionMenu] = useState(false)
+  const [showMediaRequest, setShowMediaRequest] = useState(false)
+  const [mrPrompt, setMrPrompt] = useState('')
+  const [mrAccept, setMrAccept] = useState<string[]>(['image', 'video', 'pdf'])
+  const [mrMaxFiles, setMrMaxFiles] = useState('10')
+  const [mrExpiry, setMrExpiry] = useState('168')
+  const [mrSaving, setMrSaving] = useState(false)
   const [showTicketPanel, setShowTicketPanel] = useState(false)
   const [showCreateOrder, setShowCreateOrder] = useState(false)
   const [orderPrefillCart, setOrderPrefillCart] = useState<any>(null)
@@ -194,6 +218,10 @@ export default function InboxPage() {
   const [wooCustomer, setWooCustomer] = useState<any>(null)
   const [wooOrders, setWooOrders] = useState<any[]>([])
   const [abandonedCarts, setAbandonedCarts] = useState<any[]>([])
+  const [orderSearch, setOrderSearch] = useState('')
+  const [orderDateFrom, setOrderDateFrom] = useState('')
+  const [orderDateTo, setOrderDateTo] = useState('')
+  const [showOrderSearch, setShowOrderSearch] = useState(false)
   const [loading, setLoading] = useState(true)
   // New chat features
   const [replyTo, setReplyTo] = useState<Message | null>(null)
@@ -871,6 +899,29 @@ export default function InboxPage() {
     } catch (e: any) { showToast(e.message || 'Failed to update order') }
   }
 
+  const sendMediaRequest = async () => {
+    if (!companyId || !selected) return
+    if (mrAccept.length === 0) { showToast('Select at least one file type'); return }
+    setMrSaving(true)
+    try {
+      const res = await fetch('/api/media-requests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId, conversationId: selected.id, contactId: contact?.id,
+          prompt: mrPrompt.trim() || 'Please upload the requested files.',
+          accept: mrAccept, maxFiles: parseInt(mrMaxFiles) || 10,
+          expiryHours: mrExpiry ? parseInt(mrExpiry) : null,
+          createdBy: user?.user_metadata?.display_name || user?.email?.split('@')[0],
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not create request')
+      setShowMediaRequest(false)
+      showToast('Media request sent')
+      selectConversation(selected)
+    } catch (e: any) { showToast(e.message || 'Failed to send request') } finally { setMrSaving(false) }
+  }
+
   const sendCoupon = async () => {
     if (!companyId || !selected || !couponAmount.trim()) return
     setCouponSaving(true)
@@ -1277,7 +1328,7 @@ export default function InboxPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', justifyContent: 'flex-end' }} onClick={() => setEditOrder(null)}>
           <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: '100%', height: '100%', background: '#fff', overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.2)' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>✏️ Edit order {editOrderData ? `#${editOrderData.number}` : ''}</h2>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Edit order {editOrderData ? `#${editOrderData.number}` : ''}</h2>
               <button onClick={() => setEditOrder(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
             </div>
             <div style={{ padding: 20 }}>
@@ -1319,12 +1370,66 @@ export default function InboxPage() {
         </div>
       )}
 
+      {/* Request Media popup */}
+      {showMediaRequest && selected && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowMediaRequest(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '100%', background: '#fff', borderRadius: 16, overflow: 'hidden', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{Icon.media(17)}</span> Request Media</h2>
+              <button onClick={() => setShowMediaRequest(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '0 0 16px', lineHeight: 1.5 }}>Send a private upload link. The customer can upload photos, videos, or PDFs at full quality — no MMS compression.</p>
+
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>What do you need?</label>
+              <textarea value={mrPrompt} onChange={e => setMrPrompt(e.target.value)} rows={2} placeholder="e.g. Please upload clear photos of the damaged item and the box."
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit', marginBottom: 16 }} />
+
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>Accept file types</label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+                {[['image', 'Photos'], ['video', 'Videos'], ['pdf', 'PDFs'], ['audio', 'Audio']].map(([k, label]) => {
+                  const on = mrAccept.includes(k)
+                  return (
+                    <button key={k} onClick={() => setMrAccept(prev => on ? prev.filter(x => x !== k) : [...prev, k])}
+                      style={{ padding: '8px 14px', borderRadius: 9, border: on ? '2px solid var(--coral)' : '1px solid var(--border)', background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{label}</button>
+                  )
+                })}
+              </div>
+
+              <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Maximum files</label>
+                  <input type="number" min={1} value={mrMaxFiles} onChange={e => setMrMaxFiles(e.target.value)}
+                    style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Link expires in</label>
+                  <select value={mrExpiry} onChange={e => setMrExpiry(e.target.value)}
+                    style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box' }}>
+                    <option value="24">24 hours</option>
+                    <option value="72">3 days</option>
+                    <option value="168">7 days</option>
+                    <option value="720">30 days</option>
+                    <option value="">Never</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setShowMediaRequest(false)} style={{ flex: 1, padding: '11px', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                <button onClick={sendMediaRequest} disabled={mrSaving || mrAccept.length === 0} style={{ flex: 2, padding: '11px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: mrAccept.length === 0 ? 0.6 : 1 }}>{mrSaving ? 'Sending…' : 'Send Request'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Send coupon panel */}
       {showCoupon && selected && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', justifyContent: 'flex-end' }} onClick={() => setShowCoupon(false)}>
           <div onClick={e => e.stopPropagation()} style={{ width: 400, maxWidth: '100%', height: '100%', background: '#fff', overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.2)' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>🎟️ Send a coupon</h2>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Send a coupon</h2>
               <button onClick={() => setShowCoupon(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
             </div>
             <div style={{ padding: 20 }}>
@@ -1366,7 +1471,7 @@ export default function InboxPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', justifyContent: 'flex-end' }} onClick={() => setShowTicketPanel(false)}>
           <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: '100%', height: '100%', background: '#fff', overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.2)' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>🎫 New Support Ticket</h2>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>New Support Ticket</h2>
               <button onClick={() => setShowTicketPanel(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
             </div>
             <div style={{ padding: 20 }}>
@@ -1859,20 +1964,28 @@ export default function InboxPage() {
                         )}
                         {['poll', 'survey', 'form'].includes(msg.message_type) && (
                           <div style={{ marginTop: 6, padding: '8px 12px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', color: 'var(--slate)', fontSize: 12 }}>
-                            📎 Interactive {msg.message_type} sent — the customer can respond in the widget.
+                            Interactive {msg.message_type} sent — the customer can respond in the widget.
                           </div>
                         )}
                         {msg.message_type === 'coupon' && msg.message_payload && (
                           <div style={{ marginTop: 6, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #fff4f1, #fff)', border: '1.5px dashed var(--coral)', color: 'var(--ink)' }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase', letterSpacing: 0.5 }}>🎟️ Coupon sent</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 5 }}>{Icon.coupon(13)} Coupon sent</div>
                             <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 1, margin: '4px 0' }}>{msg.message_payload.code}</div>
                             <div style={{ fontSize: 13, color: 'var(--slate)' }}>{msg.message_payload.display_amount}{msg.message_payload.expires ? ` · expires ${msg.message_payload.expires}` : ''}</div>
+                          </div>
+                        )}
+                        {msg.message_type === 'media_request' && msg.message_payload && (
+                          <div style={{ marginTop: 6, padding: '12px 14px', borderRadius: 12, background: '#fff', border: '1px solid var(--border)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, color: 'var(--coral)' }}>{Icon.media(15)}<span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>Media requested</span></div>
+                            <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--ink)' }}>{msg.message_payload.prompt}</p>
+                            <button type="button" onClick={() => { navigator.clipboard?.writeText(msg.message_payload.link); showToast('Upload link copied') }}
+                              style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)', background: 'var(--peach)', border: '1px solid var(--coral)', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Copy upload link</button>
                           </div>
                         )}
                         {msg.message_type === 'order' && msg.message_payload && (
                           <div style={{ marginTop: 6, padding: '12px 14px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', color: 'var(--ink)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                              <span style={{ fontSize: 14 }}>🛒</span>
+                              <span style={{ color: "var(--coral)", display: "inline-flex" }}>{Icon.cart(15)}</span>
                               <span style={{ fontSize: 13.5, fontWeight: 700 }}>Order #{msg.message_payload.order_number}</span>
                               <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: '#eef2ff', color: '#4f46e5', textTransform: 'uppercase' }}>{msg.message_payload.status}</span>
                             </div>
@@ -2008,9 +2121,9 @@ export default function InboxPage() {
                     </button>
                     {showSendMenu && (
                       <div style={{ position: 'absolute', bottom: '120%', left: 0, width: 180, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
-                        {[['poll', '📊 Send Poll'], ['survey', '📝 Send Survey'], ['form', '📋 Send Form'], ['payment', '💳 Request Payment']].map(([k, label]) => (
+                        {[['poll', Icon.poll(), 'Send Poll'], ['survey', Icon.survey(), 'Send Survey'], ['form', Icon.form(), 'Send Form'], ['payment', Icon.payment(), 'Request Payment']].map(([k, icon, label]: any) => (
                           <button key={k} type="button" onClick={() => openPicker(k as any)}
-                            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>{label}</button>
+                            style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}><span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{icon}</span>{label}</button>
                         ))}
                       </div>
                     )}
@@ -2069,7 +2182,7 @@ export default function InboxPage() {
             {(['info', 'timeline', ...(wooCustomer || wooOrders.length > 0 ? ['orders' as const] : [])] as const).map(p => (
               <button key={p} type="button" onClick={() => setActivePanel(p)}
                 style={{ flex: 1, padding: '11px 0', border: 'none', background: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: activePanel === p ? 700 : 500, color: activePanel === p ? 'var(--coral)' : 'var(--slate)', borderBottom: activePanel === p ? '2px solid var(--coral)' : '2px solid transparent', textTransform: 'capitalize' }}>
-                {p === 'info' ? 'Information' : p === 'timeline' ? 'Timeline' : '🛒 Orders'}
+                {p === 'info' ? 'Information' : p === 'timeline' ? 'Timeline' : 'Orders'}
               </button>
             ))}
           </div>
@@ -2082,7 +2195,7 @@ export default function InboxPage() {
               doa: { label: 'DOA Claim', icon: '📦' },
               warranty: { label: 'Warranty Claim', icon: '🛡️' },
               return_refund: { label: 'Return / Refund', icon: '↩️' },
-              create_order: { label: 'Create Order', icon: '🛒' },
+              create_order: { label: 'Create Order', icon: '🛒' },  // icon shown as emoji in action list
               booking: { label: 'Booking', icon: '📅' },
               support_ticket: { label: 'Support Ticket', icon: '🎫' },
               custom_form: { label: 'Custom Form', icon: '📝' },
@@ -2117,6 +2230,11 @@ export default function InboxPage() {
                         </button>
                       )
                     })}
+                    <button type="button"
+                      onClick={() => { setShowActionMenu(false); setShowMediaRequest(true) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', border: 'none', background: '#fff', cursor: 'pointer', fontSize: 13.5, color: 'var(--ink)', textAlign: 'left' }}>
+                      <span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{Icon.media(16)}</span> Request Media
+                    </button>
                   </div>
                 )}
                 {doaMatch && convActions.doa?.enabled && (
@@ -2260,7 +2378,7 @@ export default function InboxPage() {
                 {/* Abandoned cart — what the customer was trying to buy */}
                 {abandonedCarts.length > 0 && (
                   <div style={{ marginTop: 18 }}>
-                    <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>🛒 Abandoned Cart <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: '#fef3c7', color: '#b45309' }}>{abandonedCarts.length}</span></h3>
+                    <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{Icon.cart(15)}</span> Abandoned Cart <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: '#fef3c7', color: '#b45309' }}>{abandonedCarts.length}</span></h3>
                     {abandonedCarts.map(cart => (
                       <div key={cart.id} style={{ border: '1.5px solid #fde68a', borderRadius: 12, padding: 14, marginBottom: 10, background: 'linear-gradient(135deg,#fffbeb,#fff)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -2359,7 +2477,7 @@ export default function InboxPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 18, position: 'relative' }}>
                   {/* Quick actions */}
                   <div style={{ display: 'flex', gap: 6, marginBottom: 12, marginTop: 6, flexWrap: 'wrap' }}>
-                    <button type="button" onClick={sendReviewRequest} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontWeight: 600 }}>⭐ Send review request</button>
+                    <button type="button" onClick={sendReviewRequest} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontWeight: 600 }}>Send review request</button>
                   </div>
                   {events.length === 0 ? (
                     <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>No timeline events yet.</p>
@@ -2445,7 +2563,7 @@ export default function InboxPage() {
                 {wooCustomer && (
                   <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)', border: '1px solid #ddd6fe' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                      <span style={{ fontSize: 16 }}>🛒</span>
+                      <span style={{ color: "var(--coral)", display: "inline-flex" }}>{Icon.cart(16)}</span>
                       <span style={{ fontSize: 13, fontWeight: 700, color: '#6d28d9' }}>WooCommerce Customer</span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -2472,12 +2590,56 @@ export default function InboxPage() {
                 )}
 
                 {/* Order history */}
-                <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Order History ({wooOrders.length})</h3>
-                {wooOrders.length === 0 ? (
-                  <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>No orders found for this customer's email.</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {wooOrders.map(o => {
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Order History ({wooOrders.length})</h3>
+                  <button type="button" onClick={() => setShowOrderSearch(v => !v)} title="Search orders"
+                    style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: showOrderSearch ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: showOrderSearch ? 'var(--coral)' : 'var(--slate)' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  </button>
+                </div>
+                {showOrderSearch && (
+                  <div style={{ marginBottom: 12, padding: 10, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
+                    <input value={orderSearch} onChange={e => setOrderSearch(e.target.value)} placeholder="Order #, name, email, phone, address, item…"
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box', marginBottom: 8 }} />
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 10, color: 'var(--slate)', fontWeight: 600 }}>From</label>
+                        <input type="date" value={orderDateFrom} onChange={e => setOrderDateFrom(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12, boxSizing: 'border-box' }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 10, color: 'var(--slate)', fontWeight: 600 }}>To</label>
+                        <input type="date" value={orderDateTo} onChange={e => setOrderDateTo(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12, boxSizing: 'border-box' }} />
+                      </div>
+                      {(orderSearch || orderDateFrom || orderDateTo) && (
+                        <button onClick={() => { setOrderSearch(''); setOrderDateFrom(''); setOrderDateTo('') }} style={{ alignSelf: 'flex-end', fontSize: 11, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: '6px 4px' }}>Clear</button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {(() => {
+                  const q = orderSearch.trim().toLowerCase()
+                  const from = orderDateFrom ? new Date(orderDateFrom).getTime() : null
+                  const to = orderDateTo ? new Date(orderDateTo).getTime() + 86400000 : null
+                  const filteredOrders = wooOrders.filter(o => {
+                    if (from || to) {
+                      const t = o.order_date ? new Date(o.order_date).getTime() : 0
+                      if (from && t < from) return false
+                      if (to && t > to) return false
+                    }
+                    if (!q) return true
+                    const hay = [
+                      o.order_number, o.order_id, o.woo_order_id, o.status, o.customer_email, o.customer_name,
+                      o.billing?.first_name, o.billing?.last_name, o.billing?.phone, o.billing?.email,
+                      o.billing?.address_1, o.billing?.city, o.billing?.postcode,
+                      ...(Array.isArray(o.line_items) ? o.line_items.map((li: any) => li.name) : []),
+                    ].filter(Boolean).join(' ').toLowerCase()
+                    return hay.includes(q)
+                  })
+                  return filteredOrders.length === 0 ? (
+                    <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>{wooOrders.length === 0 ? "No orders found for this customer's email." : 'No orders match your search.'}</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {filteredOrders.map(o => {
                       const oid = o.order_id || o.woo_order_id || o.id
                       const onum = o.order_number || o.woo_order_id || o.id
                       const payload = { order_id: oid, order_number: onum, total: o.total, currency: o.currency, status: o.status, pay_link: o.payment_url || (o.store_url && o.order_key ? `${o.store_url}/checkout/order-pay/${oid}/?pay_for_order=true&key=${o.order_key}` : null), store_url: o.store_url, integration_id: o.integration_id }
@@ -2509,7 +2671,8 @@ export default function InboxPage() {
                       </div>
                     )})}
                   </div>
-                )}
+                  )
+                })()}
               </>
             )}
           </div>
