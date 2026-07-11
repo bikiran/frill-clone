@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
         roadmap: v.widgetRoadmap !== false,
         updates: v.widgetUpdates !== false,
         help: v.widgetKnowledgeBase !== false,
-        chat: true, // chat is always available
+        chat: v.widgetChat !== false,
         order: v.widgetOrder || null,
       }
     } catch {}

@@ -70,7 +70,8 @@ export default function SettingsPage() {
   const [widgetPolls, setWidgetPolls] = useState(true)
   const [widgetSurveys, setWidgetSurveys] = useState(true)
   const [widgetKnowledgeBase, setWidgetKnowledgeBase] = useState(true)
-  const [widgetOrder, setWidgetOrder] = useState(['Feedback', 'Roadmap', 'Updates', 'Forms', 'Polls', 'Surveys', 'Knowledge Base'])
+  const [widgetChat, setWidgetChat] = useState(true)
+  const [widgetOrder, setWidgetOrder] = useState(['Chat', 'Feedback', 'Roadmap', 'Updates', 'Knowledge Base'])
   const [dragWidgetItem, setDragWidgetItem] = useState<string | null>(null)
   // Webhooks
   const [webhooks, setWebhooks] = useState<any[]>([])
@@ -275,6 +276,12 @@ export default function SettingsPage() {
           if (s.navAnnouncements !== undefined) setNavAnnouncements(s.navAnnouncements)
           if (s.navHelp !== undefined) setNavHelp(s.navHelp)
           if (s.navOrder && Array.isArray(s.navOrder)) setNavOrder(s.navOrder)
+          if (s.widgetChat !== undefined) setWidgetChat(s.widgetChat)
+          if (s.widgetFeedback !== undefined) setWidgetFeedback(s.widgetFeedback)
+          if (s.widgetRoadmap !== undefined) setWidgetRoadmap(s.widgetRoadmap)
+          if (s.widgetUpdates !== undefined) setWidgetUpdates(s.widgetUpdates)
+          if (s.widgetKnowledgeBase !== undefined) setWidgetKnowledgeBase(s.widgetKnowledgeBase)
+          if (s.widgetOrder && Array.isArray(s.widgetOrder)) setWidgetOrder(s.widgetOrder)
           if (s.themeMode) setThemeMode(s.themeMode)
           if (s.borderRadius) setBorderRadius(s.borderRadius)
           if (s.emailFromName) setEmailFromName(s.emailFromName)
@@ -345,7 +352,7 @@ export default function SettingsPage() {
   }, [
     companyName, logoUrl, faviconUrl, ogImageUrl, logoLink, customScript,
     navIdeas, navRoadmap, navAnnouncements, navHelp, navOrder,
-    widgetFeedback, widgetRoadmap, widgetUpdates, widgetForms, widgetPolls, widgetSurveys, widgetKnowledgeBase, widgetOrder,
+    widgetChat, widgetFeedback, widgetRoadmap, widgetUpdates, widgetForms, widgetPolls, widgetSurveys, widgetKnowledgeBase, widgetOrder,
     accentColor, themeMode, borderRadius,
     emailFromName, emailReplyTo, emailSignature,
     hidePoweredBy, boardDomain, helpDomain,
@@ -374,7 +381,7 @@ export default function SettingsPage() {
     const settingsData = {
       companyName, logoUrl, faviconUrl, ogImageUrl, logoLink, customScript,
       navIdeas, navRoadmap, navAnnouncements, navHelp, navOrder,
-      widgetFeedback, widgetRoadmap, widgetUpdates, widgetForms, widgetPolls, widgetSurveys, widgetKnowledgeBase, widgetOrder,
+      widgetChat, widgetFeedback, widgetRoadmap, widgetUpdates, widgetForms, widgetPolls, widgetSurveys, widgetKnowledgeBase, widgetOrder,
       accentColor, themeMode, borderRadius,
       emailFromName, emailReplyTo, emailSignature,
       hidePoweredBy, customDomain, boardDomain, helpDomain, domainStatus,
@@ -1438,12 +1445,10 @@ export default function SettingsPage() {
               <div className="space-y-2 mb-6">
                 {(() => {
                   const meta: Record<string, { state: boolean; set: (v: boolean) => void; desc: string }> = {
+                    'Chat': { state: widgetChat, set: setWidgetChat, desc: 'Live chat with your team' },
                     'Feedback': { state: widgetFeedback, set: setWidgetFeedback, desc: 'Let users submit and vote on ideas' },
                     'Roadmap': { state: widgetRoadmap, set: setWidgetRoadmap, desc: 'Show your product roadmap' },
                     'Updates': { state: widgetUpdates, set: setWidgetUpdates, desc: 'Display announcements and changelog' },
-                    'Forms': { state: widgetForms, set: setWidgetForms, desc: 'Embed custom feedback forms' },
-                    'Polls': { state: widgetPolls, set: setWidgetPolls, desc: 'Run quick polls and surveys' },
-                    'Surveys': { state: widgetSurveys, set: setWidgetSurveys, desc: 'Collect detailed feedback' },
                     'Knowledge Base': { state: widgetKnowledgeBase, set: setWidgetKnowledgeBase, desc: 'Link to help articles and docs' },
                   }
                   const labelFor: Record<string, string> = { 'Feedback': 'Feedback Board' }
@@ -1483,12 +1488,10 @@ export default function SettingsPage() {
               {/* Widget order info */}
               <div className="p-3 rounded-xl" style={{ background: 'var(--canvas)', borderColor: 'var(--border)' }}>
                 <p className="text-xs font-medium" style={{ color: 'var(--slate)' }}>Shown in the widget, in order: {widgetOrder.filter(s => {
+                  if (s === 'Chat') return widgetChat
                   if (s === 'Feedback') return widgetFeedback
                   if (s === 'Roadmap') return widgetRoadmap
                   if (s === 'Updates') return widgetUpdates
-                  if (s === 'Forms') return widgetForms
-                  if (s === 'Polls') return widgetPolls
-                  if (s === 'Surveys') return widgetSurveys
                   if (s === 'Knowledge Base') return widgetKnowledgeBase
                   return false
                 }).map(s => s === 'Feedback' ? 'Feedback Board' : s).join(', ') || 'nothing (all sections hidden)'}</p>

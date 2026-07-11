@@ -181,13 +181,15 @@ function WidgetContent() {
         
         setCompany(data.company)
         setWidgetTabs(data.widgetTabs || null)
-        // If the default 'feedback' tab is disabled, open on the first enabled one.
+        // Open on the FIRST tab in the configured order (respects Chat-first, etc).
         if (data.widgetTabs) {
           const wt = data.widgetTabs
-          if (wt.feedback === false) {
-            const firstVisible = ['roadmap', 'updates', 'help', 'chat'].find(k => wt[k] !== false) || 'chat'
-            setTab(firstVisible as any)
-          }
+          const labelToKey: Record<string, string> = { 'Chat': 'chat', 'Feedback': 'feedback', 'Ideas': 'feedback', 'Roadmap': 'roadmap', 'Updates': 'updates', 'Knowledge Base': 'help', 'Help Centre': 'help', 'Help': 'help' }
+          const allKeys = ['feedback', 'roadmap', 'updates', 'help', 'chat']
+          let ordered = allKeys
+          if (Array.isArray(wt.order)) ordered = Array.from(new Set([...wt.order.map((l: string) => labelToKey[l]).filter(Boolean), ...allKeys]))
+          const firstVisible = ordered.find(k => wt[k] !== false)
+          if (firstVisible) setTab(firstVisible as any)
         }
         setIdeas(data.ideas || [])
         setAnnouncements(data.announcements || [])
@@ -1924,19 +1926,18 @@ function WidgetContent() {
       {/* Footer nav */}
       <div style={{ background: '#fff', display: 'flex', padding: '6px 8px 8px', flexShrink: 0, width: '100%', boxSizing: 'border-box', justifyContent: 'space-around', gap: 2 }}>
         {(() => {
-          // Map settings labels → widget tab keys.
-          const labelToKey: Record<string, string> = { 'Feedback': 'feedback', 'Ideas': 'feedback', 'Roadmap': 'roadmap', 'Updates': 'updates', 'Knowledge Base': 'help', 'Help Centre': 'help', 'Help': 'help' }
+          // Map settings labels → widget tab keys (Chat included, orderable).
+          const labelToKey: Record<string, string> = { 'Chat': 'chat', 'Feedback': 'feedback', 'Ideas': 'feedback', 'Roadmap': 'roadmap', 'Updates': 'updates', 'Knowledge Base': 'help', 'Help Centre': 'help', 'Help': 'help' }
           const allKeys = ['feedback', 'roadmap', 'updates', 'help', 'chat'] as const
           // Visibility from settings (default: all shown).
           const visible = (k: string) => !widgetTabs ? true : widgetTabs[k] !== false
-          // Order from settings if provided, else default; chat always last.
-          let ordered: string[] = allKeys.filter(k => k !== 'chat')
+          // Order from settings if provided (chat can be anywhere), else default.
+          let ordered: string[] = [...allKeys]
           if (widgetTabs?.order && Array.isArray(widgetTabs.order)) {
             const fromOrder = widgetTabs.order.map((l: string) => labelToKey[l]).filter(Boolean)
-            // keep only known non-chat keys, dedup, then append any missing
-            ordered = Array.from(new Set([...fromOrder, ...allKeys.filter(k => k !== 'chat')])).filter(k => k !== 'chat')
+            ordered = Array.from(new Set([...fromOrder, ...allKeys]))
           }
-          const finalTabs = [...ordered.filter(visible), 'chat'] as string[]
+          const finalTabs = ordered.filter(visible)
           return finalTabs.map(t => {
           const isActive = tab === t
           return (
