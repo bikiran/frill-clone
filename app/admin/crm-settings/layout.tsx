@@ -8,6 +8,7 @@ const NAV = [
   { slug: 'business', label: 'Business' },
   { slug: 'channels', label: 'Channels' },
   { slug: 'conversation-actions', label: 'Conversation Actions' },
+  { slug: 'order-automation', label: 'Order Automation' },
   { slug: 'custom-fields', label: 'Custom Fields' },
   { slug: 'power-ups', label: 'Time Savers' },
   { slug: 'ai', label: 'AI' },

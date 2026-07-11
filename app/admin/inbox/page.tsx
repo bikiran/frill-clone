@@ -134,6 +134,10 @@ export default function InboxPage() {
   const [showTicketPanel, setShowTicketPanel] = useState(false)
   const [showCreateOrder, setShowCreateOrder] = useState(false)
   const [showCoupon, setShowCoupon] = useState(false)
+  const [editOrder, setEditOrder] = useState<any>(null)
+  const [editOrderData, setEditOrderData] = useState<any>(null)
+  const [editOrderLoading, setEditOrderLoading] = useState(false)
+  const [editOrderSaving, setEditOrderSaving] = useState(false)
   const [couponAmount, setCouponAmount] = useState('')
   const [couponType, setCouponType] = useState<'fixed' | 'percent'>('fixed')
   const [couponCode, setCouponCode] = useState('')
@@ -423,11 +427,35 @@ export default function InboxPage() {
     const { data: woo } = await (supabase as any).from('woocommerce_customers')
       .select('*').eq('company_id', companyId).ilike('email', email).maybeSingle()
     if (woo) setWooCustomer(woo)
-    // Orders by email (covers guest orders too)
+    // Orders by email (covers guest orders too) — synced table first for speed
     const { data: orders } = await (supabase as any).from('woocommerce_orders')
       .select('*').eq('company_id', companyId).ilike('customer_email', email)
       .order('order_date', { ascending: false }).limit(50)
     setWooOrders(orders || [])
+    // Then fetch LIVE orders from WooCommerce (includes Colvy-created orders that
+    // haven't synced yet) and merge, de-duplicated by order id/number.
+    try {
+      const res = await fetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email)}`)
+      const data = await res.json()
+      if (data.orders && data.orders.length > 0) {
+        const seen = new Set((orders || []).map((o: any) => String(o.order_number || o.order_id)))
+        const merged = [...(orders || [])]
+        data.orders.forEach((o: any) => {
+          const key = String(o.number)
+          if (!seen.has(key)) {
+            seen.add(key)
+            merged.push({
+              order_id: o.id, order_number: o.number, status: o.status, total: o.total,
+              currency: o.currency, order_date: o.date, customer_email: email,
+              line_items: o.items, integration_id: o.integration_id, store_url: o.store_url,
+              order_key: o.order_key, payment_url: o.payment_url, _live: true,
+            })
+          }
+        })
+        merged.sort((a: any, b: any) => new Date(b.order_date || 0).getTime() - new Date(a.order_date || 0).getTime())
+        setWooOrders(merged)
+      }
+    } catch {}
   }
 
   const loadConversationExtras = async (convId: string) => {
@@ -705,6 +733,49 @@ export default function InboxPage() {
       showToast('Payment request sent')
       selectConversation(selected)
     } catch (e: any) { showToast(e.message || 'Failed to send payment request') }
+  }
+
+  const miniBtn = (color: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 600, color, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' })
+
+  const openOrderEditor = async (payload: any) => {
+    if (!companyId || !payload?.order_id) return
+    setEditOrder(payload); setEditOrderData(null); setEditOrderLoading(true)
+    try {
+      const res = await fetch(`/api/orders/details?companyId=${companyId}&orderId=${payload.order_id}${payload.integration_id ? `&integrationId=${payload.integration_id}` : ''}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not load order')
+      // Normalize into an editable structure
+      setEditOrderData({
+        order_id: payload.order_id,
+        number: data.order.number,
+        status: data.order.status,
+        integration_id: payload.integration_id,
+        items: (data.order.line_items || []).map((li: any, i: number) => ({ key: `i${i}`, id: li.id, name: li.name, quantity: li.quantity, total: li.total })),
+        customerNote: '',
+      })
+    } catch (e: any) { showToast(e.message || 'Could not load order'); setEditOrder(null) } finally { setEditOrderLoading(false) }
+  }
+
+  const saveOrderEdit = async () => {
+    if (!companyId || !editOrderData) return
+    setEditOrderSaving(true)
+    try {
+      const res = await fetch('/api/orders/edit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId, integrationId: editOrderData.integration_id, orderId: editOrderData.order_id,
+          status: editOrderData.status,
+          items: editOrderData.items.map((it: any) => ({ id: it.id, quantity: it.quantity })),
+          customerNote: editOrderData.customerNote,
+          conversationId: selected?.id,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not save order')
+      showToast(`Order #${editOrderData.number} updated`)
+      setEditOrder(null); setEditOrderData(null)
+      if (selected) selectConversation(selected)
+    } catch (e: any) { showToast(e.message || 'Failed to save') } finally { setEditOrderSaving(false) }
   }
 
   const updateOrderStatus = async (payload: any, status: string) => {
@@ -1066,6 +1137,53 @@ export default function InboxPage() {
           onClose={() => setShowCreateOrder(false)}
           onCreated={() => { if (selected) selectConversation(selected) }}
         />
+      )}
+
+      {/* Order editor panel */}
+      {editOrder && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', justifyContent: 'flex-end' }} onClick={() => setEditOrder(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: '100%', height: '100%', background: '#fff', overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>✏️ Edit order {editOrderData ? `#${editOrderData.number}` : ''}</h2>
+              <button onClick={() => setEditOrder(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
+            </div>
+            <div style={{ padding: 20 }}>
+              {editOrderLoading || !editOrderData ? (
+                <p style={{ color: 'var(--slate)', fontSize: 13.5 }}>Loading order…</p>
+              ) : (
+                <>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>Items (set quantity to 0 to remove)</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                    {editOrderData.items.map((it: any) => (
+                      <div key={it.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 9 }}>
+                        <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)' }}>{it.name}</span>
+                        <input type="number" min={0} value={it.quantity} onChange={e => setEditOrderData((d: any) => ({ ...d, items: d.items.map((x: any) => x.key === it.key ? { ...x, quantity: Math.max(0, parseInt(e.target.value) || 0) } : x) }))}
+                          style={{ width: 60, padding: '5px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13 }} />
+                        <span style={{ fontSize: 12.5, fontWeight: 600, width: 60, textAlign: 'right' }}>${it.total}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Status</label>
+                  <select value={editOrderData.status} onChange={e => setEditOrderData((d: any) => ({ ...d, status: e.target.value }))}
+                    style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 14 }}>
+                    {['pending', 'processing', 'on-hold', 'completed', 'cancelled', 'refunded'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Add a customer note (optional)</label>
+                  <textarea value={editOrderData.customerNote} onChange={e => setEditOrderData((d: any) => ({ ...d, customerNote: e.target.value }))} rows={2}
+                    style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', marginBottom: 18, resize: 'vertical', fontFamily: 'inherit' }} />
+
+                  <button onClick={saveOrderEdit} disabled={editOrderSaving}
+                    style={{ width: '100%', padding: '12px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                    {editOrderSaving ? 'Saving…' : 'Save changes'}
+                  </button>
+                  <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 10, lineHeight: 1.5 }}>WooCommerce recalculates totals and tax when items change. Changing an item's quantity may adjust stock.</p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Send coupon panel */}
@@ -2162,14 +2280,18 @@ export default function InboxPage() {
                   <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>No orders found for this customer's email.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {wooOrders.map(o => (
-                      <div key={o.id} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff' }}>
+                    {wooOrders.map(o => {
+                      const oid = o.order_id || o.woo_order_id || o.id
+                      const onum = o.order_number || o.woo_order_id || o.id
+                      const payload = { order_id: oid, order_number: onum, total: o.total, currency: o.currency, status: o.status, pay_link: o.payment_url || (o.store_url && o.order_key ? `${o.store_url}/checkout/order-pay/${oid}/?pay_for_order=true&key=${o.order_key}` : null), store_url: o.store_url, integration_id: o.integration_id }
+                      return (
+                      <div key={oid} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>#{o.woo_order_id}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>#{onum}</span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>${(parseFloat(o.total) || 0).toFixed(2)}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: o.status === 'completed' ? '#dcfce7' : '#fef3c7', color: o.status === 'completed' ? '#059669' : '#d97706', fontWeight: 600, textTransform: 'capitalize' }}>{o.status}</span>
+                          <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: o.status === 'completed' ? '#dcfce7' : o.status === 'processing' ? '#dbeafe' : o.status === 'cancelled' || o.status === 'failed' ? '#fee2e2' : '#fef3c7', color: o.status === 'completed' ? '#059669' : o.status === 'processing' ? '#2563eb' : o.status === 'cancelled' || o.status === 'failed' ? '#dc2626' : '#d97706', fontWeight: 600, textTransform: 'capitalize' }}>{o.status}</span>
                           <span style={{ fontSize: 11, color: '#9ca3af' }}>{o.order_date ? new Date(o.order_date).toLocaleDateString('en-AU') : ''}</span>
                         </div>
                         {Array.isArray(o.line_items) && o.line_items.length > 0 && (
@@ -2180,8 +2302,15 @@ export default function InboxPage() {
                             {o.line_items.length > 3 && <p style={{ margin: '2px 0', fontSize: 11, color: '#9ca3af' }}>+{o.line_items.length - 3} more</p>}
                           </div>
                         )}
+                        {/* Per-order actions */}
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                          <button type="button" onClick={() => openOrderEditor(payload)} style={miniBtn('var(--coral)')}>Edit</button>
+                          <button type="button" onClick={() => sendOrderPaymentRequest(payload)} style={miniBtn('#635BFF')}>Payment request</button>
+                          <button type="button" onClick={() => generateInvoice(payload)} style={miniBtn('var(--ink)')}>Invoice</button>
+                          {payload.pay_link && <button type="button" onClick={() => { navigator.clipboard?.writeText(payload.pay_link!); showToast('Pay link copied') }} style={miniBtn('var(--slate)')}>Copy link</button>}
+                        </div>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 )}
               </>

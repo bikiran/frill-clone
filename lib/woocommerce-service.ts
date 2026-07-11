@@ -284,6 +284,25 @@ export class WooCommerceService {
     } catch { return false }
   }
 
+  // All orders for an email (covers guest orders + Colvy-created orders that
+  // may not have synced into our local table yet). Returns live from WooCommerce.
+  async getOrdersByEmail(email: string, limit = 25): Promise<any[]> {
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders?search=${encodeURIComponent(email)}&per_page=${limit}&orderby=date&order=desc`, { headers: this.wcHeaders() })
+      if (!res.ok) return []
+      const orders = await res.json()
+      // WooCommerce `search` matches broadly; keep only orders whose billing email matches.
+      return (orders || [])
+        .filter((o: any) => (o.billing?.email || '').toLowerCase() === email.toLowerCase())
+        .map((o: any) => ({
+          id: o.id, number: o.number || o.id, status: o.status, total: o.total, currency: o.currency,
+          date: o.date_created, payment_method: o.payment_method_title,
+          items: (o.line_items || []).map((li: any) => ({ name: li.name, quantity: li.quantity, total: li.total })),
+          order_key: o.order_key, payment_url: o.payment_url,
+        }))
+    } catch { return [] }
+  }
+
   // Read the store's configured shipping methods across all zones, so staff
   // pick a real method rather than a hardcoded list.
   async getShippingMethods(): Promise<Array<{ zone: string; method_id: string; title: string; cost?: string }>> {
