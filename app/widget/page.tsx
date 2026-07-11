@@ -1659,7 +1659,7 @@ function WidgetContent() {
                               )}
                             </div>
                           ))}
-                          {msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '0 9px 4px' : 0 }}>{msg.content}</div>}
+                          {msg.content && !['media_request', 'coupon', 'payment', 'order'].includes(msg.message_type) && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '0 9px 4px' : 0 }}>{msg.content}</div>}
                           {/* Payment request card */}
                           {msg.message_type === 'payment' && msg.message_payload && (
                             <div style={{ marginTop: 6, padding: 12, borderRadius: 12, background: '#fff', border: '1px solid #e5e5e5', color: '#0d0d0d', minWidth: 210 }}>
@@ -1697,8 +1697,8 @@ function WidgetContent() {
                             </div>
                           )}
                           {msg.message_type === 'media_request' && msg.message_payload && (
-                            <div style={{ marginTop: 6, padding: 14, borderRadius: 14, background: '#fff', border: '1px solid #e5e5e5', minWidth: 210 }}>
-                              <p style={{ margin: '0 0 8px', fontSize: 13.5, color: '#0d0d0d' }}>{msg.message_payload.prompt}</p>
+                            <div style={{ marginTop: 6, padding: 14, borderRadius: 14, background: '#fff', border: '1px solid #e5e5e5', width: '100%', maxWidth: 280, boxSizing: 'border-box' }}>
+                              <p style={{ margin: '0 0 8px', fontSize: 13.5, color: '#0d0d0d', wordBreak: 'break-word' }}>{msg.message_payload.prompt}</p>
                               <a href={msg.message_payload.link} target="_blank" rel="noopener"
                                 style={{ display: 'block', textAlign: 'center', padding: '10px 0', borderRadius: 9, background: accentColor, color: '#fff', textDecoration: 'none', fontSize: 13.5, fontWeight: 700 }}>
                                 Upload files
@@ -2018,6 +2018,16 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
       const table = kind === 'poll' ? 'polls' : kind === 'survey' ? 'surveys' : 'forms'
       const { data } = await (supabase as any).from(table).select('*').eq('id', payload.ref_id).maybeSingle()
       setItem(data)
+
+      // If this respondent already answered (in a prior session/reload), show the
+      // submitted state instead of a fillable form again.
+      try {
+        let q = (supabase as any).from('chat_interactions').select('id').eq('message_id', msg.id).limit(1)
+        if (conversationId) q = q.eq('conversation_id', conversationId)
+        const { data: prior } = await q
+        if (prior && prior.length) { setDone(true); return }
+      } catch {}
+
       // Pre-fill fields when the smart trigger supplied known customer details.
       if (data && payload.prefill && (kind === 'form' || kind === 'survey')) {
         const qs = data.questions || data.options || []
@@ -2059,14 +2069,14 @@ function WidgetInteractive({ msg, companyId, conversationId, respondent, accentC
     } catch (e) { console.error(e) }
   }
 
-  if (done) return <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 10, background: '#dcfce7', color: '#059669', fontSize: 12.5, fontWeight: 600 }}>✓ Thanks for your response!</div>
+  if (done) return <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 10, background: '#dcfce7', color: '#059669', fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Submitted — thanks for your response!</div>
   if (!item) return <div style={{ marginTop: 6, fontSize: 12, color: '#9ca3af' }}>Loading…</div>
 
   const options = item.options || payload.options || []
   const questions = item.questions || []
 
   return (
-    <div style={{ marginTop: 6, padding: 12, borderRadius: 12, background: '#fff', border: '1px solid #e5e5e5', minWidth: 220 }}>
+    <div style={{ marginTop: 6, padding: 12, borderRadius: 12, background: '#fff', border: '1px solid #e5e5e5', width: '100%', maxWidth: 280, boxSizing: 'border-box' }}>
       <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: '#0d0d0d' }}>{item.question || item.title || 'Respond'}</p>
       {/* Poll: options as buttons */}
       {kind === 'poll' && options.map((opt: any, i: number) => (
