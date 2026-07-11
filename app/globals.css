@@ -588,13 +588,19 @@ input[type="range"] {
 
 /* ── TRELLO-STYLE HORIZONTAL SCROLL KANBAN ── */
 .kanban-scroll {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1rem;
-  overflow-x: auto;
-  overflow-y: hidden;
   padding-bottom: 1rem;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
+  align-items: start;
+}
+
+/* On narrower screens, wrap into fewer columns instead of scrolling. */
+@media (max-width: 1024px) {
+  .kanban-scroll { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .kanban-scroll { grid-template-columns: 1fr; }
 }
 
 .kanban-scroll::-webkit-scrollbar {
@@ -616,18 +622,16 @@ input[type="range"] {
 }
 
 .kanban-column {
-  flex: 0 0 320px;
-  max-width: 320px;
-  scroll-snap-align: start;
+  min-width: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  height: 100%;
 }
 
 @media (min-width: 768px) {
   .kanban-column {
-    flex: 0 0 360px;
-    max-width: 360px;
+    min-width: 0;
+    max-width: none;
   }
 }
 

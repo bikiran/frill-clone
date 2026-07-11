@@ -72,7 +72,31 @@ export default function HomePage() {
     const h = window.location.hostname
     if (h === 'admin.colvy.com' && !window.location.pathname.startsWith('/platform-admin')) {
       window.location.replace('/platform-admin')
+      return
     }
+    // Respect the company's configured default homepage. If it's not "ideas",
+    // send the visitor to that page instead of the ideas board.
+    const map: Record<string, string> = { roadmap: '/roadmap', announcements: '/announcements', help: '/help' }
+    const goHome = (home?: string) => { if (home && map[home]) { window.location.replace(map[home]); return true } return false }
+    try {
+      const isSub = h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com'
+      const slug = isSub ? h.replace('.colvy.com', '') : 'colvy'
+      const s = JSON.parse(localStorage.getItem(`site_settings_${slug}`) || '{}')
+      if (s.defaultHomepage) { if (goHome(s.defaultHomepage)) return }
+      else {
+        // Not cached yet — fetch settings once to honour the default homepage.
+        ;(async () => {
+          try {
+            let cid: string | null = null
+            if (isSub) { const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle(); cid = co?.id || null }
+            let q = (supabase as any).from('site_settings').select('value').eq('key', 'general')
+            q = cid ? q.eq('company_id', cid) : q.is('company_id', null)
+            const { data: rows } = await q.order('updated_at', { ascending: false }).limit(1)
+            goHome(rows?.[0]?.value?.defaultHomepage)
+          } catch {}
+        })()
+      }
+    } catch {}
   }, [])
 
   const [ideas, setIdeas] = useState<any[]>([])

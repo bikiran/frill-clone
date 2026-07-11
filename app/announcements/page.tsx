@@ -24,6 +24,9 @@ export default function AnnouncementsPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [localReactions, setLocalReactions] = useState<Record<string, Record<string, number>>>({})
   const articleRefs = useRef<Record<string, HTMLElement>>({})
+  const sidebarRefs = useRef<Record<string, HTMLElement>>({})
+  const sidebarScrollRef = useRef<HTMLDivElement | null>(null)
+  const isProgrammaticScroll = useRef(false)
 
   useEffect(() => {
     supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null))
@@ -101,8 +104,10 @@ export default function AnnouncementsPage() {
   const handleSelect = async (ann: any) => {
     setSelectedId(ann.id)
     // Scroll to article
+    isProgrammaticScroll.current = true
     setTimeout(() => {
       articleRefs.current[ann.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setTimeout(() => { isProgrammaticScroll.current = false }, 700)
     }, 50)
     // Track view + impression
     await (supabase as any).from('announcements').update({
@@ -166,6 +171,37 @@ export default function AnnouncementsPage() {
     !search || a.title.toLowerCase().includes(search.toLowerCase())
   )
 
+  // As the reader scrolls the articles, highlight the matching sidebar item and
+  // gently scroll the sidebar to keep it aligned with the article in view.
+  useEffect(() => {
+    const ids = filtered.map(a => a.id)
+    if (ids.length === 0) return
+    const observer = new IntersectionObserver((entries) => {
+      if (isProgrammaticScroll.current) return
+      // Pick the entry nearest the top that is intersecting.
+      const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+      const top = visible[0]
+      if (!top) return
+      const id = (top.target as HTMLElement).dataset.annId
+      if (!id) return
+      setSelectedId(id)
+      // Scroll the matching sidebar item into view within the sidebar only.
+      const el = sidebarRefs.current[id]
+      const container = sidebarScrollRef.current
+      if (el && container) {
+        const elRect = el.getBoundingClientRect()
+        const cRect = container.getBoundingClientRect()
+        const offsetWithin = (elRect.top - cRect.top) + container.scrollTop
+        const target = offsetWithin - container.clientHeight / 2 + el.clientHeight / 2
+        container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
+      }
+    }, { rootMargin: '-10% 0px -70% 0px', threshold: 0 })
+
+    ids.forEach(id => { const el = articleRefs.current[id]; if (el) observer.observe(el) })
+    return () => observer.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered.length, loading])
+
   // Pinned items get their own section at the top (still newest-pinned-first among themselves).
   // Everything else stays strictly chronological so month groups never appear out of order.
   const pinnedItems = filtered.filter(a => a.is_pinned)
@@ -217,7 +253,7 @@ export default function AnnouncementsPage() {
         )}
 
         {/* Timeline list */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto" ref={sidebarScrollRef}>
           {loading ? (
             <div className="p-4 space-y-3">
               {[1, 2, 3, 4].map(i => <div key={i} className="skeleton h-16 rounded-lg" />)}
@@ -243,6 +279,7 @@ export default function AnnouncementsPage() {
                       <button
                         key={ann.id}
                         onClick={() => handleSelect(ann)}
+                        ref={el => { if (el) sidebarRefs.current[ann.id] = el }}
                         className="w-full text-left flex items-start gap-3 px-4 py-3 transition-smooth hover:bg-gray-50 relative"
                         style={{ background: isActive ? 'var(--peach)' : 'transparent' }}>
                         <div className="relative shrink-0 mt-1 z-10">
@@ -292,6 +329,7 @@ export default function AnnouncementsPage() {
                       <button
                         key={ann.id}
                         onClick={() => handleSelect(ann)}
+                        ref={el => { if (el) sidebarRefs.current[ann.id] = el }}
                         className="w-full text-left flex items-start gap-3 px-4 py-3 transition-smooth hover:bg-gray-50 relative"
                         style={{ background: isActive ? 'var(--peach)' : 'transparent' }}>
                         {/* Timeline dot */}
@@ -374,6 +412,7 @@ export default function AnnouncementsPage() {
                   key={ann.id}
                   id={`ann-${ann.id}`}
                   ref={el => { if (el) articleRefs.current[ann.id] = el }}
+                  data-ann-id={ann.id}
                   className="mb-12 pb-12 scroll-mt-6 transition-all"
                   style={{ borderBottom: '1px solid #e5e7eb', marginBottom: '3rem', paddingBottom: '3rem' }}>
 

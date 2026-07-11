@@ -344,7 +344,7 @@ export default function SettingsPage() {
     showIdeaNumber, showRoadmapDesc, showIdeaDate, showIdeaActivity, requireIdeaTopic, categories, defaultHomepage,
   ])
 
-  const handleSave = async (isManualSave: boolean = false) => {
+  const handleSave = async (isManualSave: boolean = false, overrides?: Record<string, any>) => {
     setSaving(true)
     
     // Wait for company to be loaded
@@ -386,10 +386,11 @@ export default function SettingsPage() {
     
     const siteSettingsValue = { 
       ...settingsData,
+      ...(overrides || {}),
       faviconUrl: faviconUrl || undefined,
       ogImageUrl: ogImageUrl || undefined,
-      defaultHomepage: defaultHomepage || 'ideas',
-      navOrder: Array.isArray(navOrder) ? navOrder : ['Ideas', 'Roadmap', 'Updates', 'Help Centre'],
+      defaultHomepage: (overrides?.defaultHomepage ?? defaultHomepage) || 'ideas',
+      navOrder: Array.isArray(overrides?.navOrder ?? navOrder) ? (overrides?.navOrder ?? navOrder) : ['Ideas', 'Roadmap', 'Updates', 'Help Centre'],
       companyId,
       savedAt: new Date().toISOString(),
     }
@@ -1277,6 +1278,9 @@ export default function SettingsPage() {
                             navIdeas, navRoadmap, navAnnouncements, navHelp,
                             navOrder: newOrder,
                           }}))
+                          // Persist immediately with the new order — don't rely on the
+                          // debounced auto-save (which can be gated out during load).
+                          setTimeout(() => handleSave(false, { navOrder: newOrder }), 0)
                         }}
                         onDragEnd={() => setDragNavItem(null)}
                         className="flex items-center justify-between py-4 border-b last:border-b-0 cursor-grab active:cursor-grabbing select-none"
