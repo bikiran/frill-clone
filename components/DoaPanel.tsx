@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 // The DOA claim panel. Pre-fills name/phone/email from the chat contact, looks
 // up the order by number from WooCommerce, lets the agent select items or an
@@ -22,6 +22,24 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
   const [notes, setNotes] = useState('')
   const [processing, setProcessing] = useState(false)
   const [result, setResult] = useState<string>('')
+  const [recentOrders, setRecentOrders] = useState<any[]>([])
+  const [loadingRecent, setLoadingRecent] = useState(false)
+
+  // Load the customer's recent orders so the agent can pick one without knowing
+  // the number (the most recent is tagged RECENT). Search still works too.
+  useEffect(() => {
+    const email = contact?.email
+    if (!email || !companyId) return
+    setLoadingRecent(true)
+    fetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email)}`)
+      .then(r => r.json())
+      .then(d => {
+        const list = (d.orders || []).slice().sort((a: any, b: any) => new Date(b.date_created || b.created_at || 0).getTime() - new Date(a.date_created || a.created_at || 0).getTime())
+        setRecentOrders(list)
+      })
+      .catch(() => {})
+      .finally(() => setLoadingRecent(false))
+  }, [companyId, contact?.email])
 
   const lookup = async () => {
     if (!orderNumber.trim()) return
@@ -99,6 +117,34 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
                 <input style={{ ...I, flex: 1 }} value={orderNumber} onChange={e => setOrderNumber(e.target.value)} placeholder="e.g. 1234" onKeyDown={e => e.key === 'Enter' && lookup()} />
                 <button onClick={lookup} disabled={looking} style={{ padding: '0 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{looking ? '…' : 'Look up'}</button>
               </div>
+
+              {/* Recent orders for this customer — pick without knowing the number */}
+              {!order && (
+                <div style={{ marginTop: 14 }}>
+                  <label style={L}>{loadingRecent ? 'Loading orders…' : recentOrders.length ? 'Recent orders' : ''}</label>
+                  {recentOrders.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
+                      {recentOrders.map((o, i) => {
+                        const num = o.number || o.order_number || o.id
+                        return (
+                          <button key={num} onClick={() => { setOrderNumber(String(num)); setTimeout(() => lookup(), 0) }}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', textAlign: 'left' }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>#{num}</span>
+                                {i === 0 && <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.05em', padding: '2px 6px', borderRadius: 5, background: 'var(--coral)', color: '#fff' }}>RECENT</span>}
+                                <span style={{ fontSize: 11, color: 'var(--slate)', textTransform: 'capitalize' }}>{o.status}</span>
+                              </div>
+                              <div style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 2 }}>{o.date_created ? new Date(o.date_created).toLocaleDateString() : ''}{o.line_items?.length ? ` · ${o.line_items.length} item${o.line_items.length > 1 ? 's' : ''}` : ''}</div>
+                            </div>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{o.currency_symbol || '$'}{o.total}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {order && (
                 <>

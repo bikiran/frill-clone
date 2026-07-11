@@ -8,7 +8,20 @@
   if (!slug) { console.warn('[Colvy] data-slug attribute missing'); return }
 
   var BASE = 'https://colvy.com'
+  // The widget runs in an iframe, so it can't see the host page's URL by itself.
+  // Pass the REAL parent page URL + title (this script runs on the business site).
+  function parentInfo() {
+    try {
+      return {
+        url: window.location.href,
+        title: document.title || '',
+      }
+    } catch (e) { return { url: '', title: '' } }
+  }
+  var pi = parentInfo()
   var WIDGET_URL = BASE + '/widget?slug=' + encodeURIComponent(slug)
+    + '&purl=' + encodeURIComponent(pi.url)
+    + '&ptitle=' + encodeURIComponent(pi.title)
 
   // Config (populated from /api/widget-data): default is CHAT ICON ONLY.
   var cfg = { mode: 'icon', label: 'Chat with us', color: '#ff7a6b', position: 'bottom-right', offsetX: '24', offsetXUnit: 'px', offsetY: '24', offsetYUnit: 'px' }
@@ -110,6 +123,26 @@
     .catch(function () { btn.style.background = cfg.color })
 
   function mount() { document.body.appendChild(btn); document.body.appendChild(popup); applyPosition() }
+
+  // Keep the widget informed of the parent page as the visitor navigates, so the
+  // conversation's Page History reflects the real business-site pages (not the
+  // Colvy iframe URL). Fires on load and on SPA route changes.
+  function sendPage() {
+    try {
+      var info = parentInfo()
+      if (popup && popup.contentWindow) {
+        popup.contentWindow.postMessage({ colvy: true, type: 'page', url: info.url, title: info.title }, BASE)
+      }
+    } catch (e) {}
+  }
+  window.addEventListener('load', sendPage)
+  // Detect SPA navigations (pushState/replaceState/popstate).
+  try {
+    var _ps = history.pushState, _rs = history.replaceState
+    history.pushState = function () { _ps.apply(this, arguments); setTimeout(sendPage, 50) }
+    history.replaceState = function () { _rs.apply(this, arguments); setTimeout(sendPage, 50) }
+    window.addEventListener('popstate', function () { setTimeout(sendPage, 50) })
+  } catch (e) {}
   if (document.readyState !== 'loading') mount()
   else document.addEventListener('DOMContentLoaded', mount)
 })()

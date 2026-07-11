@@ -11,6 +11,16 @@ import { getRelativeTime } from '@/lib/time-utils'
 function WidgetContent() {
   const params = useSearchParams()
   const slug = params.get('slug') || ''
+  // The embedding script (widget.js) passes the REAL parent page URL/title here,
+  // since this iframe can't read the host page itself.
+  const [parentPage, setParentPage] = useState<{ url: string | null; title: string | null }>({
+    url: params.get('purl') || null,
+    title: params.get('ptitle') || null,
+  })
+  const [parentPageHistory, setParentPageHistory] = useState<any[]>(() => {
+    const u = params.get('purl'); const t = params.get('ptitle')
+    return u ? [{ url: u, title: t || null, ts: new Date().toISOString() }] : []
+  })
 
   const [tab, setTab] = useState<'feedback' | 'roadmap' | 'updates' | 'help' | 'chat'>('feedback')
   const [chatConvId, setChatConvId] = useState<string | null>(null)
@@ -44,6 +54,26 @@ function WidgetContent() {
   const [helpFeedbackNote, setHelpFeedbackNote] = useState('')
   const [helpFeedbackEmail, setHelpFeedbackEmail] = useState('')
   const [helpFeedbackDone, setHelpFeedbackDone] = useState(false)
+
+  // Receive live parent-page updates from the embedding script as the visitor
+  // navigates the business site, and record them in Page History.
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      const d: any = e.data
+      if (!d || !d.colvy || d.type !== 'page' || !d.url) return
+      setParentPage({ url: d.url, title: d.title || null })
+      setParentPageHistory(prev => {
+        if (prev.length && prev[prev.length - 1].url === d.url) return prev
+        const next = [...prev, { url: d.url, title: d.title || null, ts: new Date().toISOString() }]
+        if (chatConvId) {
+          ;(supabase as any).from('conversations').update({ page_url: d.url, page_title: d.title || null, page_history: next }).eq('id', chatConvId).then(() => {}, () => {})
+        }
+        return next
+      })
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [chatConvId])
 
   // Reset article feedback state whenever a different item opens
   useEffect(() => {
@@ -1505,9 +1535,9 @@ function WidgetContent() {
                         visitor_id: visitorId,
                         sms_number: normalizedMobile,
                         sms_enabled: !!(normalizedMobile && smsOptIn),
-                        page_url: typeof window !== 'undefined' ? window.location.href : null,
-                        page_title: typeof document !== 'undefined' ? document.title : null,
-                        page_history: [{ url: typeof window !== 'undefined' ? window.location.href : null, title: typeof document !== 'undefined' ? document.title : null, ts: new Date().toISOString() }],
+                        page_url: parentPage.url || (typeof window !== 'undefined' ? window.location.href : null),
+                        page_title: parentPage.title || (typeof document !== 'undefined' ? document.title : null),
+                        page_history: parentPageHistory.length ? parentPageHistory : [{ url: parentPage.url || (typeof window !== 'undefined' ? window.location.href : null), title: parentPage.title || (typeof document !== 'undefined' ? document.title : null), ts: new Date().toISOString() }],
                         last_message_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),
                       }).select('id').maybeSingle()
