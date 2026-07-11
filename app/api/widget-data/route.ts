@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     console.log('[WIDGET API] Fetching data for slug:', slug)
     
     const { data: company, error: companyError } = await (supabase as any)
-      .from('companies').select('id,name,slug,logo_url,accent_color,is_private')
+      .from('companies').select('id,name,slug,logo_url,accent_color,is_private,widget_config')
       .eq('slug', slug).single()
 
     if (companyError || !company) {

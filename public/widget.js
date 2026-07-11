@@ -10,21 +10,39 @@
   var BASE = 'https://colvy.com'
   var WIDGET_URL = BASE + '/widget?slug=' + encodeURIComponent(slug)
 
-  // Inject styles
+  // Config (populated from /api/widget-data): default is CHAT ICON ONLY.
+  var cfg = { mode: 'icon', label: 'Chat with us', color: '#ff7a6b' }
+
+  var CHAT_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+  var CLOSE_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+
+  // Inject styles. Icon-only mode is a round button; icon+label is a pill.
   var style = document.createElement('style')
   style.textContent = [
-    '#colvy-btn{position:fixed;bottom:24px;right:24px;z-index:999998;display:flex;align-items:center;gap:8px;padding:12px 18px;border-radius:999px;border:none;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px;font-weight:700;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,0.18);transition:transform 0.2s,box-shadow 0.2s}',
+    '#colvy-btn{position:fixed;bottom:24px;right:24px;z-index:999998;display:flex;align-items:center;gap:8px;border:none;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px;font-weight:700;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,0.18);transition:transform 0.2s,box-shadow 0.2s}',
+    '#colvy-btn.icon{width:56px;height:56px;border-radius:999px;justify-content:center;padding:0}',
+    '#colvy-btn.pill{padding:12px 18px;border-radius:999px}',
     '#colvy-btn:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,0.22)}',
-    '#colvy-popup{position:fixed;bottom:88px;right:24px;z-index:999999;width:360px;height:540px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.2),0 0 0 1px rgba(0,0,0,0.06);overflow:hidden;border:none;transform-origin:bottom right;transition:transform 0.25s cubic-bezier(0.16,1,0.3,1),opacity 0.2s;opacity:0;transform:scale(0.85) translateY(12px);pointer-events:none}',
+    '#colvy-popup{position:fixed;bottom:92px;right:24px;z-index:999999;width:360px;height:540px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.2),0 0 0 1px rgba(0,0,0,0.06);overflow:hidden;border:none;transform-origin:bottom right;transition:transform 0.25s cubic-bezier(0.16,1,0.3,1),opacity 0.2s;opacity:0;transform:scale(0.85) translateY(12px);pointer-events:none}',
     '#colvy-popup.open{opacity:1;transform:scale(1) translateY(0);pointer-events:all}',
-    '@media(max-width:480px){#colvy-popup{width:calc(100vw - 24px);height:70vh;bottom:80px;right:12px;left:12px}#colvy-btn{bottom:16px;right:16px}}',
+    '@media(max-width:480px){#colvy-popup{width:calc(100vw - 24px);height:70vh;bottom:84px;right:12px;left:12px}#colvy-btn{bottom:16px;right:16px}}',
   ].join('')
   document.head.appendChild(style)
 
   // Launcher button
   var btn = document.createElement('button')
   btn.id = 'colvy-btn'
-  btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Give feedback</span>'
+
+  function renderBtn(isOpen) {
+    var iconOnly = cfg.mode !== 'icon_label'
+    btn.className = iconOnly ? 'icon' : 'pill'
+    if (isOpen) {
+      btn.innerHTML = CLOSE_ICON + (iconOnly ? '' : '<span>Close</span>')
+    } else {
+      btn.innerHTML = CHAT_ICON + (iconOnly ? '' : '<span>' + (cfg.label || 'Chat with us') + '</span>')
+    }
+  }
+  renderBtn(false)
 
   // Iframe popup
   var popup = document.createElement('iframe')
@@ -36,41 +54,32 @@
   var open = false
   function toggle() {
     open = !open
-    if (open) {
-      popup.classList.add('open')
-      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span>Close</span>'
-    } else {
-      popup.classList.remove('open')
-      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Give feedback</span>'
-    }
+    if (open) { popup.classList.add('open'); renderBtn(true) }
+    else { popup.classList.remove('open'); renderBtn(false) }
   }
   btn.addEventListener('click', toggle)
 
-  // Close on outside click
   document.addEventListener('click', function (e) {
     if (open && !btn.contains(e.target) && !popup.contains(e.target)) {
-      open = false
-      popup.classList.remove('open')
-      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Give feedback</span>'
+      open = false; popup.classList.remove('open'); renderBtn(false)
     }
   })
 
-  // Apply accent color from company data
+  // Load config: accent colour + bubble mode/label from company settings.
   fetch(BASE + '/api/widget-data?slug=' + encodeURIComponent(slug))
     .then(function (r) { return r.json() })
     .then(function (d) {
-      var color = d.company && d.company.accent_color ? d.company.accent_color : '#ff7a6b'
-      btn.style.background = color
+      if (d.company && d.company.accent_color) cfg.color = d.company.accent_color
+      var wc = d.company && d.company.widget_config ? d.company.widget_config : {}
+      if (wc.bubble_mode) cfg.mode = wc.bubble_mode
+      if (wc.text) cfg.label = wc.text
+      if (wc.color) cfg.color = wc.color
+      btn.style.background = cfg.color
+      renderBtn(open)
     })
-    .catch(function () { btn.style.background = '#ff7a6b' })
+    .catch(function () { btn.style.background = cfg.color })
 
-  // Mount
-  document.addEventListener('DOMContentLoaded', function () {
-    document.body.appendChild(btn)
-    document.body.appendChild(popup)
-  })
-  if (document.readyState !== 'loading') {
-    document.body.appendChild(btn)
-    document.body.appendChild(popup)
-  }
+  function mount() { document.body.appendChild(btn); document.body.appendChild(popup) }
+  if (document.readyState !== 'loading') mount()
+  else document.addEventListener('DOMContentLoaded', mount)
 })()

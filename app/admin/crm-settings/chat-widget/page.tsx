@@ -71,7 +71,16 @@ export default function ChatWidgetSettings() {
                   </div>
                 </div>
                 <div>
-                  <label style={S.label}>Widget text <span style={{ color: 'var(--slate)', fontWeight: 400 }}>({(cfg.text || '').length}/18)</span></label>
+                  <label style={S.label}>Bubble display</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {[{ k: 'icon', label: 'Chat icon only' }, { k: 'icon_label', label: 'Icon + label' }].map(m => (
+                      <button key={m.k} onClick={() => set('bubble_mode', m.k)} style={{ padding: '8px 16px', borderRadius: 8, border: (cfg.bubble_mode || 'icon') === m.k ? '2px solid var(--coral)' : '1px solid var(--border)', background: (cfg.bubble_mode || 'icon') === m.k ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13 }}>{m.label}</button>
+                    ))}
+                  </div>
+                  <p style={{ ...S.hint, marginTop: 6 }}>By default only the chat icon shows. Choose "Icon + label" to show text next to it.</p>
+                </div>
+                <div>
+                  <label style={S.label}>Bubble label <span style={{ color: 'var(--slate)', fontWeight: 400 }}>(shown only in "Icon + label" mode)</span></label>
                   <input value={cfg.text || ''} maxLength={18} onChange={e => set('text', e.target.value)} placeholder="Chat with us" style={S.input} />
                 </div>
                 <div>
@@ -82,7 +91,42 @@ export default function ChatWidgetSettings() {
             </>
           )}
           {step === 1 && <><h2 style={S.h2}>FAQs (Optional)</h2><p style={S.hint}>Add frequently asked questions that show in the widget before a chat starts. Coming soon.</p></>}
-          {step === 2 && <><h2 style={S.h2}>Builder</h2><p style={S.hint}>Fine-tune fields and greeting flow. Coming soon.</p></>}
+          {step === 2 && (
+            <>
+              <h2 style={S.h2}>Chat form</h2>
+              <p style={{ ...S.hint, marginBottom: 16 }}>Choose what to ask visitors before they start a chat, and which fields are required.</p>
+              {(() => {
+                const defaults = [
+                  { key: 'name', label: 'Name' },
+                  { key: 'email', label: 'Email' },
+                  { key: 'mobile', label: 'Mobile number' },
+                ]
+                const fields = cfg.chat_form_fields || { name: { show: true, required: true }, email: { show: true, required: false }, mobile: { show: true, required: false } }
+                const setField = (key: string, patch: any) => set('chat_form_fields', { ...fields, [key]: { ...(fields[key] || {}), ...patch } })
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {defaults.map(f => {
+                      const fc = fields[f.key] || { show: false, required: false }
+                      return (
+                        <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 10 }}>
+                          <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{f.label}</span>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--slate)', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={!!fc.show} onChange={e => setField(f.key, { show: e.target.checked, required: e.target.checked ? fc.required : false })} />
+                            Show
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: fc.show ? 'var(--slate)' : '#ccc', cursor: fc.show ? 'pointer' : 'not-allowed' }}>
+                            <input type="checkbox" disabled={!fc.show} checked={!!fc.required} onChange={e => setField(f.key, { required: e.target.checked })} />
+                            Required
+                          </label>
+                        </div>
+                      )
+                    })}
+                    <p style={{ ...S.hint, marginTop: 4 }}>Name is recommended so you know who you're talking to. If mobile is shown, visitors can opt in to SMS replies.</p>
+                  </div>
+                )
+              })()}
+            </>
+          )}
           {step === 3 && <><h2 style={S.h2}>Location</h2><p style={S.hint}>Choose which pages the widget appears on. Coming soon.</p></>}
           {step === 4 && <><h2 style={S.h2}>Success</h2><p style={S.hint}>Your widget is ready. Save and embed the snippet on your site.</p></>}
         </div>

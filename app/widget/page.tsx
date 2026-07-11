@@ -1424,12 +1424,24 @@ function WidgetContent() {
                   <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#0d0d0d' }}>Chat with us</h3>
                   <p style={{ margin: 0, fontSize: 13, color: '#9ca3af' }}>We're online and ready to help</p>
                 </div>
-                <input value={chatName} onChange={e => setChatName(e.target.value)} placeholder="Your name"
-                  style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
-                <input value={chatEmail} onChange={e => setChatEmail(e.target.value)} placeholder="Your email (optional)" type="email"
-                  style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
-                <input value={chatMobile} onChange={e => setChatMobile(e.target.value)} placeholder="Mobile number (optional)" type="tel"
-                  style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
+                {(() => {
+                  const ff = company?.widget_config?.chat_form_fields || { name: { show: true, required: true }, email: { show: true, required: false }, mobile: { show: true, required: false } }
+                  const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' as const }
+                  const req = (r: boolean) => r ? ' *' : ''
+                  return (
+                    <>
+                      {ff.name?.show && (
+                        <input value={chatName} onChange={e => setChatName(e.target.value)} placeholder={`Your name${req(ff.name.required)}`} style={inputStyle} />
+                      )}
+                      {ff.email?.show && (
+                        <input value={chatEmail} onChange={e => setChatEmail(e.target.value)} placeholder={`Your email${ff.email.required ? ' *' : ' (optional)'}`} type="email" style={inputStyle} />
+                      )}
+                      {ff.mobile?.show && (
+                        <input value={chatMobile} onChange={e => setChatMobile(e.target.value)} placeholder={`Mobile number${ff.mobile.required ? ' *' : ' (optional)'}`} type="tel" style={inputStyle} />
+                      )}
+                    </>
+                  )
+                })()}
                 {chatMobile.trim() && (
                   <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12.5, color: '#6b7280', cursor: 'pointer', lineHeight: 1.4 }}>
                     <input type="checkbox" checked={smsOptIn} onChange={e => setSmsOptIn(e.target.checked)} style={{ marginTop: 2 }} />
@@ -1443,7 +1455,13 @@ function WidgetContent() {
                 )}
                 <button type="button" disabled={chatCreating}
                   onClick={async () => {
-                    if (!chatName.trim()) return
+                    const ff = company?.widget_config?.chat_form_fields || { name: { show: true, required: true }, email: { show: true, required: false }, mobile: { show: true, required: false } }
+                    // Validate required fields per config.
+                    if (ff.name?.show && ff.name?.required && !chatName.trim()) { setChatCreateError('Please enter your name.'); return }
+                    if (ff.email?.show && ff.email?.required && !chatEmail.trim()) { setChatCreateError('Please enter your email.'); return }
+                    if (ff.mobile?.show && ff.mobile?.required && !chatMobile.trim()) { setChatCreateError('Please enter your mobile number.'); return }
+                    // Need at least something to identify the visitor.
+                    if (!chatName.trim() && !chatEmail.trim() && !chatMobile.trim()) { setChatCreateError('Please fill in at least one field.'); return }
                     setChatCreating(true)
                     setChatCreateError('')
                     // Create a contact or look up existing
@@ -1509,7 +1527,7 @@ function WidgetContent() {
                     }
                     setChatCreating(false)
                   }}
-                  style={{ width: '100%', padding: '13px 0', borderRadius: 12, background: accentColor, color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: (chatName.trim() && !chatCreating) ? 'pointer' : 'default', opacity: (chatName.trim() && !chatCreating) ? 1 : 0.5 }}>
+                  style={{ width: '100%', padding: '13px 0', borderRadius: 12, background: accentColor, color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: (!chatCreating && (chatName.trim() || chatEmail.trim() || chatMobile.trim())) ? 'pointer' : 'default', opacity: (!chatCreating && (chatName.trim() || chatEmail.trim() || chatMobile.trim())) ? 1 : 0.5 }}>
                   {chatCreating ? 'Starting…' : 'Start Chat'}
                 </button>
               </div>
@@ -1878,25 +1896,6 @@ function WidgetContent() {
         )}
       </div>
 
-      {/* "Powered by Colvy" — with UTM tracking referral to the company */}
-      <div style={{ borderTop: '1px solid #f0f0f0', background: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '5px 8px 2px', flexShrink: 0 }}>
-        <a
-          href={`https://colvy.com/?utm_source=${encodeURIComponent(slug)}&utm_medium=widget&utm_campaign=powered_by&utm_content=${encodeURIComponent(company?.name || slug)}`}
-          target="_blank"
-          rel="noopener"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: '#9ca3af', fontSize: 10, fontWeight: 600, letterSpacing: 0.2 }}>
-          Powered by
-          {/* Colvy wordmark SVG */}
-          <svg height="12" viewBox="0 0 48 14" xmlns="http://www.w3.org/2000/svg" style={{ display: 'block' }}>
-            <text x="0" y="12" fontFamily="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" fontWeight="800" fontSize="13" fill="#6b7280">Colvy</text>
-          </svg>
-          {/* Arrow-up-right */}
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>
-          </svg>
-        </a>
-      </div>
-
       {/* Footer nav */}
       <div style={{ background: '#fff', display: 'flex', padding: '6px 8px 8px', flexShrink: 0, width: '100%', boxSizing: 'border-box', justifyContent: 'space-around', gap: 2 }}>
         {(['feedback', 'roadmap', 'updates', 'help', 'chat'] as const).map(t => {
@@ -1918,12 +1917,24 @@ function WidgetContent() {
           )
         })}
       </div>
+
+      {/* "Powered by Colvy" — at the very bottom, below the menu items */}
+      <div style={{ borderTop: '1px solid #f0f0f0', background: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '5px 8px 7px', flexShrink: 0 }}>
+        <a
+          href={`https://colvy.com/?utm_source=${encodeURIComponent(slug)}&utm_medium=widget&utm_campaign=powered_by&utm_content=${encodeURIComponent(company?.name || slug)}`}
+          target="_blank"
+          rel="noopener"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: '#9ca3af', fontSize: 10, fontWeight: 600, letterSpacing: 0.2 }}>
+          Powered by
+          <span style={{ fontWeight: 800, fontSize: 12, color: accentColor }}>Colvy</span>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={accentColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>
+          </svg>
+        </a>
+      </div>
     </div>
   )
 }
-
-// Renders an interactive poll/survey/form inside the widget and captures the
-// customer's response into chat_interactions.
 function WidgetInteractive({ msg, companyId, conversationId, respondent, accentColor }: any) {
   const [done, setDone] = React.useState(false)
   const [item, setItem] = React.useState<any>(null)
