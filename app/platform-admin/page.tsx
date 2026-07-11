@@ -221,62 +221,53 @@ function OverviewPage({ data }: { data: any }) {
 
       {/* KPI grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14, marginBottom: 24 }}>
-        <KPI label="Total Companies" value={data.companies?.toLocaleString() || '—'} trend={12} sub="vs last month" spark={sparkA} color="#ff7a6b" />
-        <KPI label="Active Companies" value={data.active?.toLocaleString() || '—'} trend={8} sub="30-day active" spark={sparkB} color="#6366f1" />
-        <KPI label="Trial Users" value={data.trials?.toLocaleString() || '—'} trend={-3} sub="currently trialing" spark={sparkA.map(x => x * 0.6)} color="#f59e0b" />
-        <KPI label="Paid Users" value={data.paid?.toLocaleString() || '—'} trend={15} sub="active subscriptions" spark={sparkB.map(x => x * 1.4)} color="#10b981" />
-        <KPI label="MRR" value={`$${((data.paid || 0) * 49).toLocaleString()}`} trend={11} sub="monthly recurring" spark={sparkA.map(x => x * 2)} color="#8b5cf6" />
-        <KPI label="ARR" value={`$${((data.paid || 0) * 49 * 12).toLocaleString()}`} trend={11} sub="annual run rate" color="#ec4899" />
-        <KPI label="Churn Rate" value="2.4%" trend={-0.3} sub="vs 2.7% last month" color="#ef4444" />
-        <KPI label="Conversion" value="18.2%" trend={2.1} sub="trial → paid" spark={sparkB} color="#0891b2" />
-        <KPI label="New Today" value={data.today?.toLocaleString() || '0'} sub="signups in last 24h" color="#10b981" />
-        <KPI label="DAC" value={data.dac?.toLocaleString() || '—'} sub="daily active companies" spark={sparkA.slice(6)} color="#6366f1" />
-        <KPI label="Total Ideas" value={data.ideas?.toLocaleString() || '—'} trend={6} sub="across all boards" color="#f59e0b" />
-        <KPI label="Help Articles" value={data.articles?.toLocaleString() || '—'} sub="published" color="#0891b2" />
+        <KPI label="Total Companies" value={data.companies?.toLocaleString() ?? '—'} sub="all workspaces" color="#ff7a6b" />
+        <KPI label="Active Companies" value={data.active?.toLocaleString() ?? '—'} sub="active in 30 days" color="#6366f1" />
+        <KPI label="Trial" value={data.trials?.toLocaleString() ?? '—'} sub="on trial plan" color="#f59e0b" />
+        <KPI label="Paid" value={data.paid?.toLocaleString() ?? '—'} sub="paid plans" color="#10b981" />
+        <KPI label="MRR" value={`$${(data.mrr ?? 0).toLocaleString()}`} sub={data.mrrSource === 'subscriptions' ? 'from Stripe subs' : 'est. from plans'} color="#8b5cf6" />
+        <KPI label="ARR" value={`$${(data.arr ?? 0).toLocaleString()}`} sub="annual run rate" color="#ec4899" />
+        <KPI label="Conversion" value={data.conversion != null ? `${data.conversion}%` : '—'} sub="paid ÷ (paid + trial)" color="#0891b2" />
+        <KPI label="New Today" value={data.today?.toLocaleString() ?? '0'} sub="signups in last 24h" color="#10b981" />
+        <KPI label="DAC" value={data.dac?.toLocaleString() ?? '—'} sub="active companies today" color="#6366f1" />
+        <KPI label="Total Ideas" value={data.ideas?.toLocaleString() ?? '—'} sub="across all boards" color="#f59e0b" />
+        <KPI label="Help Articles" value={data.articles?.toLocaleString() ?? '—'} sub="published" color="#0891b2" />
       </div>
 
       {/* Charts row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 24 }}>
-        {/* DAU chart */}
-        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20, gridColumn: 'span 1' }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Daily Active Companies</p>
-          <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 16 }}>Last 7 days</p>
-          <MiniBar data={barData} color="#6366f1" />
-        </div>
-
-        {/* Retention */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 24 }}>
+        {/* Daily active companies (REAL: activity in conversations + ideas) */}
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>12-Month Retention</p>
-          <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 16 }}>Cohort average</p>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 60 }}>
-            {retentionData.map((v, i) => (
-              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <div style={{ width: '100%', background: `hsl(${160 - i * 10}, 70%, ${45 + i * 2}%)`, borderRadius: '3px 3px 0 0', height: `${(v / 100) * 52}px` }} />
-                {i % 3 === 0 && <span style={{ fontSize: 9, color: 'var(--sa-muted)' }}>M{i + 1}</span>}
-              </div>
-            ))}
-          </div>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Daily Active Companies</p>
+          <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 16 }}>Last 7 days · companies with chat or idea activity</p>
+          <MiniBar data={(data.activeSeries || []).map((d: any) => ({ label: new Date(d.day).toLocaleDateString([], { weekday: 'short' }), value: d.count }))} color="#6366f1" />
         </div>
 
-        {/* Plan mix */}
+        {/* Plan distribution (REAL: companies.plan) */}
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 16 }}>Plan Distribution</p>
-          {[
-            { label: 'Growth', pct: 34, color: '#ff7a6b' },
-            { label: 'Business', pct: 28, color: '#6366f1' },
-            { label: 'Startup', pct: 22, color: '#10b981' },
-            { label: 'Free / Trial', pct: 16, color: '#d1d5db' },
-          ].map(p => (
-            <div key={p.label} style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                <span style={{ fontSize: 12, color: 'var(--sa-muted)' }}>{p.label}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sa-text)' }}>{p.pct}%</span>
-              </div>
-              <div style={{ height: 5, borderRadius: 999, background: 'var(--sa-border)' }}>
-                <div style={{ height: '100%', width: `${p.pct}%`, background: p.color, borderRadius: 999 }} />
-              </div>
-            </div>
-          ))}
+          {(() => {
+            const dist = data.planDistribution || {}
+            const order = ['growth', 'business', 'startup', 'trial', 'free', 'enterprise', 'suspended']
+            const colors: Record<string, string> = { growth: '#ff7a6b', business: '#6366f1', startup: '#10b981', trial: '#f59e0b', free: '#d1d5db', enterprise: '#8b5cf6', suspended: '#ef4444' }
+            const total = Object.values(dist).reduce((a: number, b: any) => a + b, 0) as number
+            const keys = Object.keys(dist).sort((a, b) => (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b)))
+            if (total === 0) return <p style={{ fontSize: 12, color: 'var(--sa-muted)' }}>No companies yet.</p>
+            return keys.map(k => {
+              const pct = Math.round((dist[k] / total) * 100)
+              return (
+                <div key={k} style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                    <span style={{ fontSize: 12, color: 'var(--sa-muted)', textTransform: 'capitalize' }}>{k} ({dist[k]})</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sa-text)' }}>{pct}%</span>
+                  </div>
+                  <div style={{ height: 5, borderRadius: 999, background: 'var(--sa-border)' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: colors[k] || '#9ca3af', borderRadius: 999 }} />
+                  </div>
+                </div>
+              )
+            })
+          })()}
         </div>
       </div>
 
@@ -897,6 +888,113 @@ function CrossCompanyContent({ title, sub, table, statusFilter, titleField, extr
   )
 }
 
+function TicketsPage() {
+  const [tickets, setTickets] = useState<any[]>([])
+  const [counts, setCounts] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [priorityFilter, setPriorityFilter] = useState('all')
+
+  const load = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/tickets', { headers: { 'Authorization': `Bearer ${session?.access_token}` } })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not load tickets')
+      setTickets(data.tickets || []); setCounts(data.counts || {})
+    } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [])
+
+  const changeStatus = async (ticketId: string, status: string) => {
+    setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status } : t))
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      await fetch('/api/platform-admin/tickets', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ ticketId, status }) })
+    } catch {}
+  }
+
+  const PRIORITY_COLOR: Record<string, string> = { low: '#9ca3af', normal: '#6366f1', high: '#f59e0b', urgent: '#ef4444' }
+  const filtered = tickets.filter(t => {
+    if (statusFilter !== 'all' && t.status !== statusFilter) return false
+    if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false
+    if (!search) return true
+    const hay = [t.ticket_number, t.subject, t.description, t.company?.name, t.contact?.name, t.contact?.email].filter(Boolean).join(' ').toLowerCase()
+    return hay.includes(search.toLowerCase())
+  })
+
+  return (
+    <div>
+      <SectionHeader title="Support Tickets" sub={`All tickets across every company (${tickets.length})`}
+        action={<button onClick={load} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-muted)', fontSize: 13, cursor: 'pointer' }}>{I.refresh} Refresh</button>} />
+
+      {/* Status summary chips */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        {[['all', 'All', tickets.length], ['open', 'Open', counts.open || 0], ['in_progress', 'In Progress', counts.in_progress || 0], ['resolved', 'Resolved', counts.resolved || 0], ['closed', 'Closed', counts.closed || 0]].map(([key, label, n]: any) => (
+          <button key={key} onClick={() => setStatusFilter(key)}
+            style={{ padding: '8px 14px', borderRadius: 10, border: statusFilter === key ? '2px solid #ff7a6b' : '1px solid var(--sa-border)', background: statusFilter === key ? 'rgba(255,122,107,0.1)' : 'var(--sa-card)', color: statusFilter === key ? '#ff7a6b' : 'var(--sa-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            {label} <span style={{ opacity: 0.7 }}>({n})</span>
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+        <div style={{ flex: 1 }}><SearchBar placeholder="Search ticket #, subject, company, customer..." value={search} onChange={setSearch} /></div>
+        <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-text)', fontSize: 13 }}>
+          <option value="all">All priorities</option>
+          <option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
+        </select>
+      </div>
+
+      {err && <div style={{ padding: '10px 14px', borderRadius: 9, background: '#fee2e2', color: '#dc2626', fontSize: 13, marginBottom: 14 }}>{err}</div>}
+
+      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--sa-border)' }}>
+              {['Ticket', 'Company', 'Customer', 'Priority', 'Created', 'Status'].map(h => (
+                <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading...</td></tr>
+            : filtered.length === 0 ? <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>No tickets found</td></tr>
+            : filtered.map((t, i) => (
+              <tr key={t.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--sa-border)' : 'none' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--sa-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <td style={{ padding: '12px 16px' }}>
+                  <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)' }}>{t.ticket_number}</p>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--sa-muted)', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject || '(no subject)'}</p>
+                </td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>
+                  {t.company ? <button onClick={() => window.open(`https://${t.company.slug}.colvy.com/admin/inbox`, '_blank')} style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', fontSize: 12, padding: 0 }}>{t.company.name}</button> : '—'}
+                </td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{t.contact?.name || t.contact?.email || '—'}</td>
+                <td style={{ padding: '12px 16px' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: PRIORITY_COLOR[t.priority] || '#6366f1', textTransform: 'capitalize' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: PRIORITY_COLOR[t.priority] || '#6366f1' }} />{t.priority}
+                  </span>
+                </td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{t.created_at ? new Date(t.created_at).toLocaleDateString() : '—'}</td>
+                <td style={{ padding: '12px 16px' }}>
+                  <select value={t.status} onChange={e => changeStatus(t.id, e.target.value)}
+                    style={{ padding: '5px 8px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 12, cursor: 'pointer' }}>
+                    <option value="open">Open</option><option value="in_progress">In Progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option>
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function PlaceholderPage({ title, sub }: { title: string; sub: string }) {
   return (
     <div>
@@ -940,26 +1038,13 @@ export default function SuperAdmin() {
         return
       }
       setAuthed(true)
-      // Load real stats
-      const [coRes, ideaRes, artRes] = await Promise.all([
-        (supabase as any).from('companies').select('*', { count: 'exact', head: true }),
-        (supabase as any).from('ideas').select('*', { count: 'exact', head: true }),
-        (supabase as any).from('help_articles').select('*', { count: 'exact', head: true }),
-      ])
-      // Active = created in last 30 days
-      const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString()
-      const { count: activeCount } = await (supabase as any).from('companies').select('*', { count: 'exact', head: true }).gte('created_at', thirtyAgo)
-      const { count: todayCount } = await (supabase as any).from('companies').select('*', { count: 'exact', head: true }).gte('created_at', new Date().toISOString().split('T')[0])
-      setData({
-        companies: coRes.count || 0,
-        active: activeCount || 0,
-        trials: Math.round((coRes.count || 0) * 0.18),
-        paid: Math.round((coRes.count || 0) * 0.24),
-        today: todayCount || 0,
-        dac: Math.round((activeCount || 0) * 0.6),
-        ideas: ideaRes.count || 0,
-        articles: artRes.count || 0,
-      })
+      // Load real, computed stats from the analytics endpoint (service-role:
+      // reads across all companies + subscriptions, computes activity/MRR).
+      try {
+        const res = await fetch('/api/platform-admin/analytics', { headers: { 'Authorization': `Bearer ${s.session.access_token}` } })
+        const d = await res.json()
+        if (res.ok) setData(d)
+      } catch {}
     })
   }, [])
 
@@ -1108,7 +1193,7 @@ export default function SuperAdmin() {
           {page === 'announce'   && <CrossCompanyContent title="Announcements" sub="All announcements and changelog posts" table="announcements" />}
           {page === 'help'       && <CrossCompanyContent title="Help Center" sub="Help articles across all companies" table="help_articles" extraCol={{ header: 'Views', render: (r) => <span>{r.views ?? 0}</span> }} />}
           {page === 'chat'       && <PlaceholderPage title="Live Chat" sub="Global inbox for all live chat conversations" />}
-          {page === 'tickets'    && <PlaceholderPage title="Support Tickets" sub="All open and closed support tickets" />}
+          {page === 'tickets'    && <TicketsPage />}
           {page === 'moderation' && <PlaceholderPage title="Moderation" sub="Flagged content, spam and reported ideas" />}
           {page === 'billing'    && <PlaceholderPage title="Billing" sub="Revenue, invoices, refunds and Stripe reconciliation" />}
           {page === 'settings'   && <PlaceholderPage title="Settings" sub="Super admin configuration, API keys and integrations" />}
