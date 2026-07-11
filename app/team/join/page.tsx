@@ -18,6 +18,18 @@ function JoinTeamContent() {
   const [invitation, setInvitation] = useState<any>(null)
   const [accepting, setAccepting] = useState(false)
   const [accepted, setAccepted] = useState(false)
+  const [password, setPassword] = useState('')
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null)
+  const [checkingSession, setCheckingSession] = useState(true)
+  const [acceptError, setAcceptError] = useState<string | null>(null)
+
+  useEffect(() => {
+    ;(async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      setSessionEmail(session?.user?.email || null)
+      setCheckingSession(false)
+    })()
+  }, [])
 
   useEffect(() => {
     loadInvitation()
@@ -31,14 +43,14 @@ function JoinTeamContent() {
         return
       }
 
-      // Load company
+      // Load company (maybeSingle never throws on no-rows, unlike .single)
       const { data: co } = await (supabase as any)
         .from('companies')
         .select('*')
         .eq('slug', company)
-        .single()
+        .maybeSingle()
 
-      if (!co) throw new Error('Company not found')
+      if (!co) throw new Error('Company not found. Ask your inviter to resend the invitation.')
       setCompanyData(co)
 
       // Load invitation
@@ -66,32 +78,47 @@ function JoinTeamContent() {
 
   const handleAccept = async () => {
     setAccepting(true)
+    setAcceptError(null)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user) throw new Error('Please sign in first')
+      let { data: { session } } = await supabase.auth.getSession()
 
-      if (session.user.email !== email) {
-        throw new Error(`You must sign in with ${email} to accept this invitation`)
+      // Not signed in (or signed in as the wrong person): use the password field
+      // to sign in, or create the account if it doesn't exist yet.
+      if (!session?.user || session.user.email !== email) {
+        if (session?.user && session.user.email !== email) {
+          await supabase.auth.signOut()
+        }
+        if (!password || password.length < 6) {
+          throw new Error('Enter a password (at least 6 characters) to join.')
+        }
+        // Try sign-in first (existing account), else sign up.
+        const signInRes = await supabase.auth.signInWithPassword({ email: email!, password })
+        if (signInRes.error) {
+          const signUpRes = await supabase.auth.signUp({ email: email!, password })
+          if (signUpRes.error) {
+            // If the user exists but the password was wrong, say so clearly.
+            if (/already registered|already exists/i.test(signUpRes.error.message)) {
+              throw new Error('An account with this email exists, but that password is incorrect. Use your existing password, or reset it.')
+            }
+            throw signUpRes.error
+          }
+        }
+        const re = await supabase.auth.getSession()
+        session = re.data.session
+        if (!session?.user) throw new Error('Could not sign you in. Please try again.')
       }
 
-      // Update invitation status
+      // Accept: activate the membership and attach the user id.
       const { error: updateErr } = await (supabase as any)
         .from('team_members')
-        .update({
-          status: 'active',
-          user_id: session.user.id,
-          joined_at: new Date().toISOString(),
-        })
+        .update({ status: 'active', user_id: session.user.id, joined_at: new Date().toISOString() })
         .eq('id', invitation.id)
-
       if (updateErr) throw updateErr
 
       setAccepted(true)
-      setTimeout(() => {
-        router.push(`/admin`)
-      }, 2000)
+      setTimeout(() => { router.push('/admin') }, 1500)
     } catch (err: any) {
-      setError(err.message)
+      setAcceptError(err.message)
     } finally {
       setAccepting(false)
     }
@@ -148,6 +175,31 @@ function JoinTeamContent() {
           </p>
         </div>
 
+        {/* If not already signed in as the invited user, collect a password to
+            sign in or create the account. */}
+        {!checkingSession && sessionEmail !== email && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, color: 'var(--slate)', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+              {sessionEmail ? `You're signed in as ${sessionEmail}. Enter the password for ${email} to switch and join.` : `Set a password for ${email} (or enter your existing one)`}
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="Password (min 6 characters)"
+              onKeyDown={e => e.key === 'Enter' && handleAccept()}
+              style={{ width: '100%', padding: '11px 14px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }}
+            />
+          </div>
+        )}
+
+        {acceptError && (
+          <div style={{ background: '#fef2f2', color: '#dc2626', padding: '10px 14px', borderRadius: 9, fontSize: 13, marginBottom: 14, lineHeight: 1.4 }}>
+            {acceptError}
+            {/rese?t/i.test(acceptError) && <> <a href="/reset-password" style={{ color: '#dc2626', fontWeight: 700 }}>Reset password</a></>}
+          </div>
+        )}
+
         <button
           onClick={handleAccept}
           disabled={accepting}
@@ -164,7 +216,7 @@ function JoinTeamContent() {
             opacity: accepting ? 0.6 : 1,
             marginBottom: 12,
           }}>
-          {accepting ? '⏳ Accepting...' : '✅ Accept Invitation'}
+          {accepting ? 'Joining…' : 'Accept & Join'}
         </button>
 
         <p style={{ fontSize: 12, color: 'var(--slate)', textAlign: 'center' }}>
