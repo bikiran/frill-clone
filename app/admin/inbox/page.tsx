@@ -630,6 +630,76 @@ export default function InboxPage() {
     setPickerItems(data || [])
   }
 
+  const generateInvoice = async (payload: any) => {
+    if (!companyId || !payload?.order_id) return
+    try {
+      const res = await fetch(`/api/orders/details?companyId=${companyId}&orderId=${payload.order_id}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not load order')
+      const { order, company } = data
+      const { jsPDF } = await import('jspdf')
+      const doc = new jsPDF()
+      let y = 18
+      doc.setFontSize(18); doc.setFont(undefined, 'bold')
+      doc.text(company.name || 'Invoice', 14, y); y += 8
+      doc.setFontSize(10); doc.setFont(undefined, 'normal')
+      if (company.business_address) { doc.text(String(company.business_address), 14, y); y += 5 }
+      if (company.business_email) { doc.text(String(company.business_email), 14, y); y += 5 }
+      if (company.abn_acn) { doc.text(`ABN/ACN: ${company.abn_acn}`, 14, y); y += 5 }
+      y += 4
+      doc.setFontSize(14); doc.setFont(undefined, 'bold')
+      doc.text(`Invoice — Order #${order.number}`, 14, y); y += 7
+      doc.setFontSize(10); doc.setFont(undefined, 'normal')
+      doc.text(`Date: ${new Date(order.date).toLocaleDateString()}`, 14, y); y += 5
+      doc.text(`Status: ${order.status}`, 14, y); y += 8
+      // Bill to
+      doc.setFont(undefined, 'bold'); doc.text('Bill to:', 14, y); y += 5; doc.setFont(undefined, 'normal')
+      const b = order.billing || {}
+      doc.text(`${b.first_name || ''} ${b.last_name || ''}`.trim(), 14, y); y += 5
+      if (b.email) { doc.text(b.email, 14, y); y += 5 }
+      const addr = [b.address_1, b.city, b.state, b.postcode].filter(Boolean).join(', ')
+      if (addr) { doc.text(addr, 14, y); y += 5 }
+      y += 4
+      // Items table header
+      doc.setFont(undefined, 'bold')
+      doc.text('Item', 14, y); doc.text('Qty', 130, y); doc.text('Total', 170, y); y += 3
+      doc.line(14, y, 196, y); y += 5
+      doc.setFont(undefined, 'normal')
+      ;(order.line_items || []).forEach((li: any) => {
+        const name = doc.splitTextToSize(li.name, 100)
+        doc.text(name, 14, y); doc.text(String(li.quantity), 130, y); doc.text(`$${li.total}`, 170, y)
+        y += (name.length * 5) + 2
+        if (y > 260) { doc.addPage(); y = 20 }
+      })
+      y += 2; doc.line(14, y, 196, y); y += 6
+      const money = (v: any) => `$${parseFloat(v || 0).toFixed(2)}`
+      const right = (label: string, val: string, bold = false) => { doc.setFont(undefined, bold ? 'bold' : 'normal'); doc.text(label, 130, y); doc.text(val, 170, y); y += 6 }
+      if (parseFloat(order.discount_total) > 0) right('Discount', `-${money(order.discount_total)}`)
+      if (parseFloat(order.shipping_total) > 0) right('Shipping', money(order.shipping_total))
+      if (parseFloat(order.total_tax) > 0) right('Tax (incl.)', money(order.total_tax))
+      right('Total', `${order.currency || 'AUD'} ${money(order.total)}`, true)
+      doc.save(`invoice-${order.number}.pdf`)
+      showToast('Invoice downloaded')
+    } catch (e: any) { showToast(e.message || 'Could not generate invoice') }
+  }
+
+  const sendOrderPaymentRequest = async (payload: any) => {
+    if (!companyId || !selected) return
+    // Reuse the existing in-chat payment request feature, tagged to this order so
+    // that when the customer pays, the order is marked processing.
+    try {
+      const amount = (parseFloat(payload.total) || 0).toFixed(2)
+      const res = await fetch('/api/stripe/chat-payment', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, conversationId: selected.id, amount, description: `Order #${payload.order_number}`, senderName: user?.user_metadata?.display_name || user?.email?.split('@')[0], orderId: payload.order_id, integrationId: payload.integration_id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not send payment request')
+      showToast('Payment request sent')
+      selectConversation(selected)
+    } catch (e: any) { showToast(e.message || 'Failed to send payment request') }
+  }
+
   const updateOrderStatus = async (payload: any, status: string) => {
     if (!companyId || !payload?.order_id) return
     const verb = status === 'cancelled' ? 'cancel' : 'mark paid'
@@ -1480,14 +1550,20 @@ export default function InboxPage() {
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                               <a href={`${msg.message_payload.store_url}/wp-admin/post.php?post=${msg.message_payload.order_id}&action=edit`} target="_blank" rel="noopener"
                                 style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)', textDecoration: 'none', padding: '5px 10px', border: '1px solid var(--border)', borderRadius: 7 }}>View order</a>
+                              <button type="button" onClick={() => sendOrderPaymentRequest(msg.message_payload)}
+                                style={{ fontSize: 12, fontWeight: 600, color: '#635BFF', background: '#fff', border: '1px solid #c7d2fe', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Send payment request</button>
+                              <button type="button" onClick={() => generateInvoice(msg.message_payload)}
+                                style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', background: '#fff', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Invoice PDF</button>
                               {msg.message_payload.pay_link && (
                                 <button type="button" onClick={() => { navigator.clipboard?.writeText(msg.message_payload.pay_link); showToast('Payment link copied') }}
-                                  style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', background: '#fff', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Copy payment link</button>
+                                  style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', background: '#fff', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Copy link</button>
                               )}
+                              <button type="button" onClick={() => updateOrderStatus(msg.message_payload, 'processing')}
+                                style={{ fontSize: 12, fontWeight: 600, color: '#4f46e5', background: '#fff', border: '1px solid #c7d2fe', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Mark paid (bank/other)</button>
                               <button type="button" onClick={() => updateOrderStatus(msg.message_payload, 'completed')}
-                                style={{ fontSize: 12, fontWeight: 600, color: '#059669', background: '#fff', border: '1px solid #bbf7d0', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Mark paid</button>
+                                style={{ fontSize: 12, fontWeight: 600, color: '#059669', background: '#fff', border: '1px solid #bbf7d0', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Mark completed</button>
                               <button type="button" onClick={() => updateOrderStatus(msg.message_payload, 'cancelled')}
-                                style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', background: '#fff', border: '1px solid #fecaca', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Cancel order</button>
+                                style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', background: '#fff', border: '1px solid #fecaca', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Cancel</button>
                             </div>
                           </div>
                         )}

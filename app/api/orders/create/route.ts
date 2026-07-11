@@ -22,7 +22,7 @@ function admin() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { companyId, integrationId, conversationId, contactId, customer, items, coupons, orderDiscount, fees, shipping, customerNote, internalNote, status, setPaid, createdByName } = body
+    const { companyId, integrationId, conversationId, contactId, customer, items, coupons, orderDiscount, fees, shipping, customerNote, internalNote, status, setPaid, createdByName, isQuote } = body
     if (!companyId || !items?.length) return NextResponse.json({ error: 'Missing companyId or items' }, { status: 400 })
 
     const db = admin()
@@ -138,9 +138,9 @@ export async function POST(req: NextRequest) {
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 })
     const order = result.order
 
-    // ── Internal note (staff-only) after creation
+    // ── Internal note (staff-only) after creation, attributed to the staff member
     if (internalNote && internalNote.trim()) {
-      await woo.addOrderNote(order.id, `[Colvy] ${internalNote.trim()}`, false)
+      await woo.addOrderNote(order.id, `[Colvy · ${createdByName || 'staff'}] ${internalNote.trim()}`, false)
     }
     await woo.addOrderNote(order.id, `Order created from Colvy chat${createdByName ? ` by ${createdByName}` : ''}.`, false)
 
@@ -150,14 +150,15 @@ export async function POST(req: NextRequest) {
     // ── Post the audit event into the conversation
     if (conversationId) {
       try {
-        const content = `🛒 WooCommerce order #${order.number || order.id} created\nTotal: ${order.currency || 'AUD'} $${order.total}\nStatus: ${order.status}${createdByName ? `\nCreated by: ${createdByName}` : ''}`
+        const noun = isQuote ? 'Quote' : 'WooCommerce order'
+        const content = `🛒 ${noun} #${order.number || order.id} created\nTotal: ${order.currency || 'AUD'} $${order.total}\nStatus: ${order.status}${createdByName ? `\nCreated by: ${createdByName}` : ''}`
         await db.from('messages').insert({
           conversation_id: conversationId, company_id: companyId, sender_type: 'system',
           content,
           message_type: 'order',
-          message_payload: { kind: 'order', order_id: order.id, order_number: order.number || order.id, total: order.total, currency: order.currency, status: order.status, pay_link: payLink, store_url: integ.store_url },
+          message_payload: { kind: 'order', is_quote: !!isQuote, order_id: order.id, order_number: order.number || order.id, total: order.total, currency: order.currency, status: order.status, pay_link: payLink, store_url: integ.store_url },
         })
-        await db.from('conversations').update({ last_message: `🛒 Order #${order.number || order.id} created`, last_message_at: new Date().toISOString() }).eq('id', conversationId)
+        await db.from('conversations').update({ last_message: `🛒 ${noun} #${order.number || order.id} created`, last_message_at: new Date().toISOString() }).eq('id', conversationId)
       } catch {}
     }
 

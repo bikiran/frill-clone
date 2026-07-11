@@ -49,6 +49,27 @@ export async function POST(req: NextRequest) {
             const { data: m } = await (supabase as any).from('messages').select('message_payload').eq('id', pay.message_id).maybeSingle()
             await (supabase as any).from('messages').update({ message_payload: { ...(m?.message_payload || {}), status: 'paid' } }).eq('id', pay.message_id)
           }
+          // If this payment was for a WooCommerce order, mark it processing.
+          if (meta.orderId) {
+            try {
+              let integ: any = null
+              if (meta.integrationId) {
+                const r = await (supabase as any).from('woocommerce_integrations').select('*').eq('id', meta.integrationId).maybeSingle()
+                integ = r.data
+              }
+              if (!integ) {
+                const r = await (supabase as any).from('woocommerce_integrations').select('*').eq('company_id', meta.companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)
+                integ = r.data?.[0] || null
+              }
+              if (integ?.store_url) {
+                await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${meta.orderId}`, {
+                  method: 'PUT',
+                  headers: { 'Authorization': `Basic ${Buffer.from(`${integ.consumer_key}:${integ.consumer_secret}`).toString('base64')}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ status: 'processing', set_paid: true }),
+                })
+              }
+            } catch {}
+          }
           // Post a confirmation system message
           await (supabase as any).from('messages').insert({
             conversation_id: meta.conversationId, company_id: meta.companyId,

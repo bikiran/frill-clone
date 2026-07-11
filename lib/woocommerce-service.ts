@@ -129,22 +129,35 @@ export class WooCommerceService {
 
   // ── Create Order support ───────────────────────────────────────────────
 
-  // Live product search: name / SKU. Returns normalized products with stock,
-  // price, tax status, image, and any variations.
-  async searchProducts(query: string, limit = 12): Promise<any[]> {
+  // Live product search. WooCommerce's `search=` only matches title/content, NOT
+  // SKU (SKUs live in post meta, excluded for performance). So we run the text
+  // search AND a SKU search in parallel and merge, de-duplicated. We also widen
+  // per_page so more matches surface.
+  async searchProducts(query: string, limit = 20): Promise<any[]> {
+    const norm = (p: any) => ({
+      id: p.id, name: p.name, sku: p.sku, type: p.type,
+      price: p.price, regular_price: p.regular_price, sale_price: p.sale_price,
+      tax_status: p.tax_status, tax_class: p.tax_class,
+      stock_status: p.stock_status, stock_quantity: p.stock_quantity, manage_stock: p.manage_stock,
+      image: p.images?.[0]?.src || null,
+      has_variations: p.type === 'variable' && (p.variations?.length || 0) > 0,
+      variation_ids: p.variations || [],
+    })
     try {
-      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/products?search=${encodeURIComponent(query)}&per_page=${limit}&status=publish`, { headers: this.wcHeaders() })
-      if (!res.ok) return []
-      const products = await res.json()
-      return (products || []).map((p: any) => ({
-        id: p.id, name: p.name, sku: p.sku, type: p.type,
-        price: p.price, regular_price: p.regular_price, sale_price: p.sale_price,
-        tax_status: p.tax_status, tax_class: p.tax_class,
-        stock_status: p.stock_status, stock_quantity: p.stock_quantity, manage_stock: p.manage_stock,
-        image: p.images?.[0]?.src || null,
-        has_variations: p.type === 'variable' && (p.variations?.length || 0) > 0,
-        variation_ids: p.variations || [],
-      }))
+      const base = `${this.config.storeUrl}/wp-json/wc/v3/products`
+      const h = this.wcHeaders()
+      // Run three lookups: text search, exact SKU, and partial-SKU-via-search.
+      const [byText, bySkuExact] = await Promise.all([
+        fetch(`${base}?search=${encodeURIComponent(query)}&per_page=${limit}&status=publish`, { headers: h }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${base}?sku=${encodeURIComponent(query)}&per_page=${limit}&status=publish`, { headers: h }).then(r => r.ok ? r.json() : []).catch(() => []),
+      ])
+      // Merge, de-duplicate by id, keep order (text matches first, then SKU).
+      const seen = new Set<number>()
+      const merged: any[] = []
+      for (const p of [...(byText || []), ...(bySkuExact || [])]) {
+        if (p && p.id && !seen.has(p.id)) { seen.add(p.id); merged.push(norm(p)) }
+      }
+      return merged
     } catch { return [] }
   }
 
@@ -269,6 +282,37 @@ export class WooCommerceService {
       })
       return res.ok
     } catch { return false }
+  }
+
+  // Read the store's configured shipping methods across all zones, so staff
+  // pick a real method rather than a hardcoded list.
+  async getShippingMethods(): Promise<Array<{ zone: string; method_id: string; title: string; cost?: string }>> {
+    try {
+      const h = this.wcHeaders()
+      const zonesRes = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/shipping/zones`, { headers: h })
+      if (!zonesRes.ok) return []
+      const zones = await zonesRes.json()
+      // Include zone 0 ("Rest of the world") which the zones list may omit.
+      const zoneList = [...(zones || [])]
+      const out: Array<{ zone: string; method_id: string; title: string; cost?: string }> = []
+      for (const z of zoneList) {
+        try {
+          const mRes = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/shipping/zones/${z.id}/methods`, { headers: h })
+          if (!mRes.ok) continue
+          const methods = await mRes.json()
+          for (const m of (methods || [])) {
+            if (m.enabled === false) continue
+            out.push({
+              zone: z.name || 'Zone',
+              method_id: m.method_id,
+              title: m.title || m.method_title || m.method_id,
+              cost: m.settings?.cost?.value || m.settings?.cost || undefined,
+            })
+          }
+        } catch {}
+      }
+      return out
+    } catch { return [] }
   }
 
   async getCustomers(): Promise<WooCommerceCustomer[]> {

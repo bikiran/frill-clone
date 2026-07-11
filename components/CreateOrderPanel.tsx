@@ -31,6 +31,9 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
   // Source picker
   const [sources, setSources] = useState<any[]>([])
   const [source, setSource] = useState<any>(null)
+  const [shippingMethods, setShippingMethods] = useState<any[]>([])
+  const [locations, setLocations] = useState<any[]>([])
+  const [pickupLocationId, setPickupLocationId] = useState('')
 
   // Customer (pre-filled, editable)
   const [editingCustomer, setEditingCustomer] = useState(false)
@@ -78,6 +81,8 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
       const res = await fetch(`/api/orders/sources?companyId=${companyId}`)
       const data = await res.json()
       setSources(data.sources || [])
+      setShippingMethods(data.shippingMethods || [])
+      setLocations(data.locations || [])
       const firstWoo = (data.sources || []).find((s: any) => s.platform === 'woocommerce')
       setSource(firstWoo || (data.sources || [])[0] || null)
     })()
@@ -131,6 +136,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
     return orderDiscType === 'percent' ? subtotal * (amt / 100) : amt
   })()
   const feesTotal = fees.reduce((s, f) => s + (parseFloat(f.amount) || 0), 0)
+  const isQuote = shipMethod === 'quote_later'
   const shippingValue = ['free', 'pickup', 'quote_later', 'none'].includes(shipMethod) ? 0 : (parseFloat(shipCost) || 0)
   const taxableBase = Math.max(0, subtotal - orderDiscountValue) + feesTotal + shippingValue
   const gst = taxableBase * GST_RATE / (1 + GST_RATE) // GST-inclusive display estimate
@@ -164,9 +170,15 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
           items: items.map(it => ({ product_id: it.product_id, variation_id: it.variation_id, quantity: it.quantity, name: it.name, price: it.price, custom_price: it.custom_price, custom_name: it.product_id ? undefined : it.name })),
           coupons: appliedCoupon ? [appliedCoupon.code] : [],
           orderDiscount: orderDiscAmount ? { type: 'fixed', amount: orderDiscountValue.toFixed(2), label: orderDiscLabel || 'Discount' } : null,
-          fees, shipping: { method: shipMethod, label: shipLabel, cost: shipCost },
+          fees, shipping: {
+            method: shipMethod.startsWith('zone:') ? 'flat' : shipMethod,
+            label: shipMethod === 'pickup' && pickupLocationId ? `Pickup — ${(locations.find((l: any) => l.id === pickupLocationId)?.label || 'location')}` : shipLabel,
+            cost: shipCost,
+            pickup_location_id: shipMethod === 'pickup' ? pickupLocationId : undefined,
+          },
+          isQuote,
           customerNote, internalNote,
-          status: withPaymentLink ? 'pending' : status,
+          status: isQuote ? 'draft' : (withPaymentLink ? 'pending' : status),
           setPaid: false,
           createdByName: staffName, staffId,
           ignoreStockWarnings: ignoreStock,
@@ -355,18 +367,49 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
               <button onClick={() => setFees([...fees, { name: '', amount: '' }])} style={{ fontSize: 12.5, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>+ Add custom fee</button>
 
               {/* Shipping */}
-              <label style={L}>Shipping</label>
-              <select value={shipMethod} onChange={e => setShipMethod(e.target.value)} style={I}>
-                <option value="flat">Flat rate</option>
-                <option value="free">Free shipping</option>
-                <option value="pickup">Local pickup</option>
-                <option value="quote_later">Quote later</option>
-                <option value="none">No shipping</option>
+              <label style={L}>Shipping / fulfilment</label>
+              <select value={shipMethod} onChange={e => { setShipMethod(e.target.value); const m = shippingMethods.find(sm => `zone:${sm.method_id}:${sm.title}` === e.target.value); if (m) { setShipLabel(m.title); setShipCost(m.cost || '') } }} style={I}>
+                {/* Real WooCommerce methods */}
+                {shippingMethods.length > 0 && <optgroup label="From your store">
+                  {shippingMethods.map((m, i) => (
+                    <option key={i} value={`zone:${m.method_id}:${m.title}`}>{m.title}{m.zone ? ` — ${m.zone}` : ''}{m.cost ? ` ($${m.cost})` : ''}</option>
+                  ))}
+                </optgroup>}
+                <optgroup label="Other">
+                  <option value="flat">Flat rate (custom)</option>
+                  <option value="free">Free shipping</option>
+                  <option value="pickup">Pickup at location</option>
+                  <option value="quote_later">Quote later (send as quote)</option>
+                  <option value="none">No shipping</option>
+                </optgroup>
               </select>
               {shipMethod === 'flat' && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <input style={{ ...I, flex: 1 }} value={shipLabel} onChange={e => setShipLabel(e.target.value)} placeholder="Label" />
                   <input style={{ ...I, width: 90 }} value={shipCost} onChange={e => setShipCost(e.target.value)} placeholder="$" />
+                </div>
+              )}
+              {shipMethod === 'pickup' && (
+                <div style={{ marginTop: 8 }}>
+                  {locations.length > 0 ? (
+                    <select value={pickupLocationId} onChange={e => setPickupLocationId(e.target.value)} style={I}>
+                      <option value="">Select a pickup location…</option>
+                      {locations.map((loc: any) => (
+                        <option key={loc.id} value={loc.id}>{loc.label || loc.suburb || 'Location'}{loc.state ? ` — ${loc.state}` : ''}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p style={{ fontSize: 12, color: 'var(--slate)' }}>No business locations set. Add them in Settings → Locations.</p>
+                  )}
+                </div>
+              )}
+              {shipMethod === 'quote_later' && (
+                <p style={{ fontSize: 12, color: 'var(--slate)', marginTop: 6 }}>This will be sent as a quote (draft order) — no payment is requested until you confirm shipping.</p>
+              )}
+              {shipMethod?.startsWith('zone:') && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <input style={{ ...I, flex: 1 }} value={shipLabel} onChange={e => setShipLabel(e.target.value)} placeholder="Label" />
+                  <input style={{ ...I, width: 90 }} value={shipCost} onChange={e => setShipCost(e.target.value)} placeholder="$ (override)" />
                 </div>
               )}
 

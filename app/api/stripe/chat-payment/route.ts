@@ -22,7 +22,7 @@ function stripe() {
 // still feeling inline — the widget shows amount + a secure Pay button.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId, amount, description, senderName } = await req.json()
+    const { companyId, conversationId, amount, description, senderName, orderId, integrationId } = await req.json()
     if (!companyId || !conversationId || !amount) {
       return NextResponse.json({ error: 'Missing companyId, conversationId or amount' }, { status: 400 })
     }
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       payment_intent_data: applicationFee > 0 ? { application_fee_amount: applicationFee } : undefined,
       success_url: `${origin}/pay/success?cs={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/pay/cancelled`,
-      metadata: { kind: 'chat_payment', companyId, conversationId },
+      metadata: { kind: 'chat_payment', companyId, conversationId, orderId: orderId ? String(orderId) : '', integrationId: integrationId ? String(integrationId) : '' },
     }, useOwnKeys ? undefined : { stripeAccount: company.stripe_account_id })
 
     // Post the payment message into the chat
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
       sender_name: senderName || company.name,
       content: `💳 Payment request: $${(cents / 100).toFixed(2)} AUD${description ? ` — ${description}` : ''}`,
       message_type: 'payment',
-      message_payload: { amount_cents: cents, currency: 'aud', description: description || null, checkout_url: session.url, status: 'pending' },
+      message_payload: { amount_cents: cents, currency: 'aud', description: description || null, checkout_url: session.url, status: 'pending', order_id: orderId || null },
     }).select().maybeSingle()
 
     // Record the payment
