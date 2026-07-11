@@ -47,14 +47,15 @@ export async function GET(req: NextRequest) {
     const trialCompanies = (companies || []).filter((c: any) => (c.plan || '').toLowerCase() === 'trial').length
     const newToday = (companies || []).filter((c: any) => c.created_at && c.created_at >= today).length
 
-    // ── MRR (REAL): prefer live subscriptions; fall back to plan-based estimate.
+    // ── MRR (REAL): prefer live subscription amounts; fall back to plan estimate.
     let mrr = 0
     let mrrSource = 'plan_estimate'
     try {
-      const { data: subs } = await db.from('subscriptions').select('tier, status').eq('status', 'active')
+      const { data: subs } = await db.from('subscriptions').select('amount_cents, billing_interval, status').eq('status', 'active')
       if (subs && subs.length) {
-        mrr = subs.reduce((sum: number, s: any) => sum + (PLAN_PRICE[(s.tier || 'free').toLowerCase()] || 0), 0)
-        mrrSource = 'subscriptions'
+        const monthly = (a: number, iv: string) => iv === 'year' ? a / 12 : iv === 'week' ? a * 52 / 12 : iv === 'day' ? a * 365 / 12 : a
+        const totalCents = subs.reduce((sum: number, s: any) => sum + monthly(s.amount_cents || 0, s.billing_interval || 'month'), 0)
+        if (totalCents > 0) { mrr = Math.round(totalCents / 100); mrrSource = 'subscriptions' }
       }
     } catch {}
     if (mrrSource === 'plan_estimate') {

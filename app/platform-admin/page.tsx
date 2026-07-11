@@ -888,6 +888,91 @@ function CrossCompanyContent({ title, sub, table, statusFilter, titleField, extr
   )
 }
 
+function SubscriptionsPage() {
+  const [subs, setSubs] = useState<any[]>([])
+  const [mrr, setMrr] = useState(0)
+  const [arr, setArr] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+
+  const load = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/subscriptions', { headers: { 'Authorization': `Bearer ${session?.access_token}` } })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not load subscriptions')
+      setSubs(data.subscriptions || []); setMrr(data.mrr || 0); setArr(data.arr || 0)
+    } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [])
+
+  const sync = async () => {
+    setSyncing(true); setMsg(''); setErr('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/subscriptions', { method: 'POST', headers: { 'Authorization': `Bearer ${session?.access_token}` } })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Sync failed')
+      setMsg(`Synced ${data.synced} subscription${data.synced === 1 ? '' : 's'} from Stripe${data.skipped ? ` (${data.skipped} skipped — no matching user)` : ''}.`)
+      await load()
+    } catch (e: any) { setErr(e.message) } finally { setSyncing(false) }
+  }
+
+  const STATUS_COLOR: Record<string, string> = { active: '#10b981', trialing: '#6366f1', past_due: '#f59e0b', canceled: '#ef4444' }
+
+  return (
+    <div>
+      <SectionHeader title="Subscriptions" sub="Live Stripe subscriptions and recurring revenue"
+        action={<button onClick={sync} disabled={syncing} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: 'none', background: '#635BFF', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{I.refresh} {syncing ? 'Syncing…' : 'Sync from Stripe'}</button>} />
+
+      {msg && <div style={{ padding: '10px 14px', borderRadius: 9, background: '#ecfdf5', color: '#059669', fontSize: 13, marginBottom: 14 }}>{msg}</div>}
+      {err && <div style={{ padding: '10px 14px', borderRadius: 9, background: '#fee2e2', color: '#dc2626', fontSize: 13, marginBottom: 14 }}>{err}</div>}
+
+      {/* MRR / ARR summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14, marginBottom: 20 }}>
+        <KPI label="MRR" value={`$${mrr.toLocaleString()}`} sub="from active subscriptions" color="#8b5cf6" />
+        <KPI label="ARR" value={`$${arr.toLocaleString()}`} sub="annual run rate" color="#ec4899" />
+        <KPI label="Active subs" value={subs.filter(s => s.status === 'active').length.toLocaleString()} sub="paying now" color="#10b981" />
+        <KPI label="Total subs" value={subs.length.toLocaleString()} sub="incl. trials / past due" color="#6366f1" />
+      </div>
+
+      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--sa-border)' }}>
+              {['Company', 'Plan', 'Amount', 'Monthly', 'Renews', 'Status'].map(h => (
+                <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading...</td></tr>
+            : subs.length === 0 ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>No subscriptions yet. Click "Sync from Stripe" to pull existing ones.</td></tr>
+            : subs.map((s, i) => (
+              <tr key={s.id} style={{ borderBottom: i < subs.length - 1 ? '1px solid var(--sa-border)' : 'none' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--sa-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: 'var(--sa-text)' }}>{s.company?.name || <span style={{ color: 'var(--sa-muted)', fontWeight: 400 }}>Unlinked</span>}</td>
+                <td style={{ padding: '12px 16px' }}><Badge status={s.tier || 'free'} /></td>
+                <td style={{ padding: '12px 16px', fontSize: 12.5, color: 'var(--sa-text)' }}>{s.currency} ${s.amount.toLocaleString()} / {s.interval}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12.5, color: 'var(--sa-text)' }}>${s.monthly.toLocaleString()}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{s.current_period_end ? new Date(s.current_period_end).toLocaleDateString() : '—'}</td>
+                <td style={{ padding: '12px 16px' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: STATUS_COLOR[s.status] || '#6b7280', textTransform: 'capitalize' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_COLOR[s.status] || '#6b7280' }} />{s.status.replace('_', ' ')}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function TicketsPage() {
   const [tickets, setTickets] = useState<any[]>([])
   const [counts, setCounts] = useState<Record<string, number>>({})
@@ -1187,7 +1272,7 @@ export default function SuperAdmin() {
           {page === 'flags'      && <FeatureFlagsPage data={data} />}
           {page === 'system'     && <SystemPage />}
           {page === 'audit'      && <AuditPage />}
-          {page === 'subs'       && <PlaceholderPage title="Subscriptions" sub="Manage all active and past subscriptions, invoices and payment methods" />}
+          {page === 'subs'       && <SubscriptionsPage />}
           {page === 'ideas'      && <CrossCompanyContent title="Ideas" sub="All ideas across every company board" table="ideas" extraCol={{ header: 'Votes', render: (r) => <span>{r.votes ?? 0}</span> }} />}
           {page === 'roadmap'    && <CrossCompanyContent title="Roadmaps" sub="All roadmap items across all companies" table="ideas" statusFilter={['planned', 'in_progress', 'shipped']} extraCol={{ header: 'Votes', render: (r) => <span>{r.votes ?? 0}</span> }} />}
           {page === 'announce'   && <CrossCompanyContent title="Announcements" sub="All announcements and changelog posts" table="announcements" />}

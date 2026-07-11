@@ -79,6 +79,8 @@ export default function SettingsPage() {
   const [newWebhookUrl, setNewWebhookUrl] = useState('')
   // API Keys
   const [apiKeys, setApiKeys] = useState<any[]>([])
+  const [pluginKey, setPluginKey] = useState('')
+  const [showPluginKey, setShowPluginKey] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
   const [generatedKey, setGeneratedKey] = useState('')
   // Terminology
@@ -210,6 +212,15 @@ export default function SettingsPage() {
 
         if (co) {
           setCompany(co)
+          if (co.api_key) setPluginKey(co.api_key)
+          else {
+            // Generate and persist an API key for this company if it lacks one.
+            try {
+              const genKey = 'colvy_' + (crypto.randomUUID?.() || Date.now().toString(36)).replace(/-/g, '')
+              await (supabase as any).from('companies').update({ api_key: genKey }).eq('id', co.id)
+              setPluginKey(genKey)
+            } catch {}
+          }
           if (co.name) setCompanyName(co.name)
           if (co.logo_url) setLogoUrl(co.logo_url)
           if (co.accent_color) setAccentColor(co.accent_color)
@@ -1528,6 +1539,32 @@ export default function SettingsPage() {
 
         {activeSettingsTab === 'api' && (
           <div className="space-y-5">
+            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-center gap-2 mb-1">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+                <h2 className="font-bold" style={{ color: 'var(--ink)' }}>WordPress plugin</h2>
+              </div>
+              <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Install the Colvy plugin on your WordPress site, then paste these two values into <strong>Colvy → Settings</strong> in your WP admin. No file editing needed.</p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--slate)' }}>Company ID</label>
+                  <div className="flex gap-2">
+                    <code className="flex-1 px-3 py-2 rounded-lg border text-xs overflow-x-auto" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>{company?.id || '—'}</code>
+                    <button onClick={() => { navigator.clipboard?.writeText(company?.id || ''); showToast('Company ID copied', 'success') }} className="px-3 py-2 rounded-lg text-xs font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>Copy</button>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--slate)' }}>API key</label>
+                  <div className="flex gap-2">
+                    <code className="flex-1 px-3 py-2 rounded-lg border text-xs overflow-x-auto" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>{pluginKey ? (showPluginKey ? pluginKey : pluginKey.slice(0, 10) + '••••••••••••') : 'Loading…'}</code>
+                    <button onClick={() => setShowPluginKey(v => !v)} className="px-3 py-2 rounded-lg text-xs font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>{showPluginKey ? 'Hide' : 'Show'}</button>
+                    <button onClick={() => { navigator.clipboard?.writeText(pluginKey || ''); showToast('API key copied', 'success') }} className="px-3 py-2 rounded-lg text-xs font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>Copy</button>
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs mt-3" style={{ color: 'var(--slate)' }}>Keep your API key private — it lets the plugin update your board's branding and settings.</p>
+            </div>
+
             <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>API Keys</h2>
               <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Build your own integration using the Colvy API. <a href="https://developers.colvy.com" target="_blank" className="hover:underline" style={{ color: 'var(--coral)' }}>View API documentation →</a></p>

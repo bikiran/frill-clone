@@ -80,14 +80,30 @@ export async function POST(req: NextRequest) {
         }
         const { userId, tier } = meta
         if (userId && tier) {
+          // Fetch the real subscription to capture the actual billed amount.
+          let amountCents = 0, currency = 'aud', interval = 'month', periodEnd = new Date(Date.now() + 30 * 86400000).toISOString()
+          try {
+            if (session.subscription) {
+              const sub = await stripe.subscriptions.retrieve(session.subscription as string)
+              const item = sub.items?.data?.[0]
+              amountCents = item?.price?.unit_amount || 0
+              currency = (item?.price?.currency || 'aud')
+              interval = (item?.price?.recurring?.interval || 'month')
+              if ((sub as any).current_period_end) periodEnd = new Date((sub as any).current_period_end * 1000).toISOString()
+            }
+          } catch {}
           await (supabase as any).from('subscriptions').upsert({
             user_id: userId,
             stripe_customer_id: session.customer,
             stripe_subscription_id: session.subscription,
             tier,
             status: 'active',
+            amount_cents: amountCents,
+            currency,
+            billing_interval: interval,
             current_period_start: new Date().toISOString(),
-            current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            current_period_end: periodEnd,
+            synced_at: new Date().toISOString(),
           }, { onConflict: 'user_id' })
         }
         // Phone number purchase — provision the number now that payment is set up
@@ -110,9 +126,14 @@ export async function POST(req: NextRequest) {
       }
       case 'customer.subscription.updated': {
         const sub = event.data.object
+        const item = sub.items?.data?.[0]
         await (supabase as any).from('subscriptions').update({
           status: sub.status,
+          amount_cents: item?.price?.unit_amount || 0,
+          currency: item?.price?.currency || 'aud',
+          billing_interval: item?.price?.recurring?.interval || 'month',
           current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+          synced_at: new Date().toISOString(),
         }).eq('stripe_subscription_id', sub.id)
         break
       }
