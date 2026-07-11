@@ -1673,7 +1673,17 @@ function WidgetContent() {
                     const fmtT = (d: string) => {
                       if (!d) return ''
                       const p = new Date(d.endsWith?.('Z') ? d : d + 'Z')
-                      return isNaN(p.getTime()) ? '' : p.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                      if (isNaN(p.getTime())) return ''
+                      const now = new Date()
+                      const time = p.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                      const sameDay = p.toDateString() === now.toDateString()
+                      const yest = new Date(now); yest.setDate(now.getDate() - 1)
+                      const isYest = p.toDateString() === yest.toDateString()
+                      if (sameDay) return time
+                      if (isYest) return `Yesterday ${time}`
+                      const sameYear = p.getFullYear() === now.getFullYear()
+                      const date = p.toLocaleDateString([], sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' })
+                      return `${date}, ${time}`
                     }
                     return (
                       <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: isAgent ? 'flex-start' : 'flex-end', position: 'relative' }}
@@ -1796,7 +1806,10 @@ function WidgetContent() {
                             ))}
                           </div>
                         )}
-                        <p style={{ margin: '2px 4px 0', fontSize: 9, color: '#b0b0b0' }}>{fmtT(msg.created_at)}</p>
+                        <p style={{ margin: '2px 4px 0', fontSize: 9, color: '#b0b0b0' }}>
+                          {fmtT(msg.created_at)}
+                          {!isAgent && <span style={{ marginLeft: 5 }}>{msg.id ? '· Delivered' : '· Sent'}</span>}
+                        </p>
                       </div>
                     )
                   })}

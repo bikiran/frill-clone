@@ -281,7 +281,16 @@ export default function SettingsPage() {
           if (s.widgetRoadmap !== undefined) setWidgetRoadmap(s.widgetRoadmap)
           if (s.widgetUpdates !== undefined) setWidgetUpdates(s.widgetUpdates)
           if (s.widgetKnowledgeBase !== undefined) setWidgetKnowledgeBase(s.widgetKnowledgeBase)
-          if (s.widgetOrder && Array.isArray(s.widgetOrder)) setWidgetOrder(s.widgetOrder)
+          if (s.widgetOrder && Array.isArray(s.widgetOrder)) {
+            // Merge saved order with the current tab set: keep saved positions,
+            // drop tabs that no longer exist (Forms/Polls/Surveys), and append
+            // any newly-added tabs (e.g. Chat) that aren't in the saved order.
+            const valid = ['Chat', 'Feedback', 'Roadmap', 'Updates', 'Knowledge Base']
+            const kept = s.widgetOrder.filter((x: string) => valid.includes(x))
+            const missing = valid.filter(v => !kept.includes(v))
+            // New tabs like Chat go to the FRONT so they're discoverable.
+            setWidgetOrder([...missing, ...kept])
+          }
           if (s.themeMode) setThemeMode(s.themeMode)
           if (s.borderRadius) setBorderRadius(s.borderRadius)
           if (s.emailFromName) setEmailFromName(s.emailFromName)
