@@ -120,7 +120,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (saveError || !saved) {
-      // Surface the real reason instead of pretending success.
+      // Record the failure reason on the most recent hit so ?diag=1 reveals it.
+      try {
+        const { data: lastHit } = await db.from('abandoned_cart_hits').select('id').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1).maybeSingle()
+        if (lastHit?.id) await db.from('abandoned_cart_hits').update({ save_error: saveError || 'insert returned no row' }).eq('id', lastHit.id)
+      } catch {}
       return NextResponse.json({ ok: false, error: saveError || 'Cart could not be saved', norm }, { status: 500 })
     }
 
@@ -149,18 +153,23 @@ export async function GET(req: NextRequest) {
       const { data: recent } = await db.from('abandoned_carts').select('id, email, phone, total, status, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(10)
       let hits: any[] = []
       try {
-        const { data: h } = await db.from('abandoned_cart_hits').select('had_email, had_phone, item_count, raw_keys, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(10)
+        const { data: h } = await db.from('abandoned_cart_hits').select('had_email, had_phone, item_count, raw_keys, save_error, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(10)
         hits = h || []
       } catch {}
+      const lastError = hits.find(h => h.save_error)?.save_error || null
+      let hint: string
+      if (hits.length === 0) hint = 'No POST has reached Colvy at all — the WordPress bridge is not firing (wrong hook, plugin not active, or blocked outbound request).'
+      else if ((recent?.length || 0) > 0) hint = 'Carts are being saved successfully.'
+      else if (lastError) hint = `Posts ARE arriving but the database rejected the save: "${lastError}". This usually means the abandoned_carts table/columns are missing — run the COLVY_V136_ABANDONED_CARTS.sql migration.`
+      else hint = 'Posts are arriving but nothing saved, and no error was captured. Likely the abandoned_carts table is missing — run COLVY_V136_ABANDONED_CARTS.sql.'
       return NextResponse.json({
         diag: true,
         saved_carts: recent?.length || 0,
         recent: recent || [],
         inbound_posts_received: hits.length,
+        last_save_error: lastError,
         last_posts: hits,
-        hint: hits.length === 0
-          ? 'No POST has reached Colvy at all — the WordPress bridge is not firing (wrong hook, plugin not active, or blocked outbound request).'
-          : (recent?.length === 0 ? 'Posts are arriving but every one lacked an email AND phone, so nothing was saved. The customer must enter email or phone on the checkout page for capture to work.' : 'Carts are being saved.'),
+        hint,
       })
     }
 
