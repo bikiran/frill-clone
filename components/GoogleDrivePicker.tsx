@@ -1,29 +1,16 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-// Loads Google Identity Services + Picker API and opens the native Drive picker.
-// Requires two PUBLIC credentials (safe to expose):
-//   NEXT_PUBLIC_GOOGLE_API_KEY   — API key with the Picker API enabled
-//   NEXT_PUBLIC_GOOGLE_CLIENT_ID — OAuth client ID (Web application)
-// No client secret is used; the token flow is entirely client-side.
+// Single-origin Google Drive picker.
+//
+// Google OAuth requires each JavaScript origin to be registered in the Cloud
+// Console, and you CANNOT wildcard *.colvy.com. To avoid registering every
+// company subdomain, we run the actual OAuth + Picker on the ROOT domain
+// (https://colvy.com/drive-connect) in a popup, and receive the selected files
+// back via postMessage. So only https://colvy.com needs to be registered.
 
-const SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
-
-declare global {
-  interface Window { gapi?: any; google?: any }
-}
-
-function loadScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return }
-    const s = document.createElement('script')
-    s.src = src; s.async = true; s.defer = true
-    s.onload = () => resolve()
-    s.onerror = () => reject(new Error(`Failed to load ${src}`))
-    document.head.appendChild(s)
-  })
-}
+const ROOT = 'https://colvy.com'
 
 export interface DrivePickedFile {
   id: string
@@ -33,68 +20,46 @@ export interface DrivePickedFile {
 }
 
 export function useGoogleDrivePicker(onPicked: (files: DrivePickedFile[]) => void) {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
-  const configured = !!(apiKey && clientId)
-  const [ready, setReady] = useState(false)
+  // The picker popup runs on the root domain and uses the public creds there, so
+  // the subdomain doesn't need them. We consider it "configured" always; if the
+  // root domain lacks creds, the popup shows a clear message.
+  const configured = true
+  const ready = true
   const [loading, setLoading] = useState(false)
-  const tokenClient = useRef<any>(null)
-  const accessToken = useRef<string>('')
+  const popupRef = useRef<Window | null>(null)
+  const onPickedRef = useRef(onPicked)
+  onPickedRef.current = onPicked
 
   useEffect(() => {
-    if (!configured) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        await loadScript('https://apis.google.com/js/api.js')
-        await loadScript('https://accounts.google.com/gsi/client')
-        // Load the picker module.
-        await new Promise<void>((resolve) => window.gapi.load('picker', () => resolve()))
-        if (cancelled) return
-        tokenClient.current = window.google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
-          scope: SCOPE,
-          callback: () => {}, // set per-request below
-        })
-        setReady(true)
-      } catch (e) {
-        console.error('[DrivePicker] load failed', e)
+    const handler = (e: MessageEvent) => {
+      // Accept only messages from the root colvy.com drive-connect page.
+      let host = ''
+      try { host = new URL(e.origin).hostname } catch {}
+      if (host !== 'colvy.com' && host !== 'www.colvy.com') return
+      const d: any = e.data
+      if (!d || !d.colvyDrive) return
+      if (d.type === 'picked') {
+        setLoading(false)
+        if (Array.isArray(d.files) && d.files.length) onPickedRef.current(d.files)
+        try { popupRef.current?.close() } catch {}
+      } else if (d.type === 'cancel') {
+        setLoading(false)
       }
-    })()
-    return () => { cancelled = true }
-  }, [configured, clientId])
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [])
 
   const openPicker = useCallback(() => {
-    if (!configured || !ready) return
     setLoading(true)
-    tokenClient.current.callback = (resp: any) => {
-      if (resp.error) { setLoading(false); return }
-      accessToken.current = resp.access_token
-      const view = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
-        .setMimeTypes('image/png,image/jpeg,image/gif,image/webp,video/mp4,video/quicktime,application/pdf')
-        .setSelectFolderEnabled(false)
-      const picker = new window.google.picker.PickerBuilder()
-        .enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED)
-        .setOAuthToken(accessToken.current)
-        .setDeveloperKey(apiKey!)
-        .addView(view)
-        .setCallback((data: any) => {
-          if (data.action === window.google.picker.Action.PICKED) {
-            const files: DrivePickedFile[] = (data.docs || []).map((d: any) => ({
-              id: d.id, name: d.name, mimeType: d.mimeType, accessToken: accessToken.current,
-            }))
-            onPicked(files)
-          }
-          if (data.action === window.google.picker.Action.PICKED || data.action === window.google.picker.Action.CANCEL) {
-            setLoading(false)
-          }
-        })
-        .build()
-      picker.setVisible(true)
-    }
-    // Request an access token (prompts consent the first time).
-    tokenClient.current.requestAccessToken({ prompt: '' })
-  }, [configured, ready, apiKey, onPicked])
+    const origin = typeof window !== 'undefined' ? window.location.origin : ROOT
+    const url = `${ROOT}/drive-connect?origin=${encodeURIComponent(origin)}`
+    const w = 520, h = 600
+    const left = typeof window !== 'undefined' ? window.screenX + (window.outerWidth - w) / 2 : 0
+    const top = typeof window !== 'undefined' ? window.screenY + (window.outerHeight - h) / 2 : 0
+    popupRef.current = window.open(url, 'colvy-drive', `width=${w},height=${h},left=${left},top=${top}`)
+    if (!popupRef.current) { setLoading(false); alert('Please allow pop-ups to import from Google Drive.') }
+  }, [])
 
   return { configured, ready, loading, openPicker }
 }
