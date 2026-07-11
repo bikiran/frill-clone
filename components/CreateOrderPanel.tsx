@@ -18,13 +18,14 @@ type Item = {
 
 const GST_RATE = 0.10 // Australia
 
-export default function CreateOrderPanel({ companyId, conversationId, contactId, contact, staffName, staffId, onClose, onCreated }: {
+export default function CreateOrderPanel({ companyId, conversationId, contactId, contact, staffName, staffId, prefillCart, onClose, onCreated }: {
   companyId: string
   conversationId?: string | null
   contactId?: string | null
   contact?: any
   staffName?: string
   staffId?: string
+  prefillCart?: any
   onClose: () => void
   onCreated?: (order: any) => void
 }) {
@@ -87,6 +88,26 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
       setSource(firstWoo || (data.sources || [])[0] || null)
     })()
   }, [companyId])
+
+  // Seed from an abandoned cart, if provided.
+  useEffect(() => {
+    if (!prefillCart) return
+    if (Array.isArray(prefillCart.items) && prefillCart.items.length) {
+      setItems(prefillCart.items.map((it: any, i: number) => ({
+        key: `pre-${i}-${Date.now()}`,
+        product_id: it.product_id || undefined,
+        variation_id: it.variation_id || undefined,
+        name: it.name || 'Item',
+        sku: it.sku || undefined,
+        price: String(it.price ?? '0'),
+        quantity: it.quantity || 1,
+        image: null,
+      })))
+    }
+    if (prefillCart.coupon) setCouponCode(prefillCart.coupon)
+    if (prefillCart.notes) setCustomerNote(prefillCart.notes)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillCart])
 
   // Debounced product search
   useEffect(() => {

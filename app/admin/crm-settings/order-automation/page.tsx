@@ -116,6 +116,20 @@ export default function OrderAutomationSettings() {
         </div>
         <p style={{ fontSize: 12.5, color: 'var(--slate)', marginTop: 10 }}>The company id is already embedded in this URL, so no custom headers are needed. Set the webhook status to <strong>Active</strong> and save.</p>
       </div>
+
+      <div style={{ ...S.card, background: 'var(--canvas)' }}>
+        <h2 style={S.h2}>🛒 Abandoned carts</h2>
+        <p style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.6 }}>
+          WooCommerce doesn't track abandoned carts on its own. If your store uses an abandonment plugin (or a small checkout snippet) that can send cart data to a URL, point it at Colvy and abandoned carts will appear in the chat sidebar — so you can see exactly what a customer wanted and convert it into an order.
+        </p>
+        <p style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', margin: '10px 0 4px' }}>Send cart data (POST, JSON) to:</p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input readOnly value={typeof window !== 'undefined' ? `${window.location.origin.replace(/[^.]+\.colvy/, 'colvy')}/api/abandoned-carts?company=${companyId || ''}` : ''} onFocus={e => e.currentTarget.select()} style={{ ...S.input, fontSize: 12, fontFamily: 'monospace' }} />
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--slate)', marginTop: 8, lineHeight: 1.6 }}>
+          Expected fields (all optional, but include email or phone): <code>name</code>, <code>email</code>, <code>phone</code>, <code>billing</code> (address), <code>items</code> (or <code>line_items</code>), <code>coupon</code>, <code>shipping</code>, <code>notes</code>, <code>total</code>, <code>cart_url</code>, <code>external_id</code>.
+        </p>
+      </div>
     </div>
   )
 }

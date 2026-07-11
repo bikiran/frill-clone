@@ -133,6 +133,7 @@ export default function InboxPage() {
   const [showActionMenu, setShowActionMenu] = useState(false)
   const [showTicketPanel, setShowTicketPanel] = useState(false)
   const [showCreateOrder, setShowCreateOrder] = useState(false)
+  const [orderPrefillCart, setOrderPrefillCart] = useState<any>(null)
   const [showCoupon, setShowCoupon] = useState(false)
   const [editOrder, setEditOrder] = useState<any>(null)
   const [editOrderData, setEditOrderData] = useState<any>(null)
@@ -192,6 +193,7 @@ export default function InboxPage() {
   const [activePanel, setActivePanel] = useState<'info' | 'timeline' | 'orders'>('info')
   const [wooCustomer, setWooCustomer] = useState<any>(null)
   const [wooOrders, setWooOrders] = useState<any[]>([])
+  const [abandonedCarts, setAbandonedCarts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   // New chat features
   const [replyTo, setReplyTo] = useState<Message | null>(null)
@@ -421,13 +423,26 @@ export default function InboxPage() {
   const loadWooData = async (contactId: string | null) => {
     setWooCustomer(null)
     setWooOrders([])
+    setAbandonedCarts([])
     if (!companyId) return
-    // Resolve the contact's email
+    // Resolve the contact's email + phone
     let email: string | null = null
+    let phone: string | null = null
     if (contactId) {
-      const { data: c } = await (supabase as any).from('contacts').select('email').eq('id', contactId).maybeSingle()
+      const { data: c } = await (supabase as any).from('contacts').select('email, phone').eq('id', contactId).maybeSingle()
       email = c?.email || null
+      phone = c?.phone || null
     }
+    // Abandoned carts match by email or phone (independent of WooCommerce sync).
+    try {
+      if (email || phone) {
+        const p = new URLSearchParams({ companyId })
+        if (email) p.set('email', email); else if (phone) p.set('phone', phone)
+        const res = await fetch(`/api/abandoned-carts?${p}`)
+        const data = await res.json()
+        setAbandonedCarts(data.carts || [])
+      }
+    } catch {}
     if (!email) return
     // Match WooCommerce customer by email
     const { data: woo } = await (supabase as any).from('woocommerce_customers')
@@ -780,6 +795,19 @@ export default function InboxPage() {
       showToast('Payment request sent')
       selectConversation(selected)
     } catch (e: any) { showToast(e.message || 'Failed to send payment request') }
+  }
+
+  const convertAbandonedCart = (cart: any) => {
+    setOrderPrefillCart(cart)
+    setShowCreateOrder(true)
+  }
+
+  const dismissAbandonedCart = async (cart: any) => {
+    if (!companyId) return
+    try {
+      await (supabase as any).from('abandoned_carts').update({ status: 'dismissed' }).eq('id', cart.id)
+      setAbandonedCarts(prev => prev.filter(c => c.id !== cart.id))
+    } catch {}
   }
 
   const miniBtn = (color: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 600, color, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' })
@@ -1183,8 +1211,12 @@ export default function InboxPage() {
           contact={contact}
           staffName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
           staffId={user?.id}
-          onClose={() => setShowCreateOrder(false)}
-          onCreated={() => { if (selected) selectConversation(selected) }}
+          prefillCart={orderPrefillCart}
+          onClose={() => { setShowCreateOrder(false); setOrderPrefillCart(null) }}
+          onCreated={(order) => {
+            if (orderPrefillCart?.id) { (supabase as any).from('abandoned_carts').update({ status: 'recovered', recovered_order_id: order?.id }).eq('id', orderPrefillCart.id); setAbandonedCarts(prev => prev.filter(c => c.id !== orderPrefillCart.id)) }
+            if (selected) selectConversation(selected)
+          }}
         />
       )}
 
@@ -2224,6 +2256,41 @@ export default function InboxPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Abandoned cart — what the customer was trying to buy */}
+                {abandonedCarts.length > 0 && (
+                  <div style={{ marginTop: 18 }}>
+                    <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>🛒 Abandoned Cart <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: '#fef3c7', color: '#b45309' }}>{abandonedCarts.length}</span></h3>
+                    {abandonedCarts.map(cart => (
+                      <div key={cart.id} style={{ border: '1.5px solid #fde68a', borderRadius: 12, padding: 14, marginBottom: 10, background: 'linear-gradient(135deg,#fffbeb,#fff)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>{cart.created_at ? new Date(cart.created_at).toLocaleDateString('en-AU') : ''}</span>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>${(parseFloat(cart.total) || 0).toFixed(2)}</span>
+                        </div>
+                        {Array.isArray(cart.items) && cart.items.length > 0 && (
+                          <div style={{ marginBottom: 8 }}>
+                            {cart.items.map((it: any, i: number) => (
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--ink)', padding: '2px 0' }}>
+                                <span>{it.quantity}× {it.name}{it.sku ? ` (${it.sku})` : ''}</span>
+                                {it.price != null && <span style={{ color: 'var(--slate)' }}>${(parseFloat(it.price) || 0).toFixed(2)}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.7, borderTop: '1px solid #fde68a', paddingTop: 8 }}>
+                          {cart.coupon && <div>🎟️ Coupon: <strong>{cart.coupon}</strong></div>}
+                          {cart.shipping?.label && <div>🚚 {cart.shipping.label}{cart.shipping.cost ? ` — $${cart.shipping.cost}` : ''}</div>}
+                          {cart.address?.address_1 && <div>📍 {[cart.address.address_1, cart.address.city, cart.address.state, cart.address.postcode].filter(Boolean).join(', ')}</div>}
+                          {cart.notes && <div>📝 {cart.notes}</div>}
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                          <button onClick={() => convertAbandonedCart(cart)} style={{ flex: 1, padding: '8px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Convert to order</button>
+                          <button onClick={() => dismissAbandonedCart(cart)} title="Dismiss" style={{ padding: '8px 12px', borderRadius: 8, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Dismiss</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Shared Media — everything image/video shared in this conversation */}
                 {(() => {
