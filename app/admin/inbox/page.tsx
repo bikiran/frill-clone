@@ -2396,10 +2396,10 @@ export default function InboxPage() {
                           </div>
                         )}
                         <div style={{ fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.7, borderTop: '1px solid #fde68a', paddingTop: 8 }}>
-                          {cart.coupon && <div>🎟️ Coupon: <strong>{cart.coupon}</strong></div>}
+                          {cart.coupon && <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{Icon.coupon(12)}</span> Coupon: <strong>{cart.coupon}</strong></div>}
                           {cart.shipping?.label && <div>🚚 {cart.shipping.label}{cart.shipping.cost ? ` — $${cart.shipping.cost}` : ''}</div>}
                           {cart.address?.address_1 && <div>📍 {[cart.address.address_1, cart.address.city, cart.address.state, cart.address.postcode].filter(Boolean).join(', ')}</div>}
-                          {cart.notes && <div>📝 {cart.notes}</div>}
+                          {cart.notes && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}><span style={{ color: 'var(--slate)', display: 'inline-flex', marginTop: 2 }}>{Icon.survey(12)}</span> {cart.notes}</div>}
                         </div>
                         <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
                           <button onClick={() => convertAbandonedCart(cart)} style={{ flex: 1, padding: '8px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Convert to order</button>
