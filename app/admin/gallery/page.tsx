@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useCompanyUser } from '../crm-settings/_shared'
 import MediaGallery from '@/components/MediaGallery'
+import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
 
 export default function GalleryPage() {
   const { companyId, loading } = useCompanyUser()
@@ -72,10 +73,28 @@ export default function GalleryPage() {
     await uploadFiles(Array.from(e.target.files || []))
   }
 
+  // Google Drive picker → import selected files server-side into the gallery.
+  const [driveImporting, setDriveImporting] = useState(false)
+  const { configured: driveConfigured, loading: driveLoading, openPicker } = useGoogleDrivePicker(async (picked) => {
+    if (!companyId || picked.length === 0) return
+    setDriveImporting(true)
+    try {
+      const res = await fetch('/api/media/import-drive', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, folderId: activeFolder, accessToken: picked[0].accessToken, files: picked.map(p => ({ id: p.id, name: p.name, mimeType: p.mimeType })) }),
+      })
+      const data = await res.json()
+      if (data.imported != null) load()
+    } catch {} finally { setDriveImporting(false) }
+  })
+
   const connectSource = (source: 'google_drive' | 'canva') => {
-    // These require OAuth apps to be configured. Until then, be honest.
-    const name = source === 'google_drive' ? 'Google Drive' : 'Canva'
-    alert(`${name} import isn't connected yet. Once we set up the ${name} app, you'll be able to pick files from ${name} here. For now, download from ${name} and use Upload media.`)
+    if (source === 'google_drive') {
+      if (!driveConfigured) { alert('Google Drive import needs to be configured first (Google API key + OAuth client ID). Once those are set, this button opens your Drive to pick files.'); return }
+      openPicker()
+      return
+    }
+    alert("Canva import isn't connected yet. Once we set up the Canva app, you'll be able to pick designs here. For now, export from Canva and use Upload media.")
   }
 
   const deleteItem = async (item: any) => {
@@ -108,6 +127,7 @@ export default function GalleryPage() {
         <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Media Gallery</h1>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={syncPrexty} style={{ padding: '9px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Sync from Prexty</button>
+          {driveConfigured && <button onClick={() => connectSource('google_drive')} disabled={driveLoading || driveImporting} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}><GoogleDriveIcon /> {driveImporting ? 'Importing…' : 'Google Drive'}</button>}
           <button onClick={() => fileRef.current?.click()} disabled={uploading} style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{uploading ? 'Uploading…' : '+ Upload media'}</button>
           <input ref={fileRef} type="file" accept="image/*,video/*" multiple onChange={onUpload} style={{ display: 'none' }} />
         </div>
@@ -184,8 +204,8 @@ export default function GalleryPage() {
 
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                   <button onClick={e => { e.stopPropagation(); fileRef.current?.click() }} style={{ padding: '10px 20px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Upload media</button>
-                  <button onClick={e => { e.stopPropagation(); connectSource('google_drive') }} style={connectBtn}>
-                    <GoogleDriveIcon /> Google Drive
+                  <button onClick={e => { e.stopPropagation(); connectSource('google_drive') }} disabled={driveLoading || driveImporting} style={connectBtn}>
+                    <GoogleDriveIcon /> {driveImporting ? 'Importing…' : driveLoading ? 'Opening…' : 'Google Drive'}
                   </button>
                   <button onClick={e => { e.stopPropagation(); connectSource('canva') }} style={connectBtn}>
                     <CanvaIcon /> Canva
