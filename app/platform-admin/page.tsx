@@ -547,32 +547,42 @@ function UsersPage() {
   const [users, setUsers] = useState<any[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
 
   useEffect(() => {
     ;(async () => {
-      const { data } = await (supabase as any).from('companies').select('id,name,slug,owner_id,plan,created_at').order('created_at', { ascending: false }).limit(50)
-      setUsers(data || [])
-      setLoading(false)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch('/api/platform-admin/users', { headers: { 'Authorization': `Bearer ${session?.access_token}` } })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Could not load users')
+        setUsers(data.users || [])
+      } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
     })()
   }, [])
 
-  const filtered = users.filter(u => !search || u.name?.toLowerCase().includes(search.toLowerCase()) || u.slug?.toLowerCase().includes(search.toLowerCase()))
+  const filtered = users.filter(u => !search
+    || (u.name || '').toLowerCase().includes(search.toLowerCase())
+    || (u.email || '').toLowerCase().includes(search.toLowerCase())
+    || (u.companies || []).some((c: any) => (c.name || '').toLowerCase().includes(search.toLowerCase()) || (c.slug || '').toLowerCase().includes(search.toLowerCase())))
 
   return (
     <div>
-      <SectionHeader title="Users" sub="All registered company owners and team members" />
-      <div style={{ marginBottom: 16 }}><SearchBar placeholder="Search users..." value={search} onChange={setSearch} /></div>
+      <SectionHeader title="Users" sub={`All registered accounts (${users.length})`} />
+      <div style={{ marginBottom: 16 }}><SearchBar placeholder="Search by name, email, or company..." value={search} onChange={setSearch} /></div>
+      {err && <div style={{ padding: '10px 14px', borderRadius: 9, background: '#fee2e2', color: '#dc2626', fontSize: 13, marginBottom: 14 }}>{err}</div>}
       <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--sa-border)' }}>
-              {['Company', 'Slug', 'Plan', 'Member Since', 'Actions'].map(h => (
+              {['User', 'Email', 'Owns', 'Joined', 'Last sign-in', 'Actions'].map(h => (
                 <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading...</td></tr>
+            {loading ? <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading...</td></tr>
+            : filtered.length === 0 ? <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>No users found</td></tr>
             : filtered.map((u, i) => (
               <tr key={u.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--sa-border)' : 'none' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--sa-hover)')}
@@ -580,18 +590,20 @@ function UsersPage() {
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #ff7a6b, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 12 }}>
-                      {u.name?.[0]?.toUpperCase()}
+                      {(u.name || u.email || '?')[0]?.toUpperCase()}
                     </div>
                     <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--sa-text)' }}>{u.name}</span>
                   </div>
                 </td>
-                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.slug}</td>
-                <td style={{ padding: '12px 16px' }}><Badge status={u.plan || 'free'} /></td>
-                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{new Date(u.created_at).toLocaleDateString()}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.email}{!u.confirmed && <span style={{ marginLeft: 6, fontSize: 10, color: '#f59e0b' }}>(unconfirmed)</span>}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-text)' }}>
+                  {u.companies.length === 0 ? <span style={{ color: 'var(--sa-muted)' }}>—</span> : u.companies.map((c: any) => c.name).join(', ')}
+                </td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : 'never'}</td>
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button onClick={() => window.open(`https://${u.slug}.colvy.com/admin`, '_blank')} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: 'pointer', fontSize: 12 }}>Login as</button>
-                    <button onClick={() => window.open(`https://${u.slug}.colvy.com`, '_blank')} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 12 }}>{I.external}</button>
+                    {u.companies[0]?.slug && <button onClick={() => window.open(`https://${u.companies[0].slug}.colvy.com/admin`, '_blank')} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: 'pointer', fontSize: 12 }}>Login as</button>}
                   </div>
                 </td>
               </tr>
@@ -810,6 +822,81 @@ function AuditPage() {
   )
 }
 
+// Aggregates content of one type across every company, with the company name
+// resolved for each row. Used by the Ideas / Roadmaps / Announcements / Help pages.
+function CrossCompanyContent({ title, sub, table, statusFilter, titleField, extraCol }: {
+  title: string; sub: string; table: string; statusFilter?: string[]; titleField?: string; extraCol?: { header: string; render: (r: any) => React.ReactNode }
+}) {
+  const [rows, setRows] = useState<any[]>([])
+  const [companies, setCompanies] = useState<Record<string, any>>({})
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data: cos } = await (supabase as any).from('companies').select('id, name, slug')
+        const map: Record<string, any> = {}
+        ;(cos || []).forEach((c: any) => { map[c.id] = c })
+        setCompanies(map)
+
+        let q = (supabase as any).from(table).select('*').order('created_at', { ascending: false }).limit(200)
+        if (statusFilter && statusFilter.length) q = q.in('status', statusFilter)
+        const { data, error } = await q
+        if (error) throw new Error(error.message)
+        setRows(data || [])
+      } catch (e: any) { setErr(e.message) } finally { setLoading(false) }
+    })()
+  }, [table])
+
+  const tf = titleField || 'title'
+  const filtered = rows.filter(r => {
+    if (!search) return true
+    const co = companies[r.company_id]
+    const hay = [r[tf], r.status, co?.name, co?.slug].filter(Boolean).join(' ').toLowerCase()
+    return hay.includes(search.toLowerCase())
+  })
+
+  return (
+    <div>
+      <SectionHeader title={title} sub={`${sub} (${rows.length})`} />
+      <div style={{ marginBottom: 16 }}><SearchBar placeholder={`Search ${title.toLowerCase()}...`} value={search} onChange={setSearch} /></div>
+      {err && <div style={{ padding: '10px 14px', borderRadius: 9, background: '#fee2e2', color: '#dc2626', fontSize: 13, marginBottom: 14 }}>{err}</div>}
+      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--sa-border)' }}>
+              {['Title', 'Company', 'Status', extraCol?.header || 'Created'].map(h => (
+                <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? <tr><td colSpan={4} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading...</td></tr>
+            : filtered.length === 0 ? <tr><td colSpan={4} style={{ padding: 32, textAlign: 'center', color: 'var(--sa-muted)' }}>Nothing here yet</td></tr>
+            : filtered.map((r, i) => {
+              const co = companies[r.company_id]
+              return (
+                <tr key={r.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--sa-border)' : 'none' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--sa-hover)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: 'var(--sa-text)', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r[tf] || '(untitled)'}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>
+                    {co ? <button onClick={() => window.open(`https://${co.slug}.colvy.com`, '_blank')} style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', fontSize: 12, padding: 0 }}>{co.name}</button> : '—'}
+                  </td>
+                  <td style={{ padding: '12px 16px' }}>{r.status ? <Badge status={r.status} /> : <span style={{ color: 'var(--sa-muted)', fontSize: 12 }}>—</span>}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{extraCol ? extraCol.render(r) : (r.created_at ? new Date(r.created_at).toLocaleDateString() : '—')}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function PlaceholderPage({ title, sub }: { title: string; sub: string }) {
   return (
     <div>
@@ -1016,10 +1103,10 @@ export default function SuperAdmin() {
           {page === 'system'     && <SystemPage />}
           {page === 'audit'      && <AuditPage />}
           {page === 'subs'       && <PlaceholderPage title="Subscriptions" sub="Manage all active and past subscriptions, invoices and payment methods" />}
-          {page === 'ideas'      && <PlaceholderPage title="Ideas" sub="All ideas across every company board" />}
-          {page === 'roadmap'    && <PlaceholderPage title="Roadmaps" sub="All roadmap items across all companies" />}
-          {page === 'announce'   && <PlaceholderPage title="Announcements" sub="All announcements and changelog posts" />}
-          {page === 'help'       && <PlaceholderPage title="Help Center" sub="Article analytics, search terms and failed searches" />}
+          {page === 'ideas'      && <CrossCompanyContent title="Ideas" sub="All ideas across every company board" table="ideas" extraCol={{ header: 'Votes', render: (r) => <span>{r.votes ?? 0}</span> }} />}
+          {page === 'roadmap'    && <CrossCompanyContent title="Roadmaps" sub="All roadmap items across all companies" table="ideas" statusFilter={['planned', 'in_progress', 'shipped']} extraCol={{ header: 'Votes', render: (r) => <span>{r.votes ?? 0}</span> }} />}
+          {page === 'announce'   && <CrossCompanyContent title="Announcements" sub="All announcements and changelog posts" table="announcements" />}
+          {page === 'help'       && <CrossCompanyContent title="Help Center" sub="Help articles across all companies" table="help_articles" extraCol={{ header: 'Views', render: (r) => <span>{r.views ?? 0}</span> }} />}
           {page === 'chat'       && <PlaceholderPage title="Live Chat" sub="Global inbox for all live chat conversations" />}
           {page === 'tickets'    && <PlaceholderPage title="Support Tickets" sub="All open and closed support tickets" />}
           {page === 'moderation' && <PlaceholderPage title="Moderation" sub="Flagged content, spam and reported ideas" />}

@@ -75,10 +75,10 @@ export default function CreateCompanyPage() {
       const result = await res.json()
       if (result.error) throw new Error(result.error)
 
-      // 2. Get the new user's ID
-      const { data: users } = await (supabase as any).auth.admin.listUsers()
-      const newUser = users?.users?.find((u: any) => u.email === ownerEmail)
-      const userId = newUser?.id
+      // 2. Use the user ID returned by the create-user route (works for both
+      //    newly created and pre-existing accounts). Client-side listUsers()
+      //    doesn't work without the service role, which caused failures before.
+      const userId = result.userId
 
       // 3. Create the company via API route
       const coRes = await fetch('/api/companies', {

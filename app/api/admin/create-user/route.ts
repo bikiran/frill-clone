@@ -20,9 +20,32 @@ export async function POST(req: NextRequest) {
         email: userEmail, password, email_confirm: true,
         user_metadata: { display_name: name || email.split('@')[0] },
       })
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-      userId = data.user?.id
-      userEmail = data.user?.email || email
+      if (error) {
+        // If the user already exists, reuse their account rather than failing —
+        // the super admin is provisioning a company for an existing person.
+        const alreadyExists = /already|registered|exists/i.test(error.message || '')
+        if (alreadyExists) {
+          // Find the existing user by paging through auth users.
+          let found: any = null
+          for (let page = 1; page <= 20 && !found; page++) {
+            const { data: list } = await (supabaseAdmin.auth.admin as any).listUsers({ page, perPage: 200 })
+            const users = list?.users || []
+            found = users.find((u: any) => (u.email || '').toLowerCase() === userEmail)
+            if (users.length < 200) break
+          }
+          if (found) {
+            userId = found.id
+            userEmail = found.email || userEmail
+          } else {
+            return NextResponse.json({ error: 'This email is registered but the account could not be located. Check the Users list.' }, { status: 400 })
+          }
+        } else {
+          return NextResponse.json({ error: error.message }, { status: 400 })
+        }
+      } else {
+        userId = data.user?.id
+        userEmail = data.user?.email || email
+      }
     } else {
       const { data, error } = await supabaseAdmin.auth.signUp({
         email: userEmail, password,
@@ -38,7 +61,7 @@ export async function POST(req: NextRequest) {
       })
     } catch {}
 
-    return NextResponse.json({ success: true, email: userEmail })
+    return NextResponse.json({ success: true, email: userEmail, userId })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
