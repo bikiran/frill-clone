@@ -209,6 +209,14 @@ export async function POST(req: NextRequest) {
 
     // Order-triggered chat automation — the payload for order topics IS the order.
     if ((resource === 'order' || data.line_items) && data.status) {
+      // Diagnostic breadcrumb so ?diag=1 can confirm order webhooks are arriving.
+      try {
+        await supabase.from('abandoned_cart_hits').insert({
+          company_id: companyId, had_email: !!data.billing?.email, had_phone: !!data.billing?.phone,
+          item_count: Array.isArray(data.line_items) ? data.line_items.length : 0,
+          raw_keys: `ORDER_WEBHOOK status=${data.status} id=${data.id}`,
+        })
+      } catch {}
       try { await runOrderChatAutomation(supabase, companyId, data) }
       catch (e) { console.error('[Webhook] order chat automation error', e) }
     }

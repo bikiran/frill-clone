@@ -78,17 +78,25 @@ export async function POST(req: NextRequest) {
     const norm = normalize(body)
     if (!norm.email && !norm.phone) return NextResponse.json({ error: 'Cart needs at least an email or phone to be useful' }, { status: 400 })
 
-    // Match to an existing contact so we can link a conversation later.
+    // Find-or-create the contact, then find-or-create a conversation, so the
+    // abandoned cart appears as a chat in the inbox (not just a silent record).
     let conversationId: string | null = null
+    let contact: any = null
+    let contactIsNew = false
     try {
-      let contact: any = null
       if (norm.email) {
-        const { data } = await db.from('contacts').select('id').eq('company_id', companyId).ilike('email', norm.email).limit(1)
+        const { data } = await db.from('contacts').select('id, name').eq('company_id', companyId).ilike('email', norm.email).limit(1)
         contact = data?.[0] || null
       }
       if (!contact && norm.phone) {
-        const { data } = await db.from('contacts').select('id').eq('company_id', companyId).eq('phone', norm.phone).limit(1)
+        const { data } = await db.from('contacts').select('id, name').eq('company_id', companyId).eq('phone', norm.phone).limit(1)
         contact = data?.[0] || null
+      }
+      if (!contact) {
+        const { data: created } = await db.from('contacts').insert({
+          company_id: companyId, name: norm.name || norm.email || norm.phone, email: norm.email || null, phone: norm.phone || null,
+        }).select('id, name').maybeSingle()
+        contact = created; contactIsNew = true
       }
       if (contact?.id) {
         const { data: conv } = await db.from('conversations').select('id').eq('company_id', companyId).eq('contact_id', contact.id).order('last_message_at', { ascending: false }).limit(1)
@@ -128,8 +136,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: saveError || 'Cart could not be saved', norm }, { status: 500 })
     }
 
-    // Only notify when a NEW cart was actually saved.
+    // For a NEW cart: create a conversation if the contact has none, post a
+    // system message with the cart summary, and notify — so it shows as a chat.
     if (isNew) {
+      try {
+        if (!conversationId && contact?.id) {
+          const { data: newConv } = await db.from('conversations').insert({
+            company_id: companyId, channel: 'chat', subject: 'Abandoned cart',
+            contact_id: contact.id, status: 'open', is_unread: true, unread_count: 1,
+            last_message: '', last_message_at: new Date().toISOString(),
+          }).select('id').maybeSingle()
+          conversationId = newConv?.id || null
+          // Link the cart to the new conversation.
+          if (conversationId) await db.from('abandoned_carts').update({ conversation_id: conversationId }).eq('id', saved.id)
+        }
+        if (conversationId) {
+          const itemLines = (norm.items || []).map((it: any) => `• ${it.quantity || 1}× ${it.name || 'item'}`).join('\n')
+          const summary = `🛒 Abandoned cart — ${norm.currency || 'AUD'} $${norm.total || 0}${itemLines ? `\n${itemLines}` : ''}${norm.cart_url ? `\n\nCart: ${norm.cart_url}` : ''}`
+          await db.from('messages').insert({
+            conversation_id: conversationId, company_id: companyId, sender_type: 'system',
+            content: summary, metadata: { abandoned_cart: true, cart_id: saved.id },
+          })
+          await db.from('conversations').update({ last_message: `🛒 Abandoned cart — ${norm.currency || 'AUD'} $${norm.total || 0}`, last_message_at: new Date().toISOString(), is_unread: true }).eq('id', conversationId)
+        }
+      } catch (e) { console.error('[abandoned-cart] conversation create failed', e) }
+
       try { await notifyCompany({ db, companyId, type: 'cart', message: `Abandoned cart from ${norm.name || norm.email || norm.phone || 'a customer'} — ${norm.currency || 'AUD'} $${(norm.total || 0)}`, actorName: norm.name || undefined, conversationId: conversationId || undefined }) } catch {}
     }
 
