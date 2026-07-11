@@ -82,38 +82,40 @@ function JoinTeamContent() {
     try {
       let { data: { session } } = await supabase.auth.getSession()
 
-      // Not signed in (or signed in as the wrong person): use the password field
-      // to sign in, or create the account if it doesn't exist yet.
-      if (!session?.user || session.user.email !== email) {
-        if (session?.user && session.user.email !== email) {
-          await supabase.auth.signOut()
-        }
-        if (!password || password.length < 6) {
-          throw new Error('Enter a password (at least 6 characters) to join.')
-        }
-        // Try sign-in first (existing account), else sign up.
-        const signInRes = await supabase.auth.signInWithPassword({ email: email!, password })
-        if (signInRes.error) {
-          const signUpRes = await supabase.auth.signUp({ email: email!, password })
-          if (signUpRes.error) {
-            // If the user exists but the password was wrong, say so clearly.
-            if (/already registered|already exists/i.test(signUpRes.error.message)) {
-              throw new Error('An account with this email exists, but that password is incorrect. Use your existing password, or reset it.')
-            }
-            throw signUpRes.error
-          }
-        }
-        const re = await supabase.auth.getSession()
-        session = re.data.session
-        if (!session?.user) throw new Error('Could not sign you in. Please try again.')
+      // If already signed in as the invited user, just activate membership.
+      if (session?.user && session.user.email === email) {
+        const { error: updateErr } = await (supabase as any)
+          .from('team_members')
+          .update({ status: 'active', user_id: session.user.id, joined_at: new Date().toISOString() })
+          .eq('id', invitation.id)
+        if (updateErr) throw updateErr
+        setAccepted(true)
+        setTimeout(() => { router.push('/admin') }, 1500)
+        return
       }
 
-      // Accept: activate the membership and attach the user id.
-      const { error: updateErr } = await (supabase as any)
-        .from('team_members')
-        .update({ status: 'active', user_id: session.user.id, joined_at: new Date().toISOString() })
-        .eq('id', invitation.id)
-      if (updateErr) throw updateErr
+      // Otherwise create/confirm the account server-side (email auto-confirmed),
+      // which also activates the membership, then sign in with the password.
+      if (!password || password.length < 6) {
+        throw new Error('Enter a password (at least 6 characters) to join.')
+      }
+      if (session?.user && session.user.email !== email) {
+        await supabase.auth.signOut()
+      }
+
+      const res = await fetch('/api/team/accept-invite', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, companySlug: company }),
+      })
+      const out = await res.json()
+      if (!res.ok) throw new Error(out.error || 'Could not accept the invitation.')
+
+      // Now sign in — the account is confirmed, so this yields a real session.
+      const signInRes = await supabase.auth.signInWithPassword({ email: email!, password })
+      if (signInRes.error) {
+        // Membership is already active; guide them to sign in manually.
+        throw new Error('Your account is ready, but automatic sign-in failed. Please sign in with your email and password.')
+      }
 
       setAccepted(true)
       setTimeout(() => { router.push('/admin') }, 1500)

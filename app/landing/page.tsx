@@ -147,7 +147,7 @@ export default function LandingPage() {
   const handleDashboard = async () => {
     if (!user) { window.location.href = '/signup'; return }
     try {
-      const { data: co } = await (supabase as any).from('companies').select('slug').eq('owner_id', user.id).single()
+      const { data: co } = await (supabase as any).from('companies').select('slug').eq('owner_id', user.id).order('created_at', { ascending: true }).limit(1).maybeSingle()
       if (co?.slug) window.location.href = `https://${co.slug}.colvy.com/admin`
       else await redirectToUserAdmin(user.id)
     } catch { await redirectToUserAdmin(user.id) }

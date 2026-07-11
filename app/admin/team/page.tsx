@@ -134,6 +134,36 @@ export default function TeamPage() {
     fetchMembers()
   }
 
+  const [resendingId, setResendingId] = useState<string | null>(null)
+  const resendInvite = async (m: any) => {
+    setResendingId(m.id)
+    try {
+      // Resolve the company (slug + name) for the invite link.
+      let company: any = null
+      const { data: owned } = await (supabase as any).from('companies').select('id, name, slug').eq('owner_id', user?.id).order('created_at', { ascending: true }).limit(1)
+      company = owned?.[0] || null
+      if (!company && m.company_id) {
+        const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', m.company_id).maybeSingle()
+        company = data
+      }
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'
+      const inviteLink = `${origin}/team/join?company=${encodeURIComponent(company?.slug || '')}&email=${encodeURIComponent(m.email)}&role=${m.role}`
+      const res = await fetch('/api/send-team-invite', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: m.email, companyName: company?.name || 'the team', role: m.role, inviteLink,
+          inviterName: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A teammate',
+        }),
+      })
+      if (!res.ok) { const o = await res.json().catch(() => ({})); throw new Error(o.error || 'Failed to resend') }
+      showMsg(`Invitation resent to ${m.email}`)
+    } catch (e: any) {
+      showMsg(`Could not resend: ${e.message}`)
+    } finally {
+      setResendingId(null)
+    }
+  }
+
   if (!user) return <SkeletonList rows={6} />
 
   return (
@@ -229,7 +259,12 @@ export default function TeamPage() {
                   {m.status === 'active' ? 'Active' : 'Invited'}
                 </span>
               </div>
-              <div className="col-span-2 text-right">
+              <div className="col-span-2 text-right flex items-center justify-end gap-3">
+                {m.status !== 'active' && (
+                  <button onClick={() => resendInvite(m)} disabled={resendingId === m.id} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
+                    {resendingId === m.id ? 'Sending…' : 'Resend'}
+                  </button>
+                )}
                 <button onClick={() => setConfirmDelete(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: '#dc2626' }}>
                   Remove
                 </button>
