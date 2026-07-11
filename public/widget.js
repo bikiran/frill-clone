@@ -114,6 +114,9 @@
   window.addEventListener('message', function (e) {
     var d = e.data
     if (!d || !d.colvy) return
+    // The iframe can ask for the current parent page (fallback if purl wasn't
+    // in the initial src, e.g. cached old iframe). Reply with the real URL.
+    if (d.type === 'request_parent_page') { sendPage(); return }
     if (d.type === 'new_message' && !open) {
       // Agent replied while the widget is closed: badge it and gently bounce.
       showBadge((unread || 0) + (d.count || 1))

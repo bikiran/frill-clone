@@ -60,6 +60,13 @@ function WidgetContent() {
 
   // Track open/closed state reported by the embedding script.
   useEffect(() => {
+    // Ask the parent for the current page in case purl wasn't in our src (old
+    // cached widget.js, or navigation before we loaded).
+    try {
+      if (typeof window !== 'undefined' && window.parent !== window && !parentPage.url) {
+        window.parent.postMessage({ colvy: true, type: 'request_parent_page' }, '*')
+      }
+    } catch {}
     const onOpen = (e: MessageEvent) => {
       const d: any = e.data
       if (!d || !d.colvy || d.type !== 'widget_open') return
@@ -171,8 +178,11 @@ function WidgetContent() {
           return [...prev, msg]
         })
         // Agent/system reply: highlight it, and if the widget is closed, wake the
-        // bubble (badge + bounce) via the embedding script.
-        if (msg.sender_type === 'agent' || msg.sender_type === 'system') {
+        // bubble (badge + bounce) via the embedding script. Skip internal-only
+        // system notes (cart/order events) — those aren't shown to the customer.
+        const mMeta = msg.metadata || {}
+        const isInternal = msg.sender_type === 'system' && (mMeta.abandoned_cart || mMeta.order_event || mMeta.internal)
+        if ((msg.sender_type === 'agent' || msg.sender_type === 'system') && !isInternal) {
           if (msg.id) {
             setHighlightMsgIds(prev => [...prev, msg.id])
             setTimeout(() => setHighlightMsgIds(prev => prev.filter(id => id !== msg.id)), 2600)
@@ -1684,6 +1694,10 @@ function WidgetContent() {
                   {chatMessages2.map((msg: any, i) => {
                     const isAgent = msg.sender_type === 'agent'
                     const isSystem = msg.sender_type === 'system'
+                    // Internal-only system messages (abandoned cart summary, order
+                    // events, etc.) are for the agent — never show them to the customer.
+                    const meta = msg.metadata || {}
+                    if (isSystem && (meta.abandoned_cart || meta.order_event || meta.internal)) return null
                     if (isSystem) return <div key={i} style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af' }}><span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>{msg.content}</span></div>
                     const atts = Array.isArray(msg.attachments) ? msg.attachments : []
                     const reactions = Array.isArray(msg.reactions) ? msg.reactions : []
