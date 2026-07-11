@@ -7,6 +7,29 @@ const AU_STATES = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA']
 
 export default function LocationsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [geocoding, setGeocoding] = useState(false)
+
+  const geocodeOutlets = async () => {
+    if (!companyId) return
+    setGeocoding(true)
+    try {
+      const res = await fetch('/api/locations/geocode', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, force: true }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        alert(`Geocoded ${data.geocoded} outlet(s). Victorian visitors will now be auto-assigned to the nearest one.`)
+        await loadLocations(companyId)
+      } else {
+        alert('Geocoding failed: ' + (data.error || 'unknown error'))
+      }
+    } catch (e: any) {
+      alert('Geocoding failed: ' + e.message)
+    } finally {
+      setGeocoding(false)
+    }
+  }
   const [locations, setLocations] = useState<any[]>([])
   const [numbers, setNumbers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -99,12 +122,20 @@ export default function LocationsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>Locations</h1>
           <p style={{ fontSize: 14, color: 'var(--slate)', margin: 0 }}>Manage your business addresses (Australian format).</p>
         </div>
-        {!editing && (
-          <button onClick={() => setEditing({ ...blank })}
-            style={{ padding: '10px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-            + Add location
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 10 }}>
+          {!editing && (
+            <button onClick={geocodeOutlets} disabled={geocoding}
+              style={{ padding: '10px 16px', borderRadius: 10, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+              {geocoding ? 'Geocoding…' : 'Geocode for auto-assign'}
+            </button>
+          )}
+          {!editing && (
+            <button onClick={() => setEditing({ ...blank })}
+              style={{ padding: '10px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+              + Add location
+            </button>
+          )}
+        </div>
       </div>
 
       {editing ? (

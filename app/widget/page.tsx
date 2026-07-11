@@ -58,6 +58,9 @@ function WidgetContent() {
   const [widgetIsOpen, setWidgetIsOpen] = useState(true)
   const widgetIsOpenRef = useRef(true)
   const [highlightMsgIds, setHighlightMsgIds] = useState<string[]>([])
+  const [outletInfo, setOutletInfo] = useState<{ isVic: boolean; nearest: any; outlets: any[] } | null>(null)
+  const [assignedOutlet, setAssignedOutlet] = useState<any>(null)
+  const [showOutletPicker, setShowOutletPicker] = useState(false)
 
   // Keep the chat pinned to the latest message: when the Chat tab is (re)opened,
   // when the chat view is shown, or when new messages arrive, scroll to bottom.
@@ -70,6 +73,33 @@ function WidgetContent() {
     const id = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
     return () => cancelAnimationFrame(id)
   }, [tab, chatStep, chatMessages2.length])
+
+  // When a chat starts, check the visitor's location. For Victorian visitors,
+  // auto-assign the nearest outlet and let them change it. Interstate visitors
+  // are unaffected (no outlet selection shown).
+  useEffect(() => {
+    if (chatStep !== 'chat' || !chatConvId || !company?.id) return
+    if (outletInfo) return
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/widget/nearest-outlet?companyId=${company.id}`)
+        const data = await res.json()
+        setOutletInfo({ isVic: !!data.isVic, nearest: data.nearest || null, outlets: data.outlets || [] })
+        if (data.isVic && data.nearest) {
+          setAssignedOutlet(data.nearest)
+          try { await (supabase as any).from('conversations').update({ assigned_location_id: data.nearest.id, assigned_auto: true }).eq('id', chatConvId) } catch {}
+        }
+      } catch {}
+    })()
+  }, [chatStep, chatConvId, company?.id])
+
+  const changeOutlet = async (outlet: any) => {
+    setAssignedOutlet(outlet)
+    setShowOutletPicker(false)
+    if (chatConvId) {
+      try { await (supabase as any).from('conversations').update({ assigned_location_id: outlet.id, assigned_auto: false }).eq('id', chatConvId) } catch {}
+    }
+  }
 
   // Track open/closed state reported by the embedding script.
   useEffect(() => {
@@ -1704,6 +1734,32 @@ function WidgetContent() {
                   <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '8px 0' }}>
                     <span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>Chat started • We'll reply as soon as we can</span>
                   </div>
+
+                  {/* VIC visitors: nearest-outlet auto-assignment with a Change dropdown. */}
+                  {assignedOutlet && (
+                    <div style={{ position: 'relative', textAlign: 'center', margin: '2px 0 6px' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--peach, #fff4f1)', border: '1px solid #ffe0d8', borderRadius: 12, padding: '7px 12px', fontSize: 12, color: '#0d0d0d', maxWidth: '92%' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                        <span>You've been assigned to <strong>{company?.name ? `${company.name} ` : ''}{assignedOutlet.label || assignedOutlet.suburb}</strong></span>
+                        {outletInfo?.outlets && outletInfo.outlets.length > 1 && (
+                          <button type="button" onClick={() => setShowOutletPicker(v => !v)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: 'none', border: 'none', color: accentColor, fontWeight: 700, fontSize: 12, cursor: 'pointer', padding: 0, flexShrink: 0 }}>
+                            Change <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+                          </button>
+                        )}
+                      </div>
+                      {showOutletPicker && outletInfo?.outlets && (
+                        <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: '100%', marginTop: 4, zIndex: 20, background: '#fff', border: '1px solid #e5e5e5', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', overflow: 'hidden', minWidth: 200 }}>
+                          {outletInfo.outlets.map((o: any) => (
+                            <button key={o.id} type="button" onClick={() => changeOutlet(o)}
+                              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', background: assignedOutlet.id === o.id ? 'var(--peach, #fff4f1)' : '#fff', border: 'none', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', fontSize: 13, color: '#0d0d0d', fontWeight: assignedOutlet.id === o.id ? 700 : 500 }}>
+                              {o.label || o.suburb}{o.suburb && o.label ? ` · ${o.suburb}` : ''}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {chatMessages2.map((msg: any, i) => {
                     const isAgent = msg.sender_type === 'agent'
                     const isSystem = msg.sender_type === 'system'
