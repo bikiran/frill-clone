@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
+import { notifyCompany } from '@/lib/notify'
 
 function admin() {
   return createClient(
@@ -146,6 +147,8 @@ export async function POST(req: NextRequest) {
 
     // ── Payment link (WooCommerce order-pay URL)
     const payLink = order.payment_url || `${integ.store_url}/checkout/order-pay/${order.id}/?pay_for_order=true&key=${order.order_key}`
+
+    try { await notifyCompany({ db, companyId, type: 'order', message: `Order #${order.number || order.id} created — ${order.currency || 'AUD'} $${order.total}`, actorName: createdByName }) } catch {}
 
     // ── Post the audit event into the conversation
     if (conversationId) {

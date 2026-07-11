@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { notifyCompany } from '@/lib/notify'
 
 function admin() {
   return createClient(
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
+    try { await notifyCompany({ db, companyId, type: 'ticket', message: `Support ticket ${ticket.ticket_number} created — "${subject}"` }) } catch {}
     return NextResponse.json({ ok: true, ticket, link })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

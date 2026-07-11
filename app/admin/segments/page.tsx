@@ -18,6 +18,7 @@ export default function SegmentsPage() {
   const [allUsers, setAllUsers] = useState<any[]>([])
   const [selectedSegment, setSelectedSegment] = useState<Segment | null>(null)
   const [searchUsers, setSearchUsers] = useState('')
+  const [visibleCount, setVisibleCount] = useState(50)
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [newName, setNewName] = useState('')
@@ -34,6 +35,8 @@ export default function SegmentsPage() {
     fetchSegments()
     fetchUsers()
   }, [router])
+
+  useEffect(() => { setVisibleCount(50) }, [selectedSegment, searchUsers])
 
   const fetchSegments = async () => {
     try {
@@ -130,6 +133,7 @@ export default function SegmentsPage() {
   const segmentUsers = selectedSegment
     ? allUsers.filter(u => matchUser(u, selectedSegment)).filter(u => !searchUsers || (u.name || '').toLowerCase().includes(searchUsers.toLowerCase()) || (u.email || '').toLowerCase().includes(searchUsers.toLowerCase()))
     : allUsers.filter(u => !searchUsers || (u.name || '').toLowerCase().includes(searchUsers.toLowerCase()) || (u.email || '').toLowerCase().includes(searchUsers.toLowerCase()))
+  const visibleUsers = segmentUsers.slice(0, visibleCount)
 
   const createSegment = async () => {
     if (!newName.trim()) return
@@ -173,7 +177,7 @@ export default function SegmentsPage() {
             onClick={() => setSelectedSegment(null)}
             className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-smooth hover:bg-gray-50 cursor-pointer"
             style={{ background: !selectedSegment ? 'var(--canvas)' : 'transparent', color: 'var(--ink)', fontWeight: !selectedSegment ? 600 : 400 }}>
-            <span>All Users</span>
+            <span>All Customers</span>
             <span className="text-xs px-1.5 rounded" style={{ background: 'var(--canvas)', color: 'var(--slate)' }}>{allUsers.length}</span>
           </button>
           {segments.map(s => (
@@ -193,8 +197,8 @@ export default function SegmentsPage() {
         <div className="px-4 md:px-8 py-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>{selectedSegment ? selectedSegment.name : 'All Users'}</h1>
-              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>{segmentUsers.length} {segmentUsers.length === 1 ? 'user' : 'users'}</p>
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>{selectedSegment ? selectedSegment.name : 'All Customers'}</h1>
+              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>{segmentUsers.length} {segmentUsers.length === 1 ? 'customer' : 'customers'}</p>
             </div>
             <div className="flex items-center gap-2">
               {selectedSegment && (
@@ -214,11 +218,11 @@ export default function SegmentsPage() {
               <div className="mb-4">
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border)' }}>
                   <SearchIcon size={16} color="var(--slate)" />
-                  <input type="text" value={searchUsers} onChange={e => setSearchUsers(e.target.value)} placeholder="Search users" className="flex-1 text-sm focus:outline-none" style={{ fontSize: '16px' }} />
+                  <input type="text" value={searchUsers} onChange={e => setSearchUsers(e.target.value)} placeholder="Search customers" className="flex-1 text-sm focus:outline-none" style={{ fontSize: '16px' }} />
                 </div>
               </div>
               <div className="space-y-1">
-                {segmentUsers.map(u => {
+                {visibleUsers.map(u => {
                   const SRC: Record<string, { label: string; bg: string; c: string }> = {
                     woocommerce: { label: 'WooCommerce', bg: '#f3e8ff', c: '#96588A' },
                     shopify: { label: 'Shopify', bg: '#eefbe0', c: '#5c8a1b' },
@@ -242,7 +246,12 @@ export default function SegmentsPage() {
                     </div>
                   </button>
                 )})}
-                {segmentUsers.length === 0 && <p className="text-center py-8" style={{ color: 'var(--slate)' }}>No users found</p>}
+                {segmentUsers.length === 0 && <p className="text-center py-8" style={{ color: 'var(--slate)' }}>No customers found</p>}
+                {visibleCount < segmentUsers.length && (
+                  <button onClick={() => setVisibleCount(c => c + 50)} className="w-full py-2.5 mt-2 rounded-lg border text-sm font-medium" style={{ borderColor: 'var(--border)', color: 'var(--coral)' }}>
+                    Load more ({segmentUsers.length - visibleCount} remaining)
+                  </button>
+                )}
               </div>
             </div>
 
@@ -279,7 +288,7 @@ export default function SegmentsPage() {
             </div>
             <div className="p-6">
               <div className="flex items-center gap-2 mb-4 text-sm" style={{ color: 'var(--ink)' }}>
-                Match users that meet
+                Match customers that meet
                 <select value={newMatchType} onChange={e => setNewMatchType(e.target.value)} className="px-3 py-1.5 rounded-lg border text-sm" style={{ borderColor: 'var(--border)' }}>
                   <option value="all">All</option>
                   <option value="any">Any</option>

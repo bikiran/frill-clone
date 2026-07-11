@@ -1400,7 +1400,7 @@ export default function InboxPage() {
       {galleryIndex !== null && (() => {
         const media: MediaItem[] = []
         messages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
-          if (a.kind === 'image' || a.kind === 'video') media.push({ url: a.url, name: a.name, kind: a.kind })
+          { const isImg = a.kind === 'image' || String(a.type||'').startsWith('image'); const isVid = a.kind === 'video' || String(a.type||'').startsWith('video'); if ((isImg || isVid) && a.url) media.push({ url: a.url, name: a.name, kind: isVid ? 'video' : 'image' }) }
         }))
         return <MediaGallery items={media} index={galleryIndex} onClose={() => setGalleryIndex(null)} onIndex={setGalleryIndex} />
       })()}
@@ -2296,7 +2296,7 @@ export default function InboxPage() {
                 {(() => {
                   const media: any[] = []
                   messages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
-                    if (a.kind === 'image' || a.kind === 'video') media.push(a)
+                    { const isImg = a.kind === 'image' || String(a.type||'').startsWith('image'); const isVid = a.kind === 'video' || String(a.type||'').startsWith('video'); if ((isImg || isVid) && a.url) media.push({ ...a, kind: isVid ? 'video' : 'image' }) }
                   }))
                   if (media.length === 0) return null
                   return (

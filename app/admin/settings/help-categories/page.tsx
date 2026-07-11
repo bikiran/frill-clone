@@ -22,12 +22,27 @@ export default function HelpCategoriesPage() {
     const init = async () => {
       const { data: authData } = await supabase.auth.getSession()
       if (!authData.session?.user) return
+      const uid = authData.session.user.id
 
-      const { data: co } = await (supabase as any)
-        .from('companies')
-        .select('*')
-        .eq('owner_id', authData.session.user.id)
-        .maybeSingle()
+      // Robust company resolution: subdomain slug → owner → team membership.
+      let co: any = null
+      const host = typeof window !== 'undefined' ? window.location.hostname : ''
+      if (host.endsWith('.colvy.com') && host !== 'colvy.com' && host !== 'www.colvy.com') {
+        const slug = host.replace('.colvy.com', '')
+        const { data } = await (supabase as any).from('companies').select('*').eq('slug', slug).maybeSingle()
+        co = data || null
+      }
+      if (!co) {
+        const { data } = await (supabase as any).from('companies').select('*').eq('owner_id', uid).maybeSingle()
+        co = data || null
+      }
+      if (!co) {
+        const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', uid).maybeSingle()
+        if (tm?.company_id) {
+          const { data } = await (supabase as any).from('companies').select('*').eq('id', tm.company_id).maybeSingle()
+          co = data || null
+        }
+      }
 
       setCompany(co)
       if (co?.id) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { notifyCompany } from '@/lib/notify'
 
 function admin() {
   return createClient(
@@ -87,12 +88,21 @@ export async function POST(req: NextRequest) {
 
     // Upsert on external_id if provided, else insert.
     let saved: any = null
+    let isNew = false
     if (norm.external_id) {
+      // Check if it already existed to avoid notifying on every cart update.
+      const { data: existing } = await db.from('abandoned_carts').select('id').eq('company_id', companyId).eq('external_id', norm.external_id).maybeSingle()
+      isNew = !existing
       const { data } = await db.from('abandoned_carts').upsert(row, { onConflict: 'company_id,external_id' }).select().maybeSingle()
       saved = data
     } else {
       const { data } = await db.from('abandoned_carts').insert(row).select().maybeSingle()
       saved = data
+      isNew = true
+    }
+
+    if (isNew) {
+      try { await notifyCompany({ db, companyId, type: 'cart', message: `Abandoned cart from ${norm.name || norm.email || norm.phone || 'a customer'} — ${norm.currency || 'AUD'} $${(norm.total || 0)}`, actorName: norm.name || undefined }) } catch {}
     }
 
     return NextResponse.json({ ok: true, id: saved?.id })
@@ -100,7 +110,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
-
 // GET: list abandoned carts for a company, or fetch by email/phone (for the chat).
 export async function GET(req: NextRequest) {
   try {
