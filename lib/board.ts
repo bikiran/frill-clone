@@ -33,14 +33,18 @@ export async function getCompanyBySlug(slug: string): Promise<Company | null> {
 
 export async function getCompanyByOwner(userId: string): Promise<Company | null> {
   try {
-    // maybeSingle() returns null (not throws) when no company found
+    // A user may own more than one company. .maybeSingle() throws on multiple
+    // rows, which previously caused the Dashboard to fall through to an arbitrary
+    // workspace (e.g. landing on Prexty instead of the user's own board). Use an
+    // array query and return the OLDEST-owned company as the stable primary.
     const { data, error } = await (supabase as any)
       .from('companies')
       .select('*')
       .eq('owner_id', userId)
-      .maybeSingle()
+      .order('created_at', { ascending: true })
+      .limit(1)
     if (error) console.warn('getCompanyByOwner error:', error.message)
-    return data || null
+    return (data && data[0]) || null
   } catch (e: any) {
     console.warn('getCompanyByOwner exception:', e.message)
     return null

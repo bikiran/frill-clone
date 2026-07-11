@@ -49,6 +49,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   const [showDrawer, setShowDrawer] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [notifications, setNotifications] = useState<any[]>([])
@@ -397,15 +399,21 @@ export default function RootLayout({
 
   const userInitial = user?.email?.[0].toUpperCase() || 'A'
 
-  // Pages that use their own full-page layout (no nav wrapper)
-  const isEmbed = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('embed') === '1'
+  // Pages that use their own full-page layout (no nav wrapper).
+  // IMPORTANT: window-dependent checks (embed, marketing root) must NOT change
+  // the render tree between the server render and the first client render, or
+  // React throws a hydration error (the "page error that clears on reload" bug
+  // when navigating to/from signin). So they only take effect after mount.
+  const isEmbed = mounted && new URLSearchParams(window.location.search).get('embed') === '1'
   // On colvy.com the proxy rewrites "/" → "/landing", but usePathname() still
   // reports "/". Detect the root of the marketing domain so we don't render the
   // app nav on top of the landing page's own nav (the "mixed up menu" bug).
-  const isMarketingRoot = typeof window !== 'undefined'
+  const isMarketingRoot = mounted
     && (window.location.hostname === 'colvy.com' || window.location.hostname === 'www.colvy.com')
     && (pathname === '/' || pathname === '/landing')
-  const isFullPage = isEmbed || isMarketingRoot || ['/landing', '/pricing', '/features', '/platform-admin', '/forms/', '/widget', '/auth/handoff'].some(p => pathname?.startsWith(p))
+  // Pathname-based full-page routes are safe on the server (no window needed).
+  const isFullPageRoute = ['/landing', '/pricing', '/features', '/platform-admin', '/forms/', '/widget', '/auth/handoff'].some(p => pathname?.startsWith(p))
+  const isFullPage = isEmbed || isMarketingRoot || isFullPageRoute
 
   if (isFullPage) {
     return (
