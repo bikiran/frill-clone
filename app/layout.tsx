@@ -539,6 +539,15 @@ export default function RootLayout({
     } else if (notification.type === 'settings') {
       setShowNotifications(false)
       router.push('/admin/settings')
+    } else if (['chat', 'sms', 'order', 'ticket', 'cart', 'activity'].includes(notification.type)) {
+      // CRM activity — go to the inbox (open the specific conversation if known).
+      setShowNotifications(false)
+      const convId = notification.conversation_id || notification.conversationId
+      router.push(convId ? `/admin/inbox?conversation=${convId}` : '/admin/inbox')
+    } else {
+      // Fallback: any unrecognised type with a conversation goes to the inbox.
+      setShowNotifications(false)
+      if (notification.conversation_id) router.push(`/admin/inbox?conversation=${notification.conversation_id}`)
     }
   }
 

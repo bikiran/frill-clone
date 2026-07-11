@@ -84,9 +84,30 @@ export default function ChatWidgetSettings() {
                   <input value={cfg.text || ''} maxLength={18} onChange={e => set('text', e.target.value)} placeholder="Chat with us" style={S.input} />
                 </div>
                 <div>
-                  <label style={S.label}>Popup text <span style={{ color: 'var(--slate)', fontWeight: 400 }}>({(cfg.popup_text || '').length}/255)</span></label>
-                  <textarea value={cfg.popup_text || ''} maxLength={255} onChange={e => set('popup_text', e.target.value)} rows={2} placeholder="Hi there! How can we help?" style={{ ...S.input, resize: 'vertical' }} />
+                  <label style={S.label}>Bubble position</label>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {[['bottom-right', 'Bottom right'], ['bottom-left', 'Bottom left'], ['center-right', 'Center right'], ['center-left', 'Center left']].map(([k, label]) => (
+                      <button key={k} onClick={() => set('bubble_position', k)} style={{ padding: '8px 14px', borderRadius: 8, border: (cfg.bubble_position || 'bottom-right') === k ? '2px solid var(--coral)' : '1px solid var(--border)', background: (cfg.bubble_position || 'bottom-right') === k ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13 }}>{label}</button>
+                    ))}
+                  </div>
                 </div>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={S.label}>Side offset</label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input value={cfg.offset_x ?? '24'} onChange={e => set('offset_x', e.target.value)} style={{ ...S.input, flex: 1 }} placeholder="24" />
+                      <select value={cfg.offset_x_unit || 'px'} onChange={e => set('offset_x_unit', e.target.value)} style={{ ...S.input, width: 64 }}><option value="px">px</option><option value="%">%</option></select>
+                    </div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={S.label}>Vertical offset</label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input value={cfg.offset_y ?? '24'} onChange={e => set('offset_y', e.target.value)} style={{ ...S.input, flex: 1 }} placeholder="24" />
+                      <select value={cfg.offset_y_unit || 'px'} onChange={e => set('offset_y_unit', e.target.value)} style={{ ...S.input, width: 64 }}><option value="px">px</option><option value="%">%</option></select>
+                    </div>
+                  </div>
+                </div>
+                <p style={{ ...S.hint, marginTop: -4 }}>Side offset moves the bubble in from the left/right edge; vertical offset moves it up from the bottom (or down from centre). Use px or % like Tawk.to.</p>
               </div>
             </>
           )}

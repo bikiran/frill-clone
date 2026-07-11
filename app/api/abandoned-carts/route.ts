@@ -119,10 +119,26 @@ export async function GET(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
 
+    // Diagnostic: ?diag=1 returns recent carts + counts so you can verify the
+    // bridge is delivering, without needing a matching contact.
+    if (req.nextUrl.searchParams.get('diag')) {
+      const { data: recent } = await db.from('abandoned_carts').select('id, email, phone, total, status, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(10)
+      return NextResponse.json({ diag: true, count: recent?.length || 0, recent: recent || [] })
+    }
+
     let q = db.from('abandoned_carts').select('*').eq('company_id', companyId).eq('status', 'abandoned').order('created_at', { ascending: false })
-    if (email) q = q.ilike('email', email)
-    else if (phone) q = q.eq('phone', phone)
-    const { data } = await q.limit(email || phone ? 5 : 100)
+    if (email) {
+      q = q.ilike('email', email)
+      const { data } = await q.limit(5)
+      return NextResponse.json({ carts: data || [] })
+    } else if (phone) {
+      // Match on the last 8-9 digits so +61 435 844 469 == 0435 844 469.
+      const tail = phone.replace(/\D/g, '').slice(-8)
+      const { data: all } = await q.limit(100)
+      const carts = (all || []).filter((c: any) => (c.phone || '').replace(/\D/g, '').slice(-8) === tail)
+      return NextResponse.json({ carts })
+    }
+    const { data } = await q.limit(100)
     return NextResponse.json({ carts: data || [] })
   } catch (err: any) {
     return NextResponse.json({ error: err.message, carts: [] }, { status: 500 })

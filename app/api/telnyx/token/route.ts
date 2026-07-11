@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
     const db = admin()
     const { data: integ } = await db.from('telnyx_integrations').select('*').eq('company_id', companyId).maybeSingle()
-    if (!integ?.api_key) return NextResponse.json({ error: 'Telnyx not configured for this company' }, { status: 400 })
+    if (!integ?.api_key) return NextResponse.json({ error: 'Call feature is not connected for this company. Please add a phone number from Integrations → Phone & SMS.' }, { status: 400 })
     if (!integ.connection_id) return NextResponse.json({ error: 'No WebRTC connection configured' }, { status: 400 })
 
     const svc = new TelnyxService(integ.api_key)

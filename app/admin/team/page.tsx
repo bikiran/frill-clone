@@ -49,15 +49,39 @@ export default function TeamPage() {
     if (!inviteEmail.trim()) return
     setWorking(true)
     try {
+      // Resolve the inviter's company (for the slug + name in the invite link).
+      let company: any = null
+      const { data: owned } = await (supabase as any).from('companies').select('id, name, slug').eq('owner_id', user?.id).order('created_at', { ascending: true }).limit(1)
+      company = owned?.[0] || null
+      if (!company) {
+        const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', user?.id).maybeSingle()
+        if (tm?.company_id) { const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', tm.company_id).maybeSingle(); company = data }
+      }
+
       const { error } = await supabase.from('team_members').insert({
         email: inviteEmail.trim().toLowerCase(),
         role: inviteRole,
         status: 'invited',
         invited_by: user?.id,
+        company_id: company?.id || null,
       })
       if (error) throw error
-      // Send magic link invite
-      await supabase.auth.signInWithOtp({ email: inviteEmail.trim(), options: { emailRedirectTo: `${window.location.origin}/auth/callback` } })
+
+      // Send a stable invite link (NOT a magic link — those expire fast and get
+      // consumed by email prefetch bots, causing "otp_expired"). This link points
+      // to /team/join, which handles sign-up/sign-in and membership acceptance.
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'
+      const inviteLink = `${origin}/team/join?company=${encodeURIComponent(company?.slug || '')}&email=${encodeURIComponent(inviteEmail.trim().toLowerCase())}&role=${inviteRole}`
+      await fetch('/api/send-team-invite', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: inviteEmail.trim().toLowerCase(),
+          companyName: company?.name || 'the team',
+          role: inviteRole,
+          inviteLink,
+          inviterName: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A teammate',
+        }),
+      })
       showMsg(`Invitation sent to ${inviteEmail}!`)
       setInviteEmail('')
       setShowInvite(false)

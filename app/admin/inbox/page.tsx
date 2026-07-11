@@ -40,6 +40,11 @@ const CHANNEL_ICON: Record<string, string> = {
 const svg = (path: React.ReactNode, size = 15) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>{path}</svg>
 )
+const AiSparkIcon = ({ size = 13 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+    <path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z"/>
+  </svg>
+)
 const Icon = {
   cart: (s?: number) => svg(<><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></>, s),
   poll: (s?: number) => svg(<><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></>, s),
@@ -131,7 +136,17 @@ function extractFromText(text: string) {
     phone = cand.replace(/\s+/g, ' ').trim(); break
   }
   const email = cleaned.match(/[\w.+-]+@[\w-]+\.\w+/)?.[0] || null
-  const address = cleaned.match(/\d+[A-Za-z]?[/-]?\d*\s+[A-Za-z0-9\s,.'-]+?(Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Place|Pl|Court|Ct|Way|Boulevard|Blvd|Crescent|Cres|Terrace|Tce|Parade|Pde|Close|Cl|Highway|Hwy)\b[A-Za-z0-9\s,.'-]*/i)?.[0]?.trim() || null
+  let address = cleaned.match(/\d+[A-Za-z]?[/-]?\d*\s+[A-Za-z0-9\s,.'-]+?(Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Place|Pl|Court|Ct|Way|Boulevard|Blvd|Crescent|Cres|Terrace|Tce|Parade|Pde|Close|Cl|Highway|Hwy)\b[A-Za-z0-9\s,.'-]*/i)?.[0]?.trim() || null
+  // If we found a street address, try to extend it with a trailing AU
+  // suburb + state + 4-digit postcode (e.g. "Richmond VIC 3121").
+  if (address) {
+    const idx = cleaned.indexOf(address)
+    if (idx !== -1) {
+      const tail = cleaned.slice(idx, idx + address.length + 40)
+      const withState = tail.match(new RegExp(address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "[A-Za-z0-9\\s,.'-]*?\\b(NSW|VIC|QLD|SA|WA|TAS|ACT|NT)\\b\\s*\\d{4}", 'i'))
+      if (withState?.[0]) address = withState[0].replace(/\s+/g, ' ').trim()
+    }
+  }
   return { phone: phone || null, email: email || null, address: address || null }
 }
 
@@ -213,6 +228,7 @@ export default function InboxPage() {
   const [showContactEdit, setShowContactEdit] = useState(false)
   const [editContact, setEditContact] = useState<Partial<Contact>>({})
   const [aiDetected, setAiDetected] = useState<{ phone?: string | null; email?: string | null; address?: string | null } | null>(null)
+  const [aiSavedFields, setAiSavedFields] = useState<Set<string>>(new Set())
   const [savingContact, setSavingContact] = useState(false)
   const [activePanel, setActivePanel] = useState<'info' | 'timeline' | 'orders'>('info')
   const [wooCustomer, setWooCustomer] = useState<any>(null)
@@ -391,6 +407,11 @@ export default function InboxPage() {
     selectedRef.current = conv
     setMobilePane('thread')
     setAiDetected(null)
+    // Restore which fields AI auto-saved for this contact (for the badge).
+    try {
+      const store = JSON.parse(localStorage.getItem('colvy-ai-saved') || '{}')
+      setAiSavedFields(new Set(store[conv.contact_id] || []))
+    } catch { setAiSavedFields(new Set()) }
     setShowContactEdit(false)
     setReplyTo(null)
     setAiSummary((conv as any).ai_summary || '')
@@ -443,7 +464,19 @@ export default function InboxPage() {
         const v = (extracted as any)[k]
         if (v && !convDismissed.includes(v)) filtered[k] = v
       })
-      if (filtered.phone || filtered.email || filtered.address) setAiDetected(filtered)
+      if (filtered.phone || filtered.email || filtered.address) {
+        // Auto-save any detected field the contact doesn't already have, and
+        // remember which fields AI filled (to show the AI badge).
+        ;(['phone', 'email', 'address'] as const).forEach(async (k) => {
+          const val = filtered[k]
+          if (!val) return
+          const already = (conv.__contact && conv.__contact[k]) // may be undefined
+          if (!already) {
+            try { await autoSaveAiField(conv, k, val) } catch {}
+          }
+        })
+        setAiDetected(filtered)
+      }
       else setAiDetected(null)
     }, 300)
   }
@@ -1175,6 +1208,32 @@ export default function InboxPage() {
     setAiDetected(null)
   }
 
+  // Automatically save an AI-detected field to the contact when it's empty,
+  // and record that AI filled it so we can show an AI badge next to it.
+  const autoSaveAiField = async (conv: any, field: string, value: string) => {
+    let contactId = conv.contact_id || conv.__contact?.id
+    if (contactId) {
+      const { data: existing } = await (supabase as any).from('contacts').select(field).eq('id', contactId).maybeSingle()
+      if (existing && existing[field]) return // already has a value — don't overwrite
+      await (supabase as any).from('contacts').update({ [field]: value, updated_at: new Date().toISOString() }).eq('id', contactId)
+    } else if (companyId) {
+      const contactName = conv.subject || 'Visitor'
+      const { data: newContact } = await (supabase as any).from('contacts').insert({ company_id: companyId, name: contactName, [field]: value }).select().maybeSingle()
+      if (newContact) { contactId = newContact.id; try { await (supabase as any).from('conversations').update({ contact_id: contactId }).eq('id', conv.id) } catch {} }
+    }
+    // Mark AI-saved (persist per contact in localStorage so the badge survives reloads).
+    try {
+      const store = JSON.parse(localStorage.getItem('colvy-ai-saved') || '{}')
+      store[contactId] = Array.from(new Set([...(store[contactId] || []), field]))
+      localStorage.setItem('colvy-ai-saved', JSON.stringify(store))
+    } catch {}
+    // Reflect in the open contact panel if it's this conversation.
+    if (selected?.id === conv.id) {
+      setContact((c: any) => c ? { ...c, [field]: value } : c)
+      setAiSavedFields(prev => new Set([...Array.from(prev), field]))
+    }
+  }
+
   const acceptAiField = async (field: string, value: string) => {
     const updated = { ...editContact, [field]: value }
     setEditContact(updated)
@@ -1809,24 +1868,15 @@ export default function InboxPage() {
             {/* AI detection banner */}
             {aiDetected && (aiDetected.phone || aiDetected.email || aiDetected.address) && (
               <div style={{ background: '#fffbeb', borderBottom: '1px solid #fde68a', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12 }}>
-                <span style={{ fontWeight: 700, color: '#d97706' }}>✨ AI detected:</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700, color: '#d97706' }}><AiSparkIcon /> AI saved:</span>
                 {aiDetected.phone && (
-                  <button type="button" onClick={() => acceptAiField('phone', aiDetected.phone!)}
-                    style={{ padding: '3px 10px', borderRadius: 8, background: '#fff', border: '1px solid #fde68a', cursor: 'pointer', fontSize: 12, color: '#d97706', fontWeight: 600 }}>
-                    📱 {aiDetected.phone} — click to save
-                  </button>
+                  <span style={{ padding: '3px 10px', borderRadius: 8, background: '#fff', border: '1px solid #fde68a', fontSize: 12, color: '#d97706', fontWeight: 600 }}>{aiDetected.phone}</span>
                 )}
                 {aiDetected.email && (
-                  <button type="button" onClick={() => acceptAiField('email', aiDetected.email!)}
-                    style={{ padding: '3px 10px', borderRadius: 8, background: '#fff', border: '1px solid #fde68a', cursor: 'pointer', fontSize: 12, color: '#d97706', fontWeight: 600 }}>
-                    ✉️ {aiDetected.email} — click to save
-                  </button>
+                  <span style={{ padding: '3px 10px', borderRadius: 8, background: '#fff', border: '1px solid #fde68a', fontSize: 12, color: '#d97706', fontWeight: 600 }}>{aiDetected.email}</span>
                 )}
                 {aiDetected.address && (
-                  <button type="button" onClick={() => acceptAiField('address', aiDetected.address!)}
-                    style={{ padding: '3px 10px', borderRadius: 8, background: '#fff', border: '1px solid #fde68a', cursor: 'pointer', fontSize: 12, color: '#d97706', fontWeight: 600 }}>
-                    📍 {aiDetected.address} — click to save
-                  </button>
+                  <span style={{ padding: '3px 10px', borderRadius: 8, background: '#fff', border: '1px solid #fde68a', fontSize: 12, color: '#d97706', fontWeight: 600 }}>{aiDetected.address}</span>
                 )}
                 <button type="button" onClick={dismissAllAi} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 14 }}>✕</button>
               </div>
@@ -2295,7 +2345,12 @@ export default function InboxPage() {
                     ] as [string, string, string][])
                       .map(([field, label, value]) => (
                         <div key={field} className="contact-field-row" style={{ position: 'relative' }}>
-                          <p style={{ margin: '0 0 2px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>{label}</p>
+                          <p style={{ margin: '0 0 2px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {label}
+                            {aiSavedFields.has(field as string) && value && (
+                              <span title="Saved automatically by AI" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, color: '#8b5cf6', background: '#f3e8ff', padding: '1px 5px', borderRadius: 5, fontSize: 8.5 }}><AiSparkIcon size={9} /> AI</span>
+                            )}
+                          </p>
                           {editField === field ? (
                             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                               <input autoFocus value={editFieldValue} onChange={e => setEditFieldValue(e.target.value)}
