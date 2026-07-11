@@ -47,20 +47,76 @@ export default function SegmentsPage() {
   }
 
   const fetchUsers = async () => {
-    // Get unique users from ideas + comments + votes
-    const { data: ideas } = await supabase.from('ideas').select('user_id, created_by_name, created_at')
+    // Resolve the company (subdomain slug → owner → team membership).
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.user) { setAllUsers([]); return }
+    let cid: string | null = null
+    const h = typeof window !== 'undefined' ? window.location.hostname : ''
+    if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
+      const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
+      cid = co?.id || null
+    }
+    if (!cid) {
+      const { data: ownCo } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
+      cid = ownCo?.id || null
+    }
+    if (!cid) {
+      const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', session.user.id).maybeSingle()
+      cid = tm?.company_id || null
+    }
+
+    // A single map keyed by email (or a synthetic key) so the same person from
+    // multiple sources merges into one row with combined source tags.
     const userMap = new Map<string, any>()
-    ;(ideas || []).forEach(i => {
-      if (i.user_id && !userMap.has(i.user_id)) {
-        userMap.set(i.user_id, { id: i.user_id, name: i.created_by_name || 'Anonymous', last_seen: i.created_at })
+    const add = (key: string, data: any, source: string) => {
+      const k = (key || '').toLowerCase() || `${source}-${Math.random()}`
+      const existing = userMap.get(k)
+      if (existing) {
+        existing.sources = Array.from(new Set([...(existing.sources || []), source]))
+        // Fill any missing fields
+        for (const f of ['name', 'email', 'phone', 'total_spend', 'total_orders']) if (!existing[f] && data[f]) existing[f] = data[f]
+      } else {
+        userMap.set(k, { ...data, sources: [source] })
       }
-    })
+    }
+
+    // 1) Feedback board users (ideas)
+    try {
+      const { data: ideas } = await supabase.from('ideas').select('user_id, created_by_name, created_at')
+      ;(ideas || []).forEach((i: any) => { if (i.user_id) add(i.user_id, { id: i.user_id, name: i.created_by_name || 'Anonymous', last_seen: i.created_at }, 'feedback') })
+    } catch {}
+
+    if (cid) {
+      // 2) Chat contacts
+      try {
+        const { data: contacts } = await (supabase as any).from('contacts').select('id, name, email, phone, created_at').eq('company_id', cid)
+        ;(contacts || []).forEach((c: any) => add(c.email || c.id, { id: c.id, name: c.name || 'Contact', email: c.email, phone: c.phone, last_seen: c.created_at }, 'chat'))
+      } catch {}
+      // 3) WooCommerce customers
+      try {
+        const { data: woo } = await (supabase as any).from('woocommerce_customers').select('id, email, first_name, last_name, phone, total_spend, total_orders').eq('company_id', cid)
+        ;(woo || []).forEach((c: any) => add(c.email || c.id, { id: c.id, name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email, email: c.email, phone: c.phone, total_spend: c.total_spend, total_orders: c.total_orders }, 'woocommerce'))
+      } catch {}
+      // 4) Shopify customers
+      try {
+        const { data: shop } = await (supabase as any).from('shopify_customers').select('id, email, first_name, last_name, phone, total_spend, total_orders').eq('company_id', cid)
+        ;(shop || []).forEach((c: any) => add(c.email || c.id, { id: c.id, name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email, email: c.email, phone: c.phone, total_spend: c.total_spend, total_orders: c.total_orders }, 'shopify'))
+      } catch {}
+    }
+
     setAllUsers(Array.from(userMap.values()))
   }
 
   const matchUser = (u: any, segment: Segment) => {
     if (!segment.conditions || segment.conditions.length === 0) return true
     const checks = segment.conditions.map((c: any) => {
+      // 'source' is an array of tags; match if any tag matches.
+      if (c.field === 'source') {
+        const target = (c.value || '').toLowerCase()
+        const srcs = (u.sources || []).map((s: string) => s.toLowerCase())
+        if (c.operator === 'is_equal_to') return srcs.includes(target)
+        return srcs.some((s: string) => s.includes(target))
+      }
       const val = (u[c.field] || u.name || '').toLowerCase()
       const target = (c.value || '').toLowerCase()
       if (c.operator === 'contains') return val.includes(target)
@@ -72,8 +128,8 @@ export default function SegmentsPage() {
   }
 
   const segmentUsers = selectedSegment
-    ? allUsers.filter(u => matchUser(u, selectedSegment)).filter(u => !searchUsers || (u.name || '').toLowerCase().includes(searchUsers.toLowerCase()))
-    : allUsers.filter(u => !searchUsers || (u.name || '').toLowerCase().includes(searchUsers.toLowerCase()))
+    ? allUsers.filter(u => matchUser(u, selectedSegment)).filter(u => !searchUsers || (u.name || '').toLowerCase().includes(searchUsers.toLowerCase()) || (u.email || '').toLowerCase().includes(searchUsers.toLowerCase()))
+    : allUsers.filter(u => !searchUsers || (u.name || '').toLowerCase().includes(searchUsers.toLowerCase()) || (u.email || '').toLowerCase().includes(searchUsers.toLowerCase()))
 
   const createSegment = async () => {
     if (!newName.trim()) return
@@ -162,17 +218,30 @@ export default function SegmentsPage() {
                 </div>
               </div>
               <div className="space-y-1">
-                {segmentUsers.map(u => (
+                {segmentUsers.map(u => {
+                  const SRC: Record<string, { label: string; bg: string; c: string }> = {
+                    woocommerce: { label: 'WooCommerce', bg: '#f3e8ff', c: '#96588A' },
+                    shopify: { label: 'Shopify', bg: '#eefbe0', c: '#5c8a1b' },
+                    chat: { label: 'Chat', bg: '#e0f2fe', c: '#0369a1' },
+                    feedback: { label: 'Feedback', bg: '#fef3c7', c: '#b45309' },
+                  }
+                  return (
                   <button key={u.id} onClick={() => setSelectedUser(selectedUser?.id === u.id ? null : u)} className="w-full flex items-center gap-3 p-3 rounded-xl border transition-smooth hover:shadow-md cursor-pointer text-left" style={{ borderColor: selectedUser?.id === u.id ? 'var(--coral)' : 'var(--border)', background: selectedUser?.id === u.id ? 'var(--peach)' : 'white' }}>
                     <span className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: 'var(--coral)' }}>
                       {(u.name || 'A')[0].toUpperCase()}
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{u.name}</p>
-                      <p className="text-xs" style={{ color: 'var(--slate)' }}>Last seen {new Date(u.last_seen).toLocaleDateString()}</p>
+                      <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{u.email || (u.last_seen ? `Last seen ${new Date(u.last_seen).toLocaleDateString()}` : '')}{u.total_spend ? ` · $${u.total_spend} spent` : ''}</p>
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {(u.sources || []).map((s: string) => {
+                          const meta = SRC[s] || { label: s, bg: '#f3f4f6', c: '#6b7280' }
+                          return <span key={s} style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 10, background: meta.bg, color: meta.c }}>{meta.label}</span>
+                        })}
+                      </div>
                     </div>
                   </button>
-                ))}
+                )})}
                 {segmentUsers.length === 0 && <p className="text-center py-8" style={{ color: 'var(--slate)' }}>No users found</p>}
               </div>
             </div>
@@ -223,6 +292,8 @@ export default function SegmentsPage() {
                   <select value={c.field} onChange={e => { const nc = [...newConditions]; nc[i].field = e.target.value; setNewConditions(nc) }} className="flex-1 px-3 py-2 rounded-lg border text-sm" style={{ borderColor: 'var(--border)' }}>
                     <option value="name">Name</option>
                     <option value="email">Email</option>
+                    <option value="phone">Phone</option>
+                    <option value="source">Source (woocommerce/shopify/chat/feedback)</option>
                   </select>
                   <select value={c.operator} onChange={e => { const nc = [...newConditions]; nc[i].operator = e.target.value; setNewConditions(nc) }} className="flex-1 px-3 py-2 rounded-lg border text-sm" style={{ borderColor: 'var(--border)' }}>
                     <option value="contains">Contains</option>

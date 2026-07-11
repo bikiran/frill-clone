@@ -18,6 +18,7 @@ function WidgetContent() {
   const [chatInput, setChatInput] = useState('')
   const [chatSending, setChatSending] = useState(false)
   const [chatUploading, setChatUploading] = useState(false)
+  const [copiedCoupon, setCopiedCoupon] = useState<string | null>(null)
   const [widgetReplyTo, setWidgetReplyTo] = useState<any>(null)
   const [widgetReactPicker, setWidgetReactPicker] = useState<number | null>(null)
   const WIDGET_EMOJIS = ['👍', '❤️', '😊', '🎉', '🙏', '😂']
@@ -1599,6 +1600,22 @@ function WidgetContent() {
                               ) : (msg.message_payload.status === 'completed' || msg.message_payload.status === 'processing') ? (
                                 <div style={{ padding: '8px 0', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#059669' }}>✓ Paid</div>
                               ) : null}
+                            </div>
+                          )}
+                          {msg.message_type === 'coupon' && msg.message_payload && (
+                            <div style={{ marginTop: 6, padding: 16, borderRadius: 14, background: 'linear-gradient(135deg, #fff4f1, #ffffff)', border: `1.5px dashed ${accentColor}`, color: '#0d0d0d', minWidth: 220, textAlign: 'center' }}>
+                              <p style={{ margin: '0 0 2px', fontSize: 11, fontWeight: 700, color: accentColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>🎟️ You've received a coupon</p>
+                              <p style={{ margin: '6px 0 2px', fontSize: 26, fontWeight: 800, letterSpacing: 1.5 }}>{msg.message_payload.code}</p>
+                              <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: accentColor }}>{msg.message_payload.display_amount}</p>
+                              <button onClick={() => { navigator.clipboard?.writeText(msg.message_payload.code); setCopiedCoupon(msg.id); setTimeout(() => setCopiedCoupon(null), 1600) }}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9, background: accentColor, color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                                {copiedCoupon === msg.id ? (
+                                  <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied!</>
+                                ) : (
+                                  <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy code</>
+                                )}
+                              </button>
+                              {msg.message_payload.expires && <p style={{ margin: '8px 0 0', fontSize: 11, color: '#9ca3af' }}>Expires {msg.message_payload.expires}</p>}
                             </div>
                           )}
                           {/* Interactive poll/survey/form */}

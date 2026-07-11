@@ -13,6 +13,7 @@ const ACTION_CATALOGUE: { key: string; label: string; desc: string; icon: string
   { key: 'create_order', label: 'Create Order', desc: 'Build a WooCommerce or Shopify order from the chat.', icon: '🛒' },
   { key: 'booking', label: 'Booking', desc: 'Take a booking or appointment from the conversation.', icon: '📅', formBased: true },
   { key: 'support_ticket', label: 'Support Ticket', desc: 'Raise a support ticket with a number and link.', icon: '🎫' },
+  { key: 'send_coupon', label: 'Send Coupon', desc: 'Create a WooCommerce coupon and send it to the customer as a copyable code.', icon: '🎟️' },
   { key: 'custom_form', label: 'Custom Form', desc: 'Send any form you have built as an action.', icon: '📝', formBased: true },
 ]
 

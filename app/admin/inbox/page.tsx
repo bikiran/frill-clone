@@ -133,6 +133,13 @@ export default function InboxPage() {
   const [showActionMenu, setShowActionMenu] = useState(false)
   const [showTicketPanel, setShowTicketPanel] = useState(false)
   const [showCreateOrder, setShowCreateOrder] = useState(false)
+  const [showCoupon, setShowCoupon] = useState(false)
+  const [couponAmount, setCouponAmount] = useState('')
+  const [couponType, setCouponType] = useState<'fixed' | 'percent'>('fixed')
+  const [couponCode, setCouponCode] = useState('')
+  const [couponOneTime, setCouponOneTime] = useState(true)
+  const [couponExpiry, setCouponExpiry] = useState('')
+  const [couponSaving, setCouponSaving] = useState(false)
   const [ticketSubject, setTicketSubject] = useState('')
   const [ticketDesc, setTicketDesc] = useState('')
   const [ticketPriority, setTicketPriority] = useState('normal')
@@ -716,6 +723,29 @@ export default function InboxPage() {
     } catch (e: any) { showToast(e.message || 'Failed to update order') }
   }
 
+  const sendCoupon = async () => {
+    if (!companyId || !selected || !couponAmount.trim()) return
+    setCouponSaving(true)
+    try {
+      const res = await fetch('/api/coupons/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId, conversationId: selected.id, contactId: contact?.id,
+          email: contact?.email, amount: couponAmount.trim(),
+          discountType: couponType === 'percent' ? 'percent' : 'fixed',
+          code: couponCode.trim() || undefined, oneTime: couponOneTime,
+          expiryDays: couponExpiry ? Number(couponExpiry) : undefined,
+          createdByName: user?.user_metadata?.display_name || user?.email?.split('@')[0],
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not create coupon')
+      setShowCoupon(false)
+      showToast(`Coupon ${data.code} sent`)
+      selectConversation(selected)
+    } catch (e: any) { showToast(e.message || 'Failed to send coupon') } finally { setCouponSaving(false) }
+  }
+
   const createTicket = async () => {
     if (!companyId || !ticketSubject.trim()) return
     setTicketSaving(true)
@@ -1036,6 +1066,48 @@ export default function InboxPage() {
           onClose={() => setShowCreateOrder(false)}
           onCreated={() => { if (selected) selectConversation(selected) }}
         />
+      )}
+
+      {/* Send coupon panel */}
+      {showCoupon && selected && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', justifyContent: 'flex-end' }} onClick={() => setShowCoupon(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 400, maxWidth: '100%', height: '100%', background: '#fff', overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>🎟️ Send a coupon</h2>
+              <button onClick={() => setShowCoupon(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Discount</label>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                <select value={couponType} onChange={e => setCouponType(e.target.value as any)} style={{ padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, width: 90 }}>
+                  <option value="fixed">$ off</option>
+                  <option value="percent">% off</option>
+                </select>
+                <input value={couponAmount} onChange={e => setCouponAmount(e.target.value)} placeholder={couponType === 'percent' ? '10' : '20.00'} autoFocus
+                  style={{ flex: 1, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5 }} />
+              </div>
+
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Code (leave blank to auto-generate)</label>
+              <input value={couponCode} onChange={e => setCouponCode(e.target.value.toUpperCase())} placeholder="e.g. WELCOME10"
+                style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', marginBottom: 14 }} />
+
+              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Expires in (days, optional)</label>
+              <input value={couponExpiry} onChange={e => setCouponExpiry(e.target.value)} placeholder="e.g. 30" type="number"
+                style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', marginBottom: 14 }} />
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 8 }}>
+                <input type="checkbox" checked={couponOneTime} onChange={e => setCouponOneTime(e.target.checked)} />
+                One-time use{contact?.email ? `, restricted to ${contact.email}` : ''}
+              </label>
+              {!contact?.email && <p style={{ fontSize: 11.5, color: 'var(--slate)', marginBottom: 12 }}>No email on this contact — the coupon won't be email-restricted.</p>}
+
+              <button onClick={sendCoupon} disabled={couponSaving || !couponAmount.trim()}
+                style={{ width: '100%', padding: '12px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: couponAmount.trim() ? 'pointer' : 'not-allowed', opacity: couponAmount.trim() ? 1 : 0.6, marginTop: 8 }}>
+                {couponSaving ? 'Creating…' : 'Create & send coupon'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Create support ticket panel */}
@@ -1539,6 +1611,13 @@ export default function InboxPage() {
                             📎 Interactive {msg.message_type} sent — the customer can respond in the widget.
                           </div>
                         )}
+                        {msg.message_type === 'coupon' && msg.message_payload && (
+                          <div style={{ marginTop: 6, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #fff4f1, #fff)', border: '1.5px dashed var(--coral)', color: 'var(--ink)' }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase', letterSpacing: 0.5 }}>🎟️ Coupon sent</div>
+                            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 1, margin: '4px 0' }}>{msg.message_payload.code}</div>
+                            <div style={{ fontSize: 13, color: 'var(--slate)' }}>{msg.message_payload.display_amount}{msg.message_payload.expires ? ` · expires ${msg.message_payload.expires}` : ''}</div>
+                          </div>
+                        )}
                         {msg.message_type === 'order' && msg.message_payload && (
                           <div style={{ marginTop: 6, padding: '12px 14px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', color: 'var(--ink)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -1768,6 +1847,7 @@ export default function InboxPage() {
                             setShowActionMenu(false)
                             if (key === 'doa' || key === 'return_refund') setShowDoa(true)
                             else if (key === 'create_order') setShowCreateOrder(true)
+                            else if (key === 'send_coupon') { setCouponAmount(''); setCouponCode(''); setCouponType('fixed'); setCouponOneTime(true); setCouponExpiry(''); setShowCoupon(true) }
                             else if (key === 'support_ticket') { setTicketSubject(selected?.subject || ''); setTicketDesc(''); setTicketPriority('normal'); setShowTicketPanel(true) }
                             else if (cfg.form_id) {
                               const { data: form } = await (supabase as any).from('forms').select('*').eq('id', cfg.form_id).maybeSingle()
