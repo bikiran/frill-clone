@@ -34,6 +34,7 @@ function WidgetContent() {
   const [widgetReactPicker, setWidgetReactPicker] = useState<number | null>(null)
   const WIDGET_EMOJIS = ['👍', '❤️', '😊', '🎉', '🙏', '😂']
   const chatFileRef = useRef<HTMLInputElement>(null)
+  const chatScrollRef = useRef<HTMLDivElement>(null)
   const [chatName, setChatName] = useState('')
   const [chatEmail, setChatEmail] = useState('')
   const [chatMobile, setChatMobile] = useState('')
@@ -57,6 +58,18 @@ function WidgetContent() {
   const [widgetIsOpen, setWidgetIsOpen] = useState(true)
   const widgetIsOpenRef = useRef(true)
   const [highlightMsgIds, setHighlightMsgIds] = useState<string[]>([])
+
+  // Keep the chat pinned to the latest message: when the Chat tab is (re)opened,
+  // when the chat view is shown, or when new messages arrive, scroll to bottom.
+  // Fixes the chat resetting to the top after visiting Roadmap/other tabs.
+  useEffect(() => {
+    if (tab !== 'chat' || chatStep !== 'chat') return
+    const el = chatScrollRef.current
+    if (!el) return
+    // Defer to after paint so the container has its full height.
+    const id = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
+    return () => cancelAnimationFrame(id)
+  }, [tab, chatStep, chatMessages2.length])
 
   // Track open/closed state reported by the embedding script.
   useEffect(() => {
@@ -1687,7 +1700,7 @@ function WidgetContent() {
                   )
                 })()}
                 {/* Messages */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div ref={chatScrollRef} style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '8px 0' }}>
                     <span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>Chat started • We'll reply as soon as we can</span>
                   </div>
@@ -1854,76 +1867,85 @@ function WidgetContent() {
                   </div>
                 )}
                 {/* Input */}
-                <div style={{ padding: '10px 12px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <div style={{ padding: '10px 12px', borderTop: '1px solid #f0f0f0' }}>
                   <input ref={chatFileRef} type="file" accept="image/*,video/*,.pdf,.doc,.docx,.txt" style={{ display: 'none' }}
                     onChange={e => { uploadChatFile(e.target.files?.[0]); e.target.value = '' }} />
-                  <button type="button" onClick={() => chatFileRef.current?.click()} disabled={chatUploading || !chatConvId}
-                    title="Attach file"
-                    style={{ width: 36, height: 36, borderRadius: '50%', border: '1px solid #e5e5e5', background: '#fff', cursor: chatConvId ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', flexShrink: 0 }}>
-                    {chatUploading ? '⏳' : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
-                  </button>
-                  <textarea value={chatInput} onChange={e => setChatInput(e.target.value)}
-                    onKeyDown={async e => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                    <textarea value={chatInput} onChange={e => setChatInput(e.target.value)}
+                      onKeyDown={async e => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          if (!chatInput.trim() || !chatConvId || chatSending) return
+                          setChatSending(true)
+                          const content = chatInput.trim()
+                          setChatInput('')
+                          const newMsg = { sender_type: 'visitor', sender_name: chatName, content, created_at: new Date().toISOString() }
+                          setChatMessages2(prev => [...prev, newMsg])
+                          try {
+                            const { error: msgErr } = await (supabase as any).from('messages').insert({
+                              conversation_id: chatConvId,
+                              company_id: company?.id,
+                              sender_type: 'visitor',
+                              sender_name: chatName,
+                              sender_email: chatEmail || null,
+                              content,
+                              reply_to: widgetReplyTo?.id || null,
+                            })
+                            setWidgetReplyTo(null)
+                            try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}
+                            // Auto-reply fires now, on the customer's message (the
+                            // route only sends once per conversation via auto_replied).
+                            try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId }) }) } catch {}
+                            await (supabase as any).from('conversations').update({
+                              last_message: content,
+                              last_message_at: new Date().toISOString(),
+                              is_unread: true,
+                              unread_count: 1,
+                              updated_at: new Date().toISOString(),
+                            }).eq('id', chatConvId)
+                          } catch (err) {
+                            console.error('Widget message send error:', err)
+                            setChatCreateError('Message could not be sent. Please try again.')
+                          }
+                          setChatSending(false)
+                        }
+                      }}
+                      placeholder="Type a message…" rows={2}
+                      style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1px solid #e5e5e5', fontSize: 14, resize: 'none', outline: 'none', fontFamily: 'inherit' }} />
+                    <button type="button"
+                      onClick={async () => {
                         if (!chatInput.trim() || !chatConvId || chatSending) return
                         setChatSending(true)
                         const content = chatInput.trim()
                         setChatInput('')
-                        const newMsg = { sender_type: 'visitor', sender_name: chatName, content, created_at: new Date().toISOString() }
-                        setChatMessages2(prev => [...prev, newMsg])
+                        setChatMessages2(prev => [...prev, { sender_type: 'visitor', sender_name: chatName, content, created_at: new Date().toISOString() }])
                         try {
-                          const { error: msgErr } = await (supabase as any).from('messages').insert({
-                            conversation_id: chatConvId,
-                            company_id: company?.id,
-                            sender_type: 'visitor',
-                            sender_name: chatName,
-                            sender_email: chatEmail || null,
-                            content,
-                            reply_to: widgetReplyTo?.id || null,
-                          })
-                          setWidgetReplyTo(null)
-                          try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}
-                          // Auto-reply fires now, on the customer's message (the
-                          // route only sends once per conversation via auto_replied).
-                          try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId }) }) } catch {}
-                          await (supabase as any).from('conversations').update({
-                            last_message: content,
-                            last_message_at: new Date().toISOString(),
-                            is_unread: true,
-                            unread_count: 1,
-                            updated_at: new Date().toISOString(),
-                          }).eq('id', chatConvId)
+                          const { error: msgErr } = await (supabase as any).from('messages').insert({ conversation_id: chatConvId, company_id: company?.id, sender_type: 'visitor', sender_name: chatName, sender_email: chatEmail || null, content, reply_to: widgetReplyTo?.id || null }); const _wr = widgetReplyTo; setWidgetReplyTo(null)
+                          try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}; try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId }) }) } catch {}
+                          if (msgErr) throw msgErr
+                          await (supabase as any).from('conversations').update({ last_message: content, last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, updated_at: new Date().toISOString() }).eq('id', chatConvId)
                         } catch (err) {
                           console.error('Widget message send error:', err)
                           setChatCreateError('Message could not be sent. Please try again.')
                         }
                         setChatSending(false)
-                      }
-                    }}
-                    placeholder="Type a message…" rows={2}
-                    style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1px solid #e5e5e5', fontSize: 14, resize: 'none', outline: 'none', fontFamily: 'inherit' }} />
-                  <button type="button"
-                    onClick={async () => {
-                      if (!chatInput.trim() || !chatConvId || chatSending) return
-                      setChatSending(true)
-                      const content = chatInput.trim()
-                      setChatInput('')
-                      setChatMessages2(prev => [...prev, { sender_type: 'visitor', sender_name: chatName, content, created_at: new Date().toISOString() }])
-                      try {
-                        const { error: msgErr } = await (supabase as any).from('messages').insert({ conversation_id: chatConvId, company_id: company?.id, sender_type: 'visitor', sender_name: chatName, sender_email: chatEmail || null, content, reply_to: widgetReplyTo?.id || null }); const _wr = widgetReplyTo; setWidgetReplyTo(null)
-                        try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}; try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId }) }) } catch {}
-                        if (msgErr) throw msgErr
-                        await (supabase as any).from('conversations').update({ last_message: content, last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, updated_at: new Date().toISOString() }).eq('id', chatConvId)
-                      } catch (err) {
-                        console.error('Widget message send error:', err)
-                        setChatCreateError('Message could not be sent. Please try again.')
-                      }
-                      setChatSending(false)
-                    }}
-                    style={{ width: 38, height: 38, borderRadius: '50%', background: chatInput.trim() ? accentColor : '#e5e5e5', border: 'none', cursor: chatInput.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                  </button>
+                      }}
+                      style={{ width: 38, height: 38, borderRadius: '50%', background: chatInput.trim() ? accentColor : '#e5e5e5', border: 'none', cursor: chatInput.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                  </div>
+                  {/* Toolbar below the text box — keeps the typing area roomy */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, paddingLeft: 2 }}>
+                    <button type="button" onClick={() => chatFileRef.current?.click()} disabled={chatUploading || !chatConvId}
+                      title="Attach a photo, video or file"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: chatConvId ? 'pointer' : 'default', color: '#9ca3af', fontSize: 11.5, padding: 0 }}>
+                      {chatUploading ? (
+                        <span>Uploading…</span>
+                      ) : (
+                        <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> Attach</>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
