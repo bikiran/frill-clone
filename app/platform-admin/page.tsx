@@ -203,6 +203,22 @@ function OverviewPage({ data }: { data: any }) {
         }
       />
 
+      {/* Quick actions */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12, marginBottom: 24 }}>
+        <a href="https://colvy.com/admin" target="_blank" rel="noopener" style={paQuick('#ff7a6b')}>
+          <span style={{ fontSize: 20 }}>🏠</span>
+          <div><p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--sa-text)' }}>Manage colvy.com</p><p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--sa-muted)' }}>Widget, help centre & content for the main site</p></div>
+        </a>
+        <a href="https://colvy.com" target="_blank" rel="noopener" style={paQuick('#6366f1')}>
+          <span style={{ fontSize: 20 }}>🌐</span>
+          <div><p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--sa-text)' }}>View colvy.com</p><p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--sa-muted)' }}>Open the public marketing site</p></div>
+        </a>
+        <a href="https://colvy.com/admin/create-company" target="_blank" rel="noopener" style={paQuick('#10b981')}>
+          <span style={{ fontSize: 20 }}>➕</span>
+          <div><p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--sa-text)' }}>New company</p><p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--sa-muted)' }}>Provision a new customer workspace</p></div>
+        </a>
+      </div>
+
       {/* KPI grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14, marginBottom: 24 }}>
         <KPI label="Total Companies" value={data.companies?.toLocaleString() || '—'} trend={12} sub="vs last month" spark={sparkA} color="#ff7a6b" />
@@ -318,6 +334,21 @@ function OverviewPage({ data }: { data: any }) {
   )
 }
 
+const paLabel: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--sa-muted)', marginTop: 14, marginBottom: 5 }
+const paInput: React.CSSProperties = { width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 13.5, boxSizing: 'border-box', fontFamily: 'inherit' }
+function paQuick(color: string): React.CSSProperties {
+  return { display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 14, border: '1px solid var(--sa-border)', borderLeft: `3px solid ${color}`, background: 'var(--sa-card)', textDecoration: 'none', cursor: 'pointer' }
+}
+function paField(label: string, value: string, onChange: (v: string) => void, placeholder = '', hint = '') {
+  return (
+    <div>
+      <label style={paLabel}>{label}</label>
+      <input value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={paInput} />
+      {hint && <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginTop: 4 }}>{hint}</p>}
+    </div>
+  )
+}
+
 function CompaniesPage() {
   const [companies, setCompanies] = useState<any[]>([])
   const [search, setSearch] = useState('')
@@ -325,6 +356,39 @@ function CompaniesPage() {
   const [selected, setSelected] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
+  const [editCo, setEditCo] = useState<any>(null)
+  const [form, setForm] = useState<any>({})
+  const [saving, setSaving] = useState(false)
+  const [editErr, setEditErr] = useState('')
+
+  const openEdit = (co: any) => {
+    setEditErr('')
+    setForm({
+      name: co.name || '', slug: co.slug || '', plan: co.plan || 'free',
+      business_phone: co.business_phone || '', assigned_admin_email: co.assigned_admin_email || '',
+      board_domain: co.board_domain || '', help_domain: co.help_domain || '',
+      accent_color: co.accent_color || '#ff7a6b', owner_email: '', notes: co.notes || '',
+    })
+    setEditCo(co)
+  }
+
+  const saveEdit = async () => {
+    if (!editCo) return
+    setSaving(true); setEditErr('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ companyId: editCo.id, patch: form }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Update failed')
+      setCompanies(prev => prev.map(c => c.id === editCo.id ? { ...c, ...data.company } : c))
+      setMsg(`${data.company?.name || 'Company'} updated`)
+      setEditCo(null)
+    } catch (e: any) { setEditErr(e.message) } finally { setSaving(false) }
+  }
 
   useEffect(() => {
     ;(async () => {
@@ -419,6 +483,7 @@ function CompaniesPage() {
                 </td>
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => openEdit(co)} title="Edit company" style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#ff7a6b', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>Edit</button>
                     <button onClick={() => action('view', co)} title="View board" style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 12 }}>{I.external}</button>
                     <button onClick={() => action('impersonate', co)} title="Impersonate admin" style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 12 }}>{I.users}</button>
                     <button onClick={() => action('seed', co)} title="Seed sample data" style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: 'pointer', fontSize: 12 }}>{I.refresh}</button>
@@ -433,6 +498,47 @@ function CompaniesPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Edit company drawer */}
+      {editCo && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', justifyContent: 'flex-end' }} onClick={() => setEditCo(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 460, maxWidth: '100%', height: '100%', background: 'var(--sa-card)', borderLeft: '1px solid var(--sa-border)', overflowY: 'auto' }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--sa-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: 'var(--sa-card)' }}>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--sa-text)' }}>Edit {editCo.name}</h2>
+              <button onClick={() => setEditCo(null)} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer' }}>{I.x}</button>
+            </div>
+            <div style={{ padding: 22 }}>
+              {editErr && <div style={{ padding: '9px 12px', borderRadius: 9, background: '#fee2e2', color: '#dc2626', fontSize: 12.5, marginBottom: 14 }}>{editErr}</div>}
+
+              {paField('Company name', form.name, v => setForm({ ...form, name: v }))}
+              {paField('Slug (subdomain)', form.slug, v => setForm({ ...form, slug: v }), 'company', `Board URL: ${form.slug || '…'}.colvy.com`)}
+              {paField('Business phone', form.business_phone, v => setForm({ ...form, business_phone: v }), '+61…')}
+              {paField('Assigned admin (email)', form.assigned_admin_email, v => setForm({ ...form, assigned_admin_email: v }), 'staff@company.com', 'Who manages this account (informational).')}
+              {paField('Reassign owner (email)', form.owner_email, v => setForm({ ...form, owner_email: v }), 'newowner@company.com', 'Transfers ownership. The user must already have a Colvy account. Leave blank to keep current owner.')}
+              {paField('Custom board domain', form.board_domain, v => setForm({ ...form, board_domain: v }), 'feedback.company.com')}
+              {paField('Custom help domain', form.help_domain, v => setForm({ ...form, help_domain: v }), 'help.company.com')}
+
+              <label style={paLabel}>Plan</label>
+              <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} style={paInput}>
+                {['free', 'trial', 'startup', 'business', 'growth', 'suspended'].map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+
+              <label style={paLabel}>Accent colour</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="color" value={form.accent_color} onChange={e => setForm({ ...form, accent_color: e.target.value })} style={{ width: 44, height: 38, border: '1px solid var(--sa-border)', borderRadius: 8, background: 'none', cursor: 'pointer' }} />
+                <input value={form.accent_color} onChange={e => setForm({ ...form, accent_color: e.target.value })} style={{ ...paInput, marginBottom: 0 }} />
+              </div>
+
+              <label style={paLabel}>Internal notes</label>
+              <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={3} style={{ ...paInput, resize: 'vertical' }} />
+
+              <button onClick={saveEdit} disabled={saving} style={{ width: '100%', padding: 12, borderRadius: 10, background: '#ff7a6b', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', marginTop: 10 }}>
+                {saving ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

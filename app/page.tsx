@@ -66,6 +66,15 @@ const FilterIcon = ({ type }: { type: string }) => {
 }
 
 export default function HomePage() {
+  // admin.colvy.com is the platform super-admin panel — route straight to it.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const h = window.location.hostname
+    if (h === 'admin.colvy.com' && !window.location.pathname.startsWith('/platform-admin')) {
+      window.location.replace('/platform-admin')
+    }
+  }, [])
+
   const [ideas, setIdeas] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
