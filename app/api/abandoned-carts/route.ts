@@ -53,6 +53,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const db = admin()
 
+    // Diagnostic breadcrumb: record that a POST arrived (even if later rejected),
+    // so ?diag=1 can confirm the WooCommerce bridge is actually reaching Colvy.
+    try {
+      await db.from('abandoned_cart_hits').insert({
+        company_id: companyId,
+        had_email: !!(body.email || body.billing?.email),
+        had_phone: !!(body.phone || body.billing?.phone),
+        item_count: Array.isArray(body.items || body.line_items || body.cart) ? (body.items || body.line_items || body.cart).length : 0,
+        raw_keys: Object.keys(body || {}).join(','),
+      })
+    } catch {}
+
     // Recovery ping: the store tells us a previously-abandoned cart converted.
     if (req.nextUrl.searchParams.get('recovered') || body.status === 'recovered') {
       if (body.external_id) {
@@ -86,23 +98,35 @@ export async function POST(req: NextRequest) {
 
     const row: any = { company_id: companyId, ...norm, status: 'abandoned', conversation_id: conversationId, updated_at: new Date().toISOString() }
 
-    // Upsert on external_id if provided, else insert.
+    // Save the cart. The unique index on (company_id, external_id) is PARTIAL
+    // (WHERE external_id IS NOT NULL), which Postgres ON CONFLICT can't target —
+    // so we do an explicit find-then-update-or-insert instead of upsert. (The
+    // previous upsert failed silently, leaving nothing saved.)
     let saved: any = null
     let isNew = false
+    let saveError: string | null = null
     if (norm.external_id) {
-      // Check if it already existed to avoid notifying on every cart update.
       const { data: existing } = await db.from('abandoned_carts').select('id').eq('company_id', companyId).eq('external_id', norm.external_id).maybeSingle()
-      isNew = !existing
-      const { data } = await db.from('abandoned_carts').upsert(row, { onConflict: 'company_id,external_id' }).select().maybeSingle()
-      saved = data
+      if (existing?.id) {
+        const { data, error } = await db.from('abandoned_carts').update(row).eq('id', existing.id).select().maybeSingle()
+        saved = data; saveError = error?.message || null; isNew = false
+      } else {
+        const { data, error } = await db.from('abandoned_carts').insert(row).select().maybeSingle()
+        saved = data; saveError = error?.message || null; isNew = true
+      }
     } else {
-      const { data } = await db.from('abandoned_carts').insert(row).select().maybeSingle()
-      saved = data
-      isNew = true
+      const { data, error } = await db.from('abandoned_carts').insert(row).select().maybeSingle()
+      saved = data; saveError = error?.message || null; isNew = true
     }
 
+    if (saveError || !saved) {
+      // Surface the real reason instead of pretending success.
+      return NextResponse.json({ ok: false, error: saveError || 'Cart could not be saved', norm }, { status: 500 })
+    }
+
+    // Only notify when a NEW cart was actually saved.
     if (isNew) {
-      try { await notifyCompany({ db, companyId, type: 'cart', message: `Abandoned cart from ${norm.name || norm.email || norm.phone || 'a customer'} — ${norm.currency || 'AUD'} $${(norm.total || 0)}`, actorName: norm.name || undefined }) } catch {}
+      try { await notifyCompany({ db, companyId, type: 'cart', message: `Abandoned cart from ${norm.name || norm.email || norm.phone || 'a customer'} — ${norm.currency || 'AUD'} $${(norm.total || 0)}`, actorName: norm.name || undefined, conversationId: conversationId || undefined }) } catch {}
     }
 
     return NextResponse.json({ ok: true, id: saved?.id })
@@ -123,7 +147,21 @@ export async function GET(req: NextRequest) {
     // bridge is delivering, without needing a matching contact.
     if (req.nextUrl.searchParams.get('diag')) {
       const { data: recent } = await db.from('abandoned_carts').select('id, email, phone, total, status, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(10)
-      return NextResponse.json({ diag: true, count: recent?.length || 0, recent: recent || [] })
+      let hits: any[] = []
+      try {
+        const { data: h } = await db.from('abandoned_cart_hits').select('had_email, had_phone, item_count, raw_keys, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(10)
+        hits = h || []
+      } catch {}
+      return NextResponse.json({
+        diag: true,
+        saved_carts: recent?.length || 0,
+        recent: recent || [],
+        inbound_posts_received: hits.length,
+        last_posts: hits,
+        hint: hits.length === 0
+          ? 'No POST has reached Colvy at all — the WordPress bridge is not firing (wrong hook, plugin not active, or blocked outbound request).'
+          : (recent?.length === 0 ? 'Posts are arriving but every one lacked an email AND phone, so nothing was saved. The customer must enter email or phone on the checkout page for capture to work.' : 'Carts are being saved.'),
+      })
     }
 
     let q = db.from('abandoned_carts').select('*').eq('company_id', companyId).eq('status', 'abandoned').order('created_at', { ascending: false })
