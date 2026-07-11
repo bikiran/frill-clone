@@ -1432,32 +1432,57 @@ export default function SettingsPage() {
           <div className="space-y-5">
             <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Widget Display</h2>
-              <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Choose which sections to display in your embedded widget and set their order.</p>
+              <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Choose which sections to display in your embedded widget, and drag to set their order.</p>
 
-              {/* Widget toggles */}
-              <div className="space-y-3 mb-8">
-                {[
-                  { label: 'Feedback Board', state: widgetFeedback, set: setWidgetFeedback, desc: 'Let users submit and vote on ideas' },
-                  { label: 'Roadmap', state: widgetRoadmap, set: setWidgetRoadmap, desc: 'Show your product roadmap' },
-                  { label: 'Updates', state: widgetUpdates, set: setWidgetUpdates, desc: 'Display announcements and changelog' },
-                  { label: 'Forms', state: widgetForms, set: setWidgetForms, desc: 'Embed custom feedback forms' },
-                  { label: 'Polls', state: widgetPolls, set: setWidgetPolls, desc: 'Run quick polls and surveys' },
-                  { label: 'Surveys', state: widgetSurveys, set: setWidgetSurveys, desc: 'Collect detailed feedback' },
-                  { label: 'Knowledge Base', state: widgetKnowledgeBase, set: setWidgetKnowledgeBase, desc: 'Link to help articles and docs' },
-                ].map(item => (
-                  <div key={item.label} className="flex items-center justify-between p-3 rounded-xl hover:bg-gray-50" style={{ borderColor: 'var(--border)' }}>
-                    <div>
-                      <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{item.label}</p>
-                      <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>{item.desc}</p>
-                    </div>
-                    <input type="checkbox" checked={item.state} onChange={() => item.set(!item.state)} className="w-5 h-5 rounded cursor-pointer" style={{ accentColor: 'var(--coral)' }} />
-                  </div>
-                ))}
+              {/* Widget items — draggable + toggleable */}
+              <div className="space-y-2 mb-6">
+                {(() => {
+                  const meta: Record<string, { state: boolean; set: (v: boolean) => void; desc: string }> = {
+                    'Feedback': { state: widgetFeedback, set: setWidgetFeedback, desc: 'Let users submit and vote on ideas' },
+                    'Roadmap': { state: widgetRoadmap, set: setWidgetRoadmap, desc: 'Show your product roadmap' },
+                    'Updates': { state: widgetUpdates, set: setWidgetUpdates, desc: 'Display announcements and changelog' },
+                    'Forms': { state: widgetForms, set: setWidgetForms, desc: 'Embed custom feedback forms' },
+                    'Polls': { state: widgetPolls, set: setWidgetPolls, desc: 'Run quick polls and surveys' },
+                    'Surveys': { state: widgetSurveys, set: setWidgetSurveys, desc: 'Collect detailed feedback' },
+                    'Knowledge Base': { state: widgetKnowledgeBase, set: setWidgetKnowledgeBase, desc: 'Link to help articles and docs' },
+                  }
+                  const labelFor: Record<string, string> = { 'Feedback': 'Feedback Board' }
+                  return widgetOrder.map(label => {
+                    const m = meta[label]
+                    if (!m) return null
+                    return (
+                      <div key={label}
+                        draggable
+                        onDragStart={() => setDragWidgetItem(label)}
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={() => {
+                          if (!dragWidgetItem || dragWidgetItem === label) return
+                          const next = [...widgetOrder]
+                          const from = next.indexOf(dragWidgetItem)
+                          const to = next.indexOf(label)
+                          if (from === -1 || to === -1) return
+                          next.splice(to, 0, next.splice(from, 1)[0])
+                          setWidgetOrder(next)
+                          setDragWidgetItem(null)
+                          handleSave(false, { widgetOrder: next })
+                        }}
+                        className="flex items-center gap-3 p-3 rounded-xl border cursor-move"
+                        style={{ borderColor: 'var(--border)', background: dragWidgetItem === label ? 'var(--peach)' : '#fff', opacity: m.state ? 1 : 0.55 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>
+                        <div style={{ flex: 1 }}>
+                          <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{labelFor[label] || label}</p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{m.desc}</p>
+                        </div>
+                        <input type="checkbox" checked={m.state} onChange={() => { m.set(!m.state); handleSave(false, { [`widget${label.replace(/\s/g, '')}`]: !m.state }) }} className="w-5 h-5 rounded cursor-pointer" style={{ accentColor: 'var(--coral)' }} />
+                      </div>
+                    )
+                  })
+                })()}
               </div>
 
               {/* Widget order info */}
               <div className="p-3 rounded-xl" style={{ background: 'var(--canvas)', borderColor: 'var(--border)' }}>
-                <p className="text-xs font-medium" style={{ color: 'var(--slate)' }}>Widget sections display in the order: {widgetOrder.filter(s => {
+                <p className="text-xs font-medium" style={{ color: 'var(--slate)' }}>Shown in the widget, in order: {widgetOrder.filter(s => {
                   if (s === 'Feedback') return widgetFeedback
                   if (s === 'Roadmap') return widgetRoadmap
                   if (s === 'Updates') return widgetUpdates
@@ -1466,7 +1491,7 @@ export default function SettingsPage() {
                   if (s === 'Surveys') return widgetSurveys
                   if (s === 'Knowledge Base') return widgetKnowledgeBase
                   return false
-                }).join(', ')}</p>
+                }).map(s => s === 'Feedback' ? 'Feedback Board' : s).join(', ') || 'nothing (all sections hidden)'}</p>
               </div>
             </div>
 
