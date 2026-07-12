@@ -159,14 +159,15 @@ export default function SettingsPage() {
   const [overviewDays, setOverviewDays] = useState(30)
   const [overviewLoading, setOverviewLoading] = useState(false)
   useEffect(() => {
-    if (activeSettingsTab !== 'overview' || !companyId) return
+    const cid = company?.id
+    if (activeSettingsTab !== 'overview' || !cid) return
     setOverviewLoading(true)
-    fetch(`/api/company/overview?companyId=${companyId}&days=${overviewDays}`)
+    fetch(`/api/company/overview?companyId=${cid}&days=${overviewDays}`)
       .then(r => r.json())
       .then(d => setOverview(d))
       .catch(() => {})
       .finally(() => setOverviewLoading(false))
-  }, [activeSettingsTab, companyId, overviewDays])
+  }, [activeSettingsTab, company?.id, overviewDays])
 
   // Listen to hash changes to retain tab on reload
   useEffect(() => {

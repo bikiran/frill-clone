@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
 
     // Create with a sequential number; retry once on a rare collision.
     let ticket: any = null
+    let lastError: string | null = null
     for (let attempt = 0; attempt < 2 && !ticket; attempt++) {
       const ticketNumber = await nextTicketNumber(db, companyId)
       const { data, error } = await db.from('support_tickets').insert({
@@ -40,8 +41,16 @@ export async function POST(req: NextRequest) {
         status: 'open', created_by: createdBy || null,
       }).select().maybeSingle()
       if (!error) ticket = data
+      else lastError = error.message
     }
-    if (!ticket) return NextResponse.json({ error: 'Could not create ticket' }, { status: 500 })
+    if (!ticket) {
+      // Say WHY, instead of a generic failure. A missing table here means the
+      // COLVY_V133_TICKETS.sql migration hasn't been run.
+      const hint = /does not exist|relation/i.test(lastError || '')
+        ? 'The tickets tables are missing — run the COLVY_V133_TICKETS.sql migration.'
+        : null
+      return NextResponse.json({ error: hint || lastError || 'Could not create ticket' }, { status: 500 })
+    }
 
     // Build a shareable link to the ticket
     const origin = req.headers.get('host') ? `${req.headers.get('x-forwarded-proto') || 'https'}://${req.headers.get('host')}` : (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com')

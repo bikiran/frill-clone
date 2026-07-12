@@ -762,16 +762,49 @@ export default function InboxPage() {
     setGalleryItems(data.items || [])
   }
 
+  // Where should an SMS go? Prefer the number the conversation came in on, but
+  // fall back to the contact's mobile — otherwise a chat-originated conversation
+  // could never receive media/links by text even when we know their number.
+  const smsDestination = (): string | null => {
+    const fromConv = (selected as any)?.sms_number
+    if (fromConv) return fromConv
+    const phone = contact?.phone
+    return phone || null
+  }
+
   const sendGalleryMedia = async () => {
     if (!companyId || !selected || gallerySelected.size === 0) return
     const chosen = galleryItems.filter(it => gallerySelected.has(it.id))
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+    const smsNumber = smsDestination()
     try {
       for (const item of chosen) {
+        const attachment = { url: item.url, name: item.title || 'media', type: item.kind === 'video' ? 'video/mp4' : 'image/jpeg', kind: item.kind, from_gallery: true }
+
+        // On an SMS conversation, actually TEXT the customer a link to the media
+        // (as a short colvy.com/m/… viewer). Without this the media only appeared
+        // in the chat thread and the customer received nothing.
+        if (smsNumber) {
+          try {
+            const r = await fetch('/api/telnyx/sms/send', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                companyId, conversationId: selected.id, to: smsNumber,
+                text: '', attachments: [attachment], senderName: me,
+                skipChatMessage: true,
+              }),
+            })
+            const rd = await r.json()
+            // Don't hide a failed text — the agent thinks the customer got it.
+            if (!r.ok) showToast(`Media saved to the chat, but the SMS failed: ${rd.error || 'unknown error'}`)
+          } catch (e: any) { showToast('Media saved, but the SMS failed to send.') }
+        }
+
         await (supabase as any).from('messages').insert({
           conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
           sender_id: user.id, sender_name: me, sender_email: user.email,
-          content: '', attachments: [{ url: item.url, name: item.title || 'media', type: item.kind === 'video' ? 'video/mp4' : 'image/jpeg', kind: item.kind, from_gallery: true }],
+          content: '', attachments: [attachment],
+          delivery_channel: smsNumber ? 'sms' : 'chat',
         })
       }
       await (supabase as any).from('conversations').update({ last_message: '🖼️ Media', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
@@ -797,23 +830,27 @@ export default function InboxPage() {
         const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
         const attachment = { url: data.url, name: data.name, type: data.type, kind: data.kind }
 
-        // If this is an SMS conversation, actually TEXT the customer a link to
-        // the media. Previously the file was only inserted into the chat thread
-        // and never sent — so the customer received nothing at all.
-        const smsNumber = (selected as any).sms_number
+        // Text the customer a link to the media when we have a mobile for them.
+        // Previously the file was only inserted into the chat thread and never
+        // sent — so the customer received nothing at all.
+        const smsNumber = smsDestination()
         if (smsNumber) {
           try {
-            await fetch('/api/telnyx/sms/send', {
+            const r = await fetch('/api/telnyx/sms/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 companyId, conversationId: selected.id, to: smsNumber,
                 text: data.kind === 'file' ? `📎 ${data.name}` : '',
-                attachments: [attachment],   // becomes a short colvy.com/l/… link
+                attachments: [attachment],   // becomes a short colvy.com/m/… link
                 senderName: me,
                 skipChatMessage: true,       // we insert our own richer message below
               }),
             })
-          } catch (e) { console.warn('SMS attachment send failed', e) }
+            const rd = await r.json()
+            // Never hide a failed text — otherwise the agent believes the
+            // customer received it when they didn't.
+            if (!r.ok) showToast(`Saved to the chat, but the SMS failed: ${rd.error || 'unknown error'}`)
+          } catch (e: any) { showToast('Saved to the chat, but the SMS failed to send.') }
         }
 
         await (supabase as any).from('messages').insert({
