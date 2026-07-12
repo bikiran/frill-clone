@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { shortenUrl } from '@/lib/short-link'
 import { createClient } from '@supabase/supabase-js'
 
 function admin() {
@@ -109,6 +110,12 @@ export async function POST(req: NextRequest) {
     }, useOwnKeys ? undefined : { stripeAccount: company.stripe_account_id })
 
     // Post the payment message into the chat
+    // Wrap the (very long, spammy-looking) Stripe URL behind colvy.com/l/<code>
+    // so it's short in SMS and readable in chat.
+    const shortUrl = await shortenUrl(session.url || '', {
+      companyId, kind: 'payment', conversationId,
+    })
+
     const { data: msg } = await db.from('messages').insert({
       conversation_id: conversationId,
       company_id: companyId,
@@ -116,7 +123,7 @@ export async function POST(req: NextRequest) {
       sender_name: senderName || company.name,
       content: `💳 Payment request: $${(cents / 100).toFixed(2)} AUD${description ? ` — ${description}` : ''}`,
       message_type: 'payment',
-      message_payload: { amount_cents: cents, currency: 'aud', description: description || null, checkout_url: session.url, status: 'pending', order_id: orderId || null },
+      message_payload: { amount_cents: cents, currency: 'aud', description: description || null, checkout_url: shortUrl || session.url, status: 'pending', order_id: orderId || null },
     }).select().maybeSingle()
 
     // Record the payment
@@ -131,7 +138,7 @@ export async function POST(req: NextRequest) {
       last_message_at: new Date().toISOString(),
     }).eq('id', conversationId)
 
-    return NextResponse.json({ ok: true, checkoutUrl: session.url, messageId: msg?.id })
+    return NextResponse.json({ ok: true, checkoutUrl: shortUrl || session.url, fullUrl: session.url, messageId: msg?.id })
   } catch (err: any) {
     console.error('Chat payment error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })

@@ -1159,11 +1159,13 @@ export default function InboxPage() {
       })
       const data = await res.json()
       if (!res.ok) { alert(data.error || 'Could not create payment'); return }
-      // For SMS, text the pay link + app
+      // For SMS, text the pay link — but DON'T log it as a second chat message
+      // (the payment card above already shows it; logging again produced the
+      // duplicate message with the long raw Stripe URL).
       const smsNumber = (selected as any).sms_number
       if (smsNumber && data.checkoutUrl) {
         const body = `Payment request: $${parseFloat(payAmount).toFixed(2)} AUD${payDesc ? ` — ${payDesc}` : ''}\nPay securely: ${data.checkoutUrl}`
-        try { await fetch('/api/telnyx/sms/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName }) }) } catch {}
+        try { await fetch('/api/telnyx/sms/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName, skipChatMessage: true }) }) } catch {}
       }
       setSendPicker(null); setPayAmount(''); setPayDesc('')
       const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
@@ -1450,6 +1452,7 @@ export default function InboxPage() {
       <style>{`
         @keyframes doaSlideIn { from { transform: translate(100%, -50%); } to { transform: translate(0, -50%); } }
         @keyframes typingDot { 0%, 60%, 100% { opacity: 0.25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
+        @keyframes livePulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); } 50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(34,197,94,0); } }
       `}</style>
 
       {/* Charge a saved card */}
@@ -1938,15 +1941,18 @@ export default function InboxPage() {
             } else if (c.channel === 'whatsapp') {
               source = { label: 'WhatsApp', bg: '#dcfce7', fg: '#15803d' }
             } else {
-              source = { label: 'Live Chat Enquiry', bg: '#f3f4f6', fg: '#6b7280' }
+              source = { label: 'Live Chat Enquiry', bg: '#dcfce7', fg: '#15803d' }
             }
+            const isLiveChat = source.label === 'Live Chat Enquiry'
 
+            const accent = companyInfo?.accent_color || 'var(--coral)'
+            const unread = conv.is_unread && selected?.id !== conv.id
             return (
             <button key={conv.id} type="button" onClick={() => selectConversation(conv)}
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', paddingLeft: conv.is_unread && selected?.id !== conv.id ? 11 : 14, border: 'none', borderLeft: conv.is_unread && selected?.id !== conv.id ? '3px solid var(--coral)' : '3px solid transparent', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === conv.id ? 'var(--peach)' : conv.is_unread ? '#fff6f4' : '#fff', transition: 'background 0.1s' }}>
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', paddingLeft: unread ? 11 : 14, border: 'none', borderLeft: unread ? `3px solid ${accent}` : '3px solid transparent', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === conv.id ? 'var(--peach)' : unread ? '#fff6f4' : '#fff', transition: 'background 0.1s' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                  {conv.is_unread && selected?.id !== conv.id && <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--coral)', flexShrink: 0 }} />}
+                  {unread && <span style={{ width: 7, height: 7, borderRadius: '50%', background: accent, flexShrink: 0 }} />}
                   <span style={{ fontSize: 13.5, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {displayName}
                   </span>
@@ -1954,8 +1960,11 @@ export default function InboxPage() {
                 <span style={{ fontSize: 10, color: '#9ca3af', flexShrink: 0, marginLeft: 6 }}>{timeAgo(conv.last_message_at)}</span>
               </div>
 
-              {/* Source tag */}
-              <span style={{ display: 'inline-block', fontSize: 9.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 5, background: source.bg, color: source.fg, marginBottom: 5 }}>
+              {/* Source tag — live chat gets a gentle live pulse */}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 5, background: source.bg, color: source.fg, marginBottom: 5 }}>
+                {isLiveChat && (
+                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
+                )}
                 {source.label}
               </span>
 

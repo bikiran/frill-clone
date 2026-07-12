@@ -15,7 +15,10 @@ function admin() {
 // videos aren't rejected and images aren't downscaled by the carrier.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId, to, text, senderName, attachments } = await req.json()
+    // skipChatMessage: deliver the SMS but DON'T log it as a chat message. Used
+    // when the chat already shows a richer version (e.g. a payment card), so the
+    // customer doesn't see the same thing twice with a long raw link.
+    const { companyId, conversationId, to, text, senderName, attachments, skipChatMessage } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
@@ -62,7 +65,7 @@ export async function POST(req: NextRequest) {
     })
 
     // Log into the conversation thread as an agent message sent via SMS
-    if (conversationId) {
+    if (conversationId && !skipChatMessage) {
       await db.from('messages').insert({
         conversation_id: conversationId,
         company_id: companyId,
