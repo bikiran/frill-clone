@@ -94,9 +94,29 @@ function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: st
   const time = parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const date = parsed.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' })
   const label = isAgent ? 'Delivered' : 'Received'
-  const chan = channel ? channel.charAt(0).toUpperCase() + channel.slice(1) : ''
-  return `${label} ${time} | ${date}${!isAgent && chan ? ` | ${chan}` : ''}`
+  const NAMES: Record<string, string> = {
+    sms: 'SMS', email: 'Email', chat: 'Live Chat', widget: 'Live Chat',
+    instagram: 'Instagram', facebook: 'Messenger', messenger: 'Messenger',
+    whatsapp: 'WhatsApp', phone: 'Phone Call',
+  }
+  const chan = channel ? (NAMES[channel.toLowerCase()] || channel.charAt(0).toUpperCase() + channel.slice(1)) : ''
+  // Show the channel on BOTH sides — an agent needs to know a reply went by SMS.
+  return `${label} ${time} | ${date}${chan ? ` | ${chan}` : ''}`
 }
+// Interleave conversation events (assignments, channel switches, moves) into the
+// message list in chronological order, so the thread reads like a real timeline.
+function mergeEvents(msgs: any[], events: any[]) {
+  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request']
+  const evs = (events || [])
+    .filter(e => SHOW.includes(e.event_type))
+    .map(e => ({ ...e, __event: true }))
+  return [...msgs, ...evs].sort((a, b) => {
+    const ta = new Date(String(a.created_at).endsWith('Z') ? a.created_at : a.created_at + 'Z').getTime()
+    const tb = new Date(String(b.created_at).endsWith('Z') ? b.created_at : b.created_at + 'Z').getTime()
+    return ta - tb
+  })
+}
+
 // Returns "Today" / "Yesterday" / "12 Jul 2026" for a date divider
 function dayLabel(d: string | undefined | null) {
   if (!d) return ''
@@ -1202,6 +1222,33 @@ export default function InboxPage() {
 
   // Right-click context menu on the conversation list.
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; conv: any } | null>(null)
+
+  // ── Move or view enquiries across outlets ─────────────────────────────────
+  const [showMoveMenu, setShowMoveMenu] = useState(false)
+  const [outlets, setOutlets] = useState<any[]>([])
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      const { data } = await (supabase as any).from('company_locations')
+        .select('id, label, suburb, is_primary').eq('company_id', companyId).order('is_primary', { ascending: false })
+      setOutlets(data || [])
+    })()
+  }, [companyId])
+
+  const moveToOutlet = async (outlet: any) => {
+    if (!selected) return
+    await (supabase as any).from('conversations')
+      .update({ assigned_location_id: outlet.id, assigned_auto: false }).eq('id', selected.id)
+    await (supabase as any).from('conversation_events').insert({
+      conversation_id: selected.id, company_id: companyId,
+      event_type: 'moved', actor_name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent',
+      detail: `Enquiry moved to ${outlet.label || outlet.suburb}`,
+    })
+    setShowMoveMenu(false)
+    setSelected({ ...selected, assigned_location_id: outlet.id } as any)
+    loadConversationExtras(selected.id)
+    showToast(`Moved to ${outlet.label || outlet.suburb}`)
+  }
   useEffect(() => {
     if (!ctxMenu) return
     const close = () => setCtxMenu(null)
@@ -1529,6 +1576,7 @@ export default function InboxPage() {
         @keyframes doaSlideIn { from { transform: translate(100%, -50%); } to { transform: translate(0, -50%); } }
         @keyframes typingDot { 0%, 60%, 100% { opacity: 0.25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
         @keyframes livePulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); } 50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(34,197,94,0); } }
+        .ai-spark:hover .ai-tip { opacity: 1 !important; }
       `}</style>
 
       {/* Right-click menu on a conversation */}
@@ -2132,6 +2180,36 @@ export default function InboxPage() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
               </button>
               <span style={{ fontSize: 16 }}>{CHANNEL_ICON[selected.channel]}</span>
+              {/* Move or view enquiries across outlets */}
+              {outlets.length > 0 && (
+                <div style={{ position: 'relative' }}>
+                  <button type="button" onClick={() => setShowMoveMenu(v => !v)} title="Move Or View Enquiries"
+                    style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${showMoveMenu ? 'var(--coral)' : 'var(--border)'}`, background: showMoveMenu ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: showMoveMenu ? 'var(--coral)' : 'var(--slate)' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                  </button>
+                  {showMoveMenu && (
+                    <div style={{ position: 'absolute', top: '120%', right: 0, width: 260, background: '#fff', borderRadius: 14, border: '1px solid var(--border)', boxShadow: '0 12px 36px rgba(0,0,0,0.16)', zIndex: 80, padding: 8 }}>
+                      <p style={{ margin: '2px 6px 8px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Move or view enquiries</p>
+                      {outlets.map(o => {
+                        const isCurrent = (selected as any).assigned_location_id === o.id
+                        return (
+                          <button key={o.id} type="button" onClick={() => !isCurrent && moveToOutlet(o)}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 10, border: 'none', background: isCurrent ? 'var(--peach)' : 'var(--canvas)', cursor: isCurrent ? 'default' : 'pointer', marginBottom: 5 }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label || o.suburb}</span>
+                            </span>
+                            {isCurrent && (
+                              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--coral)', border: '1px solid var(--coral)', borderRadius: 6, padding: '2px 7px', flexShrink: 0 }}>Current</span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Search messages toggle */}
               <button type="button" onClick={() => { setShowMsgSearch(v => !v); setMsgSearch('') }} title="Search messages"
                 style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: showMsgSearch ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', order: -1 }}>
@@ -2312,7 +2390,45 @@ export default function InboxPage() {
                   })
                 })
                 let lastDay = ''
-                return list.map(msg => {
+                const first = list[0]
+                const enquiryName = contact?.name || contact?.email || contact?.phone || 'a customer'
+                const SRC: Record<string, string> = {
+                  sms: 'SMS Enquiry', email: 'Email Enquiry', instagram: 'Instagram Enquiry',
+                  facebook: 'Messenger Enquiry', messenger: 'Messenger Enquiry',
+                  whatsapp: 'WhatsApp Enquiry', phone: 'Phone Call',
+                }
+                const subj = (selected.subject || '').toLowerCase()
+                const enquiryKind = subj.startsWith('abandoned cart') ? 'Abandoned Cart'
+                  : subj.startsWith('order #') ? 'Order Placed'
+                  : (SRC[(selected.channel || '').toLowerCase()] || 'Live Chat Enquiry')
+
+                const header = (
+                  <div key="enquiry-header" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 14px' }}>
+                    <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
+                      New {enquiryKind} from {enquiryName}
+                    </span>
+                    <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                  </div>
+                )
+
+                return [header, ...mergeEvents(list, events).map((item: any) => {
+                if (item.__event) {
+                  // Inline timeline event: "Conversation assigned to X",
+                  // "Now chatting through SMS", "Enquiry moved to …"
+                  const ev = item
+                  return (
+                    <div key={`ev-${ev.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0' }}>
+                      <div style={{ flex: 1, height: 1, background: '#eceef0' }} />
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#9ca3af', whiteSpace: 'nowrap' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        {ev.detail || ev.event_type}
+                      </span>
+                      <div style={{ flex: 1, height: 1, background: '#eceef0' }} />
+                    </div>
+                  )
+                }
+                const msg = item
                 const thisDay = dayLabel(msg.created_at)
                 const showDivider = thisDay && thisDay !== lastDay
                 if (thisDay) lastDay = thisDay
@@ -2462,7 +2578,7 @@ export default function InboxPage() {
 
                       {/* Timestamp + read receipt */}
                       <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af', textAlign: isAgent ? 'right' : 'left', display: 'flex', gap: 5, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start' }}>
-                        {fmtReceipt(msg.created_at, isAgent, selected.channel)}
+                        {fmtReceipt(msg.created_at, isAgent, (msg as any).delivery_channel || selected.channel)}
                         {/* Read-by avatars on visitor messages */}
                         {!isAgent && readBy.length > 0 && (
                           <span style={{ display: 'inline-flex', gap: 2, marginLeft: 2 }}>
@@ -2507,7 +2623,7 @@ export default function InboxPage() {
                   </div>
                   </div>
                 )
-              })
+              })]
               })()}
               <div ref={messagesEndRef} />
             </div>
@@ -2795,13 +2911,13 @@ export default function InboxPage() {
                       ['phone', 'Phone', contact.phone],
                       ['address', 'Address', [contact.address, contact.city, contact.country].filter(Boolean).join(', ')],
                     ] as [string, string, string][])
-                      .map(([field, label, value]) => (
-                        <div key={field} className="contact-field-row" style={{ position: 'relative' }}>
+                      .map(([field, label, value]) => {
+                        const aiFilled = aiSavedFields.has(field as string) && !!value
+                        return (
+                        <div key={field} className="contact-field-row"
+                          style={{ position: 'relative', borderRadius: 8, padding: aiFilled ? '5px 7px' : 0, margin: aiFilled ? '0 -7px' : 0, background: aiFilled ? '#f7f8fa' : 'transparent' }}>
                           <p style={{ margin: '0 0 2px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
                             {label}
-                            {aiSavedFields.has(field as string) && value && (
-                              <span title="Saved automatically by AI" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, color: '#8b5cf6', background: '#f3e8ff', padding: '1px 5px', borderRadius: 5, fontSize: 8.5 }}><AiSparkIcon size={9} /> AI</span>
-                            )}
                           </p>
                           {editField === field ? (
                             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -2817,6 +2933,14 @@ export default function InboxPage() {
                             </div>
                           ) : (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {aiFilled && (
+                              <span className="ai-spark" title="" style={{ position: 'relative', display: 'inline-flex', flexShrink: 0, color: '#8b5cf6' }}>
+                                <AiSparkIcon size={13} />
+                                <span className="ai-tip" style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', background: '#1a1a1a', color: '#fff', fontSize: 11, fontWeight: 600, padding: '5px 9px', borderRadius: 7, opacity: 0, pointerEvents: 'none', transition: 'opacity 0.12s', zIndex: 20 }}>
+                                  Auto added by Colvy AI
+                                </span>
+                              </span>
+                            )}
                             <p style={{ margin: 0, fontSize: 13, color: value ? 'var(--ink)' : '#c0c0c5', flex: 1, wordBreak: 'break-word', fontStyle: value ? 'normal' : 'italic', cursor: value ? 'default' : 'pointer' }}
                                onClick={() => { if (!value) { setEditField(field); setEditFieldValue('') } }}>
                               {value || `Add ${label.toLowerCase()}`}
@@ -2841,7 +2965,8 @@ export default function InboxPage() {
                           </div>
                           )}
                         </div>
-                      ))
+                        )
+                      })
                     }
                     {contact.subscribed_to_marketing && <span style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>✓ Subscribed to marketing</span>}
                     {contact.notes && <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)', fontStyle: 'italic' }}>{contact.notes}</p>}
