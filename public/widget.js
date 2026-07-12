@@ -259,24 +259,62 @@
     }
   }
 
-  // Keep the widget informed of the parent page as the visitor navigates, so the
-  // conversation's Page History reflects the real business-site pages (not the
-  // Colvy iframe URL). Fires on load and on SPA route changes.
-  function sendPage() {
+  // ── Page history ─────────────────────────────────────────────────────────
+  // This script runs on the BUSINESS site, so it can see the real URLs (the
+  // widget iframe cannot). Record every page the visitor views and hand the
+  // whole history to the widget, so agents see the real journey.
+  var PAGE_KEY = 'colvy_page_history'
+
+  function loadHistory() {
+    try {
+      var raw = sessionStorage.getItem(PAGE_KEY)
+      var arr = raw ? JSON.parse(raw) : []
+      return Array.isArray(arr) ? arr : []
+    } catch (e) { return [] }
+  }
+
+  function recordPage() {
     try {
       var info = parentInfo()
+      if (!info.url) return loadHistory()
+      var hist = loadHistory()
+      var last = hist[hist.length - 1]
+      // Skip consecutive duplicates (e.g. hash changes on the same page).
+      if (!last || last.url !== info.url) {
+        hist.push({ url: info.url, title: info.title || '', ts: new Date().toISOString() })
+        // Keep it bounded.
+        if (hist.length > 50) hist = hist.slice(hist.length - 50)
+        sessionStorage.setItem(PAGE_KEY, JSON.stringify(hist))
+      }
+      return hist
+    } catch (e) { return loadHistory() }
+  }
+
+  // Record the page we loaded on, immediately.
+  recordPage()
+
+  function sendPage() {
+    try {
+      var hist = recordPage()
+      var info = parentInfo()
       if (popup && popup.contentWindow) {
-        popup.contentWindow.postMessage({ colvy: true, type: 'page', url: info.url, title: info.title }, BASE)
+        popup.contentWindow.postMessage({
+          colvy: true, type: 'page',
+          url: info.url, title: info.title,
+          history: hist,
+        }, BASE)
       }
     } catch (e) {}
   }
+
   window.addEventListener('load', sendPage)
-  // Detect SPA navigations (pushState/replaceState/popstate).
+  // Detect SPA navigations (pushState/replaceState/popstate) and hash changes.
   try {
     var _ps = history.pushState, _rs = history.replaceState
     history.pushState = function () { _ps.apply(this, arguments); setTimeout(sendPage, 50) }
     history.replaceState = function () { _rs.apply(this, arguments); setTimeout(sendPage, 50) }
     window.addEventListener('popstate', function () { setTimeout(sendPage, 50) })
+    window.addEventListener('hashchange', function () { setTimeout(sendPage, 50) })
   } catch (e) {}
   if (document.readyState !== 'loading') mount()
   else document.addEventListener('DOMContentLoaded', mount)

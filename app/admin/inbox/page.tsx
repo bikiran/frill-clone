@@ -376,10 +376,25 @@ export default function InboxPage() {
   const loadConversations = useCallback(async (cid?: string | null) => {
     const id = cid || companyId
     if (!id) return
-    let q = (supabase as any).from('conversations').select('*, contacts(name, email, phone)').eq('company_id', id)
+    // NOTE: conversations.contact_id has no FK to contacts in some deployments,
+    // so a PostgREST embed (`contacts(...)`) fails the WHOLE query and returns
+    // nothing (blank inbox). Fetch conversations plainly, then attach contacts.
+    let q = (supabase as any).from('conversations').select('*').eq('company_id', id)
     if (statusFilter !== 'all') q = q.eq('status', statusFilter)
     const { data } = await q.order('last_message_at', { ascending: false }).limit(50)
-    setConversations(data || [])
+    const convs = data || []
+
+    // Attach contact details in one extra query.
+    const contactIds = Array.from(new Set(convs.map((c: any) => c.contact_id).filter(Boolean)))
+    if (contactIds.length) {
+      const { data: cts } = await (supabase as any)
+        .from('contacts').select('id, name, email, phone').in('id', contactIds)
+      const byId: Record<string, any> = {}
+      for (const ct of cts || []) byId[ct.id] = ct
+      for (const c of convs) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
+    }
+
+    setConversations(convs)
     // On first load (desktop), OPEN the top conversation — including its messages
     // and contact — instead of just highlighting it (which left the pane blank).
     if (data && data.length > 0 && !selectedRef.current && typeof window !== 'undefined' && window.innerWidth >= 768) {

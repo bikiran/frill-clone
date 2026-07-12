@@ -165,6 +165,17 @@ function WidgetContent() {
       const d: any = e.data
       if (!d || !d.colvy || d.type !== 'page' || !d.url) return
       setParentPage({ url: d.url, title: d.title || null })
+      // The embedding script keeps the authoritative history (it runs on the
+      // real site and can see every page). Prefer it wholesale.
+      if (Array.isArray(d.history) && d.history.length) {
+        setParentPageHistory(d.history)
+        if (chatConvId) {
+          ;(supabase as any).from('conversations').update({
+            page_url: d.url, page_title: d.title || null, page_history: d.history,
+          }).eq('id', chatConvId).then(() => {}, () => {})
+        }
+        return
+      }
       setParentPageHistory(prev => {
         if (prev.length && prev[prev.length - 1].url === d.url) return prev
         const next = [...prev, { url: d.url, title: d.title || null, ts: new Date().toISOString() }]
@@ -1731,9 +1742,13 @@ function WidgetContent() {
                         visitor_id: visitorId,
                         sms_number: normalizedMobile,
                         sms_enabled: !!(normalizedMobile && smsOptIn),
-                        page_url: parentPage.url || (typeof window !== 'undefined' ? window.location.href : null),
-                        page_title: parentPage.title || (typeof document !== 'undefined' ? document.title : null),
-                        page_history: parentPageHistory.length ? parentPageHistory : [{ url: parentPage.url || (typeof window !== 'undefined' ? window.location.href : null), title: parentPage.title || (typeof document !== 'undefined' ? document.title : null), ts: new Date().toISOString() }],
+                        // Only ever record the REAL parent page (from widget.js).
+                        // Never fall back to window.location.href — inside the
+                        // iframe that's the Colvy widget URL, which is useless
+                        // to an agent and was what showed up before.
+                        page_url: parentPage.url || null,
+                        page_title: parentPage.title || null,
+                        page_history: parentPageHistory.length ? parentPageHistory : (parentPage.url ? [{ url: parentPage.url, title: parentPage.title || null, ts: new Date().toISOString() }] : []),
                         last_message_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),
                       }).select('id').maybeSingle()
