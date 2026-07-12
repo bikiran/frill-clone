@@ -74,12 +74,51 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // ── Sales converted from chat ─────────────────────────────────────────────
-    // NOTE: Colvy has no local orders table — orders live in WooCommerce/Shopify.
-    // What we CAN attribute honestly:
-    //   • recovered abandoned carts (a cart Colvy captured that later converted)
-    //   • orders that produced a chat (order_chat_events), counted as "orders seen"
-    // We do NOT invent a sales figure we can't substantiate.
+    // ── Sales converted through chat (REAL revenue) ───────────────────────────
+    // Orders are recorded in woocommerce_orders with an attribution telling us
+    // how Colvy contributed. These are actual order totals, not estimates.
+    let salesConverted = 0
+    let salesAmount = 0
+    const byAttribution: Record<string, { count: number; amount: number }> = {}
+    try {
+      const { data: orders } = await db
+        .from('woocommerce_orders')
+        .select('total, attribution, status, order_date')
+        .eq('company_id', companyId)
+        .not('attribution', 'is', null)
+        .gte('order_date', since)
+      for (const o of orders || []) {
+        // Don't count cancelled/failed/refunded orders as converted revenue.
+        const st = (o.status || '').toLowerCase()
+        if (['cancelled', 'failed', 'refunded', 'trash'].includes(st)) continue
+        const amt = parseFloat(o.total as any) || 0
+        salesConverted++
+        salesAmount += amt
+        const key = o.attribution || 'other'
+        if (!byAttribution[key]) byAttribution[key] = { count: 0, amount: 0 }
+        byAttribution[key].count++
+        byAttribution[key].amount += amt
+      }
+    } catch {}
+
+    // Total store orders in range (for a conversion share, when available).
+    let totalOrders = 0
+    let totalOrderAmount = 0
+    try {
+      const { data: allOrders } = await db
+        .from('woocommerce_orders')
+        .select('total, status')
+        .eq('company_id', companyId)
+        .gte('order_date', since)
+      for (const o of allOrders || []) {
+        const st = (o.status || '').toLowerCase()
+        if (['cancelled', 'failed', 'refunded', 'trash'].includes(st)) continue
+        totalOrders++
+        totalOrderAmount += parseFloat(o.total as any) || 0
+      }
+    } catch {}
+
+    // Recovered abandoned carts.
     let cartsRecovered = 0
     let cartsRecoveredAmount = 0
     try {
@@ -110,17 +149,6 @@ export async function GET(req: NextRequest) {
       }
     } catch {}
 
-    // Orders that flowed through chat (from the WooCommerce webhook).
-    let ordersInChat = 0
-    try {
-      const { data: oce } = await db
-        .from('order_chat_events')
-        .select('order_id')
-        .eq('company_id', companyId)
-        .gte('created_at', since)
-      ordersInChat = new Set((oce || []).map((o: any) => o.order_id)).size
-    } catch {}
-
     return NextResponse.json({
       days,
       conversations: conversations.length,
@@ -130,7 +158,12 @@ export async function GET(req: NextRequest) {
       messagesReceived,
       conversationsReplied,
       resolved,
-      ordersInChat,
+      // Real, attributed revenue
+      salesConverted,
+      salesAmount: Math.round(salesAmount * 100) / 100,
+      byAttribution,
+      totalOrders,
+      totalOrderAmount: Math.round(totalOrderAmount * 100) / 100,
       cartsCaptured,
       cartsCapturedAmount: Math.round(cartsCapturedAmount * 100) / 100,
       cartsRecovered,

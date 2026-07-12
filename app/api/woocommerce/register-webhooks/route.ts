@@ -20,10 +20,9 @@ export async function POST(req: NextRequest) {
     const db = admin()
 
     const { data: integs } = await db
-      .from('integrations')
+      .from('woocommerce_integrations')
       .select('*')
       .eq('company_id', companyId)
-      .eq('type', 'woocommerce')
       .eq('is_active', true)
 
     if (!integs || integs.length === 0) {
