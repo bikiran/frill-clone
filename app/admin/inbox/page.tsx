@@ -764,11 +764,33 @@ export default function InboxPage() {
         const data = await res.json()
         if (!res.ok) { alert('Attachment failed: ' + (data.error || 'upload error')); continue }
         const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+        const attachment = { url: data.url, name: data.name, type: data.type, kind: data.kind }
+
+        // If this is an SMS conversation, actually TEXT the customer a link to
+        // the media. Previously the file was only inserted into the chat thread
+        // and never sent — so the customer received nothing at all.
+        const smsNumber = (selected as any).sms_number
+        if (smsNumber) {
+          try {
+            await fetch('/api/telnyx/sms/send', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                companyId, conversationId: selected.id, to: smsNumber,
+                text: data.kind === 'file' ? `📎 ${data.name}` : '',
+                attachments: [attachment],   // becomes a short colvy.com/l/… link
+                senderName: me,
+                skipChatMessage: true,       // we insert our own richer message below
+              }),
+            })
+          } catch (e) { console.warn('SMS attachment send failed', e) }
+        }
+
         await (supabase as any).from('messages').insert({
           conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
           sender_id: user.id, sender_name: me, sender_email: user.email,
           content: data.kind === 'file' ? `📎 ${data.name}` : '',
-          attachments: [{ url: data.url, name: data.name, type: data.type, kind: data.kind }],
+          attachments: [attachment],
+          delivery_channel: smsNumber ? 'sms' : 'chat',
         })
       }
       await (supabase as any).from('conversations').update({ last_message: '📎 Attachment', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
@@ -1173,7 +1195,42 @@ export default function InboxPage() {
     } catch (e: any) { alert('Payment error: ' + e.message) }
   }
 
-  // Send the composer text (auto-routes chat vs SMS)
+  // Send the composer text. Channel is auto-routed unless the agent forces one
+  // from the Send dropdown.
+  const [sendChannel, setSendChannel] = useState<'auto' | 'chat' | 'sms' | 'email'>('auto')
+  const [showChannelMenu, setShowChannelMenu] = useState(false)
+
+  // Right-click context menu on the conversation list.
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; conv: any } | null>(null)
+  useEffect(() => {
+    if (!ctxMenu) return
+    const close = () => setCtxMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('scroll', close, true)
+    return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true) }
+  }, [ctxMenu])
+
+  const markRead = async (conv: any) => {
+    await (supabase as any).from('conversations').update({ is_unread: false, unread_count: 0 }).eq('id', conv.id)
+    loadConversations()
+  }
+  const snoozeConv = async (conv: any, hours: number) => {
+    const until = new Date(Date.now() + hours * 3600 * 1000).toISOString()
+    await (supabase as any).from('conversations').update({ snoozed_until: until }).eq('id', conv.id)
+    loadConversations()
+    showToast(`Snoozed for ${hours}h`)
+  }
+  const closeConv = async (conv: any) => {
+    await (supabase as any).from('conversations').update({ status: 'closed' }).eq('id', conv.id)
+    loadConversations()
+    showToast('Enquiry closed')
+  }
+  const copyConvLink = (conv: any) => {
+    const url = `${window.location.origin}/admin/inbox?conversation=${conv.id}`
+    navigator.clipboard?.writeText(url)
+    showToast('Link copied')
+  }
+
   const sendReply = async () => {
     if (!reply.trim() || !selected || !user) return
     setSending(true)
@@ -1182,7 +1239,7 @@ export default function InboxPage() {
 
     // Email conversations reply by email (threaded back into the customer's
     // original message), not through the chat widget.
-    if ((selected as any).channel === 'email') {
+    if ((selected as any).channel === 'email' || sendChannel === 'email') {
       try {
         const res = await fetch('/api/email/reply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1207,9 +1264,25 @@ export default function InboxPage() {
     const smsNumber = (selected as any).sms_number
     const lastSeen = (selected as any).visitor_last_seen || (selected as any).last_message_at
     const visitorOnline = lastSeen ? (Date.now() - new Date(String(lastSeen).endsWith('Z') ? lastSeen : lastSeen + 'Z').getTime()) < 120000 : false
-    const shouldSms = smsNumber && !visitorOnline
+    const shouldSms = sendChannel === 'sms'
+      ? !!smsNumber
+      : sendChannel === 'chat'
+        ? false
+        : (smsNumber && !visitorOnline)
 
     if (shouldSms) {
+      // Tell the agent (and the record) that the conversation moved to SMS.
+      const prevChannel = (selected as any).active_channel || 'chat'
+      if (prevChannel !== 'sms') {
+        try {
+          await (supabase as any).from('conversations').update({ active_channel: 'sms' }).eq('id', selected.id)
+          await (supabase as any).from('conversation_events').insert({
+            conversation_id: selected.id, company_id: companyId,
+            event_type: 'channel_switch', actor_name: senderName,
+            detail: 'Now chatting through SMS',
+          })
+        } catch {}
+      }
       try {
         const res = await fetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1407,6 +1480,9 @@ export default function InboxPage() {
     if (!searchTerm) return true
     const q = searchTerm.toLowerCase()
     const ct: any = (c as any).contacts || {}
+    // Snoozed conversations drop out of the list until their time is up.
+    const snz = (c as any).snoozed_until
+    if (snz && new Date(String(snz).endsWith('Z') ? snz : snz + 'Z').getTime() > Date.now() && statusFilter !== 'all') return false
     return (c.last_message || '').toLowerCase().includes(q)
       || (c.subject || '').toLowerCase().includes(q)
       || (ct.name || '').toLowerCase().includes(q)
@@ -1454,6 +1530,43 @@ export default function InboxPage() {
         @keyframes typingDot { 0%, 60%, 100% { opacity: 0.25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
         @keyframes livePulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); } 50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(34,197,94,0); } }
       `}</style>
+
+      {/* Right-click menu on a conversation */}
+      {ctxMenu && (
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{ position: 'fixed', top: Math.min(ctxMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 240), left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 210), width: 200, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.16)', zIndex: 500, overflow: 'hidden', padding: '4px 0' }}>
+          {([
+            ['Mark as read', <svg key="r" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>, () => markRead(ctxMenu.conv)],
+            ['Open in new tab', <svg key="o" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>, () => window.open(`/admin/inbox?conversation=${ctxMenu.conv.id}`, '_blank')],
+            ['Copy link', <svg key="c" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>, () => copyConvLink(ctxMenu.conv)],
+            ['Close enquiry', <svg key="x" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>, () => closeConv(ctxMenu.conv)],
+          ] as any[]).map(([label, icon, fn]: any) => (
+            <button key={label} type="button" onClick={() => { fn(); setCtxMenu(null) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--canvas)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+              <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{icon}</span>{label}
+            </button>
+          ))}
+
+          <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+          <div style={{ padding: '4px 14px 6px' }}>
+            <p style={{ margin: '0 0 5px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              Snooze
+            </p>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[1, 4, 24].map(h => (
+                <button key={h} type="button" onClick={() => { snoozeConv(ctxMenu.conv, h); setCtxMenu(null) }}
+                  style={{ flex: 1, padding: '5px 0', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>
+                  {h === 24 ? '1d' : `${h}h`}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Charge a saved card */}
       {showChargeCard && selected && (
@@ -1947,8 +2060,19 @@ export default function InboxPage() {
 
             const accent = companyInfo?.accent_color || 'var(--coral)'
             const unread = conv.is_unread && selected?.id !== conv.id
+
+            // How long has the customer been waiting for a reply?
+            const waitingSince = (c as any).last_customer_message_at
+            let waitingHours = 0
+            if (waitingSince && conv.status !== 'closed') {
+              const ts = String(waitingSince).endsWith('Z') ? waitingSince : waitingSince + 'Z'
+              waitingHours = (Date.now() - new Date(ts).getTime()) / 3600000
+            }
+            const isOverdue = waitingHours >= 3
+
             return (
             <button key={conv.id} type="button" onClick={() => selectConversation(conv)}
+              onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, conv }) }}
               style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', paddingLeft: unread ? 11 : 14, border: 'none', borderLeft: unread ? `3px solid ${accent}` : '3px solid transparent', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === conv.id ? 'var(--peach)' : unread ? '#fff6f4' : '#fff', transition: 'background 0.1s' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
@@ -1956,6 +2080,13 @@ export default function InboxPage() {
                   <span style={{ fontSize: 13.5, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {displayName}
                   </span>
+                  {isOverdue && (
+                    <span
+                      title={`${displayName} has been waiting for a reply for over ${Math.floor(waitingHours)} hours. Please provide a reply or consider closing the conversation.`}
+                      style={{ display: 'inline-flex', flexShrink: 0, color: '#dc2626' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg>
+                    </span>
+                  )}
                 </div>
                 <span style={{ fontSize: 10, color: '#9ca3af', flexShrink: 0, marginLeft: 6 }}>{timeAgo(conv.last_message_at)}</span>
               </div>
@@ -2499,10 +2630,38 @@ export default function InboxPage() {
                     style={{ padding: '8px 14px', borderRadius: 10, background: '#fff', color: reply.trim() ? 'var(--ink)' : '#9ca3af', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: reply.trim() ? 'pointer' : 'default' }}>
                     Send & Close
                   </button>
-                  <button type="button" onClick={sendReply} disabled={sending || !reply.trim()}
-                    style={{ padding: '8px 20px', borderRadius: 10, background: reply.trim() ? 'var(--coral)' : '#e5e7eb', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: reply.trim() ? 'pointer' : 'default', transition: 'all 0.15s' }}>
-                    {sending ? 'Sending…' : 'Send →'}
-                  </button>
+                  {/* Send + channel selector */}
+                  <div style={{ position: 'relative', display: 'flex' }}>
+                    <button type="button" onClick={sendReply} disabled={sending || !reply.trim()}
+                      style={{ padding: '8px 16px', borderRadius: '10px 0 0 10px', background: reply.trim() ? 'var(--coral)' : '#e5e7eb', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: reply.trim() ? 'pointer' : 'default', transition: 'all 0.15s' }}>
+                      {sending ? 'Sending…' : `Send${sendChannel !== 'auto' ? ` via ${sendChannel.toUpperCase()}` : ''} →`}
+                    </button>
+                    <button type="button" onClick={() => setShowChannelMenu(v => !v)} disabled={sending}
+                      title="Choose a channel"
+                      style={{ padding: '8px 8px', borderRadius: '0 10px 10px 0', background: reply.trim() ? 'var(--coral)' : '#e5e7eb', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="18 15 12 9 6 15"/></svg>
+                    </button>
+
+                    {showChannelMenu && (
+                      <div style={{ position: 'absolute', bottom: '120%', right: 0, width: 190, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden', padding: '4px 0' }}>
+                        <p style={{ margin: 0, padding: '6px 14px 4px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Send via</p>
+                        {([
+                          ['auto', 'Automatic', true],
+                          ['chat', 'Live chat', true],
+                          ['sms', 'SMS', !!(selected as any).sms_number],
+                          ['email', 'Email', !!contact?.email],
+                        ] as any[]).map(([key, label, available]: any) => (
+                          <button key={key} type="button" disabled={!available}
+                            onClick={() => { setSendChannel(key); setShowChannelMenu(false) }}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: sendChannel === key ? 'var(--peach)' : 'none', cursor: available ? 'pointer' : 'not-allowed', fontSize: 13, color: available ? 'var(--ink)' : '#c0c4cc', fontWeight: sendChannel === key ? 700 : 500 }}>
+                            {label}
+                            {!available && <span style={{ fontSize: 10, color: '#c0c4cc' }}>n/a</span>}
+                            {sendChannel === key && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

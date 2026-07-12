@@ -36,20 +36,25 @@ export async function POST(req: NextRequest) {
     const e164 = toE164(dest || '')
     if (!e164) return NextResponse.json({ error: 'No valid destination mobile number' }, { status: 400 })
 
-    // Build the message body — append short links for any attachments
+    // Build the message body — append short links for any attachments.
+    // Media goes to /m/<code> (a friendly viewer that renders the image/video on
+    // mobile) rather than a raw storage URL, which often just downloads or looks
+    // like spam in a text message.
     let body = text || ''
     const atts = Array.isArray(attachments) ? attachments : []
     if (atts.length > 0) {
       const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
       const links: string[] = []
       for (const a of atts) {
-        // Create a short link row that redirects to the file
         try {
           const code = Math.random().toString(36).slice(2, 8)
-          await db.from('short_links').insert({ code, company_id: companyId, target_url: a.url, label: a.name })
-          links.push(`${origin}/l/${code}`)
+          await db.from('short_links').insert({
+            code, company_id: companyId, target_url: a.url, label: a.name,
+            kind: 'media', conversation_id: conversationId || null,
+          })
+          links.push(`${origin}/m/${code}`)
         } catch {
-          links.push(a.url) // fall back to the raw URL if shortlink table missing
+          links.push(a.url) // fall back to the raw URL if the shortlink insert fails
         }
       }
       body = (body ? body + '\n' : '') + links.join('\n')
