@@ -596,7 +596,7 @@ function WidgetContent() {
         sender_name: chatName, sender_email: chatEmail || null,
         content: newMsg.content, attachments: [att],
       })
-      await (supabase as any).from('conversations').update({ last_message: '📎 Attachment', last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, updated_at: new Date().toISOString() }).eq('id', chatConvId)
+      await (supabase as any).from('conversations').update({ last_message: '📎 Attachment', last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, status: 'open', updated_at: new Date().toISOString() }).eq('id', chatConvId)
     } catch (e: any) { alert('Attachment failed: ' + e.message) }
     setChatUploading(false)
   }
@@ -1745,9 +1745,51 @@ function WidgetContent() {
                         const { data: newContact } = await (supabase as any).from('contacts').insert({ company_id: company?.id, name: chatName, phone: normalizedMobile, source: 'widget' }).select('id').maybeSingle()
                         if (newContact) contactId = newContact.id
                       }
-                      // Create conversation
+                      // Reuse this customer's existing conversation rather than
+                      // creating a duplicate. A returning customer previously got
+                      // a brand-new thread, so the same person appeared in both
+                      // Open and Closed — with their history split in two.
                       const visitorId = `widget-${Date.now()}-${Math.random().toString(36).slice(2)}`
-                      const { data: conv } = await (supabase as any).from('conversations').insert({
+                      let conv: any = null
+
+                      if (contactId) {
+                        const { data: prior } = await (supabase as any)
+                          .from('conversations').select('id, status')
+                          .eq('company_id', company?.id)
+                          .eq('contact_id', contactId)
+                          .order('last_message_at', { ascending: false })
+                          .limit(1)
+                        if (prior?.[0]?.id) {
+                          const existing = prior[0]
+                          // If they'd been closed/resolved, REOPEN — they're back.
+                          await (supabase as any).from('conversations').update({
+                            status: 'open',
+                            is_unread: true,
+                            sms_number: normalizedMobile || undefined,
+                            sms_enabled: !!(normalizedMobile && smsOptIn),
+                            page_url: parentPage.url || null,
+                            page_title: parentPage.title || null,
+                            page_history: parentPageHistory.length ? parentPageHistory : undefined,
+                            last_message_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString(),
+                          }).eq('id', existing.id)
+
+                          // Note the reopen on the timeline so the agent sees it.
+                          if (['closed', 'resolved'].includes((existing.status || '').toLowerCase())) {
+                            try {
+                              await (supabase as any).from('conversation_events').insert({
+                                conversation_id: existing.id, company_id: company?.id,
+                                event_type: 'status', actor_name: chatName || 'Customer',
+                                detail: 'Customer started chatting again — reopened',
+                              })
+                            } catch {}
+                          }
+                          conv = existing
+                        }
+                      }
+
+                      if (!conv) {
+                        const { data: created } = await (supabase as any).from('conversations').insert({
                         company_id: company?.id,
                         contact_id: contactId,
                         channel: 'widget',
@@ -1766,6 +1808,8 @@ function WidgetContent() {
                         last_message_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),
                       }).select('id').maybeSingle()
+                        conv = created
+                      }
                       if (conv) {
                         setChatConvId(conv.id)
                         // Persist so a page reload restores this chat
@@ -2063,7 +2107,7 @@ function WidgetContent() {
                               reply_to: widgetReplyTo?.id || null,
                             })
                             setWidgetReplyTo(null)
-                            try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}
+                            try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}; try { fetch('/api/inbox/keyword-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content, companyId: company?.id }) }) } catch {}
                             // Auto-reply fires now, on the customer's message (the
                             // route only sends once per conversation via auto_replied).
                             try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId }) }) } catch {}
@@ -2072,6 +2116,9 @@ function WidgetContent() {
                               last_message_at: new Date().toISOString(),
                               is_unread: true,
                               unread_count: 1,
+                              // A customer writing in reopens a closed enquiry —
+                              // they shouldn't be stuck in the Closed tab.
+                              status: 'open',
                               updated_at: new Date().toISOString(),
                             }).eq('id', chatConvId)
                           } catch (err) {
@@ -2092,9 +2139,9 @@ function WidgetContent() {
                         setChatMessages2(prev => [...prev, { sender_type: 'visitor', sender_name: chatName, content, created_at: new Date().toISOString() }])
                         try {
                           const { error: msgErr } = await (supabase as any).from('messages').insert({ conversation_id: chatConvId, company_id: company?.id, sender_type: 'visitor', sender_name: chatName, sender_email: chatEmail || null, content, reply_to: widgetReplyTo?.id || null }); const _wr = widgetReplyTo; setWidgetReplyTo(null)
-                          try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}; try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId }) }) } catch {}
+                          try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}; try { fetch('/api/inbox/keyword-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content, companyId: company?.id }) }) } catch {}; try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId }) }) } catch {}
                           if (msgErr) throw msgErr
-                          await (supabase as any).from('conversations').update({ last_message: content, last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, updated_at: new Date().toISOString() }).eq('id', chatConvId)
+                          await (supabase as any).from('conversations').update({ last_message: content, last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, status: 'open', updated_at: new Date().toISOString() }).eq('id', chatConvId)
                         } catch (err) {
                           console.error('Widget message send error:', err)
                           setChatCreateError('Message could not be sent. Please try again.')

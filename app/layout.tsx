@@ -499,7 +499,6 @@ export default function RootLayout({
   }, [showNotifications])
 
   const userInitial = user?.email?.[0].toUpperCase() || 'A'
-
   // Pages that use their own full-page layout (no nav wrapper).
   // IMPORTANT: window-dependent checks (embed, marketing root) must NOT change
   // the render tree between the server render and the first client render, or

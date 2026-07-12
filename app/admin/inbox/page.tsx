@@ -110,11 +110,21 @@ function mergeEvents(msgs: any[], events: any[]) {
   const evs = (events || [])
     .filter(e => SHOW.includes(e.event_type))
     .map(e => ({ ...e, __event: true }))
-  return [...msgs, ...evs].sort((a, b) => {
-    const ta = new Date(String(a.created_at).endsWith('Z') ? a.created_at : a.created_at + 'Z').getTime()
-    const tb = new Date(String(b.created_at).endsWith('Z') ? b.created_at : b.created_at + 'Z').getTime()
-    return ta - tb
-  })
+
+  // Postgres timestamps come back with or without a trailing Z depending on the
+  // column type. Parsing inconsistently offset events by the local timezone,
+  // which shoved them all to the bottom of the thread instead of sorting them
+  // in among the messages.
+  const ts = (v: any): number => {
+    if (!v) return 0
+    const s = String(v)
+    // Already has a timezone (Z or ±HH:MM) → parse as-is.
+    const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(s)
+    const d = new Date(hasTz ? s : s.replace(' ', 'T') + 'Z')
+    return isNaN(d.getTime()) ? 0 : d.getTime()
+  }
+
+  return [...msgs, ...evs].sort((a, b) => ts(a.created_at) - ts(b.created_at))
 }
 
 // Returns "Today" / "Yesterday" / "12 Jul 2026" for a date divider
@@ -251,6 +261,49 @@ export default function InboxPage() {
   const [chargeDesc, setChargeDesc] = useState('')
   const [chargeCardId, setChargeCardId] = useState<string>('')
   const [charging, setCharging] = useState(false)
+
+  // ── Quick responses (Time Savers) ────────────────────────────────────────
+  // Typing "/" in the composer offers saved replies; picking one (or typing its
+  // shortcut and pressing Tab/Enter) expands it. Previously these were saved in
+  // settings but the composer ignored them, so "/hours" sent as literal text.
+  const [quickResponses, setQuickResponses] = useState<any[]>([])
+  const [showQuickMenu, setShowQuickMenu] = useState(false)
+  const [quickIndex, setQuickIndex] = useState(0)
+
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      const { data } = await (supabase as any).from('quick_responses')
+        .select('*').eq('company_id', companyId).order('created_at', { ascending: true })
+      setQuickResponses(data || [])
+    })()
+  }, [companyId])
+
+  // Which saved replies match what's been typed after the "/"?
+  const quickMatches = (() => {
+    const m = reply.match(/(?:^|\s)\/([\w-]*)$/)
+    if (!m) return []
+    const q = (m[1] || '').toLowerCase()
+    return quickResponses.filter(r => {
+      const sc = (r.shortcut || '').replace(/^\//, '').toLowerCase()
+      const title = (r.title || '').toLowerCase()
+      return !q || sc.startsWith(q) || title.includes(q)
+    })
+  })()
+
+  useEffect(() => {
+    setShowQuickMenu(quickMatches.length > 0)
+    setQuickIndex(0)
+  }, [reply])
+
+  const applyQuickResponse = (r: any) => {
+    // Replace the trailing "/shortcut" with the saved body.
+    setReply(prev => prev.replace(/(?:^|\s)\/[\w-]*$/, (match) => {
+      const lead = match.startsWith(' ') ? ' ' : ''
+      return lead + (r.body || '')
+    }))
+    setShowQuickMenu(false)
+  }
 
   // ── Live typing preview (ADMIN ONLY) ──────────────────────────────────────
   // See what the customer is typing before they send it, so agents can prepare.
@@ -2814,9 +2867,39 @@ export default function InboxPage() {
                 </div>
               )}
 
+              {/* Quick responses — type "/" to pick a saved reply */}
+              {showQuickMenu && (
+                <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, marginBottom: 6, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 70, overflow: 'hidden', maxHeight: 260, overflowY: 'auto' }}>
+                  <p style={{ margin: 0, padding: '8px 14px 6px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Quick responses</p>
+                  {quickMatches.map((r, i) => (
+                    <button key={r.id} type="button"
+                      onMouseEnter={() => setQuickIndex(i)}
+                      onClick={() => applyQuickResponse(r)}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: i === quickIndex ? 'var(--peach)' : 'none', cursor: 'pointer' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{r.title || 'Reply'}</span>
+                        <code style={{ fontSize: 11, color: 'var(--coral)', background: 'var(--canvas)', padding: '1px 6px', borderRadius: 5 }}>/{(r.shortcut || '').replace(/^\//, '')}</code>
+                      </span>
+                      <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.body}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <textarea ref={textareaRef} value={reply} onChange={e => setReply(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply() } }}
-                placeholder="Type a reply… (Enter to send, Shift+Enter for new line)"
+                onKeyDown={e => {
+                  // Quick-response picker takes priority over sending.
+                  if (showQuickMenu && quickMatches.length) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setQuickIndex(i => (i + 1) % quickMatches.length); return }
+                    if (e.key === 'ArrowUp') { e.preventDefault(); setQuickIndex(i => (i - 1 + quickMatches.length) % quickMatches.length); return }
+                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                      e.preventDefault(); applyQuickResponse(quickMatches[quickIndex]); return
+                    }
+                    if (e.key === 'Escape') { setShowQuickMenu(false); return }
+                  }
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply() }
+                }}
+                placeholder="Type a reply… (Enter to send, / for quick responses)"
                 rows={3}
                 style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }} />
 

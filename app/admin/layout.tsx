@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import AdminBanner from '@/components/AdminBanner'
 import { getCompanyByOwner } from '@/lib/board'
 import { useRouter } from 'next/navigation'
 import FeedbackButton from '@/components/FeedbackButton'
@@ -93,6 +94,7 @@ const NAV_GROUPS = [
       { label: 'Users', href: '/admin/users', icon: 'users' },
       { label: 'Locations', href: '/admin/locations', icon: 'settings' },
       { label: 'Channels', href: '/admin/channels', icon: 'integrations' },
+      { label: 'Auto Replies', href: '/admin/auto-replies', icon: 'integrations' },
       { label: 'Integrations', href: '/admin/integrations', icon: 'integrations' },
       { label: 'Import Data', href: '/admin/import', icon: 'import_data' },
       { label: 'Settings', href: '/admin/settings', icon: 'settings' },
@@ -484,6 +486,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* Main content — offset by sidebar width on desktop, full width on mobile */}
       <div className="admin-main" style={{ marginLeft: adminCollapsed ? 60 : 220, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', transition: 'margin-left 0.2s ease' }}>
+        <AdminBanner />
         {children}
       </div>
 

@@ -148,6 +148,8 @@ export async function POST(req: NextRequest) {
       last_message: content.slice(0, 200),
       last_message_at: new Date().toISOString(),
       is_unread: true,
+      // An inbound message reopens a closed enquiry — the customer is back.
+      status: 'open',
       unread_count: (conv.unread_count || 0) + 1,
     }).eq('id', conv.id)
 
