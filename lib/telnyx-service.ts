@@ -203,12 +203,68 @@ export class TelnyxService {
     return []
   }
 
-  // Order a specific number
+  // Check a specific number is currently available to buy. Telnyx rejects orders
+  // for numbers it hasn't seen in a recent availability search ("We don't
+  // recognize the number(s)... Did you first search for the number(s)?"), and a
+  // number found minutes ago may already be taken by someone else.
+  async isNumberAvailable(phoneNumber: string): Promise<boolean> {
+    const digits = phoneNumber.replace(/\D/g, '')
+    // Search by the exact number across the shapes Telnyx accepts.
+    const queries = [
+      `filter[phone_number][starts_with]=${encodeURIComponent(phoneNumber)}&filter[limit]=5`,
+      `filter[phone_number][contains]=${digits.slice(-8)}&filter[limit]=10`,
+    ]
+    for (const q of queries) {
+      try {
+        const data = await this.req(`/available_phone_numbers?${q}`, 'GET')
+        const list = data.data || []
+        if (list.some((n: any) => (n.phone_number || '').replace(/\D/g, '') === digits)) return true
+      } catch { /* try the next shape */ }
+    }
+    return false
+  }
+
+  // Order a specific number. Re-validates availability first so we surface a
+  // useful message instead of Telnyx's cryptic "did you search first?" error.
   async orderNumber(phoneNumber: string, opts?: { messaging_profile_id?: string; connection_id?: string }) {
     const body: any = { phone_numbers: [{ phone_number: phoneNumber }] }
     if (opts?.messaging_profile_id) body.messaging_profile_id = opts.messaging_profile_id
     if (opts?.connection_id) body.connection_id = opts.connection_id
     return this.req('/number_orders', 'POST', body)
+  }
+
+  // Order the wanted number, falling back to an equivalent one if it's gone.
+  // Returns { order, phoneNumber, substituted }.
+  async orderNumberWithFallback(
+    wanted: string,
+    searchParams: { country?: string; type?: 'local' | 'mobile' | 'toll_free' | 'national'; areaCode?: string; locality?: string },
+    opts?: { messaging_profile_id?: string; connection_id?: string }
+  ): Promise<{ order: any; phoneNumber: string; substituted: boolean }> {
+    // 1) Re-search to (a) satisfy Telnyx's "search before order" rule and
+    //    (b) confirm nobody took it while the customer was paying.
+    const stillFree = await this.isNumberAvailable(wanted)
+    if (stillFree) {
+      try {
+        const order = await this.orderNumber(wanted, opts)
+        return { order, phoneNumber: wanted, substituted: false }
+      } catch (e: any) {
+        // Fall through to a substitute rather than failing a paid customer.
+        console.warn('[telnyx] wanted number failed to order, substituting:', e.message)
+      }
+    }
+
+    // 2) Pick a fresh number of the same kind/region.
+    const candidates = await this.searchAvailableNumbers({ ...searchParams, limit: 5 })
+    for (const c of candidates) {
+      const pn = c.phone_number
+      if (!pn || pn === wanted) continue
+      try {
+        const order = await this.orderNumber(pn, opts)
+        return { order, phoneNumber: pn, substituted: true }
+      } catch { /* try the next candidate */ }
+    }
+
+    throw new Error('That number is no longer available, and no replacement could be provisioned. Please contact support — you have not been charged for a number.')
   }
 
   // Configure a purchased number (assign messaging profile + voice connection)

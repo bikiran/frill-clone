@@ -34,6 +34,9 @@ export async function POST(req: NextRequest) {
     let phoneNumberWanted: string | undefined
     let subscriptionId: string | undefined
     let locationId: string | undefined
+    let numberType: string | undefined
+    let locality: string | undefined
+    let areaCode: string | undefined
     if (sessionId) {
       const secret = (process.env.STRIPE_SECRET_KEY || '').trim()
       if (secret.startsWith('sk_')) {
@@ -42,6 +45,9 @@ export async function POST(req: NextRequest) {
         paid = session.payment_status === 'paid' || session.status === 'complete'
         phoneNumberWanted = (session.metadata?.phoneNumber as string) || undefined
         locationId = (session.metadata?.locationId as string) || undefined
+        numberType = (session.metadata?.numberType as string) || 'local'
+        locality = (session.metadata?.locality as string) || undefined
+        areaCode = (session.metadata?.areaCode as string) || undefined
         subscriptionId = (session.subscription as string) || undefined
         if (!paid) return NextResponse.json({ error: 'Payment not completed yet', pending: true }, { status: 202 })
       }
@@ -59,17 +65,41 @@ export async function POST(req: NextRequest) {
 
     // Provision the number now
     const svc = new TelnyxService(PLATFORM_KEY)
+
+    // What kind of number was the customer buying? (used if we must substitute)
+    const wantedType: any = (numberType === 'mobile' ? 'mobile' : 'local')
+    const searchParams = { country: 'AU', type: wantedType, locality: locality || undefined, areaCode: areaCode || undefined }
+
     let numberToBuy = phoneNumberWanted
+    let substituted = false
+    let order: any = null
+
     if (!numberToBuy) {
-      const available = await svc.searchAvailableNumbers({ country: 'AU', type: 'local', limit: 1 })
+      const available = await svc.searchAvailableNumbers({ ...searchParams, limit: 1 })
       numberToBuy = available?.[0]?.phone_number
       if (!numberToBuy) return NextResponse.json({ error: 'No Australian numbers available right now — please contact support; your payment is safe.' }, { status: 502 })
+      order = await svc.orderNumber(numberToBuy, {
+        messaging_profile_id: PLATFORM_MESSAGING_PROFILE,
+        connection_id: PLATFORM_CONNECTION,
+      })
+    } else {
+      // Telnyx requires the number to have been seen in a recent availability
+      // search, and it may have been taken while the customer paid. This
+      // re-validates and substitutes an equivalent number if needed, so a paid
+      // customer always ends up with a working number.
+      try {
+        const res = await svc.orderNumberWithFallback(numberToBuy, searchParams, {
+          messaging_profile_id: PLATFORM_MESSAGING_PROFILE,
+          connection_id: PLATFORM_CONNECTION,
+        })
+        order = res.order
+        numberToBuy = res.phoneNumber
+        substituted = res.substituted
+      } catch (e: any) {
+        return NextResponse.json({ error: e.message }, { status: 502 })
+      }
     }
 
-    const order = await svc.orderNumber(numberToBuy, {
-      messaging_profile_id: PLATFORM_MESSAGING_PROFILE,
-      connection_id: PLATFORM_CONNECTION,
-    })
     const orderId = order?.data?.id
 
     try {
@@ -116,7 +146,12 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
-    return NextResponse.json({ ok: true, phoneNumber: numberToBuy })
+    return NextResponse.json({
+      ok: true,
+      phoneNumber: numberToBuy,
+      substituted,
+      ...(substituted ? { notice: `The number you picked was taken while payment completed, so we provisioned ${numberToBuy} for you instead.` } : {}),
+    })
   } catch (err: any) {
     console.error('Number finalize error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
