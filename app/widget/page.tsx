@@ -26,6 +26,32 @@ function WidgetContent() {
   const [chatConvId, setChatConvId] = useState<string | null>(null)
   const [chatMessages2, setChatMessages2] = useState<any[]>([])
   const [chatInput, setChatInput] = useState('')
+
+  // Broadcast what the customer is typing so agents can see it live and prepare
+  // a reply. This is ADMIN-ONLY visibility — nothing is shown to the customer,
+  // and nothing is stored; it's an ephemeral realtime channel.
+  const typingChanRef = useRef<any>(null)
+  useEffect(() => {
+    if (!chatConvId) return
+    const ch = supabase.channel(`typing-${chatConvId}`)
+    ch.subscribe()
+    typingChanRef.current = ch
+    return () => { supabase.removeChannel(ch); typingChanRef.current = null }
+  }, [chatConvId])
+
+  useEffect(() => {
+    if (!typingChanRef.current) return
+    const t = setTimeout(() => {
+      try {
+        typingChanRef.current?.send({
+          type: 'broadcast',
+          event: 'typing',
+          payload: { from: 'visitor', text: chatInput, name: chatName, at: Date.now() },
+        })
+      } catch {}
+    }, 250) // debounce so we don't flood the channel on every keystroke
+    return () => clearTimeout(t)
+  }, [chatInput])
   const [chatSending, setChatSending] = useState(false)
   const [chatUploading, setChatUploading] = useState(false)
   const [copiedCoupon, setCopiedCoupon] = useState<string | null>(null)
@@ -1940,11 +1966,17 @@ function WidgetContent() {
                           )}
                           {/* React + reply actions (only on messages that have an id) */}
                           {msg.id && (
-                            <div style={{ position: 'absolute', top: -12, [isAgent ? 'right' : 'left']: 4, display: 'flex', gap: 2 } as any}>
+                            <div style={{ position: 'absolute', top: -12, [isAgent ? 'right' : 'left']: 4, display: 'flex', gap: 2, zIndex: 5 } as any}>
                               <button type="button" onClick={() => setWidgetReactPicker(widgetReactPicker === i ? null : i)}
-                                style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid #e5e5e5', background: '#fff', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>😊</button>
+                                title="React"
+                                style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid #e5e5e5', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', padding: 0, color: '#6b7280' }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                              </button>
                               <button type="button" onClick={() => setWidgetReplyTo(msg)}
-                                style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid #e5e5e5', background: '#fff', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>↩</button>
+                                title="Reply"
+                                style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid #e5e5e5', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', padding: 0, color: '#6b7280' }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+                              </button>
                             </div>
                           )}
                           {widgetReactPicker === i && (

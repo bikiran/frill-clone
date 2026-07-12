@@ -35,6 +35,51 @@ export async function POST(req: NextRequest) {
         const session = event.data.object
         const meta = session.metadata || {}
 
+        // Card saved for later (Stripe 'setup' mode) — store the payment method
+        // so the business can charge it from the chat. We only ever keep the
+        // Stripe ids and the last 4 digits; card data stays with Stripe.
+        if (meta.kind === 'save_card' && meta.companyId) {
+          try {
+            const setupIntentId = session.setup_intent as string
+            if (setupIntentId) {
+              const { data: company } = await (supabase as any).from('companies').select('*').eq('id', meta.companyId).maybeSingle()
+              const useOwnKeys = company?.stripe_mode === 'keys' && company?.stripe_secret_key
+              const key = useOwnKeys ? company.stripe_secret_key : process.env.STRIPE_SECRET_KEY
+              const sc = new (require('stripe'))(String(key).trim(), { apiVersion: '2024-06-20' })
+              const opts = useOwnKeys ? undefined : (company?.stripe_account_id ? { stripeAccount: company.stripe_account_id } : undefined)
+
+              const si = await sc.setupIntents.retrieve(setupIntentId, opts)
+              const pmId = si.payment_method
+              if (pmId) {
+                const pm = await sc.paymentMethods.retrieve(pmId, opts)
+                const row = {
+                  company_id: meta.companyId,
+                  contact_id: meta.contactId || null,
+                  stripe_customer_id: String(session.customer),
+                  stripe_payment_method_id: String(pmId),
+                  brand: pm.card?.brand || null,
+                  last4: pm.card?.last4 || null,
+                  exp_month: pm.card?.exp_month || null,
+                  exp_year: pm.card?.exp_year || null,
+                  is_default: true,
+                }
+                const { data: existing } = await (supabase as any).from('saved_cards')
+                  .select('id').eq('company_id', meta.companyId).eq('stripe_payment_method_id', String(pmId)).maybeSingle()
+                if (!existing) await (supabase as any).from('saved_cards').insert(row)
+
+                if (meta.conversationId) {
+                  await (supabase as any).from('messages').insert({
+                    conversation_id: meta.conversationId, company_id: meta.companyId,
+                    sender_type: 'system',
+                    content: `✅ Card saved — ${pm.card?.brand || 'card'} ending ${pm.card?.last4}. You can charge it from the chat.`,
+                    metadata: { card_saved: true },
+                  })
+                }
+              }
+            }
+          } catch (e) { console.error('[webhook] save_card failed', e) }
+        }
+
         // In-chat payment (on a connected account) — mark paid + confirm in chat
         if (meta.kind === 'chat_payment' && meta.conversationId) {
           const receiptUrl = session.receipt_url || null

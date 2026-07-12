@@ -223,6 +223,83 @@ export default function InboxPage() {
   const [sendPicker, setSendPicker] = useState<'poll' | 'survey' | 'form' | 'payment' | null>(null)
   const [pickerItems, setPickerItems] = useState<any[]>([])
   const [payAmount, setPayAmount] = useState('')
+
+  // ── Saved cards: save a card on file, then charge it later without asking ──
+  const [showChargeCard, setShowChargeCard] = useState(false)
+  const [savedCards, setSavedCards] = useState<any[]>([])
+  const [chargeAmount, setChargeAmount] = useState('')
+  const [chargeDesc, setChargeDesc] = useState('')
+  const [chargeCardId, setChargeCardId] = useState<string>('')
+  const [charging, setCharging] = useState(false)
+
+  // ── Live typing preview (ADMIN ONLY) ──────────────────────────────────────
+  // See what the customer is typing before they send it, so agents can prepare.
+  // The customer is never shown the agent's draft — this is one-way.
+  const [liveTyping, setLiveTyping] = useState<string>('')
+  useEffect(() => {
+    if (!selected?.id) { setLiveTyping(''); return }
+    setLiveTyping('')
+    const ch = supabase.channel(`typing-${selected.id}`)
+    ch.on('broadcast', { event: 'typing' }, (msg: any) => {
+      const p = msg?.payload
+      if (!p || p.from !== 'visitor') return
+      setLiveTyping(p.text || '')
+    }).subscribe()
+    // Clear the preview if they go quiet.
+    const idle = setInterval(() => setLiveTyping(t => t), 1000)
+    return () => { supabase.removeChannel(ch); clearInterval(idle) }
+  }, [selected?.id])
+
+  const cardsApi = async (body: any) => {
+    const res = await fetch('/api/stripe/cards', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId, conversationId: selected?.id, ...body }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Request failed')
+    return data
+  }
+
+  const loadSavedCards = async () => {
+    if (!selected || !companyId) return
+    try {
+      const d = await cardsApi({ action: 'list_cards' })
+      setSavedCards(d.cards || [])
+      setChargeCardId(d.cards?.[0]?.id || '')
+    } catch { setSavedCards([]) }
+  }
+
+  // Sends the customer a secure Stripe page to store their card.
+  const saveCard = async () => {
+    if (!selected || !companyId) return
+    try {
+      await cardsApi({ action: 'save_card' })
+      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+      setMessages(msgs || [])
+      scrollBottom()
+      showToast('Card-save link sent to the customer')
+    } catch (e: any) {
+      showToast(e.message)
+    }
+  }
+
+  // Charges a card the customer already saved.
+  const chargeCard = async () => {
+    if (!selected || !companyId || !chargeAmount) return
+    setCharging(true)
+    try {
+      const d = await cardsApi({ action: 'charge_card', amount: chargeAmount, description: chargeDesc, cardId: chargeCardId || undefined })
+      setShowChargeCard(false); setChargeAmount(''); setChargeDesc('')
+      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+      setMessages(msgs || [])
+      scrollBottom()
+      showToast(d.paid ? 'Card charged successfully' : `Charge status: ${d.status}`)
+    } catch (e: any) {
+      showToast(e.message)
+    } finally {
+      setCharging(false)
+    }
+  }
   const [payDesc, setPayDesc] = useState('')
   const [toast, setToast] = useState('')
   const [editField, setEditField] = useState<string | null>(null)
@@ -1355,7 +1432,67 @@ export default function InboxPage() {
       <IncomingCallListener companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
 
       {/* Conversation action panels */}
-      <style>{`@keyframes doaSlideIn { from { transform: translate(100%, -50%); } to { transform: translate(0, -50%); } }`}</style>
+      <style>{`
+        @keyframes doaSlideIn { from { transform: translate(100%, -50%); } to { transform: translate(0, -50%); } }
+        @keyframes typingDot { 0%, 60%, 100% { opacity: 0.25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
+      `}</style>
+
+      {/* Charge a saved card */}
+      {showChargeCard && selected && (
+        <div onClick={() => setShowChargeCard(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 380, maxWidth: '92vw', background: '#fff', borderRadius: 16, padding: 22 }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Charge saved card</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--slate)' }}>Charges the customer&rsquo;s card on file. They won&rsquo;t need to do anything.</p>
+
+            {savedCards.length === 0 ? (
+              <>
+                <div style={{ padding: 14, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)', marginBottom: 14 }}>
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+                    No saved card for this customer yet. Use <strong>Save Card</strong> to send them a secure Stripe link first.
+                  </p>
+                </div>
+                <button type="button" onClick={() => { setShowChargeCard(false); saveCard() }}
+                  style={{ width: '100%', padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                  Send &ldquo;Save Card&rdquo; link
+                </button>
+              </>
+            ) : (
+              <>
+                <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Card</label>
+                <select value={chargeCardId} onChange={e => setChargeCardId(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, boxSizing: 'border-box' }}>
+                  {savedCards.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {(c.brand || 'card').toUpperCase()} •••• {c.last4} — expires {String(c.exp_month).padStart(2, '0')}/{c.exp_year}
+                    </option>
+                  ))}
+                </select>
+
+                <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Amount (AUD)</label>
+                <input type="number" min="1" step="0.01" value={chargeAmount} onChange={e => setChargeAmount(e.target.value)}
+                  placeholder="49.95"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, boxSizing: 'border-box' }} />
+
+                <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>What&rsquo;s this for?</label>
+                <input value={chargeDesc} onChange={e => setChargeDesc(e.target.value)}
+                  placeholder="Replacement part"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 18, boxSizing: 'border-box' }} />
+
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" onClick={() => setShowChargeCard(false)}
+                    style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                  <button type="button" onClick={chargeCard} disabled={!chargeAmount || charging}
+                    style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: (!chargeAmount || charging) ? 0.6 : 1 }}>
+                    {charging ? 'Charging…' : `Charge $${chargeAmount || '0'}`}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {showDoa && selected && companyId && (
         <DoaPanel
@@ -2252,6 +2389,22 @@ export default function InboxPage() {
                 rows={3}
                 style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }} />
 
+              {/* Live typing preview — what the customer is typing right now.
+                  Admin-only; the customer never sees the agent's draft. */}
+              {liveTyping.trim() && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 12px', borderRadius: 10, background: '#f0f9ff', border: '1px dashed #7dd3fc', marginBottom: 8 }}>
+                  <span style={{ display: 'flex', gap: 2, paddingTop: 5, flexShrink: 0 }}>
+                    {[0, 1, 2].map(i => (
+                      <span key={i} style={{ width: 4, height: 4, borderRadius: '50%', background: '#0284c7', animation: `typingDot 1.2s ${i * 0.15}s infinite` }} />
+                    ))}
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Customer is typing</p>
+                    <p style={{ margin: '2px 0 0', fontSize: 13, color: '#0c4a6e', fontStyle: 'italic', wordBreak: 'break-word' }}>{liveTyping}</p>
+                  </div>
+                </div>
+              )}
+
               <input ref={fileInputRef} type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" style={{ display: 'none' }}
                 onChange={e => { handleFileUpload(e.target.files); e.target.value = '' }} />
 
@@ -2264,11 +2417,32 @@ export default function InboxPage() {
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
                     {showSendMenu && (
-                      <div style={{ position: 'absolute', bottom: '120%', left: 0, width: 180, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
-                        {[['poll', Icon.poll(), 'Send Poll'], ['survey', Icon.survey(), 'Send Survey'], ['form', Icon.form(), 'Send Form'], ['payment', Icon.payment(), 'Request Payment']].map(([k, icon, label]: any) => (
+                      <div style={{ position: 'absolute', bottom: '120%', left: 0, width: 200, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
+                        {[['poll', Icon.poll(), 'Send Poll'], ['survey', Icon.survey(), 'Send Survey'], ['form', Icon.form(), 'Send Form']].map(([k, icon, label]: any) => (
                           <button key={k} type="button" onClick={() => openPicker(k as any)}
                             style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}><span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{icon}</span>{label}</button>
                         ))}
+
+                        <div style={{ borderTop: '1px solid var(--border)' }} />
+
+                        <button type="button" onClick={() => openPicker('payment' as any)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.payment()}</span>Send Payment Link
+                        </button>
+
+                        <button type="button" onClick={() => { setShowSendMenu(false); setShowChargeCard(true); loadSavedCards() }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                          </span>Charge Card
+                        </button>
+
+                        <button type="button" onClick={() => { setShowSendMenu(false); saveCard() }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/><path d="M16 15h3"/></svg>
+                          </span>Save Card
+                        </button>
                       </div>
                     )}
                   </div>
