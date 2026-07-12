@@ -146,58 +146,6 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   }
   } // end automation-message block
 
-  // ── Record the order with its chat attribution ────────────────────────────
-  // This makes "sales converted through chat" a real revenue figure. We only
-  // attribute what we can defend:
-  //   cart_recovered → this customer had a cart Colvy captured, now converted
-  //   chat_order     → the order was created by an agent from the chat
-  //   chat_assisted  → the customer had a real conversation before ordering
-  try {
-    let attribution: string | null = null
-
-    // Recovered cart? (the bridge marks carts recovered on checkout)
-    if (contact?.id) {
-      const { data: cart } = await db.from('abandoned_carts')
-        .select('id').eq('company_id', companyId).eq('status', 'recovered')
-        .or(`email.ilike.${email || 'x@x'},phone.eq.${phone || 'x'}`)
-        .limit(1)
-      if (cart?.length) attribution = 'cart_recovered'
-    }
-    // Created from chat by an agent?
-    if (!attribution && order.meta_data?.some?.((m: any) => m.key === '_colvy_conversation_id')) {
-      attribution = 'chat_order'
-    }
-    // Otherwise, did the customer actually converse (not just system events)?
-    if (!attribution && conv?.id) {
-      const { data: realMsgs } = await db.from('messages')
-        .select('id').eq('conversation_id', conv.id)
-        .in('sender_type', ['visitor', 'agent']).limit(1)
-      if (realMsgs?.length) attribution = 'chat_assisted'
-    }
-
-    const orderRow: any = {
-      company_id: companyId,
-      woo_order_id: order.id,
-      customer_email: email || null,
-      status,
-      total: parseFloat(order.total) || 0,
-      currency: order.currency || 'AUD',
-      order_date: order.date_created ? new Date(order.date_created).toISOString() : new Date().toISOString(),
-      line_items: order.line_items || [],
-      billing: order.billing || {},
-      conversation_id: conv?.id || null,
-      attribution,
-      attributed_at: attribution ? new Date().toISOString() : null,
-    }
-    const { data: existingOrder } = await db.from('woocommerce_orders')
-      .select('id').eq('company_id', companyId).eq('woo_order_id', order.id).maybeSingle()
-    if (existingOrder?.id) {
-      await db.from('woocommerce_orders').update(orderRow).eq('id', existingOrder.id)
-    } else {
-      await db.from('woocommerce_orders').insert(orderRow)
-    }
-  } catch (e) { console.error('[order attribution] failed', e) }
-
   // ── Auto review request on completion ─────────────────────────────────────
   // Independent of the order-chat automation toggle: if the business turned on
   // review requests, schedule one (optionally delayed) for a completed order.

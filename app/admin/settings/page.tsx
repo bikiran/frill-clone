@@ -1831,60 +1831,33 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Conversions */}
-                <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)', margin: '0 0 10px' }}>Sales converted through chat</p>
+                <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)', margin: '0 0 10px' }}>Conversions</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 12 }}>
                   <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--coral)', background: 'var(--peach)' }}>
-                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--coral)', margin: '0 0 2px' }}>${(overview.salesAmount ?? 0).toLocaleString()}</p>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Revenue converted</p>
-                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>
-                      {overview.totalOrderAmount > 0
-                        ? `${Math.round((overview.salesAmount / overview.totalOrderAmount) * 100)}% of $${overview.totalOrderAmount.toLocaleString()} total`
-                        : 'From chat-attributed orders'}
-                    </p>
+                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--coral)', margin: '0 0 2px' }}>{overview.cartsRecovered ?? 0}</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Carts recovered</p>
+                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>Abandoned carts that converted</p>
                   </div>
                   <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--coral)', background: 'var(--peach)' }}>
-                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--coral)', margin: '0 0 2px' }}>{overview.salesConverted ?? 0}</p>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Orders converted</p>
-                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>
-                      {overview.totalOrders > 0 ? `of ${overview.totalOrders} total orders` : 'Attributed to chat'}
-                    </p>
-                  </div>
-                  <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
-                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink)', margin: '0 0 2px' }}>{overview.cartsRecovered ?? 0}</p>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Carts recovered</p>
-                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>${(overview.cartsRecoveredAmount ?? 0).toLocaleString()} recovered</p>
+                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--coral)', margin: '0 0 2px' }}>${(overview.cartsRecoveredAmount ?? 0).toLocaleString()}</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Recovered value</p>
+                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>AUD from recovered carts</p>
                   </div>
                   <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
                     <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink)', margin: '0 0 2px' }}>{overview.cartsCaptured ?? 0}</p>
                     <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Carts captured</p>
                     <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>${(overview.cartsCapturedAmount ?? 0).toLocaleString()} at risk</p>
                   </div>
-                </div>
-
-                {/* Attribution breakdown */}
-                {overview.byAttribution && Object.keys(overview.byAttribution).length > 0 && (
-                  <div style={{ marginBottom: 12, border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-                    {Object.entries(overview.byAttribution).map(([key, v]: any) => {
-                      const labels: Record<string, string> = {
-                        chat_order: 'Order created from chat',
-                        cart_recovered: 'Recovered abandoned cart',
-                        chat_assisted: 'Customer chatted before ordering',
-                      }
-                      return (
-                        <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
-                          <span style={{ fontSize: 13, color: 'var(--ink)' }}>{labels[key] || key}</span>
-                          <span style={{ fontSize: 13, color: 'var(--slate)' }}>
-                            <strong style={{ color: 'var(--ink)' }}>${v.amount.toLocaleString()}</strong> · {v.count} order{v.count === 1 ? '' : 's'}
-                          </span>
-                        </div>
-                      )
-                    })}
+                  <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
+                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink)', margin: '0 0 2px' }}>{overview.ordersInChat ?? 0}</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Orders in chat</p>
+                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>Orders that opened a conversation</p>
                   </div>
-                )}
+                </div>
 
                 <div style={{ padding: 12, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
                   <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0, lineHeight: 1.5 }}>
-                    <strong>How attribution works:</strong> an order counts as converted through chat only when Colvy can prove it — the agent created it from the chat, it recovered a cart Colvy captured, or the customer actually conversed before ordering. Cancelled, failed and refunded orders are excluded. These are real order totals from your store, not estimates.
+                    <strong>About sales figures:</strong> Colvy doesn&rsquo;t store your orders — they live in WooCommerce/Shopify. So we only report conversions we can genuinely attribute: abandoned carts Colvy captured that later converted, and orders that flowed through chat. Total store revenue lives in your store&rsquo;s own reports.
                   </p>
                 </div>
               </>
