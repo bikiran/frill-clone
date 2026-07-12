@@ -436,9 +436,41 @@ export default function RootLayout({
     getCount()
     const ch = supabase
       .channel(`notifications-${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => getCount())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload: any) => {
+        getCount()
+        // Browser notification for new items (works while the admin tab is open,
+        // even if it's in the background). Interim until the mobile app ships.
+        try {
+          if (payload.eventType === 'INSERT' && payload.new && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            const n = payload.new
+            const notif = new Notification(n.actor_name ? `${n.actor_name}` : 'Colvy', {
+              body: n.message || 'You have a new notification',
+              icon: '/logo.png',
+              badge: '/favicon.png',
+              tag: n.id,
+            })
+            notif.onclick = () => {
+              window.focus()
+              if (n.conversation_id) window.location.href = `/admin/inbox?conversation=${n.conversation_id}`
+              else window.location.href = '/admin'
+              notif.close()
+            }
+          }
+        } catch {}
+      })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
+  }, [user])
+
+  // Ask for browser-notification permission once the user is signed in to the
+  // admin. Only prompts if they haven't decided yet.
+  useEffect(() => {
+    if (!user) return
+    if (typeof window === 'undefined' || typeof Notification === 'undefined') return
+    if (Notification.permission !== 'default') return
+    // Delay slightly so the prompt doesn't collide with page load.
+    const t = setTimeout(() => { try { Notification.requestPermission() } catch {} }, 2500)
+    return () => clearTimeout(t)
   }, [user])
 
   // Fetch notifications when dropdown opens. Also declared before any early

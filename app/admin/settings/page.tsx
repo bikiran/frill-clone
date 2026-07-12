@@ -9,6 +9,7 @@ import { useToast, ToastContainer } from '@/lib/toast'
 
 const SIDEBAR_ITEMS = [
   { section: null, items: [
+    { label: 'Overview', tab: 'overview' },
     { label: 'General', tab: 'general' },
     { label: 'Invite Team', href: '/admin/team' },
     { label: 'Languages', tab: 'languages' },
@@ -141,7 +142,7 @@ export default function SettingsPage() {
   const [activeSettingsTab, setActiveSettingsTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '')
-      const valid = ['general','theme','emails','whitelabel','auth','nav','terminology','webhooks','api','privacy','misc']
+      const valid = ['overview','general','theme','emails','whitelabel','auth','nav','terminology','webhooks','api','privacy','misc']
       if (valid.includes(hash)) return hash
     }
     return 'general'
@@ -153,11 +154,25 @@ export default function SettingsPage() {
     if (typeof window !== 'undefined') window.location.hash = tab
   }
 
+  // Overview metrics (real data, fetched when the Overview tab is open).
+  const [overview, setOverview] = useState<any>(null)
+  const [overviewDays, setOverviewDays] = useState(30)
+  const [overviewLoading, setOverviewLoading] = useState(false)
+  useEffect(() => {
+    if (activeSettingsTab !== 'overview' || !companyId) return
+    setOverviewLoading(true)
+    fetch(`/api/company/overview?companyId=${companyId}&days=${overviewDays}`)
+      .then(r => r.json())
+      .then(d => setOverview(d))
+      .catch(() => {})
+      .finally(() => setOverviewLoading(false))
+  }, [activeSettingsTab, companyId, overviewDays])
+
   // Listen to hash changes to retain tab on reload
   useEffect(() => {
     // On mount, sync hash to state immediately
     const hash = window.location.hash.replace('#', '')
-    const valid = ['general','theme','emails','whitelabel','auth','nav','terminology','webhooks','api','privacy','misc']
+    const valid = ['overview','general','theme','emails','whitelabel','auth','nav','terminology','webhooks','api','privacy','misc']
     if (valid.includes(hash) && hash !== activeSettingsTab) {
       setActiveSettingsTab(hash)
     }
@@ -891,6 +906,7 @@ export default function SettingsPage() {
         <>
         {/* Tab title */}
         <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>
+          {activeSettingsTab === 'overview' && 'Overview'}
           {activeSettingsTab === 'general' && 'General'}
           {activeSettingsTab === 'theme' && 'Theme'}
           {activeSettingsTab === 'emails' && 'Emails'}
@@ -906,6 +922,7 @@ export default function SettingsPage() {
           {activeSettingsTab === 'languages' && 'Languages'}
         </h1>
         <p className="mb-6 text-sm" style={{ color: 'var(--slate)' }}>
+          {activeSettingsTab === 'overview' && 'How your team is performing across chat, customers and conversions.'}
           {activeSettingsTab === 'general' && 'Manage your company settings.'}
           {activeSettingsTab === 'theme' && 'Customize the look and feel of your board.'}
           {activeSettingsTab === 'emails' && 'Configure outgoing email settings.'}
@@ -1764,6 +1781,92 @@ export default function SettingsPage() {
         )}
 
         {/* General, Theme, Emails tabs — show content based on activeSettingsTab */}
+        {activeSettingsTab === 'overview' && (
+          <div>
+            {/* Range selector */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+              {[7, 30, 90].map(d => (
+                <button key={d} onClick={() => setOverviewDays(d)}
+                  style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)', background: overviewDays === d ? 'var(--peach)' : '#fff', color: overviewDays === d ? 'var(--coral)' : 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  {d} days
+                </button>
+              ))}
+            </div>
+
+            {overviewLoading && !overview ? (
+              <p style={{ fontSize: 14, color: 'var(--slate)' }}>Loading…</p>
+            ) : overview ? (
+              <>
+                {/* Conversations & service */}
+                <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)', margin: '0 0 10px' }}>Conversations</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 26 }}>
+                  {[
+                    { label: 'Customers served', value: overview.customersServed, hint: 'Distinct people you chatted with' },
+                    { label: 'Messages received', value: overview.messagesReceived, hint: 'Messages sent by customers' },
+                    { label: 'Conversations replied', value: overview.conversationsReplied, hint: 'Chats where your team responded' },
+                    { label: 'Resolved', value: overview.resolved, hint: 'Marked resolved or closed' },
+                  ].map(m => (
+                    <div key={m.label} style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
+                      <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink)', margin: '0 0 2px' }}>{m.value ?? '—'}</p>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{m.label}</p>
+                      <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>{m.hint}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Customers */}
+                <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)', margin: '0 0 10px' }}>Customers</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 26 }}>
+                  {[
+                    { label: 'New customers', value: overview.newCustomers, hint: 'First conversation in this period' },
+                    { label: 'Returning customers', value: overview.returningCustomers, hint: 'Had chatted with you before' },
+                    { label: 'Total conversations', value: overview.conversations, hint: 'Chats started in this period' },
+                  ].map(m => (
+                    <div key={m.label} style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
+                      <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink)', margin: '0 0 2px' }}>{m.value ?? '—'}</p>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{m.label}</p>
+                      <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>{m.hint}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Conversions */}
+                <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)', margin: '0 0 10px' }}>Conversions</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 12 }}>
+                  <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--coral)', background: 'var(--peach)' }}>
+                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--coral)', margin: '0 0 2px' }}>{overview.cartsRecovered ?? 0}</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Carts recovered</p>
+                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>Abandoned carts that converted</p>
+                  </div>
+                  <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--coral)', background: 'var(--peach)' }}>
+                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--coral)', margin: '0 0 2px' }}>${(overview.cartsRecoveredAmount ?? 0).toLocaleString()}</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Recovered value</p>
+                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>AUD from recovered carts</p>
+                  </div>
+                  <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
+                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink)', margin: '0 0 2px' }}>{overview.cartsCaptured ?? 0}</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Carts captured</p>
+                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>${(overview.cartsCapturedAmount ?? 0).toLocaleString()} at risk</p>
+                  </div>
+                  <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
+                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink)', margin: '0 0 2px' }}>{overview.ordersInChat ?? 0}</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Orders in chat</p>
+                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>Orders that opened a conversation</p>
+                  </div>
+                </div>
+
+                <div style={{ padding: 12, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
+                  <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0, lineHeight: 1.5 }}>
+                    <strong>About sales figures:</strong> Colvy doesn&rsquo;t store your orders — they live in WooCommerce/Shopify. So we only report conversions we can genuinely attribute: abandoned carts Colvy captured that later converted, and orders that flowed through chat. Total store revenue lives in your store&rsquo;s own reports.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <p style={{ fontSize: 14, color: 'var(--slate)' }}>Could not load metrics.</p>
+            )}
+          </div>
+        )}
+
         {(activeSettingsTab === 'general' || activeSettingsTab === 'theme' || activeSettingsTab === 'emails') && (<>
 
           {/* Company section */}
