@@ -28,6 +28,14 @@ function toE164(raw: string): string | null {
 export default function CallBar({ companyId, toNumber, contactName, contactId, conversationId, agentName }: CallBarProps) {
   const [state, setState] = useState<CallState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+
+  // Errors and ended calls shouldn't linger — clear the bar automatically so it
+  // doesn't sit there permanently.
+  useEffect(() => {
+    if (state !== 'error' && state !== 'ended') return
+    const t = setTimeout(() => { setState('idle'); setErrorMsg('') }, state === 'error' ? 5000 : 2500)
+    return () => clearTimeout(t)
+  }, [state])
   const [seconds, setSeconds] = useState(0)
   const [muted, setMuted] = useState(false)
   const clientRef = useRef<any>(null)

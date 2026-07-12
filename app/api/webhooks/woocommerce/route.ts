@@ -146,6 +146,42 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   }
   } // end automation-message block
 
+  // ── Recover abandoned carts by email/phone ────────────────────────────────
+  // The WordPress bridge marks a cart recovered when the SAME browser session
+  // converts. But customers routinely abandon on mobile and buy on desktop —
+  // a different session, so the external_id never matches and the cart would
+  // stay "abandoned" forever even though they bought. Match on contact details
+  // as well, which is how people actually shop.
+  try {
+    const paidLike = ['processing', 'completed', 'on-hold'].includes(status)
+    if (paidLike && (email || phone)) {
+      const { data: openCarts } = await db.from('abandoned_carts')
+        .select('id, email, phone')
+        .eq('company_id', companyId)
+        .eq('status', 'abandoned')
+
+      const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-8) // last 8 digits
+      const wantEmail = (email || '').toLowerCase()
+      const wantPhone = norm(phone || '')
+
+      const matches = (openCarts || []).filter((c: any) => {
+        const cEmail = (c.email || '').toLowerCase()
+        const cPhone = norm(c.phone || '')
+        if (wantEmail && cEmail && cEmail === wantEmail) return true
+        if (wantPhone && cPhone && cPhone === wantPhone) return true
+        return false
+      })
+
+      for (const m of matches) {
+        await db.from('abandoned_carts').update({
+          status: 'recovered',
+          recovered_order_id: String(order.id),
+          updated_at: new Date().toISOString(),
+        }).eq('id', m.id)
+      }
+    }
+  } catch (e) { console.error('[cart recovery] match failed', e) }
+
   // ── Record the order with its chat attribution ────────────────────────────
   // This makes "sales converted through chat" a real revenue figure. We only
   // attribute what we can defend:

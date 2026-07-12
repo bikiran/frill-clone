@@ -299,7 +299,7 @@ export default function InboxPage() {
   const loadConversations = useCallback(async (cid?: string | null) => {
     const id = cid || companyId
     if (!id) return
-    let q = (supabase as any).from('conversations').select('*').eq('company_id', id)
+    let q = (supabase as any).from('conversations').select('*, contacts(name, email, phone)').eq('company_id', id)
     if (statusFilter !== 'all') q = q.eq('status', statusFilter)
     const { data } = await q.order('last_message_at', { ascending: false }).limit(50)
     setConversations(data || [])
@@ -1312,7 +1312,12 @@ export default function InboxPage() {
   const filteredConvs = conversations.filter(c => {
     if (!searchTerm) return true
     const q = searchTerm.toLowerCase()
-    return (c.last_message || '').toLowerCase().includes(q) || (c.subject || '').toLowerCase().includes(q)
+    const ct: any = (c as any).contacts || {}
+    return (c.last_message || '').toLowerCase().includes(q)
+      || (c.subject || '').toLowerCase().includes(q)
+      || (ct.name || '').toLowerCase().includes(q)
+      || (ct.email || '').toLowerCase().includes(q)
+      || (ct.phone || '').toLowerCase().includes(q)
   })
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -1751,19 +1756,57 @@ export default function InboxPage() {
           {filteredConvs.length === 0 && (
             <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No conversations yet</div>
           )}
-          {filteredConvs.map(conv => (
+          {filteredConvs.map(conv => {
+            // Customer name first — the source is a tag, not the headline.
+            const c: any = conv
+            const contact = c.contacts || {}
+            const displayName =
+              contact.name ||
+              contact.email ||
+              contact.phone ||
+              c.sms_number ||
+              (c.subject && !/^(abandoned cart|order #)/i.test(c.subject) ? c.subject : null) ||
+              'Visitor'
+
+            // Where did this conversation come from?
+            const subj = (c.subject || '').toLowerCase()
+            let source: { label: string; bg: string; fg: string }
+            if (subj.startsWith('abandoned cart')) {
+              source = { label: 'Abandoned Cart', bg: '#fee2e2', fg: '#dc2626' }
+            } else if (subj.startsWith('order #')) {
+              source = { label: 'Order Placed', bg: '#dcfce7', fg: '#15803d' }
+            } else if (c.channel === 'email') {
+              source = { label: 'Email', bg: '#e0e7ff', fg: '#4338ca' }
+            } else if (c.channel === 'sms') {
+              source = { label: 'SMS', bg: '#fef3c7', fg: '#b45309' }
+            } else if (c.channel === 'instagram') {
+              source = { label: 'Instagram', bg: '#fce7f3', fg: '#be185d' }
+            } else if (c.channel === 'facebook' || c.channel === 'messenger') {
+              source = { label: 'Messenger', bg: '#dbeafe', fg: '#1d4ed8' }
+            } else if (c.channel === 'whatsapp') {
+              source = { label: 'WhatsApp', bg: '#dcfce7', fg: '#15803d' }
+            } else {
+              source = { label: 'Live Chat Enquiry', bg: '#f3f4f6', fg: '#6b7280' }
+            }
+
+            return (
             <button key={conv.id} type="button" onClick={() => selectConversation(conv)}
               style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', paddingLeft: conv.is_unread && selected?.id !== conv.id ? 11 : 14, border: 'none', borderLeft: conv.is_unread && selected?.id !== conv.id ? '3px solid var(--coral)' : '3px solid transparent', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === conv.id ? 'var(--peach)' : conv.is_unread ? '#fff6f4' : '#fff', transition: 'background 0.1s' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                   {conv.is_unread && selected?.id !== conv.id && <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--coral)', flexShrink: 0 }} />}
-                  <span style={{ fontSize: 14 }}>{CHANNEL_ICON[conv.channel] || '💬'}</span>
-                  <span style={{ fontSize: 13, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {conv.subject || conv.visitor_id?.slice(0, 8) || 'Visitor'}
+                  <span style={{ fontSize: 13.5, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {displayName}
                   </span>
                 </div>
-                <span style={{ fontSize: 10, color: '#9ca3af', flexShrink: 0 }}>{timeAgo(conv.last_message_at)}</span>
+                <span style={{ fontSize: 10, color: '#9ca3af', flexShrink: 0, marginLeft: 6 }}>{timeAgo(conv.last_message_at)}</span>
               </div>
+
+              {/* Source tag */}
+              <span style={{ display: 'inline-block', fontSize: 9.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 5, background: source.bg, color: source.fg, marginBottom: 5 }}>
+                {source.label}
+              </span>
+
               <p style={{ margin: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {conv.last_message || 'No messages yet'}
               </p>
@@ -1774,7 +1817,8 @@ export default function InboxPage() {
                 <span style={{ float: 'right', marginTop: -14, fontSize: 10, fontWeight: 700, background: 'var(--coral)', color: '#fff', padding: '1px 6px', borderRadius: 20 }}>{conv.unread_count}</span>
               )}
             </button>
-          ))}
+            )
+          })}
         </div>
       </div>
       )}
