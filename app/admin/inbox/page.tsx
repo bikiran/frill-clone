@@ -407,6 +407,23 @@ export default function InboxPage() {
   }
 
   const selectConversation = async (conv: Conversation) => {
+    // Reconcile any pending Stripe payments straight from Stripe. The webhook
+    // may not be configured (or a delivery was missed), which would otherwise
+    // leave a paid order showing as "pending" in the chat forever.
+    try {
+      fetch('/api/stripe/verify-payment', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: conv.id }),
+      }).then(r => r.json()).then(d => {
+        // If something flipped to paid, refresh the thread so it shows.
+        if (d?.updated > 0) {
+          ;(supabase as any).from('messages').select('*').eq('conversation_id', conv.id)
+            .order('created_at', { ascending: true })
+            .then(({ data }: any) => { if (data) setMessages(data) })
+        }
+      }).catch(() => {})
+    } catch {}
+
     setSelected(conv)
     selectedRef.current = conv
     setMobilePane('thread')
