@@ -3,7 +3,11 @@
 import { useState, useEffect, useRef } from 'react'
 
 // Polls for deployment updates and shows a banner when a new version is available
-export default function UpdateNotification() {
+export default function UpdateNotification({ accentColor }: { accentColor?: string } = {}) {
+  // Use the company's brand colour when we're inside a branded surface (the
+  // widget), otherwise Colvy's own coral.
+  const accent = accentColor || 'var(--coral)'
+  const accentSoft = accentColor ? `${accentColor}1f` : 'var(--peach)'
   const [show, setShow] = useState(false)
   const buildIdRef = useRef<string | null>(null)
 
@@ -67,13 +71,18 @@ export default function UpdateNotification() {
 
   return (
     <div
-      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl border"
+      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2.5 rounded-2xl shadow-2xl border"
       style={{
         background: 'white',
         borderColor: 'var(--border)',
         boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
         animation: 'slideUp 0.3s ease-out',
-        minWidth: 'min(420px, 90vw)',
+        // Fit the container it's in. The old fixed 420px min-width overflowed
+        // the chat widget (which is only ~320-360px wide) and broke the layout.
+        width: 'calc(100% - 24px)',
+        maxWidth: 420,
+        padding: '10px 12px',
+        boxSizing: 'border-box',
       }}>
       <style>{`
         @keyframes slideUp {
@@ -84,8 +93,8 @@ export default function UpdateNotification() {
 
       {/* Icon */}
       <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-        style={{ background: 'var(--peach)' }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2.5" strokeLinecap="round">
+        style={{ background: accentSoft }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="2.5" strokeLinecap="round">
           <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
         </svg>
@@ -93,15 +102,15 @@ export default function UpdateNotification() {
 
       {/* Text */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Update available</p>
-        <p className="text-xs" style={{ color: 'var(--slate)' }}>We've updated Colvy behind the scenes.</p>
+        <p className="font-semibold" style={{ color: 'var(--ink)', fontSize: 13, lineHeight: 1.25, margin: 0 }}>Update available</p>
+        <p style={{ color: 'var(--slate)', fontSize: 11.5, lineHeight: 1.3, margin: '1px 0 0' }}>Refresh to get the latest version.</p>
       </div>
 
       {/* Refresh button */}
       <button
         onClick={() => window.location.reload()}
-        className="px-4 py-1.5 rounded-lg text-sm font-semibold text-white cursor-pointer hover:opacity-90 transition-all shrink-0"
-        style={{ background: 'var(--coral)' }}>
+        className="rounded-lg font-semibold text-white cursor-pointer hover:opacity-90 transition-all shrink-0"
+        style={{ background: accent, padding: '6px 12px', fontSize: 12.5, whiteSpace: 'nowrap' }}>
         Refresh
       </button>
 

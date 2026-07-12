@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
+import { runKeywordReply } from '@/lib/keyword-reply'
+import { TelnyxService } from '@/lib/telnyx-service'
 
 function admin() {
   return createClient(
@@ -87,6 +89,29 @@ export async function POST(req: NextRequest) {
           fetch(`${origin}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `New SMS from ${from}`, body: text, conversationId: conv.id }) })
           fetch(`${origin}/api/inbox/smart-trigger`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, text }) })
         } catch {}
+
+        // Answer common questions automatically — and TEXT the answer back, so
+        // an SMS customer actually receives it (not just the chat thread).
+        try {
+          const { data: integ } = await db.from('telnyx_integrations')
+            .select('api_key, phone_number, messaging_profile_id')
+            .eq('company_id', companyId).maybeSingle()
+
+          await runKeywordReply({
+            conversationId: conv.id, text, companyId,
+            deliver: async (reply) => {
+              if (!integ?.api_key || !integ.phone_number) return
+              const svc = new TelnyxService(integ.api_key)
+              await svc.sendSMS({
+                from: integ.phone_number,
+                to: from,
+                text: reply,
+                messaging_profile_id: integ.messaging_profile_id || undefined,
+              })
+            },
+          })
+        } catch (e) { console.error('[sms keyword reply]', e) }
+
         try { await notifyCompany({ db, companyId, type: 'sms', message: `New SMS from ${from}: ${(text || '').slice(0, 80)}`, actorName: from }) } catch {}
       }
       return NextResponse.json({ ok: true })

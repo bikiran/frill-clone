@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
+import { runKeywordReply } from '@/lib/keyword-reply'
 
 export const dynamic = 'force-dynamic'
 
@@ -152,6 +153,36 @@ export async function POST(req: NextRequest) {
       status: 'open',
       unread_count: (conv.unread_count || 0) + 1,
     }).eq('id', conv.id)
+
+    // Answer common questions automatically — and EMAIL the answer back, in the
+    // same thread, so the customer actually receives it.
+    try {
+      const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+      await runKeywordReply({
+        conversationId: conv.id, text: content, companyId,
+        deliver: async (reply) => {
+          if (!process.env.RESEND_API_KEY) return
+          const fromAddress = channel.from_address || channel.inbound_address
+          if (!fromAddress) return
+          const { data: co } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
+          const fromName = channel.from_name || co?.name || 'Support'
+          const headers: Record<string, string> = {}
+          if (messageId) { headers['In-Reply-To'] = messageId; headers['References'] = messageId }
+          await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              from: `${fromName} <${fromAddress}>`,
+              to: [from.email],
+              subject: /^re:/i.test(subject) ? subject : `Re: ${subject}`,
+              text: reply,
+              reply_to: channel.inbound_address || fromAddress,
+              ...(Object.keys(headers).length ? { headers } : {}),
+            }),
+          })
+        },
+      })
+    } catch (e) { console.error('[email keyword reply]', e) }
 
     try {
       await notifyCompany({

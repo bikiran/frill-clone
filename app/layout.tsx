@@ -525,7 +525,7 @@ export default function RootLayout({
         </head>
         <body>
           {children}
-          <UpdateNotification />
+          <UpdateNotification accentColor={company?.accent_color} />
         </body>
       </html>
     )
@@ -1014,7 +1014,7 @@ export default function RootLayout({
           </ToastProvider>
         </main>
         <LiveChat />
-        <UpdateNotification />
+        <UpdateNotification accentColor={company?.accent_color} />
       </body>
     </html>
   )

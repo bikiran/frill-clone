@@ -95,6 +95,7 @@ const NAV_GROUPS = [
       { label: 'Locations', href: '/admin/locations', icon: 'settings' },
       { label: 'Channels', href: '/admin/channels', icon: 'integrations' },
       { label: 'Auto Replies', href: '/admin/auto-replies', icon: 'integrations' },
+      { label: 'Team Banner', href: '/admin/banners', icon: 'integrations' },
       { label: 'Integrations', href: '/admin/integrations', icon: 'integrations' },
       { label: 'Import Data', href: '/admin/import', icon: 'import_data' },
       { label: 'Settings', href: '/admin/settings', icon: 'settings' },
