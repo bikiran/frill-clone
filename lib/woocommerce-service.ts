@@ -61,6 +61,81 @@ export class WooCommerceService {
     return { 'Authorization': `Basic ${this.basicAuth}`, 'Content-Type': 'application/json' }
   }
 
+  // ── Webhooks ────────────────────────────────────────────────────────────
+  // Colvy needs WooCommerce to push order events to us so a new order can open
+  // a chat. Previously this had to be added by hand in WooCommerce settings —
+  // which is why orders silently never created conversations. We now register
+  // (and reconcile) the webhooks automatically.
+
+  async listWebhooks(): Promise<any[]> {
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/webhooks?per_page=100`, { headers: this.wcHeaders() })
+      if (!res.ok) return []
+      const data = await res.json()
+      return Array.isArray(data) ? data : []
+    } catch { return [] }
+  }
+
+  async createWebhook(topic: string, deliveryUrl: string, secret?: string): Promise<any | null> {
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/webhooks`, {
+        method: 'POST',
+        headers: this.wcHeaders(),
+        body: JSON.stringify({
+          name: `Colvy — ${topic}`,
+          topic,                 // e.g. 'order.created', 'order.updated'
+          delivery_url: deliveryUrl,
+          status: 'active',
+          ...(secret ? { secret } : {}),
+        }),
+      })
+      if (!res.ok) {
+        const t = await res.text()
+        throw new Error(`WooCommerce rejected the webhook (${res.status}): ${t.slice(0, 200)}`)
+      }
+      return await res.json()
+    } catch (e) {
+      throw e
+    }
+  }
+
+  // Ensure the order webhooks Colvy relies on exist and point at our endpoint.
+  // Returns a summary so the UI can tell the user exactly what happened.
+  async ensureColvyWebhooks(deliveryUrl: string, secret?: string) {
+    const wanted = ['order.created', 'order.updated']
+    const existing = await this.listWebhooks()
+    const results: any[] = []
+    for (const topic of wanted) {
+      const match = existing.find((w: any) =>
+        w.topic === topic && (w.delivery_url || '').split('?')[0] === deliveryUrl.split('?')[0]
+      )
+      if (match) {
+        // Re-activate if it was disabled (Woo auto-disables after failures).
+        if (match.status !== 'active') {
+          try {
+            await fetch(`${this.config.storeUrl}/wp-json/wc/v3/webhooks/${match.id}`, {
+              method: 'PUT', headers: this.wcHeaders(),
+              body: JSON.stringify({ status: 'active', delivery_url: deliveryUrl }),
+            })
+            results.push({ topic, action: 'reactivated' })
+          } catch (e: any) {
+            results.push({ topic, action: 'failed', error: e.message })
+          }
+        } else {
+          results.push({ topic, action: 'already active' })
+        }
+        continue
+      }
+      try {
+        await this.createWebhook(topic, deliveryUrl, secret)
+        results.push({ topic, action: 'created' })
+      } catch (e: any) {
+        results.push({ topic, action: 'failed', error: e.message })
+      }
+    }
+    return results
+  }
+
   // Look up a single order by its number/id. Returns the full order (line items,
   // totals, billing/shipping) or null if not found.
   async getOrderByNumber(orderNumber: string | number): Promise<any | null> {

@@ -84,9 +84,13 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     await db.from('order_chat_events').insert({ ...dupeKey, conversation_id: conv.id })
   }
 
-  // The configured automation message only sends if enabled AND a template
-  // exists for this status (and not already sent for this order+status).
-  if (cfg.enabled && template && !seenEvent) {
+  // The automation message sends when enabled. For a brand-new order we ALWAYS
+  // greet the customer (a thank-you), because an order with no acknowledgement
+  // in the chat is worse than none at all — the customer is looking at a widget
+  // that says nothing about the order they just placed.
+  const isNewOrderStatus = ['processing', 'on-hold', 'completed'].includes(status)
+  const shouldSend = !seenEvent && template && (cfg.enabled || isNewOrderStatus)
+  if (shouldSend) {
   const refundedAmount = order.refunds?.length ? `$${Math.abs(order.refunds.reduce((s: number, r: any) => s + (parseFloat(r.total) || 0), 0)).toFixed(2)}` : `$${order.total}`
   const body = template
     .replace(/\{business\}/g, businessName)

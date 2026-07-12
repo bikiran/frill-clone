@@ -21,6 +21,35 @@ export default function WooCommerceIntegration() {
   const [loading, setLoading] = useState(true)
   const [configuring, setConfiguring] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [registeringHooks, setRegisteringHooks] = useState(false)
+
+  // Ask WooCommerce to push order events to Colvy. Without these webhooks, a new
+  // order never reaches Colvy and no chat is created — this is the fix for
+  // "successful orders are not initiating a chat".
+  const registerWebhooks = async () => {
+    if (!companyId) return
+    setRegisteringHooks(true)
+    try {
+      const res = await fetch('/api/woocommerce/register-webhooks', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed')
+      const lines: string[] = []
+      for (const s of data.summary || []) {
+        if (s.error) { lines.push(`${s.store}: ${s.error}`); continue }
+        for (const r of s.results || []) {
+          lines.push(`${r.topic}: ${r.action}${r.error ? ' — ' + r.error : ''}`)
+        }
+      }
+      setSuccess('Order → chat: ' + (lines.join(' · ') || 'done'))
+    } catch (e: any) {
+      setError('Could not register webhooks: ' + e.message)
+    } finally {
+      setRegisteringHooks(false)
+    }
+  }
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -605,6 +634,19 @@ export default function WooCommerceIntegration() {
               }}
             >
               ⚡ Quick Update
+            </button>
+
+            <button
+              onClick={registerWebhooks}
+              disabled={registeringHooks}
+              title="Lets WooCommerce notify Colvy when an order is placed, so a chat opens automatically with a thank-you."
+              style={{
+                flex: 1, minWidth: '160px', padding: '10px 16px', borderRadius: '8px',
+                border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)',
+                fontSize: '13px', fontWeight: 700, cursor: registeringHooks ? 'default' : 'pointer', opacity: registeringHooks ? 0.6 : 1,
+              }}
+            >
+              {registeringHooks ? 'Connecting…' : 'Enable order → chat'}
             </button>
 
             <button

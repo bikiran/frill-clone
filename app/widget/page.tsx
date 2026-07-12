@@ -35,6 +35,7 @@ function WidgetContent() {
   const WIDGET_EMOJIS = ['👍', '❤️', '😊', '🎉', '🙏', '😂']
   const chatFileRef = useRef<HTMLInputElement>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
+  const chatMessagesRef = useRef<any[]>([])
   const [chatName, setChatName] = useState('')
   const [chatEmail, setChatEmail] = useState('')
   const [chatMobile, setChatMobile] = useState('')
@@ -58,6 +59,10 @@ function WidgetContent() {
   const [widgetIsOpen, setWidgetIsOpen] = useState(true)
   const widgetIsOpenRef = useRef(true)
   const [highlightMsgIds, setHighlightMsgIds] = useState<string[]>([])
+
+  // Mirror chat messages into a ref so the polling interval always sees the
+  // latest list (avoids a stale closure that made it miss agent replies).
+  useEffect(() => { chatMessagesRef.current = chatMessages2 }, [chatMessages2])
   const [outletInfo, setOutletInfo] = useState<{ isVic: boolean; nearest: any; outlets: any[] } | null>(null)
   const [assignedOutlet, setAssignedOutlet] = useState<any>(null)
   const [showOutletPicker, setShowOutletPicker] = useState(false)
@@ -247,29 +252,41 @@ function WidgetContent() {
       .subscribe()
 
     // Polling fallback — refresh messages every 4s in case realtime isn't
-    // enabled on the table, so agent replies show without a manual reload
+    // enabled on the table, so agent replies show without a manual reload.
+    // Compare by message ID, not length: an optimistic (id-less) visitor message
+    // can make the counts match even when a new agent reply exists, which meant
+    // agent replies silently never appeared for the customer.
     const poll = setInterval(async () => {
       const { data: msgs } = await (supabase as any)
         .from('messages').select('*')
         .eq('conversation_id', chatConvId)
         .order('created_at', { ascending: true })
-      if (msgs) setChatMessages2(prev => {
-        if (msgs.length === prev.length) return prev
-        // Find agent/system messages we didn't have before → wake + highlight.
-        const prevIds = new Set(prev.map((m: any) => m.id).filter(Boolean))
-        const fresh = msgs.filter((m: any) => m.id && !prevIds.has(m.id) && (m.sender_type === 'agent' || m.sender_type === 'system'))
-        if (fresh.length) {
-          const ids = fresh.map((m: any) => m.id)
-          setHighlightMsgIds(h => [...h, ...ids])
-          setTimeout(() => setHighlightMsgIds(h => h.filter(id => !ids.includes(id))), 2600)
-          try {
-            if (!widgetIsOpenRef.current && typeof window !== 'undefined' && window.parent !== window) {
-              window.parent.postMessage({ colvy: true, type: 'new_message', count: fresh.length }, '*')
-            }
-          } catch {}
-        }
-        return msgs
+      if (!msgs) return
+
+      const knownIds = new Set(chatMessagesRef.current.map((m: any) => m.id).filter(Boolean))
+      const fresh = msgs.filter((m: any) => m.id && !knownIds.has(m.id))
+      const hasOptimistic = chatMessagesRef.current.some((m: any) => !m.id)
+
+      // Nothing new and no optimistic message to reconcile → leave state alone.
+      if (fresh.length === 0 && !hasOptimistic && msgs.length === chatMessagesRef.current.length) return
+
+      setChatMessages2(msgs)
+
+      const freshFromAgent = fresh.filter((m: any) => {
+        const meta = m.metadata || {}
+        const internal = m.sender_type === 'system' && (meta.abandoned_cart || meta.order_event || meta.internal)
+        return (m.sender_type === 'agent' || m.sender_type === 'system') && !internal
       })
+      if (freshFromAgent.length) {
+        const ids = freshFromAgent.map((m: any) => m.id)
+        setHighlightMsgIds(h => [...h, ...ids])
+        setTimeout(() => setHighlightMsgIds(h => h.filter(id => !ids.includes(id))), 2600)
+        try {
+          if (!widgetIsOpenRef.current && typeof window !== 'undefined' && window.parent !== window) {
+            window.parent.postMessage({ colvy: true, type: 'new_message', count: freshFromAgent.length }, '*')
+          }
+        } catch {}
+      }
     }, 4000)
 
     return () => { supabase.removeChannel(ch); clearInterval(poll) }
