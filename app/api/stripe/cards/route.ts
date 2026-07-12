@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
 
       const succeeded = intent.status === 'succeeded'
 
-      const { data: pay } = await db.from('payments').insert({
+      const { data: pay } = await db.from('chat_payments').insert({
         company_id: companyId, conversation_id: conversationId,
         amount_cents: cents, currency: 'aud',
         status: succeeded ? 'paid' : 'pending',

@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     const { conversationId, paymentId, companyId } = await req.json()
     const db = admin()
 
-    let q = db.from('payments').select('*').eq('status', 'pending')
+    let q = db.from('chat_payments').select('*').eq('status', 'pending')
     if (paymentId) q = q.eq('id', paymentId)
     else if (conversationId) q = q.eq('conversation_id', conversationId)
     else if (companyId) q = q.eq('company_id', companyId)
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
         if (!isPaid) { results.push({ id: pay.id, status: session?.payment_status || 'unpaid' }); continue }
 
         // Mark paid + post the confirmation into the chat (same as the webhook).
-        await db.from('payments').update({
+        await db.from('chat_payments').update({
           status: 'paid', paid_at: new Date().toISOString(),
         }).eq('id', pay.id)
 
