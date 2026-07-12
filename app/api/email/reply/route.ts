@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { sendGmail } from '@/lib/gmail'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,18 +35,24 @@ export async function POST(req: NextRequest) {
     const toEmail = contact?.email
     if (!toEmail) return NextResponse.json({ error: 'No customer email on this conversation' }, { status: 400 })
 
-    // Sending identity from the company's email channel.
-    const { data: channels } = await db.from('email_channels').select('*')
-      .eq('company_id', conv.company_id).eq('is_active', true).limit(1)
-    const channel = channels?.[0]
+    // Which mailbox does this conversation belong to? Fall back to the company's
+    // first active mailbox for older conversations that predate multi-account.
+    let channel: any = null
+    if (conv.email_channel_id) {
+      const { data } = await db.from('email_channels').select('*').eq('id', conv.email_channel_id).maybeSingle()
+      channel = data
+    }
+    if (!channel) {
+      const { data: channels } = await db.from('email_channels').select('*')
+        .eq('company_id', conv.company_id).eq('is_active', true)
+        .order('created_at', { ascending: true }).limit(1)
+      channel = channels?.[0]
+    }
+    if (!channel) {
+      return NextResponse.json({ error: 'No email account configured for this company.' }, { status: 400 })
+    }
 
     const { data: company } = await db.from('companies').select('name').eq('id', conv.company_id).maybeSingle()
-
-    const fromAddress = channel?.from_address || channel?.inbound_address
-    if (!fromAddress) {
-      return NextResponse.json({ error: 'No sending address configured for this company.' }, { status: 400 })
-    }
-    const fromName = channel?.from_name || company?.name || 'Support'
 
     // Thread the reply to the customer's most recent message.
     const { data: lastInbound } = await db.from('messages')
@@ -60,6 +67,45 @@ export async function POST(req: NextRequest) {
     const subject = conv.email_subject
       ? (/^re:/i.test(conv.email_subject) ? conv.email_subject : `Re: ${conv.email_subject}`)
       : 'Re: your message'
+
+    const fromName = channel.from_name || company?.name || 'Support'
+
+    // ── Gmail account: send through the Gmail API, so the reply lands in the
+    //    business's own Sent folder and threads properly for the customer.
+    if (channel.provider === 'gmail') {
+      const out = await sendGmail(channel, {
+        to: toEmail, subject, body: content,
+        inReplyTo,
+        threadId: conv.email_message_id || null,
+      })
+      if (out.error) return NextResponse.json({ error: out.error }, { status: 502 })
+
+      await db.from('messages').insert({
+        conversation_id: conversationId,
+        company_id: conv.company_id,
+        sender_type: 'agent',
+        sender_name: agentName || fromName,
+        content,
+        delivery_channel: 'email',
+        gmail_message_id: out.id || null,
+        email_in_reply_to: inReplyTo,
+      })
+      await db.from('conversations').update({
+        last_message: content.slice(0, 200),
+        last_message_at: new Date().toISOString(),
+      }).eq('id', conversationId)
+
+      return NextResponse.json({ ok: true, id: out.id, via: 'gmail' })
+    }
+
+    // ── Webhook (domain) account: send via Resend.
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json({ error: 'Email sending is not configured (RESEND_API_KEY missing).' }, { status: 500 })
+    }
+    const fromAddress = channel.from_address || channel.inbound_address
+    if (!fromAddress) {
+      return NextResponse.json({ error: 'No sending address configured for this mailbox.' }, { status: 400 })
+    }
 
     const headers: Record<string, string> = {}
     if (inReplyTo) {
@@ -78,7 +124,7 @@ export async function POST(req: NextRequest) {
         to: [toEmail],
         subject,
         text: content,
-        reply_to: channel?.inbound_address || fromAddress,
+        reply_to: channel.inbound_address || fromAddress,
         ...(Object.keys(headers).length ? { headers } : {}),
       }),
     })
@@ -88,13 +134,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: out?.message || 'Resend rejected the email', detail: out }, { status: 502 })
     }
 
-    // Record the outbound message on the thread.
     await db.from('messages').insert({
       conversation_id: conversationId,
       company_id: conv.company_id,
       sender_type: 'agent',
       sender_name: agentName || fromName,
       content,
+      delivery_channel: 'email',
       email_message_id: out?.id || null,
       email_in_reply_to: inReplyTo,
     })
@@ -104,7 +150,7 @@ export async function POST(req: NextRequest) {
       last_message_at: new Date().toISOString(),
     }).eq('id', conversationId)
 
-    return NextResponse.json({ ok: true, id: out?.id })
+    return NextResponse.json({ ok: true, id: out?.id, via: 'resend' })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

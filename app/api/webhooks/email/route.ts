@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
+import { passesRules } from '@/lib/gmail'
 
 export const dynamic = 'force-dynamic'
 
@@ -94,6 +95,11 @@ export async function POST(req: NextRequest) {
     }
     const companyId = channel.company_id
 
+    // Respect this mailbox's allow/block rules before importing anything.
+    if (!(await passesRules(db, channel, from.email))) {
+      return NextResponse.json({ ok: false, reason: 'Sender filtered by an email rule' })
+    }
+
     const content = stripQuoted(String(textBody)) || String(htmlBody).replace(/<[^>]+>/g, ' ').trim()
 
     // ── Find-or-create the contact ───────────────────────────────────────────
@@ -126,6 +132,10 @@ export async function POST(req: NextRequest) {
       const { data: newConv } = await db.from('conversations').insert({
         company_id: companyId, channel: 'email', subject,
         email_subject: subject, email_message_id: messageId || null,
+        // Which mailbox it arrived at, and which outlet owns that mailbox — so
+        // replies go back out from the right address.
+        email_channel_id: channel.id,
+        assigned_location_id: channel.location_id || null,
         contact_id: contact?.id || null, status: 'open',
         is_unread: true, unread_count: 1,
         last_message: content.slice(0, 200), last_message_at: new Date().toISOString(),
