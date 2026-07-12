@@ -43,10 +43,29 @@ export async function POST(req: NextRequest) {
     let body = text || ''
     const atts = Array.isArray(attachments) ? attachments : []
     if (atts.length > 0) {
-      const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+      // Send media links on the COMPANY's own subdomain (roxyaquarium.colvy.com)
+      // rather than the bare Colvy domain — it looks like the business, which
+      // matters a lot for trust in an SMS.
+      const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+      let origin = base
+      try {
+        const { data: co } = await db.from('companies').select('slug').eq('id', companyId).maybeSingle()
+        const u = new URL(base)
+        if (co?.slug && u.hostname.endsWith('colvy.com')) {
+          origin = `${u.protocol}//${co.slug}.colvy.com`
+        }
+      } catch {}
       const links: string[] = []
       for (const a of atts) {
         try {
+          // Reuse an existing link for this exact file in this conversation,
+          // so the same image can't go out as two different links.
+          const { data: existing } = await db.from('short_links')
+            .select('code').eq('company_id', companyId).eq('target_url', a.url).limit(1)
+          if (existing?.[0]?.code) {
+            links.push(`${origin}/m/${existing[0].code}`)
+            continue
+          }
           const code = Math.random().toString(36).slice(2, 8)
           await db.from('short_links').insert({
             code, company_id: companyId, target_url: a.url, label: a.name,
@@ -57,7 +76,8 @@ export async function POST(req: NextRequest) {
           links.push(a.url) // fall back to the raw URL if the shortlink insert fails
         }
       }
-      body = (body ? body + '\n' : '') + links.join('\n')
+      // De-dupe in case the same file was passed twice.
+      body = (body ? body + '\n' : '') + Array.from(new Set(links)).join('\n')
     }
     if (!body.trim()) return NextResponse.json({ error: 'Nothing to send' }, { status: 400 })
 

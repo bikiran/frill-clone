@@ -26,6 +26,21 @@ export async function shortenUrl(
   if (!targetUrl) return targetUrl
   try {
     const db = admin()
+
+    // Serve the link from the company's own subdomain when we can — a link that
+    // reads roxyaquarium.colvy.com is far more trustworthy to a customer than a
+    // bare colvy.com link they don't recognise.
+    let origin = base
+    if (opts.companyId) {
+      try {
+        const { data: co } = await db.from('companies').select('slug').eq('id', opts.companyId).maybeSingle()
+        const u = new URL(base)
+        if (co?.slug && u.hostname.endsWith('colvy.com')) {
+          origin = `${u.protocol}//${co.slug}.colvy.com`
+        }
+      } catch {}
+    }
+
     // A few attempts in case of a code collision.
     for (let i = 0; i < 5; i++) {
       const code = makeCode()
@@ -37,7 +52,7 @@ export async function shortenUrl(
         conversation_id: opts.conversationId || null,
         expires_at: opts.expiresAt || null,
       })
-      if (!error) return `${base}/l/${code}`
+      if (!error) return `${origin}/l/${code}`
       // Unique violation → try another code; anything else → give up.
       if (!/duplicate|unique/i.test(error.message || '')) break
     }
