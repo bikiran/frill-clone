@@ -1970,7 +1970,7 @@ function WidgetContent() {
                               )}
                             </div>
                           ))}
-                          {msg.content && !['media_request', 'coupon', 'payment', 'order'].includes(msg.message_type) && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '0 9px 4px' : 0 }}>{msg.content}</div>}
+                          {msg.content && !['media_request', 'coupon', 'payment', 'order', 'product'].includes(msg.message_type) && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '0 9px 4px' : 0 }}>{msg.content}</div>}
                           {/* Payment request card */}
                           {msg.message_type === 'payment' && msg.message_payload && (
                             <div style={{ marginTop: 6, padding: 12, borderRadius: 12, background: '#fff', border: '1px solid #e5e5e5', color: '#0d0d0d', minWidth: 210 }}>
@@ -2007,6 +2007,33 @@ function WidgetContent() {
                               ) : null}
                             </div>
                           )}
+                          {msg.message_type === 'product' && msg.message_payload && (
+                            <div style={{ marginTop: 6, borderRadius: 14, background: '#fff', border: '1px solid #e5e5e5', overflow: 'hidden', width: '100%', maxWidth: 260 }}>
+                              {msg.message_payload.image && (
+                                <img src={msg.message_payload.image} alt={msg.message_payload.name}
+                                  style={{ width: '100%', height: 140, objectFit: 'cover', display: 'block' }} />
+                              )}
+                              <div style={{ padding: 12 }}>
+                                <p style={{ margin: '0 0 5px', fontSize: 13, fontWeight: 700, color: '#0d0d0d', lineHeight: 1.35 }}>{msg.message_payload.name}</p>
+                                <p style={{ margin: '0 0 9px', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: 15, fontWeight: 800, color: '#0d0d0d' }}>${msg.message_payload.price}</span>
+                                  {msg.message_payload.on_sale && msg.message_payload.regular_price && (
+                                    <span style={{ fontSize: 11.5, color: '#9ca3af', textDecoration: 'line-through' }}>${msg.message_payload.regular_price}</span>
+                                  )}
+                                  <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 5, background: msg.message_payload.stock_status === 'instock' ? '#dcfce7' : '#fee2e2', color: msg.message_payload.stock_status === 'instock' ? '#15803d' : '#dc2626' }}>
+                                    {msg.message_payload.stock_status === 'instock' ? 'In stock' : 'Out of stock'}
+                                  </span>
+                                </p>
+                                {msg.message_payload.permalink && msg.message_payload.shown !== 'price' && (
+                                  <a href={msg.message_payload.permalink} target="_blank" rel="noopener"
+                                    style={{ display: 'block', textAlign: 'center', padding: '9px 0', borderRadius: 9, background: accentColor, color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 700 }}>
+                                    View product
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
                           {msg.message_type === 'media_request' && msg.message_payload && (
                             <div style={{ marginTop: 6, padding: 14, borderRadius: 14, background: '#fff', border: '1px solid #e5e5e5', width: '100%', maxWidth: 280, boxSizing: 'border-box' }}>
                               <p style={{ margin: '0 0 8px', fontSize: 13.5, color: '#0d0d0d', wordBreak: 'break-word' }}>{msg.message_payload.prompt}</p>

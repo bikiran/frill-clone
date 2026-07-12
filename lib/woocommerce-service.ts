@@ -212,9 +212,14 @@ export class WooCommerceService {
     const norm = (p: any) => ({
       id: p.id, name: p.name, sku: p.sku, type: p.type,
       price: p.price, regular_price: p.regular_price, sale_price: p.sale_price,
+      on_sale: !!p.on_sale,
       tax_status: p.tax_status, tax_class: p.tax_class,
       stock_status: p.stock_status, stock_quantity: p.stock_quantity, manage_stock: p.manage_stock,
       image: p.images?.[0]?.src || null,
+      // The public product page — needed so an agent can send the customer a
+      // link they can actually buy from.
+      permalink: p.permalink || null,
+      short_description: (p.short_description || '').replace(/<[^>]+>/g, '').trim(),
       has_variations: p.type === 'variable' && (p.variations?.length || 0) > 0,
       variation_ids: p.variations || [],
     })

@@ -262,6 +262,93 @@ export default function InboxPage() {
   const [chargeCardId, setChargeCardId] = useState<string>('')
   const [charging, setCharging] = useState(false)
 
+  // ── Product search ───────────────────────────────────────────────────────
+  // Agents constantly get "how much is this?" — this looks the product up in
+  // WooCommerce without leaving the chat, and sends the price or a buy link.
+  const [showProducts, setShowProducts] = useState(false)
+  const [productQuery, setProductQuery] = useState('')
+  const [products, setProducts] = useState<any[]>([])
+  const [productSearching, setProductSearching] = useState(false)
+  const [productSent, setProductSent] = useState<string>('')
+
+  const searchProducts = async () => {
+    if (!companyId || !productQuery.trim()) return
+    setProductSearching(true)
+    try {
+      const res = await fetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(productQuery.trim())}`)
+      const d = await res.json()
+      setProducts(d.products || [])
+    } catch { setProducts([]) }
+    finally { setProductSearching(false) }
+  }
+
+  // Post a message about the product into the chat (and out over SMS if that's
+  // how we're talking to them).
+  const sendProductMessage = async (p: any, kind: 'price' | 'link' | 'both') => {
+    if (!selected || !companyId || !user) return
+    const currency = '$'
+    const price = p.sale_price && p.on_sale ? p.sale_price : (p.price || p.regular_price)
+    const stock = p.stock_status === 'instock'
+      ? (p.manage_stock && p.stock_quantity != null ? `${p.stock_quantity} in stock` : 'In stock')
+      : 'Out of stock'
+
+    let content = ''
+    if (kind === 'price') {
+      content = `${p.name} — ${currency}${price} AUD (${stock})`
+    } else if (kind === 'link') {
+      content = `${p.name}\n${p.permalink || ''}`
+    } else {
+      content = `${p.name} — ${currency}${price} AUD (${stock})\n${p.permalink || ''}`
+    }
+
+    const me = user.user_metadata?.display_name || user.email?.split('@')[0]
+    const smsNumber = smsDestination()
+
+    try {
+      // Shorten the product link for SMS so it isn't a huge ugly URL.
+      let smsText = content
+      if (smsNumber) {
+        const r = await fetch('/api/telnyx/sms/send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId, conversationId: selected.id, to: smsNumber,
+            text: smsText, senderName: me, skipChatMessage: true,
+          }),
+        })
+        const rd = await r.json()
+        if (!r.ok) showToast(`Sent in chat, but the SMS failed: ${rd.error || 'unknown error'}`)
+      }
+
+      await (supabase as any).from('messages').insert({
+        conversation_id: selected.id, company_id: companyId,
+        sender_type: 'agent', sender_id: user.id, sender_name: me, sender_email: user.email,
+        content,
+        message_type: 'product',
+        message_payload: {
+          kind: 'product',
+          id: p.id, name: p.name, sku: p.sku,
+          price, currency: 'AUD', on_sale: !!p.on_sale, regular_price: p.regular_price,
+          stock_status: p.stock_status, stock_quantity: p.stock_quantity,
+          image: p.image, permalink: p.permalink,
+          shown: kind,
+        },
+        delivery_channel: smsNumber ? 'sms' : 'chat',
+      })
+
+      await (supabase as any).from('conversations').update({
+        last_message: content.split('\n')[0], last_message_at: new Date().toISOString(),
+      }).eq('id', selected.id)
+
+      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+      setMessages(msgs || [])
+      scrollBottom()
+      setProductSent(`${p.id}-${kind}`)
+      setTimeout(() => setProductSent(''), 1800)
+    } catch (e: any) {
+      showToast('Could not send the product: ' + e.message)
+    }
+  }
+
   // ── Quick responses (Time Savers) ────────────────────────────────────────
   // Typing "/" in the composer offers saved replies; picking one (or typing its
   // shortcut and pressing Tab/Enter) expands it. Previously these were saved in
@@ -1703,6 +1790,86 @@ export default function InboxPage() {
         .ai-spark:hover .ai-tip { opacity: 1 !important; }
       `}</style>
 
+      {/* Product search — look a product up and send its price or buy link */}
+      {showProducts && selected && (
+        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, maxWidth: '95vw', background: '#fff', borderLeft: '1px solid var(--border)', boxShadow: '-8px 0 32px rgba(0,0,0,0.10)', zIndex: 250, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div>
+              <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Product search</p>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)' }}>Send a price or a buy link without leaving the chat.</p>
+            </div>
+            <button onClick={() => setShowProducts(false)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', display: 'flex', padding: 4 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8 }}>
+            <input autoFocus value={productQuery} onChange={e => setProductQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') searchProducts() }}
+              placeholder="Search by name or SKU…"
+              style={{ flex: 1, padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5 }} />
+            <button onClick={searchProducts} disabled={productSearching || !productQuery.trim()}
+              style={{ padding: '10px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              {productSearching ? '…' : 'Search'}
+            </button>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
+            {products.length === 0 && !productSearching && (
+              <p style={{ fontSize: 13.5, color: 'var(--slate)', textAlign: 'center', padding: 30 }}>
+                {productQuery ? 'No products found.' : 'Search your WooCommerce catalogue.'}
+              </p>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {products.map(p => {
+                const onSale = p.on_sale && p.sale_price
+                const price = onSale ? p.sale_price : (p.price || p.regular_price)
+                const inStock = p.stock_status === 'instock'
+                return (
+                  <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: '#fff' }}>
+                    <div style={{ display: 'flex', gap: 11, marginBottom: 10 }}>
+                      {p.image
+                        ? <img src={p.image} alt="" style={{ width: 54, height: 54, borderRadius: 9, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} />
+                        : <div style={{ width: 54, height: 54, borderRadius: 9, background: 'var(--canvas)', flexShrink: 0 }} />}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.35 }}>{p.name}</p>
+                        <p style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>${price}</span>
+                          {onSale && <span style={{ fontSize: 11.5, color: '#9ca3af', textDecoration: 'line-through' }}>${p.regular_price}</span>}
+                          <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 5, background: inStock ? '#dcfce7' : '#fee2e2', color: inStock ? '#15803d' : '#dc2626' }}>
+                            {inStock ? (p.manage_stock && p.stock_quantity != null ? `${p.stock_quantity} in stock` : 'In stock') : 'Out of stock'}
+                          </span>
+                        </p>
+                        {p.sku && <p style={{ margin: '3px 0 0', fontSize: 11, color: 'var(--slate)' }}>SKU: {p.sku}</p>}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => sendProductMessage(p, 'price')}
+                        style={{ flex: 1, padding: '7px 0', borderRadius: 8, background: productSent === `${p.id}-price` ? '#dcfce7' : 'var(--coral)', color: productSent === `${p.id}-price` ? '#15803d' : '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                        {productSent === `${p.id}-price` ? 'Sent ✓' : 'Send price'}
+                      </button>
+                      <button onClick={() => sendProductMessage(p, 'link')} disabled={!p.permalink}
+                        title={p.permalink ? 'Send a link they can buy from' : 'No product URL available'}
+                        style={{ flex: 1, padding: '7px 0', borderRadius: 8, background: productSent === `${p.id}-link` ? '#dcfce7' : 'var(--peach)', color: productSent === `${p.id}-link` ? '#15803d' : 'var(--coral)', border: '1px solid var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: p.permalink ? 'pointer' : 'not-allowed', opacity: p.permalink ? 1 : 0.5 }}>
+                        {productSent === `${p.id}-link` ? 'Sent ✓' : 'Send link'}
+                      </button>
+                      <button onClick={() => sendProductMessage(p, 'both')} disabled={!p.permalink}
+                        title="Send the price and a buy link together"
+                        style={{ padding: '7px 12px', borderRadius: 8, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 700, cursor: p.permalink ? 'pointer' : 'not-allowed', opacity: p.permalink ? 1 : 0.5 }}>
+                        Both
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filter panel (Coax style) */}
       {showFilters && (
         <div onClick={() => setShowFilters(false)}
@@ -2388,6 +2555,12 @@ export default function InboxPage() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
               </button>
               <span style={{ fontSize: 16 }}>{CHANNEL_ICON[selected.channel]}</span>
+              {/* Product search */}
+              <button type="button" onClick={() => setShowProducts(true)} title="Product search — send a price or buy link"
+                style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${showProducts ? 'var(--coral)' : 'var(--border)'}`, background: showProducts ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: showProducts ? 'var(--coral)' : 'var(--slate)' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+              </button>
+
               {/* Move or view enquiries across outlets */}
               {outlets.length > 0 && (
                 <div style={{ position: 'relative' }}>
