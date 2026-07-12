@@ -61,6 +61,13 @@ function WidgetContent() {
   const [outletInfo, setOutletInfo] = useState<{ isVic: boolean; nearest: any; outlets: any[] } | null>(null)
   const [assignedOutlet, setAssignedOutlet] = useState<any>(null)
   const [showOutletPicker, setShowOutletPicker] = useState(false)
+  const [sizeMode, setSizeMode] = useState<'normal' | 'compact' | 'expanded' | 'fullscreen'>('normal')
+
+  // Tell the embedding script to resize the iframe panel.
+  const setSize = (mode: 'normal' | 'compact' | 'expanded' | 'fullscreen') => {
+    setSizeMode(mode)
+    try { window.parent?.postMessage({ colvy: true, type: 'size', mode }, '*') } catch {}
+  }
 
   // Keep the chat pinned to the latest message: when the Chat tab is (re)opened,
   // when the chat view is shown, or when new messages arrive, scroll to bottom.
@@ -1260,6 +1267,36 @@ function WidgetContent() {
             </div>
           )}
           <span style={{ fontSize: 14, fontWeight: 700, color: '#0d0d0d', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company?.name || slug}</span>
+
+          {/* Size controls — shrink / expand / full screen */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+            <button type="button" title={sizeMode === 'compact' ? 'Normal size' : 'Shrink'}
+              onClick={() => setSize(sizeMode === 'compact' ? 'normal' : 'compact')}
+              style={{ width: 26, height: 26, borderRadius: 6, border: 'none', background: sizeMode === 'compact' ? '#f3f4f6' : 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/></svg>
+            </button>
+            <button type="button" title={sizeMode === 'expanded' ? 'Normal size' : 'Expand'}
+              onClick={() => setSize(sizeMode === 'expanded' ? 'normal' : 'expanded')}
+              style={{ width: 26, height: 26, borderRadius: 6, border: 'none', background: sizeMode === 'expanded' ? '#f3f4f6' : 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 21 3 21 3 15"/><polyline points="15 3 21 3 21 9"/></svg>
+            </button>
+            <button type="button" title={sizeMode === 'fullscreen' ? 'Exit full screen' : 'Full screen'}
+              onClick={() => setSize(sizeMode === 'fullscreen' ? 'normal' : 'fullscreen')}
+              style={{ width: 26, height: 26, borderRadius: 6, border: 'none', background: sizeMode === 'fullscreen' ? '#f3f4f6' : 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
+              {sizeMode === 'fullscreen' ? (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+              ) : (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+              )}
+            </button>
+            {sizeMode === 'fullscreen' && (
+              <button type="button" title="Close"
+                onClick={() => { setSize('normal'); try { window.parent?.postMessage({ colvy: true, type: 'close' }, '*') } catch {} }}
+                style={{ width: 26, height: 26, borderRadius: 6, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            )}
+          </div>
           <a
             href={`${boardUrl}?utm_source=widget&utm_medium=colvy_widget&utm_campaign=${encodeURIComponent(slug)}`}
             target="_blank" rel="noopener"
