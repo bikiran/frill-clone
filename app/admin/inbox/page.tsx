@@ -1069,6 +1069,27 @@ export default function InboxPage() {
     const content = reply.trim()
     const senderName = user.user_metadata?.display_name || user.email?.split('@')[0]
 
+    // Email conversations reply by email (threaded back into the customer's
+    // original message), not through the chat widget.
+    if ((selected as any).channel === 'email') {
+      try {
+        const res = await fetch('/api/email/reply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: selected.id, content, agentName: senderName }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Email failed to send')
+        setReply(''); setReplyTo(null); setSending(false)
+        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+        setMessages(msgs || [])
+        scrollBottom()
+      } catch (e: any) {
+        setSending(false)
+        alert('Could not send the email: ' + e.message)
+      }
+      return
+    }
+
     // Auto-route: send via chat by default. If the visitor gave a mobile and
     // isn't currently online (no activity in the last 2 minutes), also deliver
     // over SMS so they get the reply on their phone.
