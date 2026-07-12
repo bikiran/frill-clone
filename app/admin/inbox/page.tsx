@@ -324,7 +324,16 @@ export default function InboxPage() {
   const [toast, setToast] = useState('')
   const [editField, setEditField] = useState<string | null>(null)
   const [editFieldValue, setEditFieldValue] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'assigned' | 'resolved'>('open')
+  const [statusFilter, setStatusFilter] = useState<'open' | 'closed'>('open')
+
+  // ── Filter panel (Coax style) ─────────────────────────────────────────────
+  const [showFilters, setShowFilters] = useState(false)
+  const [filters, setFilters] = useState<any>({
+    dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', oldestFirst: false,
+  })
+  const activeFilterCount = ['dateFrom', 'dateTo', 'channel', 'assignedTo', 'source']
+    .filter(k => filters[k]).length + (filters.oldestFirst ? 1 : 0)
+  const resetFilters = () => setFilters({ dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', oldestFirst: false })
   const [showAssignMenu, setShowAssignMenu] = useState(false)
   const [showContactEdit, setShowContactEdit] = useState(false)
   const [editContact, setEditContact] = useState<Partial<Contact>>({})
@@ -400,7 +409,9 @@ export default function InboxPage() {
     // so a PostgREST embed (`contacts(...)`) fails the WHOLE query and returns
     // nothing (blank inbox). Fetch conversations plainly, then attach contacts.
     let q = (supabase as any).from('conversations').select('*').eq('company_id', id)
-    if (statusFilter !== 'all') q = q.eq('status', statusFilter)
+    // "Closed" covers closed + resolved; "Open" is everything else.
+    if (statusFilter === 'closed') q = q.in('status', ['closed', 'resolved'])
+    else q = q.not('status', 'in', '("closed","resolved")')
     const { data } = await q.order('last_message_at', { ascending: false }).limit(50)
     const convs = data || []
 
@@ -1529,13 +1540,36 @@ export default function InboxPage() {
     const ct: any = (c as any).contacts || {}
     // Snoozed conversations drop out of the list until their time is up.
     const snz = (c as any).snoozed_until
-    if (snz && new Date(String(snz).endsWith('Z') ? snz : snz + 'Z').getTime() > Date.now() && statusFilter !== 'all') return false
+    if (snz && new Date(String(snz).endsWith('Z') ? snz : snz + 'Z').getTime() > Date.now() && statusFilter === 'open') return false
+
+    // Advanced filters from the Filter panel.
+    const cc: any = c
+    if (filters.channel && (cc.channel || '') !== filters.channel) return false
+    if (filters.assignedTo) {
+      if (filters.assignedTo === '__unassigned') { if (cc.assigned_to) return false }
+      else if (cc.assigned_to !== filters.assignedTo) return false
+    }
+    if (filters.source) {
+      const s = (cc.subject || '').toLowerCase()
+      const src = s.startsWith('abandoned cart') ? 'cart' : s.startsWith('order #') ? 'order' : 'chat'
+      if (src !== filters.source) return false
+    }
+    if (filters.dateFrom || filters.dateTo) {
+      const t = new Date(String(cc.last_message_at).endsWith('Z') ? cc.last_message_at : cc.last_message_at + 'Z').getTime()
+      if (filters.dateFrom && t < new Date(filters.dateFrom).getTime()) return false
+      if (filters.dateTo && t > new Date(filters.dateTo).getTime() + 86400000) return false
+    }
     return (c.last_message || '').toLowerCase().includes(q)
       || (c.subject || '').toLowerCase().includes(q)
       || (ct.name || '').toLowerCase().includes(q)
       || (ct.email || '').toLowerCase().includes(q)
       || (ct.phone || '').toLowerCase().includes(q)
   })
+    .sort((a: any, b: any) => {
+      const ta = new Date(String(a.last_message_at).endsWith('Z') ? a.last_message_at : a.last_message_at + 'Z').getTime()
+      const tb = new Date(String(b.last_message_at).endsWith('Z') ? b.last_message_at : b.last_message_at + 'Z').getTime()
+      return filters.oldestFirst ? ta - tb : tb - ta
+    })
 
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--slate)' }}>Loading inbox…</div>
@@ -1578,6 +1612,81 @@ export default function InboxPage() {
         @keyframes livePulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); } 50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(34,197,94,0); } }
         .ai-spark:hover .ai-tip { opacity: 1 !important; }
       `}</style>
+
+      {/* Filter panel (Coax style) */}
+      {showFilters && (
+        <div onClick={() => setShowFilters(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 860, maxWidth: '95vw', maxHeight: '88vh', overflowY: 'auto', background: '#fff', borderRadius: 20, padding: 26 }}>
+            <h2 style={{ margin: '0 0 20px', fontSize: 20, fontWeight: 800, color: 'var(--coral)' }}>Filter</h2>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+              {/* Left: date range + sort */}
+              <div>
+                <div style={{ background: 'var(--canvas)', borderRadius: 14, padding: 18, marginBottom: 14 }}>
+                  <p style={{ margin: '0 0 14px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Date Range</p>
+                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 5 }}>From</label>
+                  <input type="date" value={filters.dateFrom} onChange={e => setFilters({ ...filters, dateFrom: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 14, boxSizing: 'border-box', background: '#fff' }} />
+                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 5 }}>To</label>
+                  <input type="date" value={filters.dateTo} onChange={e => setFilters({ ...filters, dateTo: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', background: '#fff' }} />
+                </div>
+
+                <div style={{ background: 'var(--canvas)', borderRadius: 14, padding: 18 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={filters.oldestFirst}
+                      onChange={e => setFilters({ ...filters, oldestFirst: e.target.checked })}
+                      style={{ width: 18, height: 18, accentColor: 'var(--coral)' }} />
+                    <span style={{ fontSize: 14, color: 'var(--ink)' }}>Order by oldest to newest</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Right: channel / assigned / source */}
+              <div style={{ background: 'var(--canvas)', borderRadius: 14, padding: 18 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Channel</label>
+                <select value={filters.channel} onChange={e => setFilters({ ...filters, channel: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 16, boxSizing: 'border-box', background: '#fff' }}>
+                  <option value="">Select channel</option>
+                  <option value="chat">Live chat</option>
+                  <option value="sms">SMS</option>
+                  <option value="email">Email</option>
+                  <option value="instagram">Instagram</option>
+                  <option value="whatsapp">WhatsApp</option>
+                </select>
+
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Assigned user</label>
+                <select value={filters.assignedTo} onChange={e => setFilters({ ...filters, assignedTo: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 16, boxSizing: 'border-box', background: '#fff' }}>
+                  <option value="">Select an assigned user</option>
+                  <option value="__unassigned">Unassigned</option>
+                  {team.map((t: any) => (
+                    <option key={t.user_id || t.id} value={t.user_id || t.id}>{t.name || t.email}</option>
+                  ))}
+                </select>
+
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Source</label>
+                <select value={filters.source} onChange={e => setFilters({ ...filters, source: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', background: '#fff' }}>
+                  <option value="">Select source</option>
+                  <option value="chat">Live chat enquiry</option>
+                  <option value="order">Order placed</option>
+                  <option value="cart">Abandoned cart</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+              <button type="button" onClick={() => setShowFilters(false)}
+                style={{ padding: '12px 34px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Apply</button>
+              <button type="button" onClick={resetFilters}
+                style={{ padding: '12px 30px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Reset</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Right-click menu on a conversation */}
       {ctxMenu && (
@@ -2056,14 +2165,23 @@ export default function InboxPage() {
           </div>
           <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search conversations…"
             style={{ ...inp, background: 'var(--canvas)' }} />
-          {/* Status filter */}
-          <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
-            {(['open', 'assigned', 'resolved', 'all'] as const).map(s => (
-              <button key={s} type="button" onClick={() => setStatusFilter(s)}
-                style={{ flex: 1, padding: '5px 4px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, textTransform: 'capitalize', background: statusFilter === s ? 'var(--coral)' : 'var(--canvas)', color: statusFilter === s ? '#fff' : 'var(--slate)' }}>
-                {s}
-              </button>
-            ))}
+          {/* Open / Closed tabs (Coax style) + filter */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+            <div style={{ flex: 1, display: 'flex', background: 'var(--canvas)', borderRadius: 10, padding: 3 }}>
+              {(['open', 'closed'] as const).map(s => (
+                <button key={s} type="button" onClick={() => setStatusFilter(s)}
+                  style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, textTransform: 'capitalize', background: statusFilter === s ? '#fff' : 'transparent', color: statusFilter === s ? 'var(--ink)' : 'var(--slate)', boxShadow: statusFilter === s ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.12s' }}>
+                  {s}
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => setShowFilters(true)} title="Filter"
+              style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${activeFilterCount > 0 ? 'var(--coral)' : 'var(--border)'}`, background: activeFilterCount > 0 ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: activeFilterCount > 0 ? 'var(--coral)' : 'var(--slate)', position: 'relative', flexShrink: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              {activeFilterCount > 0 && (
+                <span style={{ position: 'absolute', top: -4, right: -4, width: 16, height: 16, borderRadius: '50%', background: 'var(--coral)', color: '#fff', fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{activeFilterCount}</span>
+              )}
+            </button>
           </div>
         </div>
 

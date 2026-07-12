@@ -14,6 +14,45 @@ export default function GoogleReviewsPage() {
   const [msg, setMsg] = useState('')
   const [replyDraft, setReplyDraft] = useState<Record<string, string>>({})
 
+  // Review dashboard: search, rating + reply filters, AI drafting.
+  const [reviewSearch, setReviewSearch] = useState('')
+  const [ratingFilter, setRatingFilter] = useState('')
+  const [replyFilter, setReplyFilter] = useState('all')  // all | replied | not_replied
+  const [aiBusy, setAiBusy] = useState('')
+
+  const generateAiReply = async (reviewId: string) => {
+    if (!companyId) return
+    setAiBusy(reviewId)
+    try {
+      const res = await fetch('/api/google/reviews/ai-reply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, reviewId }),
+      })
+      const d = await res.json()
+      if (d.error) throw new Error(d.error)
+      setReplyDraft(p => ({ ...p, [reviewId]: d.reply }))
+    } catch (e: any) { setMsg('AI reply failed: ' + e.message) }
+    finally { setAiBusy('') }
+  }
+
+  const filteredReviews = reviews.filter(r => {
+    if (ratingFilter && String(r.star_rating) !== ratingFilter) return false
+    if (replyFilter === 'replied' && !r.reply_comment) return false
+    if (replyFilter === 'not_replied' && r.reply_comment) return false
+    const q = reviewSearch.trim().toLowerCase()
+    if (q && !((r.comment || '').toLowerCase().includes(q) || (r.reviewer_name || '').toLowerCase().includes(q))) return false
+    return true
+  })
+
+  const stats = {
+    total: reviews.length,
+    replied: reviews.filter(r => r.reply_comment).length,
+    pending: reviews.filter(r => !r.reply_comment).length,
+    average: reviews.length
+      ? (reviews.reduce((s, r) => s + (r.star_rating || 0), 0) / reviews.filter(r => r.star_rating).length).toFixed(1)
+      : '—',
+  }
+
   // Auto review-request settings
   const [rr, setRr] = useState<any>({
     enabled: false, delay_hours: 24,
@@ -251,40 +290,98 @@ export default function GoogleReviewsPage() {
         </button>
       </div>
 
-      {/* Reviews */}
+      {/* Reviews dashboard */}
       {reviews.length > 0 && (
-        <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 20, background: '#fff' }}>
-          <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', margin: '0 0 14px' }}>Reviews ({reviews.length})</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {reviews.map(r => (
-              <div key={r.review_id} style={{ padding: 14, borderRadius: 12, border: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{r.reviewer_name}</span>
-                  <Stars n={r.star_rating} />
-                  <span style={{ fontSize: 11.5, color: 'var(--slate)', marginLeft: 'auto' }}>
-                    {r.review_created_at ? new Date(r.review_created_at).toLocaleDateString() : ''}
-                  </span>
-                </div>
-                {r.comment && <p style={{ fontSize: 13.5, color: 'var(--ink)', margin: '0 0 10px', lineHeight: 1.5 }}>{r.comment}</p>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 18, alignItems: 'start' }}>
+          <div>
+            {/* Filters */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+              <input value={reviewSearch} onChange={e => setReviewSearch(e.target.value)} placeholder="Search reviews…"
+                style={{ flex: 1, minWidth: 180, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5 }} />
+              <select value={ratingFilter} onChange={e => setRatingFilter(e.target.value)}
+                style={{ padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, background: '#fff' }}>
+                <option value="">All ratings</option>
+                {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{n} star{n > 1 ? 's' : ''}</option>)}
+              </select>
+              <select value={replyFilter} onChange={e => setReplyFilter(e.target.value)}
+                style={{ padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, background: '#fff' }}>
+                <option value="all">All</option>
+                <option value="not_replied">Yet to reply</option>
+                <option value="replied">Replied</option>
+              </select>
+            </div>
 
-                {r.reply_comment ? (
-                  <div style={{ padding: '8px 12px', borderRadius: 9, background: 'var(--canvas)', borderLeft: '3px solid var(--coral)' }}>
-                    <p style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--coral)', margin: '0 0 2px' }}>Your reply</p>
-                    <p style={{ fontSize: 13, color: 'var(--ink)', margin: 0 }}>{r.reply_comment}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {filteredReviews.map(r => (
+                <div key={r.review_id} style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    {r.reviewer_photo
+                      ? <img src={r.reviewer_photo} alt="" style={{ width: 32, height: 32, borderRadius: 9, objectFit: 'cover' }} />
+                      : <div style={{ width: 32, height: 32, borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13 }}>{(r.reviewer_name || '?')[0]}</div>}
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{r.reviewer_name}</span>
+                    <Stars n={r.star_rating} />
+                    <span style={{ fontSize: 11.5, color: 'var(--slate)', marginLeft: 'auto' }}>
+                      {r.review_created_at ? new Date(r.review_created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                    </span>
                   </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input value={replyDraft[r.review_id] || ''} placeholder="Write a reply…"
-                      onChange={e => setReplyDraft(p => ({ ...p, [r.review_id]: e.target.value }))}
-                      style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }} />
-                    <button onClick={() => sendReply(r.review_id)} disabled={busy === 'reply-' + r.review_id}
-                      style={{ padding: '8px 14px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                      {busy === 'reply-' + r.review_id ? '…' : 'Reply'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
+
+                  {r.comment && (
+                    <p style={{ fontSize: 13.5, color: 'var(--ink)', margin: '0 0 12px', lineHeight: 1.55, padding: 12, background: 'var(--canvas)', borderRadius: 10 }}>{r.comment}</p>
+                  )}
+
+                  {r.reply_comment ? (
+                    <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--peach)', borderLeft: '3px solid var(--coral)' }}>
+                      <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--coral)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Your reply</p>
+                      <p style={{ fontSize: 13, color: 'var(--ink)', margin: 0, lineHeight: 1.5 }}>{r.reply_comment}</p>
+                    </div>
+                  ) : (
+                    <>
+                      <button type="button" onClick={() => generateAiReply(r.review_id)} disabled={aiBusy === r.review_id}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', color: '#8b5cf6', fontSize: 12.5, fontWeight: 700, padding: 0, marginBottom: 8 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
+                        {aiBusy === r.review_id ? 'Generating…' : 'Generate AI reply'}
+                      </button>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <textarea value={replyDraft[r.review_id] || ''} placeholder="Compose reply…"
+                          onChange={e => setReplyDraft(p => ({ ...p, [r.review_id]: e.target.value }))}
+                          rows={2}
+                          style={{ flex: 1, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }} />
+                        <button type="button" onClick={() => sendReply(r.review_id)} disabled={busy === 'reply-' + r.review_id || !(replyDraft[r.review_id] || '').trim()}
+                          style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', alignSelf: 'flex-start' }}>
+                          {busy === 'reply-' + r.review_id ? '…' : 'Reply'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+              {filteredReviews.length === 0 && (
+                <p style={{ fontSize: 13.5, color: 'var(--slate)', textAlign: 'center', padding: 24 }}>No reviews match these filters.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Stats sidebar */}
+          <div style={{ border: '1px solid var(--border)', borderRadius: 16, padding: 20, background: '#fff', position: 'sticky', top: 20 }}>
+            <p style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>Google Reviews</p>
+            <div style={{ marginBottom: 6 }}><Stars n={Math.round(Number(stats.average) || 0)} /></div>
+            <p style={{ margin: '0 0 14px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{location?.title || 'Your business'}</p>
+
+            <p style={{ margin: '0 0 14px', fontSize: 13.5, color: '#15803d', fontWeight: 700 }}>
+              {stats.average} Star &nbsp;|&nbsp; {stats.total} Reviews
+            </p>
+            <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.6 }}>
+              Your business has received <strong>{stats.total}</strong> reviews and on average a <strong>{stats.average} star</strong> rating.
+            </p>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>Replied</span>
+              <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--ink)' }}>{stats.replied}</span>
+            </div>
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>Yet to reply</span>
+              <span style={{ fontSize: 13.5, fontWeight: 800, color: stats.pending > 0 ? '#dc2626' : 'var(--ink)' }}>{stats.pending}</span>
+            </div>
           </div>
         </div>
       )}

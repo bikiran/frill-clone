@@ -316,19 +316,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         }
       `}</style>
 
-      {/* Mobile hamburger trigger — hidden; the top-bar hamburger now opens
-          this sidebar via the colvy:toggle-admin-sidebar event. */}
-      <button
-        onClick={() => setMobileSidebarOpen(true)}
-        className="admin-mobile-trigger"
-        style={{
-          display: 'none !important' as any, position: 'fixed', top: 68, left: 14, zIndex: 35,
-          width: 38, height: 38, borderRadius: 10, background: '#fff',
-          border: '1px solid var(--border)', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-        }}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-      </button>
+      {/* NOTE: the old floating mobile hamburger was removed. It used
+          `display: 'none !important'` in an inline style, which React silently
+          rejects (inline styles can't take !important), so it rendered anyway
+          and showed a SECOND hamburger over the sidebar. The top-bar hamburger
+          opens this sidebar via the colvy:toggle-admin-sidebar event. */}
 
       {/* Mobile overlay */}
       <div
