@@ -308,6 +308,20 @@
   }
 
   window.addEventListener('load', sendPage)
+
+  // CRITICAL: the iframe may not exist yet when 'load' fires, so the postMessage
+  // would go nowhere and the widget would never learn the real page URL (which is
+  // why Page History kept showing the Colvy widget URL). Send again as soon as
+  // the iframe itself has loaded, and retry a few times to cover slow starts.
+  popup.addEventListener('load', function () {
+    sendPage()
+    var tries = 0
+    var iv = setInterval(function () {
+      tries++
+      sendPage()
+      if (tries >= 3) clearInterval(iv)
+    }, 700)
+  })
   // Detect SPA navigations (pushState/replaceState/popstate) and hash changes.
   try {
     var _ps = history.pushState, _rs = history.replaceState

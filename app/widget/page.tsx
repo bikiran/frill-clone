@@ -168,7 +168,21 @@ function WidgetContent() {
       // The embedding script keeps the authoritative history (it runs on the
       // real site and can see every page). Prefer it wholesale.
       if (Array.isArray(d.history) && d.history.length) {
-        setParentPageHistory(d.history)
+        setParentPageHistory(prev => {
+          // If the visitor NAVIGATED while chatting, record it on the timeline so
+          // the agent can see what they're looking at right now.
+          const prevLast = prev.length ? prev[prev.length - 1]?.url : null
+          if (chatConvId && prevLast && prevLast !== d.url) {
+            ;(supabase as any).from('conversation_events').insert({
+              conversation_id: chatConvId,
+              company_id: company?.id,
+              event_type: 'page_view',
+              actor_name: chatName || 'Visitor',
+              detail: `Viewing: ${d.title || d.url}`,
+            }).then(() => {}, () => {})
+          }
+          return d.history
+        })
         if (chatConvId) {
           ;(supabase as any).from('conversations').update({
             page_url: d.url, page_title: d.title || null, page_history: d.history,

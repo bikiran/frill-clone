@@ -106,7 +106,7 @@ function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: st
 // Interleave conversation events (assignments, channel switches, moves) into the
 // message list in chronological order, so the thread reads like a real timeline.
 function mergeEvents(msgs: any[], events: any[]) {
-  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request']
+  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request', 'page_view']
   const evs = (events || [])
     .filter(e => SHOW.includes(e.event_type))
     .map(e => ({ ...e, __event: true }))
@@ -1699,7 +1699,7 @@ export default function InboxPage() {
                   style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 16, boxSizing: 'border-box', background: '#fff' }}>
                   <option value="">Select an assigned user</option>
                   <option value="__unassigned">Unassigned</option>
-                  {team.map((t: any) => (
+                  {teamMembers.map((t: any) => (
                     <option key={t.user_id || t.id} value={t.user_id || t.id}>{t.name || t.email}</option>
                   ))}
                 </select>
@@ -2572,11 +2572,16 @@ export default function InboxPage() {
                   // Inline timeline event: "Conversation assigned to X",
                   // "Now chatting through SMS", "Enquiry moved to …"
                   const ev = item
+                  const isPageView = ev.event_type === 'page_view'
                   return (
                     <div key={`ev-${ev.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0' }}>
                       <div style={{ flex: 1, height: 1, background: '#eceef0' }} />
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#9ca3af', whiteSpace: 'nowrap' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: isPageView ? '#0284c7' : '#9ca3af', whiteSpace: 'nowrap', maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {isPageView ? (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        ) : (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        )}
                         {ev.detail || ev.event_type}
                       </span>
                       <div style={{ flex: 1, height: 1, background: '#eceef0' }} />
