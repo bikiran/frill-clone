@@ -70,11 +70,29 @@ export default function PhoneUploadQR({
     return () => clearInterval(iv)
   }, [expiresAt])
 
-  // Free QR image service — no dependency to add, and the URL is not sensitive
-  // beyond the token, which is already short-lived and single-purpose.
-  const qrSrc = url
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=440x440&margin=0&data=${encodeURIComponent(url)}`
-    : ''
+  // Generate the QR locally — nothing about this session leaves our own
+  // infrastructure (the previous version called a public QR service).
+  const [qrSvg, setQrSvg] = useState('')
+  useEffect(() => {
+    if (!url) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const QR = (await import('qrcode')).default
+        const svg = await QR.toString(url, {
+          type: 'svg',
+          errorCorrectionLevel: 'M',
+          margin: 0,
+          width: 220,
+          color: { dark: '#0b0d12', light: '#ffffff' },
+        })
+        if (!cancelled) setQrSvg(svg)
+      } catch (e) {
+        if (!cancelled) setError('Could not render the QR code.')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [url])
 
   const copy = () => {
     navigator.clipboard?.writeText(url)
@@ -98,6 +116,7 @@ export default function PhoneUploadQR({
           @keyframes qrGlow { 0%,100% { opacity: .5; } 50% { opacity: .9; } }
           @keyframes scanLine { 0% { top: 6%; } 100% { top: 94%; } }
           @keyframes popIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+          .colvy-qr svg { width: 100%; height: 100%; display: block; }
         `}</style>
 
         {/* Ambient glow */}
@@ -117,13 +136,18 @@ export default function PhoneUploadQR({
 
           {error ? (
             <p style={{ color: '#ef4444', fontSize: 13.5, padding: 30 }}>{error}</p>
-          ) : !url ? (
+          ) : !url || !qrSvg ? (
             <p style={{ color: '#9aa3b2', fontSize: 13.5, padding: 60 }}>Preparing your link…</p>
           ) : (
             <>
-              {/* QR with scan-line flourish */}
+              {/* QR with scan-line flourish. Rendered locally as an SVG. */}
               <div style={{ position: 'relative', display: 'inline-block', padding: 14, borderRadius: 20, background: '#fff', animation: 'popIn .35s ease-out', boxShadow: '0 0 44px rgba(255,122,107,0.28)' }}>
-                <img src={qrSrc} alt="QR code" width={220} height={220} style={{ display: 'block', borderRadius: 8 }} />
+                <div
+                  aria-label="QR code"
+                  className="colvy-qr"
+                  style={{ width: 220, height: 220, display: 'block' }}
+                  dangerouslySetInnerHTML={{ __html: qrSvg }}
+                />
                 <span style={{ position: 'absolute', left: 14, right: 14, height: 2, background: 'linear-gradient(90deg, transparent, #ff7a6b, transparent)', animation: 'scanLine 2.4s ease-in-out infinite alternate', pointerEvents: 'none' }} />
               </div>
 

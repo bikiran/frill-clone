@@ -1,5 +1,4 @@
 node_modules/
 .next/
+# Next.js 16 renamed middleware.ts → proxy.ts; prevent the old file from being re-added
 middleware.ts
-.vercel
-.env*
