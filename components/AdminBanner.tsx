@@ -3,29 +3,20 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
-// A dismissible announcement bar across the top of the admin. Managed from
-// Settings → Announcements; can carry a link that deep-links into settings.
-export default function AdminBanner({ companyId }: { companyId?: string | null }) {
+// A dismissible announcement bar across the top of the admin. Managed by Colvy
+// from the platform admin (Product Banner) — it's a product announcement, not a
+// per-company setting.
+export default function AdminBanner() {
   const [banner, setBanner] = useState<any>(null)
   const [dismissed, setDismissed] = useState(true) // assume hidden until we know
 
   useEffect(() => {
     ;(async () => {
       try {
-        // Company banners first, then any platform-wide one.
-        let row: any = null
-        if (companyId) {
-          const { data } = await (supabase as any).from('admin_banners')
-            .select('*').eq('company_id', companyId).eq('is_active', true)
-            .order('created_at', { ascending: false }).limit(1)
-          row = data?.[0] || null
-        }
-        if (!row) {
-          const { data } = await (supabase as any).from('admin_banners')
-            .select('*').is('company_id', null).eq('is_active', true)
-            .order('created_at', { ascending: false }).limit(1)
-          row = data?.[0] || null
-        }
+        const { data } = await (supabase as any).from('admin_banners')
+          .select('*').is('company_id', null).eq('is_active', true)
+          .order('created_at', { ascending: false }).limit(1)
+        const row = data?.[0] || null
         if (!row) return
         // Respect a previous dismissal of THIS banner.
         const key = `colvy_banner_dismissed_${row.id}`
@@ -34,7 +25,7 @@ export default function AdminBanner({ companyId }: { companyId?: string | null }
         setDismissed(!!already)
       } catch { /* table may not exist yet — stay quiet */ }
     })()
-  }, [companyId])
+  }, [])
 
   if (!banner || dismissed) return null
 

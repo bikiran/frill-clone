@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import LegalAdminPage from '../admin/legal/page'
+import PlatformBannerAdmin from '@/components/PlatformBannerAdmin'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -52,6 +53,7 @@ const NAV = [
   { key: 'announce',   label: 'Announcements',    icon: 'announce' },
   { key: 'help',       label: 'Help Center',      icon: 'help' },
   { key: 'legal',      label: 'Legal Pages',      icon: 'audit' },
+  { key: 'banner',     label: 'Product Banner',   icon: 'announce' },
   { section: 'Support' },
   { key: 'chat',       label: 'Live Chat',        icon: 'chat' },
   { key: 'tickets',    label: 'Support Tickets',  icon: 'tickets' },
@@ -1501,6 +1503,7 @@ export default function SuperAdmin() {
           {page === 'moderation' && <ModerationPage />}
           {page === 'billing'    && <BillingPage />}
           {page === 'legal'      && <LegalAdminPage />}
+          {page === 'banner'     && <PlatformBannerAdmin />}
           {page === 'settings'   && <SettingsPage />}
         </div>
       </main>

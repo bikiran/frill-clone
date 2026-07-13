@@ -3,54 +3,39 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
-// Manage the announcement bar shown across the top of the admin.
-// Only one banner is shown at a time (the most recent active one), and each
-// person can dismiss it — dismissal is remembered per banner.
-export default function BannersPage() {
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+// Platform-wide announcement bar. This is a COLVY feature — a message shown
+// across the top of every company's admin (e.g. "SMS is now live").
+// Company-scoped banners aren't offered; this is for the product team.
+export default function PlatformBannerAdmin() {
   const [banners, setBanners] = useState<any[]>([])
   const [editing, setEditing] = useState<any>(null)
   const [msg, setMsg] = useState('')
+  const [loading, setLoading] = useState(true)
 
   const blank = { message: '', link_url: '', link_label: '', is_active: true }
 
-  // Handy places to deep-link people to.
+  // Deep links into the app that a banner might point at.
   const LINK_PRESETS = [
-    { label: 'Chat Widget settings', url: '/admin/settings#general' },
-    { label: 'Automatic replies', url: '/admin/auto-replies' },
-    { label: 'Channels', url: '/admin/channels' },
+    { label: 'Channels', url: '/admin/crm-settings/channels' },
+    { label: 'Automatic replies', url: '/admin/crm-settings/auto-replies' },
+    { label: 'Chat widget', url: '/admin/crm-settings/chat-widget' },
+    { label: 'Google Reviews', url: '/admin/crm-settings/channels/google-reviews' },
     { label: 'Team', url: '/admin/team' },
-    { label: 'Google Reviews', url: '/admin/integrations/google-reviews' },
   ]
 
-  useEffect(() => {
-    ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setLoading(false); return }
-      let cid: string | null = null
-      const { data: owned } = await (supabase as any).from('companies').select('id').eq('owner_id', user.id).order('created_at', { ascending: true }).limit(1)
-      cid = owned?.[0]?.id || null
-      if (!cid) {
-        const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', user.id).limit(1)
-        cid = tm?.[0]?.company_id || null
-      }
-      setCompanyId(cid)
-      if (cid) await load(cid)
-      setLoading(false)
-    })()
-  }, [])
-
-  const load = async (cid: string) => {
+  const load = async () => {
     const { data } = await (supabase as any).from('admin_banners')
-      .select('*').eq('company_id', cid).order('created_at', { ascending: false })
+      .select('*').is('company_id', null).order('created_at', { ascending: false })
     setBanners(data || [])
+    setLoading(false)
   }
 
+  useEffect(() => { load() }, [])
+
   const save = async () => {
-    if (!companyId || !editing?.message?.trim()) { setMsg('Write a message first.'); return }
+    if (!editing?.message?.trim()) { setMsg('Write a message first.'); return }
     const payload = {
-      company_id: companyId,
+      company_id: null,           // platform-wide
       message: editing.message.trim(),
       link_url: (editing.link_url || '').trim() || null,
       link_label: (editing.link_label || '').trim() || null,
@@ -58,38 +43,38 @@ export default function BannersPage() {
     }
     if (editing.id) await (supabase as any).from('admin_banners').update(payload).eq('id', editing.id)
     else await (supabase as any).from('admin_banners').insert(payload)
-    setEditing(null); setMsg('Saved. Your team will see it on their next page load.')
-    await load(companyId)
+    setEditing(null)
+    setMsg('Saved. Everyone will see it on their next page load.')
+    await load()
   }
 
   const remove = async (id: string) => {
-    if (!companyId) return
     await (supabase as any).from('admin_banners').delete().eq('id', id)
-    await load(companyId)
+    await load()
   }
-
   const toggle = async (b: any) => {
-    if (!companyId) return
     await (supabase as any).from('admin_banners').update({ is_active: !b.is_active }).eq('id', b.id)
-    await load(companyId)
+    await load()
   }
 
   const L: any = { display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }
   const I: any = { width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', marginBottom: 14 }
 
-  if (loading) return <div style={{ padding: 28 }}>Loading…</div>
+  if (loading) return <div style={{ color: 'var(--slate)' }}>Loading…</div>
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '28px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
+    <div style={{ maxWidth: 720 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 6, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>Announcement bar</h1>
-          <p style={{ fontSize: 14, color: 'var(--slate)', margin: 0 }}>A message across the top of the admin for your team. They can dismiss it.</p>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>Product banner</h1>
+          <p style={{ fontSize: 14, color: 'var(--slate)', margin: 0 }}>
+            A message across the top of every company&rsquo;s admin. Each person can dismiss it.
+          </p>
         </div>
         {!editing && (
           <button onClick={() => setEditing({ ...blank })}
             style={{ padding: '10px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            + Add announcement
+            + Add banner
           </button>
         )}
       </div>
@@ -98,24 +83,21 @@ export default function BannersPage() {
 
       {editing && (
         <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 20, background: '#fff', marginTop: 18, marginBottom: 20 }}>
-          {/* Live preview */}
           <p style={{ ...L, marginBottom: 8 }}>Preview</p>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '9px 16px', background: 'var(--coral)', color: '#fff', borderRadius: 10, fontSize: 13.5, fontWeight: 600, marginBottom: 18 }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             <span>{editing.message || 'Your message appears here'}</span>
-            {editing.link_url && (
-              <span style={{ textDecoration: 'underline', fontWeight: 800 }}>{editing.link_label || 'Learn more'}</span>
-            )}
+            {editing.link_url && <span style={{ textDecoration: 'underline', fontWeight: 800 }}>{editing.link_label || 'Learn more'}</span>}
           </div>
 
           <label style={L}>Message</label>
           <input style={I} value={editing.message || ''}
-            placeholder="Heads up — SMS is now live. Set up your number to start texting customers."
+            placeholder="SMS is now live — connect a number to start texting customers."
             onChange={e => setEditing({ ...editing, message: e.target.value })} />
 
-          <label style={L}>Link <span style={{ fontWeight: 400, color: 'var(--slate)' }}>— optional; can point at a settings page</span></label>
+          <label style={L}>Link <span style={{ fontWeight: 400, color: 'var(--slate)' }}>— optional</span></label>
           <input style={{ ...I, marginBottom: 8 }} value={editing.link_url || ''}
-            placeholder="/admin/settings#general"
+            placeholder="/admin/crm-settings/channels"
             onChange={e => setEditing({ ...editing, link_url: e.target.value })} />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 14 }}>
             {LINK_PRESETS.map(p => (
@@ -135,7 +117,7 @@ export default function BannersPage() {
             <input type="checkbox" checked={editing.is_active !== false}
               onChange={e => setEditing({ ...editing, is_active: e.target.checked })}
               style={{ width: 17, height: 17, accentColor: 'var(--coral)' }} />
-            <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>Show this announcement</span>
+            <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>Show this banner</span>
           </label>
 
           <div style={{ display: 'flex', gap: 8 }}>
@@ -150,7 +132,7 @@ export default function BannersPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 20 }}>
         {banners.length === 0 && !editing && (
           <p style={{ fontSize: 14, color: 'var(--slate)', textAlign: 'center', padding: 30 }}>
-            No announcements. Add one to tell your team about a new feature or a change.
+            No banners. Add one to announce a feature to every company.
           </p>
         )}
         {banners.map(b => (
@@ -181,7 +163,7 @@ export default function BannersPage() {
 
       <div style={{ marginTop: 20, padding: 14, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
         <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.6 }}>
-          Only the <strong>most recent live announcement</strong> is shown. Once someone dismisses it, they won&rsquo;t see that one again — but editing the message doesn&rsquo;t un-dismiss it, so publish a <strong>new</strong> announcement when you want everyone to see it again.
+          Only the <strong>most recent live banner</strong> is shown. Once someone dismisses it they won&rsquo;t see it again — and editing the text doesn&rsquo;t un-dismiss it, so publish a <strong>new</strong> banner when you want everyone to see it.
         </p>
       </div>
     </div>
