@@ -273,6 +273,107 @@ export default function InboxPage() {
   const [productSent, setProductSent] = useState<string>('')
   const [productError, setProductError] = useState('')
 
+  // ── Schedule a delivery from the chat ────────────────────────────────────
+  // Books it into the team calendar so every outlet can see the run, and tells
+  // the customer what window to expect.
+  const [showSchedule, setShowSchedule] = useState(false)
+  const [scheduling, setScheduling] = useState(false)
+  const [schedule, setSchedule] = useState<any>({
+    date: '', time_window: '', address: '', notes: '', location_id: '', notify: true,
+  })
+  const [outletsForSchedule, setOutletsForSchedule] = useState<any[]>([])
+
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      const { data } = await (supabase as any).from('company_locations')
+        .select('id, label, suburb, is_primary').eq('company_id', companyId)
+        .order('is_primary', { ascending: false })
+      setOutletsForSchedule(data || [])
+    })()
+  }, [companyId])
+
+  const openSchedule = () => {
+    // Sensible defaults: tomorrow, and the customer's address if we know it.
+    const t = new Date(); t.setDate(t.getDate() + 1)
+    setSchedule({
+      date: t.toISOString().slice(0, 10),
+      time_window: '',
+      address: contact?.address || '',
+      notes: '',
+      location_id: (selected as any)?.assigned_location_id || outletsForSchedule[0]?.id || '',
+      notify: true,
+    })
+    setShowSchedule(true)
+  }
+
+  const saveSchedule = async () => {
+    if (!companyId || !selected || !schedule.date) return
+    setScheduling(true)
+    try {
+      const who = contact?.name || contact?.email || 'customer'
+      const res = await fetch('/api/calendar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          event_type: 'delivery',
+          title: `Delivery — ${who}`,
+          notes: schedule.notes || null,
+          starts_at: new Date(`${schedule.date}T09:00:00`).toISOString(),
+          is_all_day: true,           // the window is what matters, not a clock time
+          time_window: schedule.time_window || null,
+          location_id: schedule.location_id || null,
+          contact_id: contact?.id || null,
+          conversation_id: selected.id,
+          address: schedule.address || null,
+          status: 'scheduled',
+          created_by: user?.id,
+        }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not schedule')
+
+      // Tell the customer what to expect.
+      if (schedule.notify) {
+        const when = new Date(schedule.date).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })
+        const text = `Your delivery is booked for ${when}${schedule.time_window ? `, between ${schedule.time_window}` : ''}.${schedule.address ? `\nAddress: ${schedule.address}` : ''}\nWe'll let you know when it's on its way.`
+        const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+        const smsNumber = smsDestination()
+
+        if (smsNumber) {
+          try {
+            await fetch('/api/telnyx/sms/send', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text, senderName: me, skipChatMessage: true }),
+            })
+          } catch {}
+        }
+
+        await (supabase as any).from('messages').insert({
+          conversation_id: selected.id, company_id: companyId,
+          sender_type: 'agent', sender_id: user?.id, sender_name: me,
+          content: text, message_type: 'text',
+          metadata: { delivery_scheduled: true },
+          delivery_channel: smsNumber ? 'sms' : 'chat',
+        })
+        await (supabase as any).from('conversations').update({
+          last_message: text.split('\n')[0], last_message_at: new Date().toISOString(),
+        }).eq('id', selected.id)
+      }
+
+      setShowSchedule(false)
+      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+      setMessages(msgs || [])
+      loadConversationExtras(selected.id)
+      scrollBottom()
+      showToast('Delivery scheduled — it\'s on the team calendar')
+    } catch (e: any) {
+      showToast('Could not schedule: ' + e.message)
+    } finally {
+      setScheduling(false)
+    }
+  }
+
   const searchProducts = async () => {
     if (!companyId || !productQuery.trim()) return
     if (productQuery.trim().length < 2) { setProductError('Type at least 2 characters.'); return }
@@ -1815,6 +1916,76 @@ export default function InboxPage() {
         .ai-spark:hover .ai-tip { opacity: 1 !important; }
       `}</style>
 
+      {/* Schedule a delivery */}
+      {showSchedule && selected && (
+        <div onClick={() => setShowSchedule(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 440, maxWidth: '95vw', maxHeight: '88vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24 }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>Schedule delivery</h3>
+            <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+              Books it into the team calendar so every outlet can see the run{contact?.name ? `, for ${contact.name}` : ''}.
+            </p>
+
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Date</label>
+            <input type="date" value={schedule.date}
+              onChange={e => setSchedule({ ...schedule, date: e.target.value })}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, boxSizing: 'border-box' }} />
+
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Time window</label>
+            <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
+              {['9am – 12pm', '12pm – 3pm', '3pm – 6pm', 'Anytime'].map(w => (
+                <button key={w} type="button" onClick={() => setSchedule({ ...schedule, time_window: w })}
+                  style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${schedule.time_window === w ? 'var(--coral)' : 'var(--border)'}`, background: schedule.time_window === w ? 'var(--peach)' : '#fff', color: schedule.time_window === w ? 'var(--coral)' : 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                  {w}
+                </button>
+              ))}
+            </div>
+            <input value={schedule.time_window} placeholder="Or type a custom window"
+              onChange={e => setSchedule({ ...schedule, time_window: e.target.value })}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, boxSizing: 'border-box' }} />
+
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Delivery address</label>
+            <input value={schedule.address} placeholder="5 Clunes Avenue, Dallas VIC"
+              onChange={e => setSchedule({ ...schedule, address: e.target.value })}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, boxSizing: 'border-box' }} />
+
+            {outletsForSchedule.length > 0 && (
+              <>
+                <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Delivering from</label>
+                <select value={schedule.location_id}
+                  onChange={e => setSchedule({ ...schedule, location_id: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, boxSizing: 'border-box', background: '#fff' }}>
+                  <option value="">Any outlet</option>
+                  {outletsForSchedule.map(o => <option key={o.id} value={o.id}>{o.label || o.suburb}</option>)}
+                </select>
+              </>
+            )}
+
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Notes for the team</label>
+            <textarea value={schedule.notes} placeholder="Heavy — two people. Gate code 1234."
+              onChange={e => setSchedule({ ...schedule, notes: e.target.value })}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, minHeight: 64, resize: 'vertical', marginBottom: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
+              <input type="checkbox" checked={schedule.notify}
+                onChange={e => setSchedule({ ...schedule, notify: e.target.checked })}
+                style={{ width: 17, height: 17, accentColor: 'var(--coral)' }} />
+              <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>Tell the customer the date and window</span>
+            </label>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={() => setShowSchedule(false)}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+              <button type="button" onClick={saveSchedule} disabled={!schedule.date || scheduling}
+                style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: (!schedule.date || scheduling) ? 0.6 : 1 }}>
+                {scheduling ? 'Scheduling…' : 'Schedule delivery'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Product search — look a product up and send its price or buy link */}
       {showProducts && selected && (
         <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, maxWidth: '95vw', background: '#fff', borderLeft: '1px solid var(--border)', boxShadow: '-8px 0 32px rgba(0,0,0,0.10)', zIndex: 250, display: 'flex', flexDirection: 'column' }}>
@@ -3153,6 +3324,13 @@ export default function InboxPage() {
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
                           </span>Charge Card
+                        </button>
+
+                        <button type="button" onClick={() => { setShowSendMenu(false); openSchedule() }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                          </span>Schedule delivery
                         </button>
 
                         <button type="button" onClick={() => { setShowSendMenu(false); saveCard() }}
