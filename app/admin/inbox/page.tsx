@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
@@ -270,15 +271,28 @@ export default function InboxPage() {
   const [products, setProducts] = useState<any[]>([])
   const [productSearching, setProductSearching] = useState(false)
   const [productSent, setProductSent] = useState<string>('')
+  const [productError, setProductError] = useState('')
 
   const searchProducts = async () => {
     if (!companyId || !productQuery.trim()) return
+    if (productQuery.trim().length < 2) { setProductError('Type at least 2 characters.'); return }
     setProductSearching(true)
+    setProductError('')
     try {
       const res = await fetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(productQuery.trim())}`)
       const d = await res.json()
+      if (!res.ok) {
+        // Say WHY instead of silently showing "no products found".
+        setProductError(d.error || 'Product search failed.')
+        setProducts([])
+        return
+      }
       setProducts(d.products || [])
-    } catch { setProducts([]) }
+      if (!(d.products || []).length) setProductError('')
+    } catch (e: any) {
+      setProductError('Could not reach the store: ' + (e?.message || 'network error'))
+      setProducts([])
+    }
     finally { setProductSearching(false) }
   }
 
@@ -1413,6 +1427,17 @@ export default function InboxPage() {
 
   // ── Move or view enquiries across outlets ─────────────────────────────────
   const [showMoveMenu, setShowMoveMenu] = useState(false)
+
+  // Close dropdowns when clicking anywhere else (or pressing Escape). Menus that
+  // only close by re-clicking the same button are quietly infuriating.
+  const sendMenuRef = useRef<HTMLDivElement>(null)
+  const channelMenuRef = useRef<HTMLDivElement>(null)
+  const moveMenuRef = useRef<HTMLDivElement>(null)
+  const quickMenuRef = useRef<HTMLDivElement>(null)
+  useClickOutside(showSendMenu, () => setShowSendMenu(false), [sendMenuRef])
+  useClickOutside(showChannelMenu, () => setShowChannelMenu(false), [channelMenuRef])
+  useClickOutside(showMoveMenu, () => setShowMoveMenu(false), [moveMenuRef])
+  useClickOutside(showQuickMenu, () => setShowQuickMenu(false), [quickMenuRef])
   const [outlets, setOutlets] = useState<any[]>([])
   useEffect(() => {
     if (!companyId) return
@@ -1816,9 +1841,15 @@ export default function InboxPage() {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
-            {products.length === 0 && !productSearching && (
+            {productError && (
+              <div style={{ padding: '10px 12px', borderRadius: 9, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12.5, marginBottom: 12, lineHeight: 1.45 }}>
+                {productError}
+              </div>
+            )}
+
+            {products.length === 0 && !productSearching && !productError && (
               <p style={{ fontSize: 13.5, color: 'var(--slate)', textAlign: 'center', padding: 30 }}>
-                {productQuery ? 'No products found.' : 'Search your WooCommerce catalogue.'}
+                {productQuery ? 'No products matched that search.' : 'Search your WooCommerce catalogue.'}
               </p>
             )}
 
@@ -2563,7 +2594,7 @@ export default function InboxPage() {
 
               {/* Move or view enquiries across outlets */}
               {outlets.length > 0 && (
-                <div style={{ position: 'relative' }}>
+                <div ref={moveMenuRef} style={{ position: 'relative' }}>
                   <button type="button" onClick={() => setShowMoveMenu(v => !v)} title="Move Or View Enquiries"
                     style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${showMoveMenu ? 'var(--coral)' : 'var(--border)'}`, background: showMoveMenu ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: showMoveMenu ? 'var(--coral)' : 'var(--slate)' }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -3042,7 +3073,7 @@ export default function InboxPage() {
 
               {/* Quick responses — type "/" to pick a saved reply */}
               {showQuickMenu && (
-                <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, marginBottom: 6, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 70, overflow: 'hidden', maxHeight: 260, overflowY: 'auto' }}>
+                <div ref={quickMenuRef} style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, marginBottom: 6, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 70, overflow: 'hidden', maxHeight: 260, overflowY: 'auto' }}>
                   <p style={{ margin: 0, padding: '8px 14px 6px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Quick responses</p>
                   {quickMatches.map((r, i) => (
                     <button key={r.id} type="button"
@@ -3098,7 +3129,7 @@ export default function InboxPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   {/* Send poll/survey/form/payment */}
-                  <div style={{ position: 'relative' }}>
+                  <div ref={sendMenuRef} style={{ position: 'relative' }}>
                     <button type="button" onClick={() => setShowSendMenu(v => !v)} title="Send poll, survey, form or payment"
                       style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: showSendMenu ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -3163,7 +3194,7 @@ export default function InboxPage() {
                     Send & Close
                   </button>
                   {/* Send + channel selector */}
-                  <div style={{ position: 'relative', display: 'flex' }}>
+                  <div ref={channelMenuRef} style={{ position: 'relative', display: 'flex' }}>
                     <button type="button" onClick={sendReply} disabled={sending || !reply.trim()}
                       style={{ padding: '8px 16px', borderRadius: '10px 0 0 10px', background: reply.trim() ? 'var(--coral)' : '#e5e7eb', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: reply.trim() ? 'pointer' : 'default', transition: 'all 0.15s' }}>
                       {sending ? 'Sending…' : `Send${sendChannel !== 'auto' ? ` via ${sendChannel.toUpperCase()}` : ''} →`}

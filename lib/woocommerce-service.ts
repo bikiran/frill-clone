@@ -223,22 +223,40 @@ export class WooCommerceService {
       has_variations: p.type === 'variable' && (p.variations?.length || 0) > 0,
       variation_ids: p.variations || [],
     })
-    try {
-      const base = `${this.config.storeUrl}/wp-json/wc/v3/products`
-      const h = this.wcHeaders()
-      // Run three lookups: text search, exact SKU, and partial-SKU-via-search.
-      const [byText, bySkuExact] = await Promise.all([
-        fetch(`${base}?search=${encodeURIComponent(query)}&per_page=${limit}&status=publish`, { headers: h }).then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch(`${base}?sku=${encodeURIComponent(query)}&per_page=${limit}&status=publish`, { headers: h }).then(r => r.ok ? r.json() : []).catch(() => []),
-      ])
-      // Merge, de-duplicate by id, keep order (text matches first, then SKU).
-      const seen = new Set<number>()
-      const merged: any[] = []
-      for (const p of [...(byText || []), ...(bySkuExact || [])]) {
-        if (p && p.id && !seen.has(p.id)) { seen.add(p.id); merged.push(norm(p)) }
+    // Don't swallow failures. Previously every error became an empty array, so a
+    // bad API key or a permissions problem looked identical to "no results" —
+    // which made this feature look broken with no way to tell why.
+    const base = `${this.config.storeUrl}/wp-json/wc/v3/products`
+    const h = this.wcHeaders()
+
+    const call = async (url: string) => {
+      const res = await fetch(url, { headers: h })
+      if (!res.ok) {
+        let detail = ''
+        try {
+          const body = await res.json()
+          detail = body?.message || ''
+        } catch {}
+        if (res.status === 401 || res.status === 403) {
+          throw new Error(`WooCommerce rejected the request (${res.status}). Check the API key has Read access. ${detail}`.trim())
+        }
+        throw new Error(`WooCommerce error ${res.status}${detail ? `: ${detail}` : ''}`)
       }
-      return merged
-    } catch { return [] }
+      return res.json()
+    }
+
+    // Text search and exact-SKU lookup. A SKU miss is normal, so that one is
+    // allowed to come back empty — but a text-search failure is a real error.
+    const byText = await call(`${base}?search=${encodeURIComponent(query)}&per_page=${limit}&status=publish`)
+    const bySkuExact = await call(`${base}?sku=${encodeURIComponent(query)}&per_page=${limit}&status=publish`).catch(() => [])
+
+    // Merge, de-duplicate by id, keep order (text matches first, then SKU).
+    const seen = new Set<number>()
+    const merged: any[] = []
+    for (const p of [...(byText || []), ...(bySkuExact || [])]) {
+      if (p && p.id && !seen.has(p.id)) { seen.add(p.id); merged.push(norm(p)) }
+    }
+    return merged
   }
 
   // Fetch the variations of a variable product (exact variation IDs + attributes).

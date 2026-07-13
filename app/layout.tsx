@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useClickOutside } from '@/lib/use-click-outside'
 import { TerminologyProvider } from '@/lib/terminologyContext'
 import { ToastProvider } from '@/components/ToastProvider'
 import LiveChat from '@/components/LiveChat'
@@ -72,6 +73,12 @@ export default function RootLayout({
   }, [])
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+
+  // Dropdowns should close when you click anywhere else, or press Escape.
+  const userMenuRef = useRef<HTMLDivElement>(null)
+  const notifMenuRef = useRef<HTMLDivElement>(null)
+  useClickOutside(showUserMenu, () => setShowUserMenu(false), [userMenuRef])
+  useClickOutside(showNotifications, () => setShowNotifications(false), [notifMenuRef])
   const [notifications, setNotifications] = useState<any[]>([])
   const [notificationFilter, setNotificationFilter] = useState<'unread' | 'all'>('unread')
   const [loadingNotifications, setLoadingNotifications] = useState(false)
@@ -770,6 +777,7 @@ export default function RootLayout({
               {user ? (
                 <>
                   {/* Notification icon */}
+                  <div ref={notifMenuRef} className="relative">
                   <button
                     onClick={() => setShowNotifications(!showNotifications)}
                     className="w-9 h-9 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition-smooth cursor-pointer relative"
@@ -865,7 +873,9 @@ export default function RootLayout({
                     </>
                   )}
                   
-                  <div className="relative" id="colvy-user-btn">
+                  </div>
+
+                  <div ref={userMenuRef} className="relative" id="colvy-user-btn">
                     <button
                       onClick={(e) => { e.stopPropagation(); setShowUserMenu(!showUserMenu) }}
                       className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white transition-smooth hover:shadow-md cursor-pointer overflow-hidden"
