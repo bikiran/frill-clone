@@ -15,6 +15,61 @@ export default function GalleryPage() {
   const [loadingData, setLoadingData] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [showQR, setShowQR] = useState(false)
+
+  // ── Bulk selection ────────────────────────────────────────────────────────
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const selectMode = selected.size > 0
+
+  const toggleSelect = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+  const selectAll = () => setSelected(new Set(items.map((i: any) => i.id)))
+  const clearSelection = () => setSelected(new Set())
+
+  const bulkDelete = async () => {
+    if (!confirm(`Delete ${selected.size} item${selected.size === 1 ? '' : 's'}? This can't be undone.`)) return
+    setBulkBusy(true)
+    try {
+      await (supabase as any).from('media_items').delete().in('id', Array.from(selected))
+      clearSelection()
+      await load()
+    } catch (e: any) {
+      alert('Could not delete: ' + e.message)
+    } finally { setBulkBusy(false) }
+  }
+
+  const bulkMove = async (folderId: string | null) => {
+    setBulkBusy(true)
+    try {
+      await (supabase as any).from('media_items')
+        .update({ folder_id: folderId }).in('id', Array.from(selected))
+      clearSelection()
+      await load()
+    } catch (e: any) {
+      alert('Could not move: ' + e.message)
+    } finally { setBulkBusy(false) }
+  }
+
+  // Download each selected file. Browsers throttle rapid downloads, so we stagger.
+  const bulkDownload = () => {
+    const chosen = items.filter((i: any) => selected.has(i.id))
+    chosen.forEach((item: any, idx: number) => {
+      setTimeout(() => {
+        const a = document.createElement('a')
+        a.href = item.url
+        a.download = item.title || 'download'
+        a.target = '_blank'
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+      }, idx * 350)
+    })
+  }
   const [dragOver, setDragOver] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -222,15 +277,34 @@ export default function GalleryPage() {
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
-              {items.map((item, i) => (
-                <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
-                  <div onClick={() => setLightboxIndex(i)} style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: 'var(--canvas)' }}>
+              {items.map((item, i) => {
+                const isSelected = selected.has(item.id)
+                return (
+                <div key={item.id} style={{ border: `1px solid ${isSelected ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 12, overflow: 'hidden', background: '#fff', boxShadow: isSelected ? '0 0 0 2px var(--peach)' : 'none', transition: 'all 0.12s' }}>
+                  <div style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: 'var(--canvas)' }}
+                    onClick={() => selectMode ? toggleSelect(item.id) : setLightboxIndex(i)}>
                     {item.kind === 'video' ? (
                       <video src={item.url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                       <img src={item.thumbnail_url || item.url} alt={item.title || ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                     )}
                     {item.kind === 'video' && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 26, textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>▶</div>}
+
+                    {/* Select checkbox — always available on hover, sticky in select mode */}
+                    <button type="button"
+                      onClick={e => { e.stopPropagation(); toggleSelect(item.id) }}
+                      title={isSelected ? 'Deselect' : 'Select'}
+                      style={{
+                        position: 'absolute', top: 8, left: 8, width: 24, height: 24, borderRadius: 7,
+                        border: isSelected ? 'none' : '2px solid rgba(255,255,255,0.9)',
+                        background: isSelected ? 'var(--coral)' : 'rgba(0,0,0,0.28)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer', padding: 0, backdropFilter: 'blur(3px)',
+                      }}>
+                      {isSelected && (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      )}
+                    </button>
                   </div>
                   <div style={{ padding: '8px 10px' }}>
                     <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title || 'Untitled'}</p>
@@ -244,7 +318,8 @@ export default function GalleryPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
@@ -257,6 +332,52 @@ export default function GalleryPage() {
           onIndex={setLightboxIndex}
           onClose={() => setLightboxIndex(null)}
         />
+      )}
+
+      {/* Bulk action bar — appears when items are selected */}
+      {selectMode && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 300,
+          display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 14,
+          background: '#0d0f14', color: '#fff', boxShadow: '0 12px 40px rgba(0,0,0,0.28)',
+          border: '1px solid rgba(255,255,255,0.10)', flexWrap: 'wrap', maxWidth: 'calc(100vw - 32px)',
+        }}>
+          <span style={{ fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+            {selected.size} selected
+          </span>
+
+          <button onClick={selectAll} disabled={bulkBusy}
+            style={{ padding: '6px 11px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            Select all
+          </button>
+
+          <span style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.14)' }} />
+
+          <select disabled={bulkBusy} defaultValue=""
+            onChange={e => { if (e.target.value !== '') bulkMove(e.target.value === '__none' ? null : e.target.value); e.target.value = '' }}
+            style={{ padding: '6px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+            <option value="" disabled>Move to…</option>
+            <option value="__none">Unfiled</option>
+            {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+
+          <button onClick={bulkDownload} disabled={bulkBusy}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download
+          </button>
+
+          <button onClick={bulkDelete} disabled={bulkBusy}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, background: '#dc2626', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            {bulkBusy ? '…' : 'Delete'}
+          </button>
+
+          <button onClick={clearSelection}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9aa3b2', display: 'flex', padding: 4 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
       )}
 
       {/* Scan-to-upload from a phone */}

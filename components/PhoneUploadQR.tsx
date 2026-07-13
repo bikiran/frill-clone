@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { supabase } from '@/lib/supabase'
 
 // Show a QR code the team scans to upload photos from their phone straight into
 // the gallery. Polls the session so the desktop reacts live as files land.
@@ -73,6 +74,19 @@ export default function PhoneUploadQR({
   // Generate the QR locally — nothing about this session leaves our own
   // infrastructure (the previous version called a public QR service).
   const [qrSvg, setQrSvg] = useState('')
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+
+  // Fetch the company logo so we can sit it in the middle of the code.
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any).from('companies')
+          .select('logo_url, name').eq('id', companyId).maybeSingle()
+        if (data?.logo_url) setLogoUrl(data.logo_url)
+      } catch {}
+    })()
+  }, [companyId])
+
   useEffect(() => {
     if (!url) return
     let cancelled = false
@@ -81,7 +95,9 @@ export default function PhoneUploadQR({
         const QR = (await import('qrcode')).default
         const svg = await QR.toString(url, {
           type: 'svg',
-          errorCorrectionLevel: 'M',
+          // Highest error correction, so the code still scans reliably even with
+          // a logo covering the middle of it.
+          errorCorrectionLevel: 'H',
           margin: 0,
           width: 220,
           color: { dark: '#0b0d12', light: '#ffffff' },
@@ -148,6 +164,21 @@ export default function PhoneUploadQR({
                   style={{ width: 220, height: 220, display: 'block' }}
                   dangerouslySetInnerHTML={{ __html: qrSvg }}
                 />
+
+                {/* Company logo in the middle. The code uses the highest error
+                    correction, so it still scans with the centre covered. */}
+                {logoUrl && (
+                  <span style={{
+                    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                    width: 54, height: 54, borderRadius: 14, background: '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.14)', padding: 5, boxSizing: 'border-box',
+                    animation: 'popIn .45s ease-out',
+                  }}>
+                    <img src={logoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 9 }} />
+                  </span>
+                )}
+
                 <span style={{ position: 'absolute', left: 14, right: 14, height: 2, background: 'linear-gradient(90deg, transparent, #ff7a6b, transparent)', animation: 'scanLine 2.4s ease-in-out infinite alternate', pointerEvents: 'none' }} />
               </div>
 

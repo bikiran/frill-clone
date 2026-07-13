@@ -42,38 +42,52 @@ export default function PhoneUpload() {
     const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
     setItems(prev => [...prev, { id, name: file.name, status: 'uploading', progress: 0, preview }])
 
-    const form = new FormData()
-    form.append('token', String(token))
-    form.append('file', file)
+    const fail = (msg: string) => {
+      setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'error', error: msg } : i))
+    }
 
     try {
-      // XHR so we get real upload progress on a phone connection.
+      // 1. Ask for a signed URL. The file itself goes STRAIGHT to storage —
+      //    routing it through our API capped uploads at a few megabytes, which
+      //    is why every video failed.
+      const signRes = await fetch('/api/upload-session/sign', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, fileName: file.name, contentType: file.type }),
+      })
+      const sign = await signRes.json()
+      if (!signRes.ok) { fail(sign.error || 'Could not start the upload'); return }
+
+      // 2. PUT the bytes directly to storage, with real progress.
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest()
-        xhr.open('POST', '/api/upload-session/upload')
+        xhr.open('PUT', sign.signedUrl)
+        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
         xhr.upload.onprogress = (e) => {
           if (!e.lengthComputable) return
-          const pct = Math.round((e.loaded / e.total) * 100)
+          // Leave a little headroom for the "recording it" step.
+          const pct = Math.round((e.loaded / e.total) * 95)
           setItems(prev => prev.map(i => i.id === id ? { ...i, progress: pct } : i))
         }
         xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'done', progress: 100 } : i))
-            resolve()
-          } else {
-            let msg = 'Upload failed'
-            try { msg = JSON.parse(xhr.responseText).error || msg } catch {}
-            setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'error', error: msg } : i))
-            reject(new Error(msg))
-          }
+          if (xhr.status >= 200 && xhr.status < 300) resolve()
+          else reject(new Error(`Upload failed (${xhr.status})`))
         }
-        xhr.onerror = () => {
-          setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'error', error: 'Network error' } : i))
-          reject(new Error('network'))
-        }
-        xhr.send(form)
+        xhr.onerror = () => reject(new Error('Network error — check your connection'))
+        xhr.send(file)
       })
-    } catch { /* the item already shows its error */ }
+
+      // 3. Record it in the gallery.
+      const doneRes = await fetch('/api/upload-session/complete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, path: sign.path, fileName: file.name, contentType: file.type }),
+      })
+      const done = await doneRes.json()
+      if (!doneRes.ok) { fail(done.error || 'Uploaded, but could not save it to the gallery'); return }
+
+      setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'done', progress: 100 } : i))
+    } catch (e: any) {
+      fail(e?.message || 'Upload failed')
+    }
   }
 
   const done = items.filter(i => i.status === 'done').length
