@@ -441,19 +441,50 @@ export default function RootLayout({
         // Browser notification for new items (works while the admin tab is open,
         // even if it's in the background). Interim until the mobile app ships.
         try {
-          if (payload.eventType === 'INSERT' && payload.new && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          if (payload.eventType === 'INSERT' && payload.new) {
             const n = payload.new
-            const notif = new Notification(n.actor_name ? `${n.actor_name}` : 'Colvy', {
-              body: n.message || 'You have a new notification',
-              icon: '/logo.png',
-              badge: '/favicon.png',
-              tag: n.id,
-            })
-            notif.onclick = () => {
-              window.focus()
-              if (n.conversation_id) window.location.href = `/admin/inbox?conversation=${n.conversation_id}`
-              else window.location.href = '/admin'
-              notif.close()
+
+            // A soft two-note chime — pleasant, quiet, and short. Synthesised so
+            // there's no audio file to load, and it fails silently if the browser
+            // blocks audio (which it does until the user has interacted).
+            try {
+              const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
+              if (Ctx) {
+                const ctx = new Ctx()
+                const now = ctx.currentTime
+                const play = (freq: number, at: number, dur: number, peak: number) => {
+                  const osc = ctx.createOscillator()
+                  const gain = ctx.createGain()
+                  osc.type = 'sine'
+                  osc.frequency.value = freq
+                  // Gentle swell then fade — no harsh click.
+                  gain.gain.setValueAtTime(0.0001, now + at)
+                  gain.gain.exponentialRampToValueAtTime(peak, now + at + 0.03)
+                  gain.gain.exponentialRampToValueAtTime(0.0001, now + at + dur)
+                  osc.connect(gain).connect(ctx.destination)
+                  osc.start(now + at)
+                  osc.stop(now + at + dur + 0.02)
+                }
+                play(880, 0, 0.18, 0.06)      // A5
+                play(1318.5, 0.10, 0.26, 0.045) // E6 — a soft rising fifth
+                setTimeout(() => ctx.close(), 900)
+              }
+            } catch {}
+
+            if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+              const notif = new Notification(n.actor_name ? `${n.actor_name}` : 'Colvy', {
+                body: n.message || 'You have a new notification',
+                icon: '/logo.png',
+                badge: '/favicon.png',
+                tag: n.id,
+                silent: true, // we play our own softer chime instead of the OS blare
+              })
+              notif.onclick = () => {
+                window.focus()
+                if (n.conversation_id) window.location.href = `/admin/inbox?conversation=${n.conversation_id}`
+                else window.location.href = '/admin'
+                notif.close()
+              }
             }
           }
         } catch {}

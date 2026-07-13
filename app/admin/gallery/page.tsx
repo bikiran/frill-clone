@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useCompanyUser } from '../crm-settings/_shared'
 import MediaGallery from '@/components/MediaGallery'
 import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
+import PhoneUploadQR from '@/components/PhoneUploadQR'
 
 export default function GalleryPage() {
   const { companyId, loading } = useCompanyUser()
@@ -13,6 +14,7 @@ export default function GalleryPage() {
   const [search, setSearch] = useState('')
   const [loadingData, setLoadingData] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [showQR, setShowQR] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -128,6 +130,11 @@ export default function GalleryPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={syncPrexty} style={{ padding: '9px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Sync from Prexty</button>
           {driveConfigured && <button onClick={() => connectSource('google_drive')} disabled={driveLoading || driveImporting} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}><GoogleDriveIcon /> {driveImporting ? 'Importing…' : 'Google Drive'}</button>}
+          <button onClick={() => setShowQR(true)} title="Upload from your phone by scanning a QR code"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><line x1="14" y1="14" x2="14" y2="14.01"/><line x1="18" y1="14" x2="21" y2="14"/><line x1="14" y1="18" x2="14" y2="21"/><line x1="18" y1="18" x2="21" y2="21"/></svg>
+            Phone upload
+          </button>
           <button onClick={() => fileRef.current?.click()} disabled={uploading} style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{uploading ? 'Uploading…' : '+ Upload media'}</button>
           <input ref={fileRef} type="file" accept="image/*,video/*" multiple onChange={onUpload} style={{ display: 'none' }} />
         </div>
@@ -249,6 +256,16 @@ export default function GalleryPage() {
           index={lightboxIndex}
           onIndex={setLightboxIndex}
           onClose={() => setLightboxIndex(null)}
+        />
+      )}
+
+      {/* Scan-to-upload from a phone */}
+      {showQR && companyId && (
+        <PhoneUploadQR
+          companyId={companyId}
+          folderId={activeFolder}
+          onClose={() => setShowQR(false)}
+          onUploaded={load}
         />
       )}
     </div>
