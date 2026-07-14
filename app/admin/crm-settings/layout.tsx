@@ -15,6 +15,7 @@ const NAV = [
   { slug: 'contact-form', label: 'Contact Form' },
   { slug: 'chat-widget', label: 'Chat Widget' },
   { slug: 'auto-replies', label: 'Automatic Replies' },
+  { slug: 'ai', label: 'AI Assistant' },
   { slug: 'calendar', label: 'Calendar' },
   { slug: 'archived-spam', label: 'Archived & Spam' },
   { slug: 'imports', label: 'Imports' },

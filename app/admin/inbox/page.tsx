@@ -3167,6 +3167,12 @@ export default function InboxPage() {
                       {/* Timestamp + read receipt */}
                       <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af', textAlign: isAgent ? 'right' : 'left', display: 'flex', gap: 5, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start' }}>
                         {fmtReceipt(msg.created_at, isAgent, (msg as any).delivery_channel || selected.channel)}
+                        {(msg as any).is_ai && (
+                          <span style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 3, color: '#8b5cf6', fontWeight: 700 }}>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
+                            AI reply · AI can make mistakes
+                          </span>
+                        )}
                         {/* Read-by avatars on visitor messages */}
                         {!isAgent && readBy.length > 0 && (
                           <span style={{ display: 'inline-flex', gap: 2, marginLeft: 2 }}>
