@@ -18,6 +18,7 @@ ALTER TABLE calls ADD COLUMN IF NOT EXISTS cause TEXT;                -- Telnyx 
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS recording_duration INT;
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS transcript_segments JSONB; -- [{speaker, text, start}]
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS answered_by TEXT;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS recording_error TEXT;   -- why a recording failed, instead of silence
 
 -- ── 2. Recording storage ────────────────────────────────────
 INSERT INTO storage.buckets (id, name, public)

@@ -135,13 +135,27 @@ export default function Dialer({ companyId, agentName, onClose }: Props) {
                 style={{ flex: 1, border: 'none', background: 'none', fontSize: 20, fontWeight: 600, color: 'var(--ink)', outline: 'none', minWidth: 0, letterSpacing: 0.5 }} />
             </div>
 
-            {/* Keypad */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 14 }}>
+            {/* Keypad — round, green, and clearly separate keys */}
+            <style>{`
+              .colvy-key {
+                width: 62px; height: 62px; margin: 0 auto;
+                border-radius: 50%;
+                border: 1.5px solid #bbf7d0;
+                background: radial-gradient(circle at 50% 35%, #f0fdf4 0%, #dcfce7 100%);
+                color: #065f46;
+                font-size: 22px; font-weight: 700;
+                cursor: pointer;
+                display: flex; align-items: center; justify-content: center;
+                box-shadow: 0 2px 4px rgba(6,95,70,0.10);
+                transition: transform 0.06s ease, background 0.12s ease, box-shadow 0.12s ease;
+                -webkit-tap-highlight-color: transparent;
+              }
+              .colvy-key:hover { background: #bbf7d0; box-shadow: 0 4px 10px rgba(6,95,70,0.18); }
+              .colvy-key:active { transform: scale(0.93); background: #86efac; box-shadow: inset 0 2px 6px rgba(6,95,70,0.25); }
+            `}</style>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16, justifyItems: 'center' }}>
               {KEYS.map(k => (
-                <button key={k} type="button" onClick={() => press(k)}
-                  style={{ height: 56, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--canvas)', fontSize: 21, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer' }}>
-                  {k}
-                </button>
+                <button key={k} type="button" onClick={() => press(k)} className="colvy-key">{k}</button>
               ))}
             </div>
 

@@ -7,6 +7,7 @@ import Link from 'next/link'
 import CallBar from '@/components/CallBar'
 import CallCard from '@/components/CallCard'
 import Dialer from '@/components/Dialer'
+import DeliveryPanel from '@/components/DeliveryPanel'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import DoaPanel from '@/components/DoaPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
@@ -615,6 +616,11 @@ export default function InboxPage() {
   // ── Filter panel (Coax style) ─────────────────────────────────────────────
   const [showFilters, setShowFilters] = useState(false)
   const [showDialer, setShowDialer] = useState(false)
+  const [showPod, setShowPod] = useState(false)
+  const [podNote, setPodNote] = useState('')
+  const [podFiles, setPodFiles] = useState<File[]>([])
+  const [podSending, setPodSending] = useState(false)
+  const [showDeliveryPanel, setShowDeliveryPanel] = useState(false)
   const [filters, setFilters] = useState<any>({
     dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', oldestFirst: false,
   })
@@ -1640,6 +1646,68 @@ export default function InboxPage() {
     } catch (e: any) { showToast(e.message || 'Failed to send coupon') } finally { setCouponSaving(false) }
   }
 
+  // ── Proof of Delivery ─────────────────────────────────────────────────────
+  // Attach the delivery photo(s) + a note, send it to the customer in the chat
+  // (and by SMS if we have their mobile), and mark the delivery as delivered.
+  const sendProofOfDelivery = async () => {
+    if (!selected || !companyId) return
+    if (podFiles.length === 0 && !podNote.trim()) { showToast('Add a photo or a note first'); return }
+    setPodSending(true)
+    try {
+      const attachments: any[] = []
+      for (const file of podFiles) {
+        const fd = new FormData()
+        fd.append('file', file)
+        fd.append('companyId', companyId)
+        fd.append('conversationId', selected.id)
+        const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+        const data = await res.json()
+        if (!res.ok) { showToast('Photo upload failed: ' + (data.error || 'error')); continue }
+        attachments.push({ url: data.url, name: data.name, type: data.type, kind: data.kind })
+      }
+
+      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      const body = podNote.trim() || 'Your order has been delivered. Attached is the proof of delivery — thank you!'
+
+      await (supabase as any).from('messages').insert({
+        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+        sender_name: me, content: body, attachments,
+        metadata: { proof_of_delivery: true },
+      })
+      await (supabase as any).from('conversations').update({
+        last_message: 'Proof of delivery sent', last_message_at: new Date().toISOString(),
+      }).eq('id', selected.id)
+
+      // Text it too, when we have a mobile.
+      const smsNumber = smsDestination()
+      if (smsNumber) {
+        try {
+          await fetch('/api/telnyx/sms/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId, conversationId: selected.id, to: smsNumber,
+              text: `${body}${attachments[0]?.url ? `\n${attachments[0].url}` : ''}`,
+              senderName: me, skipChatMessage: true,
+            }),
+          })
+        } catch {}
+      }
+
+      // Mark the delivery done on the contact.
+      if (contact?.id) {
+        await (supabase as any).from('contacts').update({
+          delivery_status: 'delivered',
+        }).eq('id', contact.id)
+        setContact((c: any) => ({ ...c, delivery_status: 'delivered' }))
+      }
+
+      setShowPod(false); setPodFiles([]); setPodNote('')
+      showToast('Proof of delivery sent')
+    } catch (e: any) {
+      showToast(e.message || 'Could not send proof of delivery')
+    } finally { setPodSending(false) }
+  }
+
   const createTicket = async () => {
     if (!companyId || !ticketSubject.trim()) return
     setTicketSaving(true)
@@ -2368,6 +2436,60 @@ export default function InboxPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Proof of Delivery panel */}
+      {showPod && (
+        <div onClick={() => setShowPod(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 460, maxWidth: '95vw', maxHeight: '88vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 22 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                {Icon.box(17)} Proof of Delivery
+              </h2>
+              <button type="button" onClick={() => setShowPod(false)}
+                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--slate)', marginBottom: 6 }}>Delivery photo(s)</label>
+            <input type="file" accept="image/*,video/*" multiple
+              onChange={e => setPodFiles(Array.from(e.target.files || []))}
+              style={{ width: '100%', fontSize: 12.5, marginBottom: 6 }} />
+            {podFiles.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                {podFiles.map((f, i) => (
+                  <span key={i} style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 9px', borderRadius: 7, background: 'var(--peach)', color: 'var(--coral)' }}>{f.name}</span>
+                ))}
+              </div>
+            )}
+
+            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--slate)', margin: '10px 0 6px' }}>Message to the customer</label>
+            <textarea value={podNote} onChange={e => setPodNote(e.target.value)} rows={4}
+              placeholder="Your order has been delivered. Attached is the proof of delivery — thank you!"
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13.5, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', resize: 'vertical' }} />
+
+            <button type="button" onClick={sendProofOfDelivery} disabled={podSending}
+              style={{ width: '100%', marginTop: 14, padding: 12, borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: podSending ? 'wait' : 'pointer' }}>
+              {podSending ? 'Sending…' : 'Send proof of delivery'}
+            </button>
+            <p style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 9, lineHeight: 1.5 }}>
+              Sent in the chat, texted to their mobile if we have one, and the delivery is marked as delivered.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Delivery calendar slide-out */}
+      {showDeliveryPanel && contact && (
+        <DeliveryPanel
+          companyId={companyId}
+          contact={contact}
+          onClose={() => setShowDeliveryPanel(false)}
+          onSaved={(patch: any) => setContact((c: any) => ({ ...c, ...patch }))}
+        />
       )}
 
       {showDialer && (
@@ -3862,6 +3984,7 @@ export default function InboxPage() {
               send_coupon: { label: 'Send Coupon', icon: Icon.coupon },
               booking: { label: 'Booking', icon: Icon.calendar },
               support_ticket: { label: 'Support Ticket', icon: Icon.ticket },
+              proof_of_delivery: { label: 'Proof of Delivery', icon: Icon.box },
               custom_form: { label: 'Custom Form', icon: Icon.form },
             }
             return (
@@ -3872,7 +3995,7 @@ export default function InboxPage() {
                 </button>
                 {showActionMenu && (
                   <div style={{ position: 'absolute', top: '100%', left: 14, right: 14, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', zIndex: 20, overflow: 'hidden', marginTop: 2 }}>
-                    {enabledActions.map(([key, cfg]: any) => {
+                    {[...enabledActions, ...(enabledActions.some(([k]: any) => k === 'proof_of_delivery') ? [] : [['proof_of_delivery', {}]])].map(([key, cfg]: any) => {
                       const meta = ACTION_META[key] || { label: key, icon: (s?: number) => <span>•</span> }
                       return (
                         <button key={key} type="button"
@@ -3882,6 +4005,7 @@ export default function InboxPage() {
                             else if (key === 'create_order') setShowCreateOrder(true)
                             else if (key === 'send_coupon') { setCouponAmount(''); setCouponCode(''); setCouponType('fixed'); setCouponOneTime(true); setCouponExpiry(''); setShowCoupon(true) }
                             else if (key === 'support_ticket') { setTicketSubject(selected?.subject || ''); setTicketDesc(''); setTicketPriority('normal'); setShowTicketPanel(true) }
+                            else if (key === 'proof_of_delivery') { setPodNote(''); setPodFiles([]); setShowPod(true) }
                             else if (cfg.form_id) {
                               const { data: form } = await (supabase as any).from('forms').select('*').eq('id', cfg.form_id).maybeSingle()
                               if (form) sendInteractive('form', form)
@@ -4021,15 +4145,19 @@ export default function InboxPage() {
                       <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
                         {Icon.calendar(12)} Scheduled Delivery
                       </p>
-                      <input type="date"
-                        value={(contact as any).scheduled_delivery || ''}
-                        onChange={async e => {
-                          const v = e.target.value || null
-                          setContact((c: any) => ({ ...c, scheduled_delivery: v }))
-                          await (supabase as any).from('contacts').update({ scheduled_delivery: v }).eq('id', contact.id)
-                          showToast(v ? 'Delivery date saved' : 'Delivery date cleared')
-                        }}
-                        style={{ ...inp, fontSize: 12.5, padding: '7px 9px' }} />
+                      {/* Opens the full calendar slide-out rather than a bare
+                          date box — you can pick the date, set the window, add
+                          a note and it books a real Delivery event on the team
+                          calendar. */}
+                      <button type="button" onClick={() => setShowDeliveryPanel(true)}
+                        style={{ ...inp, fontSize: 12.5, padding: '8px 9px', textAlign: 'left', cursor: 'pointer', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                        <span style={{ color: (contact as any).scheduled_delivery ? 'var(--ink)' : '#c0c0c5' }}>
+                          {(contact as any).scheduled_delivery
+                            ? new Date((contact as any).scheduled_delivery).toLocaleDateString('en-AU', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+                            : 'Schedule a delivery'}
+                        </span>
+                        <span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{Icon.calendar(14)}</span>
+                      </button>
                     </div>
 
                     <div>

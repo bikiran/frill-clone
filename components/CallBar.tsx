@@ -47,7 +47,9 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const ringbackRef = useRef<any>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
-  const recStreamsRef = useRef<MediaStream[]>([])
+  const micStreamRef = useRef<MediaStream | null>(null)
+  const [recording, setRecording] = useState(false)
+  const [recErr, setRecErr] = useState('')
 
   // ── Call recording ────────────────────────────────────────────────────────
   // Telnyx records calls placed through Call Control, but a WebRTC/SIP-credential
@@ -57,24 +59,36 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const startRecording = (call: any) => {
     try {
       const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
-      if (!Ctx || typeof MediaRecorder === 'undefined') return
+      if (!Ctx || typeof MediaRecorder === 'undefined') { setRecErr('Recording unsupported in this browser'); return }
       const ctx = audioCtxRef.current || new Ctx()
       audioCtxRef.current = ctx
+      if (ctx.state === 'suspended') ctx.resume()
       const dest = ctx.createMediaStreamDestination()
+      let sources = 0
 
-      // Far end: the remote stream the SDK attached to the call.
-      const remote: MediaStream | undefined = call?.remoteStream || call?.options?.remoteStream
-      if (remote && remote.getAudioTracks().length) {
+      // OUR side: the mic stream we opened before dialling and deliberately kept.
+      const mic = micStreamRef.current
+      if (mic && mic.getAudioTracks().length) {
+        ctx.createMediaStreamSource(mic).connect(dest)
+        sources++
+      }
+
+      // THEIR side: the SDK plays the far end through our <audio> element, so
+      // capture it straight off that element. This works regardless of whether
+      // the SDK exposes call.remoteStream (it often doesn't).
+      let remote: MediaStream | null =
+        (call?.remoteStream as MediaStream) || (call?.options?.remoteStream as MediaStream) || null
+      if (!remote || !remote.getAudioTracks?.().length) {
+        const el = document.getElementById('colvy-callbar-audio') as any
+        if (el?.captureStream) { try { remote = el.captureStream() } catch {} }
+        else if (el?.mozCaptureStream) { try { remote = el.mozCaptureStream() } catch {} }
+      }
+      if (remote && remote.getAudioTracks?.().length) {
         ctx.createMediaStreamSource(remote).connect(dest)
-        recStreamsRef.current.push(remote)
+        sources++
       }
-      // Our side: the local mic stream.
-      const local: MediaStream | undefined = call?.localStream || call?.options?.localStream
-      if (local && local.getAudioTracks().length) {
-        ctx.createMediaStreamSource(local).connect(dest)
-        recStreamsRef.current.push(local)
-      }
-      if (!dest.stream.getAudioTracks().length) return   // nothing to record
+
+      if (!sources) { setRecErr('No audio to record'); return }
 
       const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
@@ -83,9 +97,13 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       chunksRef.current = []
       rec.ondataavailable = e => { if (e.data && e.data.size) chunksRef.current.push(e.data) }
       rec.onstop = () => { void uploadRecording() }
-      rec.start(1000)   // 1s timeslices, so a crash still leaves usable audio
+      rec.start(1000)
       recorderRef.current = rec
-    } catch (e) { console.error('[call recording] could not start', e) }
+      setRecording(true)
+    } catch (e: any) {
+      console.error('[call recording] could not start', e)
+      setRecErr(e?.message || 'Recording failed to start')
+    }
   }
 
   const stopRecording = () => {
@@ -116,7 +134,17 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callId: rowId, companyId, conversationId }),
       }).catch(() => {})
-    } catch (e) { console.error('[call recording] upload failed', e) }
+    } catch (e: any) {
+      console.error('[call recording] upload failed', e)
+      // Don't fail silently — a missing 'call-recordings' bucket (i.e. the V170
+      // migration hasn't been run) looks identical to "recording just doesn't
+      // work" otherwise.
+      const msg = /bucket/i.test(e?.message || '')
+        ? 'Recording failed: the call-recordings bucket is missing — run COLVY_V170_CALLS_DELIVERY.sql'
+        : `Recording upload failed: ${e?.message || 'unknown error'}`
+      setRecErr(msg)
+      try { await (supabase as any).from('calls').update({ recording_error: msg }).eq('id', rowId) } catch {}
+    }
   }
 
   useEffect(() => () => { cleanup() }, [])
@@ -140,8 +168,12 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       // 0. Ask for the microphone up-front. If it's blocked, fail NOW with a
       // clear message instead of a cryptic mid-call error from the SDK.
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        stream.getTracks().forEach(t => t.stop())
+        // KEEP this stream — we record our own side of the call from it. The
+        // old code stopped its tracks immediately, and then tried to record
+        // from call.remoteStream/localStream, which the Telnyx SDK doesn't
+        // reliably expose. dest.stream ended up with zero tracks and recording
+        // aborted silently — which is why no recording or summary ever appeared.
+        micStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true })
       } catch {
         setErrorMsg('Microphone blocked — allow mic access for this site and try again')
         setState('error')
@@ -245,22 +277,35 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       const gain = ctx.createGain()
       osc.type = 'sine'
       osc.frequency.value = freq
-      gain.gain.setValueAtTime(vol, ctx.currentTime)
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + ms / 1000)
+      const t = ctx.currentTime
+      const dur = ms / 1000
+      // The old envelope jumped straight to full volume and then decayed, which
+      // produces a click/pop at BOTH edges — that's the "big noise" on hangup.
+      // Ramp up and back down instead, and stay well clear of zero (an
+      // exponential ramp to 0.0001 from a hard start is what cracked).
+      gain.gain.setValueAtTime(0.0001, t)
+      gain.gain.linearRampToValueAtTime(vol, t + 0.015)          // 15ms attack
+      gain.gain.setValueAtTime(vol, t + Math.max(0.02, dur - 0.04))
+      gain.gain.linearRampToValueAtTime(0.0001, t + dur)          // smooth release
       osc.connect(gain); gain.connect(ctx.destination)
-      osc.start(); osc.stop(ctx.currentTime + ms / 1000)
+      osc.start(t); osc.stop(t + dur + 0.02)
     } catch {}
   }
   // Australian ringback: two short bursts, then a pause — repeating.
   const startRingback = () => {
     stopRingback()
-    const ring = () => { beep(425, 400, 0.08); setTimeout(() => beep(425, 400, 0.08), 600) }
+    const ring = () => { beep(425, 400, 0.07); setTimeout(() => beep(425, 400, 0.07), 600) }
     ring()
     ringbackRef.current = setInterval(ring, 3000)
   }
   const stopRingback = () => { if (ringbackRef.current) { clearInterval(ringbackRef.current); ringbackRef.current = null } }
-  const toneConnected = () => { stopRingback(); beep(880, 120) }
-  const toneEnded = () => { stopRingback(); beep(400, 180); setTimeout(() => beep(300, 220), 190) }
+  const toneConnected = () => { stopRingback(); beep(880, 140, 0.09) }
+  // A soft two-note fall, quiet and fully ramped — no click.
+  const toneEnded = () => {
+    stopRingback()
+    beep(520, 130, 0.06)
+    setTimeout(() => beep(390, 200, 0.05), 130)
+  }
 
   // Telnyx hangup causes are machine-speak. Say what to actually DO about them.
   const explainCause = (cause: string): string => {
@@ -341,17 +386,29 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
 
   // Active call panel
   return (<>
+    <style>{`@keyframes recPulse { 0%,100% { opacity: 1 } 50% { opacity: 0.25 } }`}</style>
     <audio id="colvy-callbar-audio" autoPlay style={{ display: 'none' }} />
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderRadius: 12, background: state === 'error' ? '#fef2f2' : '#0d0d0d', color: '#fff' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{ margin: 0, fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {state === 'error' ? <span style={{ color: '#dc2626' }}>{errorMsg}</span> : (contactName || toNumber)}
         </p>
-        <p style={{ margin: 0, fontSize: 11, opacity: 0.7 }}>
+        <p style={{ margin: 0, fontSize: 11, opacity: 0.7, display: 'flex', alignItems: 'center', gap: 6 }}>
           {state === 'connecting' && 'Connecting…'}
           {state === 'ringing' && 'Ringing…'}
-          {state === 'active' && fmtDuration(seconds)}
+          {state === 'active' && (
+            <>
+              {fmtDuration(seconds)}
+              {recording && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#f87171', fontWeight: 700 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#dc2626', animation: 'recPulse 1.4s ease-in-out infinite' }} />
+                  REC
+                </span>
+              )}
+            </>
+          )}
           {state === 'ended' && 'Call ended'}
+          {recErr && <span style={{ color: '#fca5a5' }}>{recErr}</span>}
         </p>
       </div>
       {state === 'active' && (
