@@ -71,20 +71,62 @@ function decodeB64(data: string): string {
   } catch { return '' }
 }
 
-// Pull the plain-text body out of a Gmail payload (recursing through parts).
-function extractBody(payload: any): string {
+// Turn an HTML email into readable text.
+//
+// The old version did `.replace(/<[^>]+>/g, ' ')` — which removes TAGS but
+// leaves the CONTENTS of <style> and <script> behind, so the agent was reading
+// raw CSS ("body { width: 100% !important; ... }") instead of the message. Kill
+// those blocks entirely first, then unwrap the markup.
+export function htmlToText(html: string): string {
+  if (!html) return ''
+  let t = html
+  // Drop anything that isn't prose.
+  t = t.replace(/<style[\s\S]*?<\/style>/gi, ' ')
+  t = t.replace(/<script[\s\S]*?<\/script>/gi, ' ')
+  t = t.replace(/<head[\s\S]*?<\/head>/gi, ' ')
+  t = t.replace(/<!--[\s\S]*?-->/g, ' ')
+  t = t.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, ' ')
+  // Keep the shape of the message: block elements become line breaks.
+  t = t.replace(/<br\s*\/?>/gi, '\n')
+  t = t.replace(/<\/(p|div|tr|li|h[1-6]|table)>/gi, '\n')
+  t = t.replace(/<li[^>]*>/gi, '• ')
+  // Now remove the remaining tags.
+  t = t.replace(/<[^>]+>/g, '')
+  // Decode the common entities (&amp; was showing up literally in the thread).
+  const ENT: Record<string, string> = {
+    amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+    copy: '©', reg: '®', trade: '™', hellip: '…', mdash: '—', ndash: '–',
+    lsquo: '\u2018', rsquo: '\u2019', ldquo: '\u201C', rdquo: '\u201D',
+  }
+  t = t.replace(/&([a-z]+);/gi, (m, e) => ENT[String(e).toLowerCase()] ?? m)
+  t = t.replace(/&#(\d+);/g, (_m, d) => String.fromCharCode(Number(d)))
+  t = t.replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCharCode(parseInt(h, 16)))
+  // Tidy the whitespace without flattening paragraphs into one blob.
+  t = t.replace(/[ \t\u00a0]+/g, ' ')
+  t = t.replace(/ ?\n ?/g, '\n')
+  t = t.replace(/\n{3,}/g, '\n\n')
+  return t.trim()
+}
+
+// Pull the readable body out of a Gmail payload.
+// Prefers text/plain ANYWHERE in the tree before falling back to HTML — the old
+// code walked parts in order and could grab an HTML part even when a clean
+// plain-text alternative existed further along.
+function findPart(payload: any, mime: string): string {
   if (!payload) return ''
-  if (payload.mimeType === 'text/plain' && payload.body?.data) return decodeB64(payload.body.data)
-  if (payload.parts?.length) {
-    // Prefer plain text; fall back to stripping HTML.
-    for (const p of payload.parts) {
-      const t = extractBody(p)
-      if (t) return t
-    }
+  if (payload.mimeType === mime && payload.body?.data) return decodeB64(payload.body.data)
+  for (const p of payload.parts || []) {
+    const found = findPart(p, mime)
+    if (found) return found
   }
-  if (payload.mimeType === 'text/html' && payload.body?.data) {
-    return decodeB64(payload.body.data).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-  }
+  return ''
+}
+
+function extractBody(payload: any): string {
+  const plain = findPart(payload, 'text/plain')
+  if (plain.trim()) return plain
+  const html = findPart(payload, 'text/html')
+  if (html.trim()) return htmlToText(html)
   return ''
 }
 
@@ -111,12 +153,64 @@ function stripQuoted(text: string): string {
   return out.join('\n').trim() || text.trim()
 }
 
+// ── Is this a real customer email, or bulk noise? ───────────────────────────
+// A shared mailbox is mostly newsletters, receipts from vendors, shipping
+// notices and auto-replies. Pulling all of it into the inbox buries the actual
+// enquiries. This filters on the SAME signals a mail client uses — the standard
+// bulk-mail headers, which marketing senders are obliged to set — rather than
+// guessing from wording.
+//
+// Returns a reason string when the mail should be skipped, or null to keep it.
+export function junkReason(headers: any[], fromEmail: string, subject: string, opts: any = {}): string | null {
+  const h = (n: string) => header(headers, n).toLowerCase()
+  const addr = (fromEmail || '').toLowerCase()
+  const local = addr.split('@')[0] || ''
+  const subj = (subject || '').toLowerCase()
+
+  // Automated senders that can't receive a reply anyway.
+  if (opts.ignore_noreply !== false) {
+    if (/^(no-?reply|do-?not-?reply|donotreply|bounce|mailer-daemon|postmaster|notifications?|alerts?)/.test(local)) {
+      return 'no-reply sender'
+    }
+  }
+
+  // Auto-replies / out-of-office / vacation responders.
+  if (opts.ignore_autoreply !== false) {
+    const autoSubmitted = h('auto-submitted')          // RFC 3834
+    if (autoSubmitted && autoSubmitted !== 'no') return 'auto-reply'
+    if (h('x-autoreply') || h('x-autorespond') || h('x-auto-response-suppress')) return 'auto-reply'
+    if (/^(auto(matic)?[ -]?(reply|response)|out of (the )?office|away from|vacation|thank you for (contacting|your email))/i.test(subj)) {
+      return 'auto-reply'
+    }
+  }
+
+  // Newsletters and marketing. List-Unsubscribe is the giveaway: transactional
+  // mail a customer actually needs (order confirmations, shipping) does not
+  // carry it, but every legitimate bulk sender must.
+  if (opts.ignore_newsletters !== false) {
+    if (h('list-unsubscribe') || h('list-id')) return 'newsletter / bulk mail'
+    const prec = h('precedence')
+    if (prec === 'bulk' || prec === 'list' || prec === 'junk') return 'bulk mail'
+    if (h('x-campaign-id') || h('x-mailer-campaign') || h('feedback-id')) return 'marketing campaign'
+  }
+
+  if (opts.ignore_marketing !== false) {
+    if (/^(marketing|newsletter|promo|promotions?|offers?|deals?|news|updates?|info|hello|hi|team)@/.test(addr + '@')) {
+      // only when combined with a bulk signal above; a plain info@ can be a real
+      // customer, so this alone is NOT enough to bin it.
+    }
+    if (/(unsubscribe|% off|sale ends|limited time|black friday|newsletter)/i.test(subj)) return 'marketing'
+  }
+
+  return null
+}
+
 /**
  * Pull new mail from a connected Gmail mailbox into Colvy.
  * Only inbound messages are imported (never our own sent mail), and each Gmail
  * message id is recorded so nothing is imported twice.
  */
-export async function syncGmailChannel(channelId: string): Promise<{ imported: number; error?: string }> {
+export async function syncGmailChannel(channelId: string): Promise<{ imported: number; skipped?: number; error?: string }> {
   const db = admin()
   const { data: channel } = await db.from('email_channels').select('*').eq('id', channelId).maybeSingle()
   if (!channel || channel.provider !== 'gmail') return { imported: 0, error: 'Not a Gmail channel' }
@@ -143,6 +237,7 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
   }
 
   let imported = 0
+  let skipped = 0
 
   for (const m of list.messages || []) {
     // Skip anything we already have.
@@ -164,6 +259,22 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
 
     // Respect the mailbox's allow/block rules.
     if (!(await passesRules(db, channel, from.email))) continue
+
+    // Bin the bulk noise — unless an explicit ALLOW rule named this sender, in
+    // which case the business has said they want it.
+    const { data: allowRules } = await db.from('email_rules')
+      .select('pattern').eq('email_channel_id', channel.id).eq('rule_type', 'allow').eq('is_enabled', true)
+    const explicitlyAllowed = (allowRules || []).some((r: any) => {
+      const pat = String(r.pattern).toLowerCase().trim()
+      return pat === from.email || pat === (from.email.split('@')[1] || '')
+    })
+    if (!explicitlyAllowed) {
+      const reason = junkReason(headers, from.email, subject, channel.filter_settings || {})
+      if (reason) {
+        skipped++
+        continue
+      }
+    }
 
     const content = stripQuoted(extractBody(full.payload)) || full.snippet || ''
     const companyId = channel.company_id
@@ -235,7 +346,7 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
     sync_error: null,
   }).eq('id', channelId)
 
-  return { imported }
+  return { imported, skipped }
 }
 
 // Send a reply through Gmail (so it appears in the business's Sent folder and

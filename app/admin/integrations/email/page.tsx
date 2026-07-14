@@ -251,12 +251,60 @@ export default function EmailPage() {
                 </p>
               )}
 
-              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* ── What to let through ─────────────────────────────────────
+                  A shared mailbox is mostly newsletters, vendor receipts and
+                  auto-replies. Without this, all of it lands in the inbox and
+                  buries the actual enquiries. */}
+              <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
+                <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--slate)' }}>Keep the inbox clean</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {([
+                    ['ignore_noreply', 'Ignore no-reply senders', 'no-reply@, do-not-reply@, mailer-daemon…'],
+                    ['ignore_newsletters', 'Ignore newsletters & bulk mail', 'anything with a List-Unsubscribe header'],
+                    ['ignore_marketing', 'Ignore marketing campaigns', 'promotional blasts and offers'],
+                    ['ignore_autoreply', 'Ignore auto-replies', 'out-of-office and vacation responders'],
+                  ] as [string, string, string][]).map(([key, label, hint]) => {
+                    const fs = a.filter_settings || {}
+                    const on = fs[key] !== false
+                    return (
+                      <label key={key} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={on}
+                          onChange={e => updateAccount(a.id, { filter_settings: { ...fs, [key]: e.target.checked } })}
+                          style={{ width: 15, height: 15, accentColor: 'var(--coral)', marginTop: 1, flexShrink: 0 }} />
+                        <span>
+                          <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink)' }}>{label}</span>
+                          <span style={{ display: 'block', fontSize: 11, color: 'var(--slate)' }}>{hint}</span>
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+                <p style={{ margin: '9px 0 0', fontSize: 11, color: 'var(--slate)', lineHeight: 1.5 }}>
+                  A sender you add to the allow list always gets through, whatever these say.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                   <input type="checkbox" checked={a.sync_all !== false}
                     onChange={e => updateAccount(a.id, { sync_all: e.target.checked })}
                     style={{ width: 16, height: 16, accentColor: 'var(--coral)' }} />
                   <span style={{ fontSize: 12.5, color: 'var(--ink)' }}>Bring in all emails</span>
+                </label>
+
+                {/* Auto-sync interval. Mail used to arrive ONLY when someone
+                    pressed "Sync now", so customer email sat unseen in Gmail. */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ fontSize: 12.5, color: 'var(--ink)' }}>Auto-sync</span>
+                  <select value={String(a.sync_interval_minutes ?? 5)}
+                    onChange={e => updateAccount(a.id, { sync_interval_minutes: Number(e.target.value) })}
+                    style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12.5, background: '#fff' }}>
+                    <option value="0">Off</option>
+                    <option value="5">Every 5 min</option>
+                    <option value="15">Every 15 min</option>
+                    <option value="30">Every 30 min</option>
+                    <option value="60">Hourly</option>
+                  </select>
                 </label>
 
                 {locations.length > 0 && (

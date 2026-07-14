@@ -82,13 +82,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'update_account') {
-      const { id, from_name, location_id, is_active, sync_all } = body
+      const { id, from_name, location_id, is_active, sync_all, sync_interval_minutes, filter_settings } = body
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
       const patch: any = {}
       if (from_name !== undefined) patch.from_name = from_name
       if (location_id !== undefined) patch.location_id = location_id || null
       if (is_active !== undefined) patch.is_active = is_active
       if (sync_all !== undefined) patch.sync_all = sync_all
+      if (sync_interval_minutes !== undefined) patch.sync_interval_minutes = Number(sync_interval_minutes)
+      if (filter_settings !== undefined) patch.filter_settings = filter_settings
       await db.from('email_channels').update(patch).eq('id', id)
       return NextResponse.json({ ok: true })
     }

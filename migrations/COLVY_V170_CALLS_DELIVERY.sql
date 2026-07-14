@@ -54,13 +54,33 @@ NOTIFY pgrst, 'reload schema';
 -- precisely the ones that need attention. The badge now reads this column.
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS order_status TEXT;
 
--- Backfill from the order events already recorded, so existing threads show
--- the truth immediately instead of waiting for the next webhook.
-UPDATE conversations c
-SET order_status = w.status
-FROM woocommerce_orders w
-WHERE w.conversation_id = c.id
-  AND c.order_status IS NULL
-  AND w.status IS NOT NULL;
+-- Backfill from whatever the orders table actually calls its status column.
+-- (A hard-coded w.status failed with "column w.status does not exist" — the
+-- column name differs by install, so detect it instead of assuming.)
+DO $$
+DECLARE
+  col TEXT;
+BEGIN
+  SELECT column_name INTO col
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'woocommerce_orders'
+    AND column_name IN ('status', 'order_status')
+  ORDER BY CASE column_name WHEN 'status' THEN 1 ELSE 2 END
+  LIMIT 1;
+
+  IF col IS NOT NULL THEN
+    EXECUTE format($f$
+      UPDATE conversations c
+      SET order_status = w.%I
+      FROM woocommerce_orders w
+      WHERE w.conversation_id = c.id
+        AND c.order_status IS NULL
+        AND w.%I IS NOT NULL
+    $f$, col, col);
+    RAISE NOTICE 'Backfilled conversations.order_status from woocommerce_orders.%', col;
+  ELSE
+    RAISE NOTICE 'No status column on woocommerce_orders — new orders will populate order_status going forward.';
+  END IF;
+END $$;
 
 NOTIFY pgrst, 'reload schema';
