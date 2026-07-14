@@ -2757,6 +2757,31 @@ export default function InboxPage() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
               </button>
               <span style={{ fontSize: 16 }}>{CHANNEL_ICON[selected.channel]}</span>
+              {/* AI on/off for this conversation */}
+              <button type="button"
+                onClick={async () => {
+                  if (!selected) return
+                  // null = follow the company default; false = silenced here.
+                  const next = (selected as any).ai_enabled === false ? null : false
+                  await (supabase as any).from('conversations').update({ ai_enabled: next }).eq('id', selected.id)
+                  setSelected({ ...selected, ai_enabled: next } as any)
+                  showToast(next === false ? 'AI paused for this chat' : 'AI following your default setting')
+                }}
+                title={(selected as any).ai_enabled === false ? 'AI is paused here — click to re-enable' : 'AI may reply here — click to pause it'}
+                style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  border: `1px solid ${(selected as any).ai_enabled === false ? 'var(--border)' : '#8b5cf6'}`,
+                  background: (selected as any).ai_enabled === false ? '#fff' : '#f5f3ff',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: (selected as any).ai_enabled === false ? '#c0c4cc' : '#8b5cf6',
+                  position: 'relative',
+                }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
+                {(selected as any).ai_enabled === false && (
+                  <span style={{ position: 'absolute', width: 20, height: 1.6, background: '#dc2626', transform: 'rotate(-45deg)', borderRadius: 1 }} />
+                )}
+              </button>
+
               {/* Product search */}
               <button type="button" onClick={() => setShowProducts(true)} title="Product search — send a price or buy link"
                 style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${showProducts ? 'var(--coral)' : 'var(--border)'}`, background: showProducts ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: showProducts ? 'var(--coral)' : 'var(--slate)' }}>

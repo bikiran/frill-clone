@@ -1727,22 +1727,52 @@ function WidgetContent() {
                     if (!chatName.trim() && !chatEmail.trim() && !chatMobile.trim()) { setChatCreateError('Please fill in at least one field.'); return }
                     setChatCreating(true)
                     setChatCreateError('')
-                    // Create a contact or look up existing
+                    // Find-or-create the contact.
+                    //
+                    // Match on email (case-insensitively) OR phone. Previously it
+                    // only did an exact-case email match, and if someone gave a
+                    // phone but no email it created a brand-new contact every
+                    // time — which is why the same person appeared twice.
                     let contactId: string | null = null
                     const normalizedMobile = chatMobile.trim() ? (chatMobile.trim().startsWith('+') ? chatMobile.replace(/[^\d+]/g, '') : chatMobile.replace(/[^\d]/g, '').replace(/^0/, '+61').replace(/^61/, '+61')) : null
+                    const last8 = normalizedMobile ? normalizedMobile.replace(/\D/g, '').slice(-8) : null
+
                     try {
+                      let existing: any = null
+
                       if (chatEmail) {
-                        const { data: existingContact } = await (supabase as any).from('contacts').select('id').eq('company_id', company?.id).eq('email', chatEmail).maybeSingle()
-                        if (existingContact) {
-                          contactId = existingContact.id
-                          if (normalizedMobile) await (supabase as any).from('contacts').update({ phone: normalizedMobile }).eq('id', existingContact.id)
-                        } else {
-                          const { data: newContact } = await (supabase as any).from('contacts').insert({ company_id: company?.id, name: chatName, email: chatEmail, phone: normalizedMobile, source: 'widget' }).select('id').maybeSingle()
-                          if (newContact) contactId = newContact.id
+                        const { data } = await (supabase as any).from('contacts')
+                          .select('id, name, email, phone').eq('company_id', company?.id)
+                          .ilike('email', chatEmail.trim()).limit(1)
+                        existing = data?.[0] || null
+                      }
+
+                      // No email match? Try the phone — same person, different detail.
+                      if (!existing && last8) {
+                        const { data } = await (supabase as any).from('contacts')
+                          .select('id, name, email, phone').eq('company_id', company?.id)
+                          .not('phone', 'is', null).limit(500)
+                        existing = (data || []).find((c: any) =>
+                          (c.phone || '').replace(/\D/g, '').slice(-8) === last8
+                        ) || null
+                      }
+
+                      if (existing) {
+                        contactId = existing.id
+                        // Fill in anything we didn't know before — never overwrite.
+                        const patch: any = {}
+                        if (!existing.email && chatEmail) patch.email = chatEmail.trim()
+                        if (!existing.phone && normalizedMobile) patch.phone = normalizedMobile
+                        if (!existing.name && chatName) patch.name = chatName
+                        if (Object.keys(patch).length) {
+                          await (supabase as any).from('contacts').update(patch).eq('id', existing.id)
                         }
-                      } else if (normalizedMobile) {
-                        // No email but a mobile — still create a contact
-                        const { data: newContact } = await (supabase as any).from('contacts').insert({ company_id: company?.id, name: chatName, phone: normalizedMobile, source: 'widget' }).select('id').maybeSingle()
+                      } else if (chatEmail || normalizedMobile) {
+                        const { data: newContact } = await (supabase as any).from('contacts').insert({
+                          company_id: company?.id, name: chatName,
+                          email: chatEmail ? chatEmail.trim() : null,
+                          phone: normalizedMobile, source: 'widget',
+                        }).select('id').maybeSingle()
                         if (newContact) contactId = newContact.id
                       }
                       // Reuse this customer's existing conversation rather than

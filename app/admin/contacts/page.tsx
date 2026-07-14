@@ -12,6 +12,40 @@ export default function ContactsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [contacts, setContacts] = useState<Contact[]>([])
   const [search, setSearch] = useState('')
+
+  // ── Duplicate contacts ────────────────────────────────────────────────────
+  const [dupGroups, setDupGroups] = useState<any[] | null>(null)
+  const [dupBusy, setDupBusy] = useState(false)
+
+  const findDuplicates = async () => {
+    if (!companyId) return
+    setDupBusy(true)
+    try {
+      const res = await fetch(`/api/contacts/duplicates?companyId=${companyId}`)
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not check')
+      setDupGroups(d.groups || [])
+    } catch (e: any) { alert(e.message) }
+    finally { setDupBusy(false) }
+  }
+
+  const mergeGroup = async (group: any[], keepId: string) => {
+    if (!companyId) return
+    const mergeIds = group.filter(c => c.id !== keepId).map(c => c.id)
+    if (!confirm(`Merge ${mergeIds.length} duplicate${mergeIds.length === 1 ? '' : 's'} into this contact? All their conversations and history move across — nothing is lost.`)) return
+    setDupBusy(true)
+    try {
+      const res = await fetch('/api/contacts/duplicates', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, keepId, mergeIds }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Merge failed')
+      await findDuplicates()
+      await load()
+    } catch (e: any) { alert(e.message) }
+    finally { setDupBusy(false) }
+  }
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Contact | null>(null)
   const [editMode, setEditMode] = useState(false)
@@ -96,8 +130,12 @@ export default function ContactsPage() {
           </div>
           <input placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)}
             style={{ ...inp, maxWidth: 280, background: 'var(--canvas)' }} />
-          <button type="button" onClick={() => { setSelected(null); setEditData({}); setEditMode(true) }}
-            style={{ padding: '9px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+          <button type="button" onClick={findDuplicates} disabled={dupBusy}
+            title="Find contacts that are the same person"
+            style={{ padding: '9px 15px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+            {dupBusy ? 'Checking…' : 'Find duplicates'}
+          </button>
+          <button type="button" onClick={() => { setSelected(null); setEditData({}); setEditMode(true) }}            style={{ padding: '9px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
             + New Contact
           </button>
         </div>
@@ -228,6 +266,56 @@ export default function ContactsPage() {
           </div>
         </div>
       )}
+
+      {/* Duplicate contacts */}
+      {dupGroups !== null && (
+        <div onClick={() => setDupGroups(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 620, maxWidth: '95vw', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24 }}>
+            <h2 style={{ margin: '0 0 4px', fontSize: 19, fontWeight: 800, color: 'var(--ink)' }}>Duplicate contacts</h2>
+            <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+              Matched on email or phone only. Two people with the same name are <strong>not</strong> merged — silently combining two real customers would be far worse than leaving a duplicate.
+            </p>
+
+            {dupGroups.length === 0 ? (
+              <p style={{ fontSize: 14, color: '#15803d', textAlign: 'center', padding: 30, fontWeight: 600 }}>
+                No duplicates found.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {dupGroups.map((g: any[], i: number) => (
+                  <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
+                    <p style={{ margin: '0 0 10px', fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>
+                      Same {g[0].matched_on}: {g[0].matched_value}
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                      {g.map((c: any) => (
+                        <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 11px', borderRadius: 9, background: 'var(--canvas)' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{c.name || 'No name'}</p>
+                            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)' }}>
+                              {[c.email, c.phone].filter(Boolean).join(' · ')} · {c.conversation_count} chat{c.conversation_count === 1 ? '' : 's'}
+                            </p>
+                          </div>
+                          <button onClick={() => mergeGroup(g, c.id)} disabled={dupBusy}
+                            style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            Keep this one
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button onClick={() => setDupGroups(null)}
+              style={{ width: '100%', marginTop: 18, padding: '11px 0', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Close</button>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
