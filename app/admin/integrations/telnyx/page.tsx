@@ -11,6 +11,37 @@ export default function TelnyxIntegration() {
   const [numbers, setNumbers] = useState<any[]>([])
   const [locations, setLocations] = useState<any[]>([])
   const [addingNumber, setAddingNumber] = useState(false)
+
+  // ── Browser calling setup ────────────────────────────────────────────────
+  const [callSetup, setCallSetup] = useState<any>(null)
+  const [callSteps, setCallSteps] = useState<string[]>([])
+  const [callBusy, setCallBusy] = useState<'' | 'check' | 'setup'>('')
+
+  const checkCalling = async () => {
+    if (!companyId) return
+    setCallBusy('check'); setCallSteps([])
+    try {
+      const res = await fetch(`/api/telnyx/setup-calling?companyId=${companyId}`)
+      setCallSetup(await res.json())
+    } catch (e: any) { setCallSetup({ verdict: 'Could not check: ' + e.message }) }
+    finally { setCallBusy('') }
+  }
+
+  const setupCalling = async () => {
+    if (!companyId) return
+    setCallBusy('setup'); setCallSteps([])
+    try {
+      const res = await fetch('/api/telnyx/setup-calling', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      })
+      const d = await res.json()
+      setCallSteps(d.steps || [])
+      if (!res.ok) { setCallSetup({ verdict: d.error || 'Setup failed' }); return }
+      await checkCalling()
+    } catch (e: any) { setCallSetup({ verdict: 'Setup failed: ' + e.message }) }
+    finally { setCallBusy('') }
+  }
   const [assignLocationId, setAssignLocationId] = useState<string>('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -217,6 +248,36 @@ export default function TelnyxIntegration() {
 
       {(numbers.length > 0 || hasNumber) && !addingNumber ? (
         <div>
+          {/* Browser calling needs a WebRTC connection on Telnyx. Buying a number
+              doesn't create one — without it, calls fail with "Connection to
+              server lost", which tells the user nothing. */}
+          <div style={{ border: `1px solid ${callSetup?.verdict === 'Calling looks ready.' ? '#bbf7d0' : '#fde68a'}`, background: callSetup?.verdict === 'Calling looks ready.' ? '#f0fdf4' : '#fffbeb', borderRadius: 14, padding: 16, marginBottom: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Browser calling</p>
+                <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.45 }}>
+                  {callSetup?.verdict || 'Check whether calling is set up on Telnyx.'}
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <button onClick={checkCalling} disabled={callBusy}
+                  style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  {callBusy === 'check' ? 'Checking…' : 'Check'}
+                </button>
+                <button onClick={setupCalling} disabled={!!callBusy}
+                  style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  {callBusy === 'setup' ? 'Setting up…' : 'Set up calling'}
+                </button>
+              </div>
+            </div>
+
+            {callSteps.length > 0 && (
+              <ul style={{ margin: '12px 0 0', paddingLeft: 18, fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.7 }}>
+                {callSteps.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            )}
+          </div>
+
           {/* All numbers this company owns */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>Your numbers</p>

@@ -47,6 +47,62 @@ export class TelnyxService {
     return this.req('/telephony_credentials', 'POST', { connection_id: connectionId, name })
   }
 
+  // ── WebRTC connection ───────────────────────────────────────────────────
+  // Browser calling needs a Credential Connection on the Telnyx side. Buying a
+  // number does NOT create one, which is why calls failed with "Connection to
+  // server lost" — the client had a token for a connection that didn't exist.
+
+  async listCredentialConnections(): Promise<any[]> {
+    try {
+      const data = await this.req('/credential_connections?page[size]=50', 'GET')
+      return data?.data || []
+    } catch { return [] }
+  }
+
+  async createCredentialConnection(name: string, webhookUrl?: string) {
+    return this.req('/credential_connections', 'POST', {
+      connection_name: name,
+      // WebRTC clients register over TLS/SRTP.
+      active: true,
+      transport_protocol: 'TLS',
+      encrypted_media: 'SRTP',
+      // Let the browser client authenticate with the ephemeral token.
+      user_name: `colvy_${Math.random().toString(36).slice(2, 10)}`,
+      password: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2).toUpperCase(),
+      ...(webhookUrl ? {
+        webhook_event_url: webhookUrl,
+        webhook_api_version: '2',
+      } : {}),
+      inbound: { ani_number_format: '+E.164' },
+      outbound: { outbound_voice_profile_id: undefined },
+    })
+  }
+
+  // Point a phone number at a connection, so inbound calls reach the browser.
+  async assignNumberToConnection(phoneNumber: string, connectionId: string) {
+    // Find the number's id first.
+    const list = await this.req(`/phone_numbers?filter[phone_number]=${encodeURIComponent(phoneNumber)}`, 'GET')
+    const id = list?.data?.[0]?.id
+    if (!id) throw new Error(`Number ${phoneNumber} not found on this Telnyx account`)
+    return this.req(`/phone_numbers/${id}`, 'PATCH', { connection_id: connectionId })
+  }
+
+  // Outbound voice needs a profile, or Telnyx rejects the call.
+  async ensureOutboundVoiceProfile(name: string) {
+    try {
+      const existing = await this.req('/outbound_voice_profiles?page[size]=50', 'GET')
+      const found = (existing?.data || []).find((p: any) => p.name === name)
+      if (found) return found
+    } catch {}
+    const created = await this.req('/outbound_voice_profiles', 'POST', {
+      name,
+      traffic_type: 'conversational',
+      service_plan: 'global',
+      enabled: true,
+    })
+    return created?.data
+  }
+
   // Generate a short-lived JWT the browser uses to register the WebRTC client
   async createCredentialToken(credentialId: string) {
     // Returns a raw JWT string (text/plain)
