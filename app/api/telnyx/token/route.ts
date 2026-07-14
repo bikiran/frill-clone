@@ -37,6 +37,20 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) { console.error('[telnyx token] outbound profile heal failed', e) }
 
+    // SELF-HEAL 2 — INBOUND. A customer ringing the business number gets an
+    // engaged/busy tone if the number isn't routed to this WebRTC connection:
+    // Telnyx has nowhere to send the call, so it rejects it. Make sure the
+    // company's number points at the connection we're about to hand a token for.
+    try {
+      if (integ.phone_number && integ.connection_id) {
+        const num = await svc.getNumber(integ.phone_number)
+        if (num && String(num.connection_id || '') !== String(integ.connection_id)) {
+          await svc.assignNumberToConnection(integ.phone_number, integ.connection_id)
+          console.log('[telnyx token] re-pointed', integ.phone_number, '->', integ.connection_id)
+        }
+      }
+    } catch (e) { console.error('[telnyx token] number routing heal failed', e) }
+
     // Reuse a stored credential if we have one, otherwise create one bound to
     // the company's connection.
     let credentialId = (integ as any).sip_username // we store the credential id here

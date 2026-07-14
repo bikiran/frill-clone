@@ -14,6 +14,7 @@ const SparkIcon = () => ico(<path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 
 const ClockIcon = () => ico(<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>)
 const MicIcon = () => ico(<><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></>)
 const DocIcon = () => ico(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>)
+const PersonIcon = () => ico(<><circle cx="12" cy="7" r="4"/><path d="M5.5 21a8.38 8.38 0 0 1 13 0"/></>)
 const PhoneIcon = (size = 13) => ico(<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>, size)
 
 const SENTIMENT: Record<string, { label: string; color: string; bg: string }> = {
@@ -28,6 +29,26 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
   const [call, setCall] = useState<any>(null)
   const [expanded, setExpanded] = useState(false)
   const [showTranscript, setShowTranscript] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+  const [retryMsg, setRetryMsg] = useState('')
+
+  // Run transcription + AI summary on demand. Also the escape hatch when the
+  // automatic run after the call didn't happen (e.g. the tab was closed before
+  // the upload finished, or the STT key was added after the call).
+  const runTranscription = async () => {
+    setRetrying(true); setRetryMsg('')
+    try {
+      const res = await fetch('/api/telnyx/transcribe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callId }),
+      })
+      const d = await res.json()
+      if (d?.ok) { await load(); setRetryMsg('') }
+      else setRetryMsg(d?.reason || d?.error || 'Could not transcribe this call.')
+    } catch (e: any) {
+      setRetryMsg(e?.message || 'Could not transcribe this call.')
+    } finally { setRetrying(false) }
+  }
 
   const load = async () => {
     if (!callId) return
@@ -113,6 +134,20 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
         </div>
       )}
 
+      {/* Contact Information — Coax lists who the call was with, pulled from
+          the AI's read of the transcript plus the linked contact record. */}
+      {expanded && (call?.contact_name || call?.to_number || call?.from_number) && (
+        <div style={{ marginBottom: 12, paddingTop: 12, borderTop: '1px solid #e3e9f2' }}>
+          <p style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 700, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <PersonIcon /> Contact Information
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {call?.contact_name && <li style={{ fontSize: 12.5, color: 'var(--ink)', marginBottom: 3 }}>{call.contact_name}</li>}
+            <li style={{ fontSize: 12.5, color: 'var(--ink)' }}>{inbound ? call?.from_number : call?.to_number}</li>
+          </ul>
+        </div>
+      )}
+
       {/* Recording */}
       {call?.recording_url ? (
         <div style={{ paddingTop: 12, borderTop: '1px solid #e3e9f2' }}>
@@ -134,9 +169,29 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
           </div>
         </div>
       ) : (
-        <p style={{ margin: '10px 0 0', fontSize: 11.5, color: 'var(--slate)', fontStyle: 'italic' }}>
-          Recording uploading…
-        </p>
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e3e9f2' }}>
+          {call?.recording_error ? (
+            <p style={{ margin: 0, fontSize: 11.5, color: '#dc2626', lineHeight: 1.5 }}>
+              {call.recording_error}
+            </p>
+          ) : (
+            <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)', fontStyle: 'italic' }}>
+              Recording uploading…
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* No summary yet? Say why, and offer to run it — rather than an empty
+          card that gives no clue whether it's still working or has failed. */}
+      {call?.recording_url && !summary && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e3e9f2', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" onClick={runTranscription} disabled={retrying}
+            style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #c7d7f0', background: '#fff', color: '#2563eb', fontSize: 12, fontWeight: 700, cursor: retrying ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <SparkIcon /> {retrying ? 'Transcribing…' : (call?.transcription ? 'Generate AI summary' : 'Transcribe & summarise')}
+          </button>
+          {retryMsg && <span style={{ fontSize: 11.5, color: '#dc2626', flex: 1, minWidth: 0, lineHeight: 1.45 }}>{retryMsg}</span>}
+        </div>
       )}
 
       {/* Transcript */}

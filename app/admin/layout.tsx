@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import IncomingCallListener from '@/components/IncomingCallListener'
 import AdminBanner from '@/components/AdminBanner'
 import { getCompanyByOwner } from '@/lib/board'
 import { useRouter } from 'next/navigation'
@@ -309,6 +310,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div style={{ display: 'flex', minHeight: 'calc(100vh - 56px)' }}>
+      {/* Inbound calls: the WebRTC client used to register ONLY on the inbox
+          page. Anywhere else in the admin, no endpoint was registered with
+          Telnyx — so a customer ringing the business number got a BUSY tone
+          ("engaged"). Registering here means the agent can be reached from any
+          admin page. */}
+      <IncomingCallListener companyId={company?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
       <style>{`
         @media (max-width: 860px) {
           .admin-sidebar { transform: translateX(-100%); transition: transform 0.25s ease; box-shadow: 0 0 0 transparent; }

@@ -194,6 +194,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
         const { data: row } = await (supabase as any).from('calls').insert({
           company_id: companyId, conversation_id: conversationId || null, contact_id: contactId || null,
           direction: 'outbound', from_number: from, to_number: dest, status: 'initiated', agent_name: agentName || 'Agent',
+          contact_name: contactName || null,
         }).select().maybeSingle()
         callRowId.current = row?.id || null
       } catch {}

@@ -374,6 +374,14 @@ export class TelnyxService {
     const data = await this.req(`/phone_numbers?filter[phone_number]=${encodeURIComponent(phoneNumber)}`, 'GET')
     return data.data?.[0]?.id || null
   }
+
+  // The full phone number record — including connection_id, so we can tell
+  // whether inbound calls are actually routed to our WebRTC connection.
+  // (If they're not, Telnyx has nowhere to ring and the caller hears engaged.)
+  async getNumber(phoneNumber: string) {
+    const data = await this.req(`/phone_numbers?filter[phone_number]=${encodeURIComponent(phoneNumber)}`, 'GET')
+    return data.data?.[0] || null
+  }
 }
 
 // Normalize a phone number to E.164, defaulting to Australia (+61).

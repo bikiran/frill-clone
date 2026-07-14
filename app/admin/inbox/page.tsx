@@ -11,7 +11,6 @@ import DeliveryPanel from '@/components/DeliveryPanel'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import DoaPanel from '@/components/DoaPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
-import IncomingCallListener from '@/components/IncomingCallListener'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -1667,7 +1666,15 @@ export default function InboxPage() {
       }
 
       const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
-      const body = podNote.trim() || 'Your order has been delivered. Attached is the proof of delivery — thank you!'
+      const note = podNote.trim() || 'Your order has been delivered. Attached is the proof of delivery — thank you!'
+
+      // Include the direct link(s) as well as the attachment. Chat and SMS
+      // previews are recompressed, so a link is the only way the customer gets
+      // the ORIGINAL full-quality photo and can download/keep it.
+      const links = attachments.map(a => a.url).filter(Boolean)
+      const body = links.length
+        ? `${note}\n\n${links.length > 1 ? 'Download the full-quality photos:' : 'Download the full-quality photo:'}\n${links.join('\n')}`
+        : note
 
       await (supabase as any).from('messages').insert({
         conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
@@ -1686,7 +1693,7 @@ export default function InboxPage() {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: selected.id, to: smsNumber,
-              text: `${body}${attachments[0]?.url ? `\n${attachments[0].url}` : ''}`,
+              text: body,
               senderName: me, skipChatMessage: true,
             }),
           })
@@ -2225,7 +2232,9 @@ export default function InboxPage() {
           .inbox-mobile-only { display: none !important; }
         }
       `}</style>
-      <IncomingCallListener companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
+      {/* IncomingCallListener now lives in the admin layout, so calls ring on
+          EVERY admin page — not only here. Mounting it twice would register two
+          clients on the same credential. */}
 
       {/* Conversation action panels */}
       <style>{`
@@ -3189,6 +3198,14 @@ export default function InboxPage() {
               </button>
               <div className="inbox-header-name" style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {/* Channel badge — it sat loose in the toolbar looking like a
+                      mystery "chat" button. Beside the name, with a label, it
+                      actually tells you where this conversation is happening. */}
+                  <span title={CHANNEL_NAME[String(selected.channel || '').toLowerCase()] || selected.channel}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, color: 'var(--slate)', background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 6px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                    {CHANNEL_ICON[String(selected.channel || '').toLowerCase()] || Icon.chat(12)}
+                    {CHANNEL_NAME[String(selected.channel || '').toLowerCase()] || selected.channel}
+                  </span>
                   {contact?.name || selected.subject || 'Visitor'}
                   {/* Sentiment badge */}
                   {(selected as any).sentiment && (
@@ -3231,7 +3248,6 @@ export default function InboxPage() {
                   scrollable row under the customer's name — the native chat-app
                   pattern — instead of nine buttons wrapping into ragged rows. */}
               <div className="inbox-header-tools">
-              <span style={{ display: 'flex', alignItems: 'center', color: 'var(--slate)' }} title={selected.channel}>{CHANNEL_ICON[selected.channel] || Icon.chat(16)}</span>
               {/* AI on/off for this conversation */}
               <button type="button"
                 onClick={async () => {
@@ -3293,14 +3309,16 @@ export default function InboxPage() {
                 </div>
               )}
 
-              {/* Dialer — call any number, not just this contact's */}
-              <button type="button" onClick={() => setShowDialer(true)} title="Dialer"
-                style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                  <circle cx="5" cy="5" r="1.6"/><circle cx="12" cy="5" r="1.6"/><circle cx="19" cy="5" r="1.6"/>
-                  <circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>
-                  <circle cx="5" cy="19" r="1.6"/><circle cx="12" cy="19" r="1.6"/><circle cx="19" cy="19" r="1.6"/>
+              {/* Dialer — green and keypad-shaped, so it reads as a dialler at a
+                  glance rather than a generic grey icon. */}
+              <button type="button" onClick={() => setShowDialer(true)} title="Dialler — call any number"
+                style={{ height: 36, padding: '0 11px', borderRadius: 10, border: '1.5px solid #bbf7d0', background: 'radial-gradient(circle at 50% 30%, #f0fdf4 0%, #dcfce7 100%)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, color: '#065f46', boxShadow: '0 1px 3px rgba(6,95,70,0.12)' }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <circle cx="5" cy="4.5" r="2"/><circle cx="12" cy="4.5" r="2"/><circle cx="19" cy="4.5" r="2"/>
+                  <circle cx="5" cy="11.5" r="2"/><circle cx="12" cy="11.5" r="2"/><circle cx="19" cy="11.5" r="2"/>
+                  <circle cx="5" cy="18.5" r="2"/><circle cx="12" cy="18.5" r="2"/><circle cx="19" cy="18.5" r="2"/>
                 </svg>
+                <span style={{ fontSize: 12.5, fontWeight: 700 }}>Dial</span>
               </button>
 
               {/* Search messages toggle */}
@@ -3703,7 +3721,7 @@ export default function InboxPage() {
                       </p>
 
                       {/* Hover actions: react + reply */}
-                      <div className="chat-msg-actions" style={{ position: 'absolute', top: -10, [isAgent ? 'left' : 'right']: -8, display: 'flex', gap: 2, background: '#fff', borderRadius: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.12)', padding: '2px 4px', opacity: 0, transition: 'opacity 0.12s', pointerEvents: 'none' } as any}>
+                      <div className={`chat-msg-actions${showReactPicker === msg.id ? ' pinned' : ''}`} style={{ position: 'absolute', top: -10, [isAgent ? 'left' : 'right']: -8, display: 'flex', gap: 2, background: '#fff', borderRadius: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.12)', padding: '2px 4px', opacity: 0, transition: 'opacity 0.12s', pointerEvents: 'none' } as any}>
                         <button type="button" onClick={() => setShowReactPicker(showReactPicker === msg.id ? null : msg.id)}
                           style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px 4px', color: 'var(--slate)', display: 'inline-flex' }} title="React">{Icon.smile(14)}</button>
                         <button type="button" onClick={() => { setReplyTo(msg); textareaRef.current?.focus() }}
@@ -3712,7 +3730,9 @@ export default function InboxPage() {
 
                       {/* Reaction picker */}
                       {showReactPicker === msg.id && (
-                        <div data-react-picker style={{ position: 'absolute', top: -44, [isAgent ? 'right' : 'left']: 0, display: 'flex', gap: 2, background: '#fff', borderRadius: 24, boxShadow: '0 4px 16px rgba(0,0,0,0.16)', padding: '5px 8px', zIndex: 20 } as any}>
+                        <div data-react-picker className="chat-react-picker"
+                          onMouseDown={e => e.stopPropagation()}
+                          style={{ position: 'absolute', top: -40, [isAgent ? 'right' : 'left']: 0, display: 'flex', gap: 2, background: '#fff', borderRadius: 24, boxShadow: '0 4px 16px rgba(0,0,0,0.16)', padding: '5px 8px', zIndex: 20 } as any}>
                           {EMOJIS.slice(0, 8).map(e => (
                             <button key={e} type="button" onClick={() => reactToMessage(msg, e)}
                               style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 17, padding: 2, borderRadius: 6 }}
@@ -3740,7 +3760,15 @@ export default function InboxPage() {
             </div>
 
             <style>{`
-              .chat-msg-row:hover .chat-msg-actions { opacity: 1 !important; pointer-events: auto !important; }
+              .chat-msg-row:hover .chat-msg-actions,
+              .chat-msg-row .chat-msg-actions.pinned { opacity: 1 !important; pointer-events: auto !important; }
+              /* The picker sat 34px above the smiley with a dead gap between them:
+                 the cursor left the row on the way up, the row's :hover dropped,
+                 and everything vanished before you got there. This invisible
+                 bridge keeps the pointer inside the hoverable area the whole way. */
+              .chat-react-picker::before {
+                content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 22px;
+              }
               .chat-att:hover .chat-att-fwd { opacity: 1 !important; }
             `}</style>
 

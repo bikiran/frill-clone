@@ -19,6 +19,7 @@ ALTER TABLE calls ADD COLUMN IF NOT EXISTS recording_duration INT;
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS transcript_segments JSONB; -- [{speaker, text, start}]
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS answered_by TEXT;
 ALTER TABLE calls ADD COLUMN IF NOT EXISTS recording_error TEXT;   -- why a recording failed, instead of silence
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS contact_name TEXT;      -- shown in the card's Contact Information
 
 -- ── 2. Recording storage ────────────────────────────────────
 INSERT INTO storage.buckets (id, name, public)
