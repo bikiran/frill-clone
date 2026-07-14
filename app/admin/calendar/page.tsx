@@ -31,13 +31,31 @@ export default function CalendarPage() {
   const [editing, setEditing] = useState<any>(null)
   const [dayOpen, setDayOpen] = useState<string | null>(null)
 
+  // ── Reminder settings ────────────────────────────────────────────────────
+  const [showReminders, setShowReminders] = useState(false)
+  const [reminders, setReminders] = useState<any>({ reminders_enabled: false, lead_hours: 24, email: true })
+  const [savingRem, setSavingRem] = useState(false)
+
+  const saveReminders = async () => {
+    if (!companyId) return
+    setSavingRem(true)
+    try {
+      await (supabase as any).from('companies').update({ calendar_settings: reminders }).eq('id', companyId)
+      setShowReminders(false)
+    } catch (e: any) { alert(e.message) }
+    finally { setSavingRem(false) }
+  }
+
   useEffect(() => {
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setLoading(false); return }
       let cid: string | null = null
-      const { data: owned } = await (supabase as any).from('companies').select('id').eq('owner_id', user.id).order('created_at', { ascending: true }).limit(1)
+      const { data: owned } = await (supabase as any).from('companies').select('id, calendar_settings').eq('owner_id', user.id).order('created_at', { ascending: true }).limit(1)
       cid = owned?.[0]?.id || null
+      if (owned?.[0]?.calendar_settings && Object.keys(owned[0].calendar_settings).length) {
+        setReminders({ reminders_enabled: false, lead_hours: 24, email: true, ...owned[0].calendar_settings })
+      }
       if (!cid) {
         const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', user.id).limit(1)
         cid = tm?.[0]?.company_id || null
@@ -149,10 +167,17 @@ export default function CalendarPage() {
           <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>Calendar</h1>
           <p style={{ fontSize: 14, color: 'var(--slate)', margin: 0 }}>Deliveries, appointments, bookings and tasks — everything the team has committed to.</p>
         </div>
-        <button onClick={() => setEditing({ event_type: 'appointment', date: new Date().toISOString().slice(0, 10), time: '09:00', status: 'scheduled' })}
-          style={{ padding: '10px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-          + Add event
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setShowReminders(true)} title="Reminder settings"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 15px', borderRadius: 10, background: reminders.reminders_enabled ? 'var(--peach)' : '#fff', color: reminders.reminders_enabled ? 'var(--coral)' : 'var(--slate)', border: `1px solid ${reminders.reminders_enabled ? 'var(--coral)' : 'var(--border)'}`, fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            Reminders
+          </button>
+          <button onClick={() => setEditing({ event_type: 'appointment', date: new Date().toISOString().slice(0, 10), time: '09:00', status: 'scheduled' })}
+            style={{ padding: '10px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            + Add event
+          </button>
+        </div>
       </div>
 
       {/* Controls */}
@@ -258,6 +283,65 @@ export default function CalendarPage() {
           <strong>Prexty sync:</strong> this calendar is built ready to sync with Prexty, but <strong>it doesn&rsquo;t sync yet</strong> — Prexty POS doesn&rsquo;t expose an API we can use. Everything here is Colvy&rsquo;s own calendar. When Prexty is ready, existing events will sync without you re-entering anything.
         </p>
       </div>
+
+      {/* Reminder settings */}
+      {showReminders && (
+        <div onClick={() => setShowReminders(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 340, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 460, maxWidth: '95vw', background: '#fff', borderRadius: 18, padding: 24 }}>
+            <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>Reminders</h2>
+            <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+              Tell the team about events that are due or coming up. Each event is announced once — never repeatedly.
+            </p>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: reminders.reminders_enabled ? 18 : 0 }}>
+              <input type="checkbox" checked={!!reminders.reminders_enabled}
+                onChange={e => setReminders({ ...reminders, reminders_enabled: e.target.checked })}
+                style={{ width: 18, height: 18, accentColor: 'var(--coral)', marginTop: 2 }} />
+              <span>
+                <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>Remind the team</span>
+                <span style={{ display: 'block', fontSize: 12.5, color: 'var(--slate)', marginTop: 2 }}>Off by default — nobody gets surprise emails.</span>
+              </span>
+            </label>
+
+            {reminders.reminders_enabled && (
+              <>
+                <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>How far ahead</label>
+                <select value={reminders.lead_hours}
+                  onChange={e => setReminders({ ...reminders, lead_hours: Number(e.target.value) })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 16, boxSizing: 'border-box', background: '#fff' }}>
+                  <option value={2}>2 hours before</option>
+                  <option value={12}>12 hours before</option>
+                  <option value={24}>1 day before</option>
+                  <option value={48}>2 days before</option>
+                </select>
+
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 18 }}>
+                  <input type="checkbox" checked={reminders.email !== false}
+                    onChange={e => setReminders({ ...reminders, email: e.target.checked })}
+                    style={{ width: 17, height: 17, accentColor: 'var(--coral)', marginTop: 2 }} />
+                  <span>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>Also email the team</span>
+                    <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)', marginTop: 2 }}>
+                      Goes to every active team member. In-app notifications are sent either way.
+                    </span>
+                  </span>
+                </label>
+              </>
+            )}
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={saveReminders} disabled={savingRem}
+                style={{ padding: '10px 20px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                {savingRem ? 'Saving…' : 'Save'}
+              </button>
+              <button onClick={() => setShowReminders(false)}
+                style={{ padding: '10px 20px', borderRadius: 9, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Day detail */}
       {dayOpen && (

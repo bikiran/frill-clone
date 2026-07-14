@@ -291,11 +291,21 @@ export default function CustomerProfilePage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 520, overflowY: 'auto', paddingRight: 4 }}>
             {filteredProducts.length === 0 && <p style={{ color: '#888', fontSize: 13 }}>No products match your search.</p>}
             {filteredProducts.map((item: any, idx: number) => {
-              const name = item.name || item.product_name || `Product ${idx + 1}`
+              // WooCommerce line items vary in shape depending on how they were
+              // synced. Be generous about where the name/price/qty might live —
+              // previously an unrecognised shape rendered as an empty grey bar.
+              const name =
+                item.name || item.product_name || item.title ||
+                item.parent_name || item.product?.name ||
+                (item.sku ? `SKU ${item.sku}` : '') ||
+                (item.product_id ? `Product #${item.product_id}` : '') ||
+                'Unnamed product'
               const category = item.category || item.categories?.[0]?.name || ''
-              const image = item.image || item.images?.[0]?.src || item.thumbnail || ''
-              const price = item.price || item.total || item.subtotal || ''
-              const qty = item.quantity || item.qty || ''
+              const rawImage = item.image?.src || item.image || item.images?.[0]?.src || item.thumbnail || ''
+              const image = typeof rawImage === 'string' ? rawImage : ''
+              const rawPrice = item.price ?? item.total ?? item.subtotal ?? item.line_total ?? ''
+              const price = typeof rawPrice === 'object' ? '' : rawPrice
+              const qty = item.quantity ?? item.qty ?? ''
               const description = item.description || item.short_description || ''
               const sku = item.sku || ''
               const isOpen = expandedProducts.has(idx)

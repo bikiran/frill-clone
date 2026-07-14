@@ -16,6 +16,61 @@ export default function GalleryPage() {
   const [uploading, setUploading] = useState(false)
   const [showQR, setShowQR] = useState(false)
 
+  // ── Categories: a photo can belong to several at once ────────────────────
+  const [categories, setCategories] = useState<any[]>([])
+  const [itemCats, setItemCats] = useState<Record<string, string[]>>({})
+  const [catFilter, setCatFilter] = useState<string>('')
+  const [showCatManager, setShowCatManager] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+  const [taggingItem, setTaggingItem] = useState<any>(null)
+
+  const loadCategories = useCallback(async () => {
+    if (!companyId) return
+    try {
+      const res = await fetch(`/api/media/categories?companyId=${companyId}`)
+      const d = await res.json()
+      setCategories(d.categories || [])
+      setItemCats(d.byItem || {})
+    } catch {}
+  }, [companyId])
+
+  useEffect(() => { loadCategories() }, [loadCategories])
+
+  const catApi = async (body: any) => {
+    const res = await fetch('/api/media/categories', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId, ...body }),
+    })
+    const d = await res.json()
+    if (!res.ok) throw new Error(d.error || 'Request failed')
+    return d
+  }
+
+  const createCategory = async () => {
+    if (!newCatName.trim()) return
+    try {
+      await catApi({ action: 'create', name: newCatName.trim() })
+      setNewCatName('')
+      await loadCategories()
+    } catch (e: any) { alert(e.message) }
+  }
+
+  const toggleItemCategory = async (itemId: string, catId: string) => {
+    const current = itemCats[itemId] || []
+    const next = current.includes(catId) ? current.filter(c => c !== catId) : [...current, catId]
+    setItemCats(prev => ({ ...prev, [itemId]: next }))   // optimistic
+    try { await catApi({ action: 'set_item', itemId, categoryIds: next }) }
+    catch (e: any) { alert(e.message); await loadCategories() }
+  }
+
+  const bulkAddCategory = async (catId: string) => {
+    try {
+      await catApi({ action: 'bulk_add', itemIds: Array.from(selected), categoryId: catId })
+      clearSelection()
+      await loadCategories()
+    } catch (e: any) { alert(e.message) }
+  }
+
   // ── Bulk selection ────────────────────────────────────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -185,6 +240,14 @@ export default function GalleryPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={syncPrexty} style={{ padding: '9px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Sync from Prexty</button>
           {driveConfigured && <button onClick={() => connectSource('google_drive')} disabled={driveLoading || driveImporting} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}><GoogleDriveIcon /> {driveImporting ? 'Importing…' : 'Google Drive'}</button>}
+          {categories.length > 0 && (
+            <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
+              style={{ padding: '9px 12px', borderRadius: 9, border: `1px solid ${catFilter ? 'var(--coral)' : 'var(--border)'}`, background: catFilter ? 'var(--peach)' : '#fff', color: catFilter ? 'var(--coral)' : 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <option value="">All categories</option>
+              {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
+
           <button onClick={() => setShowQR(true)} title="Upload from your phone by scanning a QR code"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><line x1="14" y1="14" x2="14" y2="14.01"/><line x1="18" y1="14" x2="21" y2="14"/><line x1="14" y1="18" x2="14" y2="21"/><line x1="18" y1="18" x2="21" y2="21"/></svg>
@@ -277,7 +340,7 @@ export default function GalleryPage() {
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
-              {items.map((item, i) => {
+              {items.filter((it: any) => !catFilter || (itemCats[it.id] || []).includes(catFilter)).map((item, i) => {
                 const isSelected = selected.has(item.id)
                 return (
                 <div key={item.id} style={{ border: `1px solid ${isSelected ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 12, overflow: 'hidden', background: '#fff', boxShadow: isSelected ? '0 0 0 2px var(--peach)' : 'none', transition: 'all 0.12s' }}>
@@ -309,11 +372,33 @@ export default function GalleryPage() {
                   <div style={{ padding: '8px 10px' }}>
                     <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title || 'Untitled'}</p>
                     {item.sku && <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)' }}>SKU: {item.sku}</p>}
+                    {/* Categories — a photo can be in several at once */}
+                    {(itemCats[item.id] || []).length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 5 }}>
+                        {(itemCats[item.id] || []).slice(0, 3).map(cid => {
+                          const c = categories.find((x: any) => x.id === cid)
+                          if (!c) return null
+                          return (
+                            <span key={cid} style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 5, background: 'var(--peach)', color: 'var(--coral)' }}>
+                              {c.name}
+                            </span>
+                          )
+                        })}
+                        {(itemCats[item.id] || []).length > 3 && (
+                          <span style={{ fontSize: 9.5, color: 'var(--slate)', fontWeight: 700 }}>+{(itemCats[item.id] || []).length - 3}</span>
+                        )}
+                      </div>
+                    )}
+
                     <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                       <select value={item.folder_id || ''} onChange={e => moveItem(item, e.target.value || null)} style={{ flex: 1, fontSize: 11, padding: '3px 5px', borderRadius: 6, border: '1px solid var(--border)' }}>
                         <option value="">Unfiled</option>
                         {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                       </select>
+                      <button onClick={() => setTaggingItem(item)} title="Categories"
+                        style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                      </button>
                       <button onClick={() => deleteItem(item)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 14 }}>🗑</button>
                     </div>
                   </div>
@@ -332,6 +417,59 @@ export default function GalleryPage() {
           onIndex={setLightboxIndex}
           onClose={() => setLightboxIndex(null)}
         />
+      )}
+
+      {/* Categorise a photo — it can be in as many as you like */}
+      {taggingItem && (
+        <div onClick={() => setTaggingItem(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 350, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 420, maxWidth: '95vw', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 22 }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Categories</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--slate)' }}>
+              A photo can belong to several categories at once — it isn&rsquo;t duplicated.
+            </p>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <input value={newCatName} onChange={e => setNewCatName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') createCategory() }}
+                placeholder="New category…"
+                style={{ flex: 1, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5 }} />
+              <button onClick={createCategory}
+                style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Add</button>
+            </div>
+
+            {categories.length === 0 ? (
+              <p style={{ fontSize: 13, color: 'var(--slate)', textAlign: 'center', padding: 20 }}>No categories yet — create one above.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {categories.map((c: any) => {
+                  const on = (itemCats[taggingItem.id] || []).includes(c.id)
+                  return (
+                    <label key={c.id}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 12px', borderRadius: 10, border: `1px solid ${on ? 'var(--coral)' : 'var(--border)'}`, background: on ? 'var(--peach)' : '#fff', cursor: 'pointer' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                        <input type="checkbox" checked={on}
+                          onChange={() => toggleItemCategory(taggingItem.id, c.id)}
+                          style={{ width: 16, height: 16, accentColor: 'var(--coral)' }} />
+                        <span style={{ fontSize: 13.5, fontWeight: on ? 700 : 500, color: 'var(--ink)' }}>{c.name}</span>
+                      </span>
+                      <button onClick={async (e) => {
+                        e.preventDefault(); e.stopPropagation()
+                        if (!confirm(`Delete the "${c.name}" category? Photos aren't deleted.`)) return
+                        try { await catApi({ action: 'delete', id: c.id }); await loadCategories() } catch (err: any) { alert(err.message) }
+                      }}
+                        style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 15, padding: 0 }}>×</button>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+
+            <button onClick={() => setTaggingItem(null)}
+              style={{ width: '100%', marginTop: 18, padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Done</button>
+          </div>
+        </div>
       )}
 
       {/* Bulk action bar — appears when items are selected */}
@@ -360,6 +498,15 @@ export default function GalleryPage() {
             <option value="__none">Unfiled</option>
             {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
+
+          {categories.length > 0 && (
+            <select disabled={bulkBusy} defaultValue=""
+              onChange={e => { if (e.target.value) bulkAddCategory(e.target.value); e.target.value = '' }}
+              style={{ padding: '6px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+              <option value="" disabled>Add to category…</option>
+              {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
 
           <button onClick={bulkDownload} disabled={bulkBusy}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>

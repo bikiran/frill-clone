@@ -111,9 +111,15 @@
 
   // ── Drag the bubble to any of 6 zones ─────────────────────────────────────
   // Visitors can reposition the launcher: top/middle/bottom × left/right. The
-  // choice is remembered per site. A drag must NOT trigger the open/close click.
+  // choice is remembered per site.
+  //
+  // IMPORTANT: dragging must never eat a normal click. A click involves small
+  // incidental cursor movement (especially on a trackpad), so a low threshold
+  // made the bubble feel broken — clicks on the icon "did nothing". A drag now
+  // requires a deliberate movement, and the suppression flag is always cleared.
   var POSITIONS = ['top-left','top-right','middle-left','middle-right','bottom-left','bottom-right']
-  var dragging = false, moved = false, startX = 0, startY = 0
+  var DRAG_THRESHOLD = 14      // px of movement before it counts as a drag
+  var dragging = false, moved = false, suppressClick = false, startX = 0, startY = 0
 
   function savedPosition() {
     try {
@@ -124,7 +130,6 @@
   }
   function savePosition(p) { try { localStorage.setItem('colvy_bubble_pos', p) } catch (e) {} }
 
-  // Snap the bubble to the nearest zone based on where it was dropped.
   function snapZone(x, y) {
     var vw = window.innerWidth, vh = window.innerHeight
     var horiz = x < vw / 2 ? 'left' : 'right'
@@ -133,35 +138,48 @@
   }
 
   function onDragStart(e) {
+    // Only a primary-button press starts a drag.
+    if (e.button !== undefined && e.button !== 0) return
     dragging = true; moved = false
     var pt = e.touches ? e.touches[0] : e
     startX = pt.clientX; startY = pt.clientY
-    btn.classList.add('dragging')
   }
+
   function onDragMove(e) {
     if (!dragging) return
     var pt = e.touches ? e.touches[0] : e
     var dx = pt.clientX - startX, dy = pt.clientY - startY
-    // Only count as a drag once past a small threshold, so taps still open it.
-    if (!moved && Math.abs(dx) < 6 && Math.abs(dy) < 6) return
-    moved = true
-    e.preventDefault && e.preventDefault()
-    // Follow the finger/cursor freely while dragging.
+    if (!moved && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return
+
+    if (!moved) {
+      moved = true
+      btn.classList.add('dragging')
+    }
+    if (e.preventDefault) e.preventDefault()
     btn.style.left = (pt.clientX - btn.offsetWidth / 2) + 'px'
     btn.style.top = (pt.clientY - btn.offsetHeight / 2) + 'px'
     btn.style.right = 'auto'; btn.style.bottom = 'auto'; btn.style.transform = 'scale(1.06)'
   }
+
   function onDragEnd(e) {
     if (!dragging) return
     dragging = false
     btn.classList.remove('dragging')
-    if (!moved) return // it was a tap → the click handler opens the widget
+
+    if (!moved) {
+      // It was a plain click — let the click handler open the widget.
+      return
+    }
+
+    // A real drag: snap it, and swallow the click that follows.
+    suppressClick = true
     var pt = (e.changedTouches ? e.changedTouches[0] : e)
     var zone = snapZone(pt.clientX, pt.clientY)
     cfg.position = zone
     savePosition(zone)
     btn.style.transform = ''
     applyPosition()
+    moved = false
   }
 
   btn.addEventListener('mousedown', onDragStart)
@@ -172,8 +190,12 @@
   window.addEventListener('touchend', onDragEnd)
 
   btn.addEventListener('click', function (e) {
-    // Suppress the click that ends a drag.
-    if (moved) { moved = false; e.preventDefault(); e.stopPropagation(); return }
+    // Only swallow the click that immediately follows a genuine drag.
+    if (suppressClick) {
+      suppressClick = false
+      e.preventDefault(); e.stopPropagation()
+      return
+    }
     toggle()
   })
 

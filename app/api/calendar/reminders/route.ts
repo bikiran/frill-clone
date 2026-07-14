@@ -1,0 +1,145 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { notifyCompany } from '@/lib/notify'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
+const admin = () => createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+)
+
+/**
+ * Tell the team about calendar events that are due or coming up.
+ *
+ * Sends an in-app notification always, and an email if the company has that
+ * switched on. Each event is only ever announced once — a reminder that nags
+ * every few minutes is worse than no reminder at all.
+ *
+ * Vercel Hobby can't run frequent crons, so this is called opportunistically
+ * while an admin has the app open (throttled), and can also be hit manually.
+ */
+export async function GET(req: NextRequest) { return run(req) }
+export async function POST(req: NextRequest) { return run(req) }
+
+async function run(req: NextRequest) {
+  try {
+    const db = admin()
+    const now = new Date()
+
+    // Look ahead by the widest window any company might want.
+    const horizon = new Date(now.getTime() + 48 * 3600 * 1000).toISOString()
+
+    const { data: events } = await db.from('calendar_events')
+      .select('*')
+      .gte('starts_at', new Date(now.getTime() - 6 * 3600 * 1000).toISOString())
+      .lte('starts_at', horizon)
+      .in('status', ['scheduled', 'confirmed'])
+      .limit(200)
+
+    if (!events?.length) return NextResponse.json({ ok: true, sent: 0 })
+
+    // Group by company so we read each company's settings once.
+    const byCompany: Record<string, any[]> = {}
+    for (const e of events) (byCompany[e.company_id] ||= []).push(e)
+
+    let sent = 0
+    const results: any[] = []
+
+    for (const [companyId, list] of Object.entries(byCompany)) {
+      const { data: company } = await db.from('companies')
+        .select('name, calendar_settings').eq('id', companyId).maybeSingle()
+
+      const cfg = company?.calendar_settings || {}
+      // Off by default — nobody gets surprise emails.
+      if (cfg.reminders_enabled === false) continue
+      if (!cfg.reminders_enabled) continue
+
+      const leadHours = Number(cfg.lead_hours ?? 24)
+      const emailOn = cfg.email !== false
+      const cutoff = new Date(now.getTime() + leadHours * 3600 * 1000)
+
+      for (const e of list) {
+        const startsAt = new Date(e.starts_at)
+        // Only announce events inside the lead window and not already announced.
+        if (startsAt > cutoff) continue
+        if (e.reminded_at) continue
+
+        const when = e.is_all_day
+          ? startsAt.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })
+          : startsAt.toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+
+        const overdue = startsAt < now
+        const label = e.event_type === 'delivery' ? 'Delivery'
+          : e.event_type === 'booking' ? 'Booking'
+          : e.event_type === 'task' ? 'Task'
+          : e.event_type === 'pickup' ? 'Pickup' : 'Appointment'
+
+        const line = overdue
+          ? `${label} was due — ${e.title} (${when}${e.time_window ? `, ${e.time_window}` : ''})`
+          : `${label} coming up — ${e.title} (${when}${e.time_window ? `, ${e.time_window}` : ''})`
+
+        // ── In-app notification for the whole team
+        try {
+          await notifyCompany({
+            db, companyId, type: 'calendar',
+            message: line,
+            actorName: 'Calendar',
+            conversationId: e.conversation_id || undefined,
+          })
+        } catch {}
+
+        // ── Email the team
+        if (emailOn && process.env.RESEND_API_KEY) {
+          try {
+            const { data: members } = await db.from('team_members')
+              .select('email').eq('company_id', companyId).eq('status', 'active')
+            const to = (members || []).map((m: any) => m.email).filter(Boolean)
+
+            if (to.length) {
+              const { data: ec } = await db.from('email_channels')
+                .select('from_address, from_name, inbound_address')
+                .eq('company_id', companyId).eq('is_active', true).limit(1)
+              const from = ec?.[0]?.from_address || ec?.[0]?.inbound_address || 'notifications@updates.colvy.com'
+              const fromName = company?.name ? `${company.name} Calendar` : 'Colvy Calendar'
+
+              const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+              const body = [
+                line,
+                '',
+                e.address ? `Address: ${e.address}` : '',
+                e.notes ? `Notes: ${e.notes}` : '',
+                '',
+                `See it in the calendar: ${base}/admin/calendar`,
+              ].filter(Boolean).join('\n')
+
+              await fetch('https://api.resend.com/emails', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  from: `${fromName} <${from}>`,
+                  to,
+                  subject: overdue ? `Overdue: ${e.title}` : `Coming up: ${e.title}`,
+                  text: body,
+                }),
+              })
+            }
+          } catch (err) { console.error('[calendar reminder] email failed', err) }
+        }
+
+        // Mark it so we never announce the same event twice.
+        await db.from('calendar_events')
+          .update({ reminded_at: new Date().toISOString() }).eq('id', e.id)
+
+        sent++
+        results.push({ id: e.id, title: e.title, overdue })
+      }
+    }
+
+    return NextResponse.json({ ok: true, sent, results })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
+}

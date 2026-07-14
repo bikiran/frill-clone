@@ -523,6 +523,8 @@ export default function RootLayout({
         if (Date.now() - last < 10 * 60 * 1000) return
         localStorage.setItem(KEY, String(Date.now()))
         fetch('/api/reviews/dispatch').catch(() => {})
+        // Calendar reminders ride along on the same throttle.
+        fetch('/api/calendar/reminders').catch(() => {})
       } catch {}
     }
     const t = setTimeout(tick, 8000)          // shortly after load

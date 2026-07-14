@@ -128,7 +128,15 @@ export default function ContactsPage() {
                         <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--peach)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--coral)', flexShrink: 0 }}>
                           {((c.name || c.email || '?')[0] || '?').toUpperCase()}
                         </div>
-                        <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{c.name || <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>No name</span>}</span>
+                        <a
+                          href={`/admin/customers/profile?id=${c.id}`}
+                          onClick={e => e.stopPropagation()}
+                          title="Open the full customer profile"
+                          style={{ fontWeight: 600, color: 'var(--ink)', textDecoration: 'none', borderBottom: '1px solid transparent' }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)'; (e.currentTarget as HTMLElement).style.borderBottomColor = 'var(--coral)' }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--ink)'; (e.currentTarget as HTMLElement).style.borderBottomColor = 'transparent' }}>
+                          {c.name || <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>No name</span>}
+                        </a>
                       </div>
                     </td>
                     <td style={{ padding: '11px 16px', color: 'var(--slate)' }}>{c.phone || '—'}</td>

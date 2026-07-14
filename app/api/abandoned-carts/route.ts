@@ -141,9 +141,18 @@ export async function POST(req: NextRequest) {
     if (isNew) {
       try {
         if (!conversationId && contact?.id) {
+          // The pages they browsed before abandoning. These come from the
+          // WooCommerce bridge — the chat widget never saw them, which is why
+          // cart conversations used to show "no page history recorded".
+          const browsed = Array.isArray(body.page_history) ? body.page_history : []
+          const lastPage = browsed.length ? browsed[browsed.length - 1] : null
+
           const { data: newConv } = await db.from('conversations').insert({
             company_id: companyId, channel: 'chat', subject: 'Abandoned cart',
             contact_id: contact.id, status: 'open', is_unread: true, unread_count: 1,
+            page_url: lastPage?.url || norm.cart_url || null,
+            page_title: lastPage?.title || null,
+            page_history: browsed,
             last_message: '', last_message_at: new Date().toISOString(),
           }).select('id').maybeSingle()
           conversationId = newConv?.id || null
