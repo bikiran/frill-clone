@@ -34,6 +34,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         if (!res.ok || cancelled) return
         const { TelnyxRTC } = await import('@telnyx/webrtc')
         const client = new TelnyxRTC({ login_token: data.token })
+        // Route the far end's audio to our always-mounted element — without
+        // this, answered calls connect but have no sound.
+        ;(client as any).remoteElement = 'colvy-inbound-audio'
         clientRef.current = client
 
         client.on('telnyx.ready', () => { if (!cancelled) setReady(true) })
@@ -96,9 +99,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
 
   const fmtDur = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
-  if (!incoming) return null
+  // The audio element must ALWAYS be in the DOM (not just while the popup is
+  // showing) — the SDK looks it up by id when call media starts, and without
+  // it an answered call is completely silent.
+  const audioEl = <audio id="colvy-inbound-audio" autoPlay style={{ display: 'none' }} />
 
-  return (
+  if (!incoming) return audioEl
+
+  return (<>
+    {audioEl}
     <div style={{ position: 'fixed', top: 20, right: 20, width: 320, background: '#0d0d0d', color: '#fff', borderRadius: 18, boxShadow: '0 16px 48px rgba(0,0,0,0.4)', zIndex: 9999, overflow: 'hidden', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       <div style={{ padding: '20px 20px 16px' }}>
         <p style={{ margin: 0, fontSize: 11, fontWeight: 700, letterSpacing: 1, opacity: 0.6, textTransform: 'uppercase' }}>
@@ -140,5 +149,5 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         )}
       </div>
     </div>
-  )
+  </>)
 }

@@ -12,6 +12,71 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   'on-hold': 'Your order is on hold while we confirm a few details. We\'ll be in touch shortly — feel free to reply here.',
 }
 
+// ── Recover abandoned carts by email/phone ──────────────────────────────────
+// The WordPress bridge only marks a cart recovered when the SAME browser
+// session converts. Customers routinely abandon on mobile and buy on desktop,
+// so we also match on contact details. This runs at the TOP LEVEL of the
+// webhook (not buried inside the chat automation, whose early returns —
+// missing conversation, etc. — used to silently skip it). It also counts
+// 'pending' as a conversion: WooCommerce's order.created webhook fires with
+// status=pending for most gateways, and if that's the only webhook configured,
+// a successful order would otherwise never be matched.
+async function recoverAbandonedCarts(db: any, companyId: string, order: any) {
+  try {
+    const status = (order.status || '').toLowerCase()
+    const converting = ['pending', 'processing', 'completed', 'on-hold'].includes(status)
+    if (!converting) return
+
+    const email = (order.billing?.email || '').trim()
+    const phone = (order.billing?.phone || '').trim()
+    if (!email && !phone) return
+
+    const { data: openCarts } = await db.from('abandoned_carts')
+      .select('id, email, phone, conversation_id')
+      .eq('company_id', companyId)
+      .eq('status', 'abandoned')
+
+    const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-8) // last 8 digits
+    const wantEmail = email.toLowerCase()
+    const wantPhone = norm(phone)
+
+    const matches = (openCarts || []).filter((c: any) => {
+      const cEmail = (c.email || '').trim().toLowerCase()
+      const cPhone = norm(c.phone || '')
+      if (wantEmail && cEmail && cEmail === wantEmail) return true
+      if (wantPhone && cPhone && cPhone === wantPhone) return true
+      return false
+    })
+
+    for (const m of matches) {
+      await db.from('abandoned_carts').update({
+        status: 'recovered',
+        recovered_order_id: String(order.id),
+        updated_at: new Date().toISOString(),
+      }).eq('id', m.id)
+      // Note the win in the cart's conversation thread, so the agent sees it.
+      if (m.conversation_id) {
+        try {
+          await db.from('messages').insert({
+            conversation_id: m.conversation_id, company_id: companyId, sender_type: 'system',
+            content: `🛒→✅ Abandoned cart recovered — order #${order.number || order.id} placed ($${order.total})`,
+            metadata: { cart_recovered: true, order_id: order.id },
+          })
+        } catch {}
+      }
+    }
+
+    // Diagnostic breadcrumb: how many carts this order recovered (visible via ?diag=1).
+    try {
+      await db.from('abandoned_cart_hits').insert({
+        company_id: companyId, had_email: !!email, had_phone: !!phone,
+        item_count: matches.length,
+        raw_keys: `CART_RECOVERY order=${order.id} status=${status} matched=${matches.length}`,
+      })
+    } catch {}
+  } catch (e) { console.error('[cart recovery] match failed', e) }
+}
+
 // Find-or-create a contact + conversation for an order's customer, then post a
 // status-appropriate message. De-duplicated per (order, status).
 async function runOrderChatAutomation(db: any, companyId: string, order: any) {
@@ -145,42 +210,6 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     } catch (e) { console.error('[Order automation] email failed', e) }
   }
   } // end automation-message block
-
-  // ── Recover abandoned carts by email/phone ────────────────────────────────
-  // The WordPress bridge marks a cart recovered when the SAME browser session
-  // converts. But customers routinely abandon on mobile and buy on desktop —
-  // a different session, so the external_id never matches and the cart would
-  // stay "abandoned" forever even though they bought. Match on contact details
-  // as well, which is how people actually shop.
-  try {
-    const paidLike = ['processing', 'completed', 'on-hold'].includes(status)
-    if (paidLike && (email || phone)) {
-      const { data: openCarts } = await db.from('abandoned_carts')
-        .select('id, email, phone')
-        .eq('company_id', companyId)
-        .eq('status', 'abandoned')
-
-      const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-8) // last 8 digits
-      const wantEmail = (email || '').toLowerCase()
-      const wantPhone = norm(phone || '')
-
-      const matches = (openCarts || []).filter((c: any) => {
-        const cEmail = (c.email || '').toLowerCase()
-        const cPhone = norm(c.phone || '')
-        if (wantEmail && cEmail && cEmail === wantEmail) return true
-        if (wantPhone && cPhone && cPhone === wantPhone) return true
-        return false
-      })
-
-      for (const m of matches) {
-        await db.from('abandoned_carts').update({
-          status: 'recovered',
-          recovered_order_id: String(order.id),
-          updated_at: new Date().toISOString(),
-        }).eq('id', m.id)
-      }
-    }
-  } catch (e) { console.error('[cart recovery] match failed', e) }
 
   // ── Record the order with its chat attribution ────────────────────────────
   // This makes "sales converted through chat" a real revenue figure. We only
@@ -337,6 +366,10 @@ export async function POST(req: NextRequest) {
           raw_keys: `ORDER_WEBHOOK status=${data.status} id=${data.id}`,
         })
       } catch {}
+      // Cart recovery FIRST and independently — it must not be skippable by
+      // anything the chat automation does (or fails to do).
+      try { await recoverAbandonedCarts(supabase, companyId, data) }
+      catch (e) { console.error('[Webhook] cart recovery error', e) }
       try { await runOrderChatAutomation(supabase, companyId, data) }
       catch (e) { console.error('[Webhook] order chat automation error', e) }
     }

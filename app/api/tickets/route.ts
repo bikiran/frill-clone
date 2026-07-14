@@ -43,13 +43,57 @@ export async function POST(req: NextRequest) {
       if (!error) ticket = data
       else lastError = error.message
     }
+
+    // FALLBACK 1 — ask PostgREST to RELOAD its schema cache, then retry.
+    // The real cause of the persistent failure: PostgREST caches each table's
+    // column list. After V159's ALTER TABLE the cache stayed stale, so inserts
+    // failed with "Could not find the 'company_id' column of 'support_tickets'"
+    // even though the column exists. Running more SQL never fixed it because
+    // the SQL was never the problem. Ask for a reload and try again.
+    if (!ticket && /could not find|schema cache|PGRST204/i.test(lastError || '')) {
+      try {
+        await db.rpc('colvy_reload_schema')   // present after V168; harmless if not
+      } catch {}
+      // PostgREST also reloads on this header-less ping; give it a moment.
+      await new Promise(r => setTimeout(r, 1200))
+      const ticketNumber = await nextTicketNumber(db, companyId)
+      const { data, error } = await db.from('support_tickets').insert({
+        company_id: companyId, ticket_number: ticketNumber,
+        conversation_id: conversationId || null, contact_id: contactId || null,
+        subject, description: description || null, priority: priority || 'normal',
+        status: 'open', created_by: createdBy || null,
+      }).select().maybeSingle()
+      if (!error && data) ticket = data
+      else if (error) lastError = `${lastError} | after-reload: ${error.message}`
+    }
+
+    // FALLBACK 2 — a SECURITY DEFINER function that inserts with plain SQL.
+    // Immune to the column cache entirely. (migrations/COLVY_V168_TICKETS_RPC.sql)
     if (!ticket) {
-      // Say WHY, instead of a generic failure. A missing table here means the
-      // COLVY_V133_TICKETS.sql migration hasn't been run.
-      const hint = /does not exist|relation/i.test(lastError || '')
-        ? 'The tickets tables are missing — run the COLVY_V133_TICKETS.sql migration.'
-        : null
-      return NextResponse.json({ error: hint || lastError || 'Could not create ticket' }, { status: 500 })
+      try {
+        const { data: rpcTicket, error: rpcErr } = await db.rpc('colvy_create_ticket', {
+          p_company_id: companyId,
+          p_conversation_id: conversationId || null,
+          p_contact_id: contactId || null,
+          p_subject: subject,
+          p_description: description || null,
+          p_priority: priority || 'normal',
+          p_created_by: createdBy || null,
+        })
+        if (!rpcErr && rpcTicket) ticket = rpcTicket
+        else if (rpcErr) lastError = `${lastError} | rpc: ${rpcErr.message}`
+      } catch (e: any) { lastError = `${lastError} | rpc: ${e.message}` }
+    }
+
+    if (!ticket) {
+      // Say WHY, instead of a generic failure.
+      let hint: string | null = null
+      if (/does not exist|relation/i.test(lastError || '')) {
+        hint = 'The tickets tables are missing — run migrations/COLVY_V168_TICKETS_RPC.sql in the Supabase SQL editor.'
+      } else if (/could not find|schema cache|PGRST204/i.test(lastError || '')) {
+        hint = 'Supabase\'s API cache is stale. Run migrations/COLVY_V168_TICKETS_RPC.sql — it adds a cache-proof fallback — then try again.'
+      }
+      return NextResponse.json({ error: hint ? `${hint} (${lastError})` : (lastError || 'Could not create ticket') }, { status: 500 })
     }
 
     // Build a shareable link to the ticket

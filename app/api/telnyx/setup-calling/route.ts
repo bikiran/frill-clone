@@ -58,19 +58,33 @@ export async function POST(req: NextRequest) {
     if (connectionId) {
       // Make sure it still exists on the Telnyx side.
       const existing = await svc.listCredentialConnections()
-      if (!existing.some((c: any) => String(c.id) === String(connectionId))) {
+      const found = existing.find((c: any) => String(c.id) === String(connectionId))
+      if (!found) {
         steps.push('Stored connection no longer exists on Telnyx — creating a new one')
         connectionId = undefined
       } else {
         steps.push('WebRTC connection already exists')
+        // HEAL: connections created before the fix have NO outbound voice
+        // profile attached — Telnyx rejects every outbound call from them.
+        const attached = found?.outbound?.outbound_voice_profile_id
+        if (!attached && profileId) {
+          try {
+            await svc.attachOutboundProfile(String(connectionId), profileId)
+            steps.push('Outbound voice profile attached to the connection (this was why calls were rejected)')
+          } catch (e: any) {
+            steps.push(`Could not attach the outbound voice profile: ${e.message}`)
+          }
+        } else if (attached) {
+          steps.push('Outbound voice profile already attached')
+        }
       }
     }
 
     if (!connectionId) {
       try {
-        const conn = await svc.createCredentialConnection(`Colvy WebRTC ${companyId.slice(0, 8)}`, webhookUrl)
+        const conn = await svc.createCredentialConnection(`Colvy WebRTC ${companyId.slice(0, 8)}`, webhookUrl, profileId)
         connectionId = conn?.data?.id
-        steps.push(connectionId ? 'WebRTC connection created' : 'Could not create the WebRTC connection')
+        steps.push(connectionId ? 'WebRTC connection created (with outbound voice profile attached)' : 'Could not create the WebRTC connection')
       } catch (e: any) {
         return NextResponse.json({
           error: `Could not create the WebRTC connection: ${e.message}`,

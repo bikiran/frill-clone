@@ -43,11 +43,14 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const timerRef = useRef<any>(null)
   const callRowId = useRef<string | null>(null)
   const hangupCause = useRef<string | null>(null)
+  const audioCtxRef = useRef<any>(null)
+  const ringbackRef = useRef<any>(null)
 
   useEffect(() => () => { cleanup() }, [])
 
   const cleanup = () => {
     if (timerRef.current) clearInterval(timerRef.current)
+    stopRingback()
     try { callRef.current?.hangup?.() } catch {}
     try { clientRef.current?.disconnect?.() } catch {}
     callRef.current = null
@@ -61,6 +64,17 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
 
     setState('connecting'); setErrorMsg('')
     try {
+      // 0. Ask for the microphone up-front. If it's blocked, fail NOW with a
+      // clear message instead of a cryptic mid-call error from the SDK.
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        stream.getTracks().forEach(t => t.stop())
+      } catch {
+        setErrorMsg('Microphone blocked — allow mic access for this site and try again')
+        setState('error')
+        return
+      }
+
       // 1. Get an ephemeral WebRTC token from our server
       const res = await fetch('/api/telnyx/token', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -82,6 +96,9 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       // 3. Load the Telnyx WebRTC SDK and connect
       const { TelnyxRTC } = await import('@telnyx/webrtc')
       const client = new TelnyxRTC({ login_token: token })
+      // Without a remote audio element the call CONNECTS but is completely
+      // silent — the SDK has nowhere to play the far end's audio.
+      ;(client as any).remoteElement = 'colvy-callbar-audio'
       clientRef.current = client
 
       client.on('telnyx.ready', () => {
@@ -99,13 +116,15 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
         const call = notification?.call
         if (!call) return
         const s = call.state
-        if (s === 'ringing' || s === 'trying') setState('ringing')
+        if (s === 'ringing' || s === 'trying') { setState('ringing'); startRingback() }
         if (s === 'active') {
           setState('active')
+          toneConnected()
           startTimer()
           updateCallRow({ status: 'answered' })
         }
         if (s === 'hangup' || s === 'destroy') {
+          toneEnded()
           // Capture WHY the call ended — Telnyx puts a cause on the call object
           // (e.g. CALL_REJECTED, NORMAL_CLEARING, USER_BUSY, or an outbound-
           // permission/routing error). Surfacing this is the key to diagnosing
@@ -113,7 +132,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
           const cause = call.cause || call.causeCode || call.hangupCause || null
           hangupCause.current = cause
           if (seconds === 0 && cause && cause !== 'NORMAL_CLEARING') {
-            setErrorMsg(`Call ended: ${cause}`)
+            setErrorMsg(explainCause(cause))
           }
           endCall(false)
         }
@@ -134,6 +153,50 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const startTimer = () => {
     setSeconds(0)
     timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000)
+  }
+
+  // ── Call tones ───────────────────────────────────────────────────────────
+  // The call was silent in EVERY state — no ringback while dialling, no beep on
+  // connect or hangup — so there was no way to tell what was happening. These
+  // are generated with WebAudio (no audio files to host).
+  const beep = (freq: number, ms: number, vol = 0.12) => {
+    try {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
+      if (!Ctx) return
+      if (!audioCtxRef.current) audioCtxRef.current = new Ctx()
+      const ctx = audioCtxRef.current
+      if (ctx.state === 'suspended') ctx.resume()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(vol, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + ms / 1000)
+      osc.connect(gain); gain.connect(ctx.destination)
+      osc.start(); osc.stop(ctx.currentTime + ms / 1000)
+    } catch {}
+  }
+  // Australian ringback: two short bursts, then a pause — repeating.
+  const startRingback = () => {
+    stopRingback()
+    const ring = () => { beep(425, 400, 0.08); setTimeout(() => beep(425, 400, 0.08), 600) }
+    ring()
+    ringbackRef.current = setInterval(ring, 3000)
+  }
+  const stopRingback = () => { if (ringbackRef.current) { clearInterval(ringbackRef.current); ringbackRef.current = null } }
+  const toneConnected = () => { stopRingback(); beep(880, 120) }
+  const toneEnded = () => { stopRingback(); beep(400, 180); setTimeout(() => beep(300, 220), 190) }
+
+  // Telnyx hangup causes are machine-speak. Say what to actually DO about them.
+  const explainCause = (cause: string): string => {
+    const c = (cause || '').toUpperCase()
+    if (c === 'CALL_REJECTED') return 'Call rejected by the carrier — the number\'s outbound voice profile or caller ID isn\'t set up. Open Integrations → Phone & SMS and click "Set up calling".'
+    if (c === 'USER_BUSY') return 'The line was busy'
+    if (c === 'NO_ANSWER' || c === 'NO_USER_RESPONSE') return 'No answer'
+    if (c === 'UNALLOCATED_NUMBER' || c === 'INVALID_NUMBER_FORMAT') return 'That number doesn\'t exist or is misformatted'
+    if (c === 'ORIGINATOR_CANCEL') return 'Call cancelled'
+    if (c === 'NORMAL_CLEARING') return 'Call ended'
+    return `Call ended: ${cause}`
   }
 
   const updateCallRow = async (fields: any) => {
@@ -194,17 +257,19 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
 
   // Idle → show a call button
   if (state === 'idle') {
-    return (
+    return (<>
+      <audio id="colvy-callbar-audio" autoPlay style={{ display: 'none' }} />
       <button type="button" onClick={startCall} data-callbar-btn
         style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 10, border: '1px solid #059669', background: '#dcfce7', color: '#059669', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
         Call
       </button>
-    )
+    </>)
   }
 
   // Active call panel
-  return (
+  return (<>
+    <audio id="colvy-callbar-audio" autoPlay style={{ display: 'none' }} />
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderRadius: 12, background: state === 'error' ? '#fef2f2' : '#0d0d0d', color: '#fff' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{ margin: 0, fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -220,7 +285,11 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       {state === 'active' && (
         <button type="button" onClick={toggleMute} title={muted ? 'Unmute' : 'Mute'}
           style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: muted ? '#dc2626' : 'rgba(255,255,255,0.15)', color: '#fff', cursor: 'pointer', fontSize: 14 }}>
-          {muted ? '🔇' : '🎙'}
+          {muted ? (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+          ) : (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+          )}
         </button>
       )}
       {(state === 'connecting' || state === 'ringing' || state === 'active') && (
@@ -233,5 +302,5 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
         <button type="button" onClick={() => setState('idle')} style={{ padding: '5px 10px', borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.15)', color: '#fff', cursor: 'pointer', fontSize: 12 }}>Close</button>
       )}
     </div>
-  )
+  </>)
 }

@@ -24,6 +24,18 @@ export async function POST(req: NextRequest) {
 
     const svc = new TelnyxService(integ.api_key)
 
+    // SELF-HEAL: outbound calls are rejected by Telnyx unless the connection
+    // has an outbound voice profile attached. Connections created by older
+    // builds never got one. Check here — every call mints a token, so this
+    // fixes calling on the very next attempt without any manual setup step.
+    try {
+      const conn = await svc.getCredentialConnection(integ.connection_id)
+      if (conn && !conn?.outbound?.outbound_voice_profile_id) {
+        const profile = await svc.ensureOutboundVoiceProfile(`Colvy ${companyId.slice(0, 8)}`)
+        if (profile?.id) await svc.attachOutboundProfile(integ.connection_id, profile.id)
+      }
+    } catch (e) { console.error('[telnyx token] outbound profile heal failed', e) }
+
     // Reuse a stored credential if we have one, otherwise create one bound to
     // the company's connection.
     let credentialId = (integ as any).sip_username // we store the credential id here

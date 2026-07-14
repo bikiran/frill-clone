@@ -33,9 +33,9 @@ type Contact = {
 type TeamMember = { id: string; user_id: string; name: string; role: string; avatar?: string }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const CHANNEL_ICON: Record<string, string> = {
-  widget: '💬', email: '✉️', sms: '📱', facebook: '🟦', instagram: '🟣', whatsapp: '🟢'
-}
+// Channel icons are defined below (CHANNEL_ICON) once the `svg` helper exists —
+// they used to be emoji, which render differently on every OS and looked like
+// clip-art next to the rest of the UI.
 
 // Inline SVG icons (replace emojis for a cleaner, consistent look).
 const svg = (path: React.ReactNode, size = 15) => (
@@ -62,6 +62,31 @@ const Icon = {
   calendar: (s?: number) => svg(<><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>, s),
   star: (s?: number) => svg(<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>, s),
   attach: (s?: number) => svg(<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>, s),
+
+  // ── Icons that replace the last of the emoji ──────────────────────────────
+  person: (s?: number) => svg(<><circle cx="12" cy="7" r="4"/><path d="M5.5 21a8.38 8.38 0 0 1 13 0"/></>, s),
+  phone: (s?: number) => svg(<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>, s),
+  smile: (s?: number) => svg(<><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></>, s),
+  meh: (s?: number) => svg(<><circle cx="12" cy="12" r="10"/><line x1="8" y1="15" x2="16" y2="15"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></>, s),
+  frown: (s?: number) => svg(<><circle cx="12" cy="12" r="10"/><path d="M16 16s-1.5-2-4-2-4 2-4 2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></>, s),
+  chat: (s?: number) => svg(<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/>, s),
+  mail: (s?: number) => svg(<><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 6l-10 7L2 6"/></>, s),
+  mobile: (s?: number) => svg(<><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></>, s),
+  send: (s?: number) => svg(<><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></>, s),
+}
+
+// Channel icons as components (were emoji: 💬 ✉️ 📱 …, which rendered as
+// mismatched clip-art and differ across Windows / macOS / Android).
+const CHANNEL_ICON: Record<string, React.ReactNode> = {
+  widget: Icon.chat(16), chat: Icon.chat(16), email: Icon.mail(16), sms: Icon.mobile(16),
+  phone: Icon.phone(16), facebook: Icon.send(16), messenger: Icon.send(16),
+  instagram: Icon.media(16), whatsapp: Icon.chat(16),
+}
+const SENTIMENT_ICON: Record<string, (s?: number) => React.ReactNode> = {
+  positive: Icon.smile, neutral: Icon.meh, negative: Icon.frown,
+}
+const SENTIMENT_COLOR: Record<string, string> = {
+  positive: '#16a34a', neutral: '#9ca3af', negative: '#dc2626',
 }
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   open:     { bg: '#fef3c7', color: '#d97706' },
@@ -794,8 +819,27 @@ export default function InboxPage() {
   // Realtime subscription to new messages / conversation updates
   useEffect(() => {
     if (!companyId) return
-    if (channelRef.current) supabase.removeChannel(channelRef.current)
-    const ch = supabase.channel(`inbox-${companyId}`)
+    // CRITICAL: supabase.channel(name) returns the EXISTING instance if a
+    // channel with that topic is still registered on the global client — and
+    // adding postgres_changes callbacks to an already-subscribed channel throws
+    // "cannot add postgres_changes callbacks ... after subscribe()". A previous
+    // mount's channel survives navigation (channelRef is a fresh ref on
+    // remount), so sweep the client for ANY channel with this topic and remove
+    // it before building a new one.
+    try {
+      const prefix = `realtime:inbox-${companyId}`
+      for (const existing of (supabase as any).getChannels?.() || []) {
+        if (typeof existing?.topic === 'string' && existing.topic.startsWith(prefix)) {
+          try { supabase.removeChannel(existing) } catch {}
+        }
+      }
+    } catch {}
+    if (channelRef.current) { try { supabase.removeChannel(channelRef.current) } catch {}; channelRef.current = null }
+    // Belt AND braces: a UNIQUE topic per subscription. Even if a previous
+    // channel somehow survives (a cleanup that didn't run, a React 18 double
+    // mount, a fast back/forward), this new name can never collide with it, so
+    // .on() is always called on a fresh, unsubscribed channel.
+    const ch = supabase.channel(`inbox-${companyId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `company_id=eq.${companyId}` }, (payload: any) => {
         loadConversations()
         // Keep the OPEN conversation fresh too — page history, status and
@@ -859,25 +903,31 @@ export default function InboxPage() {
     window.addEventListener('focus', revive)
     window.addEventListener('online', revive)
 
+    // Polling fallback — refresh the open thread every 5s in case realtime
+    // isn't enabled on the messages table. (Previously declared after a return
+    // statement, so it never ran.) Uses selectedRef so it always polls the
+    // currently open conversation without re-running this effect.
+    const poll = setInterval(async () => {
+      loadConversations()
+      const openId = selectedRef.current?.id
+      if (openId) {
+        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', openId).order('created_at', { ascending: true })
+        if (msgs && selectedRef.current?.id === openId) setMessages(prev => msgs.length !== prev.length ? msgs : prev)
+      }
+    }, 5000)
+
+    // ONE cleanup path. The old code had two return statements — the first
+    // (listener removal) won, so removeChannel(ch) was dead code and the
+    // channel outlived the page, crashing the next visit to the inbox.
     return () => {
       document.removeEventListener('visibilitychange', revive)
       window.removeEventListener('focus', revive)
       window.removeEventListener('online', revive)
+      clearInterval(poll)
+      try { supabase.removeChannel(ch) } catch {}
+      if (channelRef.current === ch) channelRef.current = null
     }
-
-    // Polling fallback — refresh the open thread every 4s in case realtime
-    // isn't enabled on the messages table. Guarantees new messages appear
-    // without a manual reload.
-    const poll = setInterval(async () => {
-      loadConversations()
-      if (selected?.id) {
-        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-        if (msgs) setMessages(prev => msgs.length !== prev.length ? msgs : prev)
-      }
-    }, 4000)
-
-    return () => { supabase.removeChannel(ch); clearInterval(poll) }
-  }, [companyId, selected?.id, realtimeNonce])
+  }, [companyId, realtimeNonce])
 
   const loadTeam = async (cid: string) => {
     const members: TeamMember[] = []
@@ -2041,6 +2091,60 @@ export default function InboxPage() {
           .inbox-root .inbox-collapsed-rail { display: none !important; }
           /* Back / nav buttons only on mobile */
           .inbox-mobile-only { display: flex !important; }
+
+          /* ── Customer top details: native mobile chat header ──────────
+             Row 1 is the identity bar (back · name · call · contact) — the
+             pattern every phone messaging app uses. Row 2 is a single
+             horizontally-scrollable strip of tools. Previously ~10 controls
+             wrapped into three ragged rows and ate a third of the screen. */
+          .inbox-thread-header {
+            padding: 6px 8px 0 !important;
+            gap: 8px !important;
+            align-items: center;
+            position: sticky; top: 0; z-index: 20;
+            /* iOS-style translucent bar */
+            background: rgba(255,255,255,0.92) !important;
+            backdrop-filter: saturate(180%) blur(12px);
+            -webkit-backdrop-filter: saturate(180%) blur(12px);
+          }
+          .inbox-thread-header .inbox-header-name {
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+          }
+          .inbox-thread-header .inbox-header-name p:first-child { font-size: 16px !important; }
+
+          /* Row 2 — the scrolling tool strip */
+          .inbox-thread-header .inbox-header-tools {
+            order: 10;
+            flex: 0 0 100%;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;
+            padding: 6px 0 8px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            /* fade the right edge so it's obvious there's more to scroll */
+            -webkit-mask-image: linear-gradient(to right, #000 88%, transparent 100%);
+            mask-image: linear-gradient(to right, #000 88%, transparent 100%);
+          }
+          .inbox-thread-header .inbox-header-tools::-webkit-scrollbar { display: none; }
+          .inbox-thread-header .inbox-header-tools > * { flex-shrink: 0; }
+
+          /* Bigger, thumb-friendly hit targets (Apple's 44px guidance) */
+          .inbox-thread-header .inbox-header-tools button { min-height: 36px; }
+          .inbox-thread-header [data-callbar-btn] { padding: 8px 12px !important; }
+        }
+        /* Desktop / tablet: the tools sit inline on the right as before */
+        @media (min-width: 768px) {
+          .inbox-header-tools { display: flex; align-items: center; gap: 10px; }
+        }
+        /* Narrow desktop windows: tighten so nothing falls off */
+        @media (min-width: 768px) and (max-width: 1100px) {
+          .inbox-thread-header { gap: 7px !important; padding: 10px 12px !important; }
+          .inbox-header-tools { gap: 7px !important; }
         }
         @media (min-width: 768px) {
           .inbox-mobile-only { display: none !important; }
@@ -2265,7 +2369,13 @@ export default function InboxPage() {
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
           <div onClick={e => e.stopPropagation()}
             style={{ width: 860, maxWidth: '95vw', maxHeight: '88vh', overflowY: 'auto', background: '#fff', borderRadius: 20, padding: 26 }}>
-            <h2 style={{ margin: '0 0 20px', fontSize: 20, fontWeight: 800, color: 'var(--coral)' }}>Filter</h2>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: 'var(--coral)' }}>Filter</h2>
+              <button type="button" onClick={() => setShowFilters(false)} title="Close" aria-label="Close filters"
+                style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', flexShrink: 0 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
               {/* Left: date range + sort */}
@@ -2461,7 +2571,7 @@ export default function InboxPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowMediaPicker(false)}>
           <div onClick={e => e.stopPropagation()} style={{ width: 720, maxWidth: '92vw', height: 560, maxHeight: '86vh', background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>🖼️ Send from gallery</h2>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 7 }}>{Icon.media(16)} Send from gallery</h2>
               <button onClick={() => setShowMediaPicker(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
             </div>
             <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
@@ -2937,13 +3047,50 @@ export default function InboxPage() {
         ) : (
           <>
             {/* Thread header */}
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div className="inbox-thread-header" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {/* Mobile: back to conversation list */}
               <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('list')} title="Back"
                 style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', order: -2 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
               </button>
-              <span style={{ fontSize: 16 }}>{CHANNEL_ICON[selected.channel]}</span>
+              <div className="inbox-header-name" style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {contact?.name || selected.subject || 'Visitor'}
+                  {/* Sentiment badge */}
+                  {(selected as any).sentiment && (
+                    <span title={`${(selected as any).sentiment} experience`}
+                      style={{ display: 'flex', alignItems: 'center', color: SENTIMENT_COLOR[(selected as any).sentiment] || 'var(--slate)' }}>
+                      {(SENTIMENT_ICON[(selected as any).sentiment] || Icon.meh)(15)}
+                    </span>
+                  )}
+                </p>
+                {selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {selected.page_title}</p>}
+              </div>
+
+              {/* Browser calling (Telnyx WebRTC) */}
+              {(contact?.phone || (selected as any).sms_number) && (
+                <CallBar
+                  companyId={companyId}
+                  toNumber={contact?.phone || (selected as any).sms_number}
+                  contactName={contact?.name}
+                  contactId={contact?.id}
+                  conversationId={selected.id}
+                  agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+                />
+              )}
+
+              {/* Mobile: open contact panel */}
+              <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('contact')} title="Contact info"
+                style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a8.38 8.38 0 0 1 13 0"/></svg>
+              </button>
+
+
+              {/* Tools strip. On phones this becomes a single horizontally
+                  scrollable row under the customer's name — the native chat-app
+                  pattern — instead of nine buttons wrapping into ragged rows. */}
+              <div className="inbox-header-tools">
+              <span style={{ display: 'flex', alignItems: 'center', color: 'var(--slate)' }} title={selected.channel}>{CHANNEL_ICON[selected.channel] || Icon.chat(16)}</span>
               {/* AI on/off for this conversation */}
               <button type="button"
                 onClick={async () => {
@@ -3010,43 +3157,17 @@ export default function InboxPage() {
                 style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: showMsgSearch ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', order: -1 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               </button>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {contact?.name || selected.subject || 'Visitor'}
-                  {/* Sentiment badge */}
-                  {(selected as any).sentiment && (
-                    <span style={{ fontSize: 14 }} title={`${(selected as any).sentiment} experience`}>
-                      {(selected as any).sentiment === 'positive' ? '😊' : (selected as any).sentiment === 'negative' ? '😞' : '😐'}
-                    </span>
-                  )}
-                </p>
-                {selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {selected.page_title}</p>}
-              </div>
-
-              {/* Browser calling (Telnyx WebRTC) */}
-              {(contact?.phone || (selected as any).sms_number) && (
-                <CallBar
-                  companyId={companyId}
-                  toNumber={contact?.phone || (selected as any).sms_number}
-                  contactName={contact?.name}
-                  contactId={contact?.id}
-                  conversationId={selected.id}
-                  agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
-                />
-              )}
-
-              {/* Mobile: open contact panel */}
-              <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('contact')} title="Contact info"
-                style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a8.38 8.38 0 0 1 13 0"/></svg>
-              </button>
-
               {/* Sentiment picker */}
               <div style={{ display: 'flex', gap: 2 }}>
-                {[['positive', '😊'], ['neutral', '😐'], ['negative', '😞']].map(([s, e]) => (
-                  <button key={s} type="button" onClick={() => setSentiment(s)} title={`Mark ${s}`}
-                    style={{ width: 28, height: 28, borderRadius: 7, border: (selected as any).sentiment === s ? '1.5px solid var(--coral)' : '1px solid var(--border)', background: (selected as any).sentiment === s ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 14, padding: 0 }}>{e}</button>
-                ))}
+                {(['positive', 'neutral', 'negative'] as const).map(s => {
+                  const active = (selected as any).sentiment === s
+                  return (
+                    <button key={s} type="button" onClick={() => setSentiment(s)} title={`Mark ${s}`}
+                      style={{ width: 30, height: 30, borderRadius: 8, border: active ? `1.5px solid ${SENTIMENT_COLOR[s]}` : '1px solid var(--border)', background: active ? 'var(--peach)' : '#fff', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: active ? SENTIMENT_COLOR[s] : 'var(--slate)' }}>
+                      {SENTIMENT_ICON[s](16)}
+                    </button>
+                  )
+                })}
               </div>
 
               {/* Status pill */}
@@ -3060,7 +3181,9 @@ export default function InboxPage() {
               <div style={{ position: 'relative' }} data-assign-menu>
                 <button type="button" onClick={() => setShowAssignMenu(v => !v)}
                   style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>
-                  {selected.assigned_name ? `👤 ${selected.assigned_name}` : '+ Assign'}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    {selected.assigned_name ? <>{Icon.person(13)}{selected.assigned_name}</> : '+ Assign'}
+                  </span>
                 </button>
                 {showAssignMenu && (
                   <div style={{ position: 'absolute', top: '110%', right: 0, width: 220, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
@@ -3108,7 +3231,7 @@ export default function InboxPage() {
                   </div>
                 )}
               </div>
-
+              </div>
               {/* Snooze menu */}
               {showSnooze && (
                 <div style={{ position: 'absolute', top: 54, right: 16, width: 200, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden' }}>
@@ -3289,7 +3412,7 @@ export default function InboxPage() {
                               </div>
                             ) : (
                               <a href={a.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 8, color: isAgent ? '#fff' : 'var(--coral)', textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
-                                📎 {a.name}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{Icon.attach(12)}{a.name}</span>
                               </a>
                             )}
 
@@ -3417,7 +3540,7 @@ export default function InboxPage() {
                       {/* Hover actions: react + reply */}
                       <div className="chat-msg-actions" style={{ position: 'absolute', top: -10, [isAgent ? 'left' : 'right']: -8, display: 'flex', gap: 2, background: '#fff', borderRadius: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.12)', padding: '2px 4px', opacity: 0, transition: 'opacity 0.12s', pointerEvents: 'none' } as any}>
                         <button type="button" onClick={() => setShowReactPicker(showReactPicker === msg.id ? null : msg.id)}
-                          style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }} title="React">😊</button>
+                          style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px 4px', color: 'var(--slate)', display: 'inline-flex' }} title="React">{Icon.smile(14)}</button>
                         <button type="button" onClick={() => { setReplyTo(msg); textareaRef.current?.focus() }}
                           style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 12, padding: '2px 4px' }} title="Reply">↩</button>
                       </div>
@@ -3609,7 +3732,7 @@ export default function InboxPage() {
                   </button>
                   {/* Emoji */}
                   <button type="button" onClick={() => setShowEmoji(v => !v)} title="Emoji"
-                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 15 }}>😊</button>
+                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{Icon.smile(16)}</button>
                   {/* Review request */}
                   <button type="button" onClick={sendReviewRequest} title="Send review request"
                     style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -3881,7 +4004,7 @@ export default function InboxPage() {
                     {selected.assigned_name && (
                       <div>
                         <p style={{ margin: '0 0 2px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Assigned to</p>
-                        <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)' }}>👤 {selected.assigned_name}</p>
+                        <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>{Icon.person(13)}{selected.assigned_name}</p>
                       </div>
                     )}
                   </div>

@@ -23,6 +23,8 @@ export default function GalleryPage() {
   const [showCatManager, setShowCatManager] = useState(false)
   const [newCatName, setNewCatName] = useState('')
   const [taggingItem, setTaggingItem] = useState<any>(null)
+  const [catMenuFor, setCatMenuFor] = useState<string | null>(null)   // which card's category picker is open
+  const [quickCat, setQuickCat] = useState('')
 
   const loadCategories = useCallback(async () => {
     if (!companyId) return
@@ -62,6 +64,29 @@ export default function GalleryPage() {
     try { await catApi({ action: 'set_item', itemId, categoryIds: next }) }
     catch (e: any) { alert(e.message); await loadCategories() }
   }
+
+  // Create a category AND put this photo in it, without leaving the card.
+  const quickAddCategory = async (itemId: string) => {
+    const name = quickCat.trim()
+    if (!name) return
+    try {
+      const d = await catApi({ action: 'create', name })
+      setQuickCat('')
+      const created = d.category || d.categories?.find((c: any) => c.name === name)
+      await loadCategories()
+      if (created?.id) await toggleItemCategory(itemId, created.id)
+    } catch (e: any) { alert(e.message) }
+  }
+
+  // Close the category picker when clicking elsewhere.
+  useEffect(() => {
+    if (!catMenuFor) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-cat-picker]')) setCatMenuFor(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [catMenuFor])
 
   const bulkAddCategory = async (catId: string) => {
     try {
@@ -351,7 +376,7 @@ export default function GalleryPage() {
                     ) : (
                       <img src={item.thumbnail_url || item.url} alt={item.title || ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                     )}
-                    {item.kind === 'video' && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 26, textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>▶</div>}
+                    {item.kind === 'video' && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}><svg width="34" height="34" viewBox="0 0 24 24" fill="#fff" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg></div>}
 
                     {/* Select checkbox — always available on hover, sticky in select mode */}
                     <button type="button"
@@ -390,16 +415,58 @@ export default function GalleryPage() {
                       </div>
                     )}
 
-                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                      <select value={item.folder_id || ''} onChange={e => moveItem(item, e.target.value || null)} style={{ flex: 1, fontSize: 11, padding: '3px 5px', borderRadius: 6, border: '1px solid var(--border)' }}>
-                        <option value="">Unfiled</option>
-                        {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                      </select>
+                    {/* Categories: a MULTI-select. The old control here was a
+                        single-select folder dropdown, which forced each photo
+                        into exactly one place — a 4ft tank with a sump belongs
+                        in both. Toggling here writes to the many-to-many join. */}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6, position: 'relative' }} data-cat-picker>
+                      <button type="button"
+                        onClick={e => { e.stopPropagation(); setCatMenuFor(catMenuFor === item.id ? null : item.id) }}
+                        style={{ flex: 1, fontSize: 11, padding: '4px 7px', borderRadius: 6, border: '1px solid var(--border)', background: '#fff', color: (itemCats[item.id] || []).length ? 'var(--ink)' : 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, textAlign: 'left' }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {(itemCats[item.id] || []).length
+                            ? `${(itemCats[item.id] || []).length} categor${(itemCats[item.id] || []).length === 1 ? 'y' : 'ies'}`
+                            : 'Unfiled'}
+                        </span>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+                      </button>
+
+                      {catMenuFor === item.id && (
+                        <div onClick={e => e.stopPropagation()}
+                          style={{ position: 'absolute', bottom: '110%', left: 0, width: 200, maxHeight: 240, overflowY: 'auto', background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.16)', zIndex: 60, padding: 6 }}>
+                          <p style={{ margin: '2px 6px 6px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>In categories</p>
+                          {categories.length === 0 && (
+                            <p style={{ margin: 0, padding: '8px 6px', fontSize: 11.5, color: 'var(--slate)' }}>No categories yet — add one on the left.</p>
+                          )}
+                          {categories.map((c: any) => {
+                            const on = (itemCats[item.id] || []).includes(c.id)
+                            return (
+                              <label key={c.id}
+                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 6px', borderRadius: 7, cursor: 'pointer', background: on ? 'var(--peach)' : 'transparent' }}>
+                                <input type="checkbox" checked={on}
+                                  onChange={() => toggleItemCategory(item.id, c.id)}
+                                  style={{ width: 15, height: 15, accentColor: 'var(--coral)', cursor: 'pointer' }} />
+                                <span style={{ fontSize: 12, color: on ? 'var(--coral)' : 'var(--ink)', fontWeight: on ? 700 : 500 }}>{c.name}</span>
+                              </label>
+                            )
+                          })}
+                          <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6, display: 'flex', gap: 6 }}>
+                            <input value={quickCat} onChange={e => setQuickCat(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') quickAddCategory(item.id) }}
+                              placeholder="New category…"
+                              style={{ flex: 1, fontSize: 11.5, padding: '5px 7px', borderRadius: 6, border: '1px solid var(--border)', outline: 'none', minWidth: 0 }} />
+                            <button type="button" onClick={() => quickAddCategory(item.id)}
+                              style={{ padding: '5px 9px', borderRadius: 6, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Add</button>
+                          </div>
+                        </div>
+                      )}
                       <button onClick={() => setTaggingItem(item)} title="Categories"
                         style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
                       </button>
-                      <button onClick={() => deleteItem(item)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 14 }}>🗑</button>
+                      <button onClick={() => deleteItem(item)} title="Delete" style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                      </button>
                     </div>
                   </div>
                 </div>

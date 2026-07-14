@@ -59,7 +59,7 @@ export class TelnyxService {
     } catch { return [] }
   }
 
-  async createCredentialConnection(name: string, webhookUrl?: string) {
+  async createCredentialConnection(name: string, webhookUrl?: string, outboundVoiceProfileId?: string) {
     return this.req('/credential_connections', 'POST', {
       connection_name: name,
       // WebRTC clients register over TLS/SRTP.
@@ -74,7 +74,24 @@ export class TelnyxService {
         webhook_api_version: '2',
       } : {}),
       inbound: { ani_number_format: '+E.164' },
-      outbound: { outbound_voice_profile_id: undefined },
+      // CRITICAL: without an outbound voice profile ATTACHED to the connection,
+      // Telnyx rejects every outbound call (the old code passed `undefined`,
+      // which JSON.stringify silently drops — so no profile was ever attached).
+      ...(outboundVoiceProfileId ? { outbound: { outbound_voice_profile_id: outboundVoiceProfileId } } : {}),
+    })
+  }
+
+  // Fetch one credential connection (to inspect its outbound profile).
+  async getCredentialConnection(connectionId: string) {
+    const data = await this.req(`/credential_connections/${connectionId}`, 'GET')
+    return data?.data || null
+  }
+
+  // Attach/replace the outbound voice profile on an EXISTING connection —
+  // heals connections created before the fix above.
+  async attachOutboundProfile(connectionId: string, profileId: string) {
+    return this.req(`/credential_connections/${connectionId}`, 'PATCH', {
+      outbound: { outbound_voice_profile_id: profileId },
     })
   }
 

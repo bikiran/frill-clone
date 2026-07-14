@@ -101,6 +101,17 @@ $$;
 
 GRANT EXECUTE ON FUNCTION colvy_create_ticket TO anon, authenticated, service_role;
 
+-- Lets the API force a PostgREST schema-cache reload when it sees a
+-- "Could not find the '<column>' column" error, and retry immediately.
+CREATE OR REPLACE FUNCTION colvy_reload_schema() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  NOTIFY pgrst, 'reload schema';
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION colvy_reload_schema TO anon, authenticated, service_role;
+
 NOTIFY pgrst, 'reload schema';
 SELECT pg_sleep(1);
 NOTIFY pgrst, 'reload schema';
