@@ -109,6 +109,33 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [adminCollapsed, setAdminCollapsed] = useState(false)
   const [company, setCompany] = useState<any>(null)
+
+  // ── Email auto-sync ───────────────────────────────────────────────────────
+  // Email only arrived when someone pressed "Sync now". A Vercel cron would be
+  // the clean way to do this, but the Hobby plan only allows DAILY crons — a
+  // */5 schedule is an invalid config and blocks the whole deployment. So we
+  // drive it from the client instead: while any admin has Colvy open, ping the
+  // sync endpoint every 2 minutes. The endpoint itself honours each mailbox's
+  // configured interval, so this can't over-sync, and it's idempotent.
+  //
+  // (If you upgrade to Vercel Pro, add vercel.json with a */5 cron on
+  // /api/cron/email-sync and this becomes a redundant backstop.)
+  useEffect(() => {
+    if (!company?.id) return
+    let stop = false
+    const sync = () => {
+      if (document.visibilityState !== 'visible') return   // don't sync in a background tab
+      fetch('/api/cron/email-sync', { method: 'GET' }).catch(() => {})
+    }
+    const t = setTimeout(sync, 4000)          // shortly after load
+    const iv = setInterval(sync, 120000)      // then every 2 minutes
+    document.addEventListener('visibilitychange', sync)
+    return () => {
+      stop = true
+      clearTimeout(t); clearInterval(iv)
+      document.removeEventListener('visibilitychange', sync)
+    }
+  }, [company?.id])
   const [inboxUnread, setInboxUnread] = useState(0)
 
   // Poll unread conversation count for the Inbox badge

@@ -111,36 +111,50 @@ export async function POST(req: NextRequest) {
     let summary = ''
     let todos: string[] = []
     let sentiment: string | null = null
+    let summaryError = ''
     const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
+
     if (ANTHROPIC_KEY) {
-      try {
-        const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-          body: JSON.stringify({
-            model: 'claude-3-5-haiku-20241022',
-            max_tokens: 600,
-            messages: [{
-              role: 'user',
-              content: `You are summarising a phone call between a support agent at an aquarium business and a customer.
+      // Model names get retired. Rather than fail silently on a stale one, try
+      // current models in order and report the REAL upstream error if all fail —
+      // "the summary step failed" told us nothing about why.
+      const MODELS = ['claude-sonnet-4-6', 'claude-3-5-haiku-20241022']   // 4-6 is what the rest of Colvy's AI uses and is known to work with this key
+      const prompt = `You are summarising a phone call between a support agent at an aquarium business and a customer.
 
 Respond ONLY with JSON, no preamble and no markdown fences:
 {"summary":"2-3 sentences, past tense, naming who called and what they wanted and how it was left","todos":["specific follow-up actions for the business, [] if none"],"sentiment":"positive|neutral|negative"}
 
 Transcript:
-${text.slice(0, 12000)}`,
-            }],
-          }),
-        })
-        if (res.ok) {
-          const data = await res.json()
+${text.slice(0, 12000)}`
+
+      for (const model of MODELS) {
+        try {
+          const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+            body: JSON.stringify({ model, max_tokens: 800, messages: [{ role: 'user', content: prompt }] }),
+          })
+          const raw = await res.text()
+          if (!res.ok) {
+            // Keep the upstream message — it names the real problem (bad key,
+            // no credit, unknown model, rate limit…).
+            let detail = raw.slice(0, 300)
+            try { detail = JSON.parse(raw)?.error?.message || detail } catch {}
+            summaryError = `${model}: ${detail}`
+            continue    // try the next model
+          }
+          const data = JSON.parse(raw)
           const out = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim()
           const parsed = JSON.parse(out)
           summary = parsed.summary || ''
           todos = Array.isArray(parsed.todos) ? parsed.todos : []
           sentiment = parsed.sentiment || null
+          summaryError = ''
+          break
+        } catch (e: any) {
+          summaryError = `${model}: ${e?.message || 'request failed'}`
         }
-      } catch (e) { console.error('[transcribe] summary failed', e) }
+      }
     }
 
     await db.from('calls').update({
@@ -149,11 +163,12 @@ ${text.slice(0, 12000)}`,
       sentiment,
     }).eq('id', callId)
 
-    // Transcribed, but no summary — say why rather than showing an empty card.
+    // Transcribed, but no summary — say EXACTLY why.
     if (!summary) {
       const reason = !ANTHROPIC_KEY
         ? 'Transcribed, but ANTHROPIC_API_KEY isn\'t set in Vercel — that key is what writes the summary and action items.'
-        : 'Transcribed, but the summary step failed. Check the Vercel function logs for /api/telnyx/transcribe.'
+        : `Transcribed, but the summary failed — ${summaryError || 'unknown error'}`
+      console.error('[transcribe] summary failed:', summaryError)
       return NextResponse.json({ ok: false, transcription: text, reason })
     }
 

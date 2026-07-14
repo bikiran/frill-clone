@@ -20,9 +20,14 @@ function admin() {
  * all — it only moved when someone pressed the button — so new customer email
  * simply sat in Gmail until an agent thought to check.
  *
- * Scheduled in vercel.json (every 5 minutes). Vercel sends the cron secret in
- * the Authorization header; we accept an unauthenticated call only when no
- * CRON_SECRET is configured, so this still works on a plain deploy.
+ * Driven from the admin app every 2 minutes (see app/admin/layout.tsx). A Vercel
+ * cron would be tidier, but the Hobby plan only allows DAILY crons — a
+ * five-minute schedule is an invalid config and blocks the deployment entirely.
+ *
+ * On Vercel Pro, add a vercel.json with a crons entry pointing at this path on a
+ * five-minute schedule, and set CRON_SECRET. Vercel then sends it in the Authorization header. With no
+ * CRON_SECRET set, the endpoint is open to the app itself (it only pulls mail
+ * into mailboxes the business already connected, so there's nothing to leak).
  */
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
