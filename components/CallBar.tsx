@@ -45,6 +45,79 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const hangupCause = useRef<string | null>(null)
   const audioCtxRef = useRef<any>(null)
   const ringbackRef = useRef<any>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const recStreamsRef = useRef<MediaStream[]>([])
+
+  // ── Call recording ────────────────────────────────────────────────────────
+  // Telnyx records calls placed through Call Control, but a WebRTC/SIP-credential
+  // call has no call_control_id, so there's nothing server-side to record. We
+  // instead mix BOTH sides in the browser (our mic + the far end's track) and
+  // upload the result. Same outcome, and it works with the connection we have.
+  const startRecording = (call: any) => {
+    try {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
+      if (!Ctx || typeof MediaRecorder === 'undefined') return
+      const ctx = audioCtxRef.current || new Ctx()
+      audioCtxRef.current = ctx
+      const dest = ctx.createMediaStreamDestination()
+
+      // Far end: the remote stream the SDK attached to the call.
+      const remote: MediaStream | undefined = call?.remoteStream || call?.options?.remoteStream
+      if (remote && remote.getAudioTracks().length) {
+        ctx.createMediaStreamSource(remote).connect(dest)
+        recStreamsRef.current.push(remote)
+      }
+      // Our side: the local mic stream.
+      const local: MediaStream | undefined = call?.localStream || call?.options?.localStream
+      if (local && local.getAudioTracks().length) {
+        ctx.createMediaStreamSource(local).connect(dest)
+        recStreamsRef.current.push(local)
+      }
+      if (!dest.stream.getAudioTracks().length) return   // nothing to record
+
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '')
+      const rec = new MediaRecorder(dest.stream, mime ? { mimeType: mime } : undefined)
+      chunksRef.current = []
+      rec.ondataavailable = e => { if (e.data && e.data.size) chunksRef.current.push(e.data) }
+      rec.onstop = () => { void uploadRecording() }
+      rec.start(1000)   // 1s timeslices, so a crash still leaves usable audio
+      recorderRef.current = rec
+    } catch (e) { console.error('[call recording] could not start', e) }
+  }
+
+  const stopRecording = () => {
+    try {
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop()
+    } catch {}
+    recorderRef.current = null
+  }
+
+  const uploadRecording = async () => {
+    const rowId = callRowId.current
+    const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+    chunksRef.current = []
+    if (!rowId || !companyId || blob.size < 2000) return   // ignore empty/near-empty audio
+    try {
+      const path = `${companyId}/${rowId}.webm`
+      const { error } = await (supabase as any).storage
+        .from('call-recordings')
+        .upload(path, blob, { contentType: 'audio/webm', upsert: true })
+      if (error) throw error
+      const { data: pub } = (supabase as any).storage.from('call-recordings').getPublicUrl(path)
+      const url = pub?.publicUrl
+      if (!url) return
+      await (supabase as any).from('calls').update({ recording_url: url }).eq('id', rowId)
+
+      // Transcribe → AI summary → post the call card into the thread.
+      fetch('/api/telnyx/transcribe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callId: rowId, companyId, conversationId }),
+      }).catch(() => {})
+    } catch (e) { console.error('[call recording] upload failed', e) }
+  }
 
   useEffect(() => () => { cleanup() }, [])
 
@@ -122,9 +195,11 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
           toneConnected()
           startTimer()
           updateCallRow({ status: 'answered' })
+          startRecording(call)
         }
         if (s === 'hangup' || s === 'destroy') {
           toneEnded()
+          stopRecording()
           // Capture WHY the call ended — Telnyx puts a cause on the call object
           // (e.g. CALL_REJECTED, NORMAL_CLEARING, USER_BUSY, or an outbound-
           // permission/routing error). Surfacing this is the key to diagnosing
@@ -207,35 +282,32 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const endCall = async (userInitiated = true) => {
     if (timerRef.current) clearInterval(timerRef.current)
     if (userInitiated) { try { callRef.current?.hangup?.() } catch {} }
+    stopRecording()   // triggers upload → transcription → AI summary
     const cause = hangupCause.current
-    updateCallRow({ status: seconds > 0 ? 'completed' : 'failed', cause: cause || null, ended_at: new Date().toISOString(), duration_seconds: seconds })
-    // Log the call outcome into the conversation thread — ALWAYS, even if the
-    // call never connected, so there's a record and the cause is visible.
-    if (conversationId && companyId) {
+    const connected = seconds > 0
+    updateCallRow({ status: connected ? 'completed' : 'failed', cause: cause || null, ended_at: new Date().toISOString(), duration_seconds: seconds })
+
+    // Post into the thread ONLY when the call actually connected.
+    //
+    // Previously EVERY attempt posted a "Call not connected" pill, so a few
+    // retries buried the real conversation under dozens of grey rows (and a
+    // failed call isn't conversation history — it's call history). Failed
+    // attempts are still recorded in `calls`, where the dialer's Recent Calls
+    // tab shows them. Connected calls post a rich card instead: duration,
+    // recording, transcript and AI summary, filled in as they arrive.
+    if (connected && conversationId && companyId) {
       try {
-        const outcome = seconds > 0
-          ? `📞 Call — ${fmtDuration(seconds)}`
-          : `📞 Call not connected${cause && cause !== 'NORMAL_CLEARING' ? ` (${cause})` : ''}`
         await (supabase as any).from('messages').insert({
           conversation_id: conversationId, company_id: companyId, sender_type: 'system',
-          content: outcome,
+          content: `Call — ${fmtDuration(seconds)}`,
+          metadata: {
+            call_event: true,
+            call_id: callRowId.current,
+            direction: 'outbound',
+            duration_seconds: seconds,
+            agent_name: agentName || 'Agent',
+          },
         })
-        // Post an admin-only AI summary note into the timeline (visible to
-        // agents only — the visitor never sees conversation_notes)
-        if (seconds > 5 && callRowId.current) {
-          fetch('/api/telnyx/call-summary', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ callId: callRowId.current }),
-          }).then(r => r.json()).then(async (d) => {
-            if (d?.summary && d.summary !== 'No transcript available for this call yet.') {
-              await (supabase as any).from('conversation_notes').insert({
-                conversation_id: conversationId, company_id: companyId,
-                author_name: 'AI (call summary)',
-                content: `📞 Call summary: ${d.summary}${(d.todos && d.todos.length) ? '\n\nTo-dos:\n' + d.todos.map((t: string) => `• ${t}`).join('\n') : ''}`,
-              })
-            }
-          }).catch(() => {})
-        }
       } catch {}
     }
     setState('ended')

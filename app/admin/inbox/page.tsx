@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
+import CallCard from '@/components/CallCard'
+import Dialer from '@/components/Dialer'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import DoaPanel from '@/components/DoaPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
@@ -612,6 +614,7 @@ export default function InboxPage() {
 
   // ── Filter panel (Coax style) ─────────────────────────────────────────────
   const [showFilters, setShowFilters] = useState(false)
+  const [showDialer, setShowDialer] = useState(false)
   const [filters, setFilters] = useState<any>({
     dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', oldestFirst: false,
   })
@@ -2367,6 +2370,11 @@ export default function InboxPage() {
         </div>
       )}
 
+      {showDialer && (
+        <Dialer companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+          onClose={() => setShowDialer(false)} />
+      )}
+
       {/* Filter panel (Coax style) */}
       {showFilters && (
         <div onClick={() => setShowFilters(false)}
@@ -3163,6 +3171,16 @@ export default function InboxPage() {
                 </div>
               )}
 
+              {/* Dialer — call any number, not just this contact's */}
+              <button type="button" onClick={() => setShowDialer(true)} title="Dialer"
+                style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <circle cx="5" cy="5" r="1.6"/><circle cx="12" cy="5" r="1.6"/><circle cx="19" cy="5" r="1.6"/>
+                  <circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>
+                  <circle cx="5" cy="19" r="1.6"/><circle cx="12" cy="19" r="1.6"/><circle cx="19" cy="19" r="1.6"/>
+                </svg>
+              </button>
+
               {/* Search messages toggle */}
               <button type="button" onClick={() => { setShowMsgSearch(v => !v); setMsgSearch('') }} title="Search messages"
                 style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: showMsgSearch ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', order: -1 }}>
@@ -3368,6 +3386,15 @@ export default function InboxPage() {
                     <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', background: '#eef0f2', padding: '3px 12px', borderRadius: 20 }}>{thisDay}</span>
                   </div>
                 ) : null
+                // A connected call renders as a full Coax-style card — AI
+                // summary, action items, recording player, transcript — not a
+                // grey one-line pill.
+                if (isSystem && (msg as any).metadata?.call_event && (msg as any).metadata?.call_id) return (
+                  <div key={msg.id}>
+                    {dateDivider}
+                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} />
+                  </div>
+                )
                 if (isSystem) return (
                   <div key={msg.id}>
                     {dateDivider}
@@ -3987,6 +4014,46 @@ export default function InboxPage() {
                         )
                       })
                     }
+
+                    {/* ── Delivery (Coax-style) ─────────────────────────────
+                        Scheduled delivery date + status, saved inline. */}
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                      <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {Icon.calendar(12)} Scheduled Delivery
+                      </p>
+                      <input type="date"
+                        value={(contact as any).scheduled_delivery || ''}
+                        onChange={async e => {
+                          const v = e.target.value || null
+                          setContact((c: any) => ({ ...c, scheduled_delivery: v }))
+                          await (supabase as any).from('contacts').update({ scheduled_delivery: v }).eq('id', contact.id)
+                          showToast(v ? 'Delivery date saved' : 'Delivery date cleared')
+                        }}
+                        style={{ ...inp, fontSize: 12.5, padding: '7px 9px' }} />
+                    </div>
+
+                    <div>
+                      <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {Icon.box(12)} Delivery status
+                      </p>
+                      <select
+                        value={(contact as any).delivery_status || ''}
+                        onChange={async e => {
+                          const v = e.target.value || null
+                          setContact((c: any) => ({ ...c, delivery_status: v }))
+                          await (supabase as any).from('contacts').update({ delivery_status: v }).eq('id', contact.id)
+                          showToast('Delivery status updated')
+                        }}
+                        style={{ ...inp, fontSize: 12.5, padding: '7px 9px', cursor: 'pointer' }}>
+                        <option value="">--</option>
+                        <option value="pending">Pending</option>
+                        <option value="scheduled">Scheduled</option>
+                        <option value="out_for_delivery">Out for delivery</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="failed">Failed</option>
+                      </select>
+                    </div>
+
                     {contact.subscribed_to_marketing && <span style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>✓ Subscribed to marketing</span>}
                     {contact.notes && <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)', fontStyle: 'italic' }}>{contact.notes}</p>}
                     <Link href={`/admin/customers/profile?id=${contact.id}`}
