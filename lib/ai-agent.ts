@@ -360,18 +360,32 @@ export async function runAiAgent(opts: {
   const last = [...history].reverse().find(m => m.sender_type === 'visitor')
   if (!last?.content) return { replied: false, reason: 'Nothing to answer' }
 
-  // Don't talk over a human. If a person has replied more recently than the AI,
-  // the human has taken the conversation — stay out of it.
+  // Don't talk over a human. If a person replied AFTER the customer's latest
+  // message, they're handling it — stay out.
+  //
+  // Previously this checked whether a human had EVER replied, which meant the
+  // AI went permanently silent in any conversation a person had once touched —
+  // even for a brand-new question weeks later. Now it only defers when the human
+  // reply is genuinely more recent than the customer's question.
   const lastAgent = [...history].reverse().find(m => m.sender_type === 'agent')
   if (lastAgent && !lastAgent.is_ai) {
-    return { replied: false, reason: 'A human is handling this conversation' }
+    const humanAt = new Date(String(lastAgent.created_at).endsWith('Z') ? lastAgent.created_at : lastAgent.created_at + 'Z').getTime()
+    const customerAt = new Date(String(last.created_at).endsWith('Z') ? last.created_at : last.created_at + 'Z').getTime()
+    if (humanAt > customerAt) {
+      return { replied: false, reason: 'A human has already answered this message' }
+    }
   }
 
-  // Hand off after N AI turns rather than looping forever.
-  const aiTurns = history.filter(m => m.is_ai).length
+  // Hand off after N consecutive AI turns rather than looping forever.
+  // Counted since the last HUMAN message, so a person stepping in resets it —
+  // otherwise the AI would fall permanently silent after three replies, for the
+  // life of the conversation.
+  const lastHumanIdx = history.map(m => m.sender_type === 'agent' && !m.is_ai).lastIndexOf(true)
+  const sinceHuman = lastHumanIdx >= 0 ? history.slice(lastHumanIdx + 1) : history
+  const aiTurns = sinceHuman.filter(m => m.is_ai).length
   const handoffAfter = Number(cfg.handoff_after ?? 3)
   if (aiTurns >= handoffAfter) {
-    return { replied: false, handoff: true, reason: 'Handoff limit reached' }
+    return { replied: false, handoff: true, reason: `Reached the ${handoffAfter}-reply limit — waiting for a person` }
   }
 
   const caps = cfg.capabilities || {}

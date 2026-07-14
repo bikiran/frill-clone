@@ -23,6 +23,18 @@ export default function AiSettingsPage() {
   const [indexing, setIndexing] = useState(false)
   const [index, setIndex] = useState<any>(null)
   const [msg, setMsg] = useState('')
+  const [diag, setDiag] = useState<any>(null)
+  const [checking, setChecking] = useState(false)
+
+  const runCheck = async () => {
+    if (!companyId) return
+    setChecking(true)
+    try {
+      const res = await fetch(`/api/ai/reply?companyId=${companyId}`)
+      setDiag(await res.json())
+    } catch (e: any) { setDiag({ ok: false, error: e.message }) }
+    finally { setChecking(false) }
+  }
 
   useEffect(() => {
     ;(async () => {
@@ -293,6 +305,68 @@ export default function AiSettingsPage() {
           </div>
         </>
       )}
+
+      {/* Is it actually working? */}
+      <Card>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ margin: '0 0 3px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Status check</p>
+            <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>If the AI isn&rsquo;t replying, this tells you why.</p>
+          </div>
+          <button onClick={runCheck} disabled={checking}
+            style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            {checking ? 'Checking…' : 'Check now'}
+          </button>
+        </div>
+
+        {diag && (
+          <div style={{ marginTop: 14 }}>
+            <p style={{
+              margin: '0 0 12px', padding: '10px 12px', borderRadius: 9, fontSize: 13.5, fontWeight: 600, lineHeight: 1.45,
+              background: diag.verdict === 'Everything looks ready.' ? '#dcfce7' : '#fffbeb',
+              color: diag.verdict === 'Everything looks ready.' ? '#15803d' : '#92400e',
+            }}>
+              {diag.verdict || diag.error}
+            </p>
+
+            {diag.checks && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {[
+                  ['Anthropic API key set on the server', diag.checks.anthropic_key_set],
+                  ['AI assistant enabled', diag.checks.ai_enabled],
+                  ['Auto-reply switched on', diag.checks.auto_reply_on],
+                  [`Content indexed (${diag.checks.knowledge_indexed ?? 0} sources)`, (diag.checks.knowledge_indexed ?? 0) > 0],
+                ].map(([label, ok]: any) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)' }}>
+                    <span style={{ color: ok ? '#15803d' : '#dc2626', display: 'inline-flex' }}>
+                      {ok ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      )}
+                    </span>
+                    {label}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {diag.checks?.recent_ai_activity?.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <p style={{ margin: '0 0 6px', fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Recent AI activity</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {diag.checks.recent_ai_activity.slice(0, 6).map((a: any, i: number) => (
+                    <div key={i} style={{ fontSize: 12, color: 'var(--slate)', display: 'flex', gap: 8 }}>
+                      <span style={{ fontWeight: 700, color: a.blocked_reason ? '#b45309' : '#15803d', minWidth: 60 }}>{a.action}</span>
+                      <span>{a.blocked_reason || 'ok'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
 
       <button onClick={save} disabled={saving}
         style={{ padding: '11px 24px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
