@@ -77,6 +77,8 @@ export async function POST(req: NextRequest) {
           last_message: text,
           last_message_at: new Date().toISOString(),
           is_unread: true,
+          // Inbound text ⇒ this is an SMS conversation now, whatever it started as.
+          channel: 'sms',
           // An inbound message reopens a closed enquiry — the customer is back,
           // so they shouldn't stay buried in the Closed tab.
           status: 'open',

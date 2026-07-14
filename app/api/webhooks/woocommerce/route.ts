@@ -24,6 +24,7 @@ const DEFAULT_MESSAGES: Record<string, string> = {
 async function recoverAbandonedCarts(db: any, companyId: string, order: any) {
   try {
     const status = (order.status || '').toLowerCase()
+    // A failed / cancelled / refunded order did NOT recover the cart.
     const converting = ['pending', 'processing', 'completed', 'on-hold'].includes(status)
     if (!converting) return
 
@@ -129,10 +130,19 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       company_id: companyId, channel: 'chat', subject: `Order #${order.number || order.id}`,
       contact_id: contact?.id || null, status: 'open', is_unread: true, unread_count: 1,
       last_message: '', last_message_at: new Date().toISOString(),
+      order_status: status || null,
     }).select().maybeSingle()
     conv = newConv
   }
   if (!conv) return
+
+  // Keep the conversation's order status current. The inbox badge was reading
+  // only the subject ("Order #…") and so labelled EVERY order conversation
+  // "ORDER PLACED" — including failed payments, which is the opposite of what
+  // happened. The badge now reads this column.
+  try {
+    await db.from('conversations').update({ order_status: status || null }).eq('id', conv.id)
+  } catch {}
 
   // Post a system event for the order once per (order, status) so a brand-new
   // order is visible in the thread even with automation off.

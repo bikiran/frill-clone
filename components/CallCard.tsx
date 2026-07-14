@@ -42,9 +42,10 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callId }),
       })
-      const d = await res.json()
-      if (d?.ok) { await load(); setRetryMsg('') }
-      else setRetryMsg(d?.reason || d?.error || 'Could not transcribe this call.')
+      const d = await res.json().catch(() => null)
+      await load()
+      if (d?.ok) setRetryMsg('')
+      else setRetryMsg(d?.reason || d?.error || `Could not transcribe (HTTP ${res.status}).`)
     } catch (e: any) {
       setRetryMsg(e?.message || 'Could not transcribe this call.')
     } finally { setRetrying(false) }

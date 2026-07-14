@@ -47,3 +47,20 @@ WHERE sender_type = 'system'
 -- and it posts a rich call card (recording + transcript + AI summary).
 
 NOTIFY pgrst, 'reload schema';
+
+-- ── Order status on the conversation ────────────────────────
+-- The inbox badge read only the subject ("Order #…") and so labelled EVERY
+-- order conversation "ORDER PLACED" — including FAILED payments, which are
+-- precisely the ones that need attention. The badge now reads this column.
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS order_status TEXT;
+
+-- Backfill from the order events already recorded, so existing threads show
+-- the truth immediately instead of waiting for the next webhook.
+UPDATE conversations c
+SET order_status = w.status
+FROM woocommerce_orders w
+WHERE w.conversation_id = c.id
+  AND c.order_status IS NULL
+  AND w.status IS NOT NULL;
+
+NOTIFY pgrst, 'reload schema';

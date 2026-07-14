@@ -102,9 +102,14 @@ export async function POST(req: NextRequest) {
         telnyx_message_id: result?.data?.id || null,
       })
       await db.from('conversations').update({
-        last_message: text || '📎 Attachment',
+        last_message: text || 'Attachment',
         last_message_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        // The conversation has MOVED to SMS. Without this it kept claiming to be
+        // a live-chat enquiry forever — so the inbox badge, the sidebar channel
+        // and the "Currently on: <page>" banner all showed stale web-widget data
+        // for someone who is actually texting.
+        channel: 'sms',
       }).eq('id', conversationId)
     }
 

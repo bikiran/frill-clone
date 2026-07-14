@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-export const maxDuration = 120
+export const maxDuration = 60
+
+// Every outbound call gets a hard timeout. Without one, a hung request to
+// Deepgram/Anthropic leaves the UI stuck on "Transcribing…" forever with no
+// error — which is exactly what happened.
+async function fetchWithTimeout(url: string, opts: any, ms = 45000) {
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), ms)
+  try { return await fetch(url, { ...opts, signal: ctrl.signal }) }
+  finally { clearTimeout(t) }
+}
 
 function admin() {
   return createClient(
@@ -23,12 +33,12 @@ function admin() {
  * failing silently.
  */
 async function transcribeDeepgram(audio: ArrayBuffer, key: string) {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true',
     {
       method: 'POST',
       headers: { Authorization: `Token ${key}`, 'Content-Type': 'audio/webm' },
-      body: audio as any,
+      body: Buffer.from(audio),
     }
   )
   if (!res.ok) throw new Error(`Deepgram: ${res.status} ${await res.text()}`)
@@ -51,7 +61,7 @@ async function transcribeWhisper(audio: ArrayBuffer, key: string) {
   const form = new FormData()
   form.append('file', new Blob([audio], { type: 'audio/webm' }), 'call.webm')
   form.append('model', 'whisper-1')
-  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+  const res = await fetchWithTimeout('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}` },
     body: form,
@@ -82,7 +92,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Pull the audio back down.
-    const audioRes = await fetch(call.recording_url)
+    const audioRes = await fetchWithTimeout(call.recording_url, {}, 30000)
     if (!audioRes.ok) return NextResponse.json({ ok: false, reason: 'Could not read the recording.' })
     const audio = await audioRes.arrayBuffer()
 
@@ -104,7 +114,7 @@ export async function POST(req: NextRequest) {
     const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
     if (ANTHROPIC_KEY) {
       try {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
+        const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
           body: JSON.stringify({
@@ -139,6 +149,14 @@ ${text.slice(0, 12000)}`,
       sentiment,
     }).eq('id', callId)
 
+    // Transcribed, but no summary — say why rather than showing an empty card.
+    if (!summary) {
+      const reason = !ANTHROPIC_KEY
+        ? 'Transcribed, but ANTHROPIC_API_KEY isn\'t set in Vercel — that key is what writes the summary and action items.'
+        : 'Transcribed, but the summary step failed. Check the Vercel function logs for /api/telnyx/transcribe.'
+      return NextResponse.json({ ok: false, transcription: text, reason })
+    }
+
     // Refresh the call card already sitting in the thread, so the summary and
     // transcript appear without the agent reloading. (The card reads the row.)
     if (conversationId && companyId) {
@@ -157,6 +175,9 @@ ${text.slice(0, 12000)}`,
     return NextResponse.json({ ok: true, transcription: text, summary, todos, sentiment })
   } catch (err: any) {
     console.error('[transcribe] failed', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    const msg = err?.name === 'AbortError'
+      ? 'The transcription service timed out. Try again — if it keeps happening, check the DEEPGRAM_API_KEY is valid.'
+      : (err?.message || 'Transcription failed')
+    return NextResponse.json({ ok: false, error: msg, reason: msg }, { status: 200 })
   }
 }

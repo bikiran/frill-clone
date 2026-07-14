@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
@@ -615,6 +615,21 @@ export default function InboxPage() {
   // ── Filter panel (Coax style) ─────────────────────────────────────────────
   const [showFilters, setShowFilters] = useState(false)
   const [showDialer, setShowDialer] = useState(false)
+
+  // Where is this customer ACTUALLY talking, right now? The conversation's
+  // stored channel goes stale the moment someone moves from the web widget to
+  // SMS, which is why threads kept insisting they were "live chat" (and kept
+  // showing the web page the customer was supposedly "currently on" — data from
+  // a visit that may have ended days ago). The newest message wins.
+  const activeChannel = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const dc = String((messages[i] as any).delivery_channel || '').toLowerCase()
+      if (dc && dc !== 'chat') return dc
+    }
+    return String((selected as any)?.channel || 'widget').toLowerCase()
+  }, [messages, selected?.id, (selected as any)?.channel])
+
+  const isWebChat = ['widget', 'chat'].includes(activeChannel)
   const [showPod, setShowPod] = useState(false)
   const [podNote, setPodNote] = useState('')
   const [podFiles, setPodFiles] = useState<File[]>([])
@@ -3107,7 +3122,20 @@ export default function InboxPage() {
             if (subj.startsWith('abandoned cart')) {
               source = { label: 'Abandoned Cart', bg: '#fee2e2', fg: '#dc2626' }
             } else if (subj.startsWith('order #')) {
-              source = { label: 'Order Placed', bg: '#dcfce7', fg: '#15803d' }
+              // Read the ACTUAL order status. This used to say "Order Placed" for
+              // every order conversation — including failed payments, which is
+              // exactly backwards: those are the ones needing attention.
+              const os = String((c as any).order_status || '').toLowerCase()
+              const ORDER_BADGE: Record<string, any> = {
+                failed:     { label: 'Payment Failed', bg: '#fee2e2', fg: '#dc2626' },
+                cancelled:  { label: 'Order Cancelled', bg: '#fee2e2', fg: '#dc2626' },
+                refunded:   { label: 'Order Refunded', bg: '#fef3c7', fg: '#b45309' },
+                'on-hold':  { label: 'Order On Hold', bg: '#fef3c7', fg: '#b45309' },
+                pending:    { label: 'Payment Pending', bg: '#fef3c7', fg: '#b45309' },
+                completed:  { label: 'Order Completed', bg: '#dcfce7', fg: '#15803d' },
+                processing: { label: 'Order Placed', bg: '#dcfce7', fg: '#15803d' },
+              }
+              source = ORDER_BADGE[os] || { label: 'Order Placed', bg: '#dcfce7', fg: '#15803d' }
             } else if (c.channel === 'email') {
               source = { label: 'Email', bg: '#e0e7ff', fg: '#4338ca' }
             } else if (c.channel === 'sms') {
@@ -3198,14 +3226,6 @@ export default function InboxPage() {
               </button>
               <div className="inbox-header-name" style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {/* Channel badge — it sat loose in the toolbar looking like a
-                      mystery "chat" button. Beside the name, with a label, it
-                      actually tells you where this conversation is happening. */}
-                  <span title={CHANNEL_NAME[String(selected.channel || '').toLowerCase()] || selected.channel}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, color: 'var(--slate)', background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 6px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3 }}>
-                    {CHANNEL_ICON[String(selected.channel || '').toLowerCase()] || Icon.chat(12)}
-                    {CHANNEL_NAME[String(selected.channel || '').toLowerCase()] || selected.channel}
-                  </span>
                   {contact?.name || selected.subject || 'Visitor'}
                   {/* Sentiment badge */}
                   {(selected as any).sentiment && (
@@ -3218,10 +3238,10 @@ export default function InboxPage() {
                 {/* Live chat: where they are on the site. Any other channel:
                     name the channel instead, so the agent knows a reply goes
                     out by SMS/email rather than into a web widget. */}
-                {['widget', 'chat'].includes(String(selected.channel || '').toLowerCase())
+                {isWebChat
                   ? (selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {selected.page_title}</p>)
                   : <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      via {CHANNEL_NAME[String(selected.channel || '').toLowerCase()] || selected.channel}
+                      via {CHANNEL_NAME[activeChannel] || activeChannel}
                     </p>}
               </div>
 
@@ -3429,7 +3449,7 @@ export default function InboxPage() {
                 or email thread it's stale data from a previous web visit, and
                 it misleads the agent into thinking someone is live on the page
                 when they're actually texting. */}
-            {selected.page_url && ['widget', 'chat'].includes(String(selected.channel || '').toLowerCase()) && (
+            {selected.page_url && isWebChat && (
               <div style={{ background: '#f0f9ff', borderBottom: '1px solid #bae6fd', padding: '6px 16px', fontSize: 11, color: '#0369a1', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
                 <span>Currently on:</span>
@@ -4228,7 +4248,18 @@ export default function InboxPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div>
                       <p style={{ margin: '0 0 2px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Channel</p>
-                      <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)' }}>{CHANNEL_ICON[selected.channel]} {selected.channel}</p>
+                      {/* The LIVE channel, not the one the conversation started
+                          on — a customer who began on the widget and is now
+                          texting should read "SMS" here. */}
+                      <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {CHANNEL_ICON[activeChannel] || Icon.chat(14)}
+                        {CHANNEL_NAME[activeChannel] || activeChannel}
+                      </p>
+                      {!isWebChat && String((selected as any).channel || '').toLowerCase() !== activeChannel && (
+                        <p style={{ margin: '2px 0 0', fontSize: 10.5, color: '#9ca3af' }}>
+                          Started on {CHANNEL_NAME[String((selected as any).channel || '').toLowerCase()] || 'live chat'}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <p style={{ margin: '0 0 2px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Status</p>
