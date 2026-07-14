@@ -300,6 +300,11 @@ function WidgetContent() {
           } catch {}
         }
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${chatConvId}` }, (payload: any) => {
+        // Reactions and status changes are UPDATEs, not INSERTs. Without this a
+        // reaction only appeared after the customer reloaded the page.
+        setChatMessages2(prev => prev.map((m: any) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)))
+      })
       .subscribe()
 
     // Polling fallback — refresh messages every 4s in case realtime isn't

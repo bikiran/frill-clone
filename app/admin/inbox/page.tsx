@@ -622,6 +622,84 @@ export default function InboxPage() {
   const [showActions, setShowActions] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const channelRef = useRef<any>(null)
+  // Bumped to force the realtime subscription to rebuild after a dropped socket.
+  const [realtimeNonce, setRealtimeNonce] = useState(0)
+
+  // ── Forward media to another contact ─────────────────────────────────────
+  const [forwarding, setForwarding] = useState<any>(null)   // the attachment
+  const [forwardSearch, setForwardSearch] = useState('')
+  const [forwardResults, setForwardResults] = useState<any[]>([])
+  const [forwardBusy, setForwardBusy] = useState(false)
+
+  const searchForwardTargets = async (q: string) => {
+    setForwardSearch(q)
+    if (!companyId || q.trim().length < 2) { setForwardResults([]); return }
+    const { data } = await (supabase as any).from('contacts')
+      .select('id, name, email, phone').eq('company_id', companyId)
+      .or(`name.ilike.%${q.trim()}%,email.ilike.%${q.trim()}%,phone.ilike.%${q.trim()}%`)
+      .limit(10)
+    setForwardResults(data || [])
+  }
+
+  const forwardTo = async (contactTarget: any) => {
+    if (!companyId || !forwarding || !user) return
+    setForwardBusy(true)
+    try {
+      // Find-or-create a conversation with that person, so the media lands in a
+      // real thread rather than nowhere.
+      let convId: string | null = null
+      const { data: existing } = await (supabase as any).from('conversations')
+        .select('id').eq('company_id', companyId).eq('contact_id', contactTarget.id)
+        .order('last_message_at', { ascending: false }).limit(1)
+      convId = existing?.[0]?.id || null
+
+      if (!convId) {
+        const { data: created } = await (supabase as any).from('conversations').insert({
+          company_id: companyId, channel: 'chat', contact_id: contactTarget.id,
+          subject: contactTarget.name || contactTarget.email,
+          status: 'open', is_unread: false,
+          last_message: '', last_message_at: new Date().toISOString(),
+        }).select('id').maybeSingle()
+        convId = created?.id || null
+      }
+      if (!convId) throw new Error('Could not open a conversation with that contact')
+
+      const me = user.user_metadata?.display_name || user.email?.split('@')[0]
+
+      // Text it too, if that's how we talk to them.
+      const phone = contactTarget.phone
+      if (phone) {
+        try {
+          await fetch('/api/telnyx/sms/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId, conversationId: convId, to: phone,
+              text: '', attachments: [forwarding], senderName: me, skipChatMessage: true,
+            }),
+          })
+        } catch {}
+      }
+
+      await (supabase as any).from('messages').insert({
+        conversation_id: convId, company_id: companyId,
+        sender_type: 'agent', sender_id: user.id, sender_name: me, sender_email: user.email,
+        content: '', attachments: [forwarding],
+        delivery_channel: phone ? 'sms' : 'chat',
+        metadata: { forwarded: true },
+      })
+      await (supabase as any).from('conversations').update({
+        last_message: '📎 Attachment', last_message_at: new Date().toISOString(),
+      }).eq('id', convId)
+
+      setForwarding(null); setForwardSearch(''); setForwardResults([])
+      showToast(`Forwarded to ${contactTarget.name || contactTarget.email}`)
+      loadConversations()
+    } catch (e: any) {
+      showToast('Could not forward: ' + e.message)
+    } finally {
+      setForwardBusy(false)
+    }
+  }
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -718,9 +796,20 @@ export default function InboxPage() {
     if (!companyId) return
     if (channelRef.current) supabase.removeChannel(channelRef.current)
     const ch = supabase.channel(`inbox-${companyId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `company_id=eq.${companyId}` }, () => loadConversations())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `company_id=eq.${companyId}` }, (payload: any) => {
+        loadConversations()
+        // Keep the OPEN conversation fresh too — page history, status and
+        // assignment are stored on the conversation row, and without this they
+        // only appeared after a manual page reload.
+        const row = payload.new
+        if (row?.id && selectedRef.current?.id === row.id) {
+          setSelected((prev: any) => (prev ? { ...prev, ...row } : prev))
+        }
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `company_id=eq.${companyId}` }, (payload: any) => {
-        if (selected?.id === payload.new.conversation_id) {
+        // selectedRef, not `selected` — the closure captured at subscribe time
+        // would otherwise be stale and drop messages.
+        if (selectedRef.current?.id === payload.new.conversation_id) {
           setMessages(prev => {
             if (prev.some((m: any) => m.id === payload.new.id)) return prev
             return [...prev, payload.new]
@@ -729,8 +818,52 @@ export default function InboxPage() {
         }
         loadConversations()
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `company_id=eq.${companyId}` }, (payload: any) => {
+        // Reactions, read receipts and payment status are UPDATEs to the message
+        // row. We only listened for INSERTs, so a reaction never showed until
+        // the page was reloaded.
+        if (selectedRef.current?.id === payload.new.conversation_id) {
+          setMessages(prev => prev.map((m: any) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)))
+        }
+      })
       .subscribe()
     channelRef.current = ch
+
+    // A tab left open for hours loses its realtime socket (laptop sleeps, network
+    // drops, the browser throttles background tabs). Everything then looks
+    // "stale" until a manual reload — reactions don't appear, page history
+    // doesn't update. Re-subscribe and refresh whenever the tab wakes up.
+    const revive = () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const state = (channelRef.current as any)?.state
+        if (state !== 'joined') {
+          if (channelRef.current) supabase.removeChannel(channelRef.current)
+          channelRef.current = null
+          setRealtimeNonce(n => n + 1)   // rebuild the subscription
+        }
+      } catch {}
+      // Pull fresh data either way — cheap, and it guarantees we're current.
+      loadConversations()
+      if (selectedRef.current?.id) {
+        ;(supabase as any).from('messages').select('*')
+          .eq('conversation_id', selectedRef.current.id)
+          .order('created_at', { ascending: true })
+          .then(({ data }: any) => { if (data) setMessages(data) })
+        ;(supabase as any).from('conversations').select('*')
+          .eq('id', selectedRef.current.id).maybeSingle()
+          .then(({ data }: any) => { if (data) setSelected((p: any) => (p ? { ...p, ...data } : p)) })
+      }
+    }
+    document.addEventListener('visibilitychange', revive)
+    window.addEventListener('focus', revive)
+    window.addEventListener('online', revive)
+
+    return () => {
+      document.removeEventListener('visibilitychange', revive)
+      window.removeEventListener('focus', revive)
+      window.removeEventListener('online', revive)
+    }
 
     // Polling fallback — refresh the open thread every 4s in case realtime
     // isn't enabled on the messages table. Guarantees new messages appear
@@ -744,7 +877,7 @@ export default function InboxPage() {
     }, 4000)
 
     return () => { supabase.removeChannel(ch); clearInterval(poll) }
-  }, [companyId, selected?.id])
+  }, [companyId, selected?.id, realtimeNonce])
 
   const loadTeam = async (cid: string) => {
     const members: TeamMember[] = []
@@ -1915,6 +2048,53 @@ export default function InboxPage() {
         @keyframes livePulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); } 50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(34,197,94,0); } }
         .ai-spark:hover .ai-tip { opacity: 1 !important; }
       `}</style>
+
+      {/* Forward media to another contact */}
+      {forwarding && (
+        <div onClick={() => setForwarding(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 360, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 420, maxWidth: '95vw', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 22 }}>
+            <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Forward to…</h3>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, background: 'var(--canvas)', marginBottom: 16 }}>
+              {forwarding.kind === 'video'
+                ? <video src={forwarding.url} style={{ width: 46, height: 46, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+                : <img src={forwarding.url} alt="" style={{ width: 46, height: 46, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />}
+              <span style={{ fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {forwarding.name || (forwarding.kind === 'video' ? 'Video' : 'Photo')}
+              </span>
+            </div>
+
+            <input autoFocus value={forwardSearch}
+              onChange={e => searchForwardTargets(e.target.value)}
+              placeholder="Search contacts by name, email or phone…"
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 12, boxSizing: 'border-box' }} />
+
+            {forwardSearch.trim().length < 2 ? (
+              <p style={{ fontSize: 13, color: 'var(--slate)', textAlign: 'center', padding: 20 }}>Type at least 2 characters.</p>
+            ) : forwardResults.length === 0 ? (
+              <p style={{ fontSize: 13, color: 'var(--slate)', textAlign: 'center', padding: 20 }}>No contacts match.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {forwardResults.map(c => (
+                  <button key={c.id} type="button" onClick={() => forwardTo(c)} disabled={forwardBusy}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{c.name || 'No name'}</span>
+                      <span style={{ display: 'block', fontSize: 11.5, color: 'var(--slate)' }}>{[c.email, c.phone].filter(Boolean).join(' · ')}</span>
+                    </span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button onClick={() => setForwarding(null)}
+              style={{ width: '100%', marginTop: 16, padding: '10px 0', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {/* Schedule a delivery */}
       {showSchedule && selected && (
@@ -3252,14 +3432,31 @@ export default function InboxPage() {
             {/* Reply box */}
             <div style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)', position: 'relative' }}>
               {/* Reply-to preview */}
-              {replyTo && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--canvas)', borderRadius: 8, marginBottom: 8, borderLeft: '3px solid var(--coral)' }}>
-                  <span style={{ fontSize: 12, color: '#6b7280', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    ↩ Replying to {replyTo.sender_name}: {replyTo.content.slice(0, 50)}
-                  </span>
-                  <button type="button" onClick={() => setReplyTo(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 14 }}>✕</button>
-                </div>
-              )}
+              {replyTo && (() => {
+                // A photo message has no text content, so the preview used to be
+                // blank — you couldn't tell what you were replying to. Show the
+                // thumbnail instead.
+                const rAtts = Array.isArray((replyTo as any).attachments) ? (replyTo as any).attachments : []
+                const rMedia = rAtts.find((a: any) => a.kind === 'image' || a.kind === 'video')
+                const label = (replyTo.content || '').trim()
+                  || (rMedia ? (rMedia.kind === 'video' ? 'Video' : 'Photo') : '')
+                  || (rAtts.length ? rAtts[0].name || 'Attachment' : 'Message')
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--canvas)', borderRadius: 8, marginBottom: 8, borderLeft: '3px solid var(--coral)' }}>
+                    {rMedia && (
+                      rMedia.kind === 'video' ? (
+                        <video src={rMedia.url} style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                      ) : (
+                        <img src={rMedia.url} alt="" style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                      )
+                    )}
+                    <span style={{ fontSize: 12, color: '#6b7280', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      ↩ Replying to {replyTo.sender_name}: {label.slice(0, 50)}
+                    </span>
+                    <button type="button" onClick={() => setReplyTo(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 14 }}>✕</button>
+                  </div>
+                )
+              })()}
 
               {/* Emoji picker */}
               {showEmoji && (
@@ -3710,11 +3907,20 @@ export default function InboxPage() {
                       <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Shared Media ({media.length})</h3>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
                         {media.map((a, i) => (
-                          <div key={i} onClick={() => setGalleryIndex(i)}
+                          <div key={i}
                             style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', background: 'var(--canvas)' }}>
-                            {(a.kind === 'video' || String(a.type).startsWith('video'))
-                              ? <video src={a.url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                              : <img src={a.url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+                            <div onClick={() => setGalleryIndex(i)} style={{ position: 'absolute', inset: 0 }}>
+                              {(a.kind === 'video' || String(a.type).startsWith('video'))
+                                ? <video src={a.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : <img src={a.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                            </div>
+                            {/* Forward it to another customer */}
+                            <button type="button"
+                              onClick={e => { e.stopPropagation(); setForwarding(a); setForwardSearch(''); setForwardResults([]) }}
+                              title="Forward to another contact"
+                              style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 6, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, backdropFilter: 'blur(3px)' }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
+                            </button>
                           </div>
                         ))}
                       </div>
