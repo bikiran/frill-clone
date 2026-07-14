@@ -82,6 +82,10 @@ const CHANNEL_ICON: Record<string, React.ReactNode> = {
   phone: Icon.phone(16), facebook: Icon.send(16), messenger: Icon.send(16),
   instagram: Icon.media(16), whatsapp: Icon.chat(16),
 }
+const CHANNEL_NAME: Record<string, string> = {
+  widget: 'Live chat', chat: 'Live chat', sms: 'SMS', email: 'Email', phone: 'Phone',
+  facebook: 'Messenger', messenger: 'Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp',
+}
 const SENTIMENT_ICON: Record<string, (s?: number) => React.ReactNode> = {
   positive: Icon.smile, neutral: Icon.meh, negative: Icon.frown,
 }
@@ -3064,7 +3068,14 @@ export default function InboxPage() {
                     </span>
                   )}
                 </p>
-                {selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {selected.page_title}</p>}
+                {/* Live chat: where they are on the site. Any other channel:
+                    name the channel instead, so the agent knows a reply goes
+                    out by SMS/email rather than into a web widget. */}
+                {['widget', 'chat'].includes(String(selected.channel || '').toLowerCase())
+                  ? (selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {selected.page_title}</p>)
+                  : <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      via {CHANNEL_NAME[String(selected.channel || '').toLowerCase()] || selected.channel}
+                    </p>}
               </div>
 
               {/* Browser calling (Telnyx WebRTC) */}
@@ -3254,8 +3265,13 @@ export default function InboxPage() {
                 field (with its "Auto added by Colvy AI" tooltip) already says
                 the same thing, once, where it matters. */}
 
-            {/* Page history banner */}
-            {selected.page_url && (
+            {/* Page history banner — LIVE CHAT ONLY.
+                "Currently on: <page>" claims the customer is browsing the site
+                right now. That's only true for the on-site widget. For an SMS
+                or email thread it's stale data from a previous web visit, and
+                it misleads the agent into thinking someone is live on the page
+                when they're actually texting. */}
+            {selected.page_url && ['widget', 'chat'].includes(String(selected.channel || '').toLowerCase()) && (
               <div style={{ background: '#f0f9ff', borderBottom: '1px solid #bae6fd', padding: '6px 16px', fontSize: 11, color: '#0369a1', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
                 <span>Currently on:</span>

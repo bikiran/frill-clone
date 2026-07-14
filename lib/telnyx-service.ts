@@ -106,16 +106,37 @@ export class TelnyxService {
 
   // Outbound voice needs a profile, or Telnyx rejects the call.
   async ensureOutboundVoiceProfile(name: string) {
+    // CRITICAL: Telnyx outbound voice profiles default their
+    // `whitelisted_destinations` to ["US","CA"]. We never set it, so every call
+    // to a +61 number was refused by the carrier the instant it was placed —
+    // which is exactly what CALL_REJECTED means, and why the Telnyx log showed
+    // call.initiated followed by call.hangup 1-3 seconds later.
+    const DESTINATIONS = ['AU', 'NZ', 'US', 'CA', 'GB']
     try {
       const existing = await this.req('/outbound_voice_profiles?page[size]=50', 'GET')
       const found = (existing?.data || []).find((p: any) => p.name === name)
-      if (found) return found
+      if (found) {
+        // HEAL an existing profile that's missing AU.
+        const current: string[] = found.whitelisted_destinations || []
+        const missing = DESTINATIONS.filter(d => !current.includes(d))
+        if (missing.length) {
+          try {
+            const patched = await this.req(`/outbound_voice_profiles/${found.id}`, 'PATCH', {
+              whitelisted_destinations: Array.from(new Set([...current, ...DESTINATIONS])),
+              enabled: true,
+            })
+            return patched?.data || found
+          } catch { /* fall through and use it as-is */ }
+        }
+        return found
+      }
     } catch {}
     const created = await this.req('/outbound_voice_profiles', 'POST', {
       name,
       traffic_type: 'conversational',
       service_plan: 'global',
       enabled: true,
+      whitelisted_destinations: DESTINATIONS,
     })
     return created?.data
   }

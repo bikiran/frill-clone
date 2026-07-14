@@ -29,6 +29,18 @@ export async function POST(req: NextRequest) {
 
     const db = admin()
 
+    // The contact's details, in case a legacy NOT NULL column (e.g. "email")
+    // needs filling — see FALLBACK 0 below.
+    let contactEmail: string | null = null
+    let contactPhone: string | null = null
+    if (contactId) {
+      try {
+        const { data: ct } = await db.from('contacts').select('email, phone').eq('id', contactId).maybeSingle()
+        contactEmail = ct?.email || null
+        contactPhone = ct?.phone || null
+      } catch {}
+    }
+
     // Create with a sequential number; retry once on a rare collision.
     let ticket: any = null
     let lastError: string | null = null
@@ -42,6 +54,42 @@ export async function POST(req: NextRequest) {
       }).select().maybeSingle()
       if (!error) ticket = data
       else lastError = error.message
+    }
+
+    // FALLBACK 0 — a legacy NOT NULL column the app doesn't write.
+    // The real error turned out to be:
+    //   null value in column "email" of relation "support_tickets"
+    // i.e. an OLDER support_tickets table is still there with extra required
+    // columns. Parse the offending column out of the message and retry with a
+    // sensible value for it, so a ticket can still be raised before the SQL is
+    // run. (COLVY_V169_TICKETS_FINAL.sql removes the constraints for good.)
+    if (!ticket && /violates not-null constraint/i.test(lastError || '')) {
+      const extra: Record<string, any> = {}
+      for (let guard = 0; guard < 5 && !ticket; guard++) {
+        const m = /null value in column "([^"]+)"/i.exec(lastError || '')
+        if (!m) break
+        const colName = m[1]
+        if (colName in extra) break         // we already tried filling it — give up
+        // Best-effort value: use the contact's details where the name matches,
+        // otherwise a placeholder so the insert can proceed.
+        if (/email/i.test(colName)) extra[colName] = contactEmail || 'unknown@unknown.invalid'
+        else if (/phone/i.test(colName)) extra[colName] = contactPhone || ''
+        else if (/name|title|subject/i.test(colName)) extra[colName] = subject
+        else if (/status/i.test(colName)) extra[colName] = 'open'
+        else if (/priority/i.test(colName)) extra[colName] = priority || 'normal'
+        else extra[colName] = ''
+
+        const ticketNumber = await nextTicketNumber(db, companyId)
+        const { data, error } = await db.from('support_tickets').insert({
+          company_id: companyId, ticket_number: ticketNumber,
+          conversation_id: conversationId || null, contact_id: contactId || null,
+          subject, description: description || null, priority: priority || 'normal',
+          status: 'open', created_by: createdBy || null,
+          ...extra,
+        }).select().maybeSingle()
+        if (!error && data) ticket = data
+        else if (error) lastError = error.message   // may name the NEXT missing column
+      }
     }
 
     // FALLBACK 1 — ask PostgREST to RELOAD its schema cache, then retry.
@@ -88,10 +136,12 @@ export async function POST(req: NextRequest) {
     if (!ticket) {
       // Say WHY, instead of a generic failure.
       let hint: string | null = null
-      if (/does not exist|relation/i.test(lastError || '')) {
-        hint = 'The tickets tables are missing — run migrations/COLVY_V168_TICKETS_RPC.sql in the Supabase SQL editor.'
+      if (/violates not-null constraint/i.test(lastError || '')) {
+        hint = 'An old support_tickets table has extra required columns — run migrations/COLVY_V169_TICKETS_FINAL.sql in the Supabase SQL editor.'
+      } else if (/does not exist|relation/i.test(lastError || '')) {
+        hint = 'The tickets tables are missing — run migrations/COLVY_V169_TICKETS_FINAL.sql in the Supabase SQL editor.'
       } else if (/could not find|schema cache|PGRST204/i.test(lastError || '')) {
-        hint = 'Supabase\'s API cache is stale. Run migrations/COLVY_V168_TICKETS_RPC.sql — it adds a cache-proof fallback — then try again.'
+        hint = 'Supabase\'s API cache is stale — run migrations/COLVY_V169_TICKETS_FINAL.sql, then try again.'
       }
       return NextResponse.json({ error: hint ? `${hint} (${lastError})` : (lastError || 'Could not create ticket') }, { status: 500 })
     }

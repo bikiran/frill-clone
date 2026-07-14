@@ -24,15 +24,16 @@ export async function POST(req: NextRequest) {
 
     const svc = new TelnyxService(integ.api_key)
 
-    // SELF-HEAL: outbound calls are rejected by Telnyx unless the connection
-    // has an outbound voice profile attached. Connections created by older
-    // builds never got one. Check here — every call mints a token, so this
-    // fixes calling on the very next attempt without any manual setup step.
+    // SELF-HEAL on every token mint (cheap, and fixes calling with no manual
+    // step). Two things must be true or Telnyx rejects the call outright:
+    //   1. The outbound voice profile must whitelist AU (it defaults to US/CA).
+    //   2. That profile must be ATTACHED to the WebRTC connection.
     try {
+      const profile = await svc.ensureOutboundVoiceProfile(`Colvy ${companyId.slice(0, 8)}`)  // adds AU if missing
       const conn = await svc.getCredentialConnection(integ.connection_id)
-      if (conn && !conn?.outbound?.outbound_voice_profile_id) {
-        const profile = await svc.ensureOutboundVoiceProfile(`Colvy ${companyId.slice(0, 8)}`)
-        if (profile?.id) await svc.attachOutboundProfile(integ.connection_id, profile.id)
+      const attached = conn?.outbound?.outbound_voice_profile_id
+      if (profile?.id && attached !== profile.id) {
+        await svc.attachOutboundProfile(integ.connection_id, profile.id)
       }
     } catch (e) { console.error('[telnyx token] outbound profile heal failed', e) }
 
