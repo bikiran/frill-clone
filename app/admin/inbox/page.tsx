@@ -1102,13 +1102,20 @@ export default function InboxPage() {
   const markMessagesRead = async (convId: string, msgs: Message[]) => {
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
     const initial = me[0]?.toUpperCase() || 'A'
-    // Stamp read_by on visitor messages that this agent hasn't marked yet
+    // Stamp read_by on every message this agent has now seen — including other
+    // agents' replies. "Did my colleague see this?" is the question people
+    // actually have, and previously only customer messages were stamped.
     for (const m of msgs) {
-      if (m.sender_type !== 'visitor') continue
+      if (m.sender_type === 'system') continue
+      // Don't mark your own message as read by yourself — that's meaningless.
+      if (m.sender_type === 'agent' && (m as any).sender_id === user?.id) continue
       const readBy = Array.isArray((m as any).read_by) ? (m as any).read_by : []
       if (readBy.some((r: any) => r.name === me)) continue
       const updated = [...readBy, { name: me, initial, at: new Date().toISOString() }]
-      await (supabase as any).from('messages').update({ read_by: updated, is_read: true }).eq('id', m.id)
+      await (supabase as any).from('messages').update({
+        read_by: updated,
+        ...(m.sender_type === 'visitor' ? { is_read: true } : {}),
+      }).eq('id', m.id)
     }
   }
 
@@ -3118,21 +3125,11 @@ export default function InboxPage() {
             </div>
 
             {/* AI detection banner */}
-            {aiDetected && (aiDetected.phone || aiDetected.email || aiDetected.address) && (
-              <div style={{ background: '#fffbeb', borderBottom: '1px solid #fde68a', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700, color: '#d97706' }}><AiSparkIcon /> AI saved:</span>
-                {aiDetected.phone && (
-                  <span style={{ padding: '3px 10px', borderRadius: 8, background: '#fff', border: '1px solid #fde68a', fontSize: 12, color: '#d97706', fontWeight: 600 }}>{aiDetected.phone}</span>
-                )}
-                {aiDetected.email && (
-                  <span style={{ padding: '3px 10px', borderRadius: 8, background: '#fff', border: '1px solid #fde68a', fontSize: 12, color: '#d97706', fontWeight: 600 }}>{aiDetected.email}</span>
-                )}
-                {aiDetected.address && (
-                  <span style={{ padding: '3px 10px', borderRadius: 8, background: '#fff', border: '1px solid #fde68a', fontSize: 12, color: '#d97706', fontWeight: 600 }}>{aiDetected.address}</span>
-                )}
-                <button type="button" onClick={dismissAllAi} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 14 }}>✕</button>
-              </div>
-            )}
+            {/* NOTE: the "AI saved: …" banner used to appear every time you
+                opened a conversation, because detection re-runs on each select.
+                It was pure noise. The sparkle beside each AI-filled contact
+                field (with its "Auto added by Colvy AI" tooltip) already says
+                the same thing, once, where it matters. */}
 
             {/* Page history banner */}
             {selected.page_url && (
@@ -3279,7 +3276,8 @@ export default function InboxPage() {
                       }}>
                         {/* Attachments */}
                         {atts.map((a: any, ai: number) => (
-                          <div key={ai} style={{ marginBottom: a.kind !== 'file' && msg.content ? 6 : 0 }}>
+                          <div key={ai} style={{ marginBottom: a.kind !== 'file' && msg.content ? 6 : 0, position: 'relative' }}
+                            className="chat-att">
                             {a.kind === 'image' ? (
                               <img src={a.url} alt={a.name} style={{ maxWidth: 240, maxHeight: 240, borderRadius: 10, display: 'block', cursor: 'pointer' }} onClick={() => setGalleryIndex(mediaIndexOf[a.url] ?? 0)} />
                             ) : a.kind === 'video' ? (
@@ -3293,6 +3291,18 @@ export default function InboxPage() {
                               <a href={a.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 8, color: isAgent ? '#fff' : 'var(--coral)', textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
                                 📎 {a.name}
                               </a>
+                            )}
+
+                            {/* Forward this media to another contact — on the image
+                                itself, not just in the shared-media panel. */}
+                            {(a.kind === 'image' || a.kind === 'video') && (
+                              <button type="button"
+                                className="chat-att-fwd"
+                                onClick={e => { e.stopPropagation(); setForwarding(a); setForwardSearch(''); setForwardResults([]) }}
+                                title="Forward to another contact"
+                                style={{ position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: 7, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, backdropFilter: 'blur(3px)', opacity: 0, transition: 'opacity 0.12s' }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
+                              </button>
                             )}
                           </div>
                         ))}
@@ -3369,23 +3379,37 @@ export default function InboxPage() {
                         </div>
                       )}
 
-                      {/* Timestamp + read receipt */}
-                      <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af', textAlign: isAgent ? 'right' : 'left', display: 'flex', gap: 5, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start' }}>
-                        {fmtReceipt(msg.created_at, isAgent, (msg as any).delivery_channel || selected.channel)}
+                      {/* Timestamp + channel + read receipt — Coax style:
+                          "Received 3:42 PM | 29 May | Facebook   Read by: SG" */}
+                      <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af', textAlign: isAgent ? 'right' : 'left', display: 'flex', gap: 6, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>
+                        <span style={{ fontStyle: 'italic' }}>
+                          {fmtReceipt(msg.created_at, isAgent, (msg as any).delivery_channel || selected.channel)}
+                        </span>
+
                         {(msg as any).is_ai && (
-                          <span style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 3, color: '#8b5cf6', fontWeight: 700 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#8b5cf6', fontWeight: 700 }}>
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
                             AI reply · AI can make mistakes
                           </span>
                         )}
-                        {/* Read-by avatars on visitor messages */}
-                        {!isAgent && readBy.length > 0 && (
-                          <span style={{ display: 'inline-flex', gap: 2, marginLeft: 2 }}>
-                            {readBy.slice(0, 3).map((r: any, ri: number) => (
-                              <span key={ri} title={`Read by ${r.name}`} style={{ width: 14, height: 14, borderRadius: '50%', background: 'var(--coral)', color: '#fff', fontSize: 8, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                                {r.initial}
-                              </span>
-                            ))}
+
+                        {/* Who on the team has seen it. Shown on BOTH sides — on an
+                            agent message it answers "did my colleague see this?",
+                            which is the question people actually have. */}
+                        {readBy.length > 0 && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                            <span>Read by:</span>
+                            <span style={{ display: 'inline-flex', gap: 2 }}>
+                              {readBy.slice(0, 3).map((r: any, ri: number) => (
+                                <span key={ri} title={`Read by ${r.name}${r.at ? ` · ${new Date(r.at).toLocaleString('en-AU', { hour: 'numeric', minute: '2-digit', day: 'numeric', month: 'short' })}` : ''}`}
+                                  style={{ width: 15, height: 15, borderRadius: '50%', background: companyInfo?.accent_color || 'var(--coral)', color: '#fff', fontSize: 8, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  {r.initial}
+                                </span>
+                              ))}
+                              {readBy.length > 3 && (
+                                <span style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af' }}>+{readBy.length - 3}</span>
+                              )}
+                            </span>
                           </span>
                         )}
                       </p>
@@ -3427,7 +3451,10 @@ export default function InboxPage() {
               <div ref={messagesEndRef} />
             </div>
 
-            <style>{`.chat-msg-row:hover .chat-msg-actions { opacity: 1 !important; pointer-events: auto !important; }`}</style>
+            <style>{`
+              .chat-msg-row:hover .chat-msg-actions { opacity: 1 !important; pointer-events: auto !important; }
+              .chat-att:hover .chat-att-fwd { opacity: 1 !important; }
+            `}</style>
 
             {/* Reply box */}
             <div style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)', position: 'relative' }}>
