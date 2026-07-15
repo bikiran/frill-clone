@@ -1240,7 +1240,7 @@ export default function InboxPage() {
     if (woo) setWooCustomer(woo)
     // Orders by email (covers guest orders too) — synced table first for speed
     const { data: orders } = await (supabase as any).from('woocommerce_orders')
-      .select('*').eq('company_id', companyId).ilike('customer_email', email.replace(/[%_]/g, m => '\\' + m))
+      .select('*').eq('company_id', companyId).ilike('customer_email', email)
       .order('order_date', { ascending: false }).limit(50)
     setWooOrders(orders || [])
     // Then fetch LIVE orders from WooCommerce (includes Colvy-created orders that

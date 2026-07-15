@@ -107,7 +107,7 @@ export default function CustomerProfilePage() {
             const { data: byEmailOrders } = await (supabase as any)
               .from('woocommerce_orders').select('*')
               .eq('company_id', resolvedCompanyId)
-              .ilike('customer_email', email.replace(/[%_]/g, (m: string) => '\\' + m))
+              .ilike('customer_email', email)
               .order('order_date', { ascending: false })
             // Merge, dedupe by woo_order_id
             const seen = new Set(ordersData.map((o: any) => o.woo_order_id))

@@ -230,6 +230,55 @@ export class TelnyxService {
     })
   }
 
+  // ── Call Control commands (for inbound ring-all → voicemail) ────────────────
+  // These act on a live call identified by its call_control_id.
+  private cc(id: string, action: string, body?: any) {
+    return this.req(`/calls/${id}/actions/${action}`, 'POST', body || {})
+  }
+  // Answer an inbound call so we can control it.
+  async answerCall(callControlId: string, clientState?: string) {
+    return this.cc(callControlId, 'answer', clientState ? { client_state: Buffer.from(clientState).toString('base64') } : {})
+  }
+  // Ring a WebRTC/SIP client by dialing a new leg to its SIP URI, to be bridged.
+  async createChildCall(params: { connection_id: string; to: string; from: string; webhook_url?: string; timeout_secs?: number; link_to?: string }) {
+    return this.req('/calls', 'POST', {
+      connection_id: params.connection_id,
+      to: params.to,
+      from: params.from,
+      timeout_secs: params.timeout_secs || 25,
+      ...(params.link_to ? { link_to: params.link_to } : {}),
+      ...(params.webhook_url ? { webhook_url: params.webhook_url } : {}),
+    })
+  }
+  // Bridge two call legs (the caller and the agent who answered).
+  async bridgeCalls(callControlId: string, otherCallControlId: string) {
+    return this.cc(callControlId, 'bridge', { call_control_id: otherCallControlId })
+  }
+  // Speak text to the caller (voicemail greeting).
+  async speak(callControlId: string, text: string, opts?: { voice?: string; language?: string }) {
+    return this.cc(callControlId, 'speak', {
+      payload: text,
+      voice: opts?.voice || 'female',
+      language: opts?.language || 'en-AU',
+    })
+  }
+  // Start recording (voicemail).
+  async recordStart(callControlId: string, opts?: { max_length_secs?: number }) {
+    return this.cc(callControlId, 'record_start', {
+      format: 'mp3', channels: 'single',
+      ...(opts?.max_length_secs ? { max_length_secs: opts.max_length_secs } : {}),
+      // Stop the recording when the caller stops talking / hangs up.
+      trim: 'trim-silence',
+    })
+  }
+  async hangupCall(callControlId: string) {
+    return this.cc(callControlId, 'hangup')
+  }
+  // Play a ringback tone / start gathering — used to hold the caller while agents ring.
+  async startPlayback(callControlId: string, audioUrl: string, loop = false) {
+    return this.cc(callControlId, 'playback_start', { audio_url: audioUrl, loop: loop ? 'infinity' : '1' })
+  }
+
   // ── Self-serve number provisioning ─────────────────────────────────────────
 
   // Search available numbers by country + type. Tries progressively looser
