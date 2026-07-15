@@ -17,7 +17,7 @@ type Conversation = {
   id: string; company_id: string; contact_id: string | null
   channel: string; status: string; assigned_to: string | null; assigned_name: string | null
   subject: string | null; visitor_id: string | null
-  page_url: string | null; page_title: string | null; page_history: any[]
+  page_url: string | null; page_title: string | null; page_history: any[]; page_seen_at?: string | null
   last_message: string | null; last_message_at: string
   unread_count: number; is_unread: boolean; updated_at: string
   contact?: Contact | null
@@ -630,6 +630,23 @@ export default function InboxPage() {
   }, [messages, selected?.id, (selected as any)?.channel])
 
   const isWebChat = ['widget', 'chat'].includes(activeChannel)
+
+  // Is the visitor on the page RIGHT NOW? The widget heartbeats page_seen_at
+  // every 60s while their tab is open. Fresh (< 2 min) ⇒ show the live banner;
+  // stale ⇒ they've left, so the page belongs in history, not in a banner
+  // claiming they're "currently on" it. Re-checked every 20s so a banner for
+  // someone who just left disappears on its own.
+  const [nowTick, setNowTick] = useState(0)
+  useEffect(() => {
+    const iv = setInterval(() => setNowTick(t => t + 1), 20000)
+    return () => clearInterval(iv)
+  }, [])
+  const isOnPageNow = useMemo(() => {
+    const seen = (selected as any)?.page_seen_at
+    if (!seen) return false
+    const ts = String(seen).endsWith('Z') ? seen : seen + 'Z'
+    return (Date.now() - new Date(ts).getTime()) < 120000
+  }, [selected?.id, (selected as any)?.page_seen_at, nowTick])
   const [showPod, setShowPod] = useState(false)
   const [podNote, setPodNote] = useState('')
   const [podFiles, setPodFiles] = useState<File[]>([])
@@ -3116,10 +3133,24 @@ export default function InboxPage() {
               (c.subject && !/^(abandoned cart|order #)/i.test(c.subject) ? c.subject : null) ||
               'Visitor'
 
-            // Where did this conversation come from?
+            // Where is this conversation happening NOW?
             const subj = (c.subject || '').toLowerCase()
+            const ch = String(c.channel || '').toLowerCase()
             let source: { label: string; bg: string; fg: string }
-            if (subj.startsWith('abandoned cart')) {
+            // A live non-web channel wins over the subject-derived tag. Someone
+            // who began as an order/cart but is now texting should read "SMS",
+            // not keep an "Order Placed" badge forever.
+            const CHANNEL_BADGE: Record<string, any> = {
+              sms:       { label: 'SMS', bg: '#fef3c7', fg: '#b45309' },
+              email:     { label: 'Email', bg: '#e0e7ff', fg: '#4338ca' },
+              instagram: { label: 'Instagram', bg: '#fce7f3', fg: '#be185d' },
+              facebook:  { label: 'Messenger', bg: '#dbeafe', fg: '#1d4ed8' },
+              messenger: { label: 'Messenger', bg: '#dbeafe', fg: '#1d4ed8' },
+              whatsapp:  { label: 'WhatsApp', bg: '#dcfce7', fg: '#15803d' },
+            }
+            if (CHANNEL_BADGE[ch]) {
+              source = CHANNEL_BADGE[ch]
+            } else if (subj.startsWith('abandoned cart')) {
               source = { label: 'Abandoned Cart', bg: '#fee2e2', fg: '#dc2626' }
             } else if (subj.startsWith('order #')) {
               // Read the ACTUAL order status. This used to say "Order Placed" for
@@ -3136,16 +3167,6 @@ export default function InboxPage() {
                 processing: { label: 'Order Placed', bg: '#dcfce7', fg: '#15803d' },
               }
               source = ORDER_BADGE[os] || { label: 'Order Placed', bg: '#dcfce7', fg: '#15803d' }
-            } else if (c.channel === 'email') {
-              source = { label: 'Email', bg: '#e0e7ff', fg: '#4338ca' }
-            } else if (c.channel === 'sms') {
-              source = { label: 'SMS', bg: '#fef3c7', fg: '#b45309' }
-            } else if (c.channel === 'instagram') {
-              source = { label: 'Instagram', bg: '#fce7f3', fg: '#be185d' }
-            } else if (c.channel === 'facebook' || c.channel === 'messenger') {
-              source = { label: 'Messenger', bg: '#dbeafe', fg: '#1d4ed8' }
-            } else if (c.channel === 'whatsapp') {
-              source = { label: 'WhatsApp', bg: '#dcfce7', fg: '#15803d' }
             } else {
               source = { label: 'Live Chat Enquiry', bg: '#dcfce7', fg: '#15803d' }
             }
@@ -3239,7 +3260,7 @@ export default function InboxPage() {
                     name the channel instead, so the agent knows a reply goes
                     out by SMS/email rather than into a web widget. */}
                 {isWebChat
-                  ? (selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {selected.page_title}</p>)
+                  ? (isOnPageNow && selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {selected.page_title}</p>)
                   : <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       via {CHANNEL_NAME[activeChannel] || activeChannel}
                     </p>}
@@ -3449,7 +3470,7 @@ export default function InboxPage() {
                 or email thread it's stale data from a previous web visit, and
                 it misleads the agent into thinking someone is live on the page
                 when they're actually texting. */}
-            {selected.page_url && isWebChat && (
+            {selected.page_url && isWebChat && isOnPageNow && (
               <div style={{ background: '#f0f9ff', borderBottom: '1px solid #bae6fd', padding: '6px 16px', fontSize: 11, color: '#0369a1', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
                 <span>Currently on:</span>

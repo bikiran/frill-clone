@@ -75,7 +75,11 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
 
   const duration = call?.duration_seconds ?? meta?.duration_seconds ?? 0
   const inbound = (call?.direction || meta?.direction) === 'inbound'
-  const sent = call?.sentiment ? SENTIMENT[call.sentiment] : null
+  // Show a badge whenever we have any AI output. Older calls summarised before
+  // sentiment was persisted have a summary but a null sentiment — treat those
+  // as neutral rather than showing no badge at all.
+  const sentKey = call?.sentiment || (call?.ai_summary ? 'neutral' : null)
+  const sent = sentKey ? SENTIMENT[sentKey] : null
   const todos: string[] = Array.isArray(call?.ai_todos) ? call.ai_todos : []
   const summary: string = call?.ai_summary || ''
   const longSummary = summary.length > 180

@@ -148,7 +148,14 @@ ${text.slice(0, 12000)}`
           const parsed = JSON.parse(out)
           summary = parsed.summary || ''
           todos = Array.isArray(parsed.todos) ? parsed.todos : []
-          sentiment = parsed.sentiment || null
+          // Normalise to one of the three known values; anything else (or a
+          // missing field) becomes 'neutral'. The card only renders the badge
+          // when sentiment is set, so a null here meant NO badge ever showed —
+          // which is why positive/neutral/negative never appeared.
+          {
+            const raw = String(parsed.sentiment || '').toLowerCase()
+            sentiment = ['positive', 'neutral', 'negative'].includes(raw) ? raw : 'neutral'
+          }
           summaryError = ''
           break
         } catch (e: any) {
@@ -160,7 +167,9 @@ ${text.slice(0, 12000)}`
     await db.from('calls').update({
       ai_summary: summary || null,
       ai_todos: todos,
-      sentiment,
+      // If we produced a summary but the model didn't give a usable sentiment,
+      // fall back to neutral so the badge always renders alongside a summary.
+      sentiment: sentiment || (summary ? 'neutral' : null),
     }).eq('id', callId)
 
     // Transcribed, but no summary — say EXACTLY why.

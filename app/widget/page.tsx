@@ -186,6 +186,7 @@ function WidgetContent() {
         if (chatConvId) {
           ;(supabase as any).from('conversations').update({
             page_url: d.url, page_title: d.title || null, page_history: d.history,
+            page_seen_at: new Date().toISOString(),
           }).eq('id', chatConvId).then(() => {}, () => {})
         }
         return
@@ -194,13 +195,25 @@ function WidgetContent() {
         if (prev.length && prev[prev.length - 1].url === d.url) return prev
         const next = [...prev, { url: d.url, title: d.title || null, ts: new Date().toISOString() }]
         if (chatConvId) {
-          ;(supabase as any).from('conversations').update({ page_url: d.url, page_title: d.title || null, page_history: next }).eq('id', chatConvId).then(() => {}, () => {})
+          ;(supabase as any).from('conversations').update({ page_url: d.url, page_title: d.title || null, page_history: next, page_seen_at: new Date().toISOString() }).eq('id', chatConvId).then(() => {}, () => {})
         }
         return next
       })
     }
     window.addEventListener('message', onMsg)
-    return () => window.removeEventListener('message', onMsg)
+
+    // Presence heartbeat (60s). Cheap enough to run per open visitor, and it's
+    // the only signal that tells the inbox the customer is STILL on the page.
+    const beat = () => {
+      if (!chatConvId) return
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      ;(supabase as any).from('conversations')
+        .update({ page_seen_at: new Date().toISOString() })
+        .eq('id', chatConvId).then(() => {}, () => {})
+    }
+    const hb = setInterval(beat, 60000)
+    beat()
+    return () => { window.removeEventListener('message', onMsg); clearInterval(hb) }
   }, [chatConvId])
 
   // Reset article feedback state whenever a different item opens
