@@ -902,6 +902,16 @@ export default function InboxPage() {
 
   useEffect(() => { loadConversations() }, [statusFilter, loadConversations])
 
+  // The realtime subscription is created once per (company, nonce) and captures
+  // loadConversations at that moment — which froze the status filter to whatever
+  // it was then ('open'). So any conversation update while on the Closed tab
+  // reloaded the list with the OPEN filter: the rows became open conversations
+  // while the tab still said Closed, and you lost your place. Routing realtime
+  // reloads through a ref that always points at the current loadConversations
+  // keeps the filter correct without re-subscribing on every filter change.
+  const loadConversationsRef = useRef(loadConversations)
+  useEffect(() => { loadConversationsRef.current = loadConversations }, [loadConversations])
+
   // Deep-link: open a conversation from ?conversation=<id> (copy chat link)
   useEffect(() => {
     if (conversations.length === 0 || selected) return
@@ -950,7 +960,7 @@ export default function InboxPage() {
     // .on() is always called on a fresh, unsubscribed channel.
     const ch = supabase.channel(`inbox-${companyId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `company_id=eq.${companyId}` }, (payload: any) => {
-        loadConversations()
+        loadConversationsRef.current()
         // Keep the OPEN conversation fresh too — page history, status and
         // assignment are stored on the conversation row, and without this they
         // only appeared after a manual page reload.
@@ -969,7 +979,16 @@ export default function InboxPage() {
           })
           scrollBottom()
         }
-        loadConversations()
+        // Float the conversation that just got a message to the top of the list
+        // immediately, so an active thread that had drifted to the bottom (buried
+        // by newer conversations) comes back up without waiting for a reload or a
+        // manual scroll.
+        setConversations(prev => prev.map((c: any) =>
+          c.id === payload.new.conversation_id
+            ? { ...c, last_message_at: payload.new.created_at || new Date().toISOString() }
+            : c
+        ))
+        loadConversationsRef.current()
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `company_id=eq.${companyId}` }, (payload: any) => {
         // Reactions, read receipts and payment status are UPDATEs to the message
@@ -997,7 +1016,7 @@ export default function InboxPage() {
         }
       } catch {}
       // Pull fresh data either way — cheap, and it guarantees we're current.
-      loadConversations()
+      loadConversationsRef.current()
       if (selectedRef.current?.id) {
         ;(supabase as any).from('messages').select('*')
           .eq('conversation_id', selectedRef.current.id)
@@ -2475,6 +2494,22 @@ export default function InboxPage() {
           /* Bigger, thumb-friendly hit targets (Apple's 44px guidance) */
           .inbox-thread-header .inbox-header-tools button { min-height: 36px; }
           .inbox-thread-header [data-callbar-btn] { padding: 8px 12px !important; }
+
+          /* Assign and the ⋯ menu are siblings AFTER the horizontally-scrolling
+             tools strip. On mobile the strip takes a full-width row and these
+             wrapped below it, but the strip's right-edge mask and overflow could
+             sit over them and swallow taps. Force them above the strip and give
+             them real hit targets so they're always tappable. */
+          .inbox-thread-header [data-assign-menu],
+          .inbox-thread-header [data-actions-menu] {
+            position: relative;
+            z-index: 5;
+          }
+          .inbox-thread-header [data-assign-menu] > button { min-height: 38px; padding: 8px 14px !important; }
+          .inbox-thread-header [data-actions-menu] > button { min-width: 38px; min-height: 38px; }
+          /* The dropdowns must escape the tools strip's overflow clipping. */
+          .inbox-thread-header [data-assign-menu] > div,
+          .inbox-thread-header [data-actions-menu] > div { z-index: 200; }
         }
         /* Desktop / tablet: the tools sit inline on the right as before */
         @media (min-width: 768px) {
@@ -3678,6 +3713,7 @@ export default function InboxPage() {
                 )}
               </div>
               </div>
+
               {/* Snooze menu */}
               {showSnooze && (
                 <div style={{ position: 'absolute', top: 54, right: 16, width: 200, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden' }}>
