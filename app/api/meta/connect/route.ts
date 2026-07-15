@@ -11,10 +11,17 @@ export async function GET(req: NextRequest) {
       error: 'Meta isn\'t configured yet. Set META_APP_ID, META_APP_SECRET and META_REDIRECT_URI in Vercel.',
     }, { status: 400 })
   }
-  const companyId = new URL(req.url).searchParams.get('companyId')
+  const url = new URL(req.url)
+  const companyId = url.searchParams.get('companyId')
   if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
 
-  // A little CSRF protection: sign the state so the callback can trust it.
-  const state = Buffer.from(JSON.stringify({ companyId, t: Date.now() })).toString('base64url')
+  // The originating subdomain, passed explicitly by the settings page. We can't
+  // rely on the request host here because this route now runs on the root
+  // domain (colvy.com) — the host would always be root and we'd lose which
+  // company's subdomain to return the user to.
+  const origin = url.searchParams.get('origin')
+    || req.headers.get('origin')
+    || (req.headers.get('host') ? `https://${req.headers.get('host')}` : '')
+  const state = Buffer.from(JSON.stringify({ companyId, origin, t: Date.now() })).toString('base64url')
   return NextResponse.redirect(metaLoginUrl(state))
 }

@@ -18,14 +18,29 @@ export async function GET(req: NextRequest) {
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
   const err = url.searchParams.get('error_description') || url.searchParams.get('error')
-  const settingsUrl = '/admin/crm-settings/channels/meta'
+  const settingsPath = '/admin/crm-settings/channels/meta'
 
-  if (err) return NextResponse.redirect(new URL(`${settingsUrl}?error=${encodeURIComponent(err)}`, req.url))
-  if (!code || !state) return NextResponse.redirect(new URL(`${settingsUrl}?error=missing_code`, req.url))
-
+  // Parse state first — it carries the company AND the subdomain the user
+  // started from, so we can send them back there (the callback itself runs on
+  // the shared root domain, colvy.com).
   let companyId = ''
-  try { companyId = JSON.parse(Buffer.from(state, 'base64url').toString()).companyId } catch {}
-  if (!companyId) return NextResponse.redirect(new URL(`${settingsUrl}?error=bad_state`, req.url))
+  let origin = ''
+  try {
+    const parsed = JSON.parse(Buffer.from(state || '', 'base64url').toString())
+    companyId = parsed.companyId || ''
+    origin = parsed.origin || ''
+  } catch {}
+
+  // Where to send the user when we're done. Their own subdomain if we know it,
+  // otherwise back here on root.
+  const home = (params: string) => {
+    const base = origin && /^https?:\/\//.test(origin) ? origin : new URL(req.url).origin
+    return `${base}${settingsPath}?${params}`
+  }
+
+  if (err) return NextResponse.redirect(home(`error=${encodeURIComponent(err)}`))
+  if (!code || !state) return NextResponse.redirect(home('error=missing_code'))
+  if (!companyId) return NextResponse.redirect(home('error=bad_state'))
 
   try {
     const short = await exchangeCodeForToken(code)
@@ -37,7 +52,7 @@ export async function GET(req: NextRequest) {
     const { pages, error } = await listManagedPages(userToken)
     if (error) throw new Error(error)
     if (!pages || pages.length === 0) {
-      return NextResponse.redirect(new URL(`${settingsUrl}?error=no_pages`, req.url))
+      return NextResponse.redirect(home('error=no_pages'))
     }
 
     const db = admin()
@@ -84,8 +99,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.redirect(new URL(`${settingsUrl}?connected=${connected}`, req.url))
+    return NextResponse.redirect(home(`connected=${connected}`))
   } catch (e: any) {
-    return NextResponse.redirect(new URL(`${settingsUrl}?error=${encodeURIComponent(e.message || 'connect failed')}`, req.url))
+    return NextResponse.redirect(home(`error=${encodeURIComponent(e.message || 'connect failed')}`))
   }
 }

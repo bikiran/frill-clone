@@ -18,20 +18,23 @@ Nothing here works with **real customers** until App Review is approved. Before 
 |---|---|
 | `META_APP_ID` | your App ID |
 | `META_APP_SECRET` | your App Secret |
-| `META_REDIRECT_URI` | `https://roxyaquarium.colvy.com/api/meta/callback` |
+| `META_REDIRECT_URI` | `https://colvy.com/api/meta/callback` (ROOT domain — one URL for ALL companies) |
 | `META_VERIFY_TOKEN` | any random string (you'll paste the same one into the webhook config) |
 
 Redeploy after adding them.
 
 ## 3. Configure Facebook Login
 
-- **Facebook Login → Settings → Valid OAuth Redirect URIs**: add
-  `https://roxyaquarium.colvy.com/api/meta/callback`
+- **Facebook Login → Settings → Valid OAuth Redirect URIs**: add the ROOT URL only
+  `https://colvy.com/api/meta/callback`
+  You add this ONCE. It works for every company subdomain — the company identity
+  travels in the OAuth `state`, and the user is bounced back to their own
+  subdomain after connecting. You never touch Meta's allow-list per signup.
 
 ## 4. Configure the webhook
 
 - **Messenger → Settings → Webhooks** (and **Instagram → Webhooks**): 
-  - Callback URL: `https://roxyaquarium.colvy.com/api/meta/webhook`
+  - Callback URL: `https://colvy.com/api/meta/webhook` (root domain, shared by all companies)
   - Verify token: the same string you put in `META_VERIFY_TOKEN`
   - Subscribe to fields: **messages**, **messaging_postbacks**, **message_reactions**
 

@@ -7,6 +7,7 @@ export default function MetaChannelsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [configured, setConfigured] = useState(true)
+  const [metaRootOrigin, setMetaRootOrigin] = useState('')
   const [channels, setChannels] = useState<any[]>([])
   const [locations, setLocations] = useState<any[]>([])
   const [msg, setMsg] = useState('')
@@ -36,6 +37,7 @@ export default function MetaChannelsPage() {
     const res = await fetch(`/api/meta/channels?companyId=${cid}`)
     const d = await res.json()
     setConfigured(d.configured !== false)
+    setMetaRootOrigin(d.rootOrigin || '')
     setChannels(d.channels || [])
     setLocations(d.locations || [])
   }
@@ -77,7 +79,7 @@ export default function MetaChannelsPage() {
 
       {/* Connect */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 26, flexWrap: 'wrap' }}>
-        <a href={configured && companyId ? `/api/meta/connect?companyId=${companyId}` : undefined}
+        <a href={configured && companyId ? `${metaRootOrigin}/api/meta/connect?companyId=${companyId}&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}` : undefined}
           onClick={e => { if (!configured) { e.preventDefault(); setMsg('Configure the Meta app first (see above).') } }}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 18px', borderRadius: 10, background: '#1877F2', color: '#fff', fontSize: 14, fontWeight: 700, textDecoration: 'none', opacity: configured ? 1 : 0.6 }}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.25h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z"/></svg>

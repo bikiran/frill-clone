@@ -23,7 +23,14 @@ export async function GET(req: NextRequest) {
   const { data: locations } = await db.from('company_locations')
     .select('id, label, suburb').eq('company_id', companyId)
 
-  return NextResponse.json({ configured: isMetaConfigured(), channels: channels || [], locations: locations || [] })
+  // The connect flow must start on the ROOT domain (colvy.com), because that's
+  // the single redirect URI registered with Meta. Derive it from the configured
+  // redirect URI so the client can build an absolute link regardless of which
+  // company subdomain the agent is on.
+  let rootOrigin = ''
+  try { rootOrigin = new URL(process.env.META_REDIRECT_URI || '').origin } catch {}
+
+  return NextResponse.json({ configured: isMetaConfigured(), rootOrigin, channels: channels || [], locations: locations || [] })
 }
 
 // POST: map a channel to a location, toggle it, or disconnect it.
