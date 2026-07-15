@@ -1207,9 +1207,21 @@ export default function InboxPage() {
     let email: string | null = null
     let phone: string | null = null
     if (contactId) {
-      const { data: c } = await (supabase as any).from('contacts').select('email, phone').eq('id', contactId).maybeSingle()
+      const { data: c } = await (supabase as any).from('contacts').select('email, phone, identity_group_id').eq('id', contactId).maybeSingle()
       email = c?.email || null
       phone = c?.phone || null
+      // Identity propagation: if this contact is linked to others (same person
+      // across channels), inherit an email/phone from the group so a Messenger
+      // or Instagram contact — which has neither — still shows the order history
+      // and cards tied to their matched email/phone.
+      if ((!email || !phone) && c?.identity_group_id) {
+        const { data: linked } = await (supabase as any).from('contacts')
+          .select('email, phone').eq('identity_group_id', c.identity_group_id)
+        for (const lc of linked || []) {
+          if (!email && lc.email) email = lc.email
+          if (!phone && lc.phone) phone = lc.phone
+        }
+      }
     }
     // Abandoned carts match by email or phone (independent of WooCommerce sync).
     try {
@@ -3339,9 +3351,9 @@ export default function InboxPage() {
             style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
-          {conversations.filter(c => c.is_unread).length > 0 && (
+          {conversations.filter(c => c.is_unread && !['closed','resolved'].includes(c.status)).length > 0 && (
             <span style={{ marginTop: 10, fontSize: 10, fontWeight: 700, background: 'var(--coral)', color: '#fff', width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {conversations.filter(c => c.is_unread).length}
+              {conversations.filter(c => c.is_unread && !['closed','resolved'].includes(c.status)).length}
             </span>
           )}
         </div>
@@ -3353,7 +3365,7 @@ export default function InboxPage() {
             <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--ink)' }}>Inbox</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--peach)', color: 'var(--coral)', padding: '2px 8px', borderRadius: 20 }}>
-                {conversations.filter(c => c.is_unread).length} unread
+                {conversations.filter(c => c.is_unread && !['closed','resolved'].includes(c.status)).length} unread
               </span>
               <Link href="/admin/crm-settings/profile" title="Inbox settings"
                 style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', textDecoration: 'none' }}>
@@ -3516,6 +3528,21 @@ export default function InboxPage() {
                 style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', order: -2 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
               </button>
+              {/* Contact avatar — real profile photo (from Messenger/Instagram)
+                  when we have it, initials otherwise. */}
+              {(() => {
+                const nm = contact?.name || selected.subject || 'Visitor'
+                const av = (contact as any)?.avatar_url
+                return av ? (
+                  <img src={av} alt={nm} referrerPolicy="no-referrer"
+                    style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                ) : (
+                  <span style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, flexShrink: 0 }}>
+                    {nm.charAt(0).toUpperCase()}
+                  </span>
+                )
+              })()}
               <div className="inbox-header-name" style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
                   {contact?.name || selected.subject || 'Visitor'}
@@ -3532,9 +3559,15 @@ export default function InboxPage() {
                     out by SMS/email rather than into a web widget. */}
                 {isWebChat
                   ? (isOnPageNow && selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {selected.page_title}</p>)
-                  : <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      via {CHANNEL_NAME[activeChannel] || activeChannel}
-                    </p>}
+                  : (() => {
+                      // "Last activity 5m ago", Coax-style, from the customer's
+                      // most recent message on the conversation.
+                      const la = (selected as any).last_customer_activity_at || (selected as any).last_message_at
+                      const rel = la ? timeAgo(la) : null
+                      return rel
+                        ? <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Last activity {rel === 'now' ? 'just now' : `${rel} ago`}</p>
+                        : <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>via {CHANNEL_NAME[activeChannel] || activeChannel}</p>
+                    })()}
               </div>
 
               {/* Browser calling (Telnyx WebRTC) */}

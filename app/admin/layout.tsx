@@ -149,6 +149,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           .select('id', { count: 'exact', head: true })
           .eq('company_id', company.id)
           .eq('is_unread', true)
+          // A closed/resolved conversation shouldn't drive the unread badge —
+          // it's dealt with. Only open ones count as needing attention.
+          .not('status', 'in', '("closed","resolved")')
         if (active) setInboxUnread(count || 0)
       } catch {}
     }
