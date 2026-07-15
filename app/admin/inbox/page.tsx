@@ -1933,6 +1933,26 @@ export default function InboxPage() {
     const content = reply.trim()
     const senderName = user.user_metadata?.display_name || user.email?.split('@')[0]
 
+    // Instagram / Messenger conversations reply through the Meta Send API.
+    if ((selected as any).channel === 'instagram' || (selected as any).channel === 'facebook') {
+      try {
+        const res = await fetch('/api/meta/send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: selected.id, content, agentName: senderName }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Message failed to send')
+        setReply(''); setReplyTo(null); setSending(false)
+        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+        setMessages(msgs || [])
+        scrollBottom()
+      } catch (e: any) {
+        setSending(false)
+        alert('Could not send: ' + e.message)
+      }
+      return
+    }
+
     // Email conversations reply by email (threaded back into the customer's
     // original message), not through the chat widget.
     if ((selected as any).channel === 'email' || sendChannel === 'email') {

@@ -28,11 +28,11 @@ const CHANNELS = [
     href: '', ready: false,
     note: 'Needs a Meta app + WhatsApp Business account.' },
   { id: 'instagram', name: 'Instagram',        color: '#E4405F', icon: 'IG',
-    href: '', ready: false,
-    note: 'Needs a Meta app and App Review.' },
+    href: '/admin/crm-settings/channels/meta', ready: true,
+    note: 'Connect IG accounts per outlet.' },
   { id: 'facebook',  name: 'Messenger',        color: '#1877F2', icon: 'f',
-    href: '', ready: false,
-    note: 'Needs a Meta app and App Review.' },
+    href: '/admin/crm-settings/channels/meta', ready: true,
+    note: 'Connect Pages per outlet.' },
 ]
 
 export default function ChannelsSettings() {
