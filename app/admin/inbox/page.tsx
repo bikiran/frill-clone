@@ -9,6 +9,7 @@ import CallCard from '@/components/CallCard'
 import Dialer from '@/components/Dialer'
 import EmailMessage from '@/components/EmailMessage'
 import EmailComposer from '@/components/EmailComposer'
+import ContactTimeline from '@/components/ContactTimeline'
 import DeliveryPanel from '@/components/DeliveryPanel'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import DoaPanel from '@/components/DoaPanel'
@@ -634,6 +635,7 @@ export default function InboxPage() {
   const [showDialer, setShowDialer] = useState(false)
   const [emailFromLabel, setEmailFromLabel] = useState('')
   const [linkedChannels, setLinkedChannels] = useState<any[]>([])
+  const [showTimeline, setShowTimeline] = useState(false)
   const [emailSignature, setEmailSignature] = useState<string | null>(null)
 
   // Where is this customer ACTUALLY talking, right now? The conversation's
@@ -2616,6 +2618,11 @@ export default function InboxPage() {
         />
       )}
 
+      {showTimeline && contact && (
+        <ContactTimeline contactId={contact.id} contactName={contact.name || contact.email || undefined}
+          onClose={() => setShowTimeline(false)} />
+      )}
+
       {showDialer && (
         <Dialer companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
           onClose={() => setShowDialer(false)} />
@@ -4407,6 +4414,10 @@ export default function InboxPage() {
                           </div>
                         ))}
                       </div>
+                      <button type="button" onClick={() => setShowTimeline(true)}
+                        style={{ marginTop: 9, width: '100%', padding: '7px 0', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: '#2563eb', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                        View all conversations →
+                      </button>
                     </div>
                   )}
 

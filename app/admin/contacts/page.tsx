@@ -16,6 +16,25 @@ export default function ContactsPage() {
   // ── Duplicate contacts ────────────────────────────────────────────────────
   const [dupGroups, setDupGroups] = useState<any[] | null>(null)
   const [dupBusy, setDupBusy] = useState(false)
+  const [linkBusy, setLinkBusy] = useState(false)
+
+  const linkChannels = async () => {
+    if (!companyId) return
+    setLinkBusy(true)
+    try {
+      const res = await fetch('/api/contacts/backfill-identity', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Link failed')
+      alert(d.linkedGroups
+        ? `Linked ${d.linkedContacts} contacts into ${d.linkedGroups} people across their channels.`
+        : 'No cross-channel matches found — everyone is already distinct.')
+    } catch (e: any) {
+      alert(e.message || 'Could not link channels')
+    } finally { setLinkBusy(false) }
+  }
 
   const findDuplicates = async () => {
     if (!companyId) return
@@ -42,7 +61,7 @@ export default function ContactsPage() {
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Merge failed')
       await findDuplicates()
-      await load()
+      if (companyId) await loadContacts(companyId)
     } catch (e: any) { alert(e.message) }
     finally { setDupBusy(false) }
   }
@@ -134,6 +153,11 @@ export default function ContactsPage() {
             title="Find contacts that are the same person"
             style={{ padding: '9px 15px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
             {dupBusy ? 'Checking…' : 'Find duplicates'}
+          </button>
+          <button type="button" onClick={linkChannels} disabled={linkBusy}
+            title="Link the same person across live chat, SMS, Messenger, Instagram and WooCommerce by shared email/phone"
+            style={{ padding: '9px 15px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+            {linkBusy ? 'Linking…' : 'Link channels'}
           </button>
           <button type="button" onClick={() => { setSelected(null); setEditData({}); setEditMode(true) }}            style={{ padding: '9px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
             + New Contact
