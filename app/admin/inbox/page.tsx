@@ -2934,6 +2934,9 @@ export default function InboxPage() {
           conversationId={selected.id}
           contactId={contact?.id}
           contact={contact}
+          channel={['widget', 'chat'].includes(activeChannel) ? null : activeChannel}
+          channelLabel={['widget', 'chat'].includes(activeChannel) ? null : (CHANNEL_NAME[activeChannel] || activeChannel)}
+          onDeliver={deliverToCustomer}
           onClose={() => setShowDoa(false)}
           onDone={() => { if (selected) selectConversation(selected) }}
         />
@@ -2948,6 +2951,9 @@ export default function InboxPage() {
           staffName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
           staffId={user?.id}
           prefillCart={orderPrefillCart}
+          channel={['widget', 'chat'].includes(activeChannel) ? null : activeChannel}
+          channelLabel={['widget', 'chat'].includes(activeChannel) ? null : (CHANNEL_NAME[activeChannel] || activeChannel)}
+          onDeliver={deliverToCustomer}
           onClose={() => { setShowCreateOrder(false); setOrderPrefillCart(null) }}
           onCreated={(order) => {
             if (orderPrefillCart?.id) { (supabase as any).from('abandoned_carts').update({ status: 'recovered', recovered_order_id: order?.id }).eq('id', orderPrefillCart.id); setAbandonedCarts(prev => prev.filter(c => c.id !== orderPrefillCart.id)) }

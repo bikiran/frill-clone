@@ -18,7 +18,7 @@ type Item = {
 
 const GST_RATE = 0.10 // Australia
 
-export default function CreateOrderPanel({ companyId, conversationId, contactId, contact, staffName, staffId, prefillCart, onClose, onCreated }: {
+export default function CreateOrderPanel({ companyId, conversationId, contactId, contact, staffName, staffId, prefillCart, channel, channelLabel, onDeliver, onClose, onCreated }: {
   companyId: string
   conversationId?: string | null
   contactId?: string | null
@@ -26,9 +26,14 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
   staffName?: string
   staffId?: string
   prefillCart?: any
+  channel?: string | null
+  channelLabel?: string | null
+  onDeliver?: (opts: { body: string; url?: string | null; subject?: string }) => Promise<string>
   onClose: () => void
   onCreated?: (order: any) => void
 }) {
+  const [sendState, setSendState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [sendMsg, setSendMsg] = useState('')
   // Source picker
   const [sources, setSources] = useState<any[]>([])
   const [source, setSource] = useState<any>(null)
@@ -245,6 +250,29 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
                 <div style={{ marginTop: 16 }}>
                   <input readOnly value={result.pay_link} style={{ ...I, fontSize: 12 }} onFocus={e => e.currentTarget.select()} />
                   <button onClick={() => { navigator.clipboard?.writeText(result.pay_link) }} style={{ marginTop: 8, padding: '9px 18px', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Copy payment link</button>
+
+                  {/* Send the pay link straight to the customer on their channel. */}
+                  {onDeliver && (channel || contact?.email) && (
+                    <button
+                      disabled={sendState === 'sending' || sendState === 'sent'}
+                      onClick={async () => {
+                        setSendState('sending')
+                        try {
+                          const how = await onDeliver({
+                            subject: `Your order #${result.number} from us`,
+                            body: `Here's your order #${result.number} for ${result.currency || 'AUD'} ${money(parseFloat(result.total) || 0)}. Pay securely here:`,
+                            url: result.pay_link,
+                          })
+                          setSendState('sent'); setSendMsg(how)
+                        } catch (e: any) { setSendState('error'); setSendMsg(e.message) }
+                      }}
+                      style={{ marginTop: 8, marginLeft: 8, padding: '9px 18px', borderRadius: 9, background: sendState === 'sent' ? '#dcfce7' : 'var(--coral)', color: sendState === 'sent' ? '#15803d' : '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: sendState === 'sent' ? 'default' : 'pointer' }}>
+                      {sendState === 'sending' ? 'Sending…'
+                        : sendState === 'sent' ? `✓ ${sendMsg}`
+                        : `Send to customer${channelLabel ? ` on ${channelLabel}` : (contact?.email ? ' by email' : '')}`}
+                    </button>
+                  )}
+                  {sendState === 'error' && <p style={{ fontSize: 11.5, color: '#dc2626', marginTop: 6 }}>{sendMsg}</p>}
                 </div>
               )}
               <button onClick={onClose} style={{ marginTop: 18, padding: '10px 24px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'block', width: '100%' }}>Done</button>

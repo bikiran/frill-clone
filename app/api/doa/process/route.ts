@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
-    return NextResponse.json({ ok: true, claimId, message: resultMessage, coupon: updatePatch.coupon_code || null })
+    return NextResponse.json({ ok: true, claimId, message: resultMessage, coupon: updatePatch.coupon_code || null, code: updatePatch.coupon_code || null, shop_url: integ.store_url || null })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

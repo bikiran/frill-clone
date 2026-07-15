@@ -5,11 +5,14 @@ import { useState, useEffect } from 'react'
 // The DOA claim panel. Pre-fills name/phone/email from the chat contact, looks
 // up the order by number from WooCommerce, lets the agent select items or an
 // amount, and processes a refund / store credit / resend.
-export default function DoaPanel({ companyId, conversationId, contactId, contact, onClose, onDone }: {
+export default function DoaPanel({ companyId, conversationId, contactId, contact, channel, channelLabel, onDeliver, onClose, onDone }: {
   companyId: string
   conversationId?: string | null
   contactId?: string | null
   contact?: any
+  channel?: string | null
+  channelLabel?: string | null
+  onDeliver?: (opts: { body: string; url?: string | null; subject?: string }) => Promise<string>
   onClose: () => void
   onDone?: (msg: string) => void
 }) {
@@ -24,6 +27,10 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
   const [result, setResult] = useState<string>('')
   const [recentOrders, setRecentOrders] = useState<any[]>([])
   const [loadingRecent, setLoadingRecent] = useState(false)
+  // Notify the customer on their channel by default; the agent can untick for a
+  // delicate case they'd rather handle by hand.
+  const [notify, setNotify] = useState(true)
+  const canNotify = !!(onDeliver && (channel || contact?.email))
 
   // Load the customer's recent orders so the agent can pick one without knowing
   // the number (the most recent is tagged RECENT). Search still works too.
@@ -74,7 +81,29 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not process')
-      setResult(data.message || 'Done')
+
+      // Notify the customer on their channel, matching the resolution.
+      if (notify && canNotify) {
+        const amt = amount ? `$${parseFloat(amount).toFixed(2)}` : ''
+        let body = ''
+        let url: string | null = null
+        if (resolution === 'refund') {
+          body = `We're sorry your order arrived damaged. We've refunded ${amt} — it should appear on your original payment method within 3–5 business days.`
+        } else if (resolution === 'coupon') {
+          body = `We're sorry your order arrived damaged. We've issued you ${amt} in store credit — use code ${data.code || ''} at checkout.`
+          url = (data.shop_url as string) || null
+        } else {
+          body = `We're sorry your order arrived damaged. A replacement is on its way at no charge — we'll send tracking once it ships.`
+        }
+        try {
+          const how = await onDeliver!({ subject: `About your order #${order.number || order.id}`, body, url })
+          setResult(`${data.message || 'Done'} · ${how}`)
+        } catch (e: any) {
+          setResult(`${data.message || 'Done'} · couldn't message the customer: ${e.message}`)
+        }
+      } else {
+        setResult(data.message || 'Done')
+      }
       onDone?.(data.message)
     } catch (e: any) { setError(e.message) } finally { setProcessing(false) }
   }
@@ -189,8 +218,19 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
                   <label style={L}>Notes (reason)</label>
                   <textarea style={{ ...I, minHeight: 54, resize: 'vertical' }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Arrived cracked, customer sent photos." />
 
+                  {/* Notify the customer on their channel */}
+                  {canNotify && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)}
+                        style={{ width: 16, height: 16, accentColor: 'var(--coral)' }} />
+                      <span style={{ fontSize: 12.5, color: 'var(--ink)' }}>
+                        Notify the customer{channelLabel ? ` on ${channelLabel}` : (contact?.email ? ' by email' : '')}
+                      </span>
+                    </label>
+                  )}
+
                   {/* Actions */}
-                  <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <button onClick={() => process('refund')} disabled={processing}
                       style={{ padding: '12px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
                       {processing ? 'Processing…' : `💳 Refund to original payment (${order.currency || 'AUD'} $${customAmount || selectedTotal.toFixed(2)})`}
