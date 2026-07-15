@@ -1326,6 +1326,70 @@ export default function InboxPage() {
     return phone || null
   }
 
+  // ── Channel-aware delivery for actions ──────────────────────────────────────
+  // Coupons, payment links, forms, DOA claims, proof of delivery, etc. all
+  // ultimately give the customer a LINK. On the live-chat widget we can render a
+  // rich card, but on email / SMS / Messenger / Instagram we can only send text
+  // — so those channels get a short message with the link. This one helper
+  // routes to the right channel so every action doesn't reimplement it.
+  //
+  // Returns a human string describing what happened (for a toast), or throws.
+  const deliverToCustomer = async (opts: { body: string; url?: string | null; subject?: string }): Promise<string> => {
+    if (!selected || !companyId) throw new Error('No conversation selected')
+    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const ch = activeChannel
+    const fullBody = opts.url ? `${opts.body}\n${opts.url}` : opts.body
+
+    if (ch === 'email') {
+      const res = await fetch('/api/email/reply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: selected.id, content: fullBody, agentName: me, subject: opts.subject }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Email failed')
+      return 'Sent by email'
+    }
+
+    if (ch === 'instagram' || ch === 'facebook') {
+      const res = await fetch('/api/meta/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: selected.id, content: fullBody, agentName: me }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Message failed')
+      return ch === 'instagram' ? 'Sent on Instagram' : 'Sent on Messenger'
+    }
+
+    const smsNumber = smsDestination()
+    if (ch === 'sms' && smsNumber) {
+      const res = await fetch('/api/telnyx/sms/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'SMS failed')
+      return 'Sent by SMS'
+    }
+
+    // Live-chat widget (or anything else): drop it into the thread. Also text a
+    // copy if we happen to have a mobile, so they get it off the site too.
+    await (supabase as any).from('messages').insert({
+      conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+      sender_id: user?.id, sender_name: me, content: fullBody,
+      delivery_channel: 'chat',
+    })
+    await (supabase as any).from('conversations').update({ last_message: opts.body.slice(0, 120), last_message_at: new Date().toISOString() }).eq('id', selected.id)
+    if (smsNumber) {
+      try {
+        await fetch('/api/telnyx/sms/send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me, skipChatMessage: true }),
+        })
+      } catch {}
+    }
+    return 'Sent in chat'
+  }
+
   const sendGalleryMedia = async () => {
     if (!companyId || !selected || gallerySelected.size === 0) return
     const chosen = galleryItems.filter(it => gallerySelected.has(it.id))
@@ -1735,7 +1799,20 @@ export default function InboxPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not create request')
       setShowMediaRequest(false)
-      showToast('Media request sent')
+
+      // Non-widget channels: send the upload link (the in-chat uploader can't
+      // render on email/SMS/Messenger/Instagram).
+      let how = 'sent'
+      if (activeChannel !== 'widget' && activeChannel !== 'chat' && data.link) {
+        try {
+          how = await deliverToCustomer({
+            subject: `${companyInfo?.name || 'We'} need a few files from you`,
+            body: `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`,
+            url: data.link,
+          })
+        } catch (e: any) { showToast(`Request created, but sending failed: ${e.message}`); setMrSaving(false); return }
+      }
+      showToast(`Media request ${how.toLowerCase()}`)
       selectConversation(selected)
     } catch (e: any) { showToast(e.message || 'Failed to send request') } finally { setMrSaving(false) }
   }
@@ -1758,7 +1835,22 @@ export default function InboxPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not create coupon')
       setShowCoupon(false)
-      showToast(`Coupon ${data.code} sent`)
+
+      // On a non-widget channel, the in-chat coupon card can't render — send the
+      // code and a shop link over whatever channel the customer is on.
+      let how = 'sent'
+      if (activeChannel !== 'widget' && activeChannel !== 'chat') {
+        const shop = (companyInfo as any)?.store_url || ''
+        const amount = couponType === 'percent' ? `${couponAmount.trim()}%` : `$${couponAmount.trim()}`
+        try {
+          how = await deliverToCustomer({
+            subject: `A ${amount} coupon from ${companyInfo?.name || 'us'}`,
+            body: `Here's ${amount} off your next order — use code ${data.code} at checkout.${couponExpiry ? ` Valid for ${couponExpiry} days.` : ''}`,
+            url: shop || null,
+          })
+        } catch (e: any) { showToast(`Coupon created, but sending failed: ${e.message}`); setCouponSaving(false); return }
+      }
+      showToast(`Coupon ${data.code} ${how.toLowerCase()}`)
       selectConversation(selected)
     } catch (e: any) { showToast(e.message || 'Failed to send coupon') } finally { setCouponSaving(false) }
   }
@@ -1873,8 +1965,17 @@ export default function InboxPage() {
     })
     await (supabase as any).from('conversations').update({ last_message: `📋 ${title}`, last_message_at: new Date().toISOString() }).eq('id', selected.id)
 
-    // For SMS conversations, also text a link to the widget + app download
-    if (smsNumber) {
+    // For any non-widget channel, send a link to respond (the interactive card
+    // only renders inside the live-chat widget). Was SMS-only before.
+    if (activeChannel !== 'widget' && activeChannel !== 'chat') {
+      try {
+        await deliverToCustomer({
+          subject: title,
+          body: `${title}\nTap to respond:`,
+          url: link,
+        })
+      } catch (e: any) { showToast(`Saved, but sending failed: ${e.message}`) }
+    } else if (smsNumber) {
       const body = `${title}\nTap to respond: ${link}\n\nOr get our app: https://colvy.com/app`
       try { await fetch('/api/telnyx/sms/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName }) }) } catch {}
     }
@@ -1894,13 +1995,16 @@ export default function InboxPage() {
       })
       const data = await res.json()
       if (!res.ok) { alert(data.error || 'Could not create payment'); return }
-      // For SMS, text the pay link — but DON'T log it as a second chat message
-      // (the payment card above already shows it; logging again produced the
-      // duplicate message with the long raw Stripe URL).
-      const smsNumber = (selected as any).sms_number
-      if (smsNumber && data.checkoutUrl) {
-        const body = `Payment request: $${parseFloat(payAmount).toFixed(2)} AUD${payDesc ? ` — ${payDesc}` : ''}\nPay securely: ${data.checkoutUrl}`
-        try { await fetch('/api/telnyx/sms/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName, skipChatMessage: true }) }) } catch {}
+      // On non-widget channels the payment card can't render — send the pay
+      // link over the customer's channel. (Was SMS-only.)
+      if (data.checkoutUrl && activeChannel !== 'widget' && activeChannel !== 'chat') {
+        try {
+          await deliverToCustomer({
+            subject: `Payment request from ${companyInfo?.name || 'us'}`,
+            body: `Payment request: $${parseFloat(payAmount).toFixed(2)} AUD${payDesc ? ` — ${payDesc}` : ''}\nPay securely:`,
+            url: data.checkoutUrl,
+          })
+        } catch (e) { showToast(`Payment created, but sending failed: ${(e as any).message}`) }
       }
       setSendPicker(null); setPayAmount(''); setPayDesc('')
       const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
