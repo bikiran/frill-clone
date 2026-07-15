@@ -126,10 +126,18 @@ export async function POST(req: NextRequest) {
           const { data: created } = await db.from('contacts').insert({
             company_id: companyId,
             name: prof.name || (platform === 'instagram' ? 'Instagram user' : 'Messenger user'),
+            avatar_url: prof.avatar || null,
             meta_user_id: senderId,
             source: platform,
           }).select().maybeSingle()
           contact = created
+        } else if (!contact.avatar_url) {
+          // Backfill the photo for an existing contact that doesn't have one.
+          const prof = await fetchMetaProfile(senderId, channel.page_access_token, platform)
+          if (prof.avatar) {
+            await db.from('contacts').update({ avatar_url: prof.avatar }).eq('id', contact.id)
+            contact.avatar_url = prof.avatar
+          }
         }
 
         // Link this contact to any existing profile (same email/phone) and note
@@ -157,7 +165,7 @@ export async function POST(req: NextRequest) {
             // Route to the outlet this connection is mapped to.
             assigned_location_id: channel.location_id || null,
             status: 'open', is_unread: true, unread_count: 1,
-            last_message: preview.slice(0, 200), last_message_at: new Date().toISOString(),
+            last_message: preview.slice(0, 200), last_message_at: new Date().toISOString(), last_customer_activity_at: new Date().toISOString(),
           }).select().maybeSingle()
           conv = newConv
         } else {
@@ -165,7 +173,7 @@ export async function POST(req: NextRequest) {
             status: 'open', is_unread: true,
             unread_count: (conv.unread_count || 0) + 1,
             meta_channel_id: channel.id,
-            last_message: preview.slice(0, 200), last_message_at: new Date().toISOString(),
+            last_message: preview.slice(0, 200), last_message_at: new Date().toISOString(), last_customer_activity_at: new Date().toISOString(),
           }).eq('id', conv.id)
         }
         if (!conv) continue

@@ -14,7 +14,7 @@ const admin = () => createClient(
 // message so it lands in the same email conversation on their side.
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, content, agentName, to, cc, subject: subjectOverride } = await req.json()
+    const { conversationId, content, agentName, to, cc, bcc, subject: subjectOverride } = await req.json()
     if (!conversationId || !content) {
       return NextResponse.json({ error: 'conversationId and content are required' }, { status: 400 })
     }
@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
     const toEmail = (to && String(to).trim()) || contact?.email
     if (!toEmail) return NextResponse.json({ error: 'No recipient for this email' }, { status: 400 })
     const ccEmail = cc && String(cc).trim() ? String(cc).trim() : null
+    const bccEmail = bcc && String(bcc).trim() ? String(bcc).trim() : null
 
     // Which mailbox does this conversation belong to? Fall back to the company's
     // first active mailbox for older conversations that predate multi-account.
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
     //    business's own Sent folder and threads properly for the customer.
     if (channel.provider === 'gmail') {
       const out = await sendGmail(channel, {
-        to: toEmail, cc: ccEmail, subject, body: fullText, html: bodyHtml,
+        to: toEmail, cc: ccEmail, bcc: bccEmail, subject, body: fullText, html: bodyHtml,
         inReplyTo,
         threadId: conv.email_message_id || null,
       })
@@ -144,6 +145,7 @@ export async function POST(req: NextRequest) {
         from: `${fromName} <${fromAddress}>`,
         to: [toEmail],
         ...(ccEmail ? { cc: ccEmail.split(',').map((x: string) => x.trim()).filter(Boolean) } : {}),
+        ...(bccEmail ? { bcc: bccEmail.split(',').map((x: string) => x.trim()).filter(Boolean) } : {}),
         subject,
         text: fullText,
         html: bodyHtml,

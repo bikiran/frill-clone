@@ -397,6 +397,7 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
 export async function sendGmail(channel: any, opts: {
   to: string
   cc?: string | null
+  bcc?: string | null
   subject: string
   body: string
   html?: string | null
@@ -410,6 +411,7 @@ export async function sendGmail(channel: any, opts: {
   const headerLines = [
     `To: ${opts.to}`,
     ...(opts.cc ? [`Cc: ${opts.cc}`] : []),
+    ...(opts.bcc ? [`Bcc: ${opts.bcc}`] : []),
     `From: ${fromHeader}`,
     `Subject: ${opts.subject}`,
   ]

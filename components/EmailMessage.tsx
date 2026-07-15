@@ -23,6 +23,25 @@ function firstAddress(raw?: string | null): { name: string; email: string } {
   return { name: '', email: first }
 }
 
+// The stored plain-text preview sometimes contains ESCAPED html — literal
+// "&lt;br&gt;" and "&amp;" — which then showed up verbatim in the collapsed
+// view (while "View full message" rendered the real HTML fine). Decode the
+// entities and flatten any tags so the collapsed preview reads like prose.
+function cleanPreview(raw: string): string {
+  if (!raw) return ''
+  let t = raw
+  // Decode entities first (handles &lt;br&gt; -> <br>, &amp; -> & etc.).
+  const ENT: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', copy: '©' }
+  t = t.replace(/&([a-z]+);/gi, (m, e) => ENT[String(e).toLowerCase()] ?? m)
+  t = t.replace(/&#(\d+);/g, (_m, d) => String.fromCharCode(Number(d)))
+  // Turn line-break tags into real newlines, then drop the rest of the tags.
+  t = t.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|li|h[1-6])>/gi, '\n')
+  t = t.replace(/<[^>]+>/g, '')
+  // Collapse the long "------" separator rules and excess blank lines.
+  t = t.replace(/[-_=]{6,}/g, '').replace(/\n{3,}/g, '\n\n').replace(/[ \t]+/g, ' ')
+  return t.trim()
+}
+
 export default function EmailMessage({ msg, agentColor }: { msg: any; agentColor?: string }) {
   const [showFull, setShowFull] = useState(false)
   const isAgent = msg.sender_type === 'agent'
@@ -84,7 +103,7 @@ export default function EmailMessage({ msg, agentColor }: { msg: any; agentColor
               dangerouslySetInnerHTML={{ __html: html }} />
           ) : (
             <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>
-              {msg.content}
+              {cleanPreview(msg.content)}
             </p>
           )}
 

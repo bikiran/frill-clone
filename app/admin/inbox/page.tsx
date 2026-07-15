@@ -1473,7 +1473,8 @@ export default function InboxPage() {
 
         // Meta channels (Messenger / Instagram): push the media through the
         // Send API so the customer actually receives the photo/video/file.
-        const metaCh = (selected as any).channel
+        const metaCh = activeChannel
+        let deliveredOk = true
         if (metaCh === 'instagram' || metaCh === 'facebook') {
           try {
             const r = await fetch('/api/meta/send', {
@@ -1488,8 +1489,22 @@ export default function InboxPage() {
               }),
             })
             const rd = await r.json()
-            if (!r.ok) showToast(`Saved to the chat, but sending failed: ${rd.error || 'unknown error'}`)
-          } catch { showToast('Saved to the chat, but the message failed to send.') }
+            if (!r.ok) { deliveredOk = false; showToast(`Photo NOT delivered — ${rd.error || 'unknown error'}`) }
+          } catch (e: any) { deliveredOk = false; showToast(`Photo NOT delivered: ${e?.message || 'send failed'}`) }
+        } else if (metaCh === 'email') {
+          // Email: send the file as a link (the customer gets the full-quality
+          // original, and it works in every mail client).
+          try {
+            const r = await fetch('/api/email/reply', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                conversationId: selected.id, agentName: me,
+                content: `${data.kind === 'file' ? data.name : 'Photo'} attached:\n${attachment.url}`,
+              }),
+            })
+            const rd = await r.json()
+            if (!r.ok) { deliveredOk = false; showToast(`Email NOT sent — ${rd.error || 'unknown error'}`) }
+          } catch (e: any) { deliveredOk = false; showToast(`Email NOT sent: ${e?.message || 'failed'}`) }
         }
 
         await (supabase as any).from('messages').insert({
@@ -1497,7 +1512,7 @@ export default function InboxPage() {
           sender_id: user.id, sender_name: me, sender_email: user.email,
           content: data.kind === 'file' ? `📎 ${data.name}` : '',
           attachments: [attachment],
-          delivery_channel: (metaCh === 'instagram' || metaCh === 'facebook') ? metaCh : (smsNumber ? 'sms' : 'chat'),
+          delivery_channel: ['instagram', 'facebook', 'email'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
         })
       }
       await (supabase as any).from('conversations').update({ last_message: '📎 Attachment', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)

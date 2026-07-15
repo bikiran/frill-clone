@@ -23,6 +23,8 @@ export default function EmailComposer({
   const [to, setTo] = useState(toEmail)
   const [cc, setCc] = useState('')
   const [showCc, setShowCc] = useState(false)
+  const [bcc, setBcc] = useState('')
+  const [showBcc, setShowBcc] = useState(false)
   const [subject, setSubject] = useState(defaultSubject)
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
@@ -39,14 +41,14 @@ export default function EmailComposer({
       const res = await fetch('/api/email/reply', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          conversationId, to: to.trim(), cc: cc.trim() || null,
+          conversationId, to: to.trim(), cc: cc.trim() || null, bcc: bcc.trim() || null,
           subject: subject.trim() || defaultSubject,
           content: body, agentName,
         }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Send failed')
-      setBody(''); setCc(''); setShowCc(false)
+      setBody(''); setCc(''); setShowCc(false); setBcc(''); setShowBcc(false)
       onSent()
     } catch (e: any) {
       setErr(e.message || 'Could not send')
@@ -66,17 +68,33 @@ export default function EmailComposer({
       <div style={row}>
         <span style={rowLabel}>To</span>
         <input value={to} onChange={e => setTo(e.target.value)} style={field} placeholder="customer@example.com" />
-        {!showCc && (
-          <button type="button" onClick={() => setShowCc(true)}
-            style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>
-            Cc
-          </button>
+        {(!showCc || !showBcc) && (
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            {!showCc && (
+              <button type="button" onClick={() => setShowCc(true)}
+                style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Cc
+              </button>
+            )}
+            {!showBcc && (
+              <button type="button" onClick={() => setShowBcc(true)}
+                style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Bcc
+              </button>
+            )}
+          </div>
         )}
       </div>
       {showCc && (
         <div style={row}>
           <span style={rowLabel}>Cc</span>
           <input value={cc} onChange={e => setCc(e.target.value)} style={field} placeholder="cc@example.com, another@example.com" />
+        </div>
+      )}
+      {showBcc && (
+        <div style={row}>
+          <span style={rowLabel}>Bcc</span>
+          <input value={bcc} onChange={e => setBcc(e.target.value)} style={field} placeholder="bcc@example.com" />
         </div>
       )}
       <div style={row}>
