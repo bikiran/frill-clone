@@ -54,7 +54,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         ;(client as any).remoteElement = 'colvy-inbound-audio'
         clientRef.current = client
 
-        client.on('telnyx.ready', () => { if (!cancelled) setReady(true) })
+        client.on('telnyx.ready', () => {
+          if (!cancelled) { setReady(true); console.log('[telnyx] client registered and ready') }
+        })
+        client.on('telnyx.error', (e: any) => {
+          console.error('[telnyx] client error', e)
+        })
+        ;(client as any).on?.('telnyx.socket.error', (e: any) => {
+          console.error('[telnyx] socket error', e)
+        })
         client.on('telnyx.notification', (n: any) => {
           const call = n?.call
           if (!call) return
@@ -68,7 +76,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           if (call.state === 'hangup' || call.state === 'destroy') { reset() }
         })
         client.connect()
-      } catch (e) { /* silent — calling just won't be available */ }
+      } catch (e) {
+        console.error('[telnyx] client setup failed', e)
+      }
     }
     connect()
 
