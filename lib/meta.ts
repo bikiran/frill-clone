@@ -117,6 +117,27 @@ export async function sendMetaMessage(
   return { id: data.message_id }
 }
 
+// Send a media attachment (image / video / audio / file) by URL. Meta fetches
+// the URL and delivers it to the customer.
+export async function sendMetaAttachment(
+  pageId: string, pageToken: string, recipientId: string, url: string, kind: string
+): Promise<{ id?: string; error?: string }> {
+  const type = kind === 'image' ? 'image' : kind === 'video' ? 'video' : kind === 'audio' ? 'audio' : 'file'
+  const res = await fetch(`${GRAPH}/${pageId}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id: recipientId },
+      message: { attachment: { type, payload: { url, is_reusable: true } } },
+      messaging_type: 'RESPONSE',
+      access_token: pageToken,
+    }),
+  })
+  const data = await res.json()
+  if (!res.ok) return { error: data?.error?.message || 'Attachment send failed' }
+  return { id: data.message_id }
+}
+
 // Fetch a sender's profile (name, avatar) so the contact isn't just an opaque id.
 export async function fetchMetaProfile(
   userId: string, pageToken: string, platform: 'facebook' | 'instagram'

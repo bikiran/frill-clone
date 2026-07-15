@@ -55,9 +55,50 @@ export async function POST(req: NextRequest) {
     for (const event of entry.messaging || []) {
       try {
         const senderId = event.sender?.id
-        const text = event.message?.text
         const isEcho = event.message?.is_echo   // our own outgoing message echoed back
-        if (!senderId || isEcho || !text) continue
+        if (!senderId || isEcho) continue
+
+        const text: string = event.message?.text || ''
+
+        // Attachments: photos, videos, audio, files, and shares. Meta gives us
+        // a URL for each. (The old code read only .text, so every media message
+        // — and every story reply — was silently dropped.)
+        const rawAtts = event.message?.attachments || []
+        const attachments = rawAtts
+          .map((a: any) => {
+            const url = a?.payload?.url
+            if (!url) return null
+            const type = a.type === 'image' ? 'image'
+              : a.type === 'video' ? 'video'
+              : a.type === 'audio' ? 'audio'
+              : 'file'
+            return { url, kind: type, type, name: type }
+          })
+          .filter(Boolean)
+
+        // Instagram story reply / mention: the customer replied to one of the
+        // business's stories. Coax shows the story thumbnail alongside their
+        // message — capture the story media so we can too.
+        let storyReply: any = null
+        const replyTo = event.message?.reply_to
+        if (replyTo?.story) {
+          storyReply = {
+            kind: 'story_reply',
+            story_url: replyTo.story.url || null,
+            story_id: replyTo.story.id || null,
+          }
+        }
+
+        // Nothing usable? (e.g. a delivery receipt, a reaction with no content)
+        if (!text && attachments.length === 0 && !storyReply) continue
+
+        // Preview text for the conversation list.
+        const preview = text
+          || (storyReply ? 'Replied to your story' : null)
+          || (attachments[0]?.kind === 'image' ? 'Sent a photo'
+            : attachments[0]?.kind === 'video' ? 'Sent a video'
+            : attachments[0]?.kind === 'audio' ? 'Sent a voice message'
+            : attachments.length ? 'Sent a file' : 'New message')
 
         // Which connected channel owns this? Messenger keys on page_id; IG on
         // ig_account_id. This is what routes the DM to the right OUTLET.
@@ -116,7 +157,7 @@ export async function POST(req: NextRequest) {
             // Route to the outlet this connection is mapped to.
             assigned_location_id: channel.location_id || null,
             status: 'open', is_unread: true, unread_count: 1,
-            last_message: text.slice(0, 200), last_message_at: new Date().toISOString(),
+            last_message: preview.slice(0, 200), last_message_at: new Date().toISOString(),
           }).select().maybeSingle()
           conv = newConv
         } else {
@@ -124,7 +165,7 @@ export async function POST(req: NextRequest) {
             status: 'open', is_unread: true,
             unread_count: (conv.unread_count || 0) + 1,
             meta_channel_id: channel.id,
-            last_message: text.slice(0, 200), last_message_at: new Date().toISOString(),
+            last_message: preview.slice(0, 200), last_message_at: new Date().toISOString(),
           }).eq('id', conv.id)
         }
         if (!conv) continue
@@ -136,6 +177,8 @@ export async function POST(req: NextRequest) {
           content: text,
           delivery_channel: platform,
           meta_message_id: event.message?.mid || null,
+          attachments: attachments.length ? attachments : [],
+          metadata: storyReply ? { story_reply: storyReply } : {},
         })
       } catch (e) {
         console.error('[meta webhook] event failed', e)

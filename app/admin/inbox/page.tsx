@@ -1407,12 +1407,33 @@ export default function InboxPage() {
           } catch (e: any) { showToast('Saved to the chat, but the SMS failed to send.') }
         }
 
+        // Meta channels (Messenger / Instagram): push the media through the
+        // Send API so the customer actually receives the photo/video/file.
+        const metaCh = (selected as any).channel
+        if (metaCh === 'instagram' || metaCh === 'facebook') {
+          try {
+            const r = await fetch('/api/meta/send', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                conversationId: selected.id,
+                attachmentUrl: attachment.url,
+                attachmentKind: attachment.kind,
+                content: '',
+                agentName: me,
+                skipChatMessage: true,
+              }),
+            })
+            const rd = await r.json()
+            if (!r.ok) showToast(`Saved to the chat, but sending failed: ${rd.error || 'unknown error'}`)
+          } catch { showToast('Saved to the chat, but the message failed to send.') }
+        }
+
         await (supabase as any).from('messages').insert({
           conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
           sender_id: user.id, sender_name: me, sender_email: user.email,
           content: data.kind === 'file' ? `📎 ${data.name}` : '',
           attachments: [attachment],
-          delivery_channel: smsNumber ? 'sms' : 'chat',
+          delivery_channel: (metaCh === 'instagram' || metaCh === 'facebook') ? metaCh : (smsNumber ? 'sms' : 'chat'),
         })
       }
       await (supabase as any).from('conversations').update({ last_message: '📎 Attachment', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
@@ -3728,6 +3749,21 @@ export default function InboxPage() {
                         border: isAgent ? 'none' : '1px solid var(--border)',
                         position: 'relative',
                       }}>
+                        {/* Instagram story reply — show the story they replied
+                            to (thumbnail) above their message, like Coax. */}
+                        {(msg as any).metadata?.story_reply && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, padding: 6, borderRadius: 8, background: isAgent ? 'rgba(255,255,255,0.15)' : 'var(--canvas)', border: isAgent ? 'none' : '1px solid var(--border)' }}>
+                            {(msg as any).metadata.story_reply.story_url ? (
+                              /\.(mp4|mov|webm)(\?|$)/i.test((msg as any).metadata.story_reply.story_url)
+                                ? <video src={(msg as any).metadata.story_reply.story_url} style={{ width: 34, height: 48, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                                : <img src={(msg as any).metadata.story_reply.story_url} alt="story" style={{ width: 34, height: 48, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                            ) : (
+                              <span style={{ width: 34, height: 48, borderRadius: 6, background: 'linear-gradient(135deg,#F47133,#BC3081)', flexShrink: 0 }} />
+                            )}
+                            <span style={{ fontSize: 11, opacity: 0.85, fontStyle: 'italic' }}>Replied to your story</span>
+                          </div>
+                        )}
+
                         {/* Attachments */}
                         {atts.map((a: any, ai: number) => (
                           <div key={ai} style={{ marginBottom: a.kind !== 'file' && msg.content ? 6 : 0, position: 'relative' }}
