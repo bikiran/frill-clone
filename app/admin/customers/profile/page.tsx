@@ -116,6 +116,23 @@ export default function CustomerProfilePage() {
             }
           }
           ordersData.sort((a: any, b: any) => (b.order_date || '').localeCompare(a.order_date || ''))
+
+          // Live fallback: if nothing has synced yet, pull orders straight from
+          // WooCommerce (same as the inbox sidebar does), so the profile isn't
+          // blank just because the background sync hasn't caught up.
+          if (ordersData.length === 0 && email) {
+            try {
+              const res = await fetch(`/api/orders/list?companyId=${resolvedCompanyId}&email=${encodeURIComponent(email)}`)
+              const live = await res.json()
+              if (live.orders?.length) {
+                ordersData = live.orders.map((o: any) => ({
+                  woo_order_id: o.id, order_number: o.number, status: o.status, total: o.total,
+                  currency: o.currency, order_date: o.date, customer_email: email,
+                  line_items: o.items, _live: true,
+                }))
+              }
+            } catch {}
+          }
           setOrders(ordersData)
         } catch { setOrders([]) }
 

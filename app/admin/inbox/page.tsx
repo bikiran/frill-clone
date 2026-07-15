@@ -2182,7 +2182,7 @@ export default function InboxPage() {
     // Auto-route: send via chat by default. If the visitor gave a mobile and
     // isn't currently online (no activity in the last 2 minutes), also deliver
     // over SMS so they get the reply on their phone.
-    const smsNumber = (selected as any).sms_number
+    const smsNumber = smsDestination()
     const lastSeen = (selected as any).visitor_last_seen || (selected as any).last_message_at
     const visitorOnline = lastSeen ? (Date.now() - new Date(String(lastSeen).endsWith('Z') ? lastSeen : lastSeen + 'Z').getTime()) < 120000 : false
     const shouldSms = sendChannel === 'sms'
@@ -3433,9 +3433,13 @@ export default function InboxPage() {
             }
             if (CHANNEL_BADGE[ch]) {
               source = CHANNEL_BADGE[ch]
-            } else if (subj.startsWith('abandoned cart')) {
+            } else if (subj.startsWith('abandoned cart') && !(c as any).order_status && (c as any).cart_status !== 'recovered') {
+              // Only an UNrecovered cart shows the red "Abandoned Cart" badge.
+              // Once it's recovered (an order was placed), the conversation gets
+              // an order_status and should read as an order below — otherwise it
+              // wrongly stayed "Abandoned Cart" forever after the sale.
               source = { label: 'Abandoned Cart', bg: '#fee2e2', fg: '#dc2626' }
-            } else if (subj.startsWith('order #')) {
+            } else if (subj.startsWith('order #') || (c as any).order_status) {
               // Read the ACTUAL order status. This used to say "Order Placed" for
               // every order conversation — including failed payments, which is
               // exactly backwards: those are the ones needing attention.
@@ -4360,7 +4364,7 @@ export default function InboxPage() {
                         {([
                           ['auto', 'Automatic', true],
                           ['chat', 'Live chat', true],
-                          ['sms', 'SMS', !!(selected as any).sms_number],
+                          ['sms', 'SMS', !!((selected as any).sms_number || contact?.phone)],
                           ['email', 'Email', !!contact?.email],
                         ] as any[]).map(([key, label, available]: any) => (
                           <button key={key} type="button" disabled={!available}
@@ -4394,7 +4398,11 @@ export default function InboxPage() {
           </button>
           {/* Panel tabs */}
           <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
-            {(['info', 'timeline', ...(wooCustomer || wooOrders.length > 0 ? ['orders' as const] : [])] as const).map(p => (
+            {/* The Orders tab used to appear only once orders had finished
+                loading (wooCustomer || wooOrders.length), so on first open it was
+                missing and you had to click Timeline to trigger the load before
+                it showed. Always render it; it shows its own empty state. */}
+            {(['info', 'timeline', 'orders'] as const).map(p => (
               <button key={p} type="button" onClick={() => setActivePanel(p)}
                 style={{ flex: 1, padding: '11px 0', border: 'none', background: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: activePanel === p ? 700 : 500, color: activePanel === p ? 'var(--coral)' : 'var(--slate)', borderBottom: activePanel === p ? '2px solid var(--coral)' : '2px solid transparent', textTransform: 'capitalize' }}>
                 {p === 'info' ? 'Information' : p === 'timeline' ? 'Timeline' : 'Orders'}
