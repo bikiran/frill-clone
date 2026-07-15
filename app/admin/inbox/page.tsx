@@ -81,10 +81,25 @@ const Icon = {
 
 // Channel icons as components (were emoji: 💬 ✉️ 📱 …, which rendered as
 // mismatched clip-art and differ across Windows / macOS / Android).
+// Brand logos for the source channels. Simple, recognisable marks in each
+// brand's colour — clearer than a generic grey glyph.
+const BrandMessenger = (s = 16) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="#0084FF"><path d="M12 2C6.3 2 2 6.2 2 11.7c0 2.9 1.2 5.4 3.1 7.1.2.1.3.4.3.6l.1 1.8c0 .6.6 1 1.1.7l2-.9c.2-.1.4-.1.6 0 .9.3 1.9.4 2.8.4 5.7 0 10-4.2 10-9.7C22 6.2 17.7 2 12 2zm6 7.5l-2.9 4.7c-.5.7-1.5.9-2.2.4l-2.3-1.7c-.2-.2-.5-.2-.7 0l-3.1 2.4c-.4.3-1-.2-.7-.6l2.9-4.7c.5-.7 1.5-.9 2.2-.4l2.3 1.7c.2.2.5.2.7 0l3.1-2.4c.4-.3 1 .2.7.6z"/></svg>
+)
+const BrandInstagram = (s = 16) => (
+  <svg width={s} height={s} viewBox="0 0 24 24"><defs><radialGradient id="igg" cx="0.3" cy="1" r="1"><stop offset="0" stopColor="#FED576"/><stop offset="0.3" stopColor="#F47133"/><stop offset="0.6" stopColor="#BC3081"/><stop offset="1" stopColor="#4C63D2"/></radialGradient></defs><rect x="2" y="2" width="20" height="20" rx="6" fill="url(#igg)"/><circle cx="12" cy="12" r="4.2" fill="none" stroke="#fff" strokeWidth="1.8"/><circle cx="17" cy="7" r="1.2" fill="#fff"/></svg>
+)
+const BrandWhatsApp = (s = 16) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="#25D366"><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2zm5.8 14.2c-.2.7-1.4 1.3-2 1.4-.5.1-1.2.1-1.9-.1-.4-.1-1-.3-1.7-.6-3-1.3-4.9-4.3-5.1-4.5-.1-.2-1.2-1.5-1.2-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 1.9c.1.1.1.3 0 .5l-.3.5c-.1.2-.3.3-.1.6.1.2.6 1 1.3 1.6.9.8 1.6 1 1.9 1.2.2.1.4.1.5-.1l.6-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.4.2.5.3.1.2.1.7-.1 1.4z"/></svg>
+)
+const BrandWoo = (s = 16) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="#873EFF"><path d="M2 6h20a1 1 0 0 1 1 1.5l-2.5 6a1 1 0 0 1-.9.6H6.5l.4 2h11.6v2H6.2a1 1 0 0 1-1-.8L3.3 6.9 2.2 6.7z"/><circle cx="8" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/></svg>
+)
+
 const CHANNEL_ICON: Record<string, React.ReactNode> = {
   widget: Icon.chat(16), chat: Icon.chat(16), email: Icon.mail(16), sms: Icon.mobile(16),
-  phone: Icon.phone(16), facebook: Icon.send(16), messenger: Icon.send(16),
-  instagram: Icon.media(16), whatsapp: Icon.chat(16),
+  phone: Icon.phone(16), facebook: BrandMessenger(16), messenger: BrandMessenger(16),
+  instagram: BrandInstagram(16), whatsapp: BrandWhatsApp(16), woocommerce: BrandWoo(16),
 }
 const CHANNEL_NAME: Record<string, string> = {
   widget: 'Live chat', chat: 'Live chat', sms: 'SMS', email: 'Email', phone: 'Phone',
@@ -618,6 +633,7 @@ export default function InboxPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [showDialer, setShowDialer] = useState(false)
   const [emailFromLabel, setEmailFromLabel] = useState('')
+  const [linkedChannels, setLinkedChannels] = useState<any[]>([])
   const [emailSignature, setEmailSignature] = useState<string | null>(null)
 
   // Where is this customer ACTUALLY talking, right now? The conversation's
@@ -634,6 +650,22 @@ export default function InboxPage() {
   }, [messages, selected?.id, (selected as any)?.channel])
 
   const isWebChat = ['widget', 'chat'].includes(activeChannel)
+
+  // Load this contact's linked channels (same person across live chat / SMS /
+  // Messenger / IG / WooCommerce) for the sidebar's "also reachable on" panel.
+  useEffect(() => {
+    const cid = contact?.id
+    if (!cid) { setLinkedChannels([]); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/contacts/linked?contactId=${cid}`)
+        const d = await res.json()
+        if (!cancelled) setLinkedChannels(d.channels || [])
+      } catch { if (!cancelled) setLinkedChannels([]) }
+    })()
+    return () => { cancelled = true }
+  }, [contact?.id])
 
   // For an email thread, load the sending mailbox so the composer can show the
   // real "From" and append the right signature.
@@ -4358,6 +4390,26 @@ export default function InboxPage() {
                 {/* Conversation metadata */}
                 <div style={{ borderTop: '1px solid var(--border)', marginTop: 16, paddingTop: 14 }}>
                   <h3 style={{ margin: '0 0 10px 0', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Details</h3>
+
+                  {/* Cross-channel identity: every channel this person has used,
+                      linked by shared email/phone. Same human, one profile. */}
+                  {linkedChannels.length > 1 && (
+                    <div style={{ marginBottom: 14, padding: 10, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
+                      <p style={{ margin: '0 0 7px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--slate)' }}>Also reachable on</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {linkedChannels.map((lc, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ display: 'flex', flexShrink: 0 }}>{CHANNEL_ICON[String(lc.channel).toLowerCase()] || Icon.chat(14)}</span>
+                            <span style={{ fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {CHANNEL_NAME[String(lc.channel).toLowerCase()] || lc.channel}
+                              {lc.label ? <span style={{ color: 'var(--slate)' }}> · {lc.label}</span> : null}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div>
                       <p style={{ margin: '0 0 2px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Channel</p>

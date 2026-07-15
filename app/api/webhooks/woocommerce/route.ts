@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { linkContactIdentity } from '@/lib/identity'
 import { createClient } from '@supabase/supabase-js'
 import { WebhookService } from '@/lib/webhook-service'
 import { notifyCompany } from '@/lib/notify'
@@ -114,13 +115,25 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     contact = created
   }
 
-  // Find-or-create an open conversation for this contact. This ALWAYS happens
-  // for a new order (so it shows in the inbox), independent of whether the
-  // order-chat automation message is enabled/configured.
-  let conv: any = null
+  // Link this order's customer to any existing contact from other channels
+  // (live chat, SMS, Messenger, IG) by shared email/phone.
   if (contact?.id) {
-    const { data } = await db.from('conversations').select('*').eq('company_id', companyId).eq('contact_id', contact.id).order('last_message_at', { ascending: false }).limit(1)
-    conv = data?.[0] || null
+    await linkContactIdentity(db, companyId, contact.id, { email, phone, channel: 'woocommerce' })
+  }
+
+  // Find-or-create an open conversation for THIS ORDER. Match on the order's
+  // subject first (so an order.updated refreshes the right thread), then fall
+  // back to the contact's most recent conversation.
+  let conv: any = null
+  const orderSubject = `Order #${order.number || order.id}`
+  if (contact?.id) {
+    const { data: byOrder } = await db.from('conversations').select('*')
+      .eq('company_id', companyId).eq('subject', orderSubject).limit(1)
+    conv = byOrder?.[0] || null
+    if (!conv) {
+      const { data } = await db.from('conversations').select('*').eq('company_id', companyId).eq('contact_id', contact.id).order('last_message_at', { ascending: false }).limit(1)
+      conv = data?.[0] || null
+    }
   }
   const businessName = company?.name || 'us'
   const displayName = contact?.name || order.billing?.first_name || 'there'
@@ -148,11 +161,25 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // order is visible in the thread even with automation off.
   const { data: seenEvent } = await db.from('order_chat_events').select('id').match(dupeKey).maybeSingle()
   if (!seenEvent) {
-    await db.from('messages').insert({
-      conversation_id: conv.id, company_id: companyId, sender_type: 'system',
-      content: `Order #${order.number || order.id} — ${status || 'received'} · $${order.total}`,
-      metadata: { order_event: true, order_id: order.id, status },
-    })
+    // If an order message already exists for this order (from an earlier
+    // status), UPDATE it in place so the thread shows the current status
+    // instead of leaving a stale "pending" line behind. Then also post the
+    // transition, so the history is visible.
+    const { data: priorOrderMsgs } = await db.from('messages')
+      .select('id, metadata').eq('conversation_id', conv.id)
+    const priorOrderMsg = (priorOrderMsgs || []).find((m: any) => m.metadata?.order_event && String(m.metadata?.order_id) === String(order.id))
+    if (priorOrderMsg) {
+      await db.from('messages').update({
+        content: `Order #${order.number || order.id} — ${status || 'received'} · $${order.total}`,
+        metadata: { ...(priorOrderMsg.metadata || {}), status },
+      }).eq('id', priorOrderMsg.id)
+    } else {
+      await db.from('messages').insert({
+        conversation_id: conv.id, company_id: companyId, sender_type: 'system',
+        content: `Order #${order.number || order.id} — ${status || 'received'} · $${order.total}`,
+        metadata: { order_event: true, order_id: order.id, status },
+      })
+    }
     try { await notifyCompany({ db, companyId, type: 'order', message: `New order #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
     // Record the dedup marker now so repeated webhook deliveries for the same
     // order+status don't re-post (whether or not automation is enabled).

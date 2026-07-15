@@ -57,3 +57,15 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS meta_message_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_messages_meta ON messages(meta_message_id);
 
 NOTIFY pgrst, 'reload schema';
+
+-- ── Cross-channel identity linking ──────────────────────────
+-- One person may appear as several contacts (live chat, SMS, Messenger, IG).
+-- We link them under a shared identity_group_id so their profile and timeline
+-- show every channel they've used. Matching is on things that genuinely
+-- identify a person: email or phone (last 8 digits).
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS identity_group_id UUID;
+CREATE INDEX IF NOT EXISTS idx_contacts_identity ON contacts(identity_group_id);
+-- Which channels a contact has been seen on (for the profile's channel list).
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS channels_seen JSONB DEFAULT '[]'::jsonb;
+
+NOTIFY pgrst, 'reload schema';

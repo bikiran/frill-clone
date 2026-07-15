@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile } from '@/lib/meta'
+import { linkContactIdentity } from '@/lib/identity'
 
 export const dynamic = 'force-dynamic'
 
@@ -88,6 +89,14 @@ export async function POST(req: NextRequest) {
             source: platform,
           }).select().maybeSingle()
           contact = created
+        }
+
+        // Link this contact to any existing profile (same email/phone) and note
+        // the channel, so their profile shows every channel they've used.
+        if (contact?.id) {
+          await linkContactIdentity(db, companyId, contact.id, {
+            email: contact.email, phone: contact.phone, channel: platform,
+          })
         }
 
         // Thread into an existing open conversation on this channel, else open one.
