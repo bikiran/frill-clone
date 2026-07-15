@@ -176,7 +176,12 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
           image: li.image?.src || null,
         })),
         billing: o.billing || {},
-      })).filter((r: any) => r.woo_customer_id) // skip guest orders without customer id
+      })).filter((r: any) => r.woo_customer_id || r.customer_email)
+      // Keep guest orders too — they have no woo_customer_id but DO have a
+      // billing email, which is how the profile and inbox match orders to a
+      // contact. Skipping them (the old behaviour) meant an abandoned-cart
+      // recovery or any guest checkout never appeared in order history, even
+      // after a full sync.
       if (orderRows.length > 0) {
         // NOTE: supabase query builders are thenable but have no .catch — must try/await
         try {
