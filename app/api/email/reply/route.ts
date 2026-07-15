@@ -14,7 +14,7 @@ const admin = () => createClient(
 // message so it lands in the same email conversation on their side.
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, content, agentName } = await req.json()
+    const { conversationId, content, agentName, to, cc, subject: subjectOverride } = await req.json()
     if (!conversationId || !content) {
       return NextResponse.json({ error: 'conversationId and content are required' }, { status: 400 })
     }
@@ -30,10 +30,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'This conversation is not an email thread' }, { status: 400 })
     }
 
-    // Recipient = the contact's email.
+    // Recipient = the composer's To field, falling back to the contact's email.
     const { data: contact } = await db.from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
-    const toEmail = contact?.email
-    if (!toEmail) return NextResponse.json({ error: 'No customer email on this conversation' }, { status: 400 })
+    const toEmail = (to && String(to).trim()) || contact?.email
+    if (!toEmail) return NextResponse.json({ error: 'No recipient for this email' }, { status: 400 })
+    const ccEmail = cc && String(cc).trim() ? String(cc).trim() : null
 
     // Which mailbox does this conversation belong to? Fall back to the company's
     // first active mailbox for older conversations that predate multi-account.
@@ -64,17 +65,32 @@ export async function POST(req: NextRequest) {
       .limit(1)
     const inReplyTo = lastInbound?.[0]?.email_message_id || conv.email_message_id || null
 
-    const subject = conv.email_subject
-      ? (/^re:/i.test(conv.email_subject) ? conv.email_subject : `Re: ${conv.email_subject}`)
-      : 'Re: your message'
+    const subject = (subjectOverride && String(subjectOverride).trim())
+      ? String(subjectOverride).trim()
+      : (conv.email_subject
+        ? (/^re:/i.test(conv.email_subject) ? conv.email_subject : `Re: ${conv.email_subject}`)
+        : 'Re: your message')
 
     const fromName = channel.from_name || company?.name || 'Support'
+
+    // Append the mailbox signature, if any, and build an HTML version so the
+    // reply renders with paragraph breaks and clickable links on the customer's
+    // side (a plain-text-only reply looked flat next to their formatted email).
+    const signature = channel.signature ? `\n\n${channel.signature}` : ''
+    const fullText = `${content}${signature}`
+    const escapeHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const linkify = (t: string) => t.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>')
+    const bodyHtml = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a">${
+      linkify(escapeHtml(fullText)).replace(/\n/g, '<br>')
+    }</div>`
+
+    const fromLabel = `${fromName} <${channel.inbound_address || channel.from_address}>`
 
     // ── Gmail account: send through the Gmail API, so the reply lands in the
     //    business's own Sent folder and threads properly for the customer.
     if (channel.provider === 'gmail') {
       const out = await sendGmail(channel, {
-        to: toEmail, subject, body: content,
+        to: toEmail, cc: ccEmail, subject, body: fullText, html: bodyHtml,
         inReplyTo,
         threadId: conv.email_message_id || null,
       })
@@ -85,10 +101,15 @@ export async function POST(req: NextRequest) {
         company_id: conv.company_id,
         sender_type: 'agent',
         sender_name: agentName || fromName,
-        content,
+        content: fullText,
         delivery_channel: 'email',
         gmail_message_id: out.id || null,
         email_in_reply_to: inReplyTo,
+        email_from: fromLabel,
+        email_to: toEmail,
+        email_cc: ccEmail,
+        email_subject: subject,
+        email_html: bodyHtml,
       })
       await db.from('conversations').update({
         last_message: content.slice(0, 200),
@@ -122,8 +143,10 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         from: `${fromName} <${fromAddress}>`,
         to: [toEmail],
+        ...(ccEmail ? { cc: ccEmail.split(',').map((x: string) => x.trim()).filter(Boolean) } : {}),
         subject,
-        text: content,
+        text: fullText,
+        html: bodyHtml,
         reply_to: channel.inbound_address || fromAddress,
         ...(Object.keys(headers).length ? { headers } : {}),
       }),
@@ -139,10 +162,15 @@ export async function POST(req: NextRequest) {
       company_id: conv.company_id,
       sender_type: 'agent',
       sender_name: agentName || fromName,
-      content,
+      content: fullText,
       delivery_channel: 'email',
       email_message_id: out?.id || null,
       email_in_reply_to: inReplyTo,
+      email_from: `${fromName} <${fromAddress}>`,
+      email_to: toEmail,
+      email_cc: ccEmail,
+      email_subject: subject,
+      email_html: bodyHtml,
     })
 
     await db.from('conversations').update({

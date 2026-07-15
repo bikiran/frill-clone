@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
       if (sync_all !== undefined) patch.sync_all = sync_all
       if (sync_interval_minutes !== undefined) patch.sync_interval_minutes = Number(sync_interval_minutes)
       if (filter_settings !== undefined) patch.filter_settings = filter_settings
+      if (body.signature !== undefined) patch.signature = body.signature
       await db.from('email_channels').update(patch).eq('id', id)
       return NextResponse.json({ ok: true })
     }

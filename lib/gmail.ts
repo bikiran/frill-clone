@@ -108,6 +108,35 @@ export function htmlToText(html: string): string {
   return t.trim()
 }
 
+// Make an email's HTML safe to drop into the agent's browser: strip scripts,
+// event handlers, and javascript: URLs, but KEEP the layout so it reads like
+// the real email (Coax shows the actual formatted message, not flattened text).
+export function sanitizeEmailHtml(html: string): string {
+  if (!html) return ''
+  let t = html
+  t = t.replace(/<script[\s\S]*?<\/script>/gi, '')
+  t = t.replace(/<\/?(html|head|body|meta|link|base|title)[^>]*>/gi, '')
+  t = t.replace(/ on\w+\s*=\s*"[^"]*"/gi, '')
+  t = t.replace(/ on\w+\s*=\s*'[^']*'/gi, '')
+  t = t.replace(/javascript:/gi, '')
+  // Open links in a new tab and don't leak the referrer.
+  t = t.replace(/<a\s/gi, '<a target="_blank" rel="noopener noreferrer" ')
+  return t
+}
+
+// Collect attachment metadata (name, mime, size, and the Gmail attachment id
+// needed to fetch it) from a payload tree.
+function collectAttachments(payload: any, out: any[] = []): any[] {
+  if (!payload) return out
+  const filename = payload.filename
+  const attId = payload.body?.attachmentId
+  if (filename && attId) {
+    out.push({ name: filename, mime: payload.mimeType || 'application/octet-stream', size: payload.body?.size || 0, attachmentId: attId })
+  }
+  for (const part of payload.parts || []) collectAttachments(part, out)
+  return out
+}
+
 // Pull the readable body out of a Gmail payload.
 // Prefers text/plain ANYWHERE in the tree before falling back to HTML — the old
 // code walked parts in order and could grab an HTML part even when a clean
@@ -276,7 +305,14 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
       }
     }
 
-    const content = stripQuoted(extractBody(full.payload)) || full.snippet || ''
+    const rawBody = extractBody(full.payload)
+    const content = stripQuoted(rawBody) || full.snippet || ''
+    const quoted = rawBody.length > content.length ? rawBody.slice(content.length).trim() : ''
+    const htmlPart = findPart(full.payload, 'text/html')
+    const emailHtml = htmlPart ? sanitizeEmailHtml(htmlPart) : ''
+    const toHeader = header(headers, 'To')
+    const ccHeader = header(headers, 'Cc')
+    const attachments = collectAttachments(full.payload)
     const companyId = channel.company_id
 
     // Find-or-create the contact.
@@ -336,6 +372,13 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
       email_message_id: messageId,
       email_in_reply_to: inReplyTo,
       gmail_message_id: m.id,
+      email_from: header(headers, 'From') || from.email,
+      email_to: toHeader || null,
+      email_cc: ccHeader || null,
+      email_subject: subject,
+      email_html: emailHtml || null,
+      email_quoted: quoted || null,
+      email_attachments: attachments,
     })
 
     imported++
@@ -353,27 +396,51 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
 // threads correctly on the customer's side).
 export async function sendGmail(channel: any, opts: {
   to: string
+  cc?: string | null
   subject: string
   body: string
+  html?: string | null
   inReplyTo?: string | null
   threadId?: string | null
 }): Promise<{ id?: string; error?: string }> {
   const token = await getGmailToken(channel)
   if (!token) return { error: 'Google connection expired — reconnect the account.' }
 
-  const lines = [
+  const fromHeader = channel.from_name ? `${channel.from_name} <${channel.inbound_address}>` : channel.inbound_address
+  const headerLines = [
     `To: ${opts.to}`,
-    `From: ${channel.from_name ? `${channel.from_name} <${channel.inbound_address}>` : channel.inbound_address}`,
+    ...(opts.cc ? [`Cc: ${opts.cc}`] : []),
+    `From: ${fromHeader}`,
     `Subject: ${opts.subject}`,
-    'Content-Type: text/plain; charset="UTF-8"',
   ]
   if (opts.inReplyTo) {
-    lines.push(`In-Reply-To: ${opts.inReplyTo}`)
-    lines.push(`References: ${opts.inReplyTo}`)
+    headerLines.push(`In-Reply-To: ${opts.inReplyTo}`)
+    headerLines.push(`References: ${opts.inReplyTo}`)
   }
-  lines.push('', opts.body)
 
-  const raw = Buffer.from(lines.join('\r\n'))
+  let mime: string
+  if (opts.html) {
+    // Send both plain and HTML so every client renders it well.
+    const boundary = `colvy_${Math.random().toString(36).slice(2)}`
+    mime = [
+      ...headerLines,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      '',
+      `--${boundary}`,
+      'Content-Type: text/plain; charset="UTF-8"',
+      '',
+      opts.body,
+      `--${boundary}`,
+      'Content-Type: text/html; charset="UTF-8"',
+      '',
+      opts.html,
+      `--${boundary}--`,
+    ].join('\r\n')
+  } else {
+    mime = [...headerLines, 'Content-Type: text/plain; charset="UTF-8"', '', opts.body].join('\r\n')
+  }
+
+  const raw = Buffer.from(mime)
     .toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
   const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {

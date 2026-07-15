@@ -7,6 +7,8 @@ import Link from 'next/link'
 import CallBar from '@/components/CallBar'
 import CallCard from '@/components/CallCard'
 import Dialer from '@/components/Dialer'
+import EmailMessage from '@/components/EmailMessage'
+import EmailComposer from '@/components/EmailComposer'
 import DeliveryPanel from '@/components/DeliveryPanel'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import DoaPanel from '@/components/DoaPanel'
@@ -615,6 +617,8 @@ export default function InboxPage() {
   // ── Filter panel (Coax style) ─────────────────────────────────────────────
   const [showFilters, setShowFilters] = useState(false)
   const [showDialer, setShowDialer] = useState(false)
+  const [emailFromLabel, setEmailFromLabel] = useState('')
+  const [emailSignature, setEmailSignature] = useState<string | null>(null)
 
   // Where is this customer ACTUALLY talking, right now? The conversation's
   // stored channel goes stale the moment someone moves from the web widget to
@@ -630,6 +634,33 @@ export default function InboxPage() {
   }, [messages, selected?.id, (selected as any)?.channel])
 
   const isWebChat = ['widget', 'chat'].includes(activeChannel)
+
+  // For an email thread, load the sending mailbox so the composer can show the
+  // real "From" and append the right signature.
+  useEffect(() => {
+    if (!selected || String((selected as any).channel || '').toLowerCase() !== 'email') {
+      setEmailFromLabel(''); setEmailSignature(null); return
+    }
+    let cancelled = false
+    ;(async () => {
+      let ch: any = null
+      const chId = (selected as any).email_channel_id
+      if (chId) {
+        const { data } = await (supabase as any).from('email_channels').select('*').eq('id', chId).maybeSingle()
+        ch = data
+      }
+      if (!ch && companyId) {
+        const { data } = await (supabase as any).from('email_channels').select('*')
+          .eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)
+        ch = data?.[0]
+      }
+      if (cancelled || !ch) return
+      const name = ch.from_name || companyInfo?.name || 'Support'
+      setEmailFromLabel(`${name} <${ch.inbound_address || ch.from_address}>`)
+      setEmailSignature(ch.signature || null)
+    })()
+    return () => { cancelled = true }
+  }, [selected?.id, (selected as any)?.channel, (selected as any)?.email_channel_id, companyId])
 
   // Is the visitor on the page RIGHT NOW? The widget heartbeats page_seen_at
   // every 60s while their tab is open. Fresh (< 2 min) ⇒ show the live banner;
@@ -3587,6 +3618,23 @@ export default function InboxPage() {
                 const reactions = Array.isArray((msg as any).reactions) ? (msg as any).reactions : []
                 const readBy = Array.isArray((msg as any).read_by) ? (msg as any).read_by : []
                 const atts = Array.isArray(msg.attachments) ? msg.attachments : []
+
+                // Email messages render as a full Coax-style card (From/To/Cc,
+                // subject, formatted body, quoted history, attachments) rather
+                // than a chat bubble of stripped text.
+                if (String((msg as any).delivery_channel || '').toLowerCase() === 'email'
+                    && ((msg as any).email_html || (msg as any).email_from || (msg as any).email_subject)) {
+                  return (
+                    <div key={msg.id}>
+                      {dateDivider}
+                      <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} />
+                      <p style={{ textAlign: isAgent ? 'right' : 'left', fontSize: 10.5, color: '#9ca3af', margin: '2px 12px 0' }}>
+                        {fmtReceipt(msg.created_at, isAgent, 'email')}
+                      </p>
+                    </div>
+                  )
+                }
+
                 const repliedMsg = (msg as any).reply_to ? messages.find(m => m.id === (msg as any).reply_to) : null
                 // Group reactions by emoji
                 const reactionCounts: Record<string, number> = {}
@@ -3815,6 +3863,28 @@ export default function InboxPage() {
 
             {/* Reply box */}
             <div style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)', position: 'relative' }}>
+              {/* Email threads get a proper email composer (To/Cc/Subject +
+                  signature) instead of the plain chat box. */}
+              {activeChannel === 'email' ? (
+                <EmailComposer
+                  conversationId={selected.id}
+                  companyId={companyId}
+                  toEmail={contact?.email || ''}
+                  defaultSubject={(selected as any).email_subject
+                    ? (/^re:/i.test((selected as any).email_subject) ? (selected as any).email_subject : `Re: ${(selected as any).email_subject}`)
+                    : `Re: ${selected.subject || 'your message'}`}
+                  fromLabel={emailFromLabel}
+                  signature={emailSignature}
+                  agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+                  onSent={async () => {
+                    const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+                    setMessages(msgs || [])
+                    scrollBottom()
+                    loadConversations()
+                  }}
+                />
+              ) : (
+              <>
               {/* Reply-to preview */}
               {replyTo && (() => {
                 // A photo message has no text content, so the preview used to be
@@ -4017,6 +4087,8 @@ export default function InboxPage() {
                   </div>
                 </div>
               </div>
+              </>
+              )}
             </div>
           </>
         )}

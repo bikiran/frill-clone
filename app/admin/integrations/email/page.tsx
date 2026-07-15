@@ -251,6 +251,15 @@ export default function EmailPage() {
                 </p>
               )}
 
+              {/* Per-mailbox signature, appended to outgoing email. */}
+              <div style={{ marginTop: 12 }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--slate)', marginBottom: 5 }}>Email signature</label>
+                <textarea defaultValue={a.signature || ''} rows={3}
+                  onBlur={e => { if (e.target.value !== (a.signature || '')) updateAccount(a.id, { signature: e.target.value }) }}
+                  placeholder={'Kind regards,\nRoxy Aquarium\n(03) 1234 5678'}
+                  style={{ width: '100%', padding: '9px 11px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical' }} />
+              </div>
+
               {/* ── What to let through ─────────────────────────────────────
                   A shared mailbox is mostly newsletters, vendor receipts and
                   auto-replies. Without this, all of it lands in the inbox and
