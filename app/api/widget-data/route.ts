@@ -30,12 +30,12 @@ export async function GET(req: NextRequest) {
     console.log('[WIDGET API] Found company:', { id: company.id, slug: company.slug })
 
     const [ideasRes, annRes, formsRes, pollsRes, surveysRes, helpRes] = await Promise.all([
-      (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private,attachments,created_by_name').eq('company_id', company.id)
+      (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private,attachments,created_by_name,location_ids').eq('company_id', company.id)
         .neq('is_private', true).order('votes', { ascending: false }).limit(20),
-      (supabase as any).from('announcements').select('id,title,description,tag,status,created_at,is_pinned,boost_enabled,boost_type,boost_button_label,boost_title,boost_blurb,boost_image,views,impressions')
+      (supabase as any).from('announcements').select('id,title,description,tag,status,created_at,is_pinned,boost_enabled,boost_type,boost_button_label,boost_title,boost_blurb,boost_image,views,impressions,location_ids')
         .eq('company_id', company.id)
         .eq('status', 'published')
-        .order('is_pinned', { ascending: false }).order('created_at', { ascending: false }).limit(8),
+        .order('is_pinned', { ascending: false }).order('created_at', { ascending: false }).limit(20),
       (supabase as any).from('forms').select('id,title,description').eq('company_id', company.id)
         .eq('is_public', true).order('created_at', { ascending: false }).limit(5),
       (supabase as any).from('polls').select('id,title,options').eq('company_id', company.id)
@@ -82,11 +82,23 @@ export async function GET(req: NextRequest) {
       }
     } catch {}
 
+    // Location-aware content: if the widget is loaded for a specific outlet
+    // (?location=<id>), show company-wide items (no location_ids) PLUS items
+    // targeted to that outlet. With no location context, show only company-wide
+    // items so location-specific content never leaks to the wrong audience.
+    const viewerLocation = req.nextUrl.searchParams.get('location')
+    const visibleAt = (row: any) => {
+      const ids: string[] | null = row.location_ids
+      if (!ids || ids.length === 0) return true            // company-wide
+      if (!viewerLocation) return false                     // targeted, no context
+      return ids.includes(viewerLocation)
+    }
+
     const responseData = {
       company,
       widgetTabs,
-      ideas: ideasRes.data || [],
-      announcements: annRes.data || [],
+      ideas: (ideasRes.data || []).filter(visibleAt),
+      announcements: (annRes.data || []).filter(visibleAt),
       forms: formsRes.data || [],
       polls: pollsRes.data || [],
       surveys: surveysRes.data || [],

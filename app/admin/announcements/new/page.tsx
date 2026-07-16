@@ -38,6 +38,9 @@ export default function NewAnnouncementPage() {
   const [description, setDescription] = useState('')
   const [tag, setTag] = useState('Feature')
   const [status, setStatus] = useState('published')
+  const [outlets, setOutlets] = useState<any[]>([])
+  // Empty = all locations (company-wide). Otherwise the specific outlet ids.
+  const [locationIds, setLocationIds] = useState<string[]>([])
   const [language, setLanguage] = useState('English')
   const [boostEnabled, setBoostEnabled] = useState(false)
   const [boostType, setBoostType] = useState('snippet')
@@ -86,6 +89,9 @@ export default function NewAnnouncementPage() {
         if (co) {
           console.log('[ANN INIT] ✅ Company loaded:', { id: co.id, slug: co.slug })
           setCompany(co)
+          const { data: locs } = await (supabase as any).from('company_locations')
+            .select('id, label, suburb, is_primary').eq('company_id', co.id).order('is_primary', { ascending: false })
+          setOutlets(locs || [])
         } else {
           console.log('[ANN INIT] ❌ No company found!')
         }
@@ -106,6 +112,7 @@ export default function NewAnnouncementPage() {
         setDescription(data.description || '')
         setTag(data.tag || 'Feature')
         setStatus(data.status || 'draft')
+        setLocationIds(Array.isArray(data.location_ids) ? data.location_ids : [])
         setLanguage(data.language || 'English')
         setBoostEnabled(data.boost_enabled || false)
         setBoostType(data.boost_type || 'banner')
@@ -140,6 +147,7 @@ export default function NewAnnouncementPage() {
         description: description.trim(),
         tag, 
         status,
+        location_ids: locationIds.length ? locationIds : null,
         segmentation,
         notify_subscribers: notifySubscribers,
         boost_enabled: boostEnabled,
@@ -355,6 +363,36 @@ export default function NewAnnouncementPage() {
                   </select>
                 </div>
               </div>
+
+              {/* Location targeting — only when the business has multiple outlets.
+                  "All locations" (company-wide) is the default; the author can
+                  instead pick specific outlets. */}
+              {outlets.length > 1 && (
+                <div className="mt-4">
+                  <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--slate)' }}>Show at</label>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setLocationIds([])}
+                      className="px-3 py-1.5 rounded-full text-xs font-semibold border"
+                      style={{ borderColor: locationIds.length === 0 ? 'var(--coral)' : 'var(--border)', background: locationIds.length === 0 ? 'var(--peach)' : '#fff', color: locationIds.length === 0 ? 'var(--coral)' : 'var(--slate)' }}>
+                      📍 All locations
+                    </button>
+                    {outlets.map(o => {
+                      const on = locationIds.includes(o.id)
+                      return (
+                        <button key={o.id} type="button"
+                          onClick={() => setLocationIds(on ? locationIds.filter(x => x !== o.id) : [...locationIds, o.id])}
+                          className="px-3 py-1.5 rounded-full text-xs font-semibold border"
+                          style={{ borderColor: on ? 'var(--coral)' : 'var(--border)', background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)' }}>
+                          {o.label || o.suburb || 'Outlet'}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>
+                    {locationIds.length === 0 ? 'Everyone sees this announcement.' : `Only shown to ${locationIds.length} selected location${locationIds.length === 1 ? '' : 's'}.`}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Boost Announcement */}
