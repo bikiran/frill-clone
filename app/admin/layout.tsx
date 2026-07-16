@@ -73,9 +73,9 @@ const NAV_GROUPS = [
       { label: 'Inbox', href: '/admin/inbox', icon: 'support' },
       { label: 'Contacts', href: '/admin/contacts', icon: 'users' },
       { label: 'Gallery', href: '/admin/gallery', icon: 'gallery' },
-      { label: 'Reviews', href: '/admin/reviews', icon: 'analytics' },
       { label: 'Calendar', href: '/admin/calendar', icon: 'roadmap' },
       { label: 'Scheduled', href: '/admin/scheduled', icon: 'roadmap' },
+      { label: 'Reviews', href: '/admin/reviews', icon: 'analytics' },
     ],
   },
   {
