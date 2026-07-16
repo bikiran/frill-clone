@@ -26,6 +26,13 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
     )
   }
 
+  // Review links (and any plain redirect link) send the customer straight to
+  // the destination — e.g. the business's Google review page.
+  if (link.kind === 'review' || link.kind === 'redirect') {
+    const { redirect } = await import('next/navigation')
+    redirect(link.target_url)
+  }
+
   let company: any = null
   if (link.company_id) {
     const { data } = await db.from('companies').select('name, logo_url, accent_color').eq('id', link.company_id).maybeSingle()

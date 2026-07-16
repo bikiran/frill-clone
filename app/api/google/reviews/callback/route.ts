@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
         code,
         client_id: clientId,
         client_secret: clientSecret,
-        redirect_uri: `${base}/api/google/reviews/callback`,
+        redirect_uri: process.env.GOOGLE_REVIEWS_REDIRECT_URI || `${base}/api/google/reviews/callback`,
         grant_type: 'authorization_code',
       }),
     })

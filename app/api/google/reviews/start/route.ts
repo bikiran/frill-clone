@@ -16,8 +16,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Google is not configured (GOOGLE_CLIENT_ID missing).' }, { status: 500 })
   }
 
-  const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
-  const redirectUri = `${base}/api/google/reviews/callback`
+  // The redirect URI MUST byte-for-byte match one registered in the Google
+  // Cloud OAuth client, or Google returns redirect_uri_mismatch. Because Colvy
+  // is multi-tenant (many subdomains) we pin this to ONE canonical callback and
+  // route the user back to their subdomain afterwards via `state`. Set
+  // GOOGLE_REVIEWS_REDIRECT_URI in the env to override; otherwise it falls back
+  // to the canonical apex domain.
+  const redirectUri = process.env.GOOGLE_REVIEWS_REDIRECT_URI
+    || `${process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'}/api/google/reviews/callback`
 
   const state = Buffer.from(JSON.stringify({ companyId, returnTo })).toString('base64url')
 

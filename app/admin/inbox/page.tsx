@@ -1612,10 +1612,30 @@ export default function InboxPage() {
     setReviewSending(true)
     try {
       const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+
+      // Build a branded short link to the business's Google review page, so the
+      // customer gets company.colvy.com/m/xxxx (trustworthy in an SMS) that
+      // redirects to Google. Falls back to a plain message if no review link is
+      // configured yet.
+      let reviewShortLink = ''
+      try {
+        const res = await fetch('/api/short-links/create', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId, kind: 'review', conversationId: selected.id }),
+        })
+        const d = await res.json()
+        if (res.ok && d.url) reviewShortLink = d.url
+      } catch {}
+
+      const body = reviewShortLink
+        ? `We'd love your feedback! Could you take a moment to leave us a review? ⭐\n${reviewShortLink}`
+        : "We'd love your feedback! Could you take a moment to leave us a review? ⭐"
+
       await (supabase as any).from('messages').insert({
         conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
         sender_id: user.id, sender_name: me,
-        content: "We'd love your feedback! Could you take a moment to leave us a review? ⭐",
+        content: body,
+        metadata: { review_request: true },
       })
       await (supabase as any).from('conversations').update({ review_requested: true, last_message_at: new Date().toISOString() }).eq('id', selected.id)
       logEvent('review_request', 'Review request sent')
