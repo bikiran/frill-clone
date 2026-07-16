@@ -23,10 +23,19 @@ export async function POST(req: NextRequest) {
 
     let target = url as string | undefined
     if (kind === 'review') {
+      // The review link can be set in two places in the UI: the Google Reviews
+      // integration page (google_business_accounts.review_link) and the order-
+      // automation page (companies.order_chat_automation.review_url). Check both
+      // so it works wherever the business pasted it.
       const { data: acc } = await db.from('google_business_accounts')
         .select('review_link').eq('company_id', companyId)
         .not('review_link', 'is', null).limit(1)
       target = acc?.[0]?.review_link
+      if (!target) {
+        const { data: comp } = await db.from('companies')
+          .select('order_chat_automation').eq('id', companyId).maybeSingle()
+        target = comp?.order_chat_automation?.review_url || undefined
+      }
       if (!target) return NextResponse.json({ error: 'No Google review link configured' }, { status: 404 })
     }
     if (!target) return NextResponse.json({ error: 'No target url' }, { status: 400 })
