@@ -947,41 +947,60 @@ function WidgetContent() {
               )}
               {selectedItem.type === 'announcement' && (
                 <>
-                  <p style={{ fontSize: 11, color: 'var(--slate)', marginBottom: 12 }}>{item.created_at ? new Date(item.created_at).toLocaleDateString() : 'Today'}</p>
-                  <div style={{ color: 'var(--ink)', lineHeight: 1.6, fontSize: 13 }}>
-                    {item.description}
-                    {/* Parse and display images in description */}
+                  {/* Header: tag + date, then the title — the detail view used to
+                      drop the title entirely and render the body as one raw,
+                      run-on block. */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                    {item.tag && (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6, background: accentColor + '18', color: accentColor, textTransform: 'capitalize' }}>{item.tag}</span>
+                    )}
+                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500 }}>{item.created_at ? new Date(item.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : 'Today'}</span>
+                  </div>
+                  <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink)', margin: '0 0 14px', lineHeight: 1.3 }}>{item.title}</h2>
+
+                  {/* Body — rendered with the same lightweight markdown as help
+                      articles (headings, bold, lists, paragraphs, line breaks)
+                      so it reads as formatted prose, not a wall of text. Image
+                      URLs are stripped from the text and shown as images below. */}
+                  <div style={{ color: 'var(--ink)', lineHeight: 1.65, fontSize: 13.5 }}>
+                    {(() => {
+                      const raw = item.description || ''
+                      // Remove bare image URLs from the prose (shown as images).
+                      const prose = raw.replace(/https?:\/\/\S+\.(?:jpg|jpeg|png|gif|webp)(?:\?\S*)?/gi, '').trim()
+                      const lines = prose.split('\n')
+                      const out: any[] = []
+                      const inline = (t: string) => {
+                        const parts = t.split(/(\*\*[^*]+\*\*|`[^`]+`|https?:\/\/[^\s]+)/g)
+                        return parts.map((p, pi) => {
+                          if (p.startsWith('**') && p.endsWith('**')) return <strong key={pi}>{p.slice(2, -2)}</strong>
+                          if (p.startsWith('`') && p.endsWith('`')) return <code key={pi} style={{ background: 'var(--canvas)', padding: '1px 5px', borderRadius: 4, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}>{p.slice(1, -1)}</code>
+                          if (/^https?:\/\//.test(p)) return <a key={pi} href={p} target="_blank" rel="noopener noreferrer" style={{ color: accentColor, wordBreak: 'break-all' }}>{p}</a>
+                          return p
+                        })
+                      }
+                      lines.forEach((line: string, i: number) => {
+                        const t = line.trim()
+                        if (!t) { out.push(<div key={`sp${i}`} style={{ height: 8 }} />); return }
+                        if (t.startsWith('### ')) out.push(<h4 key={i} style={{ fontSize: 14, fontWeight: 700, margin: '14px 0 6px' }}>{inline(t.slice(4))}</h4>)
+                        else if (t.startsWith('## ')) out.push(<h3 key={i} style={{ fontSize: 15, fontWeight: 700, margin: '16px 0 8px' }}>{inline(t.slice(3))}</h3>)
+                        else if (t.startsWith('# ')) out.push(<h2 key={i} style={{ fontSize: 16, fontWeight: 800, margin: '16px 0 10px' }}>{inline(t.slice(2))}</h2>)
+                        else if (/^[-*] /.test(t)) out.push(<div key={i} style={{ display: 'flex', gap: 8, margin: '0 0 5px' }}><span style={{ color: accentColor }}>•</span><span style={{ flex: 1 }}>{inline(t.slice(2))}</span></div>)
+                        else if (/^\d+\. /.test(t)) out.push(<div key={i} style={{ display: 'flex', gap: 8, margin: '0 0 5px' }}><span style={{ color: accentColor, fontWeight: 700 }}>{t.match(/^\d+/)?.[0]}.</span><span style={{ flex: 1 }}>{inline(t.replace(/^\d+\. /, ''))}</span></div>)
+                        else if (t === '---') out.push(<div key={i} style={{ height: 1, background: 'var(--border)', margin: '12px 0' }} />)
+                        else out.push(<p key={i} style={{ margin: '0 0 10px', wordBreak: 'break-word' }}>{inline(t)}</p>)
+                      })
+                      return out
+                    })()}
+
+                    {/* Images */}
                     {item.description && item.description.includes('http') && (
-                      <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                        {/* Extract image URLs from description */}
-                        {item.description.split(/\s/).map((part, i) => {
-                          if (part.startsWith('http') && /\.(jpg|jpeg|png|gif|webp)$/i.test(part)) {
+                      <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {item.description.split(/\s/).map((part: string, i: number) => {
+                          if (part.startsWith('http') && /\.(jpg|jpeg|png|gif|webp)(\?\S*)?$/i.test(part)) {
                             return (
-                              <img
-                                key={i}
-                                src={part}
-                                alt="Screenshot"
-                                onClick={() => {
-                                  setViewerImage(part)
-                                  setShowImageViewer(true)
-                                }}
-                                style={{
-                                  maxWidth: '100%',
-                                  maxHeight: 200,
-                                  borderRadius: 8,
-                                  cursor: 'pointer',
-                                  border: '1px solid var(--border)',
-                                  transition: 'all 0.2s',
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'
-                                  e.currentTarget.style.transform = 'scale(1.02)'
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.boxShadow = 'none'
-                                  e.currentTarget.style.transform = 'scale(1)'
-                                }}
-                              />
+                              <img key={i} src={part} alt="Announcement"
+                                onClick={() => { setViewerImage(part); setShowImageViewer(true) }}
+                                style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 10, cursor: 'pointer', border: '1px solid var(--border)' }} />
                             )
                           }
                           return null
