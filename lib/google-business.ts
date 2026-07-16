@@ -114,6 +114,35 @@ export async function syncReviews(companyId: string) {
     } else {
       await db.from('google_reviews').insert(row)
       saved++
+      // Best-effort: tie this new review back to a review request we sent, so
+      // the agent's review card can show it was completed. Matches the
+      // reviewer's name to a contact with a recent pending request. This is
+      // name-based and therefore approximate — Google doesn't tell us which
+      // customer left which review — so we only use it as a soft signal.
+      try {
+        const rname = (row.reviewer_name || '').trim().toLowerCase()
+        if (rname && rname !== 'anonymous' && row.star_rating) {
+          const { data: contacts } = await db.from('contacts')
+            .select('id, name').eq('company_id', companyId).limit(1000)
+          const match = (contacts || []).find((c: any) => (c.name || '').trim().toLowerCase() === rname)
+          if (match) {
+            const { data: convs } = await db.from('conversations')
+              .select('id').eq('contact_id', match.id).limit(20)
+            const convIds = (convs || []).map((c: any) => c.id)
+            if (convIds.length) {
+              const { data: reqMsg } = await db.from('messages')
+                .select('id, metadata').in('conversation_id', convIds)
+                .contains('metadata', { review_request: true })
+                .order('created_at', { ascending: false }).limit(1).maybeSingle()
+              if (reqMsg && !reqMsg.metadata?.review_completed) {
+                await db.from('messages').update({
+                  metadata: { ...(reqMsg.metadata || {}), review_completed: true, review_rating: row.star_rating },
+                }).eq('id', reqMsg.id)
+              }
+            }
+          }
+        }
+      } catch { /* non-fatal */ }
     }
   }
 

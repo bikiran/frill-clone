@@ -16,7 +16,7 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
   const db = admin()
 
   const { data: link } = await db.from('short_links')
-    .select('target_url, label, company_id, kind').eq('code', code).maybeSingle()
+    .select('target_url, label, company_id, kind, conversation_id').eq('code', code).maybeSingle()
 
   if (!link?.target_url) {
     return (
@@ -29,6 +29,20 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
   // Review links (and any plain redirect link) send the customer straight to
   // the destination — e.g. the business's Google review page.
   if (link.kind === 'review' || link.kind === 'redirect') {
+    // Record the click so the agent's review card shows engagement. Best-effort.
+    if (link.kind === 'review' && (link as any).conversation_id) {
+      try {
+        const { data: msg } = await db.from('messages')
+          .select('id, metadata')
+          .eq('conversation_id', (link as any).conversation_id)
+          .contains('metadata', { review_request: true })
+          .order('created_at', { ascending: false }).limit(1).maybeSingle()
+        if (msg) {
+          const meta = { ...(msg.metadata || {}), review_clicks: ((msg.metadata?.review_clicks || 0) + 1) }
+          await db.from('messages').update({ metadata: meta }).eq('id', msg.id)
+        }
+      } catch { /* non-fatal */ }
+    }
     const { redirect } = await import('next/navigation')
     redirect(link.target_url)
   }

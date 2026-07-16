@@ -4082,7 +4082,43 @@ export default function InboxPage() {
                             )}
                           </div>
                         ))}
-                        {msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0 }}>{msg.content}</div>}
+                        {(msg as any).metadata?.review_request ? (
+                          <div style={{ padding: '4px 2px 2px' }}>
+                            {/* Review-request card, shown to the agent — mirrors
+                                what the customer received. Updates to "completed"
+                                once the customer leaves the review. */}
+                            {(() => {
+                              const completed = !!(msg as any).metadata?.review_completed
+                              const rating = (msg as any).metadata?.review_rating || 0
+                              const clicks = (msg as any).metadata?.review_clicks || 0
+                              return (
+                                <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: '14px 16px', maxWidth: 300 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                      <span style={{ width: 26, height: 26, borderRadius: 13, background: 'rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>⭐</span>
+                                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>{completed ? 'Review Left' : 'Review Request Sent'}</span>
+                                    </div>
+                                    {clicks > 0 && !completed && (
+                                      <span style={{ fontSize: 10.5, fontWeight: 700, background: 'rgba(255,255,255,0.25)', padding: '2px 7px', borderRadius: 20 }}>{clicks} click{clicks === 1 ? '' : 's'}</span>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 3, justifyContent: 'center', margin: '6px 0 2px' }}>
+                                    {[1, 2, 3, 4, 5].map(s => (
+                                      <span key={s} style={{ fontSize: 22, color: completed && s <= rating ? '#ffd25a' : 'rgba(255,255,255,0.45)' }}>★</span>
+                                    ))}
+                                  </div>
+                                  {completed && rating > 0 && (
+                                    <p style={{ margin: '4px 0 0', fontSize: 11, textAlign: 'center', opacity: 0.9 }}>Customer left {rating} star{rating === 1 ? '' : 's'}</p>
+                                  )}
+                                </div>
+                              )
+                            })()}
+                            {/* The message text (with the /m/ link) below the card. */}
+                            <div style={{ marginTop: 8, fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</div>
+                          </div>
+                        ) : (
+                          msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0 }}>{msg.content}</div>
+                        )}
                         {msg.message_type === 'payment' && msg.message_payload && (
                           <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', color: 'var(--ink)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
