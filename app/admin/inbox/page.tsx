@@ -285,6 +285,18 @@ export default function InboxPage() {
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [locationFilter, setLocationFilter] = useState<string>('all')
+
+  // Persist the chosen location across navigation within Inbox & CRM.
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('colvy_location_filter')
+      if (saved) setLocationFilter(saved)
+    } catch {}
+  }, [])
+  useEffect(() => {
+    try { sessionStorage.setItem('colvy_location_filter', locationFilter) } catch {}
+  }, [locationFilter])
   const [searchScope, setSearchScope] = useState<'all' | 'contact' | 'messages' | 'activity' | 'tasks' | 'notes'>('all')
   const [searchMsgHits, setSearchMsgHits] = useState<Record<string, boolean>>({})
   const [msgSearch, setMsgSearch] = useState('')
@@ -2457,6 +2469,13 @@ export default function InboxPage() {
   }, [searchTerm, searchScope, companyId])
 
   const filteredConvs = conversations.filter(c => {
+    // Location filter (whole Inbox & CRM). "all" shows everything; otherwise
+    // only conversations assigned to the chosen outlet. Conversations with no
+    // location assigned show under "all" only.
+    if (locationFilter !== 'all') {
+      const loc = (c as any).assigned_location_id || (c as any).location_id || null
+      if (loc !== locationFilter) return false
+    }
     if (!searchTerm) return true
     const q = searchTerm.toLowerCase()
     const ct: any = (c as any).contacts || {}
@@ -3446,8 +3465,17 @@ export default function InboxPage() {
               </button>
             </div>
           </div>
-          <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search conversations…"
-            style={{ ...inp, background: 'var(--canvas)' }} />
+          <div style={{ position: 'relative' }}>
+            <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search conversations…"
+              style={{ ...inp, background: 'var(--canvas)', paddingRight: searchTerm ? 34 : undefined }} />
+            {searchTerm && (
+              <button type="button" onClick={() => { setSearchTerm(''); setSearchScope('all') }}
+                title="Clear search"
+                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#e5e7eb', color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            )}
+          </div>
           {/* Scope pills — refine what the search looks at. Shown while typing. */}
           {searchTerm.trim() && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
@@ -3466,6 +3494,17 @@ export default function InboxPage() {
                 </button>
               ))}
             </div>
+          )}
+          {/* Location filter — scopes the whole inbox to one outlet. Only shown
+              when the business actually has more than one location. */}
+          {outlets.length > 1 && (
+            <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
+              style={{ width: '100%', marginTop: 10, padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border)', background: locationFilter !== 'all' ? 'var(--peach)' : 'var(--canvas)', fontSize: 13, fontWeight: 600, color: locationFilter !== 'all' ? 'var(--coral)' : 'var(--ink)', cursor: 'pointer' }}>
+              <option value="all">📍 All locations</option>
+              {outlets.map(o => (
+                <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>
+              ))}
+            </select>
           )}
           {/* Open / Closed tabs (Coax style) + filter */}
           <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
