@@ -54,6 +54,9 @@ export async function POST(req: NextRequest) {
     // Reuse a stored credential if we have one, otherwise create one bound to
     // the company's connection.
     let credentialId = (integ as any).credential_id || (integ as any).sip_username // legacy: id was stored in sip_username
+    let storedSipUser = (integ as any).sip_username
+    const looksLikeUuid = (s?: string | null) => !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(s)
+
     if (!credentialId) {
       const cred = await svc.createTelephonyCredential(integ.connection_id, `colvy-${companyId.slice(0, 8)}`)
       credentialId = cred?.data?.id
@@ -66,6 +69,26 @@ export async function POST(req: NextRequest) {
           credential_id: credentialId,
           ...(sipUsername ? { sip_username: sipUsername } : {}),
         }).eq('company_id', companyId)
+        storedSipUser = sipUsername
+      }
+    } else if (looksLikeUuid(storedSipUser)) {
+      // SELF-HEAL: the sip_username column holds the credential ID (a UUID),
+      // which is the legacy bug — Call Control was dialing sip:<uuid>@… which
+      // routes nowhere, so the browser never rang. Fetch the credential's real
+      // sip_username from Telnyx and correct the columns.
+      try {
+        const cred = await svc.getTelephonyCredential(credentialId)
+        const realSip = cred?.data?.sip_username || null
+        if (realSip) {
+          await db.from('telnyx_integrations').update({
+            credential_id: credentialId,   // move the UUID to its proper column
+            sip_username: realSip,
+          }).eq('company_id', companyId)
+          storedSipUser = realSip
+          console.log('[telnyx token] healed sip_username', { from: 'uuid', to: realSip })
+        }
+      } catch (e) {
+        console.error('[telnyx token] could not heal sip_username', e)
       }
     }
     if (!credentialId) return NextResponse.json({ error: 'Could not create WebRTC credential' }, { status: 500 })

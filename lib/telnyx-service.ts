@@ -47,6 +47,12 @@ export class TelnyxService {
     return this.req('/telephony_credentials', 'POST', { connection_id: connectionId, name })
   }
 
+  // Fetch a telephony credential's details — needed to read its real sip_username
+  // (the part before @sip.telnyx.com that Call Control dials to reach the client).
+  async getTelephonyCredential(credentialId: string) {
+    return this.req(`/telephony_credentials/${credentialId}`, 'GET')
+  }
+
   // ── WebRTC connection ───────────────────────────────────────────────────
   // Browser calling needs a Credential Connection on the Telnyx side. Buying a
   // number does NOT create one, which is why calls failed with "Connection to
