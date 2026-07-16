@@ -215,16 +215,19 @@ export async function POST(req: NextRequest) {
               // leg; when the agent answers we bridge (handled on call.answered of
               // the child leg). timeout_secs controls how long before no-answer.
               const ring = Number(integ.ring_seconds || 25)
+              const sipTarget = `sip:${sipUser}@sip.telnyx.com`
+              console.log('[telnyx inbound] dialing agent client', { sipTarget, connection_id: integ.connection_id })
               try {
-                await svc.createChildCall({
+                const child = await svc.createChildCall({
                   connection_id: integ.connection_id,
-                  to: `sip:${sipUser}@sip.telnyx.com`,
+                  to: sipTarget,
                   from: fromNum,
                   timeout_secs: ring,
                   link_to: callControlId,
                   webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
                 })
-                await db.from('calls').update({ status: 'ringing_agents' })
+                console.log('[telnyx inbound] child call created', { id: (child as any)?.data?.call_control_id })
+                await db.from('calls').update({ status: 'ringing_agents', transcription: `[ringing ${sipTarget}]` })
                   .eq('telnyx_call_control_id', callControlId)
               } catch (dialErr: any) {
                 console.error('[telnyx inbound] createChildCall failed', dialErr?.message || dialErr)
