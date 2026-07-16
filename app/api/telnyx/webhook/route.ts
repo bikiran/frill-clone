@@ -156,12 +156,16 @@ export async function POST(req: NextRequest) {
       const payload = event.payload
       const callControlId = payload?.call_control_id
       const sessionId = payload?.call_session_id
-      const direction = payload?.direction // 'incoming' | 'outgoing'
+      const direction = payload?.direction // Telnyx: 'incoming' | 'outgoing' (sometimes 'inbound'/'outbound')
       const fromNum = payload?.from
       const toNum = payload?.to
+      const isInbound = direction === 'incoming' || direction === 'inbound'
+      const isOutbound = direction === 'outgoing' || direction === 'outbound'
+
+      console.log('[telnyx call event]', { eventType, direction, from: fromNum, to: toNum, hasCC: !!callControlId })
 
       // Inbound call just started — answer it and ring the online agents.
-      if (eventType === 'call.initiated' && direction === 'incoming') {
+      if (eventType === 'call.initiated' && isInbound) {
         const { data: integ } = await db.from('telnyx_integrations').select('*').eq('phone_number', toNum).maybeSingle()
         const companyId = integ?.company_id
         if (companyId && integ) {
@@ -251,7 +255,7 @@ export async function POST(req: NextRequest) {
       }
 
       // A child (agent) leg was answered — bridge it to the caller.
-      if (eventType === 'call.answered' && direction === 'outgoing') {
+      if (eventType === 'call.answered' && isOutbound) {
         try {
           // The parent call is linked; find it by session or client_state.
           const { data: integRow } = await db.from('telnyx_integrations')
@@ -310,7 +314,7 @@ export async function POST(req: NextRequest) {
 
       // No agent answered in time — Telnyx sends call.hangup on the child leg.
       // If the parent is still ringing agents, fall through to voicemail.
-      if (eventType === 'call.hangup' && direction === 'outgoing') {
+      if (eventType === 'call.hangup' && isOutbound) {
         try {
           const { data: parent } = await db.from('calls')
             .select('*').eq('status', 'ringing_agents').order('created_at', { ascending: false }).limit(1)
@@ -342,7 +346,23 @@ export async function POST(req: NextRequest) {
         const update: any = { status }
         if (eventType === 'call.hangup') {
           update.ended_at = new Date().toISOString()
-          if (payload?.call_duration_secs) update.duration_seconds = payload.call_duration_secs
+          const dur = payload?.call_duration_secs || payload?.duration_secs || 0
+          if (dur) update.duration_seconds = dur
+          // A hangup with no talk time and that was never answered is a MISSED
+          // call, not "completed". Telnyx sends hangup_cause / hangup_source we
+          // can lean on, but duration 0 + not-answered is the reliable signal.
+          const answered = payload?.hangup_cause === 'normal_clearing' && dur > 0
+          // Only downgrade to missed for inbound calls that never connected;
+          // don't clobber a voicemail state the inbound flow already set.
+          const { data: existing } = await db.from('calls')
+            .select('status, is_voicemail').or(`telnyx_call_control_id.eq.${callControlId},telnyx_call_session_id.eq.${sessionId}`).maybeSingle()
+          if (existing?.is_voicemail || String(existing?.status || '').startsWith('voicemail')) {
+            update.status = 'voicemail'
+          } else if (isInbound && !answered && !dur) {
+            update.status = 'missed'
+          } else if (dur > 0) {
+            update.status = 'completed'
+          }
         }
         await db.from('calls').update(update).or(`telnyx_call_control_id.eq.${callControlId},telnyx_call_session_id.eq.${sessionId}`)
       }
