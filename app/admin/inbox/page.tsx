@@ -285,6 +285,8 @@ export default function InboxPage() {
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [searchScope, setSearchScope] = useState<'all' | 'contact' | 'messages' | 'activity' | 'tasks' | 'notes'>('all')
+  const [searchMsgHits, setSearchMsgHits] = useState<Record<string, boolean>>({})
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -2424,6 +2426,36 @@ export default function InboxPage() {
     dismissAiField(field as any, value)
   }
 
+  // When searching inside message bodies / notes / tasks / activity (not just
+  // the contact card or last message), query those tables server-side and
+  // remember which conversations matched, so the list filter includes them.
+  useEffect(() => {
+    const q = searchTerm.trim()
+    if (!q || !companyId || !['all', 'messages', 'notes', 'tasks', 'activity'].includes(searchScope)) {
+      setSearchMsgHits({})
+      return
+    }
+    let cancelled = false
+    const run = async () => {
+      const hits: Record<string, boolean> = {}
+      const like = `%${q.replace(/[%_]/g, m => '\\' + m)}%`
+      const collect = async (table: string, col: string) => {
+        try {
+          const { data } = await (supabase as any).from(table)
+            .select('conversation_id').eq('company_id', companyId).ilike(col, like).limit(500)
+          for (const r of data || []) if (r.conversation_id) hits[r.conversation_id] = true
+        } catch { /* table/column may not exist; skip */ }
+      }
+      if (searchScope === 'all' || searchScope === 'messages') await collect('messages', 'content')
+      if (searchScope === 'all' || searchScope === 'notes') await collect('conversation_notes', 'content')
+      if (searchScope === 'all' || searchScope === 'tasks') await collect('conversation_tasks', 'text')
+      if (searchScope === 'all' || searchScope === 'activity') await collect('conversation_events', 'detail')
+      if (!cancelled) setSearchMsgHits(hits)
+    }
+    const t = setTimeout(run, 300)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [searchTerm, searchScope, companyId])
+
   const filteredConvs = conversations.filter(c => {
     if (!searchTerm) return true
     const q = searchTerm.toLowerCase()
@@ -2449,11 +2481,21 @@ export default function InboxPage() {
       if (filters.dateFrom && t < new Date(filters.dateFrom).getTime()) return false
       if (filters.dateTo && t > new Date(filters.dateTo).getTime() + 86400000) return false
     }
-    return (c.last_message || '').toLowerCase().includes(q)
-      || (c.subject || '').toLowerCase().includes(q)
-      || (ct.name || '').toLowerCase().includes(q)
+    // Scope the text match. "Contact" only looks at the contact card; "messages
+    // / notes / tasks / activity" rely on the server-side hits gathered above;
+    // "all" combines everything.
+    const contactMatch = (ct.name || '').toLowerCase().includes(q)
       || (ct.email || '').toLowerCase().includes(q)
       || (ct.phone || '').toLowerCase().includes(q)
+    const surfaceMatch = (c.last_message || '').toLowerCase().includes(q)
+      || (c.subject || '').toLowerCase().includes(q)
+    const deepHit = !!searchMsgHits[c.id]
+
+    if (searchScope === 'contact') return contactMatch
+    if (searchScope === 'messages') return deepHit || surfaceMatch
+    if (searchScope === 'notes' || searchScope === 'tasks' || searchScope === 'activity') return deepHit
+    // 'all'
+    return contactMatch || surfaceMatch || deepHit
   })
     .sort((a: any, b: any) => {
       const ta = new Date(String(a.last_message_at).endsWith('Z') ? a.last_message_at : a.last_message_at + 'Z').getTime()
@@ -3406,6 +3448,25 @@ export default function InboxPage() {
           </div>
           <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search conversations…"
             style={{ ...inp, background: 'var(--canvas)' }} />
+          {/* Scope pills — refine what the search looks at. Shown while typing. */}
+          {searchTerm.trim() && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {([
+                ['all', 'All'], ['contact', 'Contact'], ['messages', 'Messages'],
+                ['activity', 'Activity & Marketing'], ['tasks', 'Tasks'], ['notes', 'Notes'],
+              ] as const).map(([key, label]) => (
+                <button key={key} type="button" onClick={() => setSearchScope(key)}
+                  style={{
+                    padding: '4px 11px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                    border: '1px solid ' + (searchScope === key ? '#2563eb' : 'var(--border)'),
+                    background: searchScope === key ? '#2563eb' : '#fff',
+                    color: searchScope === key ? '#fff' : 'var(--slate)',
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {/* Open / Closed tabs (Coax style) + filter */}
           <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
             <div style={{ flex: 1, display: 'flex', background: 'var(--canvas)', borderRadius: 10, padding: 3 }}>
