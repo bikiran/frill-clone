@@ -194,7 +194,14 @@ export async function POST(req: NextRequest) {
             // Every agent's browser connects with the company SIP credential, so
             // dialing that one SIP address rings all connected clients at once.
             const sipUser = integ.sip_username
-            const anyOnline = (online || []).length > 0 && sipUser
+            const onlineCount = (online || []).length
+            const anyOnline = onlineCount > 0 && !!sipUser
+
+            console.log('[telnyx inbound] routing decision', {
+              companyId, onlineAgents: onlineCount, hasSipUsername: !!sipUser,
+              sipUser: sipUser ? sipUser.slice(0, 6) + '…' : null,
+              willRing: anyOnline,
+            })
 
             // Answer the call so we can control it either way.
             await svc.answerCall(callControlId, JSON.stringify({ role: 'inbound', companyId, contactId }))
@@ -204,24 +211,33 @@ export async function POST(req: NextRequest) {
               // leg; when the agent answers we bridge (handled on call.answered of
               // the child leg). timeout_secs controls how long before no-answer.
               const ring = Number(integ.ring_seconds || 25)
-              await svc.createChildCall({
-                connection_id: integ.connection_id,
-                to: `sip:${sipUser}@sip.telnyx.com`,
-                from: fromNum,
-                timeout_secs: ring,
-                link_to: callControlId,
-                webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
-              })
-              // Record the parent so the follow-up events know the flow state.
-              await db.from('calls').update({ status: 'ringing_agents' })
-                .eq('telnyx_call_control_id', callControlId)
+              try {
+                await svc.createChildCall({
+                  connection_id: integ.connection_id,
+                  to: `sip:${sipUser}@sip.telnyx.com`,
+                  from: fromNum,
+                  timeout_secs: ring,
+                  link_to: callControlId,
+                  webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
+                })
+                await db.from('calls').update({ status: 'ringing_agents' })
+                  .eq('telnyx_call_control_id', callControlId)
+              } catch (dialErr: any) {
+                console.error('[telnyx inbound] createChildCall failed', dialErr?.message || dialErr)
+                // Fall back to voicemail so the caller isn't left hanging.
+                if (integ.voicemail_enabled !== false) {
+                  await svc.speak(callControlId, integ.voicemail_greeting || 'Please leave a message after the tone.')
+                  await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, transcription: `[ring failed: ${dialErr?.message || 'dial error'}]` })
+                    .eq('telnyx_call_control_id', callControlId)
+                }
+              }
             } else {
-              // Nobody online — straight to voicemail if enabled.
+              // Nobody online (or no SIP credential) — straight to voicemail.
+              const reason = !sipUser ? 'no sip_username on integration (open Colvy to provision it)' : 'no agents online (heartbeat in last 2 min)'
+              console.log('[telnyx inbound] going to voicemail —', reason)
               if (integ.voicemail_enabled !== false) {
                 await svc.speak(callControlId, integ.voicemail_greeting || 'Please leave a message after the tone.')
-                // record_start is triggered after the greeting finishes
-                // (call.speak.ended); mark state so that handler knows.
-                await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true })
+                await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, transcription: `[to voicemail: ${reason}]` })
                   .eq('telnyx_call_control_id', callControlId)
               } else {
                 await svc.hangupCall(callControlId)
