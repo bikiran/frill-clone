@@ -266,6 +266,33 @@ export default function GoogleReviewsPage() {
               <option value={168}>7 days</option>
             </select>
 
+            {/* Quiet hours — don't message customers overnight. */}
+            <label style={{ ...L, display: 'flex', alignItems: 'center', gap: 8, marginTop: 16 }}>
+              <input type="checkbox" checked={rr.quiet_hours_enabled !== false}
+                onChange={e => setRr({ ...rr, quiet_hours_enabled: e.target.checked })}
+                style={{ width: 16, height: 16, accentColor: 'var(--coral)' }} />
+              Don't send during quiet hours
+            </label>
+            {rr.quiet_hours_enabled !== false && (
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ ...L, fontSize: 11 }}>Quiet from</label>
+                  <select style={I} value={rr.quiet_start ?? 21} onChange={e => setRr({ ...rr, quiet_start: Number(e.target.value) })}>
+                    {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{h.toString().padStart(2, '0')}:00</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ ...L, fontSize: 11 }}>Until</label>
+                  <select style={I} value={rr.quiet_end ?? 9} onChange={e => setRr({ ...rr, quiet_end: Number(e.target.value) })}>
+                    {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{h.toString().padStart(2, '0')}:00</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+            <p style={{ fontSize: 11.5, color: 'var(--slate)', marginBottom: 16 }}>
+              A request that comes due overnight is held and sent the next morning instead. Times are in {rr.timezone || 'Australia/Melbourne'}.
+            </p>
+
             <label style={L}>Send via</label>
             <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
               {(['chat', 'sms', 'email'] as const).map(ch => (

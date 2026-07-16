@@ -9,6 +9,26 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+// Returns the next moment at `targetHour` (0-23) in the given timezone that is
+// in the future — i.e. "defer this until 9am their time".
+function nextAllowedTime(tz: string, targetHour: number): Date {
+  const now = new Date()
+  // Reliable timezone offset: format the same instant in the target tz and in
+  // UTC, and diff them.
+  const tzNow = new Date(now.toLocaleString('en-US', { timeZone: tz }))
+  const utcNow = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }))
+  const offsetMs = tzNow.getTime() - utcNow.getTime()   // tz = UTC + offsetMs
+
+  // Wall-clock time in the target tz.
+  const y = tzNow.getFullYear(), m = tzNow.getMonth(), d = tzNow.getDate(), h = tzNow.getHours()
+  // Target local wall-clock: today at targetHour, or tomorrow if already past.
+  const dayShift = h >= targetHour ? 1 : 0
+  // Build the UTC instant that corresponds to that local wall-clock.
+  const targetLocalMs = Date.UTC(y, m, d + dayShift, targetHour, 0, 0)
+  const result = new Date(targetLocalMs - offsetMs)
+  return result.getTime() > now.getTime() ? result : new Date(now.getTime() + 3600000)
+}
+
 // Sends any review requests whose delay has elapsed. Call this on a schedule
 // (Vercel Cron: /api/reviews/dispatch every 15 min, or hourly).
 //
@@ -45,6 +65,30 @@ async function run(req: NextRequest) {
         if (!cfg.enabled) {
           await db.from('review_requests').update({ status: 'skipped', error: 'Review requests disabled' }).eq('id', rr.id)
           continue
+        }
+
+        // Quiet hours — never message a customer in the middle of the night.
+        // The business sets a window (e.g. 21:00–09:00) and a timezone; a
+        // request that comes due inside it is deferred to the next allowed
+        // start time rather than sent. Defaults to 9am–9pm Melbourne if unset.
+        const quietStart = typeof cfg.quiet_start === 'number' ? cfg.quiet_start : 21   // 9pm
+        const quietEnd = typeof cfg.quiet_end === 'number' ? cfg.quiet_end : 9          // 9am
+        const tz = cfg.timezone || 'Australia/Melbourne'
+        if (cfg.quiet_hours_enabled !== false) {
+          // Current hour in the business's timezone.
+          const tzNow = new Date(new Date().toLocaleString('en-US', { timeZone: tz }))
+          const hour = tzNow.getHours()
+          // Is `hour` inside the quiet window? The window can wrap past midnight.
+          const inQuiet = quietStart > quietEnd
+            ? (hour >= quietStart || hour < quietEnd)   // e.g. 21..24 or 0..9
+            : (hour >= quietStart && hour < quietEnd)
+          if (inQuiet) {
+            // Defer to the next quietEnd (e.g. 9am) in the business timezone.
+            const deferred = nextAllowedTime(tz, quietEnd)
+            await db.from('review_requests').update({ send_after: deferred.toISOString() }).eq('id', rr.id)
+            results.push({ id: rr.id, deferred: deferred.toISOString() })
+            continue
+          }
         }
 
         // The link customers click to leave the review.
