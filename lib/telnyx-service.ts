@@ -93,6 +93,16 @@ export class TelnyxService {
     return data?.data || null
   }
 
+  // Set a known username/password on the credential connection so a WebRTC
+  // client can REGISTER with it (login/password), which — unlike a JWT token —
+  // makes it a registered SIP endpoint that inbound Call Control can dial.
+  async setConnectionCredentials(connectionId: string, userName: string, password: string) {
+    return this.req(`/credential_connections/${connectionId}`, 'PATCH', {
+      user_name: userName,
+      password,
+    })
+  }
+
   // Attach/replace the outbound voice profile on an EXISTING connection —
   // heals connections created before the fix above.
   async attachOutboundProfile(connectionId: string, profileId: string) {

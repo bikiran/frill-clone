@@ -48,7 +48,13 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         const data = await res.json()
         if (!res.ok || cancelled) return
         const { TelnyxRTC } = await import('@telnyx/webrtc')
-        const client = new TelnyxRTC({ login_token: data.token })
+        // Register with the connection credentials (login/password) rather than a
+        // JWT login_token. Credential registration makes the browser a REGISTERED
+        // SIP endpoint, so inbound Call Control can actually dial and reach it
+        // (a token connection does not register, so inbound legs dropped in ~1s).
+        const client = (data.sipUser && data.sipPassword)
+          ? new TelnyxRTC({ login: data.sipUser, password: data.sipPassword })
+          : new TelnyxRTC({ login_token: data.token })
         // Route the far end's audio to our always-mounted element — without
         // this, answered calls connect but have no sound.
         ;(client as any).remoteElement = 'colvy-inbound-audio'
@@ -64,10 +70,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           console.error('[telnyx] socket error', e)
         })
         client.on('telnyx.notification', (n: any) => {
+          // Log every notification so we can see whether the inbound invite is
+          // reaching this browser client at all (vs being dropped by Telnyx
+          // before delivery).
+          console.log('[telnyx notification]', n?.type, n?.call?.state, n?.call?.direction)
           const call = n?.call
           if (!call) return
           // Inbound invite
           if (call.state === 'ringing' && call.direction === 'inbound') {
+            console.log('[telnyx] INCOMING CALL received by browser client')
             callRef.current = call
             setIncoming(call)
             resolveCaller(call.options?.remoteCallerNumber || call.remoteCallerNumber)
