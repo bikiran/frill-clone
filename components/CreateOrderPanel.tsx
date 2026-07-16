@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import AddressAutocomplete from '@/components/AddressAutocomplete'
 
 type Item = {
   key: string
@@ -323,7 +324,20 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
                     </div>
                     <label style={L}>Email</label><input style={I} value={cust.email} onChange={e => setCust({ ...cust, email: e.target.value })} />
                     <label style={L}>Phone</label><input style={I} value={cust.phone} onChange={e => setCust({ ...cust, phone: e.target.value })} />
-                    <label style={L}>Billing address</label><input style={I} value={cust.address_1} onChange={e => setCust({ ...cust, address_1: e.target.value })} placeholder="Street" />
+                    <label style={L}>Billing address</label>
+                    <AddressAutocomplete
+                      value={cust.address_1}
+                      onChange={(v) => setCust({ ...cust, address_1: v })}
+                      onSelect={(parts) => setCust({
+                        ...cust,
+                        address_1: parts.line1 || parts.formatted,
+                        city: parts.city || cust.city,
+                        state: parts.state || cust.state,
+                        postcode: parts.postcode || cust.postcode,
+                      })}
+                      style={I as any}
+                      placeholder="Start typing an address…"
+                    />
                     <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                       <input style={I} value={cust.city} onChange={e => setCust({ ...cust, city: e.target.value })} placeholder="City" />
                       <input style={{ ...I, width: 90 }} value={cust.state} onChange={e => setCust({ ...cust, state: e.target.value })} placeholder="State" />

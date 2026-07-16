@@ -10,6 +10,7 @@ import Dialer from '@/components/Dialer'
 import EmailMessage from '@/components/EmailMessage'
 import EmailComposer from '@/components/EmailComposer'
 import ContactTimeline from '@/components/ContactTimeline'
+import AddressAutocomplete from '@/components/AddressAutocomplete'
 import DeliveryPanel from '@/components/DeliveryPanel'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import DoaPanel from '@/components/DoaPanel'
@@ -4512,26 +4513,59 @@ export default function InboxPage() {
                   </div>
                 ) : contact ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                    {([
+                    {(() => {
+                      // Prefer the contact's own address; if blank, pull the
+                      // billing address from their most recent WooCommerce order
+                      // (a customer who's ordered has an address on file even if
+                      // their Colvy contact record is empty).
+                      const ownAddress = [contact.address, contact.city, contact.country].filter(Boolean).join(', ')
+                      let addressValue = ownAddress
+                      let addressFromOrder = false
+                      if (!ownAddress && wooOrders.length > 0) {
+                        const b = wooOrders.find((o: any) => o.billing?.address_1)?.billing
+                        if (b) {
+                          addressValue = [b.address_1, b.address_2, b.city, b.state, b.postcode].filter(Boolean).join(', ')
+                          addressFromOrder = true
+                        }
+                      }
+                      return ([
                       ['name', 'Name', contact.name],
                       ['company', 'Company', (contact as any).company],
                       ['email', 'Email', contact.email],
                       ['phone', 'Phone', contact.phone],
-                      ['address', 'Address', [contact.address, contact.city, contact.country].filter(Boolean).join(', ')],
+                      ['address', 'Address', addressValue],
                     ] as [string, string, string][])
                       .map(([field, label, value]) => {
                         const aiFilled = aiSavedFields.has(field as string) && !!value
+                        const showOrderTag = field === 'address' && addressFromOrder && !!value
                         return (
                         <div key={field} className="contact-field-row"
                           style={{ position: 'relative', borderRadius: 8, padding: aiFilled ? '5px 7px' : 0, margin: aiFilled ? '0 -7px' : 0, background: aiFilled ? '#f7f8fa' : 'transparent' }}>
                           <p style={{ margin: '0 0 2px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
                             {label}
+                            {showOrderTag && <span style={{ fontSize: 8.5, color: '#2563eb', background: '#eef4ff', padding: '1px 5px', borderRadius: 10, letterSpacing: 0 }}>from order</span>}
                           </p>
                           {editField === field ? (
                             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                              {field === 'address' ? (
+                                <AddressAutocomplete
+                                  value={editFieldValue}
+                                  onChange={setEditFieldValue}
+                                  onSelect={(parts) => {
+                                    // Save the verified address, and split city/
+                                    // state/country into their own fields.
+                                    setEditFieldValue(parts.formatted)
+                                    saveSingleField('address', parts.line1 || parts.formatted)
+                                    if (parts.city) saveSingleField('city', parts.city)
+                                    if (parts.country) saveSingleField('country', parts.country)
+                                  }}
+                                  style={{ ...inp, fontSize: 12, padding: '5px 8px' } as any}
+                                />
+                              ) : (
                               <input autoFocus value={editFieldValue} onChange={e => setEditFieldValue(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') saveSingleField(field, editFieldValue); if (e.key === 'Escape') setEditField(null) }}
                                 style={{ ...inp, fontSize: 12, padding: '5px 8px' }} />
+                              )}
                               <button type="button" onClick={() => saveSingleField(field, editFieldValue)} style={fieldBtn('#059669')} title="Save">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                               </button>
@@ -4575,7 +4609,7 @@ export default function InboxPage() {
                         </div>
                         )
                       })
-                    }
+                    })()}
 
                     {/* ── Delivery (Coax-style) ─────────────────────────────
                         Scheduled delivery date + status, saved inline. */}
