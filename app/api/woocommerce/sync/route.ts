@@ -166,6 +166,7 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         customer_email: o.billing?.email || '',
         status: o.status,
         total: parseFloat(o.total || '0') || 0,
+        shipping_total: parseFloat(o.shipping_total || '0') || 0,
         currency: o.currency || 'AUD',
         order_date: o.date_created,
         line_items: (o.line_items || []).map((li: any) => ({

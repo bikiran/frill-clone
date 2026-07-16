@@ -323,6 +323,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       customer_email: email || null,
       status,
       total: parseFloat(order.total) || 0,
+      shipping_total: parseFloat(order.shipping_total || '0') || 0,
       currency: order.currency || 'AUD',
       order_date: order.date_created ? new Date(order.date_created).toISOString() : new Date().toISOString(),
       line_items: order.line_items || [],

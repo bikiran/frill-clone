@@ -3709,6 +3709,13 @@ export default function InboxPage() {
               <div className="inbox-header-name" style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
                   {contact?.name || selected.subject || 'Visitor'}
+                  {contact?.id && (
+                    <a href={`/admin/customers/profile?id=${contact.id}`}
+                      title="Open full customer profile"
+                      style={{ display: 'inline-flex', alignItems: 'center', color: '#2563eb', flexShrink: 0 }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
+                    </a>
+                  )}
                   {/* Sentiment badge */}
                   {(selected as any).sentiment && (
                     <span title={`${(selected as any).sentiment} experience`}

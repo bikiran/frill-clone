@@ -175,6 +175,24 @@ export default function CustomerProfilePage() {
   // Products: items_purchased can be string[] or object[] from WooCommerce line items
   const rawItems: any[] = (() => {
     let ip: any = customer.items_purchased
+    // Fallback: if the customer record has no items_purchased (e.g. a guest
+    // customer, or matched via live order fallback), derive the list from the
+    // line items across their orders — so Products Purchased still populates.
+    if (!ip || (Array.isArray(ip) && ip.length === 0)) {
+      const seen = new Map<string, any>()
+      for (const o of orders) {
+        for (const li of (o.line_items || [])) {
+          const name = li.name || li.product_name || li.title
+          if (!name) continue
+          const key = String(li.product_id || name)
+          const existing = seen.get(key)
+          const qty = li.quantity || 1
+          if (existing) existing.quantity += qty
+          else seen.set(key, { name, product_id: li.product_id, image: li.image, quantity: qty })
+        }
+      }
+      if (seen.size > 0) return Array.from(seen.values())
+    }
     if (!ip) return []
     // May arrive as a JSON string, a comma-joined string, or a JSONB array
     if (typeof ip === 'string') {
@@ -443,17 +461,41 @@ export default function CustomerProfilePage() {
                       <p style={{ margin: '0 0 4px 0', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>
                         {orderTotal > 0 ? `$${orderTotal.toFixed(2)}` : '—'}
                       </p>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: order.status === 'completed' ? '#dcfce7' : order.status === 'processing' ? '#dbeafe' : '#fef3c7', color: order.status === 'completed' ? '#166534' : order.status === 'processing' ? '#1e40af' : '#92400e' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: order.status === 'completed' ? '#dcfce7' : order.status === 'processing' ? '#dbeafe' : ['refunded', 'cancelled', 'failed'].includes(order.status) ? '#fee2e2' : '#fef3c7', color: order.status === 'completed' ? '#166534' : order.status === 'processing' ? '#1e40af' : ['refunded', 'cancelled', 'failed'].includes(order.status) ? '#dc2626' : '#92400e' }}>
                         {order.status || order.order_status || 'unknown'}
                       </span>
                     </div>
                   </div>
                   {lineItems.length > 0 && (
-                    <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
-                      {lineItems.slice(0, 3).map((li: any, i: number) => (
-                        <span key={i}>{i > 0 ? ', ' : ''}{li.name || li.product_name}{li.quantity > 1 ? ` ×${li.quantity}` : ''}</span>
-                      ))}
-                      {lineItems.length > 3 && <span style={{ color: '#9ca3af' }}> +{lineItems.length - 3} more</span>}
+                    <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                      {/* All items — no "+N more" truncation. */}
+                      {lineItems.map((li: any, i: number) => {
+                        const qty = li.quantity || 1
+                        const lineTotal = parseFloat(li.total ?? li.subtotal ?? (li.price ? li.price * qty : 0)) || 0
+                        return (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5, color: '#444', padding: '3px 0' }}>
+                            <span>{li.name || li.product_name}{qty > 1 ? ` ×${qty}` : ''}</span>
+                            {lineTotal > 0 && <span style={{ color: '#666', flexShrink: 0 }}>${lineTotal.toFixed(2)}</span>}
+                          </div>
+                        )
+                      })}
+                      {(() => {
+                        // Shipping line + a total that actually adds up (items +
+                        // shipping), matching the order total.
+                        const shipping = parseFloat(order.shipping_total ?? order.shipping ?? 0) || 0
+                        return (
+                          <>
+                            {shipping > 0 && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: '#444', padding: '3px 0' }}>
+                                <span>Shipping</span><span style={{ color: '#666' }}>${shipping.toFixed(2)}</span>
+                              </div>
+                            )}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700, color: 'var(--ink)', padding: '6px 0 0', marginTop: 4, borderTop: '1px dashed var(--border)' }}>
+                              <span>Total</span><span>${orderTotal.toFixed(2)}</span>
+                            </div>
+                          </>
+                        )
+                      })()}
                     </div>
                   )}
                 </div>
