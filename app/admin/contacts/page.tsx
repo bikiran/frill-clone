@@ -12,6 +12,19 @@ export default function ContactsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [contacts, setContacts] = useState<Contact[]>([])
   const [search, setSearch] = useState('')
+  const [outlets, setOutlets] = useState<any[]>([])
+  const [locationFilter, setLocationFilter] = useState<string>('all')
+
+  // Shared with the inbox — the same outlet stays selected across the CRM.
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('colvy_location_filter')
+      if (saved) setLocationFilter(saved)
+    } catch {}
+  }, [])
+  useEffect(() => {
+    try { sessionStorage.setItem('colvy_location_filter', locationFilter) } catch {}
+  }, [locationFilter])
 
   // ── Duplicate contacts ────────────────────────────────────────────────────
   const [dupGroups, setDupGroups] = useState<any[] | null>(null)
@@ -100,6 +113,7 @@ export default function ContactsPage() {
     if (!id) return
     setLoading(true)
     let query = (supabase as any).from('contacts').select('*', { count: 'exact' }).eq('company_id', id)
+    if (locationFilter !== 'all') query = query.eq('location_id', locationFilter)
     if (q && q.trim()) {
       // Match each word of the query against name/email/phone, so searching a
       // last name ("Wongyarit") or a full name ("Panadda Wongyarit") both work.
@@ -119,7 +133,16 @@ export default function ContactsPage() {
   useEffect(() => {
     const t = setTimeout(() => { if (companyId) loadContacts(companyId, search) }, 350)
     return () => clearTimeout(t)
-  }, [search])
+  }, [search, locationFilter])
+
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      const { data } = await (supabase as any).from('company_locations')
+        .select('id, label, suburb, is_primary').eq('company_id', companyId).order('is_primary', { ascending: false })
+      setOutlets(data || [])
+    })()
+  }, [companyId])
 
   const saveContact = async () => {
     if (!companyId) return
@@ -158,6 +181,14 @@ export default function ContactsPage() {
           </div>
           <input placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)}
             style={{ ...inp, maxWidth: 280, background: 'var(--canvas)' }} />
+          {outlets.length > 1 && (
+            <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
+              title="Filter by location"
+              style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', background: locationFilter !== 'all' ? 'var(--peach)' : '#fff', fontSize: 13, fontWeight: 700, color: locationFilter !== 'all' ? 'var(--coral)' : 'var(--ink)', cursor: 'pointer', flexShrink: 0 }}>
+              <option value="all">📍 All locations</option>
+              {outlets.map(o => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
+            </select>
+          )}
           <button type="button" onClick={findDuplicates} disabled={dupBusy}
             title="Find contacts that are the same person"
             style={{ padding: '9px 15px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>

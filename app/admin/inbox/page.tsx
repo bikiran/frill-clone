@@ -2134,6 +2134,11 @@ export default function InboxPage() {
     if (!selected) return
     await (supabase as any).from('conversations')
       .update({ assigned_location_id: outlet.id, assigned_auto: false }).eq('id', selected.id)
+    // Keep the contact's location in sync so the Contacts page location filter
+    // reflects the move.
+    if ((selected as any).contact_id) {
+      await (supabase as any).from('contacts').update({ location_id: outlet.id }).eq('id', (selected as any).contact_id)
+    }
     await (supabase as any).from('conversation_events').insert({
       conversation_id: selected.id, company_id: companyId,
       event_type: 'moved', actor_name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent',
