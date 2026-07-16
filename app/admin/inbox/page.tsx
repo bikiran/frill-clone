@@ -3591,6 +3591,26 @@ export default function InboxPage() {
             }
             const isLiveChat = source.label === 'Live Chat Enquiry'
 
+            // Secondary badge: when the primary badge is the CHANNEL (SMS, email,
+            // Messenger…), also surface the order status if this customer has an
+            // order — so an SMS conversation with a placed order shows BOTH
+            // "SMS" and "Order Placed" rather than hiding the sale.
+            let secondBadge: any = null
+            if (CHANNEL_BADGE[ch]) {
+              const os2 = String((c as any).order_status || '').toLowerCase()
+              const ORDER_BADGE2: Record<string, any> = {
+                failed:     { label: 'Payment Failed', bg: '#fee2e2', fg: '#dc2626' },
+                cancelled:  { label: 'Order Cancelled', bg: '#fee2e2', fg: '#dc2626' },
+                refunded:   { label: 'Order Refunded', bg: '#fef3c7', fg: '#b45309' },
+                'on-hold':  { label: 'Order On Hold', bg: '#fef3c7', fg: '#b45309' },
+                pending:    { label: 'Payment Pending', bg: '#fef3c7', fg: '#b45309' },
+                completed:  { label: 'Order Completed', bg: '#dcfce7', fg: '#15803d' },
+                processing: { label: 'Order Placed', bg: '#dcfce7', fg: '#15803d' },
+              }
+              if (os2 && ORDER_BADGE2[os2]) secondBadge = ORDER_BADGE2[os2]
+              else if (subj.startsWith('abandoned cart') && (c as any).cart_status !== 'recovered' && !os2) secondBadge = { label: 'Abandoned Cart', bg: '#fee2e2', fg: '#dc2626' }
+            }
+
             const accent = companyInfo?.accent_color || 'var(--coral)'
             const unread = conv.is_unread && selected?.id !== conv.id
 
@@ -3624,12 +3644,19 @@ export default function InboxPage() {
                 <span style={{ fontSize: 10, color: '#9ca3af', flexShrink: 0, marginLeft: 6 }}>{timeAgo(conv.last_message_at)}</span>
               </div>
 
-              {/* Source tag — live chat gets a gentle live pulse */}
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 5, background: source.bg, color: source.fg, marginBottom: 5 }}>
-                {isLiveChat && (
-                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
+              {/* Source tag(s) — channel plus order status when both apply */}
+              <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, marginBottom: 5 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 5, background: source.bg, color: source.fg }}>
+                  {isLiveChat && (
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
+                  )}
+                  {source.label}
+                </span>
+                {secondBadge && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 5, background: secondBadge.bg, color: secondBadge.fg }}>
+                    {secondBadge.label}
+                  </span>
                 )}
-                {source.label}
               </span>
 
               <p style={{ margin: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

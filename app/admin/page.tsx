@@ -1,4 +1,5 @@
 'use client'
+import Greeting from '@/components/Greeting'
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -284,6 +285,7 @@ export default function AdminDashboard() {
       {/* Main content */}
       <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-8">
         <div className="max-w-4xl mx-auto">
+          <Greeting name={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
           <div className="flex items-center justify-between mb-8">
             <h1 className="text-3xl font-bold" style={{ color: 'var(--ink)' }}>Getting Started</h1>
             <button 
