@@ -965,8 +965,21 @@ function WidgetContent() {
                   <div style={{ color: 'var(--ink)', lineHeight: 1.65, fontSize: 13.5 }}>
                     {(() => {
                       const raw = item.description || ''
+                      // The body often begins with the title repeated as a
+                      // markdown "# " heading (or just as the first line). We
+                      // already render the title in the header, so drop that
+                      // leading duplicate to avoid showing it twice.
+                      const norm = (s: string) => s.replace(/[#*`_>]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
+                      const titleNorm = norm(item.title || '')
+                      let body = raw
+                      const firstLineEnd = body.indexOf('\n')
+                      const firstLine = (firstLineEnd === -1 ? body : body.slice(0, firstLineEnd))
+                      if (titleNorm && norm(firstLine) === titleNorm) {
+                        body = firstLineEnd === -1 ? '' : body.slice(firstLineEnd + 1)
+                        body = body.replace(/^\s*\n/, '') // drop a leading blank line
+                      }
                       // Remove bare image URLs from the prose (shown as images).
-                      const prose = raw.replace(/https?:\/\/\S+\.(?:jpg|jpeg|png|gif|webp)(?:\?\S*)?/gi, '').trim()
+                      const prose = body.replace(/https?:\/\/\S+\.(?:jpg|jpeg|png|gif|webp)(?:\?\S*)?/gi, '').trim()
                       const lines = prose.split('\n')
                       const out: any[] = []
                       const inline = (t: string) => {
