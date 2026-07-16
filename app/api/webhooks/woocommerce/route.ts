@@ -50,12 +50,41 @@ async function recoverAbandonedCarts(db: any, companyId: string, order: any) {
       return false
     })
 
+    // Fallback: also recover any OPEN conversation for the same contact that is
+    // still flagged as an abandoned cart. The cart-record match above can miss
+    // (e.g. the cart stored a different/blank email than the billing email), yet
+    // the customer clearly converted — so flip their conversation too.
+    try {
+      const digits = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
+      const { data: contacts } = await db.from('contacts')
+        .select('id').eq('company_id', companyId)
+        .or([
+          wantEmail ? `email.ilike.${wantEmail}` : '',
+          phone ? `phone.ilike.%${digits(phone)}%` : '',
+        ].filter(Boolean).join(','))
+      const contactIds = (contacts || []).map((c: any) => c.id)
+      if (contactIds.length) {
+        const { data: cartConvs } = await db.from('conversations')
+          .select('id, subject, order_status, cart_status')
+          .in('contact_id', contactIds)
+          .ilike('subject', 'abandoned cart%')
+        for (const cc of cartConvs || []) {
+          if (cc.cart_status === 'recovered') continue
+          if (!matches.find((m: any) => m.conversation_id === cc.id)) {
+            matches.push({ id: null, conversation_id: cc.id, _viaContact: true })
+          }
+        }
+      }
+    } catch {}
+
     for (const m of matches) {
-      await db.from('abandoned_carts').update({
-        status: 'recovered',
-        recovered_order_id: String(order.id),
-        updated_at: new Date().toISOString(),
-      }).eq('id', m.id)
+      if (m.id) {
+        await db.from('abandoned_carts').update({
+          status: 'recovered',
+          recovered_order_id: String(order.id),
+          updated_at: new Date().toISOString(),
+        }).eq('id', m.id)
+      }
       // Note the win in the cart's conversation thread, so the agent sees it.
       if (m.conversation_id) {
         try {
@@ -64,6 +93,17 @@ async function recoverAbandonedCarts(db: any, companyId: string, order: any) {
             content: `🛒→✅ Abandoned cart recovered — order #${order.number || order.id} placed ($${order.total})`,
             metadata: { cart_recovered: true, order_id: order.id },
           })
+          // Stamp the CONVERSATION too — the abandoned-cart badge reads the
+          // conversation's order_status / cart_status, not the cart record.
+          // Without this the thread stayed "Abandoned Cart" forever even after
+          // the sale (which is exactly what happened for this customer).
+          await db.from('conversations').update({
+            order_status: (order.status || 'processing'),
+            cart_status: 'recovered',
+            woo_order_id: String(order.id),
+            last_message: `Order #${order.number || order.id} — ${order.status || 'processing'} · $${order.total}`,
+            last_message_at: new Date().toISOString(),
+          }).eq('id', m.conversation_id)
         } catch {}
       }
     }
