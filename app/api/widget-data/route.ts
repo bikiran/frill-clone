@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
         .order('created_at', { ascending: false }).limit(5),
       (supabase as any).from('surveys').select('id,title,questions').eq('company_id', company.id)
         .order('created_at', { ascending: false }).limit(5),
-      (supabase as any).from('help_articles').select('id,title,content,category,status,created_at').eq('company_id', company.id)
+      (supabase as any).from('help_articles').select('id,title,content,category,status,created_at,location_ids').eq('company_id', company.id)
         .eq('status', 'published')
         .order('created_at', { ascending: false }).limit(10),
     ])
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
       forms: formsRes.data || [],
       polls: pollsRes.data || [],
       surveys: surveysRes.data || [],
-      helpArticles: helpRes.data || [],
+      helpArticles: (helpRes.data || []).filter(visibleAt),
     }
 
     console.log('[WIDGET API] Returning response:', {
@@ -126,7 +126,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const supabase = getDb()
-    const { slug, title, attachments, user_name } = await req.json()
+    const { slug, title, attachments, user_name, location } = await req.json()
     if (!slug || !title) return NextResponse.json({ error: 'slug and title required' }, { status: 400 })
 
     const { data: company } = await (supabase as any)
@@ -192,6 +192,9 @@ export async function POST(req: NextRequest) {
       created_by_name: user_name || 'Anonymous',
       attachments: attachmentUrls,
       created_at: new Date().toISOString(),
+      // If the customer submitted from a specific outlet's context, tag the idea
+      // to that location so the admin roadmap can be filtered by outlet.
+      location_ids: location ? [location] : null,
     }).select()
 
     if (insertError) {
