@@ -270,6 +270,17 @@ export default function AnnouncementsAdmin() {
                 <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
                   <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Actions</p>
                   <div className="space-y-2">
+                    <button
+                      onClick={async () => {
+                        const next = !(selected as any).is_pinned
+                        await (supabase as any).from('announcements').update({ is_pinned: next }).eq('id', selected.id)
+                        setSelected({ ...selected, is_pinned: next })
+                        fetchAnnouncements()
+                      }}
+                      className="w-full py-2 rounded-lg border text-sm font-medium hover:bg-gray-50 cursor-pointer"
+                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                      {(selected as any).is_pinned ? '📌 Unpin from top' : '📌 Pin to top'}
+                    </button>
                     <Link href={`/admin/announcements/new?edit=${selected.id}`}
                       className="w-full block text-center py-2 rounded-lg border text-sm font-medium hover:bg-gray-50 cursor-pointer"
                       style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>

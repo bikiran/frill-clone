@@ -100,7 +100,16 @@ export default function ContactsPage() {
     if (!id) return
     setLoading(true)
     let query = (supabase as any).from('contacts').select('*', { count: 'exact' }).eq('company_id', id)
-    if (q) query = query.or(`name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`)
+    if (q && q.trim()) {
+      // Match each word of the query against name/email/phone, so searching a
+      // last name ("Wongyarit") or a full name ("Panadda Wongyarit") both work.
+      // Escape PostgREST's reserved characters so odd input can't break the query.
+      const clean = (s: string) => s.replace(/[,()%\\]/g, ' ').trim()
+      const words = clean(q).split(/\s+/).filter(Boolean)
+      for (const w of words) {
+        query = query.or(`name.ilike.%${w}%,email.ilike.%${w}%,phone.ilike.%${w}%`)
+      }
+    }
     const { data, count } = await query.order('created_at', { ascending: false }).limit(200)
     setContacts(data || [])
     setTotalCount(count || 0)
