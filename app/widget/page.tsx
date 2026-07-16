@@ -1676,7 +1676,12 @@ function WidgetContent() {
           <div style={{ animation: 'fadeIn 0.2s ease both' }}>
             {announcements.length === 0 ? (
               <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingTop: 24 }}>No updates yet.</p>
-            ) : announcements.map(ann => {
+            ) : [...announcements].sort((a, b) => {
+                // Pinned first, then newest first — guaranteed regardless of the
+                // order the API or realtime updates deliver them in.
+                if (!!a.is_pinned !== !!b.is_pinned) return a.is_pinned ? -1 : 1
+                return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+              }).map(ann => {
               // Tag color mapping matching main page
               const TAG_COLORS: Record<string, { bg: string; color: string }> = {
                 'new_feature': { bg: '#dbeafe', color: '#0284c7' },

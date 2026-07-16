@@ -1606,19 +1606,25 @@ export default function InboxPage() {
   }
 
   // ── Review request ─────────────────────────────────────────────────────────
+  const [reviewSending, setReviewSending] = useState(false)
   const sendReviewRequest = async () => {
-    if (!selected || !companyId) return
-    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
-    await (supabase as any).from('messages').insert({
-      conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
-      sender_id: user.id, sender_name: me,
-      content: "We'd love your feedback! Could you take a moment to leave us a review? ⭐",
-    })
-    await (supabase as any).from('conversations').update({ review_requested: true, last_message_at: new Date().toISOString() }).eq('id', selected.id)
-    logEvent('review_request', 'Review request sent')
-    const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-    setMessages(msgs || [])
-    scrollBottom()
+    if (!selected || !companyId || reviewSending) return
+    setReviewSending(true)
+    try {
+      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
+      await (supabase as any).from('messages').insert({
+        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+        sender_id: user.id, sender_name: me,
+        content: "We'd love your feedback! Could you take a moment to leave us a review? ⭐",
+      })
+      await (supabase as any).from('conversations').update({ review_requested: true, last_message_at: new Date().toISOString() }).eq('id', selected.id)
+      logEvent('review_request', 'Review request sent')
+      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+      setMessages(msgs || [])
+      scrollBottom()
+    } finally {
+      setReviewSending(false)
+    }
   }
 
   // ── AI summary & todos ─────────────────────────────────────────────────────
