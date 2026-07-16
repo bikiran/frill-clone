@@ -127,12 +127,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       if (document.visibilityState !== 'visible') return   // don't sync in a background tab
       fetch('/api/cron/email-sync', { method: 'GET' }).catch(() => {})
     }
-    const t = setTimeout(sync, 4000)          // shortly after load
-    const iv = setInterval(sync, 120000)      // then every 2 minutes
-    document.addEventListener('visibilitychange', sync)
+    // Agent presence heartbeat — records that this agent is online so an inbound
+    // call can ring them. "Online" = seen in the last ~2 minutes.
+    const beat = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        fetch('/api/telnyx/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+          body: JSON.stringify({ companyId: company.id }),
+        }).catch(() => {})
+      } catch {}
+    }
+    const t = setTimeout(() => { sync(); beat() }, 4000)   // shortly after load
+    const iv = setInterval(sync, 120000)                    // email every 2 minutes
+    const hb = setInterval(beat, 45000)                     // presence every 45s
+    document.addEventListener('visibilitychange', () => { sync(); beat() })
     return () => {
       stop = true
-      clearTimeout(t); clearInterval(iv)
+      clearTimeout(t); clearInterval(iv); clearInterval(hb)
       document.removeEventListener('visibilitychange', sync)
     }
   }, [company?.id])

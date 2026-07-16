@@ -128,12 +128,12 @@ export async function POST(req: NextRequest) {
       const fromNum = payload?.from
       const toNum = payload?.to
 
-      // Inbound call just started — create a call row + link the caller's contact
+      // Inbound call just started — answer it and ring the online agents.
       if (eventType === 'call.initiated' && direction === 'incoming') {
-        const { data: integ } = await db.from('telnyx_integrations').select('company_id').eq('phone_number', toNum).maybeSingle()
+        const { data: integ } = await db.from('telnyx_integrations').select('*').eq('phone_number', toNum).maybeSingle()
         const companyId = integ?.company_id
-        if (companyId) {
-          // Match caller to an existing contact by phone
+        if (companyId && integ) {
+          // Match caller to a contact by phone.
           let contactId: string | null = null
           let callerName: string | null = null
           const { data: contacts } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).limit(500)
@@ -142,17 +142,144 @@ export async function POST(req: NextRequest) {
           if (match) { contactId = match.id; callerName = match.name }
 
           await db.from('calls').insert({
-            company_id: companyId,
-            contact_id: contactId,
-            direction: 'inbound',
-            from_number: fromNum,
-            to_number: toNum,
+            company_id: companyId, contact_id: contactId,
+            direction: 'inbound', from_number: fromNum, to_number: toNum,
             status: 'ringing',
             telnyx_call_control_id: callControlId,
             telnyx_call_session_id: sessionId,
             caller_name: callerName,
           })
+
+          try {
+            const svc = new TelnyxService(integ.api_key)
+
+            // Who's online right now? (heartbeat in the last 2 minutes)
+            const cutoff = new Date(Date.now() - 120000).toISOString()
+            const { data: online } = await db.from('agent_presence')
+              .select('sip_username').eq('company_id', companyId)
+              .gte('last_seen_at', cutoff).eq('available', true)
+
+            // Every agent's browser connects with the company SIP credential, so
+            // dialing that one SIP address rings all connected clients at once.
+            const sipUser = integ.sip_username
+            const anyOnline = (online || []).length > 0 && sipUser
+
+            // Answer the call so we can control it either way.
+            await svc.answerCall(callControlId, JSON.stringify({ role: 'inbound', companyId, contactId }))
+
+            if (anyOnline) {
+              // Ring the agents' WebRTC client. Telnyx dials the SIP URI as a new
+              // leg; when the agent answers we bridge (handled on call.answered of
+              // the child leg). timeout_secs controls how long before no-answer.
+              const ring = Number(integ.ring_seconds || 25)
+              await svc.createChildCall({
+                connection_id: integ.connection_id,
+                to: `sip:${sipUser}@sip.telnyx.com`,
+                from: fromNum,
+                timeout_secs: ring,
+                link_to: callControlId,
+                webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
+              })
+              // Record the parent so the follow-up events know the flow state.
+              await db.from('calls').update({ status: 'ringing_agents' })
+                .eq('telnyx_call_control_id', callControlId)
+            } else {
+              // Nobody online — straight to voicemail if enabled.
+              if (integ.voicemail_enabled !== false) {
+                await svc.speak(callControlId, integ.voicemail_greeting || 'Please leave a message after the tone.')
+                // record_start is triggered after the greeting finishes
+                // (call.speak.ended); mark state so that handler knows.
+                await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true })
+                  .eq('telnyx_call_control_id', callControlId)
+              } else {
+                await svc.hangupCall(callControlId)
+              }
+            }
+          } catch (e) {
+            console.error('[telnyx inbound] call control failed', e)
+          }
         }
+        return NextResponse.json({ ok: true })
+      }
+
+      // A child (agent) leg was answered — bridge it to the caller.
+      if (eventType === 'call.answered' && direction === 'outgoing') {
+        try {
+          // The parent call is linked; find it by session or client_state.
+          const { data: integRow } = await db.from('telnyx_integrations')
+            .select('*').eq('company_id', (event.payload?.client_state ? JSON.parse(Buffer.from(event.payload.client_state, 'base64').toString()).companyId : '') || '___').maybeSingle()
+          // Fall back: look up the ringing parent for this number.
+          const { data: parent } = await db.from('calls')
+            .select('*').eq('status', 'ringing_agents').order('created_at', { ascending: false }).limit(1)
+          const parentRow = parent?.[0]
+          if (parentRow?.telnyx_call_control_id && integRow?.api_key) {
+            const svc = new TelnyxService(integRow.api_key)
+            await svc.bridgeCalls(callControlId, parentRow.telnyx_call_control_id)
+            await db.from('calls').update({ status: 'in_progress', answered_at: new Date().toISOString() })
+              .eq('id', parentRow.id)
+          }
+        } catch (e) { console.error('[telnyx bridge] failed', e) }
+        return NextResponse.json({ ok: true })
+      }
+
+      // The greeting finished playing — start recording the voicemail.
+      if (eventType === 'call.speak.ended') {
+        try {
+          const { data: row } = await db.from('calls')
+            .select('*, telnyx_integrations!inner(api_key)').eq('telnyx_call_control_id', callControlId).maybeSingle()
+          const { data: c } = await db.from('calls').select('company_id, status').eq('telnyx_call_control_id', callControlId).maybeSingle()
+          if (c?.status === 'voicemail_greeting') {
+            const { data: integ2 } = await db.from('telnyx_integrations').select('api_key').eq('company_id', c.company_id).maybeSingle()
+            if (integ2?.api_key) {
+              const svc = new TelnyxService(integ2.api_key)
+              await svc.recordStart(callControlId, { max_length_secs: 180 })
+              await db.from('calls').update({ status: 'recording_voicemail' }).eq('telnyx_call_control_id', callControlId)
+            }
+          }
+        } catch (e) { console.error('[telnyx voicemail record] failed', e) }
+        return NextResponse.json({ ok: true })
+      }
+
+      // Voicemail recording is ready — attach it to the call.
+      if (eventType === 'call.recording.saved') {
+        try {
+          const url = event.payload?.recording_urls?.mp3 || event.payload?.recording_urls?.wav || event.payload?.public_recording_urls?.mp3
+          if (url) {
+            await db.from('calls').update({
+              recording_url: url,
+              status: 'voicemail',
+              is_voicemail: true,
+            }).eq('telnyx_call_control_id', callControlId)
+            // Notify the company there's a new voicemail.
+            const { data: c } = await db.from('calls').select('company_id, from_number, caller_name, contact_id').eq('telnyx_call_control_id', callControlId).maybeSingle()
+            if (c?.company_id) {
+              try { await notifyCompany({ db, companyId: c.company_id, type: 'call', message: `New voicemail from ${c.caller_name || c.from_number}`, actorName: c.caller_name || c.from_number }) } catch {}
+            }
+          }
+        } catch (e) { console.error('[telnyx voicemail save] failed', e) }
+        return NextResponse.json({ ok: true })
+      }
+
+      // No agent answered in time — Telnyx sends call.hangup on the child leg.
+      // If the parent is still ringing agents, fall through to voicemail.
+      if (eventType === 'call.hangup' && direction === 'outgoing') {
+        try {
+          const { data: parent } = await db.from('calls')
+            .select('*').eq('status', 'ringing_agents').order('created_at', { ascending: false }).limit(1)
+          const parentRow = parent?.[0]
+          if (parentRow) {
+            const { data: integ3 } = await db.from('telnyx_integrations').select('*').eq('company_id', parentRow.company_id).maybeSingle()
+            if (integ3?.api_key && parentRow.telnyx_call_control_id) {
+              const svc = new TelnyxService(integ3.api_key)
+              if (integ3.voicemail_enabled !== false) {
+                await svc.speak(parentRow.telnyx_call_control_id, integ3.voicemail_greeting || 'Please leave a message after the tone.')
+                await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true }).eq('id', parentRow.id)
+              } else {
+                await svc.hangupCall(parentRow.telnyx_call_control_id)
+              }
+            }
+          }
+        } catch (e) { console.error('[telnyx no-answer voicemail] failed', e) }
         return NextResponse.json({ ok: true })
       }
 

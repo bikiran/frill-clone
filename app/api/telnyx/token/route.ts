@@ -53,12 +53,19 @@ export async function POST(req: NextRequest) {
 
     // Reuse a stored credential if we have one, otherwise create one bound to
     // the company's connection.
-    let credentialId = (integ as any).sip_username // we store the credential id here
+    let credentialId = (integ as any).credential_id || (integ as any).sip_username // legacy: id was stored in sip_username
     if (!credentialId) {
       const cred = await svc.createTelephonyCredential(integ.connection_id, `colvy-${companyId.slice(0, 8)}`)
       credentialId = cred?.data?.id
+      // The credential's SIP username is what Call Control dials to ring this
+      // browser client (sip:<username>@sip.telnyx.com). Store BOTH the id (to
+      // mint tokens) and the sip_username (to route inbound calls).
+      const sipUsername = cred?.data?.sip_username || null
       if (credentialId) {
-        await db.from('telnyx_integrations').update({ sip_username: credentialId }).eq('company_id', companyId)
+        await db.from('telnyx_integrations').update({
+          credential_id: credentialId,
+          ...(sipUsername ? { sip_username: sipUsername } : {}),
+        }).eq('company_id', companyId)
       }
     }
     if (!credentialId) return NextResponse.json({ error: 'Could not create WebRTC credential' }, { status: 500 })
