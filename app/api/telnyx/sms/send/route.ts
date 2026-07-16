@@ -110,6 +110,10 @@ export async function POST(req: NextRequest) {
         // and the "Currently on: <page>" banner all showed stale web-widget data
         // for someone who is actually texting.
         channel: 'sms',
+        // Record the mobile we texted, so the customer's REPLY fast-path matches
+        // back to THIS conversation instead of spawning a new "+61…" thread.
+        sms_number: dest,
+        sms_enabled: true,
       }).eq('id', conversationId)
     }
 

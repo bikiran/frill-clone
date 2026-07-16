@@ -34,10 +34,32 @@ export async function POST(req: NextRequest) {
       const companyId = integ?.company_id
       if (!companyId) return NextResponse.json({ ok: true }) // not ours
 
-      // Find an existing conversation for this mobile, else create one
+      // Normalise phone numbers to their last 9 digits so E.164 (+61407207207)
+      // and local (0407207207) forms match.
+      const digits = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
+      const fromDigits = digits(from)
+
+      // 1) Exact sms_number match (fast path).
       let { data: conv } = await db.from('conversations')
         .select('*').eq('company_id', companyId).eq('sms_number', from)
         .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+
+      // 2) Match the sender to an existing CONTACT by phone, then reuse that
+      //    contact's most recent conversation — so a reply to an abandoned-cart
+      //    or any prior thread lands there instead of spawning a "+61…" chat.
+      let matchedContactId: string | null = conv?.contact_id || null
+      if (!conv && fromDigits) {
+        const { data: contacts } = await db.from('contacts')
+          .select('id, phone, name').eq('company_id', companyId).limit(1000)
+        const contact = (contacts || []).find((c: any) => c.phone && digits(c.phone) === fromDigits)
+        if (contact) {
+          matchedContactId = contact.id
+          const { data: contactConv } = await db.from('conversations')
+            .select('*').eq('company_id', companyId).eq('contact_id', contact.id)
+            .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+          if (contactConv) conv = contactConv
+        }
+      }
 
       if (!conv) {
         const { data: newConv } = await db.from('conversations').insert({
@@ -47,6 +69,7 @@ export async function POST(req: NextRequest) {
           sms_number: from,
           sms_enabled: true,
           channel_number: to,
+          contact_id: matchedContactId,
           status: 'open',
           is_unread: true,
           unread_count: 1,
@@ -61,6 +84,15 @@ export async function POST(req: NextRequest) {
             fetch(`${origin}/api/inbox/auto-reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: newConv.id }) })
           } catch {}
         }
+      } else if (!conv.sms_number || conv.contact_id !== matchedContactId) {
+        // We reused an existing conversation — make sure it now carries the SMS
+        // number (so future replies fast-path match) and the contact link.
+        await db.from('conversations').update({
+          sms_number: conv.sms_number || from,
+          sms_enabled: true,
+          channel_number: conv.channel_number || to,
+          ...(matchedContactId && !conv.contact_id ? { contact_id: matchedContactId } : {}),
+        }).eq('id', conv.id)
       }
 
       if (conv) {
