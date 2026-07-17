@@ -291,24 +291,60 @@ export async function POST(req: NextRequest) {
       // A child (agent) leg was answered — bridge it to the caller.
       if (eventType === 'call.answered' && isOutbound) {
         try {
-          // The parent call is linked; find it by session or client_state.
-          const { data: integRow } = await db.from('telnyx_integrations')
-            .select('*').eq('company_id', (event.payload?.client_state ? JSON.parse(Buffer.from(event.payload.client_state, 'base64').toString()).companyId : '') || '___').maybeSingle()
-          // Fall back: look up the ringing parent for this number.
+          // Find the ringing caller leg to bridge to. The child (agent) leg was
+          // created with link_to the parent, so the most recent 'ringing_agents'
+          // call for a company is the parent.
           const { data: parent } = await db.from('calls')
             .select('*').eq('status', 'ringing_agents').order('created_at', { ascending: false }).limit(1)
           const parentRow = parent?.[0]
-          if (parentRow?.telnyx_call_control_id && integRow?.api_key) {
-            const svc = new TelnyxService(integRow.api_key)
+          // Get the api_key from that call's company (reliable), not client_state.
+          let apiKey: string | null = null
+          if (parentRow?.company_id) {
+            const { data: integRow } = await db.from('telnyx_integrations')
+              .select('api_key').eq('company_id', parentRow.company_id).maybeSingle()
+            apiKey = integRow?.api_key || null
+          }
+          if (parentRow?.telnyx_call_control_id && apiKey) {
+            const svc = new TelnyxService(apiKey)
             // Bridge the agent leg to the caller. This auto-answers the caller
             // (who was ringing on the network) and connects two-way audio.
             await svc.bridgeCalls(callControlId, parentRow.telnyx_call_control_id)
-            await db.from('calls').update({ status: 'in_progress', answered_at: new Date().toISOString() })
-              .eq('id', parentRow.id)
+            // Remember BOTH leg ids on the call so a hangup from either side can
+            // tear down the other.
+            await db.from('calls').update({
+              status: 'in_progress',
+              answered_at: new Date().toISOString(),
+              agent_call_control_id: callControlId,
+            }).eq('id', parentRow.id)
+            console.log('[telnyx bridge] bridged agent leg to caller', { agent: callControlId, caller: parentRow.telnyx_call_control_id })
+          } else {
+            console.error('[telnyx bridge] could not bridge — missing parent or api_key', { hasParent: !!parentRow, hasKey: !!apiKey })
           }
         } catch (e) { console.error('[telnyx bridge] failed', e) }
         return NextResponse.json({ ok: true })
       }
+
+      // Either leg hung up — tear down the OTHER leg so a browser End (agent leg
+      // hangup) also drops the caller, and vice versa.
+      if (eventType === 'call.hangup') {
+        try {
+          const { data: rows } = await db.from('calls')
+            .select('*').or(`telnyx_call_control_id.eq.${callControlId},agent_call_control_id.eq.${callControlId}`)
+            .order('created_at', { ascending: false }).limit(1)
+          const row = rows?.[0]
+          if (row?.company_id) {
+            const { data: integRow } = await db.from('telnyx_integrations').select('api_key').eq('company_id', row.company_id).maybeSingle()
+            if (integRow?.api_key) {
+              const svc = new TelnyxService(integRow.api_key)
+              // The leg that DIDN'T hang up is the one to drop.
+              const other = row.telnyx_call_control_id === callControlId ? row.agent_call_control_id : row.telnyx_call_control_id
+              if (other) { try { await svc.hangupCall(other) } catch {} }
+            }
+          }
+        } catch (e) { console.error('[telnyx hangup teardown] failed', e) }
+        // Fall through to the normal hangup status handling below.
+      }
+
 
       // The greeting finished playing — start recording the voicemail.
       if (eventType === 'call.speak.ended') {
