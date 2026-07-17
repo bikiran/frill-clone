@@ -37,16 +37,20 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) { console.error('[telnyx token] outbound profile heal failed', e) }
 
-    // SELF-HEAL 2 — INBOUND. A customer ringing the business number gets an
-    // engaged/busy tone if the number isn't routed to this WebRTC connection:
-    // Telnyx has nowhere to send the call, so it rejects it. Make sure the
-    // company's number points at the connection we're about to hand a token for.
+    // ROUTING (Option B — Voice API / Call Control): the number must be assigned
+    // to the VOICE API APPLICATION so inbound calls fire our webhook. Critically,
+    // we NO LONGER re-point the number on every token mint — the old code snapped
+    // it back to the WebRTC connection each time Colvy loaded, stealing it from
+    // the Voice API app and breaking inbound. We only nudge it toward the Voice
+    // API app when its id is explicitly configured; otherwise we leave whatever
+    // routing is set in the Telnyx UI untouched so it STAYS put.
     try {
-      if (integ.phone_number && integ.connection_id) {
+      const voiceAppId = (integ as any).voice_api_application_id
+      if (integ.phone_number && voiceAppId) {
         const num = await svc.getNumber(integ.phone_number)
-        if (num && String(num.connection_id || '') !== String(integ.connection_id)) {
-          await svc.assignNumberToConnection(integ.phone_number, integ.connection_id)
-          console.log('[telnyx token] re-pointed', integ.phone_number, '->', integ.connection_id)
+        if (num && String(num.connection_id || '') !== String(voiceAppId)) {
+          await svc.assignNumberToConnection(integ.phone_number, voiceAppId)
+          console.log('[telnyx token] pointed number at Voice API app', integ.phone_number, '->', voiceAppId)
         }
       }
     } catch (e) { console.error('[telnyx token] number routing heal failed', e) }
