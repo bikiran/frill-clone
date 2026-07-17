@@ -315,6 +315,10 @@ export class TelnyxService {
   async startPlayback(callControlId: string, audioUrl: string, loop = false) {
     return this.cc(callControlId, 'playback_start', { audio_url: audioUrl, loop: loop ? 'infinity' : '1' })
   }
+  // Stop any ringback/playback on the leg (before bridging to the agent).
+  async stopPlayback(callControlId: string) {
+    return this.cc(callControlId, 'playback_stop', {})
+  }
 
   // ── Self-serve number provisioning ─────────────────────────────────────────
 

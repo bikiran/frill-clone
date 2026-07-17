@@ -226,20 +226,20 @@ export async function POST(req: NextRequest) {
               willRing: anyOnline,
             })
 
-            // Answer the call so we can control it either way.
+            // Answer the caller so we can control the call, then immediately
+            // play RINGBACK TONE to them. Previously we answered and left dead
+            // air while the browser rang — so the caller's phone stopped ringing,
+            // started a timer, heard silence, and hung up (the two legs looked
+            // unsynced). Ringback keeps them hearing "ringing" until the agent
+            // actually answers and we bridge.
             await svc.answerCall(callControlId, JSON.stringify({ role: 'inbound', companyId, contactId }))
 
             if (anyOnline) {
-              // Ring the agents' WebRTC client. Telnyx dials the SIP URI as a new
-              // leg; when the agent answers we bridge (handled on call.answered of
-              // the child leg). timeout_secs controls how long before no-answer.
               const ring = Number(integ.ring_seconds || 25)
               const sipTarget = `sip:${sipUser}@sip.telnyx.com`
-              // Originate the child call FROM the same Voice API App the call came
-              // in on (eventConnectionId), not integ.connection_id — Telnyx only
-              // accepts a valid Call Control App id here and rejects the credential
-              // connection with "connection_id is invalid or does not exist".
               const dialConnectionId = eventConnectionId || (integ as any).voice_api_application_id || integ.connection_id
+              // Play ringback to the caller while the agent's browser rings.
+              try { await svc.startPlayback(callControlId, "https://ringtone.telnyx.com/ringback.mp3", true) } catch (e) { console.error('[telnyx inbound] ringback failed', e) }
               console.log('[telnyx inbound] dialing agent client', { sipTarget, dialConnectionId })
               try {
                 const child = await svc.createChildCall({
@@ -293,6 +293,9 @@ export async function POST(req: NextRequest) {
           const parentRow = parent?.[0]
           if (parentRow?.telnyx_call_control_id && integRow?.api_key) {
             const svc = new TelnyxService(integRow.api_key)
+            // Stop the ringback tone we were playing to the caller, THEN bridge,
+            // so they hear the agent and not ringback-over-voice.
+            try { await svc.stopPlayback(parentRow.telnyx_call_control_id) } catch {}
             await svc.bridgeCalls(callControlId, parentRow.telnyx_call_control_id)
             await db.from('calls').update({ status: 'in_progress', answered_at: new Date().toISOString() })
               .eq('id', parentRow.id)
