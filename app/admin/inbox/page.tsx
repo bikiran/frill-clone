@@ -2672,6 +2672,42 @@ export default function InboxPage() {
             mask-image: linear-gradient(to right, #000 88%, transparent 100%);
           }
           .inbox-thread-header .inbox-header-tools::-webkit-scrollbar { display: none; }
+
+          /* Overdue badge tooltip — appears INSTANTLY on hover (no browser
+             title-delay), larger, with a quick pop animation. */
+          .overdue-badge .overdue-tip {
+            position: absolute;
+            top: 50%;
+            right: calc(100% + 8px);
+            transform: translateY(-50%) scale(0.92);
+            transform-origin: right center;
+            width: 230px;
+            background: #1f2937;
+            color: #fff;
+            font-size: 12.5px;
+            line-height: 1.4;
+            font-weight: 500;
+            padding: 9px 12px;
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 100;
+            transition: opacity 90ms ease, transform 90ms ease;
+          }
+          .overdue-badge:hover .overdue-tip {
+            opacity: 1;
+            transform: translateY(-50%) scale(1);
+          }
+          .overdue-badge .overdue-tip::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 100%;
+            transform: translateY(-50%);
+            border: 6px solid transparent;
+            border-left-color: #1f2937;
+          }
           .inbox-thread-header .inbox-header-tools > * { flex-shrink: 0; }
 
           /* Bigger, thumb-friendly hit targets (Apple's 44px guidance) */
@@ -3711,12 +3747,16 @@ export default function InboxPage() {
             const accent = companyInfo?.accent_color || 'var(--coral)'
             const unread = conv.is_unread && selected?.id !== conv.id
 
-            // How long has the customer been waiting for a reply?
-            const waitingSince = (c as any).last_customer_message_at
+            // How long has the customer been waiting for a reply? Only flag a
+            // conversation as overdue when it's genuinely unanswered — i.e. it's
+            // UNREAD (the customer's latest message hasn't been actioned) AND the
+            // last activity is old. The old code read last_customer_message_at,
+            // which is never kept current, so it showed stale "129 hours" even
+            // right after a live back-and-forth.
             let waitingHours = 0
-            if (waitingSince && conv.status !== 'closed') {
-              const p = parseTs(waitingSince)
-              waitingHours = p ? (Date.now() - p.getTime()) / 3600000 : 0
+            const lastAt = parseTs(conv.last_message_at)
+            if (lastAt && conv.status !== 'closed' && conv.status !== 'resolved' && (c as any).is_unread) {
+              waitingHours = (Date.now() - lastAt.getTime()) / 3600000
             }
             const isOverdue = waitingHours >= 3
 
@@ -3730,15 +3770,20 @@ export default function InboxPage() {
                   <span style={{ fontSize: 13.5, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {displayName}
                   </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 6 }}>
                   {isOverdue && (
-                    <span
-                      title={`${displayName} has been waiting for a reply for over ${Math.floor(waitingHours)} hours. Please provide a reply or consider closing the conversation.`}
-                      style={{ display: 'inline-flex', flexShrink: 0, color: '#dc2626' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg>
+                    <span className="overdue-badge" style={{ position: 'relative', display: 'inline-flex', color: '#f59e0b' }}>
+                      {/* Gentle clock icon (amber, not a red alert) — a nudge, not
+                          an error about the customer. */}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                      <span className="overdue-tip">
+                        Waiting {Math.floor(waitingHours)}h for a reply — reply or close this conversation.
+                      </span>
                     </span>
                   )}
+                  <span style={{ fontSize: 10.5, color: '#9ca3af', fontStyle: 'italic' }}>{listTime(conv.last_message_at)}</span>
                 </div>
-                <span style={{ fontSize: 10.5, color: '#9ca3af', flexShrink: 0, marginLeft: 6, fontStyle: 'italic' }}>{listTime(conv.last_message_at)}</span>
               </div>
 
               {/* Source tag(s) — channel plus order status when both apply */}
