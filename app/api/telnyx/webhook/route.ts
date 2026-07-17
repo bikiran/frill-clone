@@ -189,14 +189,22 @@ export async function POST(req: NextRequest) {
             try { await db.from('telnyx_integrations').update({ voice_api_application_id: eventConnectionId }).eq('company_id', companyId) } catch {}
           }
 
-          await db.from('calls').insert({
-            company_id: companyId, contact_id: contactId,
-            direction: 'inbound', from_number: fromNum, to_number: toNum,
-            status: 'ringing',
-            telnyx_call_control_id: callControlId,
-            telnyx_call_session_id: sessionId,
-            caller_name: callerName,
-          })
+          // Bump the caller's conversation to the top of the inbox — an incoming
+          // call is a fresh, notable event.
+          if (contactId) {
+            try {
+              const { data: conv } = await db.from('conversations')
+                .select('id').eq('company_id', companyId).eq('contact_id', contactId)
+                .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+              if (conv?.id) {
+                await db.from('conversations').update({
+                  last_message: `📞 Incoming call`,
+                  last_message_at: new Date().toISOString(),
+                  is_unread: true,
+                }).eq('id', conv.id)
+              }
+            } catch {}
+          }
 
           try {
             const svc = new TelnyxService(integ.api_key)

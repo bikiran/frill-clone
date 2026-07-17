@@ -203,6 +203,16 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
         callRowId.current = row?.id || null
       } catch {}
 
+      // Bump the conversation to the top of the inbox — a call is a new, notable
+      // event, so it shouldn't stay buried under older-activity threads.
+      if (conversationId && companyId) {
+        try {
+          await (supabase as any).from('conversations').update({
+            last_message: `📞 Call started`,
+            last_message_at: new Date().toISOString(),
+          }).eq('id', conversationId)
+        } catch {}
+      }
       // 3. Load the Telnyx WebRTC SDK and connect
       const { TelnyxRTC } = await import('@telnyx/webrtc')
       const client = new TelnyxRTC({ login_token: token })
