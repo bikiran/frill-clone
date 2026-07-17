@@ -159,6 +159,12 @@ export async function POST(req: NextRequest) {
       const direction = payload?.direction // Telnyx: 'incoming' | 'outgoing' (sometimes 'inbound'/'outbound')
       const fromNum = payload?.from
       const toNum = payload?.to
+      // The connection_id ON THE INBOUND EVENT is the Voice API (Call Control)
+      // App the call arrived through — which is the ONLY valid connection_id to
+      // originate the child call to the browser. Using integ.connection_id
+      // (which may hold the WebRTC/credential connection) makes Telnyx reject
+      // the dial with "requested connection_id is invalid or does not exist".
+      const eventConnectionId = payload?.connection_id
       const isInbound = direction === 'incoming' || direction === 'inbound'
       const isOutbound = direction === 'outgoing' || direction === 'outbound'
 
@@ -176,6 +182,12 @@ export async function POST(req: NextRequest) {
           const digitsOf = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
           const match = (contacts || []).find((c: any) => c.phone && digitsOf(c.phone) === digitsOf(fromNum))
           if (match) { contactId = match.id; callerName = match.name }
+
+          // Remember which Voice API App the number rings through, so other code
+          // paths (and the diag) know the valid Call Control connection.
+          if (eventConnectionId && (integ as any).voice_api_application_id !== eventConnectionId) {
+            try { await db.from('telnyx_integrations').update({ voice_api_application_id: eventConnectionId }).eq('company_id', companyId) } catch {}
+          }
 
           await db.from('calls').insert({
             company_id: companyId, contact_id: contactId,
@@ -221,10 +233,15 @@ export async function POST(req: NextRequest) {
               // the child leg). timeout_secs controls how long before no-answer.
               const ring = Number(integ.ring_seconds || 25)
               const sipTarget = `sip:${sipUser}@sip.telnyx.com`
-              console.log('[telnyx inbound] dialing agent client', { sipTarget, connection_id: integ.connection_id })
+              // Originate the child call FROM the same Voice API App the call came
+              // in on (eventConnectionId), not integ.connection_id — Telnyx only
+              // accepts a valid Call Control App id here and rejects the credential
+              // connection with "connection_id is invalid or does not exist".
+              const dialConnectionId = eventConnectionId || (integ as any).voice_api_application_id || integ.connection_id
+              console.log('[telnyx inbound] dialing agent client', { sipTarget, dialConnectionId })
               try {
                 const child = await svc.createChildCall({
-                  connection_id: integ.connection_id,
+                  connection_id: dialConnectionId,
                   to: sipTarget,
                   from: fromNum,
                   timeout_secs: ring,
