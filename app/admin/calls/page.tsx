@@ -135,6 +135,15 @@ export default function CallsPage() {
                   {c.direction === 'inbound' ? c.from_number : c.to_number}
                   {c.agent_name ? ` · ${c.agent_name}` : ''}
                 </p>
+                {/* Diagnostic reason — the webhook records WHY a call went to
+                    voicemail or failed (e.g. "[ringing sip:…]", "[ring failed: …]",
+                    "[to voicemail: no agents online]"). Surface it so routing
+                    issues are visible without digging into the database. */}
+                {c.transcription && /^\[/.test(c.transcription) && (
+                  <p style={{ margin: '3px 0 0', fontSize: 11, color: '#b45309', fontFamily: 'ui-monospace, monospace', background: '#fffbeb', padding: '2px 6px', borderRadius: 4, display: 'inline-block' }}>
+                    {c.transcription}
+                  </p>
+                )}
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
                 <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)' }}>{new Date(c.created_at).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' })}</p>
