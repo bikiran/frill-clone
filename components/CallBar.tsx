@@ -43,6 +43,8 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const timerRef = useRef<any>(null)
   const callRowId = useRef<string | null>(null)
   const hangupCause = useRef<string | null>(null)
+  const placedRef = useRef(false)   // has newCall been placed for this attempt?
+  const endedRef = useRef(false)    // has this call ended? (blocks redial on reconnect)
   const audioCtxRef = useRef<any>(null)
   const ringbackRef = useRef<any>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
@@ -164,6 +166,8 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
     if (!companyId) { setErrorMsg('No company'); setState('error'); return }
 
     setState('connecting'); setErrorMsg('')
+    placedRef.current = false
+    endedRef.current = false
     try {
       // 0. Ask for the microphone up-front. If it's blocked, fail NOW with a
       // clear message instead of a cryptic mid-call error from the SDK.
@@ -206,9 +210,15 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       // silent — the SDK has nowhere to play the far end's audio.
       ;(client as any).remoteElement = 'colvy-callbar-audio'
       clientRef.current = client
+      endedRef.current = false
 
       client.on('telnyx.ready', () => {
-        // 4. Place the call
+        // Place the call exactly ONCE. Without this guard, if the socket drops
+        // after a hangup and auto-reconnects, telnyx.ready fires again and
+        // places a SECOND newCall — an endless redial loop with a blaring
+        // disconnect tone. Once a call has been placed or ended, never redial.
+        if (placedRef.current || endedRef.current) return
+        placedRef.current = true
         const call = client.newCall({
           destinationNumber: dest,
           callerNumber: from || undefined,
@@ -326,6 +336,10 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   }
 
   const endCall = async (userInitiated = true) => {
+    // Mark ended FIRST so any socket reconnect can't place a new call, and so a
+    // second hangup/destroy notification doesn't re-run all of this.
+    if (endedRef.current) return
+    endedRef.current = true
     if (timerRef.current) clearInterval(timerRef.current)
     if (userInitiated) { try { callRef.current?.hangup?.() } catch {} }
     stopRecording()   // triggers upload → transcription → AI summary
@@ -414,7 +428,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       </div>
       {state === 'active' && (
         <button type="button" onClick={toggleMute} title={muted ? 'Unmute' : 'Mute'}
-          style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: muted ? '#dc2626' : 'rgba(255,255,255,0.15)', color: '#fff', cursor: 'pointer', fontSize: 14 }}>
+          style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: muted ? '#dc2626' : 'rgba(255,255,255,0.15)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {muted ? (
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
           ) : (
