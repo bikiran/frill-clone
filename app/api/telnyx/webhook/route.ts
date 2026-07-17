@@ -234,20 +234,17 @@ export async function POST(req: NextRequest) {
               willRing: anyOnline,
             })
 
-            // Answer the caller so we can control the call, then immediately
-            // play RINGBACK TONE to them. Previously we answered and left dead
-            // air while the browser rang — so the caller's phone stopped ringing,
-            // started a timer, heard silence, and hung up (the two legs looked
-            // unsynced). Ringback keeps them hearing "ringing" until the agent
-            // actually answers and we bridge.
-            await svc.answerCall(callControlId, JSON.stringify({ role: 'inbound', companyId, contactId }))
-
+            // Do NOT answer the caller here. In Call Control, answering the
+            // caller and THEN dialing the agent means the caller is "connected"
+            // to a leg that plays either dead air or ringback we control — and
+            // playing media on that leg held its audio path, causing ONE-WAY
+            // audio after bridge. Instead we leave the caller RINGING on the
+            // network (they hear real ringback) and dial the agent. The bridge
+            // (on agent answer) auto-answers the caller and connects both ways.
             if (anyOnline) {
               const ring = Number(integ.ring_seconds || 25)
               const sipTarget = `sip:${sipUser}@sip.telnyx.com`
               const dialConnectionId = eventConnectionId || (integ as any).voice_api_application_id || integ.connection_id
-              // Play ringback to the caller while the agent's browser rings.
-              try { await svc.startPlayback(callControlId, "https://ringtone.telnyx.com/ringback.mp3", true) } catch (e) { console.error('[telnyx inbound] ringback failed', e) }
               console.log('[telnyx inbound] dialing agent client', { sipTarget, dialConnectionId })
               try {
                 const child = await svc.createChildCall({
@@ -265,6 +262,7 @@ export async function POST(req: NextRequest) {
                 console.error('[telnyx inbound] createChildCall failed', dialErr?.message || dialErr)
                 // Fall back to voicemail so the caller isn't left hanging.
                 if (integ.voicemail_enabled !== false) {
+                  try { await svc.answerCall(callControlId) } catch {}
                   await svc.speak(callControlId, integ.voicemail_greeting || 'Please leave a message after the tone.')
                   await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, transcription: `[ring failed: ${dialErr?.message || 'dial error'}]` })
                     .eq('telnyx_call_control_id', callControlId)
@@ -275,6 +273,7 @@ export async function POST(req: NextRequest) {
               const reason = !sipUser ? 'no sip_username on integration (open Colvy to provision it)' : 'no agents online (heartbeat in last 2 min)'
               console.log('[telnyx inbound] going to voicemail —', reason)
               if (integ.voicemail_enabled !== false) {
+                try { await svc.answerCall(callControlId) } catch {}
                 await svc.speak(callControlId, integ.voicemail_greeting || 'Please leave a message after the tone.')
                 await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, transcription: `[to voicemail: ${reason}]` })
                   .eq('telnyx_call_control_id', callControlId)
@@ -301,9 +300,8 @@ export async function POST(req: NextRequest) {
           const parentRow = parent?.[0]
           if (parentRow?.telnyx_call_control_id && integRow?.api_key) {
             const svc = new TelnyxService(integRow.api_key)
-            // Stop the ringback tone we were playing to the caller, THEN bridge,
-            // so they hear the agent and not ringback-over-voice.
-            try { await svc.stopPlayback(parentRow.telnyx_call_control_id) } catch {}
+            // Bridge the agent leg to the caller. This auto-answers the caller
+            // (who was ringing on the network) and connects two-way audio.
             await svc.bridgeCalls(callControlId, parentRow.telnyx_call_control_id)
             await db.from('calls').update({ status: 'in_progress', answered_at: new Date().toISOString() })
               .eq('id', parentRow.id)
