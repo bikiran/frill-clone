@@ -256,9 +256,11 @@ export async function POST(req: NextRequest) {
                   webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
                 })
                 const agentLegId = (child as any)?.data?.call_control_id || null
-                console.log('[telnyx inbound] child call created', { id: agentLegId })
-                await db.from('calls').update({ status: 'ringing_agents', transcription: `[ringing ${sipTarget}]`, agent_call_control_id: agentLegId })
-                  .eq('telnyx_call_control_id', callControlId)
+                console.log('[telnyx inbound] child call created', { agentLegId, childKeys: Object.keys((child as any)?.data || {}) })
+                const { error: updErr, data: updData } = await db.from('calls')
+                  .update({ status: 'ringing_agents', transcription: `[ringing ${sipTarget}]`, agent_call_control_id: agentLegId })
+                  .eq('telnyx_call_control_id', callControlId).select('id, agent_call_control_id')
+                console.log('[telnyx inbound] stored agent leg', { updErr: updErr?.message, updData })
               } catch (dialErr: any) {
                 console.error('[telnyx inbound] createChildCall failed', dialErr?.message || dialErr)
                 // Fall back to voicemail so the caller isn't left hanging.
