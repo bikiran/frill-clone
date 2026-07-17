@@ -134,14 +134,42 @@ export async function POST(req: NextRequest) {
       }
     } catch {}
 
-    // If the connection's SIP username/password are stored, the client should
-    // REGISTER with them (credential login) — that's the only way this Credential
-    // SIP Connection delivers inbound calls. Fall back to the token otherwise.
+    // Ensure the browser has WORKING registration credentials on the credential
+    // connection. Copy-pasting the password from the Telnyx UI proved unreliable
+    // (LOGIN_FAILED), so instead we set a KNOWN password on the connection via
+    // the API and register with that. This connection (confirmed a Credential
+    // Connection) accepts the PATCH, unlike the earlier Voice-API-app attempt.
+    let sipUser = (integ as any).sip_conn_username
+    let sipPassword = (integ as any).sip_conn_password
+    // Re-provision if we have no creds, or the stored ones just failed (we detect
+    // failure by the client reporting LOGIN_FAILED, but here we simply ensure a
+    // fresh known password is set on first use / when missing).
+    if (integ.connection_id && (!sipUser || !sipPassword || !(integ as any).sip_conn_verified)) {
+      try {
+        // Keep the connection's existing username (userinfo50106) so outbound
+        // isn't disrupted — only set a fresh KNOWN password we can register with.
+        const conn = await svc.getCredentialConnection(integ.connection_id)
+        const existingUser = conn?.user_name || sipUser || `colvy${companyId.replace(/-/g, '').slice(0, 10)}`
+        const newPass = `Cv${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2).toUpperCase()}9!`
+        await svc.setConnectionCredentials(integ.connection_id, existingUser, newPass)
+        await db.from('telnyx_integrations').update({
+          sip_conn_username: existingUser,
+          sip_conn_password: newPass,
+          sip_conn_verified: true,
+        }).eq('company_id', companyId)
+        sipUser = existingUser
+        sipPassword = newPass
+        console.log('[telnyx token] provisioned known SIP connection password', { sipUser })
+      } catch (e: any) {
+        console.error('[telnyx token] could not set connection password', e?.message || e)
+      }
+    }
+
     return NextResponse.json({
       token,
       from: fromNumber,
-      sipUser: (integ as any).sip_conn_username || null,
-      sipPassword: (integ as any).sip_conn_password || null,
+      sipUser: sipUser || null,
+      sipPassword: sipPassword || null,
     })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

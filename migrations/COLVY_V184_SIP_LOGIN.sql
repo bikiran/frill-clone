@@ -12,3 +12,5 @@
 ALTER TABLE telnyx_integrations ADD COLUMN IF NOT EXISTS sip_conn_username TEXT;
 ALTER TABLE telnyx_integrations ADD COLUMN IF NOT EXISTS sip_conn_password TEXT;
 NOTIFY pgrst, 'reload schema';
+ALTER TABLE telnyx_integrations ADD COLUMN IF NOT EXISTS sip_conn_verified BOOLEAN DEFAULT false;
+NOTIFY pgrst, 'reload schema';
