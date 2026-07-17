@@ -595,12 +595,25 @@ input[type="range"] {
   align-items: start;
 }
 
-/* On narrower screens, wrap into fewer columns instead of scrolling. */
+/* On narrower screens, switch to a horizontal scroll of fixed-width columns
+   (Trello/Coax-style) rather than stacking them vertically — so all four
+   statuses stay side-by-side and you swipe across them. */
 @media (max-width: 1024px) {
-  .kanban-scroll { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kanban-scroll {
+    display: flex;
+    grid-template-columns: none;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .kanban-scroll > * {
+    flex: 0 0 78%;
+    max-width: 320px;
+    scroll-snap-align: start;
+  }
 }
-@media (max-width: 560px) {
-  .kanban-scroll { grid-template-columns: 1fr; }
+@media (min-width: 561px) and (max-width: 1024px) {
+  .kanban-scroll > * { flex-basis: 45%; }
 }
 
 .kanban-scroll::-webkit-scrollbar {

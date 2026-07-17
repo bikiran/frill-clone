@@ -75,7 +75,13 @@ export default function HomePage() {
       return
     }
     // Respect the company's configured default homepage. If it's not "ideas",
-    // send the visitor to that page instead of the ideas board.
+    // send the visitor to that page instead of the ideas board — BUT only for a
+    // bare visit to the homepage. If the URL asks for ideas explicitly
+    // (?view=ideas) or points at a specific idea (?idea=… or #idea-…), stay here
+    // so the ideas board is always reachable even when Help is the homepage.
+    const params = new URLSearchParams(window.location.search)
+    const wantsIdeas = params.get('view') === 'ideas' || params.has('idea') || window.location.hash.startsWith('#idea')
+    if (wantsIdeas) return
     const map: Record<string, string> = { roadmap: '/roadmap', announcements: '/announcements', help: '/help' }
     const goHome = (home?: string) => { if (home && map[home]) { window.location.replace(map[home]); return true } return false }
     try {

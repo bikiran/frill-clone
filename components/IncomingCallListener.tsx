@@ -179,8 +179,8 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       // (webrtc-internals showed PeerConnections: 0 → no audio path).
       callRef.current?.answer?.()
     } catch (e) { console.error('[telnyx] answer failed', e) }
-    // Tell the server to bridge the caller to us — don't rely on the browser
-    // leg's answer webhook firing (its direction/timing is unreliable).
+    // Tell the server to bridge the caller to us. The server bridges the caller
+    // leg to the agent (child) leg whose Call Control id was stored at dial time.
     if (companyId) {
       fetch('/api/telnyx/call-action', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

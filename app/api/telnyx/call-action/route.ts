@@ -24,13 +24,27 @@ export async function POST(req: NextRequest) {
     if (!integ?.api_key) return NextResponse.json({ error: 'no api key' }, { status: 400 })
     const svc = new TelnyxService(integ.api_key)
 
-    // The ringing caller leg for this company.
-    const { data: parent } = await db.from('calls')
-      .select('*').eq('company_id', companyId)
-      .in('status', ['ringing_agents', 'ringing', 'in_progress'])
-      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+    // The ringing caller leg for this company. Retry briefly: the browser can
+    // answer a hair before the dial's DB write lands, so poll up to ~2s for the
+    // agent leg id rather than giving up with "not recorded yet".
+    let parent: any = null
+    for (let i = 0; i < 8; i++) {
+      const { data } = await db.from('calls')
+        .select('*').eq('company_id', companyId)
+        .in('status', ['ringing_agents', 'ringing', 'in_progress'])
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      parent = data
+      if (parent?.agent_call_control_id || action === 'hangup') break
+      await new Promise(r => setTimeout(r, 250))
+    }
     if (!parent?.telnyx_call_control_id) {
       return NextResponse.json({ error: 'no active caller leg' }, { status: 404 })
+    }
+    if (action === 'answer' && !(parent as any).agent_call_control_id) {
+      // The agent leg id was never stored — almost always the migration
+      // COLVY_V185_AGENT_LEG.sql hasn't run (agent_call_control_id column
+      // missing), so the dial-time UPDATE silently failed.
+      return NextResponse.json({ ok: false, bridged: false, error: 'agent_call_control_id missing — run migration COLVY_V185_AGENT_LEG.sql' }, { status: 200 })
     }
 
     if (action === 'hangup') {
