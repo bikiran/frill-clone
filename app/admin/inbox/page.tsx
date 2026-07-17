@@ -128,6 +128,15 @@ function timeAgo(d: string) {
   if (s < 86400) return `${Math.floor(s/3600)}h`; return `${Math.floor(s/86400)}d`
 }
 
+// Coax-style list timestamp: "6:12 PM - 17/7"
+function listTime(d: string) {
+  if (!d) return ''
+  const parsed = new Date(d.endsWith?.('Z') ? d : d + 'Z')
+  if (isNaN(parsed.getTime())) return ''
+  const t = parsed.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true })
+  return `${t} · ${parsed.getDate()}/${parsed.getMonth() + 1}`
+}
+
 // Safe time formatter — handles null, undefined, and non-ISO timestamps
 function fmtTime(d: string | undefined | null) {
   if (!d) return ''
@@ -739,6 +748,7 @@ export default function InboxPage() {
     .filter(k => filters[k]).length + (filters.oldestFirst ? 1 : 0)
   const resetFilters = () => setFilters({ dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', oldestFirst: false })
   const [showAssignMenu, setShowAssignMenu] = useState(false)
+  const [assignSearch, setAssignSearch] = useState('')
   const [showContactEdit, setShowContactEdit] = useState(false)
   const [editContact, setEditContact] = useState<Partial<Contact>>({})
   const [aiDetected, setAiDetected] = useState<{ phone?: string | null; email?: string | null; address?: string | null } | null>(null)
@@ -887,11 +897,6 @@ export default function InboxPage() {
   const loadConversations = useCallback(async (cid?: string | null) => {
     const id = cid || companyId
     if (!id) return
-    // Clear the list IMMEDIATELY so a tap during the fetch can't land on a
-    // stale row from the previous tab (Open→Closed briefly showed Open rows
-    // while this query was in flight, and a click during that gap opened the
-    // wrong conversation).
-    setConversations([])
     // NOTE: conversations.contact_id has no FK to contacts in some deployments,
     // so a PostgREST embed (`contacts(...)`) fails the WHOLE query and returns
     // nothing (blank inbox). Fetch conversations plainly, then attach contacts.
@@ -1719,17 +1724,21 @@ export default function InboxPage() {
     }
   }, [messages, contact])
 
-  // A single scroll shortly after opening a conversation often lands short —
-  // images/avatars in the thread finish loading a moment later and grow the
-  // container height, leaving a gap the user had to close by scrolling
-  // manually. Re-run the scroll a few times over the next second to catch
-  // that late layout growth, using 'auto' (instant) so each catch-up jump
-  // doesn't fight an in-flight smooth-scroll animation.
+  // Scroll to the newest message. One smooth scroll for the normal case, then a
+  // SINGLE instant catch-up ~400ms later ONLY if late-loading images grew the
+  // thread past where we landed — this avoids both the old "lands short" gap and
+  // the jittery multi-jump behaviour.
   const scrollBottom = () => {
-    const jump = () => messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
-    setTimeout(jump, 60)
-    setTimeout(jump, 300)
-    setTimeout(jump, 700)
+    const el = messagesEndRef.current
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    setTimeout(() => {
+      const el2 = messagesEndRef.current
+      if (!el2) return
+      const r = el2.getBoundingClientRect()
+      // Only nudge if the anchor ended up below the viewport (content grew).
+      if (r.top > window.innerHeight) el2.scrollIntoView({ behavior: 'auto', block: 'end' })
+    }, 450)
   }
 
   // ── Send reply ─────────────────────────────────────────────────────────────
@@ -2555,6 +2564,7 @@ export default function InboxPage() {
 
   const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', fontFamily: 'inherit' }
   const fieldBtn = (color: string): React.CSSProperties => ({ width: 24, height: 24, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 })
+  const cardAction = (bg: string, color: string): React.CSSProperties => ({ width: 46, height: 46, borderRadius: 12, border: 'none', background: bg, color, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' })
 
   return (
     <div className={`inbox-root inbox-pane-${mobilePane}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -3474,7 +3484,12 @@ export default function InboxPage() {
           )}
         </div>
       ) : (
-      <div className="inbox-col-list" style={{ width: 300, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#fff' }}>
+      <div className="inbox-col-list" style={{ width: 300, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#fff', position: 'relative' }}>
+        {/* Floating compose button — start a new outbound message/call */}
+        <button type="button" onClick={() => setShowDialer(true)} title="New message / call"
+          style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 20, width: 52, height: 52, borderRadius: '50%', border: 'none', background: 'var(--coral)', color: '#fff', cursor: 'pointer', boxShadow: '0 6px 18px rgba(255,122,107,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
         {/* Header */}
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 }}>
@@ -3538,7 +3553,7 @@ export default function InboxPage() {
           <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
             <div style={{ flex: 1, display: 'flex', background: 'var(--canvas)', borderRadius: 10, padding: 3 }}>
               {(['open', 'closed'] as const).map(s => (
-                <button key={s} type="button" onClick={() => setStatusFilter(s)}
+                <button key={s} type="button" onClick={() => { if (s !== statusFilter) { setConversations([]); setStatusFilter(s) } }}
                   style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, textTransform: 'capitalize', background: statusFilter === s ? '#fff' : 'transparent', color: statusFilter === s ? 'var(--ink)' : 'var(--slate)', boxShadow: statusFilter === s ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.12s' }}>
                   {s}
                 </button>
@@ -3664,7 +3679,7 @@ export default function InboxPage() {
                     </span>
                   )}
                 </div>
-                <span style={{ fontSize: 10, color: '#9ca3af', flexShrink: 0, marginLeft: 6 }}>{timeAgo(conv.last_message_at)}</span>
+                <span style={{ fontSize: 10.5, color: '#9ca3af', flexShrink: 0, marginLeft: 6, fontStyle: 'italic' }}>{listTime(conv.last_message_at)}</span>
               </div>
 
               {/* Source tag(s) — channel plus order status when both apply */}
@@ -3890,20 +3905,35 @@ export default function InboxPage() {
                   and dropdown menus when they lived inside it. */}
               {/* Assign button */}
               <div style={{ position: 'relative' }} data-assign-menu>
-                <button type="button" onClick={() => setShowAssignMenu(v => !v)}
+                <button type="button" onClick={() => { setShowAssignMenu(v => !v); setAssignSearch('') }}
                   style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                     {selected.assigned_name ? <>{Icon.person(13)}{selected.assigned_name}</> : '+ Assign'}
                   </span>
                 </button>
                 {showAssignMenu && (
-                  <div style={{ position: 'absolute', top: '110%', right: 0, width: 220, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
+                  <div style={{ position: 'absolute', top: '110%', right: 0, width: 240, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
                     <p style={{ margin: 0, padding: '10px 14px 6px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Assign User</p>
+                    {/* Search box with a clear (×) on the right */}
+                    <div style={{ padding: '0 10px 8px' }}>
+                      <div style={{ position: 'relative' }}>
+                        <input autoFocus value={assignSearch} onChange={e => setAssignSearch(e.target.value)}
+                          placeholder="Search users…"
+                          style={{ width: '100%', padding: '7px 26px 7px 10px', fontSize: 12.5, borderRadius: 8, border: '1px solid var(--border)', outline: 'none', boxSizing: 'border-box' }} />
+                        {assignSearch && (
+                          <button type="button" onClick={() => setAssignSearch('')}
+                            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', display: 'flex', alignItems: 'center', padding: 2 }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ maxHeight: 240, overflowY: 'auto' }}>
                     <button type="button" onClick={() => assignTo(null)}
                       style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>
                       Unassign
                     </button>
-                    {teamMembers.map(m => (
+                    {teamMembers.filter((m: any) => !assignSearch || (m.name || '').toLowerCase().includes(assignSearch.toLowerCase())).map(m => (
                       <button key={m.id} type="button" onClick={() => assignTo(m)}
                         style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: selected.assigned_to === m.user_id ? 'var(--peach)' : 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                         <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
@@ -3913,6 +3943,10 @@ export default function InboxPage() {
                         {selected.assigned_to === m.user_id && ' ✓'}
                       </button>
                     ))}
+                    {teamMembers.filter((m: any) => !assignSearch || (m.name || '').toLowerCase().includes(assignSearch.toLowerCase())).length === 0 && (
+                      <p style={{ margin: 0, padding: '10px 14px', fontSize: 12, color: '#9ca3af' }}>No users match.</p>
+                    )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -4704,6 +4738,51 @@ export default function InboxPage() {
           <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px' }}>
             {activePanel === 'info' && (
               <>
+                {/* Coax-style contact card header */}
+                {contact && !showContactEdit && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '4px 0 16px', borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+                    {(contact as any).avatar_url ? (
+                      <img src={(contact as any).avatar_url} alt={contact.name || ''} style={{ width: 84, height: 84, borderRadius: 14, objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ width: 84, height: 84, borderRadius: 14, background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, fontWeight: 800 }}>
+                        {(contact.name || contact.email || '?').charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    {/* Channel chips — which channels we can reach this contact on */}
+                    <div style={{ display: 'flex', gap: 7, marginTop: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+                      {[
+                        ['phone', !!contact.phone, '#6b7280', (s: number) => Icon.phone?.(s)],
+                        ['email', !!contact.email, '#6b7280', (s: number) => Icon.mail?.(s)],
+                      ].filter(([, on]) => on).map(([key], idx) => (
+                        <span key={idx} style={{ width: 30, height: 30, borderRadius: '50%', background: '#f1f2f4', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4b5563' }}>
+                          {key === 'phone'
+                            ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                            : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>}
+                        </span>
+                      ))}
+                    </div>
+                    <h3 style={{ margin: '12px 0 0', fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>{contact.name || contact.email || 'Visitor'}</h3>
+                    {/* Quick actions */}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                      <button type="button" title="Assign" onClick={() => { setActivePanel('info'); const b = document.querySelector('[data-assign-menu] button') as HTMLButtonElement; b?.click() }}
+                        style={cardAction('#ecfdf5', '#059669')}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                      </button>
+                      <button type="button" title="Edit contact" onClick={() => { setShowContactEdit(true); setEditContact(contact) }}
+                        style={cardAction('#eff6ff', '#2563eb')}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                      <a href={`/admin/customers/profile?id=${contact.id}`} title="Full profile"
+                        style={{ ...cardAction('#eff6ff', '#2563eb'), textDecoration: 'none' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      </a>
+                      <button type="button" title="Close conversation" onClick={() => setStatus('closed')}
+                        style={cardAction('#fef2f2', '#dc2626')}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {/* Contact card */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Contact</h3>
