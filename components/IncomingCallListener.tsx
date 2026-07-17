@@ -73,14 +73,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           console.error('[telnyx] socket error', e)
         })
         client.on('telnyx.notification', (n: any) => {
-          // Log every notification so we can see whether the inbound invite is
-          // reaching this browser client at all (vs being dropped by Telnyx
-          // before delivery).
-          console.log('[telnyx notification]', n?.type, n?.call?.state, n?.call?.direction)
+          // Log the FULL notification so we can see exactly what (if anything)
+          // the client receives during an inbound call.
+          console.log('[telnyx notification]', JSON.stringify({ type: n?.type, state: n?.call?.state, dir: n?.call?.direction, id: n?.call?.id }))
           const call = n?.call
           if (!call) return
-          // Inbound invite
-          if (call.state === 'ringing' && call.direction === 'inbound') {
+          // Inbound invite — accept several state spellings across SDK versions.
+          const st = call.state
+          const dir = call.direction
+          if ((st === 'ringing' || st === 'new' || st === 'early') && (dir === 'inbound' || dir === 'incoming')) {
             console.log('[telnyx] INCOMING CALL received by browser client')
             callRef.current = call
             setIncoming(call)

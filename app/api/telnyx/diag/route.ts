@@ -18,13 +18,29 @@ export async function GET(req: NextRequest) {
   const db = admin()
 
   const { data: integ } = await db.from('telnyx_integrations')
-    .select('phone_number, connection_id, sip_username, credential_id, voice_api_application_id, ring_seconds, voicemail_enabled')
+    .select('phone_number, connection_id, sip_username, credential_id, voice_api_application_id, ring_seconds, voicemail_enabled, api_key')
     .eq('company_id', companyId).maybeSingle()
 
   const cutoff = new Date(Date.now() - 120000).toISOString()
   const { data: online } = await db.from('agent_presence')
     .select('user_id, sip_username, last_seen_at').eq('company_id', companyId)
     .gte('last_seen_at', cutoff)
+
+  // Inspect the telephony credential to see WHICH connection it's bound to.
+  let credentialInfo: any = null
+  if (integ?.credential_id && integ?.api_key) {
+    try {
+      const { TelnyxService } = await import('@/lib/telnyx-service')
+      const svc = new TelnyxService(integ.api_key)
+      const cred = await svc.getTelephonyCredential(integ.credential_id)
+      credentialInfo = {
+        id: cred?.data?.id,
+        sip_username: cred?.data?.sip_username,
+        connection_id: cred?.data?.connection_id,
+        connection_matches_voice_app: String(cred?.data?.connection_id || '') === String(integ?.voice_api_application_id || ''),
+      }
+    } catch (e: any) { credentialInfo = { error: e.message } }
+  }
 
   // A real Telnyx SIP username is a short alphanumeric string. If sip_username
   // looks like a UUID, it's actually the credential ID (wrong) — that would
@@ -42,6 +58,7 @@ export async function GET(req: NextRequest) {
       ring_seconds: integ?.ring_seconds,
       voicemail_enabled: integ?.voicemail_enabled,
     },
+    credential: credentialInfo,
     online_agents: (online || []).length,
     online_detail: online || [],
     hint: !integ?.sip_username
