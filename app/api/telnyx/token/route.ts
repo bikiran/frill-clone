@@ -134,7 +134,15 @@ export async function POST(req: NextRequest) {
       }
     } catch {}
 
-    return NextResponse.json({ token, from: fromNumber })
+    // If the connection's SIP username/password are stored, the client should
+    // REGISTER with them (credential login) — that's the only way this Credential
+    // SIP Connection delivers inbound calls. Fall back to the token otherwise.
+    return NextResponse.json({
+      token,
+      from: fromNumber,
+      sipUser: (integ as any).sip_conn_username || null,
+      sipPassword: (integ as any).sip_conn_password || null,
+    })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

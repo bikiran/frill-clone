@@ -212,9 +212,11 @@ export async function POST(req: NextRequest) {
               .gte('last_seen_at', cutoff)
               .neq('available', false)
 
-            // Every agent's browser connects with the company SIP credential, so
-            // dialing that one SIP address rings all connected clients at once.
-            const sipUser = integ.sip_username
+            // Dial the SIP username the browser REGISTERS with. When the client
+            // registers via the connection's SIP credentials, it's reachable at
+            // sip:<sip_conn_username>@sip.telnyx.com. Prefer that; fall back to
+            // the telephony credential username.
+            const sipUser = (integ as any).sip_conn_username || integ.sip_username
             const onlineCount = (online || []).length
             const anyOnline = onlineCount > 0 && !!sipUser
 

@@ -49,13 +49,16 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         const data = await res.json()
         if (!res.ok || cancelled) return
         const { TelnyxRTC } = await import('@telnyx/webrtc')
-        // Connect with the telephony-credential token. Under the Voice API /
-        // Call Control model, our webhook answers the inbound call and dials the
-        // telephony credential's SIP address; the browser must be connected with
-        // THAT credential's token so it receives the leg. (Credential-connection
-        // login/password was the wrong model — it caused LOGIN_FAILED because the
-        // connection is a Voice API app, not a credential SIP connection.)
-        const client = new TelnyxRTC({ login_token: data.token })
+        // Register with the connection's SIP username/password when available.
+        // Telnyx's Authentication tab is explicit: a Credential SIP Connection
+        // requires devices to REGISTER with its username/password to receive
+        // inbound calls. The telephony-credential TOKEN connects to the gateway
+        // but never registers against this connection (it showed "Unregistered"),
+        // so inbound invites were never delivered. Credential login fixes that.
+        // Falls back to the token if the SIP creds aren't stored yet.
+        const client = (data.sipUser && data.sipPassword)
+          ? new TelnyxRTC({ login: data.sipUser, password: data.sipPassword })
+          : new TelnyxRTC({ login_token: data.token })
         // Route the far end's audio to our always-mounted element — without
         // this, answered calls connect but have no sound.
         ;(client as any).remoteElement = 'colvy-inbound-audio'
