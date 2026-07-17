@@ -62,6 +62,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         // Route the far end's audio to our always-mounted element — without
         // this, answered calls connect but have no sound.
         ;(client as any).remoteElement = 'colvy-inbound-audio'
+        // Ask for mic access early so answering a call has a live audio track to
+        // send — without a granted mic the call connects but the agent is muted
+        // (the "no talking" symptom). Best-effort; the browser prompts once.
+        try {
+          if (navigator.mediaDevices?.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => {})
+          }
+        } catch {}
+        ;(client as any).enableMicrophone?.()
         clientRef.current = client
 
         client.on('telnyx.ready', () => {
@@ -88,10 +97,25 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             console.log('[telnyx] INCOMING CALL received by browser client')
             callRef.current = call
             setIncoming(call)
+            startRing()
             resolveCaller(call.options?.remoteCallerNumber || call.remoteCallerNumber)
           }
-          if (call.state === 'active') { setInCall(true); startTimer() }
-          if (call.state === 'hangup' || call.state === 'destroy') { reset() }
+          if (call.state === 'active') {
+            stopRing()
+            setInCall(true); startTimer()
+            // Attach remote audio once the call is live (covers the case where
+            // the stream wasn't ready at answer time).
+            try {
+              const audio = document.getElementById('colvy-inbound-audio') as HTMLAudioElement | null
+              const stream = call.remoteStream || call.options?.remoteStream
+              if (audio && stream) { audio.srcObject = stream; audio.play?.().catch(() => {}) }
+            } catch {}
+          }
+          // Any terminal state tears down the popup — covers the caller hanging
+          // up before/after answer, so the browser popup never gets stuck.
+          if (['hangup', 'destroy', 'purge', 'done'].includes(String(call.state))) {
+            stopRing(); reset()
+          }
         })
         client.connect()
       } catch (e) {
@@ -130,11 +154,56 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
 
   const startTimer = () => { setSeconds(0); timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000) }
 
-  const answer = () => { try { callRef.current?.answer?.() } catch {}; setInCall(true) }
-  const decline = () => { try { callRef.current?.hangup?.() } catch {}; reset() }
-  const hangup = () => { try { callRef.current?.hangup?.() } catch {}; reset() }
+  // A simple ringtone via WebAudio (two-tone, looped) so an incoming call is
+  // audible even before it's answered.
+  const ringOscRef = useRef<any>(null)
+  const startRing = () => {
+    try {
+      const AC = (window as any).AudioContext || (window as any).webkitAudioContext
+      if (!AC) return
+      const ctx = new AC()
+      ringOscRef.current = { ctx, timer: null as any }
+      const beep = () => {
+        const o = ctx.createOscillator(); const g = ctx.createGain()
+        o.frequency.value = 440; o.type = 'sine'
+        g.gain.setValueAtTime(0.0001, ctx.currentTime)
+        g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.05)
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.9)
+        o.connect(g); g.connect(ctx.destination)
+        o.start(); o.stop(ctx.currentTime + 1)
+      }
+      beep()
+      ringOscRef.current.timer = setInterval(beep, 3000)
+    } catch {}
+  }
+  const stopRing = () => {
+    try {
+      if (ringOscRef.current) {
+        clearInterval(ringOscRef.current.timer)
+        ringOscRef.current.ctx?.close?.()
+        ringOscRef.current = null
+      }
+    } catch {}
+  }
+
+  const answer = () => {
+    stopRing()
+    try {
+      const call = callRef.current
+      call?.answer?.()
+      // Attach the remote (caller) audio to our always-mounted element so both
+      // sides can hear each other — without this the call connects silently.
+      const audio = document.getElementById('colvy-inbound-audio') as HTMLAudioElement | null
+      const stream = call?.remoteStream || call?.options?.remoteStream
+      if (audio && stream) { audio.srcObject = stream; audio.play?.().catch(() => {}) }
+    } catch {}
+    setInCall(true)
+  }
+  const decline = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
+  const hangup = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
 
   const reset = () => {
+    stopRing()
     if (timerRef.current) clearInterval(timerRef.current)
     setIncoming(null); setCaller(null); setInCall(false); setSeconds(0)
     callRef.current = null
