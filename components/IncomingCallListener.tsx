@@ -173,32 +173,17 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const answer = () => {
     stopRing()
     try {
-      // Let the SDK own media negotiation — it creates the RTCPeerConnection and
-      // captures the mic on answer(). Manually grabbing streams/getUserMedia
-      // alongside it raced the SDK and left NO peer connection forming at all
-      // (webrtc-internals showed PeerConnections: 0 → no audio path).
+      // Direct SIP delivery model: the call is delivered straight to this
+      // registered browser client, so answering the WebRTC call IS the answer —
+      // no server-side bridge is needed (the number rings this client directly,
+      // it does not go through a Voice API webhook). The SDK owns media: it
+      // creates the RTCPeerConnection and captures the mic on answer().
       callRef.current?.answer?.()
     } catch (e) { console.error('[telnyx] answer failed', e) }
-    // Tell the server to bridge the caller to us. The server bridges the caller
-    // leg to the agent (child) leg whose Call Control id was stored at dial time.
-    if (companyId) {
-      fetch('/api/telnyx/call-action', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, action: 'answer' }),
-      }).then(r => r.json()).then(d => console.log('[telnyx] bridge request', d)).catch(() => {})
-    }
     setInCall(true)
   }
-  const serverHangup = () => {
-    if (companyId) {
-      fetch('/api/telnyx/call-action', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, action: 'hangup' }),
-      }).catch(() => {})
-    }
-  }
-  const decline = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; serverHangup(); reset() }
-  const hangup = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; serverHangup(); reset() }
+  const decline = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
+  const hangup = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
 
   const reset = () => {
     stopRing()
