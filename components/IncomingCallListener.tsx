@@ -179,10 +179,26 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       // (webrtc-internals showed PeerConnections: 0 → no audio path).
       callRef.current?.answer?.()
     } catch (e) { console.error('[telnyx] answer failed', e) }
+    // Tell the server to bridge the caller to us — don't rely on the browser
+    // leg's answer webhook firing (its direction/timing is unreliable).
+    if (companyId) {
+      fetch('/api/telnyx/call-action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, action: 'answer' }),
+      }).then(r => r.json()).then(d => console.log('[telnyx] bridge request', d)).catch(() => {})
+    }
     setInCall(true)
   }
-  const decline = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
-  const hangup = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
+  const serverHangup = () => {
+    if (companyId) {
+      fetch('/api/telnyx/call-action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, action: 'hangup' }),
+      }).catch(() => {})
+    }
+  }
+  const decline = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; serverHangup(); reset() }
+  const hangup = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; serverHangup(); reset() }
 
   const reset = () => {
     stopRing()

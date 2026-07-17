@@ -255,8 +255,9 @@ export async function POST(req: NextRequest) {
                   link_to: callControlId,
                   webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
                 })
-                console.log('[telnyx inbound] child call created', { id: (child as any)?.data?.call_control_id })
-                await db.from('calls').update({ status: 'ringing_agents', transcription: `[ringing ${sipTarget}]` })
+                const agentLegId = (child as any)?.data?.call_control_id || null
+                console.log('[telnyx inbound] child call created', { id: agentLegId })
+                await db.from('calls').update({ status: 'ringing_agents', transcription: `[ringing ${sipTarget}]`, agent_call_control_id: agentLegId })
                   .eq('telnyx_call_control_id', callControlId)
               } catch (dialErr: any) {
                 console.error('[telnyx inbound] createChildCall failed', dialErr?.message || dialErr)
@@ -288,8 +289,21 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true })
       }
 
-      // A child (agent) leg was answered — bridge it to the caller.
-      if (eventType === 'call.answered' && isOutbound) {
+      // A child (agent) leg was answered — bridge it to the caller. Fire on ANY
+      // call.answered whose call_control_id is NOT the caller's own leg, because
+      // the browser-answered SIP leg's direction can be reported as inbound OR
+      // outbound depending on Telnyx's perspective — gating on isOutbound made
+      // the bridge silently never run when the browser answered.
+      if (eventType === 'call.answered') {
+        console.log('[telnyx call.answered]', { callControlId, direction, isOutbound })
+        // Is this the caller's own leg being answered by our bridge? If so, skip.
+        const { data: selfRow } = await db.from('calls')
+          .select('id, status').eq('telnyx_call_control_id', callControlId).maybeSingle()
+        const isCallerLeg = !!selfRow && selfRow.status !== 'ringing_agents'
+        if (isCallerLeg) {
+          console.log('[telnyx call.answered] this is the caller leg, not bridging')
+          return NextResponse.json({ ok: true })
+        }
         try {
           // Find the ringing caller leg to bridge to. The child (agent) leg was
           // created with link_to the parent, so the most recent 'ringing_agents'
