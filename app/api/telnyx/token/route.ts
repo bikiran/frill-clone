@@ -55,18 +55,48 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) { console.error('[telnyx token] number routing heal failed', e) }
 
-    // Reuse a stored credential if we have one, otherwise create one bound to
-    // the company's connection.
-    let credentialId = (integ as any).credential_id || (integ as any).sip_username // legacy: id was stored in sip_username
+    // The browser must register on a CREDENTIAL SIP CONNECTION to RECEIVE
+    // inbound calls. A telephony credential on the Voice API app connects but
+    // never receives the invite (the whole "registered but browser never rings"
+    // bug). So ensure a dedicated WebRTC credential connection exists, and put
+    // the telephony credential on THAT — separate from the Voice API app that
+    // owns the number and originates the dial.
+    let webrtcConnId = (integ as any).webrtc_connection_id
+    if (!webrtcConnId) {
+      try {
+        const conn = await svc.createCredentialConnection(`Colvy WebRTC ${companyId.slice(0, 8)}`)
+        webrtcConnId = conn?.data?.id
+        if (webrtcConnId) {
+          await db.from('telnyx_integrations').update({ webrtc_connection_id: webrtcConnId }).eq('company_id', companyId)
+        }
+      } catch (e) {
+        console.error('[telnyx token] could not create WebRTC credential connection', e)
+      }
+    }
+
+    // Reuse a stored credential ONLY if it's on the WebRTC connection; otherwise
+    // (re)create it there. The old credential lived on the Voice API app, which
+    // is why delivery failed — so a mismatch forces a fresh one.
+    let credentialId = (integ as any).credential_id
     let storedSipUser = (integ as any).sip_username
+    const credOnWrongConn = credentialId && (integ as any).credential_connection_id && (integ as any).credential_connection_id !== webrtcConnId
     const looksLikeUuid = (s?: string | null) => !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(s)
 
-    if (!credentialId) {
-      const cred = await svc.createTelephonyCredential(integ.connection_id, `colvy-${companyId.slice(0, 8)}`)
+    // If we have no credential, or it's on the wrong connection, or its
+    // sip_username is a UUID, create a fresh credential on the WebRTC connection.
+    let needFresh = !credentialId || looksLikeUuid(storedSipUser)
+    // Verify the existing credential is actually on the WebRTC connection.
+    if (credentialId && webrtcConnId && !needFresh) {
+      try {
+        const existing = await svc.getTelephonyCredential(credentialId)
+        if (String(existing?.data?.connection_id || '') !== String(webrtcConnId)) needFresh = true
+        else storedSipUser = existing?.data?.sip_username || storedSipUser
+      } catch { needFresh = true }
+    }
+
+    if (needFresh && webrtcConnId) {
+      const cred = await svc.createTelephonyCredential(webrtcConnId, `colvy-${companyId.slice(0, 8)}`)
       credentialId = cred?.data?.id
-      // The credential's SIP username is what Call Control dials to ring this
-      // browser client (sip:<username>@sip.telnyx.com). Store BOTH the id (to
-      // mint tokens) and the sip_username (to route inbound calls).
       const sipUsername = cred?.data?.sip_username || null
       if (credentialId) {
         await db.from('telnyx_integrations').update({
@@ -74,25 +104,7 @@ export async function POST(req: NextRequest) {
           ...(sipUsername ? { sip_username: sipUsername } : {}),
         }).eq('company_id', companyId)
         storedSipUser = sipUsername
-      }
-    } else if (looksLikeUuid(storedSipUser)) {
-      // SELF-HEAL: the sip_username column holds the credential ID (a UUID),
-      // which is the legacy bug — Call Control was dialing sip:<uuid>@… which
-      // routes nowhere, so the browser never rang. Fetch the credential's real
-      // sip_username from Telnyx and correct the columns.
-      try {
-        const cred = await svc.getTelephonyCredential(credentialId)
-        const realSip = cred?.data?.sip_username || null
-        if (realSip) {
-          await db.from('telnyx_integrations').update({
-            credential_id: credentialId,   // move the UUID to its proper column
-            sip_username: realSip,
-          }).eq('company_id', companyId)
-          storedSipUser = realSip
-          console.log('[telnyx token] healed sip_username', { from: 'uuid', to: realSip })
-        }
-      } catch (e) {
-        console.error('[telnyx token] could not heal sip_username', e)
+        console.log('[telnyx token] created credential on WebRTC connection', { credentialId, sipUsername })
       }
     }
     if (!credentialId) return NextResponse.json({ error: 'Could not create WebRTC credential' }, { status: 500 })
