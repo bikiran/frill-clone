@@ -120,10 +120,32 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   resolved: { bg: '#dcfce7', color: '#059669' },
   closed:   { bg: '#f3f4f6', color: '#6b7280' },
 }
+// Robustly parse a Supabase/Postgres timestamp. The old code appended 'Z' when
+// the string didn't already end in 'Z' — but Supabase returns offsets like
+// "+00:00", so that produced "…+00:00Z" (two tz markers), which Safari parses as
+// Invalid Date → blank timestamps everywhere. This normalises all the shapes:
+//   "2026-07-17T11:04:10.891Z"       (already fine)
+//   "2026-07-17T11:04:10.891+00:00"  (has offset → leave it)
+//   "2026-07-17 11:04:10.891+00"     (space + short offset → normalise)
+//   "2026-07-17T11:04:10.891"        (no tz → treat as UTC, append Z)
+function parseTs(d: string | undefined | null): Date | null {
+  if (!d) return null
+  let s = typeof d === 'string' ? d.trim() : String(d)
+  if (!s) return null
+  s = s.replace(' ', 'T')
+  // Normalise a bare 2-digit offset like "+00" → "+00:00" (JS Date rejects the
+  // short form). Leave "+00:00", "Z", "+0000" alone.
+  s = s.replace(/([+-]\d{2})$/, '$1:00')
+  // Already has a timezone (Z or ±HH:MM) → parse as-is.
+  const hasTz = /(Z|[+-]\d{2}:?\d{2})$/.test(s)
+  if (!hasTz) s = s + 'Z'
+  const parsed = new Date(s)
+  return isNaN(parsed.getTime()) ? null : parsed
+}
 function timeAgo(d: string) {
   if (!d) return ''
-  const parsed = new Date(d.endsWith?.('Z') ? d : d + 'Z')
-  if (isNaN(parsed.getTime())) return ''
+  const parsed = parseTs(d)
+  if (!parsed) return ''
   const s = Math.max(0, Math.floor((Date.now() - parsed.getTime()) / 1000))
   if (s < 60) return 'now'; if (s < 3600) return `${Math.floor(s/60)}m`
   if (s < 86400) return `${Math.floor(s/3600)}h`; return `${Math.floor(s/86400)}d`
@@ -132,8 +154,8 @@ function timeAgo(d: string) {
 // Coax-style list timestamp: "6:12 PM - 17/7"
 function listTime(d: string) {
   if (!d) return ''
-  const parsed = new Date(d.endsWith?.('Z') ? d : d + 'Z')
-  if (isNaN(parsed.getTime())) return ''
+  const parsed = parseTs(d)
+  if (!parsed) return ''
   const t = parsed.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true })
   return `${t} · ${parsed.getDate()}/${parsed.getMonth() + 1}`
 }
@@ -142,16 +164,16 @@ function listTime(d: string) {
 function fmtTime(d: string | undefined | null) {
   if (!d) return ''
   const s = typeof d === 'string' ? d : String(d)
-  const parsed = new Date(s.endsWith?.('Z') ? s : s + 'Z')
-  if (isNaN(parsed.getTime())) return ''
+  const parsed = parseTs(s)
+  if (!parsed) return ''
   return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 // Formats like "Received 7:18 PM | 08 Jul | Instagram" / "Delivered 2:03 PM | 09 Jul"
 function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: string) {
   if (!d) return ''
   const s = typeof d === 'string' ? d : String(d)
-  const parsed = new Date(s.endsWith?.('Z') ? s : s + 'Z')
-  if (isNaN(parsed.getTime())) return ''
+  const parsed = parseTs(s)
+  if (!parsed) return ''
   const time = parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const date = parsed.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' })
   const label = isAgent ? 'Delivered' : 'Received'
@@ -192,8 +214,8 @@ function mergeEvents(msgs: any[], events: any[]) {
 function dayLabel(d: string | undefined | null) {
   if (!d) return ''
   const s = typeof d === 'string' ? d : String(d)
-  const parsed = new Date(s.endsWith?.('Z') ? s : s + 'Z')
-  if (isNaN(parsed.getTime())) return ''
+  const parsed = parseTs(s)
+  if (!parsed) return ''
   const today = new Date()
   const yest = new Date(); yest.setDate(today.getDate() - 1)
   const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString()
@@ -204,7 +226,7 @@ function dayLabel(d: string | undefined | null) {
 function fmtDateTime(d: string | undefined | null) {
   if (!d) return ''
   const parsed = new Date(d)
-  if (isNaN(parsed.getTime())) return ''
+  if (!parsed) return ''
   return parsed.toLocaleString()
 }
 
@@ -735,8 +757,8 @@ export default function InboxPage() {
   const isOnPageNow = useMemo(() => {
     const seen = (selected as any)?.page_seen_at
     if (!seen) return false
-    const ts = String(seen).endsWith('Z') ? seen : seen + 'Z'
-    return (Date.now() - new Date(ts).getTime()) < 120000
+    const p = parseTs(seen)
+    return p ? (Date.now() - p.getTime()) < 120000 : false
   }, [selected?.id, (selected as any)?.page_seen_at, nowTick])
   const [showPod, setShowPod] = useState(false)
   const [podNote, setPodNote] = useState('')
@@ -2285,7 +2307,7 @@ export default function InboxPage() {
     // over SMS so they get the reply on their phone.
     const smsNumber = smsDestination()
     const lastSeen = (selected as any).visitor_last_seen || (selected as any).last_message_at
-    const visitorOnline = lastSeen ? (Date.now() - new Date(String(lastSeen).endsWith('Z') ? lastSeen : lastSeen + 'Z').getTime()) < 120000 : false
+    const visitorOnline = lastSeen ? (Date.now() - (parseTs(lastSeen)?.getTime() || 0)) < 120000 : false
     const shouldSms = sendChannel === 'sms'
       ? !!smsNumber
       : sendChannel === 'chat'
@@ -2541,7 +2563,7 @@ export default function InboxPage() {
     const ct: any = (c as any).contacts || {}
     // Snoozed conversations drop out of the list until their time is up.
     const snz = (c as any).snoozed_until
-    if (snz && new Date(String(snz).endsWith('Z') ? snz : snz + 'Z').getTime() > Date.now() && statusFilter === 'open') return false
+    if (snz && (parseTs(snz)?.getTime() || 0) > Date.now() && statusFilter === 'open') return false
 
     // Advanced filters from the Filter panel.
     const cc: any = c
@@ -2556,7 +2578,7 @@ export default function InboxPage() {
       if (src !== filters.source) return false
     }
     if (filters.dateFrom || filters.dateTo) {
-      const t = new Date(String(cc.last_message_at).endsWith('Z') ? cc.last_message_at : cc.last_message_at + 'Z').getTime()
+      const t = (parseTs(cc.last_message_at)?.getTime() || 0)
       if (filters.dateFrom && t < new Date(filters.dateFrom).getTime()) return false
       if (filters.dateTo && t > new Date(filters.dateTo).getTime() + 86400000) return false
     }
@@ -2577,8 +2599,8 @@ export default function InboxPage() {
     return contactMatch || surfaceMatch || deepHit
   })
     .sort((a: any, b: any) => {
-      const ta = new Date(String(a.last_message_at).endsWith('Z') ? a.last_message_at : a.last_message_at + 'Z').getTime()
-      const tb = new Date(String(b.last_message_at).endsWith('Z') ? b.last_message_at : b.last_message_at + 'Z').getTime()
+      const ta = (parseTs(a.last_message_at)?.getTime() || 0)
+      const tb = (parseTs(b.last_message_at)?.getTime() || 0)
       return filters.oldestFirst ? ta - tb : tb - ta
     })
 
@@ -3693,8 +3715,8 @@ export default function InboxPage() {
             const waitingSince = (c as any).last_customer_message_at
             let waitingHours = 0
             if (waitingSince && conv.status !== 'closed') {
-              const ts = String(waitingSince).endsWith('Z') ? waitingSince : waitingSince + 'Z'
-              waitingHours = (Date.now() - new Date(ts).getTime()) / 3600000
+              const p = parseTs(waitingSince)
+              waitingHours = p ? (Date.now() - p.getTime()) / 3600000 : 0
             }
             const isOverdue = waitingHours >= 3
 
