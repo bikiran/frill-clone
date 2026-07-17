@@ -16,6 +16,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const [inCall, setInCall] = useState(false)
   const [seconds, setSeconds] = useState(0)
   const [ready, setReady] = useState(false)
+  const [connErr, setConnErr] = useState<string | null>(null)
   // Coax shows "RA · Customer name" on an incoming call — the outlet initials
   // so staff know WHICH business the caller rang. We can do that here in the
   // browser popup. (On a native phone's own call screen we cannot: that needs
@@ -61,12 +62,14 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         clientRef.current = client
 
         client.on('telnyx.ready', () => {
-          if (!cancelled) { setReady(true); console.log('[telnyx] client registered and ready') }
+          if (!cancelled) { setReady(true); setConnErr(null); console.log('[telnyx] client registered and ready') }
         })
         client.on('telnyx.error', (e: any) => {
+          if (!cancelled) setConnErr(e?.error?.message || 'connection error')
           console.error('[telnyx] client error', e)
         })
         ;(client as any).on?.('telnyx.socket.error', (e: any) => {
+          if (!cancelled) setConnErr('socket error')
           console.error('[telnyx] socket error', e)
         })
         client.on('telnyx.notification', (n: any) => {
@@ -148,7 +151,16 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // it an answered call is completely silent.
   const audioEl = <audio id="colvy-inbound-audio" autoPlay style={{ display: 'none' }} />
 
-  if (!incoming) return audioEl
+  if (!incoming) return (<>
+    {audioEl}
+    {/* Tiny phone-status indicator so it's visible whether the WebRTC client is
+        actually connected to receive inbound calls (green = ready). */}
+    <div title={connErr ? `Phone: ${connErr}` : ready ? 'Phone ready to receive calls' : 'Phone connecting…'}
+      style={{ position: 'fixed', bottom: 12, left: 12, zIndex: 40, display: 'flex', alignItems: 'center', gap: 6, padding: '4px 9px', borderRadius: 20, background: '#fff', border: '1px solid var(--border)', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', fontSize: 11, fontWeight: 700, color: connErr ? '#dc2626' : ready ? '#15803d' : '#b45309' }}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: connErr ? '#dc2626' : ready ? '#22c55e' : '#f59e0b' }} />
+      {connErr ? 'Phone error' : ready ? 'Phone ready' : 'Connecting…'}
+    </div>
+  </>)
 
   return (<>
     {audioEl}

@@ -54,6 +54,32 @@ export default function CallsPage() {
     setCalls(data || [])
   }
 
+  // Live updates — new calls and status changes (ringing → voicemail/completed)
+  // appear without a reload.
+  useEffect(() => {
+    if (!companyId) return
+    const channel = (supabase as any)
+      .channel(`calls-${companyId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calls', filter: `company_id=eq.${companyId}` },
+        (payload: any) => {
+          setCalls(prev => {
+            if (payload.eventType === 'INSERT') {
+              if (prev.find(c => c.id === payload.new.id)) return prev
+              return [payload.new, ...prev]
+            }
+            if (payload.eventType === 'UPDATE') {
+              return prev.map(c => c.id === payload.new.id ? { ...c, ...payload.new } : c)
+            }
+            if (payload.eventType === 'DELETE') {
+              return prev.filter(c => c.id !== payload.old.id)
+            }
+            return prev
+          })
+        })
+      .subscribe()
+    return () => { (supabase as any).removeChannel(channel) }
+  }, [companyId])
+
   const fmtDuration = (s: number | null) => {
     if (!s) return '—'
     const m = Math.floor(s / 60), sec = s % 60
