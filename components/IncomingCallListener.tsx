@@ -62,15 +62,6 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         // Route the far end's audio to our always-mounted element — without
         // this, answered calls connect but have no sound.
         ;(client as any).remoteElement = 'colvy-inbound-audio'
-        // Ask for mic access early so answering a call has a live audio track to
-        // send — without a granted mic the call connects but the agent is muted
-        // (the "no talking" symptom). Best-effort; the browser prompts once.
-        try {
-          if (navigator.mediaDevices?.getUserMedia) {
-            navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => {})
-          }
-        } catch {}
-        ;(client as any).enableMicrophone?.()
         clientRef.current = client
 
         client.on('telnyx.ready', () => {
@@ -103,13 +94,6 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           if (call.state === 'active') {
             stopRing()
             setInCall(true); startTimer()
-            // Attach remote audio once the call is live (covers the case where
-            // the stream wasn't ready at answer time).
-            try {
-              const audio = document.getElementById('colvy-inbound-audio') as HTMLAudioElement | null
-              const stream = call.remoteStream || call.options?.remoteStream
-              if (audio && stream) { audio.srcObject = stream; audio.play?.().catch(() => {}) }
-            } catch {}
           }
           // Any terminal state tears down the popup — covers the caller hanging
           // up before/after answer, so the browser popup never gets stuck.
@@ -189,14 +173,12 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const answer = () => {
     stopRing()
     try {
-      const call = callRef.current
-      call?.answer?.()
-      // Attach the remote (caller) audio to our always-mounted element so both
-      // sides can hear each other — without this the call connects silently.
-      const audio = document.getElementById('colvy-inbound-audio') as HTMLAudioElement | null
-      const stream = call?.remoteStream || call?.options?.remoteStream
-      if (audio && stream) { audio.srcObject = stream; audio.play?.().catch(() => {}) }
-    } catch {}
+      // Let the SDK own media negotiation — it creates the RTCPeerConnection and
+      // captures the mic on answer(). Manually grabbing streams/getUserMedia
+      // alongside it raced the SDK and left NO peer connection forming at all
+      // (webrtc-internals showed PeerConnections: 0 → no audio path).
+      callRef.current?.answer?.()
+    } catch (e) { console.error('[telnyx] answer failed', e) }
     setInCall(true)
   }
   const decline = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
