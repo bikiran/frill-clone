@@ -96,6 +96,16 @@ export class TelnyxService {
   // Set a known username/password on the credential connection so a WebRTC
   // client can REGISTER with it (login/password), which — unlike a JWT token —
   // makes it a registered SIP endpoint that inbound Call Control can dial.
+  // Enable "Receive SIP URI calls" on the credential connection. Without this,
+  // Telnyx blocks a SIP-URI dial (sip:<user>@sip.telnyx.com) to the connection
+  // even when a client is registered — the call is dropped at the inbound gate,
+  // so the browser never rings despite showing "Registered".
+  async enableSipUriCalls(connectionId: string) {
+    return this.req(`/credential_connections/${connectionId}`, 'PATCH', {
+      inbound: { sip_subdomain_receive_settings: 'from_anyone' },
+    })
+  }
+
   async setConnectionCredentials(connectionId: string, userName: string, password: string) {
     return this.req(`/credential_connections/${connectionId}`, 'PATCH', {
       user_name: userName,

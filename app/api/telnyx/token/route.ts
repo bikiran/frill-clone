@@ -141,6 +141,13 @@ export async function POST(req: NextRequest) {
     // Connection) accepts the PATCH, unlike the earlier Voice-API-app attempt.
     let sipUser = (integ as any).sip_conn_username
     let sipPassword = (integ as any).sip_conn_password
+    // Always ensure "Receive SIP URI calls" is enabled — this is the inbound gate
+    // that lets a sip:<user>@sip.telnyx.com dial reach the registered browser.
+    // It was "Not enabled", so the dial was dropped despite the client being
+    // registered. Idempotent, cheap to repeat every token mint.
+    if (integ.connection_id) {
+      try { await svc.enableSipUriCalls(integ.connection_id) } catch (e: any) { console.error('[telnyx token] enableSipUriCalls failed', e?.message || e) }
+    }
     // Re-provision if we have no creds, or the stored ones just failed (we detect
     // failure by the client reporting LOGIN_FAILED, but here we simply ensure a
     // fresh known password is set on first use / when missing).
@@ -152,6 +159,9 @@ export async function POST(req: NextRequest) {
         const existingUser = conn?.user_name || sipUser || `colvy${companyId.replace(/-/g, '').slice(0, 10)}`
         const newPass = `Cv${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2).toUpperCase()}9!`
         await svc.setConnectionCredentials(integ.connection_id, existingUser, newPass)
+        // Also enable "Receive SIP URI calls" — without it Telnyx blocks the
+        // sip:<user>@sip.telnyx.com dial to a registered client (the last gate).
+        try { await svc.enableSipUriCalls(integ.connection_id); console.log('[telnyx token] enabled SIP URI calls') } catch (e: any) { console.error('[telnyx token] enableSipUriCalls failed', e?.message || e) }
         await db.from('telnyx_integrations').update({
           sip_conn_username: existingUser,
           sip_conn_password: newPass,
