@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { SkeletonList } from '@/components/Skeleton'
+import { SegmentationService } from '@/lib/segmentation-service'
 
 interface TeamMember {
   id: string
@@ -24,6 +25,15 @@ interface Customer {
   total_spend: number
   total_orders: number
   woo_customer_id: number
+  last_order_date?: string | null
+  first_order_date?: string | null
+  created_at?: string | null
+  highest_order?: number
+  rfm_score?: number
+  rfm_category?: string
+  address?: any
+  items_purchased?: any
+  source?: string
 }
 
 type User = TeamMember | Customer
@@ -42,6 +52,21 @@ export default function UsersPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [customerSearch, setCustomerSearch] = useState('')
   const [filterType, setFilterType] = useState<'all' | 'team' | 'customer'>('all')
+  // ── Customer filters ──────────────────────────────────────────────────────
+  const [showFilters, setShowFilters] = useState(false)
+  const [sortBy, setSortBy] = useState<'spend' | 'recent_added' | 'recent_order' | 'highest_order' | 'num_orders' | 'loyalty'>('spend')
+  const [fChannel, setFChannel] = useState<'' | 'woocommerce' | 'shopify'>('')
+  const [fLoyalty, setFLoyalty] = useState('')       // RFM category
+  const [fMinSpend, setFMinSpend] = useState('')
+  const [fMinOrders, setFMinOrders] = useState('')
+  const [fState, setFState] = useState('')
+  const [fPostcode, setFPostcode] = useState('')
+  const [fProduct, setFProduct] = useState('')       // sku or title
+  const [filterResults, setFilterResults] = useState<Customer[] | null>(null)
+  const [filtering, setFiltering] = useState(false)
+  const [resolvedCompanyId, setResolvedCompanyId] = useState<string | null>(null)
+  const filterInput: React.CSSProperties = { display: 'block', width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, background: '#fff', fontWeight: 500, color: 'var(--ink)' }
+  const filtersActive = !!(fChannel || fLoyalty || fMinSpend || fMinOrders || fState || fPostcode || fProduct || sortBy !== 'spend')
   const [hasWooCommerce, setHasWooCommerce] = useState(false)
   const [hasShopify, setHasShopify] = useState(false)
 
@@ -136,6 +161,85 @@ export default function UsersPage() {
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current) }
   }, [searchTerm])
 
+  // ── Apply customer filters server-side (across ALL customers, not just the
+  //    loaded page). Debounced. Clears back to page view when no filter is set.
+  const filterTimer = useRef<any>(null)
+  useEffect(() => {
+    if (filterTimer.current) clearTimeout(filterTimer.current)
+    if (!resolvedCompanyId || !filtersActive) { setFilterResults(null); return }
+    setFiltering(true)
+    filterTimer.current = setTimeout(async () => {
+      try {
+        const sb = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+        )
+        const table = fChannel === 'shopify' ? 'shopify_customers' : 'woocommerce_customers'
+        let q = (sb as any).from(table).select('*').eq('company_id', resolvedCompanyId)
+        // Numeric thresholds — pushed to the DB.
+        if (fMinSpend) q = q.gte('total_spend', parseFloat(fMinSpend) || 0)
+        if (fMinOrders) q = q.gte('total_orders', parseInt(fMinOrders) || 0)
+        // Address lives in a JSONB column; filter with ->> on state/postcode.
+        if (fState) q = q.ilike('address->>state', `%${fState.trim()}%`)
+        if (fPostcode) q = q.ilike('address->>postcode', `%${fPostcode.trim()}%`)
+        // Server-side ordering for the sort options that map to a column.
+        const orderCol = sortBy === 'recent_added' ? 'created_at'
+          : sortBy === 'recent_order' ? 'last_order_date'
+          : sortBy === 'highest_order' ? 'total_spend'  // proxy; refined client-side below
+          : sortBy === 'num_orders' ? 'total_orders'
+          : 'total_spend'
+        q = q.order(orderCol, { ascending: false, nullsFirst: false }).limit(2000)
+        const { data } = await q
+        let rows: any[] = data || []
+
+        // Product filter (SKU or title) — items_purchased is JSONB; match in JS
+        // so we can look inside each item object.
+        const prod = fProduct.trim().toLowerCase()
+        if (prod) {
+          rows = rows.filter(r => {
+            let ip = r.items_purchased
+            if (typeof ip === 'string') { try { ip = JSON.parse(ip) } catch { ip = [ip] } }
+            if (!Array.isArray(ip)) return false
+            return ip.some((it: any) => {
+              if (typeof it === 'string') return it.toLowerCase().includes(prod)
+              const sku = String(it.sku || it.SKU || '').toLowerCase()
+              const name = String(it.name || it.title || it.product_name || '').toLowerCase()
+              return sku.includes(prod) || name.includes(prod)
+            })
+          })
+        }
+
+        // Attach RFM + a highest-order proxy, then apply loyalty filter and the
+        // sorts that need computed values.
+        rows = rows.map(r => {
+          const score = SegmentationService.getRFMScore(r)
+          return { ...r, __rfm: score, __rfmCat: SegmentationService.getRFMCategory(score) }
+        })
+        if (fLoyalty) rows = rows.filter(r => r.__rfmCat === fLoyalty)
+        if (sortBy === 'loyalty') rows.sort((a, b) => b.__rfm - a.__rfm)
+        if (sortBy === 'highest_order') {
+          const hv = (r: any) => (r.total_orders > 0 ? (parseFloat(r.total_spend) || 0) / r.total_orders : 0)
+          rows.sort((a, b) => hv(b) - hv(a))
+        }
+
+        const mapped: Customer[] = rows.map((c: any) => ({
+          id: c.id, type: 'customer', email: c.email, first_name: c.first_name, last_name: c.last_name,
+          phone: c.phone, total_spend: c.total_spend, total_orders: c.total_orders,
+          woo_customer_id: c.woo_customer_id, last_order_date: c.last_order_date, created_at: c.created_at,
+          rfm_score: c.__rfm, rfm_category: c.__rfmCat, address: c.address, items_purchased: c.items_purchased,
+          source: fChannel === 'shopify' ? 'shopify' : undefined,
+        }))
+        setFilterResults(mapped)
+      } catch (e) {
+        console.error('Customer filter failed:', e)
+        setFilterResults([])
+      } finally {
+        setFiltering(false)
+      }
+    }, 350)
+    return () => { if (filterTimer.current) clearTimeout(filterTimer.current) }
+  }, [resolvedCompanyId, filtersActive, sortBy, fChannel, fLoyalty, fMinSpend, fMinOrders, fState, fPostcode, fProduct])
+
   useEffect(() => {
     const loadUsers = async () => {
       try {
@@ -180,6 +284,7 @@ export default function UsersPage() {
         }
 
         if (!companyId) return
+        setResolvedCompanyId(companyId)
         const company = { id: companyId }
 
         // Check if any WooCommerce integration exists (a company can have several)
@@ -301,7 +406,15 @@ export default function UsersPage() {
   const hasEcommerce = hasWooCommerce || hasShopify
   const effectiveFilterType = !hasEcommerce && filterType === 'customer' ? 'all' : filterType
 
-  const filteredUsers = users.filter(user => {
+  // When customer filters are active, show the server-side filtered results
+  // (across all customers) plus any team members that still match the tab.
+  const baseUsers: User[] = filterResults !== null
+    ? [
+        ...(effectiveFilterType !== 'customer' ? users.filter(u => u.type === 'team') : []),
+        ...filterResults,
+      ]
+    : users
+  const filteredUsers = baseUsers.filter(user => {
     const matchesType = effectiveFilterType === 'all' || user.type === effectiveFilterType
     const matchesSearch =
       user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -377,7 +490,80 @@ export default function UsersPage() {
             </button>
           ))}
         </div>
+        {hasEcommerce && (
+          <button onClick={() => setShowFilters(v => !v)}
+            style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: filtersActive ? 'var(--peach)' : '#fff', color: filtersActive ? 'var(--coral)' : 'var(--ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Filters{filtersActive ? ' •' : ''}
+          </button>
+        )}
       </div>
+
+      {hasEcommerce && showFilters && (
+        <div style={{ marginBottom: 24, padding: 16, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
+            {/* Sort */}
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Sort by
+              <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} style={filterInput}>
+                <option value="spend">Total spend (high→low)</option>
+                <option value="recent_added">Recently added</option>
+                <option value="recent_order">Most recent order</option>
+                <option value="highest_order">Highest order value</option>
+                <option value="num_orders">Number of orders</option>
+                <option value="loyalty">Loyalty (RFM)</option>
+              </select>
+            </label>
+            {/* Channel */}
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Channel
+              <select value={fChannel} onChange={e => setFChannel(e.target.value as any)} style={filterInput}>
+                <option value="">All channels</option>
+                <option value="woocommerce">WooCommerce</option>
+                <option value="shopify">Shopify</option>
+              </select>
+            </label>
+            {/* Loyalty */}
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Loyalty segment
+              <select value={fLoyalty} onChange={e => setFLoyalty(e.target.value)} style={filterInput}>
+                <option value="">Any</option>
+                <option value="Champions">Champions</option>
+                <option value="Loyal Customers">Loyal Customers</option>
+                <option value="Potential Loyalists">Potential Loyalists</option>
+                <option value="At Risk">At Risk</option>
+                <option value="Lost">Lost</option>
+              </select>
+            </label>
+            {/* Min spend */}
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Min spend ($)
+              <input type="number" value={fMinSpend} onChange={e => setFMinSpend(e.target.value)} placeholder="e.g. 500" style={filterInput} />
+            </label>
+            {/* Min orders */}
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Min orders
+              <input type="number" value={fMinOrders} onChange={e => setFMinOrders(e.target.value)} placeholder="e.g. 3" style={filterInput} />
+            </label>
+            {/* State */}
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>State
+              <input type="text" value={fState} onChange={e => setFState(e.target.value)} placeholder="e.g. VIC" style={filterInput} />
+            </label>
+            {/* Postcode */}
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Postcode
+              <input type="text" value={fPostcode} onChange={e => setFPostcode(e.target.value)} placeholder="e.g. 3000" style={filterInput} />
+            </label>
+            {/* Product */}
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Purchased (SKU or title)
+              <input type="text" value={fProduct} onChange={e => setFProduct(e.target.value)} placeholder="e.g. 1132 or Pleco" style={filterInput} />
+            </label>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+            <button onClick={() => { setSortBy('spend'); setFChannel(''); setFLoyalty(''); setFMinSpend(''); setFMinOrders(''); setFState(''); setFPostcode(''); setFProduct('') }}
+              style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>
+              Clear all
+            </button>
+            <span style={{ fontSize: 12, color: 'var(--slate)' }}>
+              {filtering ? 'Filtering…' : filterResults !== null ? `${filterResults.length.toLocaleString()} customer${filterResults.length === 1 ? '' : 's'} match` : ''}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div style={{ borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden', background: '#fff' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
