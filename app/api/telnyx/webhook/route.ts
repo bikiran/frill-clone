@@ -189,11 +189,16 @@ export async function POST(req: NextRequest) {
           try {
             const svc = new TelnyxService(integ.api_key)
 
-            // Who's online right now? (heartbeat in the last 2 minutes)
+            // Who's online right now? (heartbeat in the last 2 minutes.) We do
+            // NOT require available=true — a recent heartbeat means the browser
+            // is connected and can receive the call. Requiring available=true
+            // silently sent every call to voicemail because the heartbeat never
+            // set that column.
             const cutoff = new Date(Date.now() - 120000).toISOString()
             const { data: online } = await db.from('agent_presence')
               .select('sip_username').eq('company_id', companyId)
-              .gte('last_seen_at', cutoff).eq('available', true)
+              .gte('last_seen_at', cutoff)
+              .neq('available', false)
 
             // Every agent's browser connects with the company SIP credential, so
             // dialing that one SIP address rings all connected clients at once.

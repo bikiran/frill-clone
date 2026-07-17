@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
       company_id: companyId,
       user_id: userId,
       sip_username: integ?.sip_username || null,
+      available: true,
       last_seen_at: new Date().toISOString(),
     }, { onConflict: 'company_id,user_id' })
 
