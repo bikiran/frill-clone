@@ -1080,7 +1080,9 @@ export default function RootLayout({
             </TerminologyProvider>
           </ToastProvider>
         </main>
-        <LiveChat />
+        {/* Public-facing chat widget — hidden on the admin panel where staff
+            work (they don't need to open a support chat with themselves). */}
+        {!pathname?.startsWith('/admin') && <LiveChat />}
         <UpdateNotification accentColor={company?.accent_color} />
       </body>
     </html>

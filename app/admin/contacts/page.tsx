@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
+import { SegmentationService } from '@/lib/segmentation-service'
 
-type Contact = { id: string; name: string | null; email: string | null; phone: string | null; address: string | null; city: string | null; country: string | null; source: string; tags: string[]; subscribed_to_marketing: boolean; created_at: string }
+type Contact = { id: string; name: string | null; email: string | null; phone: string | null; address: string | null; city: string | null; country: string | null; source: string; tags: string[]; subscribed_to_marketing: boolean; created_at: string; total_spend?: number; total_orders?: number; last_order_date?: string | null; rfm_category?: string; __aov?: number }
 
 const SOURCE_COLORS: Record<string, string> = { widget: '#dbeafe', woocommerce: '#ede9fe', import: '#dcfce7', manual: '#fef9c3', email: '#ffedd5' }
 
@@ -14,6 +15,18 @@ export default function ContactsPage() {
   const [search, setSearch] = useState('')
   const [outlets, setOutlets] = useState<any[]>([])
   const [locationFilter, setLocationFilter] = useState<string>('all')
+  // ── Filters (mirrors the Users tab) ───────────────────────────────────────
+  const [showFilters, setShowFilters] = useState(false)
+  const [sortBy, setSortBy] = useState<'recent_added' | 'recent_order' | 'highest_order' | 'num_orders' | 'spend' | 'loyalty'>('recent_added')
+  const [fChannel, setFChannel] = useState('')
+  const [fLoyalty, setFLoyalty] = useState('')
+  const [fMinSpend, setFMinSpend] = useState('')
+  const [fMinOrders, setFMinOrders] = useState('')
+  const [fState, setFState] = useState('')
+  const [fPostcode, setFPostcode] = useState('')
+  const [fProduct, setFProduct] = useState('')
+  const filterInput: React.CSSProperties = { display: 'block', width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, background: '#fff', fontWeight: 500, color: 'var(--ink)' }
+  const filtersActive = !!(fChannel || fLoyalty || fMinSpend || fMinOrders || fState || fPostcode || fProduct || sortBy !== 'recent_added')
 
   // Shared with the inbox — the same outlet stays selected across the CRM.
   useEffect(() => {
@@ -125,7 +138,66 @@ export default function ContactsPage() {
       }
     }
     const { data, count } = await query.order('created_at', { ascending: false }).limit(200)
-    setContacts(data || [])
+    let rows: Contact[] = data || []
+
+    // Enrich with e-commerce stats (spend, orders, RFM, last order) by matching
+    // the contact's email to a woocommerce_customers record — so the same
+    // spend/loyalty/order filters as the Users tab work here too.
+    if (filtersActive || showFilters) {
+      try {
+        const { data: custs } = await (supabase as any)
+          .from('woocommerce_customers').select('*').eq('company_id', id).limit(5000)
+        const byEmail = new Map<string, any>()
+        for (const c of (custs || [])) if (c.email) byEmail.set(String(c.email).toLowerCase(), c)
+        rows = rows.map(r => {
+          const cust = r.email ? byEmail.get(String(r.email).toLowerCase()) : null
+          if (!cust) return r
+          const score = SegmentationService.getRFMScore(cust)
+          const orders = cust.total_orders || 0
+          return {
+            ...r,
+            total_spend: parseFloat(cust.total_spend) || 0,
+            total_orders: orders,
+            last_order_date: cust.last_order_date,
+            rfm_category: SegmentationService.getRFMCategory(score),
+            __rfm: score,
+            __aov: orders > 0 ? (parseFloat(cust.total_spend) || 0) / orders : 0,
+            __items: cust.items_purchased,
+            __state: cust.address?.state || '',
+            __postcode: cust.address?.postcode || '',
+          } as any
+        })
+      } catch (e) { console.error('Contact enrichment failed:', e) }
+
+      // Apply filters against the enriched rows.
+      if (fChannel) rows = rows.filter(r => r.source === fChannel)
+      if (fLoyalty) rows = rows.filter(r => r.rfm_category === fLoyalty)
+      if (fMinSpend) rows = rows.filter(r => (r.total_spend || 0) >= (parseFloat(fMinSpend) || 0))
+      if (fMinOrders) rows = rows.filter(r => (r.total_orders || 0) >= (parseInt(fMinOrders) || 0))
+      if (fState) rows = rows.filter(r => String((r as any).__state || r.city || '').toLowerCase().includes(fState.trim().toLowerCase()))
+      if (fPostcode) rows = rows.filter(r => String((r as any).__postcode || '').includes(fPostcode.trim()))
+      if (fProduct) {
+        const prod = fProduct.trim().toLowerCase()
+        rows = rows.filter(r => {
+          let ip = (r as any).__items
+          if (typeof ip === 'string') { try { ip = JSON.parse(ip) } catch { ip = [ip] } }
+          if (!Array.isArray(ip)) return false
+          return ip.some((it: any) => {
+            if (typeof it === 'string') return it.toLowerCase().includes(prod)
+            return String(it.sku || '').toLowerCase().includes(prod) || String(it.name || it.title || '').toLowerCase().includes(prod)
+          })
+        })
+      }
+      // Sort.
+      if (sortBy === 'recent_added') rows.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
+      else if (sortBy === 'recent_order') rows.sort((a, b) => +new Date(b.last_order_date || 0) - +new Date(a.last_order_date || 0))
+      else if (sortBy === 'highest_order') rows.sort((a, b) => ((b as any).__aov || 0) - ((a as any).__aov || 0))
+      else if (sortBy === 'num_orders') rows.sort((a, b) => (b.total_orders || 0) - (a.total_orders || 0))
+      else if (sortBy === 'spend') rows.sort((a, b) => (b.total_spend || 0) - (a.total_spend || 0))
+      else if (sortBy === 'loyalty') rows.sort((a, b) => ((b as any).__rfm || 0) - ((a as any).__rfm || 0))
+    }
+
+    setContacts(rows)
     setTotalCount(count || 0)
     setLoading(false)
   }
@@ -133,7 +205,7 @@ export default function ContactsPage() {
   useEffect(() => {
     const t = setTimeout(() => { if (companyId) loadContacts(companyId, search) }, 350)
     return () => clearTimeout(t)
-  }, [search, locationFilter])
+  }, [search, locationFilter, sortBy, fChannel, fLoyalty, fMinSpend, fMinOrders, fState, fPostcode, fProduct])
 
   useEffect(() => {
     if (!companyId) return
@@ -199,11 +271,76 @@ export default function ContactsPage() {
             style={{ padding: '9px 15px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
             {linkBusy ? 'Linking…' : 'Link channels'}
           </button>
+          <button type="button" onClick={() => setShowFilters(v => !v)}
+            style={{ padding: '9px 15px', borderRadius: 10, background: filtersActive ? 'var(--peach)' : '#fff', color: filtersActive ? 'var(--coral)' : 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Filters{filtersActive ? ' •' : ''}
+          </button>
           <button type="button" onClick={() => { setSelected(null); setEditData({}); setEditMode(true) }}            style={{ padding: '9px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
             + New Contact
           </button>
         </div>
 
+        {showFilters && (
+          <div style={{ marginTop: 14, padding: 16, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Sort by
+                <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} style={filterInput}>
+                  <option value="recent_added">Recently added</option>
+                  <option value="recent_order">Most recent order</option>
+                  <option value="highest_order">Highest order value</option>
+                  <option value="num_orders">Number of orders</option>
+                  <option value="spend">Total spend</option>
+                  <option value="loyalty">Loyalty (RFM)</option>
+                </select>
+              </label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Channel
+                <select value={fChannel} onChange={e => setFChannel(e.target.value)} style={filterInput}>
+                  <option value="">All channels</option>
+                  <option value="widget">Live chat</option>
+                  <option value="woocommerce">WooCommerce</option>
+                  <option value="import">Import</option>
+                  <option value="manual">Manual</option>
+                  <option value="email">Email</option>
+                </select>
+              </label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Loyalty segment
+                <select value={fLoyalty} onChange={e => setFLoyalty(e.target.value)} style={filterInput}>
+                  <option value="">Any</option>
+                  <option value="Champions">Champions</option>
+                  <option value="Loyal Customers">Loyal Customers</option>
+                  <option value="Potential Loyalists">Potential Loyalists</option>
+                  <option value="At Risk">At Risk</option>
+                  <option value="Lost">Lost</option>
+                </select>
+              </label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Min spend ($)
+                <input type="number" value={fMinSpend} onChange={e => setFMinSpend(e.target.value)} placeholder="e.g. 500" style={filterInput} />
+              </label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Min orders
+                <input type="number" value={fMinOrders} onChange={e => setFMinOrders(e.target.value)} placeholder="e.g. 3" style={filterInput} />
+              </label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>State
+                <input type="text" value={fState} onChange={e => setFState(e.target.value)} placeholder="e.g. VIC" style={filterInput} />
+              </label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Postcode
+                <input type="text" value={fPostcode} onChange={e => setFPostcode(e.target.value)} placeholder="e.g. 3000" style={filterInput} />
+              </label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Purchased (SKU or title)
+                <input type="text" value={fProduct} onChange={e => setFProduct(e.target.value)} placeholder="e.g. 1132 or Pleco" style={filterInput} />
+              </label>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+              <button onClick={() => { setSortBy('recent_added'); setFChannel(''); setFLoyalty(''); setFMinSpend(''); setFMinOrders(''); setFState(''); setFPostcode(''); setFProduct('') }}
+                style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>
+                Clear all
+              </button>
+              <span style={{ fontSize: 12, color: 'var(--slate)' }}>
+                {filtersActive ? `${contacts.length.toLocaleString()} contact${contacts.length === 1 ? '' : 's'} shown` : ''}
+              </span>
+            </div>
+          </div>
+        )}
         <div style={{ flex: 1, overflowY: 'auto', background: '#fff' }}>
           {loading ? (
             <SkeletonList rows={6} />
