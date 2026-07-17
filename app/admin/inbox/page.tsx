@@ -1137,6 +1137,13 @@ export default function InboxPage() {
     selectedRef.current = conv
     setMobilePane('thread')
     setAiDetected(null)
+    // Clear the PREVIOUS conversation's messages/contact immediately, before the
+    // async fetch below resolves. Without this, the old thread's full history
+    // stayed on screen — under the newly-clicked contact's name — until the
+    // real (often much shorter) data for the new conversation loaded a moment
+    // later, which looked like the page "shows the info and then hides it".
+    setMessages([])
+    setContact(null)
     // Restore which fields AI auto-saved for this contact (for the badge).
     try {
       const store = JSON.parse(localStorage.getItem('colvy-ai-saved') || '{}')
@@ -1712,7 +1719,18 @@ export default function InboxPage() {
     }
   }, [messages, contact])
 
-  const scrollBottom = () => setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+  // A single scroll shortly after opening a conversation often lands short —
+  // images/avatars in the thread finish loading a moment later and grow the
+  // container height, leaving a gap the user had to close by scrolling
+  // manually. Re-run the scroll a few times over the next second to catch
+  // that late layout growth, using 'auto' (instant) so each catch-up jump
+  // doesn't fight an in-flight smooth-scroll animation.
+  const scrollBottom = () => {
+    const jump = () => messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
+    setTimeout(jump, 60)
+    setTimeout(jump, 300)
+    setTimeout(jump, 700)
+  }
 
   // ── Send reply ─────────────────────────────────────────────────────────────
   // Open a picker for poll/survey/form, loading the company's items
@@ -4034,6 +4052,9 @@ export default function InboxPage() {
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                         )}
                         {ev.detail || ev.event_type}
+                        {ev.created_at && (
+                          <span style={{ color: '#c2c6cb', fontWeight: 500 }}> · {fmtTime(ev.created_at)}</span>
+                        )}
                       </span>
                       <div style={{ flex: 1, height: 1, background: '#eceef0' }} />
                     </div>

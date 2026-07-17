@@ -410,24 +410,6 @@ export default function AdminDashboard() {
               </div>
             )}
           </div>
-
-          {/* Database Setup */}
-          <div className="mt-8 bg-blue-50 rounded-xl border p-6" style={{ borderColor: '#3b82f6' }}>
-            <h3 className="font-bold mb-2 text-blue-900">Database Setup</h3>
-            <p className="text-sm text-blue-800 mb-4">
-              If you see "Make sure DATABASE_SETUP.sql has been run" errors, follow these steps:
-            </p>
-            <ol className="text-sm text-blue-800 space-y-2 list-decimal list-inside">
-              <li>Go to <strong>Supabase Dashboard</strong></li>
-              <li>Open your project (Bikiran)</li>
-              <li>Click <strong>SQL Editor</strong></li>
-              <li>Create a new query</li>
-              <li>Copy the DATABASE_SETUP.sql content from your project</li>
-              <li>Paste it into the SQL editor</li>
-              <li>Click <strong>Run</strong></li>
-              <li>Refresh this page</li>
-            </ol>
-          </div>
         </div>
       </main>
     </div>

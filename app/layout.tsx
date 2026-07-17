@@ -736,7 +736,20 @@ export default function RootLayout({
                 const isOnBoard = isSubdomain || isCompanyOwner
                 // On colvy.com show the full marketing menu; on boards show board nav
                 const items = isOnBoard ? NAV_ITEMS : MARKETING_NAV
-                return items
+                // Apply the saved drag-to-reorder sequence (Site Navigation
+                // settings) — items were always rendered in NAV_ITEMS' fixed
+                // array order regardless of navOrder, so dragging "Help" to the
+                // top never actually changed where it appeared here.
+                const ordered = isOnBoard
+                  ? [...items].sort((a, b) => {
+                      const ai = navOrder.indexOf(a.label), bi = navOrder.indexOf(b.label)
+                      if (ai === -1 && bi === -1) return 0
+                      if (ai === -1) return 1
+                      if (bi === -1) return -1
+                      return ai - bi
+                    })
+                  : items
+                return ordered
                 .filter(item => {
                   if (isOnBoard && navVisibility[item.label as keyof typeof navVisibility] === false) return false
                   const isBoardItem = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label) && item.href.startsWith('/') && !item.href.startsWith('/features')
@@ -978,7 +991,13 @@ export default function RootLayout({
             <div className="fixed inset-0 z-30 bg-black/20" onClick={() => setShowDrawer(false)} />
             <div className="fixed right-0 top-14 bottom-0 z-40 w-64 bg-white border-l drawer-open" style={{ borderColor: 'var(--border)' }}>
               <div className="p-4 space-y-2">
-                {NAV_ITEMS.filter(item => {
+                {[...NAV_ITEMS].sort((a, b) => {
+                  const ai = navOrder.indexOf(a.label), bi = navOrder.indexOf(b.label)
+                  if (ai === -1 && bi === -1) return 0
+                  if (ai === -1) return 1
+                  if (bi === -1) return -1
+                  return ai - bi
+                }).filter(item => {
                   if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
                   const isBoardItem2 = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)
                   const isMarketingItem2 = item.label === 'Features' || item.label === 'Pricing'
