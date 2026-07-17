@@ -7,6 +7,7 @@ import Link from 'next/link'
 import CallBar from '@/components/CallBar'
 import CallCard from '@/components/CallCard'
 import Dialer from '@/components/Dialer'
+import ComposeMessage from '@/components/ComposeMessage'
 import EmailMessage from '@/components/EmailMessage'
 import EmailComposer from '@/components/EmailComposer'
 import ContactTimeline from '@/components/ContactTimeline'
@@ -657,6 +658,7 @@ export default function InboxPage() {
   // ── Filter panel (Coax style) ─────────────────────────────────────────────
   const [showFilters, setShowFilters] = useState(false)
   const [showDialer, setShowDialer] = useState(false)
+  const [showCompose, setShowCompose] = useState(false)
   const [emailFromLabel, setEmailFromLabel] = useState('')
   const [linkedChannels, setLinkedChannels] = useState<any[]>([])
   const [showTimeline, setShowTimeline] = useState(false)
@@ -780,6 +782,7 @@ export default function InboxPage() {
   const [linkCopied, setLinkCopied] = useState(false)
   const [showActions, setShowActions] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesScrollRef = useRef<HTMLDivElement>(null)
   const channelRef = useRef<any>(null)
   // Bumped to force the realtime subscription to rebuild after a dropped socket.
   const [realtimeNonce, setRealtimeNonce] = useState(0)
@@ -1724,21 +1727,41 @@ export default function InboxPage() {
     }
   }, [messages, contact])
 
-  // Scroll to the newest message. One smooth scroll for the normal case, then a
-  // SINGLE instant catch-up ~400ms later ONLY if late-loading images grew the
-  // thread past where we landed — this avoids both the old "lands short" gap and
-  // the jittery multi-jump behaviour.
-  const scrollBottom = () => {
-    const el = messagesEndRef.current
+  // Buttery-smooth scroll to the newest message. We animate the scroll
+  // container's scrollTop with an eased requestAnimationFrame loop (much smoother
+  // than scrollIntoView, which stutters on long threads). For very long threads
+  // we jump most of the way instantly, then animate the last stretch, so it's
+  // fast AND smooth. A ResizeObserver keeps us pinned to the bottom while late
+  // images load, so it never lands short.
+  const scrollRaf = useRef<number | null>(null)
+  const smoothScrollToBottom = (opts?: { instant?: boolean }) => {
+    const el = messagesScrollRef.current
     if (!el) return
-    el.scrollIntoView({ behavior: 'smooth', block: 'end' })
-    setTimeout(() => {
-      const el2 = messagesEndRef.current
-      if (!el2) return
-      const r = el2.getBoundingClientRect()
-      // Only nudge if the anchor ended up below the viewport (content grew).
-      if (r.top > window.innerHeight) el2.scrollIntoView({ behavior: 'auto', block: 'end' })
-    }, 450)
+    if (scrollRaf.current) cancelAnimationFrame(scrollRaf.current)
+    const target = () => el.scrollHeight - el.clientHeight
+    if (opts?.instant) { el.scrollTop = target(); return }
+    // If we're far from the bottom, jump close first so the animation is short.
+    const remaining = target() - el.scrollTop
+    if (remaining > 1200) el.scrollTop = target() - 1000
+    const start = el.scrollTop
+    const startTime = performance.now()
+    const duration = 420
+    const ease = (t: number) => 1 - Math.pow(1 - t, 3) // easeOutCubic
+    const step = (now: number) => {
+      const t = Math.min(1, (now - startTime) / duration)
+      el.scrollTop = start + (target() - start) * ease(t)
+      if (t < 1) scrollRaf.current = requestAnimationFrame(step)
+    }
+    scrollRaf.current = requestAnimationFrame(step)
+  }
+  const scrollBottom = () => {
+    // First settle instantly to the bottom, then a smooth pass, then catch late
+    // layout growth (images) with a couple of instant re-pins.
+    requestAnimationFrame(() => {
+      smoothScrollToBottom()
+      setTimeout(() => smoothScrollToBottom({ instant: true }), 350)
+      setTimeout(() => smoothScrollToBottom({ instant: true }), 800)
+    })
   }
 
   // ── Send reply ─────────────────────────────────────────────────────────────
@@ -2642,6 +2665,11 @@ export default function InboxPage() {
           .inbox-thread-header [data-actions-menu] {
             position: relative;
             z-index: 5;
+            /* Move Assign and ⋯ onto the same row as the scrolling tools strip
+               (order:10) instead of letting them wrap under a long name and
+               shove the layout around. They sit at the end of that row. */
+            order: 11;
+            margin-top: 6px;
           }
           .inbox-thread-header [data-assign-menu] > button { min-height: 38px; padding: 8px 14px !important; }
           .inbox-thread-header [data-actions-menu] > button { min-width: 38px; min-height: 38px; }
@@ -2939,6 +2967,15 @@ export default function InboxPage() {
       {showDialer && (
         <Dialer companyId={companyId} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
           onClose={() => setShowDialer(false)} />
+      )}
+
+      {showCompose && companyId && (
+        <ComposeMessage
+          companyId={companyId}
+          senderName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+          onClose={() => setShowCompose(false)}
+          onStarted={(convId) => { setShowCompose(false); loadConversations(); }}
+        />
       )}
 
       {/* Filter panel (Coax style) */}
@@ -3486,7 +3523,7 @@ export default function InboxPage() {
       ) : (
       <div className="inbox-col-list" style={{ width: 300, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#fff', position: 'relative' }}>
         {/* Floating compose button — start a new outbound message/call */}
-        <button type="button" onClick={() => setShowDialer(true)} title="New message / call"
+        <button type="button" onClick={() => setShowCompose(true)} title="New message"
           style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 20, width: 52, height: 52, borderRadius: '50%', border: 'none', background: 'var(--coral)', color: '#fff', cursor: 'pointer', boxShadow: '0 6px 18px rgba(255,122,107,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
@@ -3745,8 +3782,10 @@ export default function InboxPage() {
                 )
               })()}
               <div className="inbox-header-name" style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {contact?.name || selected.subject || 'Visitor'}
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                    {contact?.name || selected.subject || 'Visitor'}
+                  </span>
                   {contact?.id && (
                     <a href={`/admin/customers/profile?id=${contact.id}`}
                       title="Open full customer profile"
@@ -4031,7 +4070,7 @@ export default function InboxPage() {
             )}
 
             {/* Messages */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div ref={messagesScrollRef} style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14, scrollBehavior: 'auto' }}>
               {(() => {
                 const list = msgSearch ? messages.filter(m => (m.content || '').toLowerCase().includes(msgSearch.toLowerCase())) : messages
                 // Flat list of all images/videos in the thread (for the gallery),
@@ -4334,9 +4373,9 @@ export default function InboxPage() {
 
                       {/* Timestamp + channel + read receipt — Coax style:
                           "Received 3:42 PM | 29 May | Facebook   Read by: SG" */}
-                      <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af', textAlign: isAgent ? 'right' : 'left', display: 'flex', gap: 6, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>
+                      <p style={{ margin: '4px 0 0', fontSize: 10.5, color: '#8a8f98', textAlign: isAgent ? 'right' : 'left', display: 'flex', gap: 6, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>
                         <span style={{ fontStyle: 'italic' }}>
-                          {fmtReceipt(msg.created_at, isAgent, (msg as any).delivery_channel || selected.channel)}
+                          {fmtReceipt(msg.created_at, isAgent, (msg as any).delivery_channel || selected.channel) || fmtTime(msg.created_at)}
                         </span>
 
                         {(msg as any).is_ai && (

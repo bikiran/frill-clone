@@ -115,6 +115,44 @@ export async function POST(req: NextRequest) {
         sms_number: dest,
         sms_enabled: true,
       }).eq('id', conversationId)
+    } else if (!conversationId && dest && !skipChatMessage) {
+      // Brand-new outbound message (from the composer) — find or create a
+      // conversation for this number so the sent SMS shows as a thread.
+      const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-9)
+      let convId: string | null = null
+      // Try to match an existing contact + their most recent conversation.
+      const { data: cts } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).limit(500)
+      const contact = (cts || []).find((c: any) => c.phone && norm(c.phone) === norm(dest))
+      if (contact) {
+        const { data: existing } = await db.from('conversations')
+          .select('id').eq('company_id', companyId).eq('contact_id', contact.id)
+          .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+        if (existing?.id) convId = existing.id
+      }
+      if (!convId) {
+        const { data: created } = await db.from('conversations').insert({
+          company_id: companyId,
+          contact_id: contact?.id || null,
+          subject: contact?.name || dest,
+          channel: 'sms',
+          status: 'open',
+          sms_number: e164,
+          last_message: body.slice(0, 120),
+          last_message_at: new Date().toISOString(),
+        }).select('id').maybeSingle()
+        convId = created?.id || null
+      }
+      if (convId) {
+        await db.from('messages').insert({
+          conversation_id: convId, company_id: companyId, sender_type: 'agent',
+          content: body, delivery_channel: 'sms',
+        })
+        await db.from('conversations').update({
+          last_message: body.slice(0, 120), last_message_at: new Date().toISOString(),
+          channel: 'sms', sms_number: e164, status: 'open',
+        }).eq('id', convId)
+      }
+      return NextResponse.json({ ok: true, id: result?.data?.id, conversationId: convId })
     }
 
     return NextResponse.json({ ok: true, id: result?.data?.id })
