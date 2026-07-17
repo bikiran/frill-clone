@@ -149,10 +149,26 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   }
   if (!contact) {
     const name = `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim() || email
+    const b = order.billing || {}
+    const address = [b.address_1, b.address_2].filter(Boolean).join(', ') || null
     const { data: created } = await db.from('contacts').insert({
       company_id: companyId, name, email: email || null, phone: phone || null,
+      address, city: b.city || null, state: b.state || null, postcode: b.postcode || null, country: b.country || null,
     }).select().maybeSingle()
     contact = created
+  } else {
+    // Existing contact (e.g. created via chat/SMS before ordering) — backfill
+    // the address from this order's billing if it's currently missing, so the
+    // "New order" message doesn't leave the contact card blank.
+    const b = order.billing || {}
+    const address = [b.address_1, b.address_2].filter(Boolean).join(', ') || null
+    if (address && !contact.address) {
+      await db.from('contacts').update({
+        address, city: b.city || contact.city || null, state: b.state || contact.state || null,
+        postcode: b.postcode || contact.postcode || null, country: b.country || contact.country || null,
+      }).eq('id', contact.id)
+      contact.address = address
+    }
   }
 
   // Link this order's customer to any existing contact from other channels

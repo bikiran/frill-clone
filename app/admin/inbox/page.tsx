@@ -887,6 +887,11 @@ export default function InboxPage() {
   const loadConversations = useCallback(async (cid?: string | null) => {
     const id = cid || companyId
     if (!id) return
+    // Clear the list IMMEDIATELY so a tap during the fetch can't land on a
+    // stale row from the previous tab (Open→Closed briefly showed Open rows
+    // while this query was in flight, and a click during that gap opened the
+    // wrong conversation).
+    setConversations([])
     // NOTE: conversations.contact_id has no FK to contacts in some deployments,
     // so a PostgREST embed (`contacts(...)`) fails the WHOLE query and returns
     // nothing (blank inbox). Fetch conversations plainly, then attach contacts.
@@ -3861,6 +3866,10 @@ export default function InboxPage() {
                   {Object.entries(STATUS_COLOR).map(([k, v]) => <option key={k} value={k}>{v.color && k.charAt(0).toUpperCase() + k.slice(1)}</option>)}
                 </select>
               </div>
+              </div>
+              {/* Assign and ⋯ are TRUE siblings of the scrolling tools strip (not
+                  inside it) — the strip's overflow-x/mask was clipping their taps
+                  and dropdown menus when they lived inside it. */}
               {/* Assign button */}
               <div style={{ position: 'relative' }} data-assign-menu>
                 <button type="button" onClick={() => setShowAssignMenu(v => !v)}
@@ -3914,7 +3923,6 @@ export default function InboxPage() {
                     </button>
                   </div>
                 )}
-              </div>
               </div>
 
               {/* Snooze menu */}

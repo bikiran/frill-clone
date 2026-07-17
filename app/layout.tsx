@@ -749,7 +749,12 @@ export default function RootLayout({
                 }).map(item => (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  // "Ideas" always needs ?view=ideas so it reaches the ideas
+                  // board even when another page (e.g. Help) is the configured
+                  // homepage — bare "/" would just redirect straight past it.
+                  // item.href itself stays "/" so the active-state checks below
+                  // (which compare against pathname, without the query) still work.
+                  href={item.label === 'Ideas' ? '/?view=ideas' : item.href}
                   className="px-4 py-2 rounded-lg text-sm font-medium transition-smooth group relative"
                   style={{
                     color: pathname === item.href ? 'var(--coral)' : 'var(--slate)',
@@ -984,7 +989,7 @@ export default function RootLayout({
                 }).map(item => (
                   <Link
                     key={item.href}
-                    href={item.href}
+                    href={item.label === 'Ideas' ? '/?view=ideas' : item.href}
                     onClick={() => setShowDrawer(false)}
                     className="block px-4 py-3 rounded-lg font-medium transition-smooth cursor-pointer"
                     style={{

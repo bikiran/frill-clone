@@ -368,8 +368,8 @@ export default function GalleryPage() {
               {items.filter((it: any) => !catFilter || (itemCats[it.id] || []).includes(catFilter)).map((item, i) => {
                 const isSelected = selected.has(item.id)
                 return (
-                <div key={item.id} style={{ border: `1px solid ${isSelected ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 12, overflow: 'hidden', background: '#fff', boxShadow: isSelected ? '0 0 0 2px var(--peach)' : 'none', transition: 'all 0.12s' }}>
-                  <div style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: 'var(--canvas)' }}
+                <div key={item.id} style={{ border: `1px solid ${isSelected ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 12, background: '#fff', boxShadow: isSelected ? '0 0 0 2px var(--peach)' : 'none', transition: 'all 0.12s', position: 'relative' }}>
+                  <div style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: 'var(--canvas)', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}
                     onClick={() => selectMode ? toggleSelect(item.id) : setLightboxIndex(i)}>
                     {item.kind === 'video' ? (
                       <video src={item.url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />

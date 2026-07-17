@@ -208,8 +208,11 @@ export default function CalendarPage() {
         </select>
       </div>
 
-      {/* Month grid */}
+      {/* Month grid — horizontally scrollable on narrow screens so the 7 columns
+          never get crushed (they were overflowing/clipping event text on mobile). */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', background: '#fff' }}>
+        <div className="calendar-scroll-x" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ minWidth: 640 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: 'var(--canvas)' }}>
           {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
             <div key={d} style={{ padding: '9px 8px', fontSize: 11.5, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>{d}</div>
@@ -266,6 +269,8 @@ export default function CalendarPage() {
               </div>
             )
           })}
+        </div>
+        </div>
         </div>
       </div>
 
