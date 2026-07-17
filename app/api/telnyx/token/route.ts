@@ -114,32 +114,7 @@ export async function POST(req: NextRequest) {
       }
     } catch {}
 
-    // Provision REGISTRATION credentials on the connection so the browser can
-    // register (login/password) as a real SIP endpoint — required for inbound
-    // Call Control to dial it. We set a known password and store it, since
-    // Telnyx never returns an existing password. Reuse the stored one if present.
-    let regUser = (integ as any).reg_username
-    let regPass = (integ as any).reg_password
-    if (!regUser || !regPass) {
-      regUser = `colvy_${companyId.slice(0, 8)}`
-      regPass = `Cv${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2).toUpperCase()}!`
-      try {
-        await svc.setConnectionCredentials(integ.connection_id, regUser, regPass)
-        await db.from('telnyx_integrations').update({ reg_username: regUser, reg_password: regPass, sip_username: regUser }).eq('company_id', companyId)
-        storedSipUser = regUser
-      } catch (e) {
-        console.error('[telnyx token] could not set connection credentials', e)
-      }
-    }
-
-    return NextResponse.json({
-      token,
-      from: fromNumber,
-      // Credential registration — the client registers with these so inbound
-      // calls to sip:<regUser>@sip.telnyx.com actually reach this browser.
-      sipUser: regUser,
-      sipPassword: regPass,
-    })
+    return NextResponse.json({ token, from: fromNumber })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
