@@ -66,13 +66,15 @@ export async function POST(req: NextRequest) {
       try {
         const conn = await svc.createCredentialConnection(`Colvy WebRTC ${companyId.slice(0, 8)}`)
         webrtcConnId = conn?.data?.id
-        console.log('[telnyx token] created WebRTC credential connection', { webrtcConnId })
+        console.log('[telnyx token] createCredentialConnection result', JSON.stringify({ id: conn?.data?.id, err: (conn as any)?.errors }))
         if (webrtcConnId) {
           const { error: persistErr } = await db.from('telnyx_integrations').update({ webrtc_connection_id: webrtcConnId }).eq('company_id', companyId)
           if (persistErr) console.error('[telnyx token] could not persist webrtc_connection_id (run migration V183):', persistErr.message)
+        } else {
+          console.error('[telnyx token] createCredentialConnection returned NO id', JSON.stringify(conn))
         }
-      } catch (e) {
-        console.error('[telnyx token] could not create WebRTC credential connection', e)
+      } catch (e: any) {
+        console.error('[telnyx token] could not create WebRTC credential connection', e?.message || e)
       }
     }
 
