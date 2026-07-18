@@ -50,7 +50,7 @@ async function run(req: NextRequest) {
 
     for (const [companyId, list] of Object.entries(byCompany)) {
       const { data: company } = await db.from('companies')
-        .select('name, calendar_settings').eq('id', companyId).maybeSingle()
+        .select('name, slug, calendar_settings').eq('id', companyId).maybeSingle()
 
       const cfg = company?.calendar_settings || {}
       // Off by default — nobody gets surprise emails.
@@ -105,7 +105,16 @@ async function run(req: NextRequest) {
               const from = ec?.[0]?.from_address || ec?.[0]?.inbound_address || 'notifications@updates.colvy.com'
               const fromName = company?.name ? `${company.name} Calendar` : 'Colvy Calendar'
 
-              const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+              // Link to the company's own subdomain — a roxyaquarium.colvy.com
+              // link is recognisable to the team, a bare colvy.com one isn't.
+              const siteBase = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+              let base = siteBase
+              try {
+                const u = new URL(siteBase)
+                if (company?.slug && u.hostname.endsWith('colvy.com')) {
+                  base = `${u.protocol}//${company.slug}.colvy.com`
+                }
+              } catch {}
               const body = [
                 line,
                 '',

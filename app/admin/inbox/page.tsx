@@ -497,19 +497,37 @@ export default function InboxPage() {
   // how we're talking to them).
   const sendProductMessage = async (p: any, kind: 'price' | 'link' | 'both') => {
     if (!selected || !companyId || !user) return
-    const currency = '$'
-    const price = p.sale_price && p.on_sale ? p.sale_price : (p.price || p.regular_price)
+    const rawPrice = p.sale_price && p.on_sale ? p.sale_price : (p.price || p.regular_price)
+    // WooCommerce returns prices like "2.9900" — show Australian currency
+    // formatting ($2.99) rather than the raw 4-decimal value.
+    const price = new Intl.NumberFormat('en-AU', {
+      style: 'currency', currency: 'AUD', currencyDisplay: 'narrowSymbol',
+    }).format(Number(rawPrice) || 0)
     const stock = p.stock_status === 'instock'
       ? (p.manage_stock && p.stock_quantity != null ? `${p.stock_quantity} in stock` : 'In stock')
       : 'Out of stock'
 
+    // Rewrite the product URL to a trackable company.colvy.com link so we can
+    // report on whether the customer opened it. Falls back to the raw permalink.
+    let productUrl = p.permalink || ''
+    if (productUrl) {
+      try {
+        const r = await fetch('/api/short-links/create', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId, kind: 'redirect', conversationId: selected.id, url: productUrl }),
+        })
+        const d = await r.json()
+        if (r.ok && d.url) productUrl = d.url
+      } catch { /* keep the original link */ }
+    }
+
     let content = ''
     if (kind === 'price') {
-      content = `${p.name} — ${currency}${price} AUD (${stock})`
+      content = `${p.name} — ${price} AUD (${stock})`
     } else if (kind === 'link') {
-      content = `${p.name}\n${p.permalink || ''}`
+      content = `${p.name}\n${productUrl}`
     } else {
-      content = `${p.name} — ${currency}${price} AUD (${stock})\n${p.permalink || ''}`
+      content = `${p.name} — ${price} AUD (${stock})\n${productUrl}`
     }
 
     const me = user.user_metadata?.display_name || user.email?.split('@')[0]
@@ -538,9 +556,9 @@ export default function InboxPage() {
         message_payload: {
           kind: 'product',
           id: p.id, name: p.name, sku: p.sku,
-          price, currency: 'AUD', on_sale: !!p.on_sale, regular_price: p.regular_price,
+          price: rawPrice, price_display: price, currency: 'AUD', on_sale: !!p.on_sale, regular_price: p.regular_price,
           stock_status: p.stock_status, stock_quantity: p.stock_quantity,
-          image: p.image, permalink: p.permalink,
+          image: p.image, permalink: productUrl, source_url: p.permalink,
           shown: kind,
         },
         delivery_channel: smsNumber ? 'sms' : 'chat',
@@ -2395,17 +2413,22 @@ export default function InboxPage() {
       return
     }
 
-    // Auto-route: send via chat by default. If the visitor gave a mobile and
-    // isn't currently online (no activity in the last 2 minutes), also deliver
-    // over SMS so they get the reply on their phone.
+    // Auto-route. Two rules, in order:
+    //   1. Continue the conversation on whatever channel we last used, so a
+    //      thread that moved to SMS stays on SMS instead of silently flipping
+    //      back to the widget.
+    //   2. Never drop a reply into a live chat the visitor doesn't have open —
+    //      if the widget isn't currently active, deliver over SMS so they
+    //      actually receive it.
     const smsNumber = smsDestination()
     const lastSeen = (selected as any).visitor_last_seen || (selected as any).last_message_at
     const visitorOnline = lastSeen ? (Date.now() - (parseTs(lastSeen)?.getTime() || 0)) < 120000 : false
+    const activeChannel = (selected as any).active_channel || null
     const shouldSms = sendChannel === 'sms'
       ? !!smsNumber
       : sendChannel === 'chat'
         ? false
-        : (smsNumber && !visitorOnline)
+        : !!smsNumber && (activeChannel === 'sms' || !visitorOnline)
 
     if (shouldSms) {
       // Tell the agent (and the record) that the conversation moved to SMS.
@@ -2462,6 +2485,8 @@ export default function InboxPage() {
       last_message: content,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      // Remember the channel so the next reply continues on it.
+      active_channel: 'chat',
     }).eq('id', selected.id)
     setReply('')
     setReplyTo(null)
@@ -2652,6 +2677,8 @@ export default function InboxPage() {
       if (loc !== locationFilter) return false
     }
     const ct: any = (c as any).contacts || {}
+    // Reported spam drops out of the open inbox (still reachable under Closed).
+    if ((c as any).is_spam && statusFilter === 'open') return false
     // Snoozed conversations drop out of the list until their time is up.
     const snz = (c as any).snoozed_until
     if (snz && (parseTs(snz)?.getTime() || 0) > Date.now() && statusFilter === 'open') return false
@@ -2723,6 +2750,53 @@ export default function InboxPage() {
     }
     return String(a)
   }
+  // ── Block contact / report spam ──────────────────────────────────────────
+  const toggleBlockContact = async () => {
+    if (!contact?.id || !companyId) return
+    const nowBlocked = !(contact as any).is_blocked
+    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A team member'
+    if (nowBlocked && !confirm(`Block ${contact.name || 'this contact'}? Their messages will be marked blocked in the inbox.`)) return
+    try {
+      await (supabase as any).from('contacts').update({
+        is_blocked: nowBlocked,
+        blocked_at: nowBlocked ? new Date().toISOString() : null,
+        blocked_by: nowBlocked ? me : null,
+      }).eq('id', contact.id)
+      setContact({ ...(contact as any), is_blocked: nowBlocked } as any)
+      // Leave a trace in the thread so the team can see who did it and when.
+      if (selected) {
+        await logEvent(
+          nowBlocked ? 'contact_blocked' : 'contact_unblocked',
+          `${me} has ${nowBlocked ? 'blocked' : 'unblocked'} this contact`
+        )
+      }
+      showToast(nowBlocked ? 'Contact blocked' : 'Contact unblocked')
+    } catch (e: any) {
+      showToast('Could not update: ' + e.message)
+    }
+  }
+
+  const reportSpam = async () => {
+    if (!selected || !companyId) return
+    if (!confirm('Report this conversation as spam? It will be marked spam and closed.')) return
+    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A team member'
+    try {
+      await (supabase as any).from('conversations').update({
+        is_spam: true, status: 'closed',
+      }).eq('id', selected.id)
+      if (contact?.id) {
+        await (supabase as any).from('contacts')
+          .update({ spam_reported_at: new Date().toISOString() }).eq('id', contact.id)
+      }
+      await logEvent('spam_reported', `${me} reported this conversation as spam`)
+      showToast('Reported as spam and closed')
+      setSelected(null)
+      loadConversations()
+    } catch (e: any) {
+      showToast('Could not report: ' + e.message)
+    }
+  }
+
   // Highlight @mentions inside an internal note so they stand out.
   const renderWithMentions = (text: string) => {
     const parts = String(text || '').split(/(@[\w.\-]+)/g)
@@ -2792,10 +2866,14 @@ export default function InboxPage() {
           }
           .inbox-thread-header .inbox-header-name p:first-child { font-size: 16px !important; }
 
-          /* Row 2 — the scrolling tool strip */
+          /* Row 2 — the scrolling tool strip. It shares this row with Assign and
+             the ⋯ menu (which sit at the end): the strip flexes to fill whatever
+             space is left rather than claiming 100% and pushing them onto a
+             third row, which ate a big chunk of a phone screen. */
           .inbox-thread-header .inbox-header-tools {
             order: 10;
-            flex: 0 0 100%;
+            flex: 1 1 0;
+            min-width: 0;
             display: flex;
             align-items: center;
             gap: 6px;
@@ -2861,10 +2939,10 @@ export default function InboxPage() {
           .inbox-thread-header [data-actions-menu] {
             position: relative;
             z-index: 5;
-            /* Move Assign and ⋯ onto the same row as the scrolling tools strip
-               (order:10) instead of letting them wrap under a long name and
-               shove the layout around. They sit at the end of that row. */
+            /* Sit at the end of the tools row (order 10) rather than wrapping
+               under a long name and shoving the layout around. */
             order: 11;
+            flex: 0 0 auto;
             margin-top: 6px;
           }
           .inbox-thread-header [data-assign-menu] > button { min-height: 38px; padding: 8px 14px !important; }
@@ -5102,6 +5180,12 @@ export default function InboxPage() {
                       ))}
                     </div>
                     <h3 style={{ margin: '12px 0 0', fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>{contact.name || contact.email || 'Visitor'}</h3>
+                    {(contact as any).is_blocked && (
+                      <span style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', padding: '3px 9px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>
+                        Blocked
+                      </span>
+                    )}
                     {/* Quick actions */}
                     <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                       <button type="button" title="Assign" onClick={() => { setActivePanel('info'); const b = document.querySelector('[data-assign-menu] button') as HTMLButtonElement; b?.click() }}
@@ -5119,6 +5203,17 @@ export default function InboxPage() {
                       <button type="button" title="Close conversation" onClick={() => setStatus('closed')}
                         style={cardAction('#fef2f2', '#dc2626')}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                      </button>
+                      {/* Block / unblock this contact */}
+                      <button type="button" onClick={toggleBlockContact}
+                        title={(contact as any).is_blocked ? 'Unblock this contact' : 'Block this contact'}
+                        style={cardAction((contact as any).is_blocked ? '#f0fdf4' : '#fef2f2', (contact as any).is_blocked ? '#059669' : '#dc2626')}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>
+                      </button>
+                      {/* Report this conversation as spam */}
+                      <button type="button" onClick={reportSpam} title="Report spam"
+                        style={cardAction('#fff7ed', '#c2410c')}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                       </button>
                     </div>
                   </div>

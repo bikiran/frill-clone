@@ -54,9 +54,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Build the branded URL on the company's subdomain.
+    // Review/media links use /m/ (a branded viewer page); plain redirects use
+    // /l/, which records a detailed click (time, location, device) for Reports
+    // before forwarding.
     const { data: company } = await db.from('companies').select('slug').eq('id', companyId).maybeSingle()
     const host = company?.slug ? `${company.slug}.colvy.com` : 'colvy.com'
-    return NextResponse.json({ url: `https://${host}/m/${code}`, code })
+    const path = (kind === 'review' || kind === 'media') ? 'm' : 'l'
+    return NextResponse.json({ url: `https://${host}/${path}/${code}`, code })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
