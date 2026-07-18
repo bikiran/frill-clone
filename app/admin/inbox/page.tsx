@@ -5490,6 +5490,24 @@ export default function InboxPage() {
                       <input type="checkbox" id="marketing" checked={!!editContact.subscribed_to_marketing} onChange={e => setEditContact(c => ({ ...c, subscribed_to_marketing: e.target.checked }))} />
                       <label htmlFor="marketing" style={{ fontSize: 12, color: 'var(--slate)' }}>Subscribed to marketing</label>
                     </div>
+                    {/* Why this contact is (or isn't) marketable — the basis you'd
+                        need to be able to point to if an opt-out is disputed. */}
+                    {((editContact as any).consent_basis || (editContact as any).unsubscribed_at) && (
+                      <div style={{ marginTop: -6, marginBottom: 8, fontSize: 11, color: 'var(--slate)', lineHeight: 1.5 }}>
+                        {(editContact as any).unsubscribed_at ? (
+                          <span style={{ color: '#dc2626', fontWeight: 600 }}>
+                            Unsubscribed {(editContact as any).unsubscribe_method === 'sms_keyword' ? 'by replying STOP' : ''} · do not include in campaigns
+                          </span>
+                        ) : (
+                          <>
+                            Consent: <strong style={{ color: 'var(--ink)' }}>{(editContact as any).consent_basis}</strong>
+                            {(editContact as any).consent_source ? ` — ${(editContact as any).consent_source}` : ''}
+                          </>
+                        )}
+                      </div>
+                    )}
+                    <div style={{ display: 'none' }}>
+                    </div>
                     <textarea value={editContact.notes || ''} onChange={e => setEditContact(c => ({ ...c, notes: e.target.value }))} placeholder="Notes…" rows={2}
                       style={{ ...inp, resize: 'vertical', fontSize: 12 }} />
                     <button type="button" onClick={saveContact} disabled={savingContact}

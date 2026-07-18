@@ -39,6 +39,55 @@ export async function POST(req: NextRequest) {
       const digits = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
       const fromDigits = digits(from)
 
+      // ── Opt-out / opt-in keywords ────────────────────────────────────────
+      // Honouring STOP is a legal requirement for marketing SMS, and it has to
+      // work regardless of what else happens to the message. Handled here,
+      // before any conversation routing, so a malformed thread can't swallow it.
+      const keyword = String(text).trim().toUpperCase().replace(/[^A-Z]/g, '')
+      const STOP_WORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT', 'OPTOUT']
+      const START_WORDS = ['START', 'SUBSCRIBE', 'YES', 'OPTIN', 'UNSTOP']
+      if (fromDigits && (STOP_WORDS.includes(keyword) || START_WORDS.includes(keyword))) {
+        const optingOut = STOP_WORDS.includes(keyword)
+        try {
+          const { data: all } = await db.from('contacts')
+            .select('id, phone').eq('company_id', companyId).limit(2000)
+          const match = (all || []).find((c: any) => c.phone && digits(c.phone) === fromDigits)
+          if (match) {
+            await db.from('contacts').update(
+              optingOut
+                ? {
+                    subscribed_to_marketing: false,
+                    consent_basis: 'none',
+                    consent_source: `replied ${keyword} by SMS`,
+                    unsubscribed_at: new Date().toISOString(),
+                    unsubscribe_method: 'sms_keyword',
+                  }
+                : {
+                    subscribed_to_marketing: true,
+                    consent_basis: 'express',
+                    consent_source: `replied ${keyword} by SMS`,
+                    consent_recorded_at: new Date().toISOString(),
+                    unsubscribed_at: null,
+                    unsubscribe_method: null,
+                  }
+            ).eq('id', match.id)
+
+            await db.from('consent_events').insert({
+              company_id: companyId,
+              contact_id: match.id,
+              action: optingOut ? 'unsubscribed' : 'subscribed',
+              basis: optingOut ? 'none' : 'express',
+              source: `SMS keyword: ${keyword}`,
+              actor: 'customer',
+            })
+          }
+        } catch (e) {
+          console.error('[telnyx] consent keyword handling failed', e)
+        }
+        // The message still falls through to be stored in the thread, so staff
+        // can see the opt-out happened rather than it vanishing silently.
+      }
+
       // 1) Exact sms_number match (fast path).
       let { data: conv } = await db.from('conversations')
         .select('*').eq('company_id', companyId).eq('sms_number', from)
