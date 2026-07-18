@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TelnyxService, toE164 } from '@/lib/telnyx-service'
+import { trackLinksInText } from '@/lib/link-tracking'
 
 function admin() {
   return createClient(
@@ -80,6 +81,17 @@ export async function POST(req: NextRequest) {
       body = (body ? body + '\n' : '') + Array.from(new Set(links)).join('\n')
     }
     if (!body.trim()) return NextResponse.json({ error: 'Nothing to send' }, { status: 400 })
+
+    // Rewrite any URLs in the message to trackable {company}.colvy.com/l/<code>
+    // links so we can report on clicks. Fail-safe: on any error the original
+    // URL is kept, so tracking can never block the message going out.
+    try {
+      body = await trackLinksInText(body, {
+        companyId,
+        conversationId: conversationId || undefined,
+        channel: 'sms',
+      })
+    } catch {}
 
     const svc = new TelnyxService(integ.api_key)
     const result = await svc.sendSMS({

@@ -2710,6 +2710,19 @@ export default function InboxPage() {
   const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', fontFamily: 'inherit' }
   const fieldBtn = (color: string): React.CSSProperties => ({ width: 24, height: 24, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 })
   const cardAction = (bg: string, color: string): React.CSSProperties => ({ width: 46, height: 46, borderRadius: 12, border: 'none', background: bg, color, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' })
+  // Addresses arrive in two shapes depending on the source: a plain string, or a
+  // structured object like { address_1, city, state, postcode, country }.
+  // Assigning the object straight into JSX crashed the page with React error #31
+  // ("objects are not valid as a React child"), so always flatten to a string.
+  const addrToString = (a: any): string => {
+    if (!a) return ''
+    if (typeof a === 'string') return a.trim()
+    if (typeof a === 'object') {
+      return [a.address_1, a.address_2, a.city, a.state, a.postcode, a.country]
+        .filter(Boolean).map(String).join(', ')
+    }
+    return String(a)
+  }
   // Highlight @mentions inside an internal note so they stand out.
   const renderWithMentions = (text: string) => {
     const parts = String(text || '').split(/(@[\w.\-]+)/g)
@@ -5154,7 +5167,7 @@ export default function InboxPage() {
                       // billing address from their most recent WooCommerce order
                       // (a customer who's ordered has an address on file even if
                       // their Colvy contact record is empty).
-                      const ownAddress = [contact.address, contact.city, contact.country].filter(Boolean).join(', ')
+                      const ownAddress = [addrToString(contact.address), contact.city, contact.country].filter(Boolean).join(', ')
                       let addressValue = ownAddress
                       let addressFromOrder = false
                       if (!ownAddress && wooOrders.length > 0) {
@@ -5170,7 +5183,7 @@ export default function InboxPage() {
                       if (!addressValue && abandonedCarts.length > 0) {
                         const c: any = abandonedCarts.find((ac: any) => ac.address || ac.billing_address_1 || ac.city || ac.address_1)
                         if (c) {
-                          addressValue = c.address
+                          addressValue = addrToString(c.address)
                             || [c.address_1 || c.billing_address_1, c.city || c.billing_city, c.state || c.billing_state, c.postcode || c.billing_postcode].filter(Boolean).join(', ')
                           addressFromOrder = true
                         }

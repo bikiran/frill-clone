@@ -78,6 +78,7 @@ const NAV_GROUPS = [
       { label: 'Calendar', href: '/admin/calendar', icon: 'calendar' },
       { label: 'Scheduled', href: '/admin/scheduled', icon: 'scheduled' },
       { label: 'Call Logs', href: '/admin/calls', icon: 'support' },
+      { label: 'Link Reports', href: '/admin/link-reports', icon: 'analytics' },
       { label: 'Reviews', href: '/admin/reviews', icon: 'analytics' },
     ],
   },
