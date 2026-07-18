@@ -26,10 +26,6 @@ export async function POST(req: NextRequest) {
     if (!companyId || !Array.isArray(userIds) || userIds.length === 0) {
       return NextResponse.json({ ok: true, sent: 0, skipped: 'nothing to send' })
     }
-    if (!process.env.RESEND_API_KEY) {
-      return NextResponse.json({ ok: true, sent: 0, skipped: 'no RESEND_API_KEY' })
-    }
-
     const db = admin()
 
     // Resolve the mentioned users' email addresses and the company details.
@@ -40,11 +36,25 @@ export async function POST(req: NextRequest) {
       .in('user_id', userIds)
 
     const { data: company } = await db
-      .from('companies').select('name, slug').eq('id', companyId).maybeSingle()
+      .from('companies').select('name, slug, owner_id').eq('id', companyId).maybeSingle()
 
-    const recipients = (members || []).filter((m: any) => m.email)
-    if (recipients.length === 0) {
-      return NextResponse.json({ ok: true, sent: 0, skipped: 'no addresses' })
+    const recipients: any[] = (members || []).filter((m: any) => m.email)
+
+    // The company OWNER is mentionable but usually has no team_members row, so
+    // the lookup above misses them entirely. Fall back to their auth record.
+    const missing = userIds.filter((id: string) => !recipients.some(r => r.user_id === id))
+    for (const uid of missing) {
+      try {
+        const { data: u } = await db.auth.admin.getUserById(uid)
+        const email = u?.user?.email
+        if (email) {
+          recipients.push({
+            user_id: uid,
+            email,
+            name: u?.user?.user_metadata?.display_name || email.split('@')[0],
+          })
+        }
+      } catch { /* can't resolve this one — skip */ }
     }
 
     const companyName = company?.name || 'your team'
@@ -55,6 +65,29 @@ export async function POST(req: NextRequest) {
     const where = context || 'a conversation'
     const safe = String(preview || '').slice(0, 300)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+    // ── In-app notification (the bell) ───────────────────────────────────────
+    // Written for EVERY mentioned user, including any we couldn't find an email
+    // for, so the mention is never silently lost.
+    try {
+      await db.from('notifications').insert(
+        userIds.map((uid: string) => ({
+          user_id: uid,
+          type: 'mention',
+          message: `${mentionedBy || 'A teammate'} mentioned you in ${where}`,
+          actor_name: mentionedBy || null,
+          conversation_id: conversationId || null,
+          is_read: false,
+        }))
+      )
+    } catch { /* the email below is still worth attempting */ }
+
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json({ ok: true, sent: 0, inApp: userIds.length, skipped: 'no RESEND_API_KEY' })
+    }
+    if (recipients.length === 0) {
+      return NextResponse.json({ ok: true, sent: 0, inApp: userIds.length, skipped: 'no addresses' })
+    }
 
     let sent = 0
     for (const m of recipients) {

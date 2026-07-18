@@ -1702,13 +1702,8 @@ export default function InboxPage() {
     // Notify anyone @mentioned in a sidebar note, same as an internal message —
     // mentions should work anywhere they can be typed.
     try {
-      const handles = Array.from(new Set((body.match(/@([\w.\-]+)/g) || []).map(h => h.slice(1).toLowerCase())))
-      if (handles.length) {
-        const hit = teamMembers.filter((m: any) =>
-          handles.includes(String(m.name || '').replace(/\s+/g, '').toLowerCase())
-        )
-        const ids = hit.map((m: any) => m.user_id).filter(Boolean)
-        if (ids.length) {
+      const ids = resolveMentions(body)
+      if (ids.length) {
           await (supabase as any).from('mention_notifications').insert(
             ids.map((uid: string) => ({
               company_id: companyId, conversation_id: selected.id,
@@ -1723,7 +1718,6 @@ export default function InboxPage() {
               context: `a note on ${contact?.name || selected.subject || 'a conversation'}`,
             }),
           }).catch(() => {})
-        }
       }
     } catch { /* the note itself is saved either way */ }
     setNewNote('')
@@ -2405,7 +2399,18 @@ export default function InboxPage() {
     // team reads it in sequence with the real conversation.
     if (internalMode) {
       try {
-        const mentionedIds = mentionedUsers.map(m => m.user_id).filter(Boolean)
+        // Combine what was picked from the dropdown with anything typed by
+        // hand, then keep only handles still present in the final text.
+        const typed = resolveMentions(content)
+        const picked = mentionedUsers
+          .filter((m: any) => {
+            const compact = String(m.name || '').replace(/\s+/g, '').toLowerCase()
+            const first = String(m.name || '').split(/\s+/)[0]?.toLowerCase() || ''
+            const low = content.toLowerCase()
+            return low.includes(`@${compact}`) || low.includes(`@${first}`)
+          })
+          .map((m: any) => m.user_id)
+        const mentionedIds = Array.from(new Set([...typed, ...picked].filter(Boolean))) as string[]
         const { data: inserted } = await (supabase as any).from('messages').insert({
           conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
           sender_name: senderName, content, is_internal: true,
@@ -2919,6 +2924,29 @@ export default function InboxPage() {
     } catch (e: any) {
       showToast('Could not report: ' + e.message)
     }
+  }
+
+  // Resolve @handles from message text against the team list. The text is the
+  // source of truth: relying on the picker state alone missed mentions that
+  // were typed out, pasted, or edited after selecting — and could notify
+  // someone whose mention had since been deleted.
+  const resolveMentions = (text: string): string[] => {
+    const handles = Array.from(new Set(
+      (String(text || '').match(/@([\w.\-]+)/g) || []).map(h => h.slice(1).toLowerCase())
+    ))
+    if (!handles.length) return []
+    const ids = teamMembers
+      .filter((m: any) => {
+        const name = String(m.name || '')
+        const compact = name.replace(/\s+/g, '').toLowerCase()
+        const first = name.split(/\s+/)[0]?.toLowerCase() || ''
+        // Match the full compacted name, the first name, or any handle that is
+        // a prefix of the compacted name (covers "@Sabin" for "Sabin Gautam").
+        return handles.some(h => h === compact || h === first || compact.startsWith(h))
+      })
+      .map((m: any) => m.user_id)
+      .filter(Boolean)
+    return Array.from(new Set(ids)) as string[]
   }
 
   // Highlight @mentions inside an internal note so they stand out.
