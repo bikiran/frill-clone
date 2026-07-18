@@ -86,9 +86,20 @@ export async function POST(req: NextRequest) {
     // links so we can report on clicks. Fail-safe: on any error the original
     // URL is kept, so tracking can never block the message going out.
     try {
+      // Pull the conversation's contact/outlet so clicks can be attributed to a
+      // customer, agent and outlet in Link Reports.
+      let convMeta: any = null
+      if (conversationId) {
+        const { data } = await db.from('conversations')
+          .select('contact_id, assigned_location_id').eq('id', conversationId).maybeSingle()
+        convMeta = data
+      }
       body = await trackLinksInText(body, {
         companyId,
         conversationId: conversationId || undefined,
+        contactId: convMeta?.contact_id || undefined,
+        locationId: convMeta?.assigned_location_id || undefined,
+        sentBy: senderName || undefined,
         channel: 'sms',
       })
     } catch {}

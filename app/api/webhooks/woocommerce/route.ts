@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { linkContactIdentity } from '@/lib/identity'
 import { createClient } from '@supabase/supabase-js'
+import { attributeOrderToLinks } from '@/lib/link-attribution'
 import { WebhookService } from '@/lib/webhook-service'
 import { notifyCompany } from '@/lib/notify'
 
@@ -227,6 +228,23 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // happened. The badge now reads this column.
   try {
     await db.from('conversations').update({ order_status: status || null }).eq('id', conv.id)
+
+  // Credit this order to any link the customer clicked shortly before ordering,
+  // so Link Reports can show revenue influenced. Best-effort — never blocks the
+  // order being processed.
+  try {
+    const paid = ['processing', 'completed'].includes(String(status || '').toLowerCase())
+    await attributeOrderToLinks({
+      companyId,
+      contactId: contact?.id || null,
+      orderId: order.id,
+      orderNumber: order.number,
+      total: order.total,
+      currency: order.currency,
+      stage: paid ? 'paid' : 'created',
+      orderDate: order.date_created || null,
+    })
+  } catch {}
   } catch {}
 
   // Post a system event for the order once per (order, status) so a brand-new

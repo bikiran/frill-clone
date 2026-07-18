@@ -14,7 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
     const { data } = await db.from('short_links')
-      .select('id, company_id, target_url, clicks').eq('code', code).maybeSingle()
+      .select('id, company_id, target_url, clicks, contact_id').eq('code', code).maybeSingle()
     if (!data?.target_url) {
       return new NextResponse('Link not found', { status: 404 })
     }
@@ -34,6 +34,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
       await db.from('link_clicks').insert({
         link_id: data.id,
         company_id: data.company_id,
+        // Copied from the link so "unique clicks" (distinct recipients) can be
+        // counted without a join.
+        contact_id: data.contact_id || null,
         ip,
         city: city ? decodeURIComponent(city) : null,
         region: region || null,
