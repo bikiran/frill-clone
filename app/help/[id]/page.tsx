@@ -118,6 +118,9 @@ export default function HelpArticlePage() {
   const id = params?.id as string
 
   const [article, setArticle] = useState<any>(null)
+  // Articles store the category SLUG. Map slug → { name, icon } so we can show
+  // the readable name and the category's chosen icon instead of the raw slug.
+  const [catMap, setCatMap] = useState<Record<string, { name: string; icon: string }>>({})
   const [loading, setLoading] = useState(true)
   const [liked, setLiked] = useState(false)
   const [feedback, setFeedback] = useState<'helpful' | 'not_helpful' | null>(null)
@@ -149,6 +152,17 @@ export default function HelpArticlePage() {
       return
     }
     try {
+      // Load the company's categories so a stored slug can be shown as its
+      // readable name with the icon chosen in Settings → Help Categories.
+      try {
+        const { data: cats } = await (supabase as any)
+          .from('help_categories').select('slug, name, icon')
+        if (cats) {
+          const m: Record<string, { name: string; icon: string }> = {}
+          for (const c of cats) m[c.slug] = { name: c.name, icon: c.icon || '📁' }
+          setCatMap(m)
+        }
+      } catch { /* fall back to the raw category value */ }
       const { data } = await (supabase as any).from('help_articles').select('*').eq('id', articleId).maybeSingle()
       if (data) {
         // Unpublished articles are only visible to company admins, even via direct URL
@@ -285,8 +299,12 @@ export default function HelpArticlePage() {
               <div className="flex items-start justify-between gap-4 mb-6">
                 <div>
                   <div className="flex items-center gap-2 mb-3">
-                    <span className="text-2xl">{CATEGORY_ICONS[article.category] || '📄'}</span>
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{article.category}</span>
+                    <span className="text-2xl">
+                      {catMap[article.category]?.icon || CATEGORY_ICONS[article.category] || '📄'}
+                    </span>
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
+                      {catMap[article.category]?.name || article.category}
+                    </span>
                   </div>
                   <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>{article.title}</h1>
                   <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>

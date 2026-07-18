@@ -31,6 +31,9 @@ const DEMO_ARTICLES = [
 
 export default function HelpCentrePage() {
   const [articles, setArticles] = useState<any[]>([])
+  // Articles store the category SLUG; resolve it to the readable name and the
+  // icon configured in Settings → Help Categories.
+  const [catMap, setCatMap] = useState<Record<string, { name: string; icon: string }>>({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
@@ -114,6 +117,15 @@ export default function HelpCentrePage() {
   const fetchArticles = async () => {
     try {
       const companyId = await getCompanyId()
+      try {
+        const { data: cats } = await (supabase as any)
+          .from('help_categories').select('slug, name, icon')
+        if (cats) {
+          const m: Record<string, { name: string; icon: string }> = {}
+          for (const c of cats) m[c.slug] = { name: c.name, icon: c.icon || '📁' }
+          setCatMap(m)
+        }
+      } catch { /* fall back to the raw category value */ }
       let q = (supabase as any).from('help_articles').select('*')
       if (companyId) {
         q = q.eq('company_id', companyId)
@@ -255,7 +267,9 @@ export default function HelpCentrePage() {
             <button key={cat} onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
               className="px-4 py-1.5 rounded-full text-sm font-medium border cursor-pointer transition-all flex items-center gap-1.5"
               style={{ background: categoryFilter === cat ? 'var(--coral)' : 'white', color: categoryFilter === cat ? 'white' : 'var(--slate)', borderColor: categoryFilter === cat ? 'var(--coral)' : 'var(--border)' }}>
-              <CategoryIcon cat={cat} /> {cat}
+              {catMap[cat]?.icon
+                ? <span>{catMap[cat].icon}</span>
+                : <CategoryIcon cat={cat} />} {catMap[cat]?.name || cat}
             </button>
           ))}
         </div>
@@ -300,7 +314,7 @@ export default function HelpCentrePage() {
             {byCat.map(({ cat, items }) => (
               <div key={cat} className="mb-10">
                 <h2 className="flex items-center gap-2 text-lg font-bold mb-4" style={{ color: 'var(--ink)' }}>
-                  <span><CategoryIcon cat={cat} /></span> {cat}
+                  <span>{catMap[cat]?.icon || <CategoryIcon cat={cat} />}</span> {catMap[cat]?.name || cat}
                 </h2>
                 <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
                   {items.map((a, i) => (

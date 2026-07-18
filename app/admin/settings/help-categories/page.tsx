@@ -5,6 +5,13 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
+// Emoji available for help category icons.
+const ICON_CHOICES = [
+  '📁', '🚀', '✨', '💳', '🔗', '🔧', '⚡',
+  '📄', '📚', '❓', '💡', '⚙️', '🔒', '📦',
+  '🐟', '🪴', '🧪', '🚚', '🛒', '🎓', '📣',
+  '🏷️', '📊', '🖼️', '🧰', '🩺', '🌊', '⭐',
+]
 
 export default function HelpCategoriesPage() {
   const router = useRouter()
@@ -13,10 +20,22 @@ export default function HelpCategoriesPage() {
   const [loading, setLoading] = useState(true)
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newIcon, setNewIcon] = useState('📁')
+  const [iconPickerFor, setIconPickerFor] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [saving, setSaving] = useState(false)
   const [draggedId, setDraggedId] = useState<string | null>(null)
+
+  // Close the icon picker when clicking elsewhere.
+  useEffect(() => {
+    if (!iconPickerFor) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-icon-picker]')) setIconPickerFor(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [iconPickerFor])
 
   useEffect(() => {
     const init = async () => {
@@ -97,22 +116,29 @@ export default function HelpCategoriesPage() {
     init()
   }, [])
 
+  // Lowercase FIRST, then strip — doing it the other way round deletes every
+  // uppercase letter ("Getting Started" → "etting-tarted").
+  const slugify = (s: string) =>
+    s.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'category'
+
   const handleAddCategory = async () => {
     if (!newName.trim() || !company?.id) return
     setSaving(true)
-    const slug = newName.toLowerCase().replace(/\s+/g, '-')
+    const slug = slugify(newName)
     const { data, error } = await (supabase as any)
       .from('help_categories')
       .insert({
         company_id: company.id,
         name: newName.trim(),
         slug,
+        icon: newIcon || '📁',
         position: categories.length,
       })
       .select()
     if (!error && data) {
       setCategories([...categories, data[0]])
       setNewName('')
+      setNewIcon('📁')
       setShowNew(false)
     }
     setSaving(false)
@@ -123,13 +149,22 @@ export default function HelpCategoriesPage() {
     setSaving(true)
     const { error } = await (supabase as any)
       .from('help_categories')
-      .update({ name: editName.trim(), slug: editName.toLowerCase().replace(/\s+/g, '-') })
+      .update({ name: editName.trim(), slug: slugify(editName) })
       .eq('id', id)
     if (!error) {
-      setCategories(categories.map(c => c.id === id ? { ...c, name: editName.trim() } : c))
+      setCategories(categories.map(c => c.id === id ? { ...c, name: editName.trim(), slug: slugify(editName) } : c))
       setEditingId(null)
     }
     setSaving(false)
+  }
+
+  // Change just the icon on a category.
+  const handleUpdateIcon = async (id: string, icon: string) => {
+    setCategories(categories.map(c => c.id === id ? { ...c, icon } : c))
+    setIconPickerFor(null)
+    try {
+      await (supabase as any).from('help_categories').update({ icon }).eq('id', id)
+    } catch { /* optimistic update already applied */ }
   }
 
   const handleDeleteCategory = async (id: string) => {
@@ -149,7 +184,10 @@ export default function HelpCategoriesPage() {
 
     const newIdx = direction === 'up' ? idx - 1 : idx + 1
     const newCategories = [...categories]
-    [newCategories[idx], newCategories[newIdx]] = [newCategories[newIdx], newCategories[idx]]
+    // The leading bracket on the next line needs this semicolon: without it JS
+    // parses `[...categories]\n[a, b] = ...` as an index expression on the array
+    // literal, which self-references newCategories and breaks reordering.
+    ;[newCategories[idx], newCategories[newIdx]] = [newCategories[newIdx], newCategories[idx]]
 
     // Update positions in DB
     for (let i = 0; i < newCategories.length; i++) {
@@ -187,6 +225,15 @@ export default function HelpCategoriesPage() {
             style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 12, fontSize: 13 }}
             onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
           />
+          <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Icon</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(14, 1fr)', gap: 4, marginBottom: 12 }}>
+            {ICON_CHOICES.map(ic => (
+              <button key={ic} type="button" onClick={() => setNewIcon(ic)}
+                style={{ fontSize: 17, lineHeight: 1, padding: '5px 0', borderRadius: 8, border: '1px solid ' + (newIcon === ic ? 'var(--coral)' : 'transparent'), background: newIcon === ic ? 'var(--peach)' : '#fff', cursor: 'pointer' }}>
+                {ic}
+              </button>
+            ))}
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={handleAddCategory} disabled={saving} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--coral)', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
               {saving ? 'Saving...' : 'Create'}
@@ -234,7 +281,28 @@ export default function HelpCategoriesPage() {
                   cursor: draggedId ? 'grabbing' : 'grab',
                   opacity: draggedId === cat.id ? 0.5 : 1,
                 }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                {/* Category icon — click to change */}
+                <div style={{ position: 'relative' }} data-icon-picker>
+                  <button type="button"
+                    onClick={() => setIconPickerFor(iconPickerFor === cat.id ? null : cat.id)}
+                    title="Change icon"
+                    style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--canvas)', cursor: 'pointer', fontSize: 19, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {cat.icon || '📁'}
+                  </button>
+                  {iconPickerFor === cat.id && (
+                    <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 60, width: 250, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.14)', padding: 10 }}>
+                      <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Choose an icon</p>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+                        {ICON_CHOICES.map(ic => (
+                          <button key={ic} type="button" onClick={() => handleUpdateIcon(cat.id, ic)}
+                            style={{ fontSize: 18, lineHeight: 1, padding: '6px 0', borderRadius: 8, border: '1px solid ' + (cat.icon === ic ? 'var(--coral)' : 'transparent'), background: cat.icon === ic ? 'var(--peach)' : 'transparent', cursor: 'pointer' }}>
+                            {ic}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {editingId && editingId === cat.id ? (
                   <input
                     value={editName}

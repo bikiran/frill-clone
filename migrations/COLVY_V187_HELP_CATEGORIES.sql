@@ -39,11 +39,14 @@ CREATE POLICY help_categories_all ON help_categories
 
 -- Seed each company's categories from the categories already used by their
 -- existing help articles, so nothing looks empty after this runs.
+-- NOTE: LOWER() must run BEFORE the character strip. Stripping [^a-z0-9-] first
+-- deletes every uppercase letter, which turned "Getting Started" into
+-- "etting-tarted" and "API" into an empty string.
 INSERT INTO help_categories (company_id, name, slug, position)
 SELECT DISTINCT
   a.company_id,
   a.category,
-  LOWER(REGEXP_REPLACE(REGEXP_REPLACE(a.category, '\s+', '-', 'g'), '[^a-z0-9-]', '', 'g')),
+  REGEXP_REPLACE(REGEXP_REPLACE(LOWER(a.category), '\s+', '-', 'g'), '[^a-z0-9-]', '', 'g'),
   0
 FROM help_articles a
 WHERE a.category IS NOT NULL
