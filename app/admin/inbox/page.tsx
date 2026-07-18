@@ -2607,14 +2607,16 @@ export default function InboxPage() {
       const loc = (c as any).assigned_location_id || (c as any).location_id || null
       if (loc !== locationFilter) return false
     }
-    if (!searchTerm) return true
-    const q = searchTerm.toLowerCase()
     const ct: any = (c as any).contacts || {}
     // Snoozed conversations drop out of the list until their time is up.
     const snz = (c as any).snoozed_until
     if (snz && (parseTs(snz)?.getTime() || 0) > Date.now() && statusFilter === 'open') return false
 
-    // Advanced filters from the Filter panel.
+    // Advanced filters from the Filter panel. These must be evaluated even when
+    // the search box is empty — an early `if (!searchTerm) return true` used to
+    // sit above this block, so with no search term the function returned before
+    // any channel/assignee/source/date filter was ever checked and the Filter
+    // panel appeared to do nothing.
     const cc: any = c
     if (filters.channel && (cc.channel || '') !== filters.channel) return false
     if (filters.assignedTo) {
@@ -2631,6 +2633,11 @@ export default function InboxPage() {
       if (filters.dateFrom && t < new Date(filters.dateFrom).getTime()) return false
       if (filters.dateTo && t > new Date(filters.dateTo).getTime() + 86400000) return false
     }
+    // No search term: the conversation has passed every active filter above, so
+    // it belongs in the list.
+    if (!searchTerm) return true
+    const q = searchTerm.toLowerCase()
+
     // Scope the text match. "Contact" only looks at the contact card; "messages
     // / notes / tasks / activity" rely on the server-side hits gathered above;
     // "all" combines everything.
