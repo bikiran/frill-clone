@@ -1695,7 +1695,35 @@ export default function InboxPage() {
   const addNote = async () => {
     if (!newNote.trim() || !selected || !companyId) return
     const author = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
-    await (supabase as any).from('conversation_notes').insert({ conversation_id: selected.id, company_id: companyId, author_name: author, content: newNote.trim() })
+    const body = newNote.trim()
+    await (supabase as any).from('conversation_notes').insert({ conversation_id: selected.id, company_id: companyId, author_name: author, content: body })
+    // Notify anyone @mentioned in a sidebar note, same as an internal message —
+    // mentions should work anywhere they can be typed.
+    try {
+      const handles = Array.from(new Set((body.match(/@([\w.\-]+)/g) || []).map(h => h.slice(1).toLowerCase())))
+      if (handles.length) {
+        const hit = teamMembers.filter((m: any) =>
+          handles.includes(String(m.name || '').replace(/\s+/g, '').toLowerCase())
+        )
+        const ids = hit.map((m: any) => m.user_id).filter(Boolean)
+        if (ids.length) {
+          await (supabase as any).from('mention_notifications').insert(
+            ids.map((uid: string) => ({
+              company_id: companyId, conversation_id: selected.id,
+              mentioned_user: uid, mentioned_by: author, preview: body.slice(0, 140),
+            }))
+          )
+          fetch('/api/mentions/notify', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId, conversationId: selected.id, userIds: ids,
+              mentionedBy: author, preview: body.slice(0, 300),
+              context: `a note on ${contact?.name || selected.subject || 'a conversation'}`,
+            }),
+          }).catch(() => {})
+        }
+      }
+    } catch { /* the note itself is saved either way */ }
     setNewNote('')
     loadConversationExtras(selected.id)
   }
@@ -2364,6 +2392,16 @@ export default function InboxPage() {
               mentioned_by: senderName, preview: content.slice(0, 140),
             }))
           )
+          // Also email them. Fire-and-forget: the in-app notification is already
+          // saved, so a mail problem must not block the note being posted.
+          fetch('/api/mentions/notify', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId, conversationId: selected.id, userIds: mentionedIds,
+              mentionedBy: senderName, preview: content.slice(0, 300),
+              context: `a conversation with ${contact?.name || selected.subject || 'a customer'}`,
+            }),
+          }).catch(() => {})
         }
         // Deliberately NOT touching conversations.last_message — an internal
         // note shouldn't change what the conversation list shows the customer
@@ -2437,6 +2475,45 @@ export default function InboxPage() {
       : sendChannel === 'chat'
         ? false
         : !!smsNumber && (activeChannel === 'sms' || !visitorOnline)
+
+    // If we can't use SMS and the visitor isn't sitting in the widget, fall back
+    // to email rather than dropping the reply into a chat nobody is watching.
+    // Order of preference: continue the last-used channel → SMS → email → chat.
+    const emailTo = contact?.email || (selected as any).customer_email || null
+    const shouldEmail = sendChannel === 'auto'
+      && !shouldSms
+      && !visitorOnline
+      && !!emailTo
+
+    if (shouldEmail) {
+      const prevChannel = (selected as any).active_channel || 'chat'
+      try {
+        if (prevChannel !== 'email') {
+          await (supabase as any).from('conversations').update({ active_channel: 'email' }).eq('id', selected.id)
+          await (supabase as any).from('conversation_events').insert({
+            conversation_id: selected.id, company_id: companyId,
+            event_type: 'channel_switch', actor_name: senderName,
+            detail: 'Now replying by email',
+          })
+        }
+        const res = await fetch('/api/email/reply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: selected.id, content, agentName: senderName, to: emailTo }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Email failed to send')
+        setReply(''); setReplyTo(null); setSending(false)
+        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+        setMessages(msgs || [])
+        scrollBottom()
+      } catch (e: any) {
+        // Email failed — the chat widget is the last resort so the reply is at
+        // least recorded and visible if they come back.
+        console.warn('Email failed, delivering via chat:', e.message)
+        await deliverChat(content, senderName)
+      }
+      return
+    }
 
     if (shouldSms) {
       // Tell the agent (and the record) that the conversation moved to SMS.

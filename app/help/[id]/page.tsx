@@ -334,18 +334,18 @@ export default function HelpArticlePage() {
     <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
       {/* Breadcrumb */}
       <div className="border-b bg-white" style={{ borderColor: 'var(--border)' }}>
-        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center gap-2 text-sm flex-wrap" style={{ color: 'var(--slate)' }}>
+        <div className="max-w-[1600px] mx-auto px-6 py-3 flex items-center gap-2 text-sm flex-wrap" style={{ color: 'var(--slate)' }}>
           <Link href="/" className="hover:underline" style={{ color: 'var(--slate)' }}>Home</Link>
           <span>/</span>
           <Link href="/help" className="hover:underline" style={{ color: 'var(--slate)' }}>Help Centre</Link>
           <span>/</span>
-          <span style={{ color: 'var(--coral)' }}>{article.category}</span>
+          <span style={{ color: 'var(--coral)' }}>{catMap[article.category]?.name || article.category}</span>
           <span>/</span>
           <span className="truncate max-w-48" style={{ color: 'var(--ink)' }}>{article.title}</span>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-10">
+      <div className="max-w-[1600px] mx-auto px-6 py-10">
         <div className="grid lg:grid-cols-4 gap-8">
           {/* On this page — headings pulled from the article, sticky, with the
               section you're currently reading highlighted. */}
@@ -537,6 +537,31 @@ export default function HelpArticlePage() {
               </div>
             </div>
 
+            {/* Quick contacts */}
+            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Contact Options</p>
+              <div className="space-y-2">
+                <button onClick={() => setShowTicketForm(true)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer text-left"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 7.5V21a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7.5M12 7.5V2H8a2 2 0 0 0-2 2v3.5m8 0V4a2 2 0 0 1 2 2v3.5"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
+                  Submit a ticket
+                </button>
+                <a href="mailto:support@colvy.com"
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                  Email support
+                </a>
+                <Link href="/"
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  💡 Request a feature
+                </Link>
+              </div>
+            </div>
+
+
             {/* Submit a Ticket */}
             <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
               <div className="flex items-center justify-between mb-3">
@@ -623,30 +648,6 @@ export default function HelpArticlePage() {
                 </div>
               </div>
             )}
-
-            {/* Quick contacts */}
-            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Contact Options</p>
-              <div className="space-y-2">
-                <button onClick={() => setShowTicketForm(true)}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer text-left"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 7.5V21a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7.5M12 7.5V2H8a2 2 0 0 0-2 2v3.5m8 0V4a2 2 0 0 1 2 2v3.5"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
-                  Submit a ticket
-                </button>
-                <a href="mailto:support@colvy.com"
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                  Email support
-                </a>
-                <Link href="/"
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  💡 Request a feature
-                </Link>
-              </div>
-            </div>
 
             {/* Back */}
             <Link href="/help"
