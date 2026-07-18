@@ -174,6 +174,8 @@ export default function CampaignsPage() {
       if (error) throw error
       setCampaigns(c => [data, ...c])
       setNewName(''); setShowNew(false)
+      // Straight into the builder rather than leaving them on the list.
+      if (data?.id) router.push(`/admin/campaigns/${data.id}`)
     } catch (e: any) {
       alert('Could not create the campaign: ' + e.message)
     } finally { setCreating(false) }
@@ -300,7 +302,10 @@ export default function CampaignsPage() {
               return (
                 <tr key={c.id} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={{ ...td, color: 'var(--ink)', fontWeight: 600 }}>
-                    {c.name}
+                    <button onClick={() => router.push(`/admin/campaigns/${c.id}`)}
+                      style={{ border: 'none', background: 'none', padding: 0, font: 'inherit', color: 'var(--ink)', cursor: 'pointer', textAlign: 'left' }}>
+                      {c.name}
+                    </button>
                     {c.campaign_type && (
                       <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, textTransform: 'capitalize' }}>
                         {c.campaign_type.replace(/_/g, ' ')}
