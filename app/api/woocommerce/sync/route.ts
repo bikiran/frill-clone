@@ -117,6 +117,8 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
             first_name: c.first_name || c.billing?.first_name || '',
             last_name: c.last_name || c.billing?.last_name || '',
             phone: c.billing?.phone || '',
+            // Normalised (last 9 digits) for the indexed phone→customer lookup.
+            phone_norm: String(c.billing?.phone || '').replace(/\D/g, '').slice(-9) || null,
             address: c.billing,
             synced_at: new Date().toISOString(),
           }
@@ -177,6 +179,9 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
           image: li.image?.src || null,
         })),
         billing: o.billing || {},
+        // Normalised billing phone (last 9 digits) so SMS-only customers can be
+        // matched to their orders via an index instead of a client-side scan.
+        billing_phone_norm: String(o.billing?.phone || '').replace(/\D/g, '').slice(-9) || null,
       })).filter((r: any) => r.woo_customer_id || r.customer_email)
       // Keep guest orders too — they have no woo_customer_id but DO have a
       // billing email, which is how the profile and inbox match orders to a

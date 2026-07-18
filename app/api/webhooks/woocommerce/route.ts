@@ -149,8 +149,12 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     // format. An exact match missed these, so the order spawned a NEW contact
     // and the existing SMS thread never got the "Order Placed" badge.
     const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-9)
-    const { data: candidates } = await db.from('contacts').select('*').eq('company_id', companyId).not('phone', 'is', null).limit(2000)
-    contact = (candidates || []).find((c: any) => norm(c.phone) === norm(phone)) || null
+    const target = norm(phone)
+    // Narrow server-side first (suffix match), then confirm in JS. This avoids
+    // pulling the whole contacts table.
+    const { data: candidates } = await db.from('contacts').select('*')
+      .eq('company_id', companyId).ilike('phone', `%${target}`).limit(50)
+    contact = (candidates || []).find((c: any) => norm(c.phone) === target) || null
   }
   if (!contact) {
     const name = `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim() || email
@@ -197,16 +201,23 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     }
   }
   const businessName = company?.name || 'us'
+  const billingName = `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim()
   const displayName = contact?.name || order.billing?.first_name || 'there'
+  const convSubject = contact?.name || billingName || `Order #${order.number || order.id}`
   const isNewConv = !conv
   if (!conv) {
     const { data: newConv } = await db.from('conversations').insert({
-      company_id: companyId, channel: 'chat', subject: `Order #${order.number || order.id}`,
+      company_id: companyId, channel: 'chat', subject: convSubject,
       contact_id: contact?.id || null, status: 'open', is_unread: true, unread_count: 1,
       last_message: '', last_message_at: new Date().toISOString(),
       order_status: status || null,
     }).select().maybeSingle()
     conv = newConv
+  } else if (contact?.id && !conv.contact_id) {
+    // Link the contact to an existing conversation that was created without one
+    // (e.g. an order thread that showed "Visitor" / "No contact linked").
+    await db.from('conversations').update({ contact_id: contact.id, subject: conv.subject?.startsWith('Order #') ? convSubject : conv.subject }).eq('id', conv.id)
+    conv.contact_id = contact.id
   }
   if (!conv) return
 

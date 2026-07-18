@@ -773,6 +773,10 @@ export default function InboxPage() {
   const resetFilters = () => setFilters({ dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', oldestFirst: false })
   const [showAssignMenu, setShowAssignMenu] = useState(false)
   const [assignSearch, setAssignSearch] = useState('')
+  // Conversation list pagination — start at 50 and grow via "Load more" so a
+  // large inbox doesn't fetch everything up front.
+  const [convLimit, setConvLimit] = useState(50)
+  const [hasMoreConvs, setHasMoreConvs] = useState(false)
   const [showContactEdit, setShowContactEdit] = useState(false)
   const [editContact, setEditContact] = useState<Partial<Contact>>({})
   const [aiDetected, setAiDetected] = useState<{ phone?: string | null; email?: string | null; address?: string | null } | null>(null)
@@ -929,8 +933,10 @@ export default function InboxPage() {
     // "Closed" covers closed + resolved; "Open" is everything else.
     if (statusFilter === 'closed') q = q.in('status', ['closed', 'resolved'])
     else q = q.not('status', 'in', '("closed","resolved")')
-    const { data } = await q.order('last_message_at', { ascending: false }).limit(50)
+    const { data } = await q.order('last_message_at', { ascending: false }).limit(convLimit)
     const convs = data || []
+    // If we got a full page back there are probably more to load.
+    setHasMoreConvs(convs.length >= convLimit)
 
     // Attach contact details in one extra query.
     const contactIds = Array.from(new Set(convs.map((c: any) => c.contact_id).filter(Boolean)))
@@ -948,7 +954,7 @@ export default function InboxPage() {
     if (data && data.length > 0 && !selectedRef.current && typeof window !== 'undefined' && window.innerWidth >= 768) {
       selectConversation(data[0])
     }
-  }, [companyId, statusFilter])
+  }, [companyId, statusFilter, convLimit])
 
   useEffect(() => { loadConversations() }, [statusFilter, loadConversations])
 
@@ -1300,10 +1306,11 @@ export default function InboxPage() {
       woo = data
     }
     if (!woo && phone) {
-      // Fall back to phone match (SMS-only contacts with no email on file).
-      const { data: candidates } = await (supabase as any).from('woocommerce_customers')
-        .select('*').eq('company_id', companyId).limit(2000)
-      woo = (candidates || []).find((c: any) => c.phone && norm(c.phone) === norm(phone)) || null
+      // Fall back to phone match (SMS-only contacts with no email on file),
+      // using the indexed normalised column from the V186 migration.
+      const { data } = await (supabase as any).from('woocommerce_customers')
+        .select('*').eq('company_id', companyId).eq('phone_norm', norm(phone)).maybeSingle()
+      woo = data || null
       // Backfill this contact's email from the matched customer so order-status
       // automations and future lookups work (SMS contact ↔ WooCommerce customer).
       if (woo?.email && contactId) {
@@ -1322,14 +1329,14 @@ export default function InboxPage() {
       orders = data || []
     }
     if (phone) {
-      // Phone-matched orders (billing.phone), merged in for SMS-only contacts.
+      // Phone-matched orders via the indexed normalised column (V186 migration)
+      // — no client-side scan of recent orders.
       const { data: byPhone } = await (supabase as any).from('woocommerce_orders')
-        .select('*').eq('company_id', companyId)
-        .order('order_date', { ascending: false }).limit(200)
+        .select('*').eq('company_id', companyId).eq('billing_phone_norm', norm(phone))
+        .order('order_date', { ascending: false }).limit(50)
       const seen = new Set(orders.map((o: any) => String(o.order_number || o.order_id)))
       for (const o of (byPhone || [])) {
-        const bp = o.billing?.phone
-        if (bp && norm(bp) === norm(phone) && !seen.has(String(o.order_number || o.order_id))) {
+        if (!seen.has(String(o.order_number || o.order_id))) {
           seen.add(String(o.order_number || o.order_id))
           orders.push(o)
         }
@@ -3690,7 +3697,7 @@ export default function InboxPage() {
           <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
             <div style={{ flex: 1, display: 'flex', background: 'var(--canvas)', borderRadius: 10, padding: 3 }}>
               {(['open', 'closed'] as const).map(s => (
-                <button key={s} type="button" onClick={() => { if (s !== statusFilter) { setConversations([]); setStatusFilter(s) } }}
+                <button key={s} type="button" onClick={() => { if (s !== statusFilter) { setConversations([]); setConvLimit(50); setStatusFilter(s) } }}
                   style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, textTransform: 'capitalize', background: statusFilter === s ? '#fff' : 'transparent', color: statusFilter === s ? 'var(--ink)' : 'var(--slate)', boxShadow: statusFilter === s ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.12s' }}>
                   {s}
                 </button>
@@ -3806,6 +3813,21 @@ export default function InboxPage() {
             <button key={conv.id} type="button" onClick={() => selectConversation(conv)}
               onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, conv }) }}
               style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', paddingLeft: unread ? 11 : 14, border: 'none', borderLeft: unread ? `3px solid ${accent}` : '3px solid transparent', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === conv.id ? 'var(--peach)' : unread ? '#fff6f4' : '#fff', transition: 'background 0.1s' }}>
+              {/* Location label — only shown when viewing All locations, so the
+                  agent can see which outlet each enquiry belongs to (Coax-style).
+                  Live-chat widget conversations show "Live Chat". */}
+              {locationFilter === 'all' && (() => {
+                const locId = (conv as any).assigned_location_id || (conv as any).location_id
+                const loc = outlets.find((o: any) => o.id === locId)
+                const label = loc ? (loc.label || loc.suburb) : (conv.channel === 'chat' || conv.channel === 'widget' || conv.channel === 'live_chat') ? 'Live Chat' : null
+                if (!label) return null
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4, fontSize: 11, fontWeight: 700, color: '#2563eb' }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                    {label}
+                  </div>
+                )
+              })()}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                   {unread && <span style={{ width: 7, height: 7, borderRadius: '50%', background: accent, flexShrink: 0 }} />}
@@ -3855,6 +3877,12 @@ export default function InboxPage() {
             </button>
             )
           })}
+          {hasMoreConvs && (
+            <button type="button" onClick={() => setConvLimit(l => l + 50)}
+              style={{ display: 'block', width: '100%', padding: '12px', border: 'none', borderTop: '1px solid var(--border)', background: '#fff', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              Load more conversations
+            </button>
+          )}
         </div>
       </div>
       )}
@@ -4982,6 +5010,17 @@ export default function InboxPage() {
                         const b = wooOrders.find((o: any) => o.billing?.address_1)?.billing
                         if (b) {
                           addressValue = [b.address_1, b.address_2, b.city, b.state, b.postcode].filter(Boolean).join(', ')
+                          addressFromOrder = true
+                        }
+                      }
+                      // Also fall back to an abandoned cart's address (it often
+                      // carries the shipping/billing address the customer entered
+                      // at checkout even though they didn't complete the order).
+                      if (!addressValue && abandonedCarts.length > 0) {
+                        const c: any = abandonedCarts.find((ac: any) => ac.address || ac.billing_address_1 || ac.city || ac.address_1)
+                        if (c) {
+                          addressValue = c.address
+                            || [c.address_1 || c.billing_address_1, c.city || c.billing_city, c.state || c.billing_state, c.postcode || c.billing_postcode].filter(Boolean).join(', ')
                           addressFromOrder = true
                         }
                       }
