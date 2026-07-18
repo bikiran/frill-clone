@@ -298,7 +298,7 @@ export default function NewHelpArticlePage() {
             <button onClick={handlePublish} disabled={saving || !title.trim()}
               className="px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
               style={{ background: 'var(--coral)' }}>
-              {saving ? 'Saving...' : 'Publish'}
+              {saving ? 'Saving...' : editId ? 'Save' : 'Publish'}
             </button>
           </div>
         </div>

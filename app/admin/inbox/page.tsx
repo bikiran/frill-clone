@@ -790,6 +790,12 @@ export default function InboxPage() {
     .filter(k => filters[k]).length + (filters.oldestFirst ? 1 : 0)
   const resetFilters = () => setFilters({ dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', oldestFirst: false })
   const [showAssignMenu, setShowAssignMenu] = useState(false)
+  // The contact card has its own assign dropdown and overflow menu, anchored to
+  // their own buttons (previously the card's assign button faked a click on the
+  // header menu, which opened a panel at the top of the page).
+  const [showCardAssign, setShowCardAssign] = useState(false)
+  const [cardAssignSearch, setCardAssignSearch] = useState('')
+  const [showCardMore, setShowCardMore] = useState(false)
   // Internal staff-only note composer state.
   const [internalMode, setInternalMode] = useState(false)
   const [mentionedUsers, setMentionedUsers] = useState<any[]>([])
@@ -1004,15 +1010,17 @@ export default function InboxPage() {
 
   // Close the assign dropdown / actions menu when clicking elsewhere
   useEffect(() => {
-    if (!showAssignMenu && !showActions) return
+    if (!showAssignMenu && !showActions && !showCardAssign && !showCardMore) return
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (!target.closest('[data-assign-menu]')) setShowAssignMenu(false)
       if (!target.closest('[data-actions-menu]')) setShowActions(false)
+      if (!target.closest('[data-card-assign]')) setShowCardAssign(false)
+      if (!target.closest('[data-card-more]')) setShowCardMore(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [showAssignMenu, showActions])
+  }, [showAssignMenu, showActions, showCardAssign, showCardMore])
 
   // Realtime subscription to new messages / conversation updates
   useEffect(() => {
@@ -5188,10 +5196,51 @@ export default function InboxPage() {
                     )}
                     {/* Quick actions */}
                     <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                      <button type="button" title="Assign" onClick={() => { setActivePanel('info'); const b = document.querySelector('[data-assign-menu] button') as HTMLButtonElement; b?.click() }}
-                        style={cardAction('#ecfdf5', '#059669')}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                      </button>
+                      {/* Assign — its own dropdown, anchored to THIS button.
+                          It used to trigger the header's assign menu via a
+                          synthetic click, which opened a panel up at the top of
+                          the page and looked broken. */}
+                      <div style={{ position: 'relative' }} data-card-assign>
+                        <button type="button" title="Assign"
+                          onClick={() => { setShowCardAssign(v => !v); setCardAssignSearch('') }}
+                          style={cardAction('#ecfdf5', '#059669')}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                        </button>
+                        {showCardAssign && (
+                          <div style={{ position: 'absolute', top: '110%', left: 0, width: 230, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 70, overflow: 'hidden', textAlign: 'left' }}>
+                            <p style={{ margin: 0, padding: '10px 14px 6px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Assign User</p>
+                            <div style={{ padding: '0 10px 8px' }}>
+                              <div style={{ position: 'relative' }}>
+                                <input autoFocus value={cardAssignSearch} onChange={e => setCardAssignSearch(e.target.value)}
+                                  placeholder="Search users…"
+                                  style={{ width: '100%', padding: '7px 26px 7px 10px', fontSize: 12.5, borderRadius: 8, border: '1px solid var(--border)', outline: 'none', boxSizing: 'border-box' }} />
+                                {cardAssignSearch && (
+                                  <button type="button" onClick={() => setCardAssignSearch('')}
+                                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', display: 'flex', padding: 2 }}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                              <button type="button" onClick={() => { assignTo(null); setShowCardAssign(false) }}
+                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>
+                                Unassign
+                              </button>
+                              {teamMembers.filter((m: any) => !cardAssignSearch || (m.name || '').toLowerCase().includes(cardAssignSearch.toLowerCase())).map((m: any) => (
+                                <button key={m.id} type="button" onClick={() => { assignTo(m); setShowCardAssign(false) }}
+                                  style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: selected?.assigned_to === m.user_id ? 'var(--peach)' : 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                                  <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                                    {m.name?.charAt(0).toUpperCase()}
+                                  </span>
+                                  {m.name}
+                                  {selected?.assigned_to === m.user_id && ' ✓'}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       <button type="button" title="Edit contact" onClick={() => { setShowContactEdit(true); setEditContact(contact) }}
                         style={cardAction('#eff6ff', '#2563eb')}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -5204,17 +5253,29 @@ export default function InboxPage() {
                         style={cardAction('#fef2f2', '#dc2626')}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                       </button>
-                      {/* Block / unblock this contact */}
-                      <button type="button" onClick={toggleBlockContact}
-                        title={(contact as any).is_blocked ? 'Unblock this contact' : 'Block this contact'}
-                        style={cardAction((contact as any).is_blocked ? '#f0fdf4' : '#fef2f2', (contact as any).is_blocked ? '#059669' : '#dc2626')}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>
-                      </button>
-                      {/* Report this conversation as spam */}
-                      <button type="button" onClick={reportSpam} title="Report spam"
-                        style={cardAction('#fff7ed', '#c2410c')}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                      </button>
+                      {/* More options — block / report spam live in here rather
+                          than as extra buttons on the row, which overflowed. */}
+                      <div style={{ position: 'relative' }} data-card-more>
+                        <button type="button" title="More options"
+                          onClick={() => setShowCardMore(v => !v)}
+                          style={cardAction('#f3f4f6', '#4b5563')}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+                        </button>
+                        {showCardMore && (
+                          <div style={{ position: 'absolute', top: '110%', right: 0, width: 210, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 70, overflow: 'hidden', padding: '4px 0', textAlign: 'left' }}>
+                            <button type="button" onClick={() => { setShowCardMore(false); reportSpam() }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#c2410c' }}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                              Report spam
+                            </button>
+                            <button type="button" onClick={() => { setShowCardMore(false); toggleBlockContact() }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (contact as any).is_blocked ? '#059669' : '#dc2626', borderTop: '1px solid var(--border)' }}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>
+                              {(contact as any).is_blocked ? 'Unblock this contact' : 'Block this contact'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}

@@ -109,7 +109,12 @@ export default function HelpAdminPage() {
   if (!user || loading) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
 
   return (
-    <div className="flex min-h-[calc(100vh-56px)]">
+    // A fixed height (not min-height) is important: the sidebar list and the
+    // article pane below both use overflow-y-auto, and an inner scroll container
+    // only works if its parent has a real height to scroll within. With
+    // min-height the article pane stretched instead and its content got cut off
+    // at the bottom with no way to scroll further.
+    <div className="flex h-[calc(100vh-56px)] overflow-hidden">
       {/* Sidebar */}
       <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white border-r" style={{ borderColor: 'var(--border)' }}>
         <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
@@ -159,8 +164,8 @@ export default function HelpAdminPage() {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="px-4 md:px-8 py-6">
+      <main className="flex-1 overflow-y-auto min-w-0">
+        <div className="px-4 md:px-8 py-6 pb-24">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Help Centre</h1>
