@@ -62,6 +62,24 @@ export default function CampaignEditorPage() {
   const [showEmoji, setShowEmoji] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
   const [smsPrice, setSmsPrice] = useState(0.05)
+  // Links & offers (step 4)
+  const [attachment, setAttachment] = useState<any>(null)
+  const [attachKind, setAttachKind] = useState('product')
+  const [linkUrl, setLinkUrl] = useState('')
+  const [linkLabel, setLinkLabel] = useState('')
+  const [prodQuery, setProdQuery] = useState('')
+  const [prodResults, setProdResults] = useState<any[]>([])
+  const [prodBusy, setProdBusy] = useState(false)
+  const [articles, setArticles] = useState<any[]>([])
+  // Coupon builder
+  const [coupon, setCoupon] = useState<any>(null)
+  const [cCode, setCCode] = useState('')
+  const [cType, setCType] = useState('percent')
+  const [cAmount, setCAmount] = useState('')
+  const [cExpiry, setCExpiry] = useState('')
+  const [cMinSpend, setCMinSpend] = useState('')
+  const [cUsageLimit, setCUsageLimit] = useState('')
+  const [couponBusy, setCouponBusy] = useState(false)
   const msgRef = useRef<HTMLTextAreaElement | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [previewError, setPreviewError] = useState('')
@@ -98,6 +116,11 @@ export default function CampaignEditorPage() {
         if (c) {
           setCampaign(c)
           setMessage(c.message || '')
+          const atts = Array.isArray(c.attachments) ? c.attachments : []
+          const primary = atts.find((a: any) => a.kind !== 'coupon') || null
+          const cp = atts.find((a: any) => a.kind === 'coupon') || null
+          if (primary) { setAttachment(primary); setAttachKind(primary.kind || 'product') }
+          if (cp) setCoupon(cp)
           const f = c.audience_filter || {}
           setAudType(c.audience_type || 'all_subscribed')
           if (f.segment) setSegment(f.segment)
@@ -242,6 +265,83 @@ export default function CampaignEditorPage() {
     finally { setSaving(false) }
   }
 
+  // ── Links & offers (step 4) ──────────────────────────────────────────────
+  const searchProducts = async () => {
+    if (!prodQuery.trim() || !companyId) return
+    setProdBusy(true)
+    try {
+      const res = await fetch(`/api/orders/products?companyId=${companyId}&q=${encodeURIComponent(prodQuery)}`)
+      const d = await res.json()
+      setProdResults(d.products || [])
+    } catch { setProdResults([]) }
+    finally { setProdBusy(false) }
+  }
+
+  const loadArticles = async () => {
+    if (!companyId || articles.length) return
+    const { data } = await (supabase as any).from('help_articles')
+      .select('id, title, category').eq('company_id', companyId).eq('status', 'published').limit(100)
+    setArticles(data || [])
+  }
+
+  const createCoupon = async () => {
+    if (!cCode.trim() || !cAmount || !companyId) return
+    setCouponBusy(true)
+    try {
+      const res = await fetch('/api/campaigns/coupon', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId, code: cCode.trim(), discountType: cType, amount: cAmount,
+          expiryDate: cExpiry || undefined,
+          minimumSpend: cMinSpend || undefined,
+          usageLimit: cUsageLimit || undefined,
+          description: `Campaign: ${campaign?.name || ''}`,
+        }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not create the coupon')
+      const c = {
+        kind: 'coupon',
+        code: d.coupon?.code || cCode.trim().toLowerCase(),
+        discountType: cType, amount: cAmount,
+        expiryDate: cExpiry || null, minimumSpend: cMinSpend || null,
+        usageLimit: cUsageLimit || null,
+        existing: !!d.existing,
+      }
+      setCoupon(c)
+      if (!/\{\{coupon_code\}\}/.test(message)) {
+        // Nudge the code into the message — a coupon nobody can see is useless.
+        setMessage(m => m.trim() ? `${m.trimEnd()} Use code {{coupon_code}}.` : 'Use code {{coupon_code}}.')
+      }
+    } catch (e: any) { alert(e.message) }
+    finally { setCouponBusy(false) }
+  }
+
+  const saveLinks = async () => {
+    if (!campaignId) return
+    setSaving(true)
+    try {
+      const atts: any[] = []
+      if (attachment) atts.push(attachment)
+      if (coupon) atts.push(coupon)
+      await (supabase as any).from('campaigns').update({
+        attachments: atts,
+        message,
+        updated_at: new Date().toISOString(),
+      }).eq('id', campaignId)
+      setSavedAt(new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }))
+    } catch (e: any) { alert('Could not save: ' + e.message) }
+    finally { setSaving(false) }
+  }
+
+  const attachAndInsert = (a: any) => {
+    setAttachment(a)
+    // The message needs {{short_link}} for the attachment to actually appear.
+    if (!/\{\{short_link\}\}/.test(message)) {
+      setMessage(m => m.trim() ? `${m.trimEnd()} {{short_link}}` : '{{short_link}}')
+    }
+  }
+
   const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 18 }
   const input: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', background: '#fff' }
   const label: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 6 }
@@ -263,7 +363,9 @@ export default function CampaignEditorPage() {
       <div style={{ marginBottom: 18 }}>
         <h1 style={{ fontSize: 23, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
         <p style={{ color: 'var(--slate)', fontSize: 13, margin: '5px 0 0' }}>
-          {step === 2 ? 'Step 2 of 6 — choose who this campaign goes to.' : 'Step 3 of 6 — write the message.'}
+          {step === 2 ? 'Step 2 of 6 — choose who this campaign goes to.'
+            : step === 3 ? 'Step 3 of 6 — write the message.'
+            : 'Step 4 of 6 — attach links and offers.'}
         </p>
       </div>
 
@@ -271,7 +373,7 @@ export default function CampaignEditorPage() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, overflowX: 'auto', paddingBottom: 2 }}>
         {['Details', 'Audience', 'Message', 'Links & offers', 'Schedule', 'Review'].map((s, i) => {
           const n = i + 1
-          const done = n === 2 || n === 3          // steps built so far
+          const done = n >= 2 && n <= 4            // steps built so far
           const active = step === n
           return (
             <button key={s} type="button" disabled={!done} onClick={() => done && setStep(n)}
@@ -465,8 +567,221 @@ export default function CampaignEditorPage() {
           </div>
         </div>
         )}
+
+        {/* ── Left: links & offers (step 4) ────────────────────────────────── */}
+        {step === 4 && (
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div style={card}>
+            <label style={label}>Attach a link</label>
+            <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--slate)' }}>
+              Whatever you attach becomes a tracked short link on your own domain, so clicks appear
+              in Link Reports. It replaces <code>{'{{short_link}}'}</code> in the message.
+            </p>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 14 }}>
+              {[
+                ['product', 'Product'], ['category', 'Category'], ['help', 'Help article'],
+                ['announcement', 'Announcement'], ['form', 'Form'], ['booking', 'Booking page'],
+                ['payment', 'Payment link'], ['external', 'External URL'],
+              ].map(([k, l]) => (
+                <button key={k} type="button"
+                  onClick={() => { setAttachKind(k); if (k === 'help') loadArticles() }}
+                  style={{
+                    padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    border: '1px solid ' + (attachKind === k ? 'var(--coral)' : 'var(--border)'),
+                    background: attachKind === k ? 'var(--peach)' : '#fff',
+                    color: attachKind === k ? 'var(--coral)' : 'var(--slate)',
+                  }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            {attachKind === 'product' && (
+              <div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={prodQuery} onChange={e => setProdQuery(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && searchProducts()}
+                    placeholder="Search products by name or SKU" style={input} />
+                  <button type="button" onClick={searchProducts} disabled={prodBusy}
+                    style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    {prodBusy ? 'Searching…' : 'Search'}
+                  </button>
+                </div>
+                <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
+                  {prodResults.map((p: any) => (
+                    <button key={p.id} type="button"
+                      onClick={() => attachAndInsert({ kind: 'product', id: p.id, label: p.name, url: p.permalink, price: p.price })}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: 10, borderRadius: 10, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
+                      {p.image && <img src={p.image} alt="" style={{ width: 34, height: 34, borderRadius: 7, objectFit: 'cover' }} />}
+                      <span style={{ flex: 1 }}>
+                        <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{p.name}</span>
+                        <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>SKU {p.sku || '—'}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {attachKind === 'help' && (
+              <div style={{ display: 'grid', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
+                {articles.length === 0 && (
+                  <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: 0 }}>No published help articles found.</p>
+                )}
+                {articles.map((a: any) => (
+                  <button key={a.id} type="button"
+                    onClick={() => attachAndInsert({ kind: 'help', id: a.id, label: a.title, url: `/help/${a.id}` })}
+                    style={{ textAlign: 'left', padding: 10, borderRadius: 10, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                    {a.title}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {['category', 'announcement', 'form', 'booking', 'payment', 'external'].includes(attachKind) && (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <input value={linkLabel} onChange={e => setLinkLabel(e.target.value)}
+                  placeholder="Label (for your reference)" style={input} />
+                <input value={linkUrl} onChange={e => setLinkUrl(e.target.value)}
+                  placeholder="https://roxyaquarium.com.au/..." style={input} />
+                <button type="button" disabled={!linkUrl.trim()}
+                  onClick={() => attachAndInsert({ kind: attachKind, label: linkLabel || linkUrl, url: linkUrl.trim() })}
+                  style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: linkUrl.trim() ? 1 : 0.5, justifySelf: 'start' }}>
+                  Attach link
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* ── Coupon ──────────────────────────────────────────────────────── */}
+          <div style={card}>
+            <label style={label}>Offer a coupon</label>
+            {coupon ? (
+              <div style={{ padding: 14, borderRadius: 10, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                  <div>
+                    <code style={{ fontSize: 15, fontWeight: 800, color: '#15803d' }}>{coupon.code.toUpperCase()}</code>
+                    <p style={{ margin: '4px 0 0', fontSize: 12.5, color: '#166534' }}>
+                      {coupon.discountType === 'percent' ? `${coupon.amount}% off` : `$${coupon.amount} off`}
+                      {coupon.minimumSpend ? ` · min spend $${coupon.minimumSpend}` : ''}
+                      {coupon.expiryDate ? ` · expires ${coupon.expiryDate}` : ''}
+                      {coupon.usageLimit ? ` · ${coupon.usageLimit} uses` : ''}
+                    </p>
+                    {coupon.existing && (
+                      <p style={{ margin: '4px 0 0', fontSize: 11.5, color: '#b45309' }}>
+                        This code already existed in WooCommerce and was reused.
+                      </p>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => setCoupon(null)}
+                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 12.5, fontWeight: 700 }}>
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <input value={cCode} onChange={e => setCCode(e.target.value)} placeholder="Code e.g. FISH15" style={input} />
+                  <select value={cType} onChange={e => setCType(e.target.value)} style={input}>
+                    <option value="percent">Percentage off</option>
+                    <option value="fixed_cart">Fixed amount off cart</option>
+                    <option value="fixed_product">Fixed amount off product</option>
+                  </select>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <input value={cAmount} onChange={e => setCAmount(e.target.value)} type="number"
+                    placeholder={cType === 'percent' ? 'Amount (%)' : 'Amount ($)'} style={input} />
+                  <input value={cExpiry} onChange={e => setCExpiry(e.target.value)} type="date"
+                    placeholder="Expiry" style={input} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <input value={cMinSpend} onChange={e => setCMinSpend(e.target.value)} type="number"
+                    placeholder="Minimum spend ($)" style={input} />
+                  <input value={cUsageLimit} onChange={e => setCUsageLimit(e.target.value)} type="number"
+                    placeholder="Usage limit" style={input} />
+                </div>
+                <button type="button" onClick={createCoupon} disabled={couponBusy || !cCode.trim() || !cAmount}
+                  style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: couponBusy || !cCode.trim() || !cAmount ? 0.5 : 1, justifySelf: 'start' }}>
+                  {couponBusy ? 'Creating…' : 'Create coupon in WooCommerce'}
+                </button>
+                <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>
+                  This creates a real, redeemable coupon in your store.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+        )}
         {/* ── Right: live count / phone preview ────────────────────────────── */}
         <div style={{ display: 'grid', gap: 12, position: 'sticky', top: 16 }}>
+          {step === 4 && (
+            <>
+              <div style={card}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>
+                  Attached
+                </div>
+                {!attachment && !coupon && (
+                  <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: 0 }}>
+                    Nothing attached yet. A campaign can still send without a link.
+                  </p>
+                )}
+                {attachment && (
+                  <div style={{ padding: 11, borderRadius: 10, border: '1px solid var(--border)', marginBottom: 8 }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase' }}>{attachment.kind}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginTop: 2 }}>{attachment.label}</div>
+                    <div style={{ fontSize: 11, color: '#9ca3af', wordBreak: 'break-all', marginTop: 2 }}>{attachment.url}</div>
+                    <button type="button" onClick={() => setAttachment(null)}
+                      style={{ marginTop: 6, border: 'none', background: 'none', padding: 0, color: '#dc2626', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                      Remove
+                    </button>
+                  </div>
+                )}
+                {coupon && (
+                  <div style={{ padding: 11, borderRadius: 10, border: '1px solid #bbf7d0', background: '#f0fdf4' }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, color: '#15803d', textTransform: 'uppercase' }}>Coupon</div>
+                    <code style={{ fontSize: 13.5, fontWeight: 800, color: '#15803d' }}>{coupon.code.toUpperCase()}</code>
+                  </div>
+                )}
+              </div>
+
+              {/* Warn when an attachment can't actually appear in the message */}
+              {attachment && !/\{\{short_link\}\}/.test(message) && (
+                <div style={{ ...card, borderColor: '#fde68a', background: '#fffbeb' }}>
+                  <p style={{ margin: 0, fontSize: 12.5, color: '#78350f' }}>
+                    Your message has no <code>{'{{short_link}}'}</code>, so the attached link won't appear.
+                  </p>
+                  <button type="button" onClick={() => setMessage(m => (m.trimEnd() + ' {{short_link}}').trim())}
+                    style={{ marginTop: 8, padding: '6px 12px', borderRadius: 8, border: '1px solid #f59e0b', background: '#fff', color: '#b45309', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                    Add it to the message
+                  </button>
+                </div>
+              )}
+              {coupon && !/\{\{coupon_code\}\}/.test(message) && (
+                <div style={{ ...card, borderColor: '#fde68a', background: '#fffbeb' }}>
+                  <p style={{ margin: 0, fontSize: 12.5, color: '#78350f' }}>
+                    Your message has no <code>{'{{coupon_code}}'}</code>, so customers won't see the code.
+                  </p>
+                </div>
+              )}
+
+              <div style={{ ...card, padding: 14, background: 'var(--canvas)' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>
+                  Preview
+                </div>
+                <div style={{ background: '#fff', borderRadius: 16, border: '1px solid var(--border)', padding: 13, fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--ink)' }}>
+                  {previewText || 'Your message will appear here.'}
+                </div>
+              </div>
+
+              <button onClick={saveLinks} disabled={saving}
+                style={{ padding: '11px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+                {saving ? 'Saving…' : 'Save links & offers'}
+              </button>
+              {savedAt && <p style={{ margin: 0, fontSize: 12, color: '#15803d', textAlign: 'center' }}>Saved at {savedAt}</p>}
+            </>
+          )}
+
           {step === 3 && (
             <>
               {/* Phone preview — updates as you type */}
