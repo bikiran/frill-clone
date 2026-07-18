@@ -4,14 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import EmojiPicker from '@/components/EmojiPicker'
 
-// Emoji available for help category icons.
-const ICON_CHOICES = [
-  '📁', '🚀', '✨', '💳', '🔗', '🔧', '⚡',
-  '📄', '📚', '❓', '💡', '⚙️', '🔒', '📦',
-  '🐟', '🪴', '🧪', '🚚', '🛒', '🎓', '📣',
-  '🏷️', '📊', '🖼️', '🧰', '🩺', '🌊', '⭐',
-]
 
 export default function HelpCategoriesPage() {
   const router = useRouter()
@@ -226,13 +220,8 @@ export default function HelpCategoriesPage() {
             onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
           />
           <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Icon</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(14, 1fr)', gap: 4, marginBottom: 12 }}>
-            {ICON_CHOICES.map(ic => (
-              <button key={ic} type="button" onClick={() => setNewIcon(ic)}
-                style={{ fontSize: 17, lineHeight: 1, padding: '5px 0', borderRadius: 8, border: '1px solid ' + (newIcon === ic ? 'var(--coral)' : 'transparent'), background: newIcon === ic ? 'var(--peach)' : '#fff', cursor: 'pointer' }}>
-                {ic}
-              </button>
-            ))}
+          <div style={{ display: 'inline-block', border: '1px solid var(--border)', borderRadius: 12, background: '#fff', marginBottom: 12, overflow: 'hidden' }}>
+            <EmojiPicker inline value={newIcon} onSelect={setNewIcon} />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={handleAddCategory} disabled={saving} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--coral)', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
@@ -290,17 +279,10 @@ export default function HelpCategoriesPage() {
                     {cat.icon || '📁'}
                   </button>
                   {iconPickerFor === cat.id && (
-                    <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 60, width: 250, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.14)', padding: 10 }}>
-                      <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Choose an icon</p>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-                        {ICON_CHOICES.map(ic => (
-                          <button key={ic} type="button" onClick={() => handleUpdateIcon(cat.id, ic)}
-                            style={{ fontSize: 18, lineHeight: 1, padding: '6px 0', borderRadius: 8, border: '1px solid ' + (cat.icon === ic ? 'var(--coral)' : 'transparent'), background: cat.icon === ic ? 'var(--peach)' : 'transparent', cursor: 'pointer' }}>
-                            {ic}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                    <EmojiPicker
+                      value={cat.icon}
+                      onSelect={(e) => handleUpdateIcon(cat.id, e)}
+                    />
                   )}
                 </div>
                 {editingId && editingId === cat.id ? (

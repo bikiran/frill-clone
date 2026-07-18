@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -16,6 +16,26 @@ const DEMO_ARTICLES: Record<string, any> = {
 const CATEGORY_ICONS: Record<string, string> = {
   'Getting Started': '🚀', 'Features': '✨', 'Billing': '💳',
   'Integrations': '🔗', 'Troubleshooting': '🔧', 'API': '⚡', 'Other': '📁',
+}
+
+// Stable id for a heading so the "On this page" links and the rendered headings
+// agree. Lowercase FIRST, then strip — the other order deletes capitals.
+function headingId(text: string) {
+  return text.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-') || 'section'
+}
+
+// Pull the h2/h3 headings out of an article body for the contents nav.
+export function extractHeadings(content: string) {
+  const out: { id: string; text: string; level: number }[] = []
+  if (!content) return out
+  let inCode = false
+  for (const line of content.split('\n')) {
+    if (line.trim().startsWith('```')) { inCode = !inCode; continue }
+    if (inCode) continue
+    if (line.startsWith('### ')) out.push({ id: headingId(line.slice(4)), text: line.slice(4), level: 3 })
+    else if (line.startsWith('## ')) out.push({ id: headingId(line.slice(3)), text: line.slice(3), level: 2 })
+  }
+  return out
 }
 
 function renderContent(content: string) {
@@ -72,9 +92,9 @@ function renderContent(content: string) {
     if (line.startsWith('# ')) {
       elements.push(<h1 key={i} className="text-2xl font-black mb-4 mt-6" style={{ color: 'var(--ink)' }}>{line.slice(2)}</h1>)
     } else if (line.startsWith('## ')) {
-      elements.push(<h2 key={i} className="text-lg font-bold mb-3 mt-6 pb-2 border-b" style={{ color: 'var(--ink)', borderColor: 'var(--border)' }}>{line.slice(3)}</h2>)
+      elements.push(<h2 id={headingId(line.slice(3))} key={i} className="text-lg font-bold mb-3 mt-6 pb-2 border-b" style={{ color: 'var(--ink)', borderColor: 'var(--border)', scrollMarginTop: 90 }}>{line.slice(3)}</h2>)
     } else if (line.startsWith('### ')) {
-      elements.push(<h3 key={i} className="text-base font-bold mb-2 mt-4" style={{ color: 'var(--ink)' }}>{line.slice(4)}</h3>)
+      elements.push(<h3 id={headingId(line.slice(4))} key={i} className="text-base font-bold mb-2 mt-4" style={{ color: 'var(--ink)', scrollMarginTop: 90 }}>{line.slice(4)}</h3>)
     } else if (line.startsWith('- ') || line.startsWith('* ')) {
       const items = []
       while (i < lines.length && (lines[i].startsWith('- ') || lines[i].startsWith('* '))) {
@@ -118,6 +138,8 @@ export default function HelpArticlePage() {
   const id = params?.id as string
 
   const [article, setArticle] = useState<any>(null)
+  // Headings extracted from the article body, for the "On this page" nav.
+  const [activeHeading, setActiveHeading] = useState<string>('')
   // Articles store the category SLUG. Map slug → { name, icon } so we can show
   // the readable name and the category's chosen icon instead of the raw slug.
   const [catMap, setCatMap] = useState<Record<string, { name: string; icon: string }>>({})
@@ -266,6 +288,39 @@ export default function HelpArticlePage() {
 
   const isAdmin = isCompanyAdmin
 
+  // Contents nav for the article body.
+  const toc = useMemo(() => extractHeadings(article?.content || ''), [article?.content])
+
+  const scrollToHeading = (id: string) => {
+    const el = document.getElementById(id)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setActiveHeading(id)
+    // Keep the URL shareable without triggering a jump.
+    if (typeof history !== 'undefined') history.replaceState(null, '', `#${id}`)
+  }
+
+  // Highlight whichever heading you're currently reading. The heading closest
+  // to (but still above) the top of the viewport wins; near the bottom of the
+  // page the last one wins so the final short section can still activate.
+  useEffect(() => {
+    if (toc.length === 0) return
+    const onScroll = () => {
+      const atBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 40
+      if (atBottom) { setActiveHeading(toc[toc.length - 1].id); return }
+      let current = toc[0].id
+      for (const h of toc) {
+        const el = document.getElementById(h.id)
+        if (el && el.getBoundingClientRect().top <= 100) current = h.id
+        else break
+      }
+      setActiveHeading(current)
+    }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [toc])
+
   if (loading) return <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)' }}>Loading...</div>
   if (!article) return (
     <div className="min-h-screen flex flex-col items-center justify-center" style={{ background: 'var(--canvas)' }}>
@@ -291,7 +346,38 @@ export default function HelpArticlePage() {
       </div>
 
       <div className="max-w-5xl mx-auto px-6 py-10">
-        <div className="grid lg:grid-cols-3 gap-8">
+        <div className="grid lg:grid-cols-4 gap-8">
+          {/* On this page — headings pulled from the article, sticky, with the
+              section you're currently reading highlighted. */}
+          <aside className="hidden lg:block lg:col-span-1">
+            {toc.length > 0 && (
+              <nav className="sticky top-6">
+                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>
+                  On this page
+                </p>
+                <ul className="space-y-1 border-l" style={{ borderColor: 'var(--border)' }}>
+                  {toc.map(h => (
+                    <li key={h.id}>
+                      <a
+                        href={`#${h.id}`}
+                        onClick={e => { e.preventDefault(); scrollToHeading(h.id) }}
+                        className="block text-sm py-1 cursor-pointer transition-colors"
+                        style={{
+                          paddingLeft: h.level === 3 ? 22 : 12,
+                          marginLeft: -1,
+                          borderLeft: activeHeading === h.id ? '2px solid var(--coral)' : '2px solid transparent',
+                          color: activeHeading === h.id ? 'var(--coral)' : 'var(--slate)',
+                          fontWeight: activeHeading === h.id ? 600 : 400,
+                        }}>
+                        {h.text}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            )}
+          </aside>
+
           {/* Main article */}
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white rounded-2xl border p-8" style={{ borderColor: 'var(--border)' }}>
@@ -517,6 +603,11 @@ export default function HelpArticlePage() {
                 {(article.likes || 0) > 0 && <span className="ml-1">({article.likes})</span>}
               </button>
             </div>
+          </div>
+
+          {/* Right sidebar — sticks while the article scrolls */}
+          <aside className="lg:col-span-1">
+            <div className="lg:sticky lg:top-6 space-y-6">
 
             {/* Related articles */}
             {related.length > 0 && (
@@ -563,7 +654,8 @@ export default function HelpArticlePage() {
               style={{ color: 'var(--slate)' }}>
               ← Back to Help Centre
             </Link>
-          </div>
+            </div>
+          </aside>
         </div>
       </div>
     </div>
