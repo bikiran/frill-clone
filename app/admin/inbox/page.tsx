@@ -318,6 +318,8 @@ export default function InboxPage() {
   const [sending, setSending] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [locationFilter, setLocationFilter] = useState<string>('all')
+  // All / Assigned to me / Unassigned tabs above the conversation list.
+  const [assignFilter, setAssignFilter] = useState<'all' | 'mine' | 'unassigned'>('all')
 
   // Persist the chosen location across navigation within Inbox & CRM.
   useEffect(() => {
@@ -1962,6 +1964,33 @@ export default function InboxPage() {
     } catch (e: any) { showToast(e.message || 'Could not generate invoice') }
   }
 
+  // Refund a paid order. This moves real money through the payment gateway, so
+  // it always confirms first and states the amount.
+  const issueOrderRefund = async (payload: any) => {
+    if (!companyId) return
+    const orderId = payload.order_id || payload.id
+    const total = Number(payload.total || 0)
+    if (!orderId) { showToast('No order id for this order'); return }
+    const amountText = total ? `$${total.toFixed(2)}` : 'the full order total'
+    if (!confirm(`Refund ${amountText} for order #${payload.order_number || orderId}?\n\nThis returns the money to the customer through the payment gateway and cannot be undone here.`)) return
+    try {
+      const res = await fetch('/api/orders/refund', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId, orderId,
+          integrationId: payload.integration_id || undefined,
+          conversationId: selected?.id || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Refund failed')
+      showToast(`Refunded $${Number(data.amount || total).toFixed(2)}`)
+      if (selected) { loadWooData(contact?.id || null); loadConversationExtras(selected.id) }
+    } catch (e: any) {
+      alert('Could not issue the refund: ' + e.message)
+    }
+  }
+
   const sendOrderPaymentRequest = async (payload: any) => {
     if (!companyId || !selected) return
     // Reuse the existing in-chat payment request feature, tagged to this order so
@@ -2467,8 +2496,12 @@ export default function InboxPage() {
     //      if the widget isn't currently active, deliver over SMS so they
     //      actually receive it.
     const smsNumber = smsDestination()
-    const lastSeen = (selected as any).visitor_last_seen || (selected as any).last_message_at
-    const visitorOnline = lastSeen ? (Date.now() - (parseTs(lastSeen)?.getTime() || 0)) < 120000 : false
+    // Is the visitor actually sitting in the widget? Use ONLY the widget's own
+    // heartbeat (page_seen_at, refreshed every 60s while their tab is open).
+    // This previously fell back to last_message_at — which the AGENT'S own
+    // replies update — so sending two messages in a row made the visitor look
+    // online and the reply went into a live chat nobody was watching.
+    const visitorOnline = isOnPageNow
     const activeChannel = (selected as any).active_channel || null
     const shouldSms = sendChannel === 'sms'
       ? !!smsNumber
@@ -2757,6 +2790,12 @@ export default function InboxPage() {
     // Location filter (whole Inbox & CRM). "all" shows everything; otherwise
     // only conversations assigned to the chosen outlet. Conversations with no
     // location assigned show under "all" only.
+    // Assignment tab: All / Assigned to me / Unassigned.
+    if (assignFilter === 'mine') {
+      if (!user?.id || (c as any).assigned_to !== user.id) return false
+    } else if (assignFilter === 'unassigned') {
+      if ((c as any).assigned_to) return false
+    }
     if (locationFilter !== 'all') {
       const loc = (c as any).assigned_location_id || (c as any).location_id || null
       if (loc !== locationFilter) return false
@@ -2973,6 +3012,9 @@ export default function InboxPage() {
             mask-image: linear-gradient(to right, #000 88%, transparent 100%);
           }
           .inbox-thread-header .inbox-header-tools::-webkit-scrollbar { display: none; }
+          /* Assignment tabs scroll horizontally without a visible scrollbar. */
+          .inbox-assign-tabs { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+          .inbox-assign-tabs::-webkit-scrollbar { display: none; }
 
           /* Overdue badge tooltip — appears INSTANTLY on hover (no browser
              title-delay), larger, with a quick pop animation. */
@@ -3937,14 +3979,42 @@ export default function InboxPage() {
           {/* Location filter — scopes the whole inbox to one outlet. Only shown
               when the business actually has more than one location. */}
           {outlets.length > 1 && (
-            <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
-              style={{ width: '100%', marginTop: 10, padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border)', background: locationFilter !== 'all' ? 'var(--peach)' : 'var(--canvas)', fontSize: 13, fontWeight: 600, color: locationFilter !== 'all' ? 'var(--coral)' : 'var(--ink)', cursor: 'pointer' }}>
-              <option value="all">📍 All locations</option>
-              {outlets.map(o => (
-                <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>
-              ))}
-            </select>
+            <div style={{ position: 'relative', marginTop: 10 }}>
+              {/* Map-pin icon sits inside the control so the select shows a real
+                  SVG rather than an emoji glyph that renders differently per OS. */}
+              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', color: locationFilter !== 'all' ? 'var(--coral)' : 'var(--slate)' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              </span>
+              <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px 8px 30px', borderRadius: 10, border: '1px solid var(--border)', background: locationFilter !== 'all' ? 'var(--peach)' : 'var(--canvas)', fontSize: 13, fontWeight: 600, color: locationFilter !== 'all' ? 'var(--coral)' : 'var(--ink)', cursor: 'pointer', appearance: 'none' }}>
+                <option value="all">All locations</option>
+                {outlets.map(o => (
+                  <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>
+                ))}
+              </select>
+            </div>
           )}
+
+          {/* Assignment tabs — a horizontally scrollable strip (Coax style) so
+              extra views can be added without wrapping the row. */}
+          <div className="inbox-assign-tabs" style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
+            {([
+              ['all', 'All'],
+              ['mine', 'Assigned to me'],
+              ['unassigned', 'Unassigned'],
+            ] as const).map(([key, label]) => (
+              <button key={key} type="button" onClick={() => setAssignFilter(key)}
+                style={{
+                  flexShrink: 0, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
+                  border: '1px solid ' + (assignFilter === key ? 'var(--coral)' : 'var(--border)'),
+                  background: assignFilter === key ? 'var(--peach)' : '#fff',
+                  color: assignFilter === key ? 'var(--coral)' : 'var(--slate)',
+                  fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', transition: 'all 0.12s',
+                }}>
+                {label}
+              </button>
+            ))}
+          </div>
           {/* Open / Closed tabs (Coax style) + filter */}
           <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
             <div style={{ flex: 1, display: 'flex', background: 'var(--canvas)', borderRadius: 10, padding: 3 }}>
@@ -3986,6 +4056,9 @@ export default function InboxPage() {
             const subj = (c.subject || '').toLowerCase()
             const ch = String(c.channel || '').toLowerCase()
             let source: { label: string; bg: string; fg: string }
+            // Set when the top tag is the source (Website) and the cart state
+            // needs to show alongside it.
+            let cartSecond: any = null
             // A live non-web channel wins over the subject-derived tag. Someone
             // who began as an order/cart but is now texting should read "SMS",
             // not keep an "Order Placed" badge forever.
@@ -4000,11 +4073,14 @@ export default function InboxPage() {
             if (CHANNEL_BADGE[ch]) {
               source = CHANNEL_BADGE[ch]
             } else if (subj.startsWith('abandoned cart') && !(c as any).order_status && (c as any).cart_status !== 'recovered') {
-              // Only an UNrecovered cart shows the red "Abandoned Cart" badge.
+              // Only an UNrecovered cart shows the "Abandoned Cart" badge.
               // Once it's recovered (an order was placed), the conversation gets
               // an order_status and should read as an order below — otherwise it
               // wrongly stayed "Abandoned Cart" forever after the sale.
-              source = { label: 'Abandoned Cart', bg: '#fee2e2', fg: '#dc2626' }
+              // The top tag is the SOURCE the enquiry came from (the website),
+              // with the cart state shown as the second badge.
+              source = { label: 'Website', bg: '#e0e7ff', fg: '#4338ca' }
+              cartSecond = { label: 'Abandoned Cart', bg: '#fee2e2', fg: '#dc2626' }
             } else if (subj.startsWith('order #') || (c as any).order_status) {
               // Read the ACTUAL order status. This used to say "Order Placed" for
               // every order conversation — including failed payments, which is
@@ -4029,7 +4105,7 @@ export default function InboxPage() {
             // Messenger…), also surface the order status if this customer has an
             // order — so an SMS conversation with a placed order shows BOTH
             // "SMS" and "Order Placed" rather than hiding the sale.
-            let secondBadge: any = null
+            let secondBadge: any = cartSecond
             if (CHANNEL_BADGE[ch]) {
               const os2 = String((c as any).order_status || '').toLowerCase()
               const ORDER_BADGE2: Record<string, any> = {
@@ -5919,7 +5995,11 @@ export default function InboxPage() {
                         {/* Per-order actions */}
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
                           <button type="button" onClick={() => openOrderEditor(payload)} style={miniBtn('var(--coral)')}>Edit</button>
-                          <button type="button" onClick={() => sendOrderPaymentRequest(payload)} style={miniBtn('#635BFF')}>Payment request</button>
+                          {/* A paid order doesn't need a payment request — the
+                              useful action there is refunding it. */}
+                          {['processing', 'completed'].includes(String(o.status || '').toLowerCase())
+                            ? <button type="button" onClick={() => issueOrderRefund(payload)} style={miniBtn('#b45309')}>Issue refund</button>
+                            : <button type="button" onClick={() => sendOrderPaymentRequest(payload)} style={miniBtn('#635BFF')}>Payment request</button>}
                           <button type="button" onClick={() => generateInvoice(payload)} style={miniBtn('var(--ink)')}>Invoice</button>
                           {payload.pay_link && <button type="button" onClick={() => { navigator.clipboard?.writeText(payload.pay_link!); showToast('Pay link copied') }} style={miniBtn('var(--slate)')}>Copy link</button>}
                         </div>
