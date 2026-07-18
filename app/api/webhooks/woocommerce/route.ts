@@ -144,8 +144,13 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     contact = data?.[0] || null
   }
   if (!contact && phone) {
-    const { data } = await db.from('contacts').select('*').eq('company_id', companyId).eq('phone', phone).limit(1)
-    contact = data?.[0] || null
+    // Match by NORMALISED phone (last 9 digits) — SMS contacts may store the
+    // number as 0468…, +61468…, or 61468… while the order billing uses another
+    // format. An exact match missed these, so the order spawned a NEW contact
+    // and the existing SMS thread never got the "Order Placed" badge.
+    const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-9)
+    const { data: candidates } = await db.from('contacts').select('*').eq('company_id', companyId).not('phone', 'is', null).limit(2000)
+    contact = (candidates || []).find((c: any) => norm(c.phone) === norm(phone)) || null
   }
   if (!contact) {
     const name = `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim() || email

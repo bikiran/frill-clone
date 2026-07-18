@@ -89,6 +89,10 @@ export default function CustomerProfilePage() {
 
         if (!customerData) { setError('Customer not found'); return }
         setCustomer(customerData)
+        // Show the profile NOW — the header, stats and contact info are ready.
+        // Orders and calls below (which include a slow live WooCommerce fetch)
+        // fill in progressively instead of holding the whole page on a spinner.
+        setLoading(false)
 
         // Load order history — match by woo_customer_id OR email (guest orders
         // often have customer_id 0 but the same billing email)
@@ -134,6 +138,14 @@ export default function CustomerProfilePage() {
             } catch {}
           }
           setOrders(ordersData)
+          // If the customer record has no address, derive it from the most recent
+          // order's billing so the profile still shows where they are.
+          if (!customerData.address?.address_1 && !customerData.address?.city) {
+            const withAddr = ordersData.find((o: any) => o.billing?.address_1 || o.billing?.city)
+            if (withAddr?.billing) {
+              setCustomer((prev: any) => prev ? { ...prev, address: withAddr.billing } : prev)
+            }
+          }
         } catch { setOrders([]) }
 
         // Load call history for this contact

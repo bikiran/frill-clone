@@ -1290,40 +1290,82 @@ export default function InboxPage() {
         setAbandonedCarts(data.carts || [])
       }
     } catch {}
-    if (!email) return
-    // Match WooCommerce customer by email
-    const { data: woo } = await (supabase as any).from('woocommerce_customers')
-      .select('*').eq('company_id', companyId).ilike('email', email).maybeSingle()
-    if (woo) setWooCustomer(woo)
-    // Orders by email (covers guest orders too) — synced table first for speed
-    const { data: orders } = await (supabase as any).from('woocommerce_orders')
-      .select('*').eq('company_id', companyId).ilike('customer_email', email)
-      .order('order_date', { ascending: false }).limit(50)
-    setWooOrders(orders || [])
-    // Then fetch LIVE orders from WooCommerce (includes Colvy-created orders that
-    // haven't synced yet) and merge, de-duplicated by order id/number.
-    try {
-      const res = await fetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email)}`)
-      const data = await res.json()
-      if (data.orders && data.orders.length > 0) {
-        const seen = new Set((orders || []).map((o: any) => String(o.order_number || o.order_id)))
-        const merged = [...(orders || [])]
-        data.orders.forEach((o: any) => {
-          const key = String(o.number)
-          if (!seen.has(key)) {
-            seen.add(key)
-            merged.push({
-              order_id: o.id, order_number: o.number, status: o.status, total: o.total,
-              currency: o.currency, order_date: o.date, customer_email: email,
-              line_items: o.items, integration_id: o.integration_id, store_url: o.store_url,
-              order_key: o.order_key, payment_url: o.payment_url, _live: true,
-            })
-          }
-        })
-        merged.sort((a: any, b: any) => new Date(b.order_date || 0).getTime() - new Date(a.order_date || 0).getTime())
-        setWooOrders(merged)
+    if (!email && !phone) return
+    const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-9)
+    // Match WooCommerce customer by email OR phone.
+    let woo: any = null
+    if (email) {
+      const { data } = await (supabase as any).from('woocommerce_customers')
+        .select('*').eq('company_id', companyId).ilike('email', email).maybeSingle()
+      woo = data
+    }
+    if (!woo && phone) {
+      // Fall back to phone match (SMS-only contacts with no email on file).
+      const { data: candidates } = await (supabase as any).from('woocommerce_customers')
+        .select('*').eq('company_id', companyId).limit(2000)
+      woo = (candidates || []).find((c: any) => c.phone && norm(c.phone) === norm(phone)) || null
+      // Backfill this contact's email from the matched customer so order-status
+      // automations and future lookups work (SMS contact ↔ WooCommerce customer).
+      if (woo?.email && contactId) {
+        try { await (supabase as any).from('contacts').update({ email: woo.email }).eq('id', contactId).is('email', null) } catch {}
+        email = woo.email
       }
-    } catch {}
+    }
+    if (woo) setWooCustomer(woo)
+
+    // Orders by email (covers guest orders too), and ALSO by phone via billing.
+    let orders: any[] = []
+    if (email) {
+      const { data } = await (supabase as any).from('woocommerce_orders')
+        .select('*').eq('company_id', companyId).ilike('customer_email', email)
+        .order('order_date', { ascending: false }).limit(50)
+      orders = data || []
+    }
+    if (phone) {
+      // Phone-matched orders (billing.phone), merged in for SMS-only contacts.
+      const { data: byPhone } = await (supabase as any).from('woocommerce_orders')
+        .select('*').eq('company_id', companyId)
+        .order('order_date', { ascending: false }).limit(200)
+      const seen = new Set(orders.map((o: any) => String(o.order_number || o.order_id)))
+      for (const o of (byPhone || [])) {
+        const bp = o.billing?.phone
+        if (bp && norm(bp) === norm(phone) && !seen.has(String(o.order_number || o.order_id))) {
+          seen.add(String(o.order_number || o.order_id))
+          orders.push(o)
+        }
+      }
+      orders.sort((a: any, b: any) => new Date(b.order_date || 0).getTime() - new Date(a.order_date || 0).getTime())
+    }
+    setWooOrders(orders)
+    // Live WooCommerce fetch runs in the background (don't block the panel — the
+    // synced orders above already render instantly; live results merge in when
+    // ready, catching Colvy-created orders that haven't synced yet).
+    if (email) {
+      ;(async () => {
+      try {
+        const res = await fetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email!)}`)
+        const data = await res.json()
+        if (data.orders && data.orders.length > 0) {
+          const seen = new Set((orders || []).map((o: any) => String(o.order_number || o.order_id)))
+          const merged = [...(orders || [])]
+          data.orders.forEach((o: any) => {
+            const key = String(o.number)
+            if (!seen.has(key)) {
+              seen.add(key)
+              merged.push({
+                order_id: o.id, order_number: o.number, status: o.status, total: o.total,
+                currency: o.currency, order_date: o.date, customer_email: email,
+                line_items: o.items, integration_id: o.integration_id, store_url: o.store_url,
+                order_key: o.order_key, payment_url: o.payment_url, _live: true,
+              })
+            }
+          })
+          merged.sort((a: any, b: any) => new Date(b.order_date || 0).getTime() - new Date(a.order_date || 0).getTime())
+          setWooOrders(merged)
+        }
+      } catch {}
+      })()
+    }
   }
 
   const loadConversationExtras = async (convId: string) => {
