@@ -772,6 +772,11 @@ export default function InboxPage() {
     .filter(k => filters[k]).length + (filters.oldestFirst ? 1 : 0)
   const resetFilters = () => setFilters({ dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', oldestFirst: false })
   const [showAssignMenu, setShowAssignMenu] = useState(false)
+  // Internal staff-only note composer state.
+  const [internalMode, setInternalMode] = useState(false)
+  const [mentionedUsers, setMentionedUsers] = useState<any[]>([])
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
+  const [mentionIndex, setMentionIndex] = useState(0)
   const [assignSearch, setAssignSearch] = useState('')
   // Conversation list pagination — start at 50 and grow via "Load more" so a
   // large inbox doesn't fetch everything up front.
@@ -2310,6 +2315,45 @@ export default function InboxPage() {
     const content = reply.trim()
     const senderName = user.user_metadata?.display_name || user.email?.split('@')[0]
 
+    // ── Internal staff-only note ────────────────────────────────────────────
+    // Written straight to the messages table with is_internal = true and never
+    // handed to ANY delivery channel (SMS / chat / email / Meta), so the
+    // customer can't receive it. It still appears inline in the thread so the
+    // team reads it in sequence with the real conversation.
+    if (internalMode) {
+      try {
+        const mentionedIds = mentionedUsers.map(m => m.user_id).filter(Boolean)
+        const { data: inserted } = await (supabase as any).from('messages').insert({
+          conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+          sender_name: senderName, content, is_internal: true,
+          mentions: mentionedIds,
+        }).select().maybeSingle()
+
+        // Notify anyone @mentioned in the note.
+        if (mentionedIds.length) {
+          await (supabase as any).from('mention_notifications').insert(
+            mentionedIds.map((uid: string) => ({
+              company_id: companyId, conversation_id: selected.id,
+              message_id: inserted?.id || null, mentioned_user: uid,
+              mentioned_by: senderName, preview: content.slice(0, 140),
+            }))
+          )
+        }
+        // Deliberately NOT touching conversations.last_message — an internal
+        // note shouldn't change what the conversation list shows the customer
+        // said, and shouldn't mark the thread as newly active for them.
+        setReply(''); setReplyTo(null); setSending(false)
+        setInternalMode(false); setMentionedUsers([])
+        const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+        setMessages(msgs || [])
+        scrollBottom()
+      } catch (e: any) {
+        setSending(false)
+        alert('Could not save the internal note: ' + e.message)
+      }
+      return
+    }
+
     // Instagram / Messenger conversations reply through the Meta Send API.
     if ((selected as any).channel === 'instagram' || (selected as any).channel === 'facebook') {
       try {
@@ -2666,6 +2710,31 @@ export default function InboxPage() {
   const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', fontFamily: 'inherit' }
   const fieldBtn = (color: string): React.CSSProperties => ({ width: 24, height: 24, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 })
   const cardAction = (bg: string, color: string): React.CSSProperties => ({ width: 46, height: 46, borderRadius: 12, border: 'none', background: bg, color, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' })
+  // Highlight @mentions inside an internal note so they stand out.
+  const renderWithMentions = (text: string) => {
+    const parts = String(text || '').split(/(@[\w.\-]+)/g)
+    return parts.map((p, i) =>
+      p.startsWith('@')
+        ? <strong key={i} style={{ color: '#b45309', fontStyle: 'normal', background: '#fef3c7', padding: '0 3px', borderRadius: 4 }}>{p}</strong>
+        : <span key={i}>{p}</span>
+    )
+  }
+  // Team members matching the in-progress @token.
+  const mentionMatches = mentionQuery === null ? [] : teamMembers.filter((m: any) =>
+    !mentionQuery || (m.name || '').toLowerCase().includes(mentionQuery.toLowerCase())
+  ).slice(0, 6)
+  // Replace the in-progress "@token" with the chosen member's handle, switch the
+  // composer into internal mode (a mention is inherently a staff-only action),
+  // and remember them so the note can notify them on send.
+  const applyMention = (m: any) => {
+    if (!m) return
+    const handle = String(m.name || '').replace(/\s+/g, '')
+    setReply(prev => prev.replace(/@([\w.\-]*)$/, `@${handle} `))
+    setMentionedUsers(prev => prev.some(p => p.user_id === m.user_id) ? prev : [...prev, m])
+    setMentionQuery(null)
+    setInternalMode(true)
+    textareaRef.current?.focus()
+  }
 
   return (
     <div className={`inbox-root inbox-pane-${mobilePane}`} style={{ display: 'flex', height: '100vh', maxHeight: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
@@ -4283,11 +4352,35 @@ export default function InboxPage() {
                 if (thisDay) lastDay = thisDay
                 const isAgent = msg.sender_type === 'agent'
                 const isSystem = msg.sender_type === 'system'
+                const isInternal = !!(msg as any).is_internal
                 const dateDivider = showDivider ? (
                   <div key={`div-${msg.id}`} style={{ textAlign: 'center', margin: '10px 0 4px' }}>
                     <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', background: '#eef0f2', padding: '3px 12px', borderRadius: 20 }}>{thisDay}</span>
                   </div>
                 ) : null
+                // Internal staff-only note — sits inline in the timeline so the
+                // team reads it in sequence, but is visually unmistakable
+                // (amber, dashed, italic, "Only your team can see this") so it's
+                // never confused with something the customer received.
+                if (isInternal) return (
+                  <div key={msg.id}>
+                    {dateDivider}
+                    <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0' }}>
+                      <div style={{ maxWidth: '86%', width: '100%', background: '#fffbeb', border: '1px dashed #f59e0b', borderRadius: 12, padding: '10px 13px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, fontSize: 11, fontWeight: 700, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/></svg>
+                          Internal note · only your team can see this
+                        </div>
+                        <p style={{ margin: 0, fontSize: 13.5, color: '#78350f', fontStyle: 'italic', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          {renderWithMentions(msg.content)}
+                        </p>
+                        <p style={{ margin: '6px 0 0', fontSize: 10.5, color: '#b08968', fontStyle: 'italic' }}>
+                          {(msg as any).sender_name || 'Team'} · {fmtTime(msg.created_at)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )
                 // A connected call renders as a full Coax-style card — AI
                 // summary, action items, recording player, transcript — not a
                 // grey one-line pill.
@@ -4684,8 +4777,26 @@ export default function InboxPage() {
                 </div>
               )}
 
-              <textarea ref={textareaRef} value={reply} onChange={e => setReply(e.target.value)}
+              <textarea ref={textareaRef} value={reply} onChange={e => {
+                  const v = e.target.value
+                  setReply(v)
+                  // Detect an in-progress "@name" token at the caret so the
+                  // mention picker can offer team members.
+                  const caret = e.target.selectionStart ?? v.length
+                  const upto = v.slice(0, caret)
+                  const m = upto.match(/@([\w.\-]*)$/)
+                  if (m) { setMentionQuery(m[1]); setMentionIndex(0) } else setMentionQuery(null)
+                }}
                 onKeyDown={e => {
+                  // @mention picker takes priority when it's open.
+                  if (mentionQuery !== null && mentionMatches.length) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => (i + 1) % mentionMatches.length); return }
+                    if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(i => (i - 1 + mentionMatches.length) % mentionMatches.length); return }
+                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                      e.preventDefault(); applyMention(mentionMatches[mentionIndex]); return
+                    }
+                    if (e.key === 'Escape') { setMentionQuery(null); return }
+                  }
                   // Quick-response picker takes priority over sending.
                   if (showQuickMenu && quickMatches.length) {
                     if (e.key === 'ArrowDown') { e.preventDefault(); setQuickIndex(i => (i + 1) % quickMatches.length); return }
@@ -4697,9 +4808,27 @@ export default function InboxPage() {
                   }
                   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply() }
                 }}
-                placeholder="Type a reply… (Enter to send, / for quick responses)"
+                placeholder={internalMode
+                  ? 'Internal note — only your team will see this. Use @ to mention someone.'
+                  : 'Type a reply… (Enter to send, / for quick responses)'}
                 rows={3}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }} />
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: internalMode ? '1px dashed #f59e0b' : '1px solid var(--border)', background: internalMode ? '#fffbeb' : '#fff', fontStyle: internalMode ? 'italic' : 'normal', fontSize: 13, resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 }} />
+
+              {/* @mention picker */}
+              {mentionQuery !== null && mentionMatches.length > 0 && (
+                <div style={{ position: 'absolute', bottom: '100%', left: 12, right: 12, marginBottom: 6, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,0.14)', maxHeight: 220, overflowY: 'auto', zIndex: 60 }}>
+                  <p style={{ margin: 0, padding: '8px 12px 4px', fontSize: 10.5, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Mention a team member</p>
+                  {mentionMatches.map((m: any, i: number) => (
+                    <button key={m.id} type="button" onClick={() => applyMention(m)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: i === mentionIndex ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                      <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                        {(m.name || '?').charAt(0).toUpperCase()}
+                      </span>
+                      {m.name}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Live typing preview — what the customer is typing right now.
                   Admin-only; the customer never sees the agent's draft. */}
@@ -4783,6 +4912,13 @@ export default function InboxPage() {
                     style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Review
                   </button>
+                  {/* Internal note toggle — staff-only message */}
+                  <button type="button" onClick={() => setInternalMode(v => !v)}
+                    title={internalMode ? 'Switch back to replying to the customer' : 'Write an internal note only your team can see'}
+                    style={{ height: 32, padding: '0 10px', borderRadius: 8, border: internalMode ? '1px solid #f59e0b' : '1px solid var(--border)', background: internalMode ? '#fef3c7' : '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: internalMode ? '#b45309' : 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
+                    {internalMode ? 'Internal note' : 'Note'}
+                  </button>
                   {/* Resolve */}
                   <button type="button" onClick={() => setStatus('resolved')}
                     style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid #059669', background: '#dcfce7', color: '#059669', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
@@ -4797,9 +4933,15 @@ export default function InboxPage() {
                   {/* Send + channel selector */}
                   <div ref={channelMenuRef} style={{ position: 'relative', display: 'flex' }}>
                     <button type="button" onClick={sendReply} disabled={sending || !reply.trim()}
-                      style={{ padding: '8px 16px', borderRadius: '10px 0 0 10px', background: reply.trim() ? 'var(--coral)' : '#e5e7eb', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: reply.trim() ? 'pointer' : 'default', transition: 'all 0.15s' }}>
-                      {sending ? 'Sending…' : `Send${sendChannel !== 'auto' ? ` via ${sendChannel.toUpperCase()}` : ''} →`}
+                      style={{ padding: '8px 16px', borderRadius: internalMode ? 10 : '10px 0 0 10px', background: !reply.trim() ? '#e5e7eb' : internalMode ? '#f59e0b' : 'var(--coral)', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: reply.trim() ? 'pointer' : 'default', transition: 'all 0.15s' }}>
+                      {sending
+                        ? (internalMode ? 'Saving…' : 'Sending…')
+                        : internalMode
+                          ? 'Add note'
+                          : `Send${sendChannel !== 'auto' ? ` via ${sendChannel.toUpperCase()}` : ''} →`}
                     </button>
+                    {!internalMode && (
+                    <>
                     <button type="button" onClick={() => setShowChannelMenu(v => !v)} disabled={sending}
                       title="Choose a channel"
                       style={{ padding: '8px 8px', borderRadius: '0 10px 10px 0', background: reply.trim() ? 'var(--coral)' : '#e5e7eb', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
@@ -4824,6 +4966,8 @@ export default function InboxPage() {
                           </button>
                         ))}
                       </div>
+                    )}
+                    </>
                     )}
                   </div>
                 </div>

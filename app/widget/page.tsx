@@ -262,6 +262,8 @@ function WidgetContent() {
             const { data: msgs } = await (supabase as any)
               .from('messages').select('*')
               .eq('conversation_id', parsed.convId)
+              // Internal staff-only notes must never reach the customer widget.
+              .or('is_internal.is.null,is_internal.eq.false')
               .order('created_at', { ascending: true })
             if (msgs) setChatMessages2(msgs)
           })()
@@ -279,6 +281,8 @@ function WidgetContent() {
       const { data: msgs } = await (supabase as any)
         .from('messages').select('*')
         .eq('conversation_id', chatConvId)
+        // Internal staff-only notes must never reach the customer widget.
+        .or('is_internal.is.null,is_internal.eq.false')
         .order('created_at', { ascending: true })
       if (msgs && msgs.length > 0) setChatMessages2(msgs)
     })()
@@ -286,6 +290,9 @@ function WidgetContent() {
     const ch = supabase.channel(`widget-chat-${chatConvId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${chatConvId}` }, (payload: any) => {
         const msg = payload.new
+        // Internal staff-only notes must never surface to the customer, not even
+        // via realtime — drop them before they reach the widget's state.
+        if (msg?.is_internal) return
         // Dedupe: skip if we already have this message id (optimistic visitor sends)
         setChatMessages2(prev => {
           if (prev.some((m: any) => m.id === msg.id)) return prev
@@ -314,6 +321,7 @@ function WidgetContent() {
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${chatConvId}` }, (payload: any) => {
+        if (payload?.new?.is_internal) return
         // Reactions and status changes are UPDATEs, not INSERTs. Without this a
         // reaction only appeared after the customer reloaded the page.
         setChatMessages2(prev => prev.map((m: any) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)))
@@ -329,6 +337,8 @@ function WidgetContent() {
       const { data: msgs } = await (supabase as any)
         .from('messages').select('*')
         .eq('conversation_id', chatConvId)
+        // Internal staff-only notes must never reach the customer widget.
+        .or('is_internal.is.null,is_internal.eq.false')
         .order('created_at', { ascending: true })
       if (!msgs) return
 
