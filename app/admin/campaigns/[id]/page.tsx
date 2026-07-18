@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
+import EmojiPicker from '@/components/EmojiPicker'
+import { analyseSms, renderVariables, SMS_VARIABLES, estimateCost } from '@/lib/sms-segments'
 
 const AUDIENCE_TYPES: [string, string, string][] = [
   ['all_subscribed', 'All subscribed contacts', 'Everyone with marketing consent'],
@@ -39,6 +41,7 @@ export default function CampaignEditorPage() {
   const [outlets, setOutlets] = useState<any[]>([])
   const [allTags, setAllTags] = useState<string[]>([])
   const [pastCampaigns, setPastCampaigns] = useState<any[]>([])
+  const [step, setStep] = useState(2)
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
 
@@ -54,6 +57,12 @@ export default function CampaignEditorPage() {
   const [minOrders, setMinOrders] = useState('')
 
   const [preview, setPreview] = useState<any>(null)
+  // Message composer (step 3)
+  const [message, setMessage] = useState('')
+  const [showEmoji, setShowEmoji] = useState(false)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [smsPrice, setSmsPrice] = useState(0.05)
+  const msgRef = useRef<HTMLTextAreaElement | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [previewError, setPreviewError] = useState('')
   const debounce = useRef<any>(null)
@@ -88,6 +97,7 @@ export default function CampaignEditorPage() {
           .select('*').eq('id', campaignId).maybeSingle()
         if (c) {
           setCampaign(c)
+          setMessage(c.message || '')
           const f = c.audience_filter || {}
           setAudType(c.audience_type || 'all_subscribed')
           if (f.segment) setSegment(f.segment)
@@ -168,6 +178,70 @@ export default function CampaignEditorPage() {
     finally { setSaving(false) }
   }
 
+  // ── Message composer ─────────────────────────────────────────────────────
+  const sms = analyseSms(message)
+  const sampleVars = Object.fromEntries(SMS_VARIABLES.map(v => [v.token, v.sample]))
+  const previewText = renderVariables(message, sampleVars)
+  // Cost is estimated on the RENDERED message, since variables change the
+  // length — a long first name can push a borderline message to another segment.
+  const renderedSms = analyseSms(previewText)
+  const recipients = preview?.recipients || 0
+  const cost = estimateCost(renderedSms.segments, recipients, smsPrice)
+  const hasOptOut = /\bstop\b/i.test(message)
+  const hasSender = /roxy|aquarium/i.test(message) || /\{\{store_name\}\}/.test(message)
+
+  const insertAtCursor = (text: string) => {
+    const el = msgRef.current
+    if (!el) { setMessage(m => m + text); return }
+    const start = el.selectionStart ?? message.length
+    const end = el.selectionEnd ?? message.length
+    const next = message.slice(0, start) + text + message.slice(end)
+    setMessage(next)
+    requestAnimationFrame(() => {
+      el.focus()
+      const pos = start + text.length
+      el.setSelectionRange(pos, pos)
+    })
+  }
+
+  const aiImprove = async () => {
+    if (!message.trim()) return
+    setAiBusy(true)
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task: 'improve_writing',
+          content:
+            `Rewrite this marketing SMS so it is concise, warm and under 160 characters. ` +
+            `Keep any {{variables}} exactly as they are, and keep the "Reply STOP to unsubscribe" ` +
+            `wording if present. Return only the message text.\n\n${message}`,
+        }),
+      })
+      const d = await res.json()
+      const out = d.result || d.content || d.text
+      if (!res.ok || !out) throw new Error(d.error || 'AI is not configured')
+      setMessage(String(out).trim())
+    } catch (e: any) {
+      alert('Could not rewrite the message: ' + e.message)
+    } finally { setAiBusy(false) }
+  }
+
+  const saveMessage = async () => {
+    if (!campaignId) return
+    setSaving(true)
+    try {
+      await (supabase as any).from('campaigns').update({
+        message,
+        segments: renderedSms.segments,
+        estimated_cost: cost,
+        updated_at: new Date().toISOString(),
+      }).eq('id', campaignId)
+      setSavedAt(new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }))
+    } catch (e: any) { alert('Could not save: ' + e.message) }
+    finally { setSaving(false) }
+  }
+
   const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 18 }
   const input: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', background: '#fff' }
   const label: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 6 }
@@ -189,27 +263,35 @@ export default function CampaignEditorPage() {
       <div style={{ marginBottom: 18 }}>
         <h1 style={{ fontSize: 23, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
         <p style={{ color: 'var(--slate)', fontSize: 13, margin: '5px 0 0' }}>
-          Step 2 of 6 — choose who this campaign goes to.
+          {step === 2 ? 'Step 2 of 6 — choose who this campaign goes to.' : 'Step 3 of 6 — write the message.'}
         </p>
       </div>
 
       {/* Step rail */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, overflowX: 'auto', paddingBottom: 2 }}>
-        {['Details', 'Audience', 'Message', 'Links & offers', 'Schedule', 'Review'].map((s, i) => (
-          <div key={s} style={{
-            flexShrink: 0, padding: '6px 13px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-            background: i === 1 ? 'var(--peach)' : '#fff',
-            color: i === 1 ? 'var(--coral)' : '#9ca3af',
-            border: '1px solid ' + (i === 1 ? 'var(--coral)' : 'var(--border)'),
-          }}>
-            {i + 1}. {s}
-          </div>
-        ))}
+        {['Details', 'Audience', 'Message', 'Links & offers', 'Schedule', 'Review'].map((s, i) => {
+          const n = i + 1
+          const done = n === 2 || n === 3          // steps built so far
+          const active = step === n
+          return (
+            <button key={s} type="button" disabled={!done} onClick={() => done && setStep(n)}
+              style={{
+                flexShrink: 0, padding: '6px 13px', borderRadius: 20, fontSize: 12, fontWeight: 700,
+                background: active ? 'var(--peach)' : '#fff',
+                color: active ? 'var(--coral)' : done ? 'var(--slate)' : '#d1d5db',
+                border: '1px solid ' + (active ? 'var(--coral)' : 'var(--border)'),
+                cursor: done ? 'pointer' : 'default',
+              }}>
+              {n}. {s}
+            </button>
+          )
+        })}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 16, alignItems: 'start' }}
         className="campaign-grid">
-        {/* ── Left: audience selection ─────────────────────────────────────── */}
+        {/* ── Left: audience selection (step 2) ────────────────────────────── */}
+        {step === 2 && (
         <div style={card}>
           <label style={label}>Who should receive this?</label>
           <div style={{ display: 'grid', gap: 6, marginBottom: 16 }}>
@@ -313,8 +395,127 @@ export default function CampaignEditorPage() {
           )}
         </div>
 
-        {/* ── Right: live count ────────────────────────────────────────────── */}
+        )}
+
+        {/* ── Left: message composer (step 3) ──────────────────────────────── */}
+        {step === 3 && (
+        <div style={card}>
+          <label style={label}>Message</label>
+          <textarea ref={msgRef} value={message} onChange={e => setMessage(e.target.value)} rows={6}
+            placeholder="Hi {{first_name}}, new 15cm+ discus have arrived at {{store_name}}! View this week's arrivals: {{short_link}} Reply STOP to unsubscribe."
+            style={{ ...input, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
+
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', margin: '10px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>
+            <span><strong style={{ color: 'var(--ink)' }}>{sms.length}</strong> characters</span>
+            <span><strong style={{ color: 'var(--ink)' }}>{renderedSms.segments}</strong> SMS segment{renderedSms.segments === 1 ? '' : 's'}</span>
+            <span><strong style={{ color: 'var(--ink)' }}>{recipients.toLocaleString()}</strong> recipients</span>
+            <span>Est. cost <strong style={{ color: 'var(--ink)' }}>
+              {new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', currencyDisplay: 'narrowSymbol' }).format(cost)}
+            </strong></span>
+          </div>
+
+          {sms.encoding === 'UCS-2' && (
+            <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 9, background: '#fffbeb', border: '1px dashed #f59e0b', fontSize: 12.5, color: '#78350f' }}>
+              <strong>This message uses special characters</strong> ({sms.nonGsmChars.join(' ')}), so it is sent as
+              Unicode — only {sms.perSegment} characters per segment instead of 160. Removing them would
+              cut the segment count and the cost.
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12, alignItems: 'center' }}>
+            <div style={{ position: 'relative' }}>
+              <button type="button" onClick={() => setShowEmoji(v => !v)}
+                style={{ padding: '7px 12px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>
+                Emoji
+              </button>
+              {showEmoji && (
+                <EmojiPicker onSelect={(e) => { insertAtCursor(e); setShowEmoji(false) }} />
+              )}
+            </div>
+            <button type="button" onClick={() => insertAtCursor('{{short_link}}')}
+              style={{ padding: '7px 12px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>
+              Insert tracked link
+            </button>
+            <button type="button" onClick={aiImprove} disabled={aiBusy || !message.trim()}
+              style={{ padding: '7px 12px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)', opacity: aiBusy || !message.trim() ? 0.5 : 1 }}>
+              {aiBusy ? 'Rewriting…' : 'Improve with AI'}
+            </button>
+            {!hasOptOut && (
+              <button type="button" onClick={() => setMessage(m => (m.trimEnd() + ' Reply STOP to unsubscribe.').trim())}
+                style={{ padding: '7px 12px', borderRadius: 9, border: '1px solid #f59e0b', background: '#fffbeb', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', color: '#b45309' }}>
+                + Add opt-out wording
+              </button>
+            )}
+          </div>
+
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+            <label style={label}>Personalisation</label>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {SMS_VARIABLES.map(v => (
+                <button key={v.token} type="button" onClick={() => insertAtCursor('{{' + v.token + '}}')}
+                  title={'Example: ' + v.sample}
+                  style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--canvas)', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)', cursor: 'pointer' }}>
+                  {v.label}
+                </button>
+              ))}
+            </div>
+            <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
+              Variables are replaced per recipient. The preview uses example values.
+            </p>
+          </div>
+        </div>
+        )}
+        {/* ── Right: live count / phone preview ────────────────────────────── */}
         <div style={{ display: 'grid', gap: 12, position: 'sticky', top: 16 }}>
+          {step === 3 && (
+            <>
+              {/* Phone preview — updates as you type */}
+              <div style={{ ...card, padding: 14, background: 'var(--canvas)' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>
+                  Preview
+                </div>
+                <div style={{ background: '#fff', borderRadius: 18, border: '1px solid var(--border)', padding: 14, minHeight: 130 }}>
+                  <div style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginBottom: 10 }}>
+                    {campaign.sender_name || 'Roxy Aquarium'}
+                  </div>
+                  {previewText.trim() ? (
+                    <div style={{ background: '#e9e9eb', color: '#1a1a1a', borderRadius: 16, padding: '10px 13px', fontSize: 13.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {previewText}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 12.5, color: '#9ca3af', textAlign: 'center', margin: '24px 0' }}>
+                      Your message will appear here.
+                    </p>
+                  )}
+                </div>
+                <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--slate)' }}>
+                  Shown with example values — each recipient sees their own details.
+                </p>
+              </div>
+
+              {/* Compliance */}
+              <div style={{ ...card, borderColor: hasOptOut && hasSender ? '#bbf7d0' : '#fde68a', background: hasOptOut && hasSender ? '#f0fdf4' : '#fffbeb' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 8, color: hasOptOut && hasSender ? '#15803d' : '#b45309' }}>
+                  Compliance
+                </div>
+                <p style={{ margin: '0 0 5px', fontSize: 12.5, color: hasOptOut ? '#166534' : '#78350f' }}>
+                  {hasOptOut ? '✓' : '!'} Unsubscribe instructions {hasOptOut ? 'included' : 'missing'}
+                </p>
+                <p style={{ margin: 0, fontSize: 12.5, color: hasSender ? '#166534' : '#78350f' }}>
+                  {hasSender ? '✓' : '!'} Sender identified {hasSender ? '' : '— name the business in the message'}
+                </p>
+              </div>
+
+              <button onClick={saveMessage} disabled={saving}
+                style={{ padding: '11px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+                {saving ? 'Saving…' : 'Save message'}
+              </button>
+              {savedAt && <p style={{ margin: 0, fontSize: 12, color: '#15803d', textAlign: 'center' }}>Saved at {savedAt}</p>}
+            </>
+          )}
+
+          {step === 2 && (
+          <>
           <div style={card}>
             <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
               Estimated recipients
@@ -377,6 +578,8 @@ export default function CampaignEditorPage() {
             The audience is stored as a filter, not a fixed list. Recipients are worked out again when
             the campaign sends, so anyone who unsubscribes in the meantime is still excluded.
           </p>
+          </>
+          )}
         </div>
       </div>
 
