@@ -5,7 +5,8 @@ import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
 import EmojiPicker from '@/components/EmojiPicker'
-import { analyseSms, renderVariables, SMS_VARIABLES, estimateCost } from '@/lib/sms-segments'
+import { analyseSms, renderVariables, SMS_VARIABLES } from '@/lib/sms-segments'
+import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate } from '@/lib/sms-pricing'
 
 const AUDIENCE_TYPES: [string, string, string][] = [
   ['all_subscribed', 'All subscribed contacts', 'Everyone with marketing consent'],
@@ -61,7 +62,7 @@ export default function CampaignEditorPage() {
   const [message, setMessage] = useState('')
   const [showEmoji, setShowEmoji] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
-  const [smsPrice, setSmsPrice] = useState(0.05)
+  const [pricing, setPricing] = useState<SmsPricing>(DEFAULT_PRICING)
   // Links & offers (step 4)
   const [attachment, setAttachment] = useState<any>(null)
   const [attachKind, setAttachKind] = useState('product')
@@ -157,6 +158,23 @@ export default function CampaignEditorPage() {
           .select('id, label, suburb').eq('company_id', cid)
         setOutlets(outs || [])
 
+        // Real per-part pricing, so cost estimates aren't guesses.
+        try {
+          const { data: pr } = await (supabase as any).from('sms_pricing')
+            .select('*').eq('company_id', cid).maybeSingle()
+          if (pr) {
+            setPricing({
+              price_per_part: Number(pr.price_per_part) || DEFAULT_PRICING.price_per_part,
+              gst_rate: Number(pr.gst_rate) ?? DEFAULT_PRICING.gst_rate,
+              gst_inclusive: pr.gst_inclusive !== false,
+              carrier_cost: Number(pr.carrier_cost) || DEFAULT_PRICING.carrier_cost,
+              carrier_currency: pr.carrier_currency || 'USD',
+              fx_rate: Number(pr.fx_rate) || DEFAULT_PRICING.fx_rate,
+              volume_tiers: Array.isArray(pr.volume_tiers) ? pr.volume_tiers : DEFAULT_PRICING.volume_tiers,
+            })
+          }
+        } catch { /* fall back to defaults until V196 is run */ }
+
         const { data: cts } = await (supabase as any).from('contacts')
           .select('tags').eq('company_id', cid).not('tags', 'is', null).limit(2000)
         const t = new Set<string>()
@@ -229,7 +247,8 @@ export default function CampaignEditorPage() {
   // length — a long first name can push a borderline message to another segment.
   const renderedSms = analyseSms(previewText)
   const recipients = preview?.recipients || 0
-  const cost = estimateCost(renderedSms.segments, recipients, smsPrice)
+  const costing = calculateCost(pricing, renderedSms.segments, recipients)
+  const cost = costing.totalIncGst
   const hasOptOut = /\bstop\b/i.test(message)
   const hasSender = /roxy|aquarium/i.test(message) || /\{\{store_name\}\}/.test(message)
 
@@ -401,6 +420,11 @@ export default function CampaignEditorPage() {
         quiet_hours: quietHours,
         send_local_time: localTime,
         rate_per_minute: ratePerMin,
+        // Lock in the rate this campaign was quoted at, so changing your pricing
+        // later doesn't retroactively alter what past campaigns appear to cost.
+        price_per_part: costing.pricePerPart,
+        estimated_cost: costing.totalIncGst,
+        segments: renderedSms.segments,
         updated_at: new Date().toISOString(),
       }).eq('id', campaignId)
       setSavedAt(new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }))
@@ -578,10 +602,19 @@ export default function CampaignEditorPage() {
             <span><strong style={{ color: 'var(--ink)' }}>{sms.length}</strong> characters</span>
             <span><strong style={{ color: 'var(--ink)' }}>{renderedSms.segments}</strong> SMS segment{renderedSms.segments === 1 ? '' : 's'}</span>
             <span><strong style={{ color: 'var(--ink)' }}>{recipients.toLocaleString()}</strong> recipients</span>
-            <span>Est. cost <strong style={{ color: 'var(--ink)' }}>
-              {new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', currencyDisplay: 'narrowSymbol' }).format(cost)}
-            </strong></span>
+            <span>Est. cost <strong style={{ color: 'var(--ink)' }}>{aud(cost)}</strong>
+              <span style={{ color: '#9ca3af' }}> inc GST</span></span>
           </div>
+
+          {recipients > 0 && (
+            <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
+              {costing.parts.toLocaleString()} message parts at {audRate(costing.pricePerPart)} each
+              {costing.tier && <span style={{ color: '#15803d', fontWeight: 600 }}> · volume rate applied</span>}
+              {costing.nextTier && (
+                <span> · {costing.nextTier.partsAway.toLocaleString()} more parts reaches {audRate(costing.nextTier.price)}</span>
+              )}
+            </p>
+          )}
 
           {sms.encoding === 'UCS-2' && (
             <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 9, background: '#fffbeb', border: '1px dashed #f59e0b', fontSize: 12.5, color: '#78350f' }}>
@@ -901,9 +934,15 @@ export default function CampaignEditorPage() {
                   Segments each <strong style={{ color: 'var(--ink)' }}>{renderedSms.segments}</strong>
                 </p>
                 <p style={{ margin: '0 0 5px', fontSize: 12.5, color: 'var(--slate)' }}>
-                  Estimated cost <strong style={{ color: 'var(--ink)' }}>
-                    {new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', currencyDisplay: 'narrowSymbol' }).format(cost)}
-                  </strong>
+                  Total parts <strong style={{ color: 'var(--ink)' }}>{costing.parts.toLocaleString()}</strong>
+                  <span style={{ color: '#9ca3af' }}> at {audRate(costing.pricePerPart)}</span>
+                </p>
+                <p style={{ margin: '0 0 5px', fontSize: 12.5, color: 'var(--slate)' }}>
+                  Estimated cost <strong style={{ color: 'var(--ink)' }}>{aud(costing.totalIncGst)}</strong>
+                  <span style={{ color: '#9ca3af' }}> inc GST</span>
+                </p>
+                <p style={{ margin: '0 0 5px', fontSize: 11.5, color: '#9ca3af' }}>
+                  {aud(costing.totalExGst)} ex GST + {aud(costing.gst)} GST
                 </p>
                 <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>
                   {sendMode === 'now'

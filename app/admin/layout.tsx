@@ -89,6 +89,7 @@ const NAV_GROUPS = [
       { label: 'Tickets', href: '/admin/tickets', icon: 'support' },
       { label: 'Help Centre', href: '/admin/help', icon: 'help' },
       { label: 'Help Categories', href: '/admin/settings/help-categories', icon: 'topics' },
+      { label: 'SMS Pricing', href: '/admin/settings/sms-pricing', icon: 'billing' },
       { label: 'Help Reporting', href: '/admin/help/analytics', icon: 'analytics' },
       { label: 'Help Settings', href: '/admin/help/settings', icon: 'settings' },
 
