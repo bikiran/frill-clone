@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { uploadAttachment, readJsonSafe } from '@/lib/upload-attachment'
+import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
@@ -838,6 +839,7 @@ export default function InboxPage() {
   const [tasks, setTasks] = useState<any[]>([])
   const [newNote, setNewNote] = useState('')
   const [newTask, setNewTask] = useState('')
+  const [newTaskAssignee, setNewTaskAssignee] = useState('')
   const [aiSummary, setAiSummary] = useState('')
   const [aiTodos, setAiTodos] = useState<any[]>([])
   const [generatingAi, setGeneratingAi] = useState(false)
@@ -1733,7 +1735,41 @@ export default function InboxPage() {
   }
   const addTask = async () => {
     if (!newTask.trim() || !selected || !companyId) return
-    await (supabase as any).from('conversation_tasks').insert({ conversation_id: selected.id, company_id: companyId, text: newTask.trim(), done: false })
+    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const assignee = teamMembers.find((m: any) => m.id === newTaskAssignee)
+    // Anyone @mentioned in the text should hear about it too, not just the
+    // person picked from the dropdown.
+    const mentioned = resolveTeamMentions(newTask, teamMembers as any)
+
+    const { data: created } = await (supabase as any).from('conversation_tasks').insert({
+      conversation_id: selected.id, company_id: companyId,
+      text: newTask.trim(), done: false,
+      assigned_to: assignee?.name || null,
+      assigned_to_id: assignee?.id || null,
+      created_by: me, created_by_id: user?.id || null,
+      mentions: (mentioned as any[]).map(m => ({ id: m.id, name: m.name })),
+    }).select().maybeSingle()
+
+    // Notify the assignee and anyone mentioned (never yourself).
+    const notify = new Map<string, string>()
+    if (assignee?.user_id) notify.set(assignee.user_id, assignee.name)
+    for (const m of mentioned as any[]) {
+      const tm = teamMembers.find((t: any) => t.id === m.id || t.name === m.name)
+      if (tm?.user_id) notify.set(tm.user_id, tm.name)
+    }
+    notify.delete(user?.id || '')
+    for (const [uid] of notify) {
+      try {
+        await (supabase as any).from('notifications').insert({
+          company_id: companyId, user_id: uid, type: 'task_assigned',
+          title: uid === assignee?.user_id ? `${me} assigned you a task` : `${me} mentioned you in a task`,
+          body: newTask.trim().slice(0, 160),
+          link: `/admin/inbox?conversation=${selected.id}`,
+          is_read: false,
+        })
+      } catch { /* the task is saved regardless */ }
+    }
+    setNewTaskAssignee('')
     setNewTask('')
     loadConversationExtras(selected.id)
   }
@@ -2258,7 +2294,9 @@ export default function InboxPage() {
           })
           const d = await readJsonSafe(res)
           if (res.ok && d.url) {
-            body = `${note}\n\n${attachments.length > 1 ? 'View photos' : 'View photo'}: ${d.url}`
+            // Just the link — the page it opens is self-explanatory, and a
+            // label in front of it only makes the SMS longer.
+            body = `${note}\n\n${d.url}`
           } else {
             // Fall back to the raw links rather than sending nothing at all.
             body = `${note}\n\n${attachments.map(a => a.url).join('\n')}`
@@ -6142,8 +6180,16 @@ export default function InboxPage() {
                     </div>
                   ))}
                   <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                    <input value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addNote() }}
-                      placeholder="Add a note…" style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, outline: 'none' }} />
+                    <div style={{ flex: 1 }}>
+                      <MentionInput
+                        value={newNote}
+                        onChange={(v) => setNewNote(v)}
+                        team={teamMembers as any}
+                        placeholder="Add a note… use @ to mention someone"
+                        onSubmit={addNote}
+                        style={{ padding: '7px 10px', fontSize: 12 }}
+                      />
+                    </div>
                     <button type="button" onClick={addNote} style={{ padding: '7px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
                   </div>
                 </div>
@@ -6155,13 +6201,38 @@ export default function InboxPage() {
                   {tasks.map(t => (
                     <label key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, marginBottom: 6, cursor: 'pointer' }}>
                       <input type="checkbox" checked={t.done} onChange={() => toggleTask(t)} style={{ marginTop: 2 }} />
-                      <span style={{ textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.6 : 1, color: 'var(--ink)' }}>{t.text}</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.6 : 1, color: 'var(--ink)' }}>{t.text}</span>
+                        {t.assigned_to && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6, padding: '1px 7px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700, verticalAlign: 'middle' }}>
+                            {t.assigned_to}
+                          </span>
+                        )}
+                      </span>
                     </label>
                   ))}
-                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                    <input value={newTask} onChange={e => setNewTask(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTask() }}
-                      placeholder="Add a task…" style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, outline: 'none' }} />
-                    <button type="button" onClick={addTask} style={{ padding: '7px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
+                  <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+                    <MentionInput
+                      value={newTask}
+                      onChange={(v) => setNewTask(v)}
+                      team={teamMembers as any}
+                      placeholder="Add a task… use @ to mention someone"
+                      onSubmit={addTask}
+                      style={{ padding: '7px 10px', fontSize: 12 }}
+                    />
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}
+                        style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, outline: 'none', background: '#fff', color: newTaskAssignee ? 'var(--ink)' : 'var(--slate)' }}>
+                        <option value="">Unassigned</option>
+                        {teamMembers.map((m: any) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                      <button type="button" onClick={addTask}
+                        style={{ padding: '7px 14px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        Add
+                      </button>
+                    </div>
                   </div>
                 </div>
 
