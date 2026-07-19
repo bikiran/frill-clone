@@ -800,6 +800,11 @@ export default function InboxPage() {
   const [showCardMore, setShowCardMore] = useState(false)
   // Internal staff-only note composer state.
   const [internalMode, setInternalMode] = useState(false)
+  // Inline URL shortener in the composer
+  const [showShortener, setShowShortener] = useState(false)
+  const [shortenInput, setShortenInput] = useState('')
+  const [shortenBusy, setShortenBusy] = useState(false)
+  const [shortenError, setShortenError] = useState('')
   const [mentionedUsers, setMentionedUsers] = useState<any[]>([])
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   const [mentionIndex, setMentionIndex] = useState(0)
@@ -1983,6 +1988,29 @@ export default function InboxPage() {
     }
   }
 
+  // Turn a pasted URL into a branded short link and drop it into the reply.
+  const shortenIntoReply = async () => {
+    const raw = shortenInput.trim()
+    if (!raw || !companyId) return
+    setShortenBusy(true); setShortenError('')
+    try {
+      const res = await fetch('/api/short-links/create', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId, kind: 'redirect', url: raw,
+          conversationId: selected?.id || undefined,
+          sentBy: user?.user_metadata?.display_name || user?.email?.split('@')[0] || null,
+        }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not shorten that URL')
+      setReply(r => (r.trim() ? `${r.trimEnd()} ${d.url}` : d.url))
+      setShowShortener(false); setShortenInput('')
+    } catch (e: any) {
+      setShortenError(e.message)
+    } finally { setShortenBusy(false) }
+  }
+
   // Refund a paid order. This moves real money through the payment gateway, so
   // it always confirms first and states the amount.
   const issueOrderRefund = async (payload: any) => {
@@ -3130,6 +3158,76 @@ export default function InboxPage() {
           /* The dropdowns must escape the tools strip's overflow clipping. */
           .inbox-thread-header [data-assign-menu] > div,
           .inbox-thread-header [data-actions-menu] > div { z-index: 200; }
+
+          /* ── Native-app feel ───────────────────────────────────────────────
+             The pane switching above already gives a phone layout; these make it
+             behave like an installed app rather than a website in a browser. */
+
+          /* Fill the real visible viewport. 100vh on iOS Safari includes the
+             address bar, so the composer sat below the fold; dvh tracks the
+             browser chrome as it hides and shows. */
+          .inbox-root {
+            height: 100dvh !important;
+            max-height: 100dvh !important;
+            overflow: hidden;
+          }
+
+          /* Respect the notch and the home indicator. */
+          .inbox-thread-header { padding-top: max(6px, env(safe-area-inset-top)) !important; }
+          .inbox-composer {
+            padding-bottom: max(8px, env(safe-area-inset-bottom)) !important;
+            position: sticky; bottom: 0; z-index: 30;
+            background: rgba(255,255,255,0.96);
+            backdrop-filter: saturate(180%) blur(12px);
+            -webkit-backdrop-filter: saturate(180%) blur(12px);
+            border-top: 1px solid var(--border);
+          }
+
+          /* iOS zooms the whole page when a focused input is under 16px. */
+          .inbox-root input,
+          .inbox-root textarea,
+          .inbox-root select { font-size: 16px !important; }
+
+          /* Momentum scrolling, and stop the rubber-band effect dragging the
+             whole page when a list hits its end. */
+          .inbox-root .inbox-col-list,
+          .inbox-root .inbox-col-thread,
+          .inbox-root .inbox-col-contact,
+          .inbox-messages {
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+          }
+
+          /* No grey flash on tap, and no accidental text selection when
+             swiping — both are dead giveaways of a web page. */
+          .inbox-root button,
+          .inbox-root [role="button"] {
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            user-select: none;
+          }
+          /* Message text stays selectable so customers' details can be copied. */
+          .inbox-messages, .inbox-messages * { user-select: text; }
+
+          /* Apple's minimum comfortable target is 44px; several controls were
+             under 30px and hard to hit accurately. */
+          .inbox-root button { min-height: 36px; }
+          .inbox-composer button { min-height: 40px; }
+
+          /* The reply box grows with content instead of scrolling in a 2-line
+             window, which is how native keyboards behave. */
+          .inbox-composer textarea {
+            max-height: 40dvh;
+            line-height: 1.4;
+          }
+
+          /* Conversation rows: full-width tap target with a pressed state. */
+          .inbox-col-list button:active { background: var(--peach) !important; }
+
+          /* Contact panel opens as a full sheet rather than a cramped column. */
+          .inbox-pane-contact .inbox-col-contact {
+            padding-bottom: max(12px, env(safe-area-inset-bottom)) !important;
+          }
         }
         /* Desktop / tablet: the tools sit inline on the right as before */
         @media (min-width: 768px) {
@@ -4595,7 +4693,7 @@ export default function InboxPage() {
             )}
 
             {/* Messages */}
-            <div ref={messagesScrollRef} style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14, scrollBehavior: 'auto' }}>
+            <div ref={messagesScrollRef} className="inbox-messages" style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14, scrollBehavior: 'auto' }}>
               {(() => {
                 const list = msgSearch ? messages.filter(m => (m.content || '').toLowerCase().includes(msgSearch.toLowerCase())) : messages
                 // Flat list of all images/videos in the thread (for the gallery),
@@ -5008,7 +5106,7 @@ export default function InboxPage() {
             `}</style>
 
             {/* Reply box */}
-            <div style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)', position: 'relative' }}>
+            <div className="inbox-composer" style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)', position: 'relative' }}>
               {/* Email threads get a proper email composer (To/Cc/Subject +
                   signature) instead of the plain chat box. */}
               {activeChannel === 'email' ? (
@@ -5231,6 +5329,38 @@ export default function InboxPage() {
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
                     {internalMode ? 'Internal note' : 'Note'}
                   </button>
+                  {/* Shorten a URL straight into the reply */}
+                  <div style={{ position: 'relative' }}>
+                    <button type="button" onClick={() => setShowShortener(v => !v)}
+                      title="Create a short, trackable link"
+                      style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: showShortener ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: showShortener ? 'var(--coral)' : 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      Short link
+                    </button>
+                    {showShortener && (
+                      <div style={{ position: 'absolute', bottom: '120%', left: 0, zIndex: 90, width: 320, maxWidth: '80vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.16)', padding: 12 }}>
+                        <p style={{ margin: '0 0 8px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>Create short URL</p>
+                        <p style={{ margin: '0 0 8px', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.4 }}>
+                          Paste a long URL — it becomes a short link on your own domain and records clicks.
+                        </p>
+                        <input value={shortenInput} onChange={e => setShortenInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); shortenIntoReply() } }}
+                          placeholder="https://roxyaquarium.com.au/..." autoFocus
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
+                        {shortenError && <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#dc2626' }}>{shortenError}</p>}
+                        <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
+                          <button type="button" onClick={shortenIntoReply} disabled={shortenBusy || !shortenInput.trim()}
+                            style={{ flex: 1, padding: '7px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', opacity: shortenBusy || !shortenInput.trim() ? 0.5 : 1 }}>
+                            {shortenBusy ? 'Shortening…' : 'Shorten & insert'}
+                          </button>
+                          <button type="button" onClick={() => { setShowShortener(false); setShortenInput(''); setShortenError('') }}
+                            style={{ padding: '7px 12px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   {/* Resolve */}
                   <button type="button" onClick={() => setStatus('resolved')}
                     style={{ height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid #059669', background: '#dcfce7', color: '#059669', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
