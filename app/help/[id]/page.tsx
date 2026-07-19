@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -135,6 +135,7 @@ function renderContent(content: string) {
 
 export default function HelpArticlePage() {
   const params = useParams()
+  const router = useRouter()
   const id = params?.id as string
 
   const [article, setArticle] = useState<any>(null)
@@ -153,6 +154,10 @@ export default function HelpArticlePage() {
   const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
   const [openMenu, setOpenMenu] = useState(false)
   const [related, setRelated] = useState<any[]>([])
+  const [helpSearch, setHelpSearch] = useState('')
+  // The business's own support address, not a hardcoded Colvy one — customers
+  // emailing about an aquarium order shouldn't land in Colvy's inbox.
+  const [helpEmail, setHelpEmail] = useState('support@colvy.com')
   const [showTicketForm, setShowTicketForm] = useState(false)
   const [ticketSubject, setTicketSubject] = useState('')
   const [ticketMessage, setTicketMessage] = useState('')
@@ -185,6 +190,18 @@ export default function HelpArticlePage() {
           setCatMap(m)
         }
       } catch { /* fall back to the raw category value */ }
+      // The company's own support address for the Contact panel.
+      try {
+        const host = typeof window !== 'undefined' ? window.location.hostname : ''
+        if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
+          const slug = host.replace('.colvy.com', '')
+          const { data: co } = await (supabase as any).from('companies')
+            .select('support_email, email, name').eq('slug', slug).maybeSingle()
+          const addr = co?.support_email || co?.email
+          if (addr) setHelpEmail(addr)
+        }
+      } catch { /* keep the default */ }
+
       const { data } = await (supabase as any).from('help_articles').select('*').eq('id', articleId).maybeSingle()
       if (data) {
         // Unpublished articles are only visible to company admins, even via direct URL
@@ -350,8 +367,10 @@ export default function HelpArticlePage() {
           {/* On this page — headings pulled from the article, sticky, with the
               section you're currently reading highlighted. */}
           <aside className="hidden lg:block lg:col-span-1">
+            {/* The nav scrolls on its own once the heading list outgrows the
+                viewport, instead of running off the bottom of the page. */}
             {toc.length > 0 && (
-              <nav className="sticky top-6">
+              <nav className="sticky top-6" style={{ maxHeight: 'calc(100vh - 3rem)', overflowY: 'auto', overscrollBehavior: 'contain' }}>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>
                   On this page
                 </p>
@@ -537,30 +556,6 @@ export default function HelpArticlePage() {
               </div>
             </div>
 
-            {/* Quick contacts */}
-            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Contact Options</p>
-              <div className="space-y-2">
-                <button onClick={() => setShowTicketForm(true)}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer text-left"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 7.5V21a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7.5M12 7.5V2H8a2 2 0 0 0-2 2v3.5m8 0V4a2 2 0 0 1 2 2v3.5"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
-                  Submit a ticket
-                </button>
-                <a href="mailto:support@colvy.com"
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                  Email support
-                </a>
-                <Link href="/"
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  💡 Request a feature
-                </Link>
-              </div>
-            </div>
-
 
             {/* Submit a Ticket */}
             <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
@@ -632,7 +627,26 @@ export default function HelpArticlePage() {
 
           {/* Right sidebar — sticks while the article scrolls */}
           <aside className="lg:col-span-1">
-            <div className="lg:sticky lg:top-6 space-y-6">
+            <div className="lg:sticky lg:top-6 space-y-6" style={{ maxHeight: 'calc(100vh - 3rem)', overflowY: 'auto', overscrollBehavior: 'contain' }}>
+
+            {/* Search — first thing in the sidebar, so it's reachable from
+                inside an article without scrolling back to the top. */}
+            <div className="bg-white rounded-2xl border p-4" style={{ borderColor: 'var(--border)' }}>
+              <form onSubmit={(e) => { e.preventDefault(); if (helpSearch.trim()) router.push(`/help?q=${encodeURIComponent(helpSearch.trim())}`) }}>
+                <div style={{ position: 'relative' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                    style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--slate)', pointerEvents: 'none' }}>
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  <input
+                    value={helpSearch}
+                    onChange={e => setHelpSearch(e.target.value)}
+                    placeholder="Search help articles…"
+                    style={{ width: '100%', padding: '10px 12px 10px 34px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }}
+                  />
+                </div>
+              </form>
+            </div>
 
             {/* Related articles */}
             {related.length > 0 && (
@@ -648,6 +662,30 @@ export default function HelpArticlePage() {
                 </div>
               </div>
             )}
+
+            {/* Quick contacts */}
+            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Contact Options</p>
+              <div className="space-y-2">
+                <button onClick={() => setShowTicketForm(true)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer text-left"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 7.5V21a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7.5M12 7.5V2H8a2 2 0 0 0-2 2v3.5m8 0V4a2 2 0 0 1 2 2v3.5"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
+                  Submit a ticket
+                </button>
+                <a href={`mailto:${helpEmail}`}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                  {helpEmail}
+                </a>
+                <Link href="/"
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-gray-50 cursor-pointer"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                  💡 Request a feature
+                </Link>
+              </div>
+            </div>
 
             {/* Back */}
             <Link href="/help"

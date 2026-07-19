@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { deliverAutomatedMessage } from '@/lib/channel-fallback'
 import { linkContactIdentity } from '@/lib/identity'
 import { createClient } from '@supabase/supabase-js'
 import { attributeOrderToLinks } from '@/lib/link-attribution'
@@ -311,34 +312,35 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
 
   // Optional direct notification: SMS and/or email (only with the automation msg).
   const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
-  if (cfg.also_sms && phone) {
-    try {
-      await fetch(`${origin}/api/telnyx/sms/send`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        // skipChatMessage: the automation already wrote this message to the
-        // thread above. Without it the SMS route writes it a SECOND time, so
-        // the customer's conversation showed the same text twice — once as
-        // Live Chat and once as SMS.
-        body: JSON.stringify({ companyId, conversationId: conv.id, to: phone, text: body, senderName: businessName, skipChatMessage: true }),
-      })
-    } catch (e) { console.error('[Order automation] SMS failed', e) }
-  }
-  if (cfg.also_email && email) {
-    try {
-      if (process.env.RESEND_API_KEY) {
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            from: `${businessName} <notifications@updates.colvy.com>`,
-            to: email,
-            subject: `Update on your order #${order.number || order.id}`,
-            text: body,
-            html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a"><p>${body.replace(/\n/g, '<br>')}</p></div>`,
-          }),
-        })
-      }
-    } catch (e) { console.error('[Order automation] email failed', e) }
+  // Deliver where the customer will actually see it.
+  //
+  // A thread message is only "delivered" if they're sitting on the site with
+  // the widget open. If they've closed the tab, it goes to SMS (then email) so
+  // the confirmation actually reaches them. When the business has explicitly
+  // ticked "also send by SMS/email", it's sent regardless — they want the
+  // customer to have a copy either way.
+  const forceCopy = !!(cfg.also_sms || cfg.also_email)
+  try {
+    const delivery = await deliverAutomatedMessage({
+      companyId,
+      conversationId: conv.id,
+      text: body,
+      phone: cfg.also_email && !cfg.also_sms ? null : phone,
+      email,
+      senderName: businessName,
+      subject: `Update on your order #${order.number || order.id}`,
+      origin,
+      force: forceCopy,
+      db,
+    })
+    console.log('[Order automation] delivery', {
+      order: order.number || order.id,
+      onLiveChat: delivery.onLiveChat,
+      via: delivery.channel,
+      sent: delivery.sent,
+    })
+  } catch (e) {
+    console.error('[Order automation] delivery failed', e)
   }
   } // end automation-message block
 

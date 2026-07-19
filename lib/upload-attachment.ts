@@ -1,0 +1,143 @@
+import { supabase } from './supabase'
+
+/**
+ * Chat attachment uploads.
+ *
+ * These used to POST the file to /api/inbox/upload. That route is a serverless
+ * function with a ~4.5MB request body cap, and a photo straight off a phone is
+ * routinely 3–12MB, so the upload came back as a PLAIN TEXT 413 ("Request
+ * Entity Too Large"). Calling res.json() on that produced the baffling
+ * "Unexpected token 'R'" error rather than anything about file size.
+ *
+ * Two changes fix it properly:
+ *   1. Photos are downscaled and re-encoded in the browser first — a 12MB
+ *      camera shot becomes a few hundred KB with no visible loss at the sizes
+ *      anyone views a delivery photo.
+ *   2. The upload goes STRAIGHT to Supabase Storage from the browser, so it
+ *      never passes through a serverless function and the body cap doesn't
+ *      apply at all.
+ */
+
+const BUCKET = 'chat-attachments'
+
+/** Longest edge, in pixels, for an uploaded photo. */
+const MAX_EDGE = 2000
+const JPEG_QUALITY = 0.82
+
+export interface UploadedAttachment {
+  url: string
+  name: string
+  type: string
+  kind: string
+  size: number
+}
+
+const kindOf = (type: string) => {
+  if (type.startsWith('image/')) return 'image'
+  if (type.startsWith('video/')) return 'video'
+  if (type.startsWith('audio/')) return 'audio'
+  if (type === 'application/pdf') return 'pdf'
+  return 'file'
+}
+
+/**
+ * Downscale a photo in the browser. Returns the original untouched if it's
+ * already small, isn't an image, or if anything goes wrong — a slightly large
+ * upload is much better than a failed one.
+ */
+export async function compressImage(file: File): Promise<File> {
+  if (!file.type.startsWith('image/')) return file
+  // HEIC can't be decoded by canvas in most browsers; leave it alone.
+  if (/heic|heif/i.test(file.type)) return file
+  if (file.size < 600 * 1024) return file
+
+  try {
+    const bitmap = await createImageBitmap(file)
+    const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height))
+    const w = Math.round(bitmap.width * scale)
+    const h = Math.round(bitmap.height * scale)
+
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return file
+    ctx.drawImage(bitmap, 0, 0, w, h)
+
+    const blob: Blob | null = await new Promise(resolve =>
+      canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY))
+    if (!blob || blob.size >= file.size) return file
+
+    const name = file.name.replace(/\.[^.]+$/, '') + '.jpg'
+    return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() })
+  } catch {
+    return file
+  }
+}
+
+/**
+ * Upload one file and return its public URL.
+ * @param onProgress reports 0–1 for the compression/upload phases.
+ */
+export async function uploadAttachment(
+  file: File,
+  opts: { companyId: string; conversationId?: string; onProgress?: (p: number) => void }
+): Promise<UploadedAttachment> {
+  const { companyId, conversationId, onProgress } = opts
+
+  onProgress?.(0.05)
+  const prepared = await compressImage(file)
+  onProgress?.(0.35)
+
+  const ext = (prepared.name.split('.').pop() || 'bin').toLowerCase()
+  const safeExt = ext.replace(/[^a-z0-9]/g, '') || 'bin'
+  const path = `${companyId}/${conversationId || 'general'}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`
+
+  const { error } = await supabase.storage.from(BUCKET).upload(path, prepared, {
+    contentType: prepared.type || 'application/octet-stream',
+    upsert: false,
+    cacheControl: '3600',
+  })
+
+  if (error) {
+    // Storage errors are readable, unlike the HTML a 413 produces.
+    throw new Error(
+      /bucket/i.test(error.message)
+        ? 'The attachments storage bucket is missing — send one message with an attachment from the composer first, or create a "chat-attachments" bucket in Supabase.'
+        : error.message
+    )
+  }
+  onProgress?.(0.9)
+
+  const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path)
+  onProgress?.(1)
+
+  return {
+    url: pub.publicUrl,
+    name: file.name,
+    type: prepared.type || file.type,
+    kind: kindOf(prepared.type || file.type),
+    size: prepared.size,
+  }
+}
+
+/**
+ * Read a response safely.
+ *
+ * A serverless 413 or a gateway error returns HTML or plain text, so calling
+ * .json() on it throws "Unexpected token '<'" or "Unexpected token 'R'" and
+ * hides the real problem. This returns a usable message either way.
+ */
+export async function readJsonSafe(res: Response): Promise<any> {
+  const text = await res.text()
+  try {
+    return JSON.parse(text)
+  } catch {
+    if (res.status === 413 || /request entity too large/i.test(text)) {
+      return { error: 'That file is too large to send. Try a smaller photo.' }
+    }
+    if (res.status === 504 || /timeout/i.test(text)) {
+      return { error: 'The upload timed out. Check your connection and try again.' }
+    }
+    return { error: `Upload failed (${res.status}). ${text.slice(0, 120)}` }
+  }
+}

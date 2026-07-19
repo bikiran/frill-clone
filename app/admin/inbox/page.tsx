@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { uploadAttachment, readJsonSafe } from '@/lib/upload-attachment'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
@@ -1613,13 +1614,15 @@ export default function InboxPage() {
     setUploading(true)
     try {
       for (const file of Array.from(files)) {
-        const fd = new FormData()
-        fd.append('file', file)
-        fd.append('companyId', companyId)
-        fd.append('conversationId', selected.id)
-        const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
-        const data = await res.json()
-        if (!res.ok) { alert('Attachment failed: ' + (data.error || 'upload error')); continue }
+        // Direct-to-storage: avoids the serverless body cap that made large
+        // photos fail with an unparseable plain-text 413.
+        let data: any
+        try {
+          data = await uploadAttachment(file, { companyId, conversationId: selected.id })
+        } catch (e: any) {
+          alert(`Could not upload ${file.name}: ${e.message}`)
+          continue
+        }
         const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
         const attachment = { url: data.url, name: data.name, type: data.type, kind: data.kind }
 
@@ -2211,16 +2214,24 @@ export default function InboxPage() {
     if (podFiles.length === 0 && !podNote.trim()) { showToast('Add a photo or a note first'); return }
     setPodSending(true)
     try {
+      // Uploads go straight to storage from the browser. Routing them through
+      // a serverless function capped the body at ~4.5MB, which a phone photo
+      // exceeds — and the 413 came back as plain text, so parsing it as JSON
+      // produced "Unexpected token 'R'" instead of anything about file size.
       const attachments: any[] = []
       for (const file of podFiles) {
-        const fd = new FormData()
-        fd.append('file', file)
-        fd.append('companyId', companyId)
-        fd.append('conversationId', selected.id)
-        const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
-        const data = await res.json()
-        if (!res.ok) { showToast('Photo upload failed: ' + (data.error || 'error')); continue }
-        attachments.push({ url: data.url, name: data.name, type: data.type, kind: data.kind })
+        try {
+          const up = await uploadAttachment(file, {
+            companyId, conversationId: selected.id,
+          })
+          attachments.push({ url: up.url, name: up.name, type: up.type, kind: up.kind })
+        } catch (e: any) {
+          showToast(`Could not upload ${file.name}: ${e.message}`)
+        }
+      }
+      if (podFiles.length > 0 && attachments.length === 0) {
+        setPodSending(false)
+        return
       }
 
       const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
