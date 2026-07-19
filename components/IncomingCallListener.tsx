@@ -22,6 +22,11 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // browser popup. (On a native phone's own call screen we cannot: that needs
   // an installed app registering with the OS dialler — see notes.)
   const [companyInitials, setCompanyInitials] = useState('')
+  // Hold / warm transfer
+  const [onHold, setOnHold] = useState(false)
+  const [transferState, setTransferState] = useState<'none' | 'ringing' | 'consulting'>('none')
+  const [transferBusy, setTransferBusy] = useState(false)
+  const [transferMsg, setTransferMsg] = useState('')
 
   useEffect(() => {
     if (!companyId) return
@@ -185,10 +190,47 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const decline = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
   const hangup = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
 
+  // ── Hold and warm transfer ───────────────────────────────────────────────
+  // These run server-side through Telnyx rather than in the browser: the
+  // customer's audio lives in a Telnyx call leg, so holding them and adding a
+  // colleague has to happen where that leg lives.
+  const callAction = async (action: string) => {
+    if (!incoming?.id || !companyId) return
+    setTransferBusy(true); setTransferMsg('')
+    try {
+      const res = await fetch('/api/telnyx/call-transfer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, callId: incoming.id, action }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'That did not work')
+
+      if (action === 'hold') { setOnHold(true) }
+      if (action === 'unhold') { setOnHold(false) }
+      if (action === 'consult') {
+        setOnHold(true); setTransferState('ringing')
+        // The response says plainly whether one person or the whole team is
+        // being rung — don't imply more precision than exists.
+        setTransferMsg(d.targeted === false ? `Ringing ${d.ringing || 'the team'}` : `Ringing ${d.ringing || ''}`)
+      }
+      if (action === 'cancel') { setOnHold(false); setTransferState('none'); setTransferMsg('') }
+      if (action === 'conference') { setOnHold(false); setTransferState('consulting'); setTransferMsg('Everyone connected') }
+      if (action === 'complete') {
+        setTransferMsg('Transferred')
+        setTimeout(() => { try { callRef.current?.hangup?.() } catch {}; reset() }, 1200)
+      }
+    } catch (e: any) {
+      setTransferMsg(e.message)
+      // A failed consult must not leave the customer stranded on hold.
+      if (action === 'consult') { setOnHold(false); setTransferState('none') }
+    } finally { setTransferBusy(false) }
+  }
+
   const reset = () => {
     stopRing()
     if (timerRef.current) clearInterval(timerRef.current)
     setIncoming(null); setCaller(null); setInCall(false); setSeconds(0)
+    setOnHold(false); setTransferState('none'); setTransferMsg('')
     callRef.current = null
   }
 
@@ -257,6 +299,22 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         )}
       </div>
 
+      {/* What's happening with hold / transfer, stated plainly */}
+      {inCall && (onHold || transferState !== 'none' || transferMsg) && (
+        <div style={{ margin: '0 0 8px', padding: '8px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.12)', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {transferState === 'ringing' && (
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#fbbf24', flexShrink: 0, animation: 'pulse 1.2s infinite' }} />
+          )}
+          <span style={{ flex: 1 }}>
+            {transferMsg
+              || (transferState === 'consulting' ? 'Three-way call'
+              : onHold ? 'Customer on hold' : '')}
+          </span>
+          {onHold && transferState === 'none' && (
+            <span style={{ opacity: 0.7, fontSize: 11 }}>they hear hold music</span>
+          )}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 1 }}>
         {!inCall ? (
           <>
@@ -274,12 +332,54 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             </button>
           </>
         ) : (
-          <button onClick={hangup} style={btn('#dc2626')}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ transform: 'rotate(135deg)', flexShrink: 0 }}>
-              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-            </svg>
-            End call
-          </button>
+          <>
+            {/* Hold / transfer controls, only while actually on a call */}
+            <div style={{ display: 'flex', gap: 1, flex: 1 }}>
+              {transferState === 'none' ? (
+                <>
+                  <button onClick={() => callAction(onHold ? 'unhold' : 'hold')} disabled={transferBusy}
+                    style={btn(onHold ? '#b45309' : '#6b7280')}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                      {onHold
+                        ? <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>
+                        : <><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/></>}
+                    </svg>
+                    {onHold ? 'Resume' : 'Hold'}
+                  </button>
+                  <button onClick={() => callAction('consult')} disabled={transferBusy}
+                    style={btn('#2563eb')}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
+                    </svg>
+                    {transferBusy ? '…' : 'Ring team'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => callAction('cancel')} disabled={transferBusy}
+                    style={btn('#6b7280')}>
+                    Cancel
+                  </button>
+                  {transferState === 'ringing' && (
+                    <button onClick={() => callAction('conference')} disabled={transferBusy}
+                      style={btn('#7c3aed')}>
+                      3-way
+                    </button>
+                  )}
+                  <button onClick={() => callAction('complete')} disabled={transferBusy}
+                    style={btn('#059669')}>
+                    Hand over
+                  </button>
+                </>
+              )}
+            </div>
+            <button onClick={hangup} style={btn('#dc2626')}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ transform: 'rotate(135deg)', flexShrink: 0 }}>
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+              End
+            </button>
+          </>
         )}
       </div>
     </div>

@@ -291,6 +291,58 @@ export class TelnyxService {
   async bridgeCalls(callControlId: string, otherCallControlId: string) {
     return this.cc(callControlId, 'bridge', { call_control_id: otherCallControlId })
   }
+
+  // ── Conference: the mechanism behind hold + internal ringing ───────────────
+  // A two-leg bridge can't have one side held while the other talks to someone
+  // new. Moving both legs into a conference can: participants are held and
+  // unheld individually, and extra legs join without disturbing the others.
+
+  /** Create a conference from an existing leg (that leg becomes the first participant). */
+  async createConference(params: { call_control_id: string; name: string; hold_audio_url?: string }) {
+    return this.req('/conferences', 'POST', {
+      call_control_id: params.call_control_id,
+      name: params.name,
+      // What a held participant hears. Telnyx plays silence without this.
+      ...(params.hold_audio_url ? { hold_audio_url: params.hold_audio_url } : {}),
+      start_conference_on_create: true,
+    })
+  }
+
+  /** Add another leg to an existing conference. */
+  async joinConference(conferenceId: string, callControlId: string, opts?: { muted?: boolean; hold?: boolean }) {
+    return this.req(`/conferences/${conferenceId}/actions/join`, 'POST', {
+      call_control_id: callControlId,
+      ...(opts?.muted ? { mute: true } : {}),
+      // Joining on hold lets an agent be added without the customer hearing them.
+      ...(opts?.hold ? { hold: true } : {}),
+      // Keep the conference alive when the customer is the only one left.
+      end_conference_on_exit: false,
+      start_conference_on_enter: true,
+    })
+  }
+
+  /** Put conference participants on hold (they hear hold audio, and can't hear the room). */
+  async holdConference(conferenceId: string, callControlIds: string[], holdAudioUrl?: string) {
+    return this.req(`/conferences/${conferenceId}/actions/hold`, 'POST', {
+      call_control_ids: callControlIds,
+      ...(holdAudioUrl ? { audio_url: holdAudioUrl } : {}),
+    })
+  }
+
+  /** Take conference participants off hold. */
+  async unholdConference(conferenceId: string, callControlIds: string[]) {
+    return this.req(`/conferences/${conferenceId}/actions/unhold`, 'POST', {
+      call_control_ids: callControlIds,
+    })
+  }
+
+  /** Remove a leg from a conference (used when the first agent drops off a transfer). */
+  async leaveConference(conferenceId: string, callControlId: string) {
+    return this.req(`/conferences/${conferenceId}/actions/leave`, 'POST', {
+      call_control_id: callControlId,
+    })
+  }
+
   // Speak text to the caller (voicemail greeting).
   async speak(callControlId: string, text: string, opts?: { voice?: string; language?: string }) {
     return this.cc(callControlId, 'speak', {
