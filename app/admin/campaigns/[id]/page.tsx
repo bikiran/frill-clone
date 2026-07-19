@@ -96,6 +96,9 @@ export default function CampaignEditorPage() {
   const [testNumber, setTestNumber] = useState('')
   const [testBusy, setTestBusy] = useState(false)
   const [testResult, setTestResult] = useState('')
+  // Review & send (step 6)
+  const [sending, setSending] = useState(false)
+  const [sendResult, setSendResult] = useState('')
   const msgRef = useRef<HTMLTextAreaElement | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [previewError, setPreviewError] = useState('')
@@ -455,6 +458,67 @@ export default function CampaignEditorPage() {
     finally { setSaving(false) }
   }
 
+  // ── Review & send (step 6) ───────────────────────────────────────────────
+  const readyProblems = (() => {
+    const out: string[] = []
+    if (!message.trim()) out.push('The message is empty')
+    if (recipients === 0) out.push('The audience has no recipients')
+    if (!hasOptOut) out.push('No unsubscribe instructions in the message')
+    if (!hasSender) out.push('The business isn\u2019t identified in the message')
+    if (sendMode === 'later' && !scheduledIso()) out.push('No send date chosen')
+    if (sendMode === 'later' && schedInPast) out.push('The scheduled time is in the past')
+    return out
+  })()
+  const blockers = readyProblems.filter(p =>
+    p.includes('empty') || p.includes('no recipients') || p.includes('in the past'))
+
+  const scheduleCampaign = async () => {
+    if (!scheduledIso()) { alert('Pick a date and time first.'); return }
+    setSending(true)
+    try {
+      await saveSchedule()
+      await (supabase as any).from('campaigns')
+        .update({ status: 'scheduled' }).eq('id', campaignId)
+      setSendResult(`Scheduled for ${new Date(scheduledIso()!).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`)
+      setCampaign((c: any) => ({ ...c, status: 'scheduled' }))
+    } catch (e: any) { alert('Could not schedule: ' + e.message) }
+    finally { setSending(false) }
+  }
+
+  const sendNow = async () => {
+    if (!companyId) return
+    // Spending money and messaging real people — make the numbers explicit.
+    const ok = confirm(
+      `You are about to send ${recipients.toLocaleString()} SMS messages ` +
+      `at an estimated cost of ${aud(costing.totalIncGst)} (inc GST).\n\n` +
+      `This cannot be undone once it starts.`
+    )
+    if (!ok) return
+    setSending(true); setSendResult('')
+    try {
+      // Persist the latest message and schedule before sending.
+      await (supabase as any).from('campaigns').update({
+        message, segments: renderedSms.segments,
+        price_per_part: costing.pricePerPart,
+        estimated_cost: costing.totalIncGst,
+        updated_at: new Date().toISOString(),
+      }).eq('id', campaignId)
+
+      const res = await fetch('/api/campaigns/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, campaignId, confirm: 'SEND' }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not start the send')
+      setSendResult(
+        `Sending to ${d.recipients.toLocaleString()} recipients` +
+        (d.excluded ? ` · ${d.excluded} excluded` : '')
+      )
+      setTimeout(() => router.push(`/admin/campaigns/${campaignId}/report`), 1500)
+    } catch (e: any) { setSendResult('Could not send: ' + e.message) }
+    finally { setSending(false) }
+  }
+
   const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 18 }
   const input: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', background: '#fff' }
   const label: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 6 }
@@ -479,7 +543,8 @@ export default function CampaignEditorPage() {
           {step === 2 ? 'Step 2 of 6 — choose who this campaign goes to.'
             : step === 3 ? 'Step 3 of 6 — write the message.'
             : step === 4 ? 'Step 4 of 6 — attach links and offers.'
-            : 'Step 5 of 6 — choose when it sends.'}
+            : step === 5 ? 'Step 5 of 6 — choose when it sends.'
+            : 'Step 6 of 6 — review and confirm.'}
         </p>
       </div>
 
@@ -487,7 +552,7 @@ export default function CampaignEditorPage() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, overflowX: 'auto', paddingBottom: 2 }}>
         {['Details', 'Audience', 'Message', 'Links & offers', 'Schedule', 'Review'].map((s, i) => {
           const n = i + 1
-          const done = n >= 2 && n <= 5            // steps built so far
+          const done = n >= 2 && n <= 6
           const active = step === n
           return (
             <button key={s} type="button" disabled={!done} onClick={() => done && setStep(n)}
@@ -1008,8 +1073,141 @@ export default function CampaignEditorPage() {
           </div>
         </div>
         )}
+
+        {/* ── Left: review & confirm (step 6) ──────────────────────────────── */}
+        {step === 6 && (
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div style={card}>
+            <label style={label}>Review</label>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <tbody>
+                {[
+                  ['Campaign', campaign.name],
+                  ['Channel', String(campaign.channel || 'sms').toUpperCase()],
+                  ['Sender', campaign.sender_name || campaign.sender_number || 'Default number'],
+                  ['Audience', `${recipients.toLocaleString()} recipients`],
+                  ['Excluded', preview ? `${(preview.excludedTotal || 0).toLocaleString()} contacts` : '—'],
+                  ['SMS segments', `${renderedSms.segments} per message`],
+                  ['Total parts', costing.parts.toLocaleString()],
+                  ['Rate', `${audRate(costing.pricePerPart)} per part`],
+                  ['Estimated cost', `${aud(costing.totalIncGst)} inc GST`],
+                  ['When', sendMode === 'now'
+                    ? 'Immediately'
+                    : scheduledIso()
+                      ? new Date(scheduledIso()!).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+                      : 'Not scheduled'],
+                ].map(([k, v]) => (
+                  <tr key={String(k)} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: '9px 0', color: 'var(--slate)', width: 150 }}>{k}</td>
+                    <td style={{ padding: '9px 0', color: 'var(--ink)', fontWeight: 600 }}>{v}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={card}>
+            <label style={label}>Message preview</label>
+            <div style={{ background: '#e9e9eb', borderRadius: 14, padding: '11px 14px', fontSize: 13.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#1a1a1a' }}>
+              {previewText || 'No message written.'}
+            </div>
+            <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
+              Shown with example values. Each recipient gets their own details.
+            </p>
+          </div>
+
+          {/* Exclusions, restated before committing */}
+          {preview && preview.excludedTotal > 0 && (
+            <div style={{ ...card, borderColor: '#fde68a', background: '#fffbeb' }}>
+              <label style={{ ...label, color: '#b45309' }}>Who won't receive this</label>
+              {Object.entries(preview.excluded as Record<string, number>)
+                .filter(([, n]) => n > 0)
+                .map(([reason, n]) => (
+                  <p key={reason} style={{ margin: '0 0 4px', fontSize: 12.5, color: '#78350f' }}>
+                    <strong>{n.toLocaleString()}</strong> {SKIP_LABEL[reason] || reason}
+                  </p>
+                ))}
+            </div>
+          )}
+
+          {/* Compliance / readiness */}
+          {readyProblems.length > 0 && (
+            <div style={{ ...card, borderColor: blockers.length ? '#fecaca' : '#fde68a', background: blockers.length ? '#fef2f2' : '#fffbeb' }}>
+              <label style={{ ...label, color: blockers.length ? '#dc2626' : '#b45309' }}>
+                {blockers.length ? 'Must fix before sending' : 'Worth checking'}
+              </label>
+              {readyProblems.map(p => (
+                <p key={p} style={{ margin: '0 0 4px', fontSize: 12.5, color: blockers.includes(p) ? '#7f1d1d' : '#78350f' }}>
+                  · {p}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+        )}
         {/* ── Right: live count / phone preview ────────────────────────────── */}
         <div style={{ display: 'grid', gap: 12, position: 'sticky', top: 16 }}>
+          {step === 6 && (
+            <>
+              <div style={{ ...card, borderColor: 'var(--coral)' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                  Ready to send
+                </div>
+                <p style={{ fontSize: 30, fontWeight: 800, color: 'var(--ink)', margin: '6px 0 0', lineHeight: 1 }}>
+                  {recipients.toLocaleString()}
+                </p>
+                <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>
+                  recipients · {aud(costing.totalIncGst)} inc GST
+                </p>
+              </div>
+
+              {campaign.status === 'sent' || campaign.status === 'sending' ? (
+                <div style={{ ...card, background: '#f0fdf4', borderColor: '#bbf7d0' }}>
+                  <p style={{ margin: 0, fontSize: 13, color: '#166534' }}>
+                    This campaign is {campaign.status}. It can't be sent again.
+                  </p>
+                  <button onClick={() => router.push(`/admin/campaigns/${campaignId}/report`)}
+                    style={{ marginTop: 10, padding: '9px 16px', borderRadius: 9, background: '#15803d', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    View report
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {sendMode === 'later' ? (
+                    <button onClick={scheduleCampaign} disabled={sending || blockers.length > 0}
+                      style={{ padding: '12px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: blockers.length ? 'not-allowed' : 'pointer', opacity: sending || blockers.length ? 0.5 : 1 }}>
+                      {sending ? 'Scheduling…' : 'Schedule campaign'}
+                    </button>
+                  ) : (
+                    <button onClick={sendNow} disabled={sending || blockers.length > 0}
+                      style={{ padding: '12px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: blockers.length ? 'not-allowed' : 'pointer', opacity: sending || blockers.length ? 0.5 : 1 }}>
+                      {sending ? 'Starting…' : `Send to ${recipients.toLocaleString()} now`}
+                    </button>
+                  )}
+                  <button onClick={() => setStep(5)}
+                    style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    Back
+                  </button>
+                  <button onClick={saveLinks} disabled={saving}
+                    style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    {saving ? 'Saving…' : 'Save draft'}
+                  </button>
+                </>
+              )}
+
+              {sendResult && (
+                <p style={{ margin: 0, fontSize: 12.5, textAlign: 'center', color: sendResult.startsWith('Could not') ? '#dc2626' : '#15803d' }}>
+                  {sendResult}
+                </p>
+              )}
+              {blockers.length > 0 && (
+                <p style={{ margin: 0, fontSize: 11.5, color: '#dc2626', textAlign: 'center' }}>
+                  Fix the blocking issues before sending.
+                </p>
+              )}
+            </>
+          )}
+
           {step === 5 && (
             <>
               <div style={card}>
