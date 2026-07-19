@@ -2237,13 +2237,36 @@ export default function InboxPage() {
       const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
       const note = podNote.trim() || 'Your order has been delivered. Attached is the proof of delivery — thank you!'
 
-      // Include the direct link(s) as well as the attachment. Chat and SMS
-      // previews are recompressed, so a link is the only way the customer gets
-      // the ORIGINAL full-quality photo and can download/keep it.
-      const links = attachments.map(a => a.url).filter(Boolean)
-      const body = links.length
-        ? `${note}\n\n${links.length > 1 ? 'Download the full-quality photos:' : 'Download the full-quality photo:'}\n${links.join('\n')}`
-        : note
+      // One branded link for the whole set, rather than a raw storage URL per
+      // file. Chat and SMS recompress previews, so the link is how the customer
+      // gets the originals — and a gallery page gives them one thing to tap
+      // instead of a wall of URLs.
+      let body = note
+      if (attachments.length > 0) {
+        try {
+          const res = await fetch('/api/short-links/create', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId, kind: 'media',
+              url: attachments[0].url,
+              mediaUrls: attachments,
+              note,
+              label: attachments.length > 1 ? `${attachments.length} photos` : 'Delivery photo',
+              conversationId: selected.id,
+              sentBy: me,
+            }),
+          })
+          const d = await readJsonSafe(res)
+          if (res.ok && d.url) {
+            body = `${note}\n\n${attachments.length > 1 ? 'View photos' : 'View photo'}: ${d.url}`
+          } else {
+            // Fall back to the raw links rather than sending nothing at all.
+            body = `${note}\n\n${attachments.map(a => a.url).join('\n')}`
+          }
+        } catch {
+          body = `${note}\n\n${attachments.map(a => a.url).join('\n')}`
+        }
+      }
 
       await (supabase as any).from('messages').insert({
         conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
@@ -3239,6 +3262,62 @@ export default function InboxPage() {
           .inbox-pane-contact .inbox-col-contact {
             padding-bottom: max(12px, env(safe-area-inset-bottom)) !important;
           }
+
+          /* ── Composer on a phone ───────────────────────────────────────────
+             The toolbar carried ~8 controls (note, resolve, short link, emoji,
+             quick replies, attach, save card, send menu) in a fixed row. On a
+             narrow screen they collided with the Send button and several were
+             unreachable. Two changes fix it without hiding anything:
+             the tools scroll horizontally on their own line, and Send gets a
+             full-width line beneath so it's never squeezed. */
+          .inbox-composer .composer-bar {
+            flex-direction: column !important;
+            align-items: stretch !important;
+            gap: 8px !important;
+          }
+          .inbox-composer .composer-tools {
+            gap: 6px !important;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-x: contain;
+            scrollbar-width: none;
+            padding-bottom: 2px;
+          }
+          .inbox-composer .composer-tools::-webkit-scrollbar { display: none; }
+          /* Controls keep their size instead of being crushed to fit. */
+          .inbox-composer .composer-tools > * { flex-shrink: 0; }
+          .inbox-composer .composer-tools button {
+            min-width: 38px;
+            min-height: 38px;
+          }
+
+          /* Send row: full width, thumb-sized. */
+          .inbox-composer .composer-bar > div:last-child {
+            display: flex !important;
+            gap: 8px !important;
+          }
+          .inbox-composer .composer-bar > div:last-child > button,
+          .inbox-composer .composer-bar > div:last-child > div {
+            flex: 1;
+          }
+          .inbox-composer .composer-bar > div:last-child button {
+            min-height: 44px;
+            font-size: 14px !important;
+          }
+
+          /* Dropdowns must escape the scrolling strip, or they'd be clipped. */
+          .inbox-composer .composer-tools [style*="position: absolute"],
+          .inbox-composer .composer-tools > div > div { z-index: 120; }
+
+          /* The thread header's own tool strip: same treatment, and drop the
+             text labels so the icons alone fit across a phone. */
+          .inbox-thread-header .inbox-header-tools button span.tool-label { display: none; }
+
+          /* Message bubbles get more of the screen — 70% left too much dead
+             space on a 390px phone. */
+          .inbox-messages > div > div { max-width: 88% !important; }
+          .inbox-messages { padding: 12px !important; gap: 10px !important; }
         }
         /* Desktop / tablet: the tools sit inline on the right as before */
         @media (min-width: 768px) {
@@ -5270,8 +5349,8 @@ export default function InboxPage() {
               <input ref={fileInputRef} type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" style={{ display: 'none' }}
                 onChange={e => { handleFileUpload(e.target.files); e.target.value = '' }} />
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <div className="composer-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div className="composer-tools" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   {/* Send poll/survey/form/payment */}
                   <div ref={sendMenuRef} style={{ position: 'relative' }}>
                     <button type="button" onClick={() => setShowSendMenu(v => !v)} title="Send poll, survey, form or payment"

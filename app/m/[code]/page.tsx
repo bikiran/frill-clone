@@ -16,7 +16,7 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
   const db = admin()
 
   const { data: link } = await db.from('short_links')
-    .select('target_url, label, company_id, kind, conversation_id').eq('code', code).maybeSingle()
+    .select('target_url, label, company_id, kind, conversation_id, media_urls, note').eq('code', code).maybeSingle()
 
   if (!link?.target_url) {
     return (
@@ -53,11 +53,22 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
     company = data
   }
 
-  const url: string = link.target_url
-  const name: string = link.label || 'Attachment'
-  const isImage = /\.(png|jpe?g|gif|webp|avif)(\?|$)/i.test(url)
-  const isVideo = /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url)
+  // A gallery link carries the whole set in media_urls; older single-file links
+  // only have target_url. Normalise both into one list so the same view renders
+  // either without special-casing.
+  const rawMedia = Array.isArray((link as any).media_urls) ? (link as any).media_urls : []
+  const media: { url: string; name: string; type?: string }[] = rawMedia.length
+    ? rawMedia.filter((m: any) => m?.url)
+    : [{ url: link.target_url, name: link.label || 'Attachment' }]
+
   const accent = company?.accent_color || '#ff7a6b'
+  const note: string = (link as any).note || ''
+  const isImg = (u: string, t?: string) =>
+    (t || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|avif)(\?|$)/i.test(u)
+  const isVid = (u: string, t?: string) =>
+    (t || '').startsWith('video/') || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(u)
+
+  const multiple = media.length > 1
 
   return (
     <div style={{ minHeight: '100vh', background: '#fafafa', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', padding: 20, boxSizing: 'border-box' }}>
@@ -69,26 +80,56 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
           <span style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{company?.name || 'Colvy'}</span>
         </div>
 
-        <div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
-          {isImage ? (
-            <img src={url} alt={name} style={{ width: '100%', display: 'block' }} />
-          ) : isVideo ? (
-            <video src={url} controls playsInline style={{ width: '100%', display: 'block', background: '#000' }} />
-          ) : (
-            <div style={{ padding: 32, textAlign: 'center' }}>
-              <p style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', margin: '0 0 6px' }}>{name}</p>
-              <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Tap below to open this file.</p>
-            </div>
-          )}
-          <div style={{ padding: 14 }}>
-            <a href={url} target="_blank" rel="noopener" download={name}
-              style={{ display: 'block', textAlign: 'center', padding: '12px 0', borderRadius: 10, background: accent, color: '#fff', textDecoration: 'none', fontSize: 14, fontWeight: 700 }}>
-              {isImage || isVideo ? 'Download' : 'Open file'}
-            </a>
+        {/* The agent's message, above the media */}
+        {note && (
+          <div style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', marginBottom: 14, boxShadow: '0 2px 10px rgba(0,0,0,0.04)' }}>
+            <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.55, color: '#1a1a1a', whiteSpace: 'pre-wrap' }}>{note}</p>
           </div>
+        )}
+
+        {multiple && (
+          <p style={{ fontSize: 12.5, color: '#6b7280', margin: '0 0 10px', fontWeight: 600 }}>
+            {media.length} attachments
+          </p>
+        )}
+
+        {/* Gallery — each item shown full width with its own download */}
+        <div style={{ display: 'grid', gap: 14 }}>
+          {media.map((m, i) => {
+            const image = isImg(m.url, m.type)
+            const video = isVid(m.url, m.type)
+            return (
+              <div key={i} style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
+                {image ? (
+                  <img src={m.url} alt={m.name || `Attachment ${i + 1}`} style={{ width: '100%', display: 'block' }} />
+                ) : video ? (
+                  <video src={m.url} controls playsInline style={{ width: '100%', display: 'block', background: '#000' }} />
+                ) : (
+                  <div style={{ padding: 30, textAlign: 'center' }}>
+                    <p style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', margin: '0 0 6px' }}>{m.name || 'File'}</p>
+                    <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Tap below to open this file.</p>
+                  </div>
+                )}
+                <div style={{ padding: 14 }}>
+                  {multiple && m.name && (
+                    <p style={{ margin: '0 0 9px', fontSize: 12.5, color: '#6b7280', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {m.name}
+                    </p>
+                  )}
+                  <a href={m.url} target="_blank" rel="noopener" download={m.name || true}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 10, background: accent, color: '#fff', textDecoration: 'none', fontSize: 14.5, fontWeight: 700 }}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    {image || video ? 'Download' : 'Open file'}
+                  </a>
+                </div>
+              </div>
+            )
+          })}
         </div>
 
-        <p style={{ textAlign: 'center', fontSize: 11.5, color: '#9ca3af', marginTop: 16 }}>Shared securely via Colvy</p>
+        <p style={{ textAlign: 'center', fontSize: 11.5, color: '#9ca3af', marginTop: 18 }}>Shared securely via Colvy</p>
       </div>
     </div>
   )

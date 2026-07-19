@@ -30,7 +30,7 @@ function classify(url: string): string {
 // Returns a branded short link on the company's own subdomain.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, kind, conversationId, url, label, customCode, sentBy } = await req.json()
+    const { companyId, kind, conversationId, url, label, customCode, sentBy, mediaUrls, note } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
 
@@ -76,6 +76,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: `The code "${clean}" is already in use` }, { status: 409 })
       }
       code = clean
+    } else if (Array.isArray(mediaUrls) && mediaUrls.length > 0) {
+      // Galleries always get a fresh code: two sends may share a first photo
+      // but carry different sets, so reusing would show the wrong attachments.
+      code = undefined
     } else {
       // Reuse an existing link for the same target if we have one, so the same
       // URL shared twice reports as one link rather than splitting its clicks.
@@ -93,6 +97,9 @@ export async function POST(req: NextRequest) {
         link_type: classify(target),
         conversation_id: conversationId || null,
         sent_by: sentBy || null,
+        // The full set, so /m/<code> can present a gallery rather than one file.
+        media_urls: Array.isArray(mediaUrls) ? mediaUrls : [],
+        note: note || null,
         clicks: 0,
       })
     }
