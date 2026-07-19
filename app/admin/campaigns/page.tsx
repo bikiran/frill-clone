@@ -302,7 +302,12 @@ export default function CampaignsPage() {
               return (
                 <tr key={c.id} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={{ ...td, color: 'var(--ink)', fontWeight: 600 }}>
-                    <button onClick={() => router.push(`/admin/campaigns/${c.id}`)}
+                    <button onClick={() => router.push(
+                      // A sent campaign opens its report; a draft opens the builder.
+                      ['sent', 'sending'].includes(c.status)
+                        ? `/admin/campaigns/${c.id}/report`
+                        : `/admin/campaigns/${c.id}`
+                    )}
                       style={{ border: 'none', background: 'none', padding: 0, font: 'inherit', color: 'var(--ink)', cursor: 'pointer', textAlign: 'left' }}>
                       {c.name}
                     </button>

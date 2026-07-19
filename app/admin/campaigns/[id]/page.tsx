@@ -56,6 +56,11 @@ export default function CampaignEditorPage() {
   const [priorCampaign, setPriorCampaign] = useState('')
   const [minSpend, setMinSpend] = useState('')
   const [minOrders, setMinOrders] = useState('')
+  // Manual contact picker
+  const [pickQuery, setPickQuery] = useState('')
+  const [pickResults, setPickResults] = useState<any[]>([])
+  const [pickBusy, setPickBusy] = useState(false)
+  const [picked, setPicked] = useState<any[]>([])
 
   const [preview, setPreview] = useState<any>(null)
   // Message composer (step 3)
@@ -152,6 +157,11 @@ export default function CampaignEditorPage() {
           if (f.campaignId) setPriorCampaign(f.campaignId)
           if (f.minSpend != null) setMinSpend(String(f.minSpend))
           if (f.minOrders != null) setMinOrders(String(f.minOrders))
+          if (Array.isArray(f.contactIds) && f.contactIds.length) {
+            const { data: pc } = await (supabase as any).from('contacts')
+              .select('id, name, phone, email').in('id', f.contactIds.slice(0, 200))
+            setPicked(pc || [])
+          }
         }
 
         const { data: outs } = await (supabase as any).from('company_locations')
@@ -197,15 +207,15 @@ export default function CampaignEditorPage() {
     if (audType === 'outlet') f.locationId = locationId
     if (audType === 'tags') f.tags = tags
     if (audType === 'clicked_campaign' && priorCampaign) f.campaignId = priorCampaign
+    if (audType === 'manual') f.contactIds = picked.map(p => p.id)
     if (minSpend) f.minSpend = parseFloat(minSpend)
     if (minOrders) f.minOrders = parseInt(minOrders)
     return f
-  }, [audType, segment, productQuery, lapsedDays, locationId, tags, priorCampaign, minSpend, minOrders])
+  }, [audType, segment, productQuery, lapsedDays, locationId, tags, priorCampaign, minSpend, minOrders, picked])
 
   // Live recipient count, debounced so typing doesn't hammer the endpoint.
   useEffect(() => {
     if (!companyId) return
-    if (audType === 'manual') { setPreview(null); return }
     clearTimeout(debounce.current)
     debounce.current = setTimeout(async () => {
       setPreviewing(true); setPreviewError('')
@@ -305,6 +315,19 @@ export default function CampaignEditorPage() {
   }
 
   // ── Links & offers (step 4) ──────────────────────────────────────────────
+  const searchContacts = async () => {
+    if (!companyId) return
+    setPickBusy(true)
+    try {
+      const res = await fetch(
+        `/api/campaigns/contacts?companyId=${companyId}&q=${encodeURIComponent(pickQuery)}&channel=${campaign?.channel || 'sms'}`
+      )
+      const d = await res.json()
+      setPickResults(d.contacts || [])
+    } catch { setPickResults([]) }
+    finally { setPickBusy(false) }
+  }
+
   const searchProducts = async () => {
     if (!prodQuery.trim() || !companyId) return
     setProdBusy(true)
@@ -567,9 +590,75 @@ export default function CampaignEditorPage() {
             </div>
           )}
           {audType === 'manual' && (
-            <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: 'var(--canvas)', fontSize: 12.5, color: 'var(--slate)' }}>
-              Hand-picking contacts is coming with the contact picker. For now, use tags or a segment
-              to define the group.
+            <div style={{ marginBottom: 14 }}>
+              <label style={label}>Find contacts</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input value={pickQuery} onChange={e => setPickQuery(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && searchContacts()}
+                  placeholder="Search by name, email or phone" style={input} />
+                <button type="button" onClick={searchContacts} disabled={pickBusy}
+                  style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  {pickBusy ? 'Searching…' : 'Search'}
+                </button>
+              </div>
+
+              {pickResults.length > 0 && (
+                <div style={{ marginTop: 10, maxHeight: 260, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+                  {pickResults.map(r => {
+                    const already = picked.some(p => p.id === r.id)
+                    return (
+                      <div key={r.id}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{r.name || 'Unnamed'}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>
+                            {r.destination || '—'}
+                            {r.issue && <span style={{ color: '#dc2626' }}> · {r.issue}</span>}
+                          </div>
+                        </div>
+                        <button type="button" disabled={already || !r.messageable}
+                          onClick={() => setPicked(cur => [...cur, r])}
+                          title={r.issue || undefined}
+                          style={{
+                            padding: '5px 11px', borderRadius: 7, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+                            border: '1px solid ' + (already ? 'var(--border)' : 'var(--coral)'),
+                            background: already ? 'var(--canvas)' : '#fff',
+                            color: already ? 'var(--slate)' : r.messageable ? 'var(--coral)' : '#d1d5db',
+                            cursor: already || !r.messageable ? 'default' : 'pointer',
+                          }}>
+                          {already ? 'Added' : r.messageable ? 'Add' : 'Can\u2019t message'}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {picked.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>
+                      {picked.length} selected
+                    </span>
+                    <button type="button" onClick={() => setPicked([])}
+                      style={{ border: 'none', background: 'none', color: '#dc2626', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                      Clear all
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    {picked.map(pc => (
+                      <span key={pc.id}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 600 }}>
+                        {pc.name || pc.phone || pc.email || 'Contact'}
+                        <button type="button" onClick={() => setPicked(cur => cur.filter(x => x.id !== pc.id))}
+                          style={{ border: 'none', background: 'none', padding: 0, color: 'var(--coral)', cursor: 'pointer', display: 'flex' }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

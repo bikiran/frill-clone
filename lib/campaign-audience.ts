@@ -55,6 +55,26 @@ export interface AudienceResult {
 const digits = (s: string | null | undefined) => (s || '').replace(/\D/g, '').slice(-9)
 
 /**
+ * Fetch every row matching a query.
+ *
+ * Supabase caps a single response at 1000 rows regardless of .limit(), so a
+ * plain .limit(20000) silently returns 1000 — which made a 12,000-customer
+ * store look like it had a few hundred contacts. This pages through with
+ * .range() until the rows run out.
+ */
+async function fetchAll(build: () => any, pageSize = 1000, hardCap = 100000): Promise<any[]> {
+  const out: any[] = []
+  for (let from = 0; from < hardCap; from += pageSize) {
+    const { data, error } = await build().range(from, from + pageSize - 1)
+    if (error) break
+    const rows = data || []
+    out.push(...rows)
+    if (rows.length < pageSize) break
+  }
+  return out
+}
+
+/**
  * Is this a plausible Australian mobile number?
  *
  * Deliberately strict: a landline or malformed number in an SMS campaign is a
@@ -92,16 +112,20 @@ export async function resolveAudience(
   if (filter.type === 'manual') {
     const ids = (filter.contactIds || []).filter(Boolean)
     if (ids.length) {
-      const { data } = await db.from('contacts').select(baseSelect)
-        .eq('company_id', companyId).in('id', ids.slice(0, 5000))
-      candidates = data || []
+      // Chunked — .in() with thousands of ids exceeds URL limits.
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data } = await db.from('contacts').select(baseSelect)
+          .eq('company_id', companyId).in('id', ids.slice(i, i + 200))
+        candidates.push(...(data || []))
+      }
     }
   } else {
     // Everything else starts from the company's contacts and narrows down.
-    let q = db.from('contacts').select(baseSelect).eq('company_id', companyId)
-    if (filter.type === 'outlet' && filter.locationId) q = q.eq('location_id', filter.locationId)
-    const { data } = await q.limit(20000)
-    candidates = data || []
+    candidates = await fetchAll(() => {
+      let q = db.from('contacts').select(baseSelect).eq('company_id', companyId)
+      if (filter.type === 'outlet' && filter.locationId) q = q.eq('location_id', filter.locationId)
+      return q.order('id', { ascending: true })
+    })
 
     if (filter.type === 'tags' && filter.tags?.length) {
       const want = filter.tags.map(t => t.toLowerCase())
@@ -113,11 +137,13 @@ export async function resolveAudience(
     const needsCommerce = ['segment', 'woocommerce', 'purchased_category', 'lapsed'].includes(filter.type)
       || filter.minSpend != null || filter.minOrders != null || filter.state || filter.postcode
     if (needsCommerce) {
-      const { data: custs } = await db.from('woocommerce_customers')
-        .select('*').eq('company_id', companyId).limit(20000)
+      const custs = await fetchAll(() =>
+        db.from('woocommerce_customers').select('*')
+          .eq('company_id', companyId).order('id', { ascending: true })
+      )
       const byEmail = new Map<string, any>()
       const byPhone = new Map<string, any>()
-      for (const cu of (custs || [])) {
+      for (const cu of custs) {
         if (cu.email) byEmail.set(String(cu.email).toLowerCase(), cu)
         if (cu.phone_norm) byPhone.set(cu.phone_norm, cu)
       }
@@ -185,24 +211,28 @@ export async function resolveAudience(
       // Contacts who clicked a link belonging to a previous campaign.
       let lq = db.from('short_links').select('id').eq('company_id', companyId).not('campaign_id', 'is', null)
       if (filter.campaignId) lq = lq.eq('campaign_id', filter.campaignId)
-      const { data: ls } = await lq.limit(5000)
-      const linkIds = (ls || []).map((l: any) => l.id)
-      let clicked = new Set<string>()
-      if (linkIds.length) {
+      const ls = await fetchAll(() => lq.order('id', { ascending: true }))
+      const linkIds = ls.map((l: any) => l.id)
+      const clicked = new Set<string>()
+      // Chunked: .in() with thousands of ids overruns the request URL.
+      for (let i = 0; i < linkIds.length; i += 200) {
         const { data: cl } = await db.from('link_clicks')
-          .select('contact_id').in('link_id', linkIds.slice(0, 500)).not('contact_id', 'is', null)
-        clicked = new Set((cl || []).map((c: any) => c.contact_id))
+          .select('contact_id').in('link_id', linkIds.slice(i, i + 200)).not('contact_id', 'is', null)
+        for (const c of (cl || [])) if (c.contact_id) clicked.add(c.contact_id)
       }
       candidates = candidates.filter(c => clicked.has(c.id))
     }
 
     if (filter.type === 'abandoned_checkout') {
-      const { data: carts } = await db.from('abandoned_carts')
-        .select('contact_id, email, phone, status').eq('company_id', companyId).limit(10000)
+      const carts = await fetchAll(() =>
+        db.from('abandoned_carts')
+          .select('contact_id, email, phone, status')
+          .eq('company_id', companyId).order('id', { ascending: true })
+      )
       const ids = new Set<string>()
       const emails = new Set<string>()
       const phones = new Set<string>()
-      for (const c of (carts || [])) {
+      for (const c of carts) {
         if (String(c.status || '').toLowerCase() === 'recovered') continue
         if (c.contact_id) ids.add(c.contact_id)
         if (c.email) emails.add(String(c.email).toLowerCase())
