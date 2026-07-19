@@ -69,6 +69,7 @@ export default function LinkReportsPage() {
   const [contacts, setContacts] = useState<Record<string, any>>({})
   const [convs, setConvs] = useState<Record<string, any>>({})
   const [outlets, setOutlets] = useState<Record<string, string>>({})
+  const [team, setTeam] = useState<string[]>([])
   const [selected, setSelected] = useState<Link | null>(null)
   const [range, setRange] = useState<'7' | '30' | '90' | 'all'>('30')
   const [search, setSearch] = useState('')
@@ -150,6 +151,23 @@ export default function LinkReportsPage() {
       for (const c of (cv || [])) m[c.id] = c
       setConvs(m)
     }
+    // The agent filter previously listed only names already stamped on links.
+    // Links sent before attribution existed have sent_by = null, so the filter
+    // came up empty — load the actual team as well.
+    try {
+      const names = new Set<string>()
+      const { data: co } = await (supabase as any).from('companies')
+        .select('name, owner_id').eq('id', cid).maybeSingle()
+      if (co?.name) names.add(`${co.name} (Owner)`)
+      const { data: tm } = await (supabase as any).from('team_members')
+        .select('name, display_name, email').eq('company_id', cid)
+      for (const m of (tm || [])) {
+        const n = m.name || m.display_name || (m.email ? String(m.email).split('@')[0] : null)
+        if (n) names.add(n)
+      }
+      setTeam(Array.from(names).sort())
+    } catch { /* the link-derived list still works */ }
+
     const { data: outs } = await (supabase as any).from('company_locations')
       .select('id, label, suburb').eq('company_id', cid)
     const om: Record<string, string> = {}
@@ -190,8 +208,12 @@ export default function LinkReportsPage() {
     'Not opened': { bg: '#f3f4f6', fg: '#6b7280' },
   }
 
-  const agents = useMemo(
-    () => Array.from(new Set(links.map(l => l.sent_by).filter(Boolean))) as string[], [links])
+  // Names on links plus the current team, so the filter is usable even before
+  // any attributed links exist.
+  const agents = useMemo(() => Array.from(new Set([
+    ...links.map(l => l.sent_by).filter(Boolean) as string[],
+    ...team,
+  ])).sort(), [links, team])
 
   const visible = useMemo(() => links.filter(l => {
     if (fChannel && (l.channel || '') !== fChannel) return false

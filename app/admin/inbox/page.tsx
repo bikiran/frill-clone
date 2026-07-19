@@ -1958,6 +1958,31 @@ export default function InboxPage() {
     } catch (e: any) { showToast(e.message || 'Could not generate invoice') }
   }
 
+  // Mark a processing order as completed in WooCommerce. This usually triggers
+  // the store's "order complete" email, so it confirms first.
+  const markOrderCompleted = async (payload: any) => {
+    if (!companyId) return
+    const orderId = payload.order_id || payload.id
+    if (!orderId) { showToast('No order id for this order'); return }
+    if (!confirm(`Mark order #${payload.order_number || orderId} as completed?\n\nThis updates WooCommerce and may send the customer a completion email.`)) return
+    try {
+      const res = await fetch('/api/orders/status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId, orderId, status: 'completed',
+          integrationId: payload.integration_id || undefined,
+          conversationId: selected?.id || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not update the order')
+      showToast(`Order #${payload.order_number || orderId} marked completed`)
+      if (selected) { loadWooData(contact?.id || null); loadConversationExtras(selected.id) }
+    } catch (e: any) {
+      alert('Could not mark the order completed: ' + e.message)
+    }
+  }
+
   // Refund a paid order. This moves real money through the payment gateway, so
   // it always confirms first and states the amount.
   const issueOrderRefund = async (payload: any) => {
@@ -4175,7 +4200,14 @@ export default function InboxPage() {
               {locationFilter === 'all' && (() => {
                 const locId = (conv as any).assigned_location_id || (conv as any).location_id
                 const loc = outlets.find((o: any) => o.id === locId)
-                const label = loc ? (loc.label || loc.suburb) : (conv.channel === 'chat' || conv.channel === 'widget' || conv.channel === 'live_chat') ? 'Live Chat' : null
+                // An abandoned cart came from the store, not the chat widget —
+                // labelling it "Live Chat" was misleading.
+                const isCart = String(conv.subject || '').toLowerCase().startsWith('abandoned cart')
+                const isWidget = conv.channel === 'chat' || conv.channel === 'widget' || conv.channel === 'live_chat'
+                const label = loc ? (loc.label || loc.suburb)
+                  : isCart ? 'Website'
+                  : isWidget ? 'Live Chat'
+                  : null
                 if (!label) return null
                 return (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4, fontSize: 11, fontWeight: 700, color: '#2563eb' }}>
@@ -6043,6 +6075,9 @@ export default function InboxPage() {
                           <button type="button" onClick={() => openOrderEditor(payload)} style={miniBtn('var(--coral)')}>Edit</button>
                           {/* A paid order doesn't need a payment request — the
                               useful action there is refunding it. */}
+                          {String(o.status || '').toLowerCase() === 'processing' && (
+                            <button type="button" onClick={() => markOrderCompleted(payload)} style={miniBtn('#15803d')}>Mark completed</button>
+                          )}
                           {['processing', 'completed'].includes(String(o.status || '').toLowerCase())
                             ? <button type="button" onClick={() => issueOrderRefund(payload)} style={miniBtn('#b45309')}>Issue refund</button>
                             : <button type="button" onClick={() => sendOrderPaymentRequest(payload)} style={miniBtn('#635BFF')}>Payment request</button>}

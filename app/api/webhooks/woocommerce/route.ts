@@ -315,7 +315,11 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     try {
       await fetch(`${origin}/api/telnyx/sms/send`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: conv.id, to: phone, text: body, senderName: businessName }),
+        // skipChatMessage: the automation already wrote this message to the
+        // thread above. Without it the SMS route writes it a SECOND time, so
+        // the customer's conversation showed the same text twice — once as
+        // Live Chat and once as SMS.
+        body: JSON.stringify({ companyId, conversationId: conv.id, to: phone, text: body, senderName: businessName, skipChatMessage: true }),
       })
     } catch (e) { console.error('[Order automation] SMS failed', e) }
   }

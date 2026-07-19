@@ -22,6 +22,54 @@ export async function POST(req: NextRequest) {
     const eventType: string = event?.event_type || ''
     const db = admin()
 
+    // ── Delivery receipts ────────────────────────────────────────────────────
+    // Telnyx reports the outcome of an outbound message with message.finalized
+    // (and message.sent for the initial hand-off). Without this, campaign
+    // recipients stayed on "sent" forever and the delivered figure in reports
+    // was really just a count of messages accepted by the carrier.
+    if (eventType === 'message.finalized' || eventType === 'message.sent') {
+      try {
+        const providerId = event?.payload?.id || event?.id
+        const to = event?.payload?.to
+        const status = Array.isArray(to) && to.length
+          ? String(to[0]?.status || '').toLowerCase()
+          : ''
+        if (providerId && status) {
+          const delivered = status === 'delivered'
+          const failed = ['delivery_failed', 'failed', 'undelivered', 'expired'].includes(status)
+          if (delivered || failed) {
+            const errText = event?.payload?.errors?.[0]?.detail
+              || event?.payload?.errors?.[0]?.title
+              || null
+            await db.from('campaign_recipients').update({
+              status: delivered ? 'delivered' : 'failed',
+              delivered_at: delivered ? new Date().toISOString() : null,
+              error: failed ? String(errText || status).slice(0, 300) : null,
+            }).eq('provider_id', providerId)
+
+            // Keep the campaign's counters in step with its recipients.
+            const { data: rec } = await db.from('campaign_recipients')
+              .select('campaign_id').eq('provider_id', providerId).maybeSingle()
+            if (rec?.campaign_id) {
+              const { count: deliveredCount } = await db.from('campaign_recipients')
+                .select('*', { count: 'exact', head: true })
+                .eq('campaign_id', rec.campaign_id).eq('status', 'delivered')
+              const { count: failedCount } = await db.from('campaign_recipients')
+                .select('*', { count: 'exact', head: true })
+                .eq('campaign_id', rec.campaign_id).eq('status', 'failed')
+              await db.from('campaigns').update({
+                delivered_count: deliveredCount || 0,
+                failed_count: failedCount || 0,
+              }).eq('id', rec.campaign_id)
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[telnyx] delivery receipt handling failed', e)
+      }
+      return NextResponse.json({ ok: true })
+    }
+
     // ── Inbound SMS ──────────────────────────────────────────────────────────
     if (eventType === 'message.received') {
       const payload = event.payload

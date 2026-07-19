@@ -123,8 +123,33 @@ export async function POST(req: NextRequest) {
         saved = data; saveError = error?.message || null; isNew = true
       }
     } else {
-      const { data, error } = await db.from('abandoned_carts').insert(row).select().maybeSingle()
-      saved = data; saveError = error?.message || null; isNew = true
+      // No external_id to key on — the bridge sometimes posts the same cart
+      // twice (cart update, then checkout). Without a fallback every post
+      // inserted a new row and posted the summary again, so the customer's
+      // thread showed the identical cart message twice. Treat a cart for the
+      // same contact with the same total in the last 6 hours as the same cart.
+      let existingId: string | null = null
+      try {
+        const since = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
+        let q = db.from('abandoned_carts').select('id, total, created_at')
+          .eq('company_id', companyId).eq('status', 'abandoned')
+          .gte('created_at', since).order('created_at', { ascending: false }).limit(5)
+        if (contact?.id) q = q.eq('contact_id', contact.id)
+        else if (norm.email) q = q.eq('email', norm.email)
+        else if (norm.phone) q = q.eq('phone', norm.phone)
+        const { data: recent } = await q
+        const match = (recent || []).find((c: any) =>
+          Math.abs((Number(c.total) || 0) - (Number(norm.total) || 0)) < 0.01)
+        existingId = match?.id || null
+      } catch { /* fall through to insert */ }
+
+      if (existingId) {
+        const { data, error } = await db.from('abandoned_carts').update(row).eq('id', existingId).select().maybeSingle()
+        saved = data; saveError = error?.message || null; isNew = false
+      } else {
+        const { data, error } = await db.from('abandoned_carts').insert(row).select().maybeSingle()
+        saved = data; saveError = error?.message || null; isNew = true
+      }
     }
 
     if (saveError || !saved) {
@@ -162,11 +187,21 @@ export async function POST(req: NextRequest) {
         if (conversationId) {
           const itemLines = (norm.items || []).map((it: any) => `• ${it.quantity || 1}× ${it.name || 'item'}`).join('\n')
           const summary = `🛒 Abandoned cart — ${norm.currency || 'AUD'} $${norm.total || 0}${itemLines ? `\n${itemLines}` : ''}${norm.cart_url ? `\n\nCart: ${norm.cart_url}` : ''}`
-          await db.from('messages').insert({
-            conversation_id: conversationId, company_id: companyId, sender_type: 'system',
-            content: summary, metadata: { abandoned_cart: true, cart_id: saved.id },
-          })
-          await db.from('conversations').update({ last_message: `🛒 Abandoned cart — ${norm.currency || 'AUD'} $${norm.total || 0}`, last_message_at: new Date().toISOString(), is_unread: true }).eq('id', conversationId)
+
+          // Belt and braces: even if two carts slip through as "new", don't post
+          // the same summary into the thread twice.
+          const since = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
+          const { data: dupe } = await db.from('messages')
+            .select('id').eq('conversation_id', conversationId)
+            .eq('content', summary).gte('created_at', since).limit(1)
+
+          if (!dupe || dupe.length === 0) {
+            await db.from('messages').insert({
+              conversation_id: conversationId, company_id: companyId, sender_type: 'system',
+              content: summary, metadata: { abandoned_cart: true, cart_id: saved.id },
+            })
+            await db.from('conversations').update({ last_message: `🛒 Abandoned cart — ${norm.currency || 'AUD'} $${norm.total || 0}`, last_message_at: new Date().toISOString(), is_unread: true }).eq('id', conversationId)
+          }
         }
       } catch (e) { console.error('[abandoned-cart] conversation create failed', e) }
 

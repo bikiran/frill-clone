@@ -15,6 +15,8 @@ export default function ContactsPage() {
   const [search, setSearch] = useState('')
   const [outlets, setOutlets] = useState<any[]>([])
   const [locationFilter, setLocationFilter] = useState<string>('all')
+  const [page, setPage] = useState(0)
+  const PAGE_SIZE = 100
   // ── Filters (mirrors the Users tab) ───────────────────────────────────────
   const [showFilters, setShowFilters] = useState(false)
   const [sortBy, setSortBy] = useState<'recent_added' | 'recent_order' | 'highest_order' | 'num_orders' | 'spend' | 'loyalty'>('recent_added')
@@ -137,7 +139,13 @@ export default function ContactsPage() {
         query = query.or(`name.ilike.%${w}%,email.ilike.%${w}%,phone.ilike.%${w}%`)
       }
     }
-    const { data, count } = await query.order('created_at', { ascending: false }).limit(200)
+    // Paginated: Supabase caps a response at 1000 rows anyway, and loading
+    // 12,000 contacts into the browser at once is slow and unusable. Range gives
+    // a real page window that matches the total count shown above the table.
+    const from = page * PAGE_SIZE
+    const { data, count } = await query
+      .order('created_at', { ascending: false })
+      .range(from, from + PAGE_SIZE - 1)
     let rows: Contact[] = data || []
 
     // Enrich with e-commerce stats (spend, orders, RFM, last order) by matching
@@ -205,6 +213,12 @@ export default function ContactsPage() {
   useEffect(() => {
     const t = setTimeout(() => { if (companyId) loadContacts(companyId, search) }, 350)
     return () => clearTimeout(t)
+  }, [search, locationFilter, sortBy, fChannel, fLoyalty, fMinSpend, fMinOrders, fState, fPostcode, fProduct, page])
+
+  // Any change to the search or filters puts you back on the first page —
+  // otherwise you can land on page 40 of a 3-page result and see nothing.
+  useEffect(() => {
+    setPage(0)
   }, [search, locationFilter, sortBy, fChannel, fLoyalty, fMinSpend, fMinOrders, fState, fPostcode, fProduct])
 
   useEffect(() => {
@@ -399,6 +413,41 @@ export default function ContactsPage() {
                 ))}
               </tbody>
             </table>
+          )}
+
+          {/* Pagination — the header shows the true total, so the table needs a
+              way to reach beyond the first page of it. */}
+          {totalCount > PAGE_SIZE && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
+                Showing {(page * PAGE_SIZE + 1).toLocaleString()}–{Math.min((page + 1) * PAGE_SIZE, totalCount).toLocaleString()} of {totalCount.toLocaleString()}
+              </span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button type="button" onClick={() => setPage(0)} disabled={page === 0}
+                  style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, color: page === 0 ? '#d1d5db' : 'var(--slate)', cursor: page === 0 ? 'default' : 'pointer' }}>
+                  First
+                </button>
+                <button type="button" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                  style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, color: page === 0 ? '#d1d5db' : 'var(--slate)', cursor: page === 0 ? 'default' : 'pointer' }}>
+                  Previous
+                </button>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', padding: '0 6px' }}>
+                  Page {page + 1} of {Math.max(1, Math.ceil(totalCount / PAGE_SIZE)).toLocaleString()}
+                </span>
+                <button type="button"
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={(page + 1) * PAGE_SIZE >= totalCount}
+                  style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, color: (page + 1) * PAGE_SIZE >= totalCount ? '#d1d5db' : 'var(--coral)', cursor: (page + 1) * PAGE_SIZE >= totalCount ? 'default' : 'pointer' }}>
+                  Next
+                </button>
+                <button type="button"
+                  onClick={() => setPage(Math.max(0, Math.ceil(totalCount / PAGE_SIZE) - 1))}
+                  disabled={(page + 1) * PAGE_SIZE >= totalCount}
+                  style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, color: (page + 1) * PAGE_SIZE >= totalCount ? '#d1d5db' : 'var(--slate)', cursor: (page + 1) * PAGE_SIZE >= totalCount ? 'default' : 'pointer' }}>
+                  Last
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>
