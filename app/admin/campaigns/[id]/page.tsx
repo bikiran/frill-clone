@@ -80,6 +80,16 @@ export default function CampaignEditorPage() {
   const [cMinSpend, setCMinSpend] = useState('')
   const [cUsageLimit, setCUsageLimit] = useState('')
   const [couponBusy, setCouponBusy] = useState(false)
+  // Schedule (step 5)
+  const [sendMode, setSendMode] = useState<'now' | 'later'>('later')
+  const [schedDate, setSchedDate] = useState('')
+  const [schedTime, setSchedTime] = useState('10:00')
+  const [quietHours, setQuietHours] = useState(true)
+  const [localTime, setLocalTime] = useState(false)
+  const [ratePerMin, setRatePerMin] = useState(60)
+  const [testNumber, setTestNumber] = useState('')
+  const [testBusy, setTestBusy] = useState(false)
+  const [testResult, setTestResult] = useState('')
   const msgRef = useRef<HTMLTextAreaElement | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [previewError, setPreviewError] = useState('')
@@ -121,6 +131,16 @@ export default function CampaignEditorPage() {
           const cp = atts.find((a: any) => a.kind === 'coupon') || null
           if (primary) { setAttachment(primary); setAttachKind(primary.kind || 'product') }
           if (cp) setCoupon(cp)
+          if (c.quiet_hours != null) setQuietHours(!!c.quiet_hours)
+          if (c.send_local_time != null) setLocalTime(!!c.send_local_time)
+          if (c.rate_per_minute) setRatePerMin(c.rate_per_minute)
+          if (c.scheduled_at) {
+            const d = new Date(c.scheduled_at)
+            if (!isNaN(d.getTime())) {
+              setSchedDate(d.toISOString().slice(0, 10))
+              setSchedTime(d.toTimeString().slice(0, 5))
+            }
+          }
           const f = c.audience_filter || {}
           setAudType(c.audience_type || 'all_subscribed')
           if (f.segment) setSegment(f.segment)
@@ -342,6 +362,52 @@ export default function CampaignEditorPage() {
     }
   }
 
+  // ── Schedule (step 5) ────────────────────────────────────────────────────
+  const scheduledIso = () => {
+    if (sendMode === 'now' || !schedDate) return null
+    const d = new Date(`${schedDate}T${schedTime || '10:00'}`)
+    return isNaN(d.getTime()) ? null : d.toISOString()
+  }
+
+  // Australian marketing rules restrict sending outside reasonable hours.
+  const schedHour = parseInt((schedTime || '10:00').split(':')[0], 10)
+  const inQuietHours = schedHour < 9 || schedHour >= 20
+  const schedInPast = (() => {
+    const iso = scheduledIso()
+    return iso ? new Date(iso).getTime() < Date.now() : false
+  })()
+
+  const sendTest = async () => {
+    if (!testNumber.trim() || !companyId) return
+    setTestBusy(true); setTestResult('')
+    try {
+      const res = await fetch('/api/campaigns/test-send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, campaignId, to: testNumber.trim() }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Test failed')
+      setTestResult(`Test sent to ${d.sentTo}`)
+    } catch (e: any) { setTestResult('Could not send: ' + e.message) }
+    finally { setTestBusy(false) }
+  }
+
+  const saveSchedule = async () => {
+    if (!campaignId) return
+    setSaving(true)
+    try {
+      await (supabase as any).from('campaigns').update({
+        scheduled_at: scheduledIso(),
+        quiet_hours: quietHours,
+        send_local_time: localTime,
+        rate_per_minute: ratePerMin,
+        updated_at: new Date().toISOString(),
+      }).eq('id', campaignId)
+      setSavedAt(new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }))
+    } catch (e: any) { alert('Could not save: ' + e.message) }
+    finally { setSaving(false) }
+  }
+
   const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 18 }
   const input: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', background: '#fff' }
   const label: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 6 }
@@ -365,7 +431,8 @@ export default function CampaignEditorPage() {
         <p style={{ color: 'var(--slate)', fontSize: 13, margin: '5px 0 0' }}>
           {step === 2 ? 'Step 2 of 6 — choose who this campaign goes to.'
             : step === 3 ? 'Step 3 of 6 — write the message.'
-            : 'Step 4 of 6 — attach links and offers.'}
+            : step === 4 ? 'Step 4 of 6 — attach links and offers.'
+            : 'Step 5 of 6 — choose when it sends.'}
         </p>
       </div>
 
@@ -373,7 +440,7 @@ export default function CampaignEditorPage() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, overflowX: 'auto', paddingBottom: 2 }}>
         {['Details', 'Audience', 'Message', 'Links & offers', 'Schedule', 'Review'].map((s, i) => {
           const n = i + 1
-          const done = n >= 2 && n <= 4            // steps built so far
+          const done = n >= 2 && n <= 5            // steps built so far
           const active = step === n
           return (
             <button key={s} type="button" disabled={!done} onClick={() => done && setStep(n)}
@@ -713,8 +780,152 @@ export default function CampaignEditorPage() {
           </div>
         </div>
         )}
+
+        {/* ── Left: schedule (step 5) ──────────────────────────────────────── */}
+        {step === 5 && (
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div style={card}>
+            <label style={label}>When should this send?</label>
+            <div style={{ display: 'grid', gap: 6, marginBottom: 14 }}>
+              {[
+                ['later', 'Schedule for later', 'Pick a date and time'],
+                ['now', 'Send immediately', 'Goes out as soon as you confirm'],
+              ].map(([v, t, d]) => (
+                <button key={v} type="button" onClick={() => setSendMode(v as any)}
+                  style={{
+                    textAlign: 'left', padding: '11px 13px', borderRadius: 10, cursor: 'pointer',
+                    border: '1px solid ' + (sendMode === v ? 'var(--coral)' : 'var(--border)'),
+                    background: sendMode === v ? 'var(--peach)' : '#fff',
+                  }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: sendMode === v ? 'var(--coral)' : 'var(--ink)' }}>{t}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 2 }}>{d}</div>
+                </button>
+              ))}
+            </div>
+
+            {sendMode === 'later' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={label}>Date</label>
+                  <input type="date" value={schedDate} onChange={e => setSchedDate(e.target.value)} style={input} />
+                </div>
+                <div>
+                  <label style={label}>Time</label>
+                  <input type="time" value={schedTime} onChange={e => setSchedTime(e.target.value)} style={input} />
+                </div>
+              </div>
+            )}
+
+            {sendMode === 'later' && schedInPast && (
+              <p style={{ margin: '10px 0 0', fontSize: 12.5, color: '#dc2626' }}>
+                That time is in the past — pick a future date and time.
+              </p>
+            )}
+            {sendMode === 'later' && !schedInPast && inQuietHours && (
+              <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 9, background: '#fffbeb', border: '1px dashed #f59e0b', fontSize: 12.5, color: '#78350f' }}>
+                <strong>That's outside normal contact hours.</strong> Marketing messages should land between
+                9am and 8pm. With quiet-hour protection on, this will be held until 9am.
+              </div>
+            )}
+          </div>
+
+          <div style={card}>
+            <label style={label}>Delivery options</label>
+            <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 12 }}>
+              <input type="checkbox" checked={quietHours} onChange={e => setQuietHours(e.target.checked)} style={{ marginTop: 2 }} />
+              <span>
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', display: 'block' }}>Quiet-hour protection</span>
+                <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>
+                  Hold anything scheduled outside 9am–8pm until the next reasonable hour.
+                </span>
+              </span>
+            </label>
+            <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 12 }}>
+              <input type="checkbox" checked={localTime} onChange={e => setLocalTime(e.target.checked)} style={{ marginTop: 2 }} />
+              <span>
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', display: 'block' }}>Send at the customer's local time</span>
+                <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>
+                  Uses the state on their address; falls back to {campaign.timezone || 'Australia/Melbourne'} when unknown.
+                </span>
+              </span>
+            </label>
+            <div>
+              <label style={label}>Maximum messages per minute</label>
+              <select value={ratePerMin} onChange={e => setRatePerMin(parseInt(e.target.value))} style={input}>
+                {[30, 60, 120, 300].map(r => <option key={r} value={r}>{r} per minute</option>)}
+              </select>
+              <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
+                Drip delivery — spreads the send so replies arrive at a manageable pace.
+                {recipients > 0 && ratePerMin > 0 && (
+                  <> About {Math.ceil(recipients / ratePerMin)} minute{Math.ceil(recipients / ratePerMin) === 1 ? '' : 's'} for {recipients.toLocaleString()} recipients.</>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {/* Test send */}
+          <div style={card}>
+            <label style={label}>Send a test</label>
+            <p style={{ margin: '0 0 10px', fontSize: 12.5, color: 'var(--slate)' }}>
+              Sends one message to a number you choose, so you can check how it reads on a real phone.
+              It never touches the campaign audience.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input value={testNumber} onChange={e => setTestNumber(e.target.value)}
+                placeholder="04XX XXX XXX" style={{ ...input, flex: 1, minWidth: 180 }} />
+              <button type="button" onClick={sendTest} disabled={testBusy || !testNumber.trim() || !message.trim()}
+                style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--ink)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: testBusy || !testNumber.trim() || !message.trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                {testBusy ? 'Sending…' : 'Send test'}
+              </button>
+            </div>
+            {testResult && (
+              <p style={{ margin: '10px 0 0', fontSize: 12.5, color: testResult.startsWith('Test sent') ? '#15803d' : '#dc2626' }}>
+                {testResult}
+              </p>
+            )}
+          </div>
+        </div>
+        )}
         {/* ── Right: live count / phone preview ────────────────────────────── */}
         <div style={{ display: 'grid', gap: 12, position: 'sticky', top: 16 }}>
+          {step === 5 && (
+            <>
+              <div style={card}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>
+                  Send summary
+                </div>
+                <p style={{ margin: '0 0 5px', fontSize: 12.5, color: 'var(--slate)' }}>
+                  Recipients <strong style={{ color: 'var(--ink)' }}>{recipients.toLocaleString()}</strong>
+                </p>
+                <p style={{ margin: '0 0 5px', fontSize: 12.5, color: 'var(--slate)' }}>
+                  Segments each <strong style={{ color: 'var(--ink)' }}>{renderedSms.segments}</strong>
+                </p>
+                <p style={{ margin: '0 0 5px', fontSize: 12.5, color: 'var(--slate)' }}>
+                  Estimated cost <strong style={{ color: 'var(--ink)' }}>
+                    {new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', currencyDisplay: 'narrowSymbol' }).format(cost)}
+                  </strong>
+                </p>
+                <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>
+                  {sendMode === 'now'
+                    ? 'Sends immediately on confirmation'
+                    : scheduledIso()
+                      ? `Scheduled for ${new Date(scheduledIso()!).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`
+                      : 'No date chosen yet'}
+                </p>
+              </div>
+
+              <button onClick={saveSchedule} disabled={saving}
+                style={{ padding: '11px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+                {saving ? 'Saving…' : 'Save schedule'}
+              </button>
+              {savedAt && <p style={{ margin: 0, fontSize: 12, color: '#15803d', textAlign: 'center' }}>Saved at {savedAt}</p>}
+              <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>
+                Saving stores the schedule only. Nothing sends until the review step, which doesn't
+                exist yet — so a campaign can't go out by accident.
+              </p>
+            </>
+          )}
+
           {step === 4 && (
             <>
               <div style={card}>

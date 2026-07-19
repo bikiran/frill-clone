@@ -9,6 +9,10 @@
 -- ============================================================
 
 -- ── Campaigns ──────────────────────────────────────────────────────────────
+-- NOTE: an earlier migration (V118) may already have created a smaller
+-- `campaigns` table. CREATE TABLE IF NOT EXISTS would then silently do nothing
+-- and none of the columns below would be added, so run COLVY_V195_REPAIR_CAMPAIGNS.sql
+-- after this one — it ADDs every column individually and is safe either way.
 CREATE TABLE IF NOT EXISTS campaigns (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id       UUID NOT NULL,
