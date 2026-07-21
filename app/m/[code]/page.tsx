@@ -2,6 +2,13 @@ import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
+// Ensure the page scales to the device width — without this a media page can
+// render zoomed-out on some phones.
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+}
+
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -101,8 +108,27 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
   const multiple = media.length > 1
 
   return (
-    <div style={{ minHeight: '100vh', background: '#fafafa', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', padding: 20, boxSizing: 'border-box' }}>
-      <div style={{ maxWidth: 640, margin: '0 auto' }}>
+    <div className="mv-root" style={{ minHeight: '100dvh', background: '#fafafa', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', padding: 20, boxSizing: 'border-box' }}>
+      <style>{`
+        * { box-sizing: border-box; }
+        .mv-inner { max-width: 640px; margin: 0 auto; }
+        .mv-media img, .mv-media video {
+          width: 100%; display: block;
+          /* Cap height so a tall portrait photo doesn't take the whole screen;
+             the customer can still tap Download for the full image. */
+          max-height: 78vh; object-fit: contain; background: #f3f4f6;
+        }
+        .mv-dl {
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+          padding: 14px 0; border-radius: 10px; text-decoration: none;
+          font-size: 15px; font-weight: 700; min-height: 48px;
+        }
+        @media (max-width: 560px) {
+          .mv-root { padding: 12px; }
+          .mv-media img, .mv-media video { max-height: 68vh; }
+        }
+      `}</style>
+      <div className="mv-inner">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
           {company?.logo_url
             ? <img src={company.logo_url} alt="" style={{ width: 36, height: 36, borderRadius: 9, objectFit: 'cover' }} />
@@ -129,11 +155,11 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
             const image = isImg(m.url, m.type)
             const video = isVid(m.url, m.type)
             return (
-              <div key={i} style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
+              <div key={i} className="mv-media" style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
                 {image ? (
-                  <img src={m.url} alt={m.name || `Attachment ${i + 1}`} style={{ width: '100%', display: 'block' }} />
+                  <img src={m.url} alt={m.name || `Attachment ${i + 1}`} />
                 ) : video ? (
-                  <video src={m.url} controls playsInline style={{ width: '100%', display: 'block', background: '#000' }} />
+                  <video src={m.url} controls playsInline />
                 ) : (
                   <div style={{ padding: 30, textAlign: 'center' }}>
                     <p style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', margin: '0 0 6px' }}>{m.name || 'File'}</p>
@@ -146,8 +172,8 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
                       {m.name}
                     </p>
                   )}
-                  <a href={m.url} target="_blank" rel="noopener" download={m.name || true}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '13px 0', borderRadius: 10, background: accent, color: '#fff', textDecoration: 'none', fontSize: 14.5, fontWeight: 700 }}>
+                  <a href={m.url} target="_blank" rel="noopener" download={m.name || true} className="mv-dl"
+                    style={{ background: accent, color: '#fff' }}>
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>

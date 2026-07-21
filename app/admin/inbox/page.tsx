@@ -2357,11 +2357,12 @@ export default function InboxPage() {
       const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
       const note = podNote.trim() || 'Your order has been delivered. Attached is the proof of delivery — thank you!'
 
-      // One branded link for the whole set, rather than a raw storage URL per
-      // file. Chat and SMS recompress previews, so the link is how the customer
-      // gets the originals — and a gallery page gives them one thing to tap
-      // instead of a wall of URLs.
-      let body = note
+      // Build ONE branded gallery link for the whole set — the friendly
+      // /m/<code> page (logo, media, download button, "Shared securely via
+      // Colvy"). The previous path fell back to raw Supabase storage URLs when
+      // the link insert failed, which is why the customer saw an ugly link AND
+      // a duplicate image.
+      let galleryUrl = ''
       if (attachments.length > 0) {
         try {
           const res = await fetch('/api/short-links/create', {
@@ -2377,37 +2378,37 @@ export default function InboxPage() {
             }),
           })
           const d = await readJsonSafe(res)
-          if (res.ok && d.url) {
-            // Just the link — the page it opens is self-explanatory, and a
-            // label in front of it only makes the SMS longer.
-            body = `${note}\n\n${d.url}`
-          } else {
-            // Fall back to the raw links rather than sending nothing at all.
-            body = `${note}\n\n${attachments.map(a => a.url).join('\n')}`
-          }
-        } catch {
-          body = `${note}\n\n${attachments.map(a => a.url).join('\n')}`
-        }
+          if (res.ok && d.url) galleryUrl = d.url
+          else console.warn('[POD] gallery link failed:', d.error)
+        } catch (e) { console.warn('[POD] gallery link error:', e) }
       }
+
+      // Chat message: note + branded link only (never raw storage URLs). The
+      // attachments still ride along so they render in the agent's thread.
+      const body = galleryUrl ? `${note}\n\n${galleryUrl}` : note
+      const smsNumber = smsDestination()
 
       await (supabase as any).from('messages').insert({
         conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
         sender_name: me, content: body, attachments,
         metadata: { proof_of_delivery: true },
+        delivery_channel: smsNumber ? 'sms' : 'chat',
       })
       await (supabase as any).from('conversations').update({
         last_message: 'Proof of delivery sent', last_message_at: new Date().toISOString(),
       }).eq('id', selected.id)
 
-      // Text it too, when we have a mobile.
-      const smsNumber = smsDestination()
+      // Text it too, when we have a mobile. If we already built the gallery
+      // link, send note + that link with NO attachments (so the SMS route
+      // doesn't append a second link). Otherwise let the route build the link.
       if (smsNumber) {
         try {
           await fetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: selected.id, to: smsNumber,
-              text: body,
+              text: galleryUrl ? body : note,
+              attachments: galleryUrl ? [] : attachments,
               senderName: me, skipChatMessage: true,
             }),
           })

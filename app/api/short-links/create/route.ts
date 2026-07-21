@@ -90,38 +90,31 @@ export async function POST(req: NextRequest) {
 
     if (!code || customCode) {
       code = code || genCode()
+
+      // Insert the columns that have existed since short_links was created.
+      // Newer columns (link_type, media_urls, note, sent_by) are patched on
+      // afterward so a missing one can never fail the whole insert and force a
+      // fall back to raw storage URLs.
       const { error: insErr } = await db.from('short_links').insert({
         code, company_id: companyId, target_url: target,
         label: label?.trim() || (kind === 'review' ? 'Leave a review' : 'Link'),
         kind: kind || 'redirect',
-        link_type: classify(target),
         conversation_id: conversationId || null,
-        sent_by: sentBy || null,
-        // The full set, so /m/<code> can present a gallery rather than one file.
-        media_urls: Array.isArray(mediaUrls) ? mediaUrls : [],
-        note: note || null,
         clicks: 0,
       })
       if (insErr) {
-        // If the media_urls/note columns don't exist yet, retry without them so
-        // the link is at least created (as a single-file link).
-        if (/media_urls|note|column/i.test(insErr.message)) {
-          const { error: retryErr } = await db.from('short_links').insert({
-            code, company_id: companyId, target_url: target,
-            label: label?.trim() || 'Link',
-            kind: kind || 'redirect',
-            link_type: classify(target),
-            conversation_id: conversationId || null,
-            sent_by: sentBy || null,
-            clicks: 0,
-          })
-          if (retryErr) {
-            return NextResponse.json({ error: `Could not create link: ${retryErr.message}` }, { status: 500 })
-          }
-        } else {
-          return NextResponse.json({ error: `Could not create link: ${insErr.message}` }, { status: 500 })
-        }
+        return NextResponse.json({ error: `Could not create link: ${insErr.message}` }, { status: 500 })
       }
+
+      // Best-effort extras — each patched independently so one missing column
+      // doesn't lose the others.
+      const patch = async (fields: Record<string, any>) => {
+        try { await db.from('short_links').update(fields).eq('code', code).eq('company_id', companyId) } catch {}
+      }
+      await patch({ link_type: classify(target) })
+      if (Array.isArray(mediaUrls) && mediaUrls.length) await patch({ media_urls: mediaUrls })
+      if (note) await patch({ note })
+      if (sentBy) await patch({ sent_by: sentBy })
     }
 
     // Build the branded URL on the company's subdomain.
