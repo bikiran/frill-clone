@@ -3,6 +3,13 @@ import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
+// Only a genuine UUID may be written to a uuid column. Anything else (a name, a
+// placeholder, an empty string) becomes null — this is what prevents the
+// "invalid input syntax for type uuid" crash when, for example, an assignee's
+// id is a name because their team_members row has no auth id yet.
+const uuidOrNull = (v: any): string | null =>
+  (typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) ? v : null
+
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -81,19 +88,23 @@ export async function POST(req: NextRequest) {
         starts_at, ends_at: ends_at || null,
         is_all_day: !!is_all_day,
         time_window: time_window || null,
-        location_id: location_id || null,
-        contact_id: contact_id || null,
-        conversation_id: conversation_id || null,
-        order_id: order_id || null,
+        location_id: uuidOrNull(location_id),
+        contact_id: uuidOrNull(contact_id),
+        conversation_id: uuidOrNull(conversation_id),
+        order_id: order_id != null ? String(order_id) : null,
         assigned_to: assigned_to || assigned_to_name || null,
         address: address || null,
         status: status || 'scheduled',
-        assigned_to_id: assigned_to_id || null,
+        // These are uuid columns — a name (e.g. an assignee whose row has no
+        // auth id yet) must become null rather than crash the insert with
+        // "invalid input syntax for type uuid".
+        assigned_to_id: uuidOrNull(assigned_to_id),
         assigned_to_name: assigned_to_name || null,
         reminder_channels: reminder_channels || null,
-        assignees: Array.isArray(assignees) ? assignees : [],
+        assignees: Array.isArray(assignees)
+          ? assignees.map((a: any) => ({ id: uuidOrNull(a?.id), name: a?.name })) : [],
         notify_customer: !!notify_customer,
-        customer_contact_id: customer_contact_id || contact_id || null,
+        customer_contact_id: uuidOrNull(customer_contact_id) || uuidOrNull(contact_id),
         updated_at: new Date().toISOString(),
       }
 
@@ -103,7 +114,7 @@ export async function POST(req: NextRequest) {
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
         event = data
       } else {
-        row.created_by = created_by || null
+        row.created_by = uuidOrNull(created_by)
         const { data, error } = await db.from('calendar_events').insert(row).select().maybeSingle()
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
         event = data
