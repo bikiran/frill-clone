@@ -157,7 +157,8 @@ export default function CalendarPage() {
         status: editing.status || 'scheduled',
         assigned_to_id: editing.assigned_to_id || null,
         assigned_to_name: editing.assigned_to_name || null,
-        reminder_channels: editing.assigned_to_id
+        assignees: editing.assignees || [],
+        reminder_channels: (editing.assignees || []).length
           ? (editing.reminder_channels || ['in_app', 'email', 'sms'])
           : null,
         notify_customer: !!editing.notify_customer,
@@ -199,29 +200,27 @@ export default function CalendarPage() {
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto', padding: '26px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       <style>{`
-        /* Hover a day's event to reveal its full title instead of the clipped
-           one — a long "Delivery for Raymundo Granados …" no longer widens or
-           breaks the grid, it just expands over its neighbours on hover. */
-        .cal-event { position: relative; transition: background 0.12s ease; }
-        .cal-event:hover {
-          z-index: 5; overflow: visible;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+        /* Each event pill anchors its own tooltip. The pill stays clipped; on
+           hover a tooltip appears BELOW it showing the full title, without
+           changing the pill's own size (which was distorting the grid and
+           causing the flicker). */
+        .cal-event { position: relative; }
+        .cal-event .cal-tip {
+          display: none;
+          position: absolute; left: 0; top: calc(100% + 3px); z-index: 20;
+          white-space: normal; width: max-content; max-width: 220px;
+          background: var(--ink); color: #fff;
+          padding: 6px 9px; border-radius: 7px;
+          font-size: 11.5px; font-weight: 600; line-height: 1.35;
+          box-shadow: 0 6px 20px rgba(0,0,0,0.22);
+          pointer-events: none;
         }
-        .cal-event:hover .cal-event-title {
-          position: absolute; left: 5px; top: 100%; margin-top: 2px;
-          white-space: normal; overflow: visible; text-overflow: clip;
-          background: #fff; border: 1px solid var(--border); border-radius: 6px;
-          padding: 5px 8px; min-width: 140px; max-width: 240px; z-index: 6;
-          box-shadow: 0 4px 14px rgba(0,0,0,0.14); font-weight: 600;
-          color: var(--ink); line-height: 1.35;
-        }
-        /* On phones the month grid scrolls sideways; make each day a bit wider
-           than a cramped 1/7 of 640 so text and dots have room. */
+        .cal-event:hover { z-index: 21; }
+        .cal-event:hover .cal-tip { display: block; }
+        /* On phones the month grid scrolls sideways; give each day room. */
         @media (max-width: 700px) {
-          .calendar-scroll-x > div { min-width: 700px !important; }
+          .calendar-scroll-x > div { min-width: 720px !important; }
         }
-        /* On very large screens don't let a single day balloon — the whole grid
-           already sits inside a 1080px container, which keeps it readable. */
       `}</style>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
         <div>
@@ -317,7 +316,8 @@ export default function CalendarPage() {
                               textDecoration: e.status === 'cancelled' ? 'line-through' : 'none',
                             }}>
                             <span style={{ width: 5, height: 5, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
-                            <span className="cal-event-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{dec(e.title)}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{dec(e.title)}</span>
+                            <span className="cal-tip">{dec(e.title)}</span>
                           </div>
                         )
                       })}
@@ -437,14 +437,29 @@ export default function CalendarPage() {
                       {loc && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>· {loc.label || loc.suburb}</span>}
                     </div>
 
-                    <p style={{ margin: '0 0 3px', fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{e.title}</p>
+                    <p style={{ margin: '0 0 3px', fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{dec(e.title)}</p>
                     <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>
                       {e.is_all_day ? 'All day' : new Date(e.starts_at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}
                       {e.time_window ? ` · ${e.time_window}` : ''}
                       {e.contact ? ` · ${e.contact.name || e.contact.email}` : ''}
                     </p>
                     {e.address && <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>{e.address}</p>}
-                    {e.notes && <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.45 }}>{e.notes}</p>}
+                    {e.notes && <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.45 }}>{dec(e.notes)}</p>}
+                    {(() => {
+                      const as = (Array.isArray(e.assignees) && e.assignees.length)
+                        ? e.assignees
+                        : (e.assigned_to_name ? [{ name: e.assigned_to_name }] : [])
+                      if (!as.length) return null
+                      return (
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
+                          {as.map((a: any, i: number) => (
+                            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 11, fontWeight: 700 }}>
+                              {a.name}
+                            </span>
+                          ))}
+                        </div>
+                      )
+                    })()}
 
                     {/* Delivery status actions */}
                     {e.event_type === 'delivery' && (
@@ -464,7 +479,7 @@ export default function CalendarPage() {
                     )}
 
                     <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                      <button onClick={() => { setDayOpen(null); setEditing({ ...e, date: new Date(e.starts_at).toISOString().slice(0, 10), time: new Date(e.starts_at).toTimeString().slice(0, 5) }) }}
+                      <button onClick={() => { setDayOpen(null); setEditing({ ...e, date: new Date(e.starts_at).toISOString().slice(0, 10), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_id ? [{ id: e.assigned_to_id, name: e.assigned_to_name }] : []) }) }}
                         style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>
                       {e.conversation_id && (
                         <a href={`/admin/inbox?conversation=${e.conversation_id}`}
@@ -550,18 +565,43 @@ export default function CalendarPage() {
               </>
             )}
 
-            {/* Assign to a team member and remind only them */}
-            <label style={L}>Team member</label>
-            <select style={I} value={editing.assigned_to_id || ''}
-              onChange={e => {
-                const m = team.find((t: any) => t.id === e.target.value)
-                setEditing({ ...editing, assigned_to_id: e.target.value || null, assigned_to_name: m?.name || null })
-              }}>
-              <option value="">Unassigned</option>
-              {team.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
+            {/* Assign to one or more team members and remind them */}
+            <label style={L}>Team members</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              {team.map((m: any) => {
+                const chosen: any[] = editing.assignees || []
+                const on = chosen.some((a: any) => a.id === m.user_id)
+                return (
+                  <button key={m.id} type="button"
+                    onClick={() => {
+                      const cur: any[] = editing.assignees || []
+                      const next = on
+                        ? cur.filter((a: any) => a.id !== m.user_id)
+                        : [...cur, { id: m.user_id, name: m.name }]
+                      setEditing({
+                        ...editing,
+                        assignees: next,
+                        // Keep the legacy single field mirroring the first pick.
+                        assigned_to_id: next[0]?.id || null,
+                        assigned_to_name: next[0]?.name || null,
+                      })
+                    }}
+                    style={{
+                      padding: '6px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                      border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'),
+                      background: on ? 'var(--peach)' : '#fff',
+                      color: on ? 'var(--coral)' : 'var(--slate)',
+                    }}>
+                    {on ? '\u2713 ' : ''}{m.name}
+                  </button>
+                )
+              })}
+              {team.length === 0 && (
+                <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>No team members found.</span>
+              )}
+            </div>
 
-            {editing.assigned_to_id && (
+            {(editing.assignees || []).length > 0 && (
               <>
                 <label style={L}>Remind them via</label>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>

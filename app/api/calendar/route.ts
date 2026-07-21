@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
         location_id, contact_id, conversation_id, order_id, assigned_to,
         address, status, created_by,
         assigned_to_id, assigned_to_name, reminder_channels,
-        notify_customer, customer_contact_id,
+        notify_customer, customer_contact_id, assignees,
       } = body
 
       if (!title || !starts_at) {
@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
         assigned_to_id: assigned_to_id || null,
         assigned_to_name: assigned_to_name || null,
         reminder_channels: reminder_channels || null,
+        assignees: Array.isArray(assignees) ? assignees : [],
         notify_customer: !!notify_customer,
         customer_contact_id: customer_contact_id || contact_id || null,
         updated_at: new Date().toISOString(),

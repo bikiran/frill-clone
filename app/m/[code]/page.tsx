@@ -15,8 +15,29 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
   const { code } = await params
   const db = admin()
 
-  const { data: link } = await db.from('short_links')
-    .select('target_url, label, company_id, kind, conversation_id, media_urls, note').eq('code', code).maybeSingle()
+  // Select the base columns first. media_urls and note are newer (V199); if
+  // that migration hasn't run, including them makes the WHOLE query fail and
+  // every link reports "no longer available". So try the full select, and fall
+  // back to the base columns if it errors.
+  let link: any = null
+  {
+    const full = await db.from('short_links')
+      .select('target_url, label, company_id, kind, conversation_id, media_urls, note')
+      .eq('code', code).maybeSingle()
+    if (full.error) {
+      const base = await db.from('short_links')
+        .select('target_url, label, company_id, kind, conversation_id')
+        .eq('code', code).maybeSingle()
+      link = base.data
+    } else {
+      link = full.data
+    }
+  }
+
+  // A gallery link may have its files only in media_urls with target_url blank.
+  if (!link?.target_url && Array.isArray(link?.media_urls) && link.media_urls[0]?.url) {
+    link.target_url = link.media_urls[0].url
+  }
 
   if (!link?.target_url) {
     return (

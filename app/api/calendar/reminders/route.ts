@@ -81,26 +81,36 @@ async function run(req: NextRequest) {
           ? `${label} was due — ${e.title} (${when}${e.time_window ? `, ${e.time_window}` : ''})`
           : `${label} coming up — ${e.title} (${when}${e.time_window ? `, ${e.time_window}` : ''})`
 
+        // Everyone assigned. Falls back to the single legacy field when the
+        // event predates multi-assignment.
+        const assignees: any[] = Array.isArray(e.assignees) && e.assignees.length
+          ? e.assignees
+          : (e.assigned_to_id ? [{ id: e.assigned_to_id, name: e.assigned_to_name }] : [])
+        const hasAssignees = assignees.length > 0
+
         // Per-event channels, when the event is assigned to someone. An event
         // with no assignee keeps the old company-wide behaviour.
         const evtChannels: string[] = Array.isArray(e.reminder_channels) && e.reminder_channels.length
           ? e.reminder_channels
           : ['in_app', 'email', 'sms']
-        const wantInApp = !e.assigned_to_id || evtChannels.includes('in_app')
-        const wantEmail = !e.assigned_to_id || evtChannels.includes('email')
-        const wantSms = !!e.assigned_to_id && evtChannels.includes('sms')
+        const wantInApp = !hasAssignees || evtChannels.includes('in_app')
+        const wantEmail = !hasAssignees || evtChannels.includes('email')
+        const wantSms = hasAssignees && evtChannels.includes('sms')
 
         // ── In-app notification
         if (wantInApp) {
         try {
-          if (e.assigned_to_id) {
-            // Assigned: notify only that person.
-            await db.from('notifications').insert({
-              company_id: companyId, user_id: e.assigned_to_id, type: 'calendar',
-              title: line, body: e.notes || null,
-              link: e.conversation_id ? `/admin/inbox?conversation=${e.conversation_id}` : '/admin/calendar',
-              is_read: false,
-            })
+          if (hasAssignees) {
+            // Assigned: notify each assignee.
+            for (const a of assignees) {
+              if (!a.id) continue
+              await db.from('notifications').insert({
+                company_id: companyId, user_id: a.id, type: 'calendar',
+                title: line, body: e.notes || null,
+                link: e.conversation_id ? `/admin/inbox?conversation=${e.conversation_id}` : '/admin/calendar',
+                is_read: false,
+              })
+            }
           } else {
             await notifyCompany({
               db, companyId, type: 'calendar',
@@ -112,19 +122,22 @@ async function run(req: NextRequest) {
         } catch {}
         }
 
-        // ── SMS the assignee (only when the event asks for it)
-        if (wantSms && e.assigned_to_id) {
-          try {
-            const { data: mem } = await db.from('team_members')
-              .select('phone').eq('company_id', companyId).eq('user_id', e.assigned_to_id).maybeSingle()
-            if (mem?.phone) {
-              const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
-              await fetch(`${origin}/api/telnyx/sms/send`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ companyId, to: mem.phone, text: line, skipChatMessage: true }),
-              })
-            }
-          } catch (err) { console.error('[calendar reminder] sms failed', err) }
+        // ── SMS the assignees (only when the event asks for it)
+        if (wantSms && hasAssignees) {
+          for (const a of assignees) {
+            if (!a.id) continue
+            try {
+              const { data: mem } = await db.from('team_members')
+                .select('phone').eq('company_id', companyId).eq('user_id', a.id).maybeSingle()
+              if (mem?.phone) {
+                const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+                await fetch(`${origin}/api/telnyx/sms/send`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ companyId, to: mem.phone, text: line, skipChatMessage: true }),
+                })
+              }
+            } catch (err) { console.error('[calendar reminder] sms failed', err) }
+          }
         }
 
         // ── Customer reminder (delivery / appointment / booking / pickup)

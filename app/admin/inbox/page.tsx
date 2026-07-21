@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { uploadAttachment, readJsonSafe } from '@/lib/upload-attachment'
 import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
 import { decodeEntities as dec } from '@/lib/decode-entities'
+import FilePickerButton from '@/components/FilePickerButton'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
@@ -3808,18 +3809,42 @@ export default function InboxPage() {
             </div>
 
             <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--slate)', marginBottom: 6 }}>Delivery photo(s)</label>
-            <input type="file" accept="image/*,video/*" multiple
-              onChange={e => setPodFiles(Array.from(e.target.files || []))}
-              style={{ width: '100%', fontSize: 12.5, marginBottom: 6 }} />
+            <FilePickerButton
+              accept="image/*,video/*"
+              label={podFiles.length ? `${podFiles.length} file${podFiles.length === 1 ? '' : 's'} selected — add more` : 'Choose photos or video'}
+              onFiles={files => setPodFiles(prev => [...prev, ...files])}
+            />
             {podFiles.length > 0 && (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '8px 0 12px' }}>
                 {podFiles.map((f, i) => (
-                  <span key={i} style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 9px', borderRadius: 7, background: 'var(--peach)', color: 'var(--coral)' }}>{f.name}</span>
+                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600, padding: '4px 9px', borderRadius: 7, background: 'var(--peach)', color: 'var(--coral)' }}>
+                    {f.name}
+                    <button type="button" onClick={() => setPodFiles(prev => prev.filter((_, j) => j !== i))}
+                      style={{ border: 'none', background: 'none', padding: 0, color: 'var(--coral)', cursor: 'pointer', display: 'flex' }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </span>
                 ))}
               </div>
             )}
 
             <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--slate)', margin: '10px 0 6px' }}>Message to the customer</label>
+            {/* Pre-written openers — tap Insert to drop one in, then edit. */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+              {[
+                'Your order has been delivered. Attached is the proof of delivery — thank you!',
+                'Hi! Your parcel has just been delivered and left in a safe spot. Photo attached.',
+                'Delivery complete 🐟 Here\u2019s a photo for your records. Reply here if anything\u2019s not right.',
+                'Your order arrived today — see the attached photo. Thanks for shopping with us!',
+              ].map((tpl, i) => (
+                <button key={i} type="button"
+                  onClick={() => setPodNote(tpl)}
+                  title={tpl}
+                  style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 10px', borderRadius: 20, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', cursor: 'pointer', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  Insert: {tpl.slice(0, 22)}…
+                </button>
+              ))}
+            </div>
             <textarea value={podNote} onChange={e => setPodNote(e.target.value)} rows={4}
               placeholder="Your order has been delivered. Attached is the proof of delivery — thank you!"
               style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13.5, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', resize: 'vertical' }} />
