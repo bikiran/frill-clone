@@ -1,5 +1,6 @@
 'use client'
 
+import { decodeEntities as dec } from '@/lib/decode-entities'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -85,20 +86,23 @@ export default function CalendarPage() {
     if (!companyId) return
     ;(async () => {
       const members: any[] = []
-      // The owner usually isn't a row in team_members, so add them explicitly —
-      // otherwise a company with no invited staff had an empty picker.
       const { data: co } = await (supabase as any).from('companies')
         .select('owner_id, name').eq('id', companyId).maybeSingle()
       if (co?.owner_id) {
         members.push({ id: co.owner_id, user_id: co.owner_id, name: co.name ? `${co.name} (Owner)` : 'Owner' })
       }
-      const { data: tm } = await (supabase as any).from('team_members')
-        .select('id, user_id, name, display_name, email').eq('company_id', companyId)
+      // Read the way the Team page does — no company_id filter, since invited
+      // members can have a null company_id and RLS already scopes the rows.
+      // Filtering by company_id was hiding everyone except the owner.
+      const { data: tm } = await (supabase as any).from('team_members').select('*')
       for (const m of (tm || [])) {
-        if (members.some(x => x.user_id === m.user_id)) continue
+        if (companyId && m.company_id && m.company_id !== companyId) continue
+        const uid = m.user_id || m.id
+        if (members.some(x => x.user_id === uid)) continue
         members.push({
-          id: m.id, user_id: m.user_id,
+          id: m.id, user_id: uid,
           name: m.name || m.display_name || (m.email ? m.email.split('@')[0] : 'Team member'),
+          pending: m.status === 'invited',
         })
       }
       setTeam(members)
@@ -194,6 +198,31 @@ export default function CalendarPage() {
 
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto', padding: '26px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+      <style>{`
+        /* Hover a day's event to reveal its full title instead of the clipped
+           one — a long "Delivery for Raymundo Granados …" no longer widens or
+           breaks the grid, it just expands over its neighbours on hover. */
+        .cal-event { position: relative; transition: background 0.12s ease; }
+        .cal-event:hover {
+          z-index: 5; overflow: visible;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+        }
+        .cal-event:hover .cal-event-title {
+          position: absolute; left: 5px; top: 100%; margin-top: 2px;
+          white-space: normal; overflow: visible; text-overflow: clip;
+          background: #fff; border: 1px solid var(--border); border-radius: 6px;
+          padding: 5px 8px; min-width: 140px; max-width: 240px; z-index: 6;
+          box-shadow: 0 4px 14px rgba(0,0,0,0.14); font-weight: 600;
+          color: var(--ink); line-height: 1.35;
+        }
+        /* On phones the month grid scrolls sideways; make each day a bit wider
+           than a cramped 1/7 of 640 so text and dots have room. */
+        @media (max-width: 700px) {
+          .calendar-scroll-x > div { min-width: 700px !important; }
+        }
+        /* On very large screens don't let a single day balloon — the whole grid
+           already sits inside a 1080px container, which keeps it readable. */
+      `}</style>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>Calendar</h1>
@@ -278,7 +307,7 @@ export default function CalendarPage() {
                       {evs.slice(0, 3).map(e => {
                         const m = TYPE_META[e.event_type] || TYPE_META.appointment
                         return (
-                          <div key={e.id} title={e.title}
+                          <div key={e.id} title={dec(e.title)} className="cal-event"
                             style={{
                               display: 'flex', alignItems: 'center', gap: 4,
                               padding: '2px 5px', borderRadius: 5, background: m.bg,
@@ -288,7 +317,7 @@ export default function CalendarPage() {
                               textDecoration: e.status === 'cancelled' ? 'line-through' : 'none',
                             }}>
                             <span style={{ width: 5, height: 5, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.title}</span>
+                            <span className="cal-event-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{dec(e.title)}</span>
                           </div>
                         )
                       })}

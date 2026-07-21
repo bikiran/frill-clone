@@ -1,3 +1,4 @@
+import { decodeEntities } from '@/lib/decode-entities'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
@@ -173,9 +174,11 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         order_date: o.date_created,
         line_items: (o.line_items || []).map((li: any) => ({
           product_id: li.product_id,
-          name: li.name,
+          name: decodeEntities(li.name),
           quantity: li.quantity,
           total: li.total,
+          total_tax: li.total_tax,
+          id: li.id,
           image: li.image?.src || null,
         })),
         billing: o.billing || {},

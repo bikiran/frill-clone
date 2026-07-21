@@ -193,7 +193,19 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // back to the contact's most recent conversation.
   let conv: any = null
   const orderSubject = `Order #${order.number || order.id}`
-  if (contact?.id) {
+  // First, the most reliable link: a prior webhook for this same order already
+  // recorded which conversation it used. This survives the contact not being
+  // linked on the first (pending) call, which was spawning a second thread when
+  // the order moved pending → processing.
+  const { data: priorOrder } = await db.from('woocommerce_orders')
+    .select('conversation_id').eq('company_id', companyId).eq('woo_order_id', order.id)
+    .not('conversation_id', 'is', null).maybeSingle()
+  if (priorOrder?.conversation_id) {
+    const { data: pc } = await db.from('conversations').select('*')
+      .eq('id', priorOrder.conversation_id).maybeSingle()
+    conv = pc || null
+  }
+  if (!conv && contact?.id) {
     const { data: byOrder } = await db.from('conversations').select('*')
       .eq('company_id', companyId).eq('subject', orderSubject).limit(1)
     conv = byOrder?.[0] || null

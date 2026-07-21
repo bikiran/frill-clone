@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { uploadAttachment, readJsonSafe } from '@/lib/upload-attachment'
 import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
+import { decodeEntities as dec } from '@/lib/decode-entities'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
@@ -277,6 +278,7 @@ export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selected, setSelected] = useState<Conversation | null>(null)
   const selectedRef = useRef<Conversation | null>(null)
+  const loadWooDataRef = useRef<((id: string | null) => void) | null>(null)
   const [showMergePicker, setShowMergePicker] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
   const [showDoa, setShowDoa] = useState(false)
@@ -1010,6 +1012,7 @@ export default function InboxPage() {
   // keeps the filter correct without re-subscribing on every filter change.
   const loadConversationsRef = useRef(loadConversations)
   useEffect(() => { loadConversationsRef.current = loadConversations }, [loadConversations])
+  useEffect(() => { loadWooDataRef.current = loadWooData })
 
   // Deep-link: open a conversation from ?conversation=<id> (copy chat link)
   useEffect(() => {
@@ -1079,6 +1082,14 @@ export default function InboxPage() {
             return [...prev, payload.new]
           })
           scrollBottom()
+          // An order automation message means a new order just landed for this
+          // customer. Refresh the order panel so the Orders tab populates
+          // without a manual page reload.
+          const md = payload.new.metadata
+          if (md && (md.order_automation || md.order_id)) {
+            const cref = selectedRef.current as any
+            setTimeout(() => loadWooDataRef.current?.(cref?.contact_id || null), 800)
+          }
         }
         // Float the conversation that just got a message to the top of the list
         // immediately, so an active thread that had drifted to the bottom (buried
@@ -1165,13 +1176,17 @@ export default function InboxPage() {
     if (co?.owner_id) {
       members.push({ id: co.owner_id, user_id: co.owner_id, name: co.name ? `${co.name} (Owner)` : 'Owner', role: 'owner' })
     }
-    // Team members
-    const { data } = await (supabase as any).from('team_members').select('*').eq('company_id', cid)
+    // Team members — no company_id filter (invited members can have a null
+    // company_id, and RLS already scopes rows). Filtering hid everyone but the
+    // owner in the assignee pickers.
+    const { data } = await (supabase as any).from('team_members').select('*')
     for (const m of data || []) {
-      if (members.some(x => x.user_id === m.user_id)) continue
+      if (cid && m.company_id && m.company_id !== cid) continue
+      const uid = m.user_id || m.id
+      if (members.some(x => x.user_id === uid)) continue
       members.push({
         id: m.id,
-        user_id: m.user_id,
+        user_id: uid,
         name: m.name || m.display_name || m.email?.split('@')[0] || 'Team member',
         role: m.role || 'member',
       })
@@ -3710,7 +3725,7 @@ export default function InboxPage() {
               {refundModal.items.map((it: any, idx: number) => (
                 <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: it.refundQty > 0 ? 'var(--peach)' : '#fff' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dec(it.name)}</div>
                     <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>
                       ${it.unit.toFixed(2)} each · {it.qty} ordered
                     </div>
@@ -4127,7 +4142,7 @@ export default function InboxPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
                     {editOrderData.items.map((it: any) => (
                       <div key={it.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 9 }}>
-                        <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)' }}>{it.name}</span>
+                        <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)' }}>{dec(it.name)}</span>
                         <input type="number" min={0} value={it.quantity} onChange={e => setEditOrderData((d: any) => ({ ...d, items: d.items.map((x: any) => x.key === it.key ? { ...x, quantity: Math.max(0, parseInt(e.target.value) || 0) } : x) }))}
                           style={{ width: 60, padding: '5px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13 }} />
                         <span style={{ fontSize: 12.5, fontWeight: 600, width: 60, textAlign: 'right' }}>${it.total}</span>
@@ -4310,7 +4325,7 @@ export default function InboxPage() {
               {conversations.filter(c => c.id !== selected.id).map(c => (
                 <button key={c.id} type="button" onClick={() => mergeConversation(c.id)}
                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 18px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{c.subject || (c as any).sms_number || 'Visitor'}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{dec(c.subject) || (c as any).sms_number || 'Visitor'}</div>
                   <div style={{ fontSize: 12, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.last_message || 'No messages'}</div>
                 </button>
               ))}
@@ -4747,7 +4762,7 @@ export default function InboxPage() {
                     name the channel instead, so the agent knows a reply goes
                     out by SMS/email rather than into a web widget. */}
                 {isWebChat
-                  ? (isOnPageNow && selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {selected.page_title}</p>)
+                  ? (isOnPageNow && selected.page_title && <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>On: {dec(selected.page_title)}</p>)
                   : (() => {
                       // "Last activity 5m ago", Coax-style, from the customer's
                       // most recent message on the conversation.
@@ -6238,7 +6253,7 @@ export default function InboxPage() {
                           <div style={{ marginBottom: 8 }}>
                             {cart.items.map((it: any, i: number) => (
                               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--ink)', padding: '2px 0' }}>
-                                <span>{it.quantity}× {it.name}{it.sku ? ` (${it.sku})` : ''}</span>
+                                <span>{it.quantity}× {dec(it.name)}{it.sku ? ` (${it.sku})` : ''}</span>
                                 {it.price != null && <span style={{ color: 'var(--slate)' }}>${(parseFloat(it.price) || 0).toFixed(2)}</span>}
                               </div>
                             ))}
@@ -6437,7 +6452,7 @@ export default function InboxPage() {
                       {[...selected.page_history].reverse().map((h: any, i: number) => (
                         <div key={i} style={{ padding: '9px 12px', borderRadius: 8, background: 'var(--canvas)', border: i === 0 ? '1.5px solid var(--coral)' : '1px solid var(--border)' }}>
                           {i === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>Current</span>}
-                          <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.title || 'Untitled'}</p>
+                          <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dec(h.title) || 'Untitled'}</p>
                           <a href={h.url} target="_blank" rel="noopener" style={{ fontSize: 11, color: 'var(--coral)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{h.url}</a>
                           <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af' }}>{fmtTime(h.ts)}</p>
                         </div>
@@ -6547,7 +6562,7 @@ export default function InboxPage() {
                         {Array.isArray(o.line_items) && o.line_items.length > 0 && (
                           <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
                             {o.line_items.slice(0, 3).map((li: any, i: number) => (
-                              <p key={i} style={{ margin: '2px 0', fontSize: 11, color: 'var(--slate)' }}>{li.quantity}× {li.name}</p>
+                              <p key={i} style={{ margin: '2px 0', fontSize: 11, color: 'var(--slate)' }}>{li.quantity}× {dec(li.name)}</p>
                             ))}
                             {o.line_items.length > 3 && <p style={{ margin: '2px 0', fontSize: 11, color: '#9ca3af' }}>+{o.line_items.length - 3} more</p>}
                           </div>
