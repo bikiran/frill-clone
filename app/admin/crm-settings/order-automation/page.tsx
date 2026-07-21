@@ -81,7 +81,7 @@ export default function OrderAutomationSettings() {
 
           <div style={S.card}>
             <h2 style={S.h2}>Also notify the customer directly</h2>
-            <p style={{ ...S.hint, marginBottom: 12 }}>The message always posts into the chat. Optionally also send it as an SMS and/or email so the customer is notified immediately.</p>
+            <p style={{ ...S.hint, marginBottom: 12 }}>The message always posts into the chat. If the customer isn't active on live chat, it's automatically sent by SMS so they're notified — the options below force a copy even when they are on live chat.</p>
             <ToggleRow title="Also send as SMS" desc="Requires a Colvy number and the customer's mobile. Standard SMS rates apply." checked={alsoSms} onChange={setAlsoSms} />
             <div style={{ height: 10 }} />
             <ToggleRow title="Also send as email" desc="Sent from your verified Colvy email domain to the order's email address." checked={alsoEmail} onChange={setAlsoEmail} />

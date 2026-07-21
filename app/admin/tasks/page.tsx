@@ -188,11 +188,29 @@ export default function TasksPage() {
                   {t.text}
                 </p>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-                  {t.assigned_to && (
-                    <span style={{ padding: '2px 8px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700 }}>
-                      {t.assigned_to}
-                    </span>
-                  )}
+                  <select
+                    value={t.assigned_to_id || ''}
+                    onChange={async (e) => {
+                      const m = team.find(x => x.id === e.target.value)
+                      setTasks(cur => cur.map(x => x.id === t.id ? { ...x, assigned_to_id: e.target.value || null, assigned_to: m?.name || null } : x))
+                      try {
+                        await (supabase as any).from('conversation_tasks')
+                          .update({ assigned_to_id: e.target.value || null, assigned_to: m?.name || null })
+                          .eq('id', t.id)
+                        // Let the newly assigned person know.
+                        if (m?.user_id && m.user_id !== userId) {
+                          await (supabase as any).from('notifications').insert({
+                            company_id: companyId, user_id: m.user_id, type: 'task_assigned',
+                            title: 'You were assigned a task', body: t.text?.slice(0, 160),
+                            link: `/admin/inbox?conversation=${t.conversation_id}`, is_read: false,
+                          })
+                        }
+                      } catch { /* optimistic update stands */ }
+                    }}
+                    style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 20, border: '1px solid var(--border)', background: t.assigned_to ? 'var(--peach)' : '#fff', color: t.assigned_to ? 'var(--coral)' : 'var(--slate)', fontWeight: 700, cursor: 'pointer' }}>
+                    <option value="">Unassigned</option>
+                    {team.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
                   {conv && (
                     <button onClick={() => router.push(`/admin/inbox?conversation=${t.conversation_id}`)}
                       style={{ border: 'none', background: 'none', padding: 0, fontSize: 11.5, color: 'var(--slate)', cursor: 'pointer', textDecoration: 'underline' }}>

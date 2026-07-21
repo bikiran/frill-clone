@@ -81,18 +81,76 @@ async function run(req: NextRequest) {
           ? `${label} was due — ${e.title} (${when}${e.time_window ? `, ${e.time_window}` : ''})`
           : `${label} coming up — ${e.title} (${when}${e.time_window ? `, ${e.time_window}` : ''})`
 
-        // ── In-app notification for the whole team
+        // Per-event channels, when the event is assigned to someone. An event
+        // with no assignee keeps the old company-wide behaviour.
+        const evtChannels: string[] = Array.isArray(e.reminder_channels) && e.reminder_channels.length
+          ? e.reminder_channels
+          : ['in_app', 'email', 'sms']
+        const wantInApp = !e.assigned_to_id || evtChannels.includes('in_app')
+        const wantEmail = !e.assigned_to_id || evtChannels.includes('email')
+        const wantSms = !!e.assigned_to_id && evtChannels.includes('sms')
+
+        // ── In-app notification
+        if (wantInApp) {
         try {
-          await notifyCompany({
-            db, companyId, type: 'calendar',
-            message: line,
-            actorName: 'Calendar',
-            conversationId: e.conversation_id || undefined,
-          })
+          if (e.assigned_to_id) {
+            // Assigned: notify only that person.
+            await db.from('notifications').insert({
+              company_id: companyId, user_id: e.assigned_to_id, type: 'calendar',
+              title: line, body: e.notes || null,
+              link: e.conversation_id ? `/admin/inbox?conversation=${e.conversation_id}` : '/admin/calendar',
+              is_read: false,
+            })
+          } else {
+            await notifyCompany({
+              db, companyId, type: 'calendar',
+              message: line,
+              actorName: 'Calendar',
+              conversationId: e.conversation_id || undefined,
+            })
+          }
         } catch {}
+        }
+
+        // ── SMS the assignee (only when the event asks for it)
+        if (wantSms && e.assigned_to_id) {
+          try {
+            const { data: mem } = await db.from('team_members')
+              .select('phone').eq('company_id', companyId).eq('user_id', e.assigned_to_id).maybeSingle()
+            if (mem?.phone) {
+              const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+              await fetch(`${origin}/api/telnyx/sms/send`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ companyId, to: mem.phone, text: line, skipChatMessage: true }),
+              })
+            }
+          } catch (err) { console.error('[calendar reminder] sms failed', err) }
+        }
+
+        // ── Customer reminder (delivery / appointment / booking / pickup)
+        if (e.notify_customer && ['delivery', 'appointment', 'booking', 'pickup'].includes(e.event_type)) {
+          try {
+            const cid = e.customer_contact_id || e.contact_id
+            if (cid) {
+              const { data: ct } = await db.from('contacts')
+                .select('phone, email, name, is_blocked, unsubscribed_at').eq('id', cid).maybeSingle()
+              if (ct && !ct.is_blocked) {
+                const custLine = `Reminder: your ${label.toLowerCase()} "${e.title}" is ${overdue ? 'due' : 'coming up'} — ${when}${e.time_window ? `, ${e.time_window}` : ''}.`
+                const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+                if (ct.phone) {
+                  await fetch(`${origin}/api/telnyx/sms/send`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ companyId, to: ct.phone, text: custLine, skipChatMessage: true }),
+                  })
+                }
+                await db.from('calendar_events').update({ customer_reminded_at: new Date().toISOString() }).eq('id', e.id)
+              }
+            }
+          } catch (err) { console.error('[calendar reminder] customer notify failed', err) }
+        }
 
         // ── Email the team
-        if (emailOn && process.env.RESEND_API_KEY) {
+        if (emailOn && wantEmail && process.env.RESEND_API_KEY) {
           try {
             const { data: members } = await db.from('team_members')
               .select('email').eq('company_id', companyId).eq('status', 'active')

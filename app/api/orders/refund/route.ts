@@ -19,12 +19,19 @@ function admin() {
  * this MOVES REAL FUNDS — it's only ever called from an explicit staff action
  * with a confirmation.
  *
- * Body: { companyId, integrationId?, orderId, amount?, reason?, conversationId? }
- * Omitting `amount` refunds the full order total.
+ * Body: {
+ *   companyId, integrationId?, orderId, conversationId?, reason?,
+ *   amount?,        // full refund when nothing itemised is given
+ *   lineItems?,     // [{ id, qty, total, tax }]  per-item refund
+ *   shipping?,      // shipping amount to refund
+ *   restock?,       // put refunded quantities back into stock
+ * }
+ * Omitting everything but the order refunds the full total.
  */
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, integrationId, orderId, amount, reason, conversationId } = await req.json()
+    const { companyId, integrationId, orderId, amount, reason, conversationId,
+            lineItems, shipping, restock } = await req.json()
     if (!companyId || !orderId) {
       return NextResponse.json({ error: 'Missing companyId or orderId' }, { status: 400 })
     }
@@ -47,8 +54,20 @@ export async function POST(req: NextRequest) {
 
     const auth = `Basic ${Buffer.from(`${integ.consumer_key}:${integ.consumer_secret}`).toString('base64')}`
 
-    // Work out the amount to refund when one wasn't supplied.
+    // Build the WooCommerce refund payload. Three shapes:
+    //   itemised  — specific line items (and optionally shipping), with restock
+    //   amount    — a flat partial refund
+    //   neither   — full order total
+    const hasItems = Array.isArray(lineItems) && lineItems.length > 0
+    const shippingNum = Number(shipping) || 0
+
+    // Compute the total so it's recorded and shown consistently.
     let refundAmount = amount
+    if (hasItems || shippingNum > 0) {
+      const itemsTotal = (lineItems || []).reduce(
+        (s: number, li: any) => s + (Number(li.total) || 0) + (Number(li.tax) || 0), 0)
+      refundAmount = (itemsTotal + shippingNum).toFixed(2)
+    }
     if (!refundAmount) {
       const oRes = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}`, {
         headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
@@ -60,16 +79,38 @@ export async function POST(req: NextRequest) {
       refundAmount = order.total
     }
 
+    if (Number(refundAmount) <= 0) {
+      return NextResponse.json({ error: 'Nothing selected to refund' }, { status: 400 })
+    }
+
+    const payload: any = {
+      amount: String(refundAmount),
+      reason: reason || 'Refunded from Colvy',
+      api_refund: true,
+    }
+
+    if (hasItems) {
+      // WooCommerce expects per-line refund_total and refund_tax keyed by tax id.
+      payload.line_items = (lineItems || []).map((li: any) => ({
+        id: li.id,
+        quantity: restock ? (Number(li.qty) || 0) : undefined,
+        refund_total: Number(li.total) || 0,
+        refund_tax: li.taxId != null
+          ? [{ id: li.taxId, refund_total: Number(li.tax) || 0 }]
+          : undefined,
+      }))
+    }
+    // restock is driven by including quantity above; WooCommerce restocks any
+    // line item that carries a quantity on the refund.
+
+    if (shippingNum > 0) {
+      payload.shipping_lines = [{ id: 0, refund_total: shippingNum }]
+    }
+
     const res = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}/refunds`, {
       method: 'POST',
       headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        amount: String(refundAmount),
-        reason: reason || 'Refunded from Colvy',
-        // Ask the payment gateway to actually return the funds. Without this
-        // WooCommerce only records the refund without moving money.
-        api_refund: true,
-      }),
+      body: JSON.stringify(payload),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {

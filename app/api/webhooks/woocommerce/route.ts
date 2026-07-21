@@ -319,13 +319,22 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // the confirmation actually reaches them. When the business has explicitly
   // ticked "also send by SMS/email", it's sent regardless — they want the
   // customer to have a copy either way.
+  // Delivery rule:
+  //   - On live chat right now → the thread message is enough.
+  //   - Not on live chat → SMS (then email) so it actually reaches them,
+  //     whether or not "also send" was ticked. An order confirmation the
+  //     customer never sees is the failure we're avoiding.
+  //   - "Also send" ticked → send the copy even if they ARE on live chat.
   const forceCopy = !!(cfg.also_sms || cfg.also_email)
   try {
     const delivery = await deliverAutomatedMessage({
       companyId,
       conversationId: conv.id,
       text: body,
-      phone: cfg.also_email && !cfg.also_sms ? null : phone,
+      // Always give it the phone — the helper only uses it when the customer
+      // isn't watching live chat (or when forced). Previously this was nulled
+      // unless "also send SMS" was on, so anyone off live chat got nothing.
+      phone,
       email,
       senderName: businessName,
       subject: `Update on your order #${order.number || order.id}`,
@@ -335,6 +344,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     })
     console.log('[Order automation] delivery', {
       order: order.number || order.id,
+      status,
       onLiveChat: delivery.onLiveChat,
       via: delivery.channel,
       sent: delivery.sent,

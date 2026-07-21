@@ -840,6 +840,7 @@ export default function InboxPage() {
   const [newNote, setNewNote] = useState('')
   const [newTask, setNewTask] = useState('')
   const [newTaskAssignee, setNewTaskAssignee] = useState('')
+  const [refundModal, setRefundModal] = useState<any>(null)
   const [aiSummary, setAiSummary] = useState('')
   const [aiTodos, setAiTodos] = useState<any[]>([])
   const [generatingAi, setGeneratingAi] = useState(false)
@@ -2052,28 +2053,80 @@ export default function InboxPage() {
 
   // Refund a paid order. This moves real money through the payment gateway, so
   // it always confirms first and states the amount.
-  const issueOrderRefund = async (payload: any) => {
+  const issueOrderRefund = (payload: any) => {
     if (!companyId) return
     const orderId = payload.order_id || payload.id
-    const total = Number(payload.total || 0)
     if (!orderId) { showToast('No order id for this order'); return }
-    const amountText = total ? `$${total.toFixed(2)}` : 'the full order total'
-    if (!confirm(`Refund ${amountText} for order #${payload.order_number || orderId}?\n\nThis returns the money to the customer through the payment gateway and cannot be undone here.`)) return
+    // Open the itemised refund modal rather than blindly refunding the whole
+    // order — refunds move real money, so the choice of what to return, whether
+    // to restock, and whether to include shipping belongs to the person.
+    const items = (payload.line_items || payload.items || []).map((li, i) => {
+      const qty = Number(li.quantity || li.qty || 1)
+      return {
+        id: li.id ?? li.line_item_id ?? i,
+        name: li.name || li.product_name || 'Item',
+        qty,
+        unit: Number(li.total || li.subtotal || li.price || 0) / Math.max(1, qty),
+        total: Number(li.total || li.subtotal || 0),
+        tax: Number(li.total_tax || li.tax || 0),
+        taxId: li.taxId ?? null,
+        refundQty: 0,
+      }
+    })
+    setRefundModal({
+      payload, orderId,
+      orderNumber: payload.order_number || orderId,
+      items,
+      shipping: Number(payload.shipping_total || 0),
+      refundShipping: false,
+      restock: true,
+      reason: '',
+      busy: false,
+    })
+  }
+
+  const submitRefund = async () => {
+    const m = refundModal
+    if (!m || !companyId) return
+    const chosen = m.items
+      .filter((it) => it.refundQty > 0)
+      .map((it) => ({
+        id: it.id,
+        qty: it.refundQty,
+        total: +(it.unit * it.refundQty).toFixed(2),
+        tax: it.qty > 0 ? +((it.tax / it.qty) * it.refundQty).toFixed(2) : 0,
+        taxId: it.taxId,
+      }))
+    const shippingAmt = m.refundShipping ? m.shipping : 0
+    if (chosen.length === 0 && shippingAmt <= 0) {
+      showToast('Select at least one item or shipping to refund')
+      return
+    }
+    const totalRefund = chosen.reduce((s, c) => s + c.total + c.tax, 0) + shippingAmt
+    if (!confirm(`Refund $${totalRefund.toFixed(2)} for order #${m.orderNumber}?\n\nThis returns money through the payment gateway and cannot be undone here.`)) return
+
+    setRefundModal((v) => ({ ...v, busy: true }))
     try {
       const res = await fetch('/api/orders/refund', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyId, orderId,
-          integrationId: payload.integration_id || undefined,
+          companyId, orderId: m.orderId,
+          integrationId: m.payload.integration_id || undefined,
           conversationId: selected?.id || undefined,
+          lineItems: chosen,
+          shipping: shippingAmt,
+          restock: m.restock,
+          reason: m.reason || undefined,
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Refund failed')
-      showToast(`Refunded $${Number(data.amount || total).toFixed(2)}`)
+      showToast(`Refunded $${Number(data.amount || totalRefund).toFixed(2)}`)
+      setRefundModal(null)
       if (selected) { loadWooData(contact?.id || null); loadConversationExtras(selected.id) }
-    } catch (e: any) {
+    } catch (e) {
       alert('Could not issue the refund: ' + e.message)
+      setRefundModal((v) => v ? { ...v, busy: false } : v)
     }
   }
 
@@ -3586,6 +3639,94 @@ export default function InboxPage() {
       )}
 
       {/* Proof of Delivery panel */}
+      {refundModal && (
+        <div onClick={() => !refundModal.busy && setRefundModal(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 340, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 22 }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Refund order #{refundModal.orderNumber}</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--slate)' }}>
+              Choose what to return. This moves real money through the payment gateway.
+            </p>
+
+            {refundModal.items.length === 0 && (
+              <p style={{ fontSize: 13, color: 'var(--slate)', marginBottom: 14 }}>
+                No line items available for this order — a full refund will be issued instead.
+              </p>
+            )}
+
+            {/* Items */}
+            <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
+              {refundModal.items.map((it: any, idx: number) => (
+                <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: it.refundQty > 0 ? 'var(--peach)' : '#fff' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>
+                      ${it.unit.toFixed(2)} each · {it.qty} ordered
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button type="button" disabled={it.refundQty <= 0}
+                      onClick={() => setRefundModal((v: any) => { const items=[...v.items]; items[idx]={...items[idx], refundQty: Math.max(0, items[idx].refundQty-1)}; return {...v, items} })}
+                      style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: it.refundQty<=0?'default':'pointer', fontSize: 15, color: 'var(--slate)' }}>−</button>
+                    <span style={{ minWidth: 22, textAlign: 'center', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{it.refundQty}</span>
+                    <button type="button" disabled={it.refundQty >= it.qty}
+                      onClick={() => setRefundModal((v: any) => { const items=[...v.items]; items[idx]={...items[idx], refundQty: Math.min(items[idx].qty, items[idx].refundQty+1)}; return {...v, items} })}
+                      style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: it.refundQty>=it.qty?'default':'pointer', fontSize: 15, color: 'var(--coral)' }}>+</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Shipping */}
+            {refundModal.shipping > 0 && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', marginBottom: 10, cursor: 'pointer' }}>
+                <input type="checkbox" checked={refundModal.refundShipping}
+                  onChange={e => setRefundModal((v: any) => ({ ...v, refundShipping: e.target.checked }))} />
+                <span style={{ flex: 1, fontSize: 13.5, color: 'var(--ink)' }}>Refund shipping</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>${refundModal.shipping.toFixed(2)}</span>
+              </label>
+            )}
+
+            {/* Restock */}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 10, background: 'var(--canvas)', marginBottom: 14, cursor: 'pointer' }}>
+              <input type="checkbox" checked={refundModal.restock}
+                onChange={e => setRefundModal((v: any) => ({ ...v, restock: e.target.checked }))} />
+              <span style={{ flex: 1, fontSize: 13.5, color: 'var(--ink)' }}>Restock refunded items</span>
+            </label>
+
+            <input value={refundModal.reason}
+              onChange={e => setRefundModal((v: any) => ({ ...v, reason: e.target.value }))}
+              placeholder="Reason (optional)"
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', marginBottom: 16 }} />
+
+            {/* Total */}
+            {(() => {
+              const items = refundModal.items.filter((it: any) => it.refundQty > 0)
+              const itemsTotal = items.reduce((s: number, it: any) => s + it.unit * it.refundQty + (it.qty>0 ? (it.tax/it.qty)*it.refundQty : 0), 0)
+              const total = itemsTotal + (refundModal.refundShipping ? refundModal.shipping : 0)
+              return (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: 11, background: 'var(--peach)', marginBottom: 16 }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>Refund total</span>
+                  <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--coral)' }}>${total.toFixed(2)}</span>
+                </div>
+              )
+            })()}
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={() => setRefundModal(null)} disabled={refundModal.busy}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', color: 'var(--slate)' }}>
+                Cancel
+              </button>
+              <button type="button" onClick={submitRefund} disabled={refundModal.busy}
+                style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: refundModal.busy ? 0.6 : 1 }}>
+                {refundModal.busy ? 'Refunding…' : 'Issue refund'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showPod && (
         <div onClick={() => setShowPod(false)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>

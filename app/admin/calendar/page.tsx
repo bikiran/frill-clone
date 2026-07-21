@@ -25,6 +25,7 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true)
   const [events, setEvents] = useState<any[]>([])
   const [locations, setLocations] = useState<any[]>([])
+  const [team, setTeam] = useState<any[]>([])
   const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); return d })
   const [locationFilter, setLocationFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -80,6 +81,15 @@ export default function CalendarPage() {
 
   useEffect(() => { load() }, [companyId, cursor, locationFilter, typeFilter])
 
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      const { data: tm } = await (supabase as any).from('team_members')
+        .select('id, user_id, name').eq('company_id', companyId)
+      setTeam(tm || [])
+    })()
+  }, [companyId])
+
   // Build the month grid (Monday-first, as is normal in Australia).
   const grid = useMemo(() => {
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1)
@@ -126,6 +136,13 @@ export default function CalendarPage() {
         location_id: editing.location_id || null,
         address: editing.address || null,
         status: editing.status || 'scheduled',
+        assigned_to_id: editing.assigned_to_id || null,
+        assigned_to_name: editing.assigned_to_name || null,
+        reminder_channels: editing.assigned_to_id
+          ? (editing.reminder_channels || ['in_app', 'email', 'sms'])
+          : null,
+        notify_customer: !!editing.notify_customer,
+        customer_contact_id: editing.customer_contact_id || null,
       }),
     })
     const d = await res.json()
@@ -487,6 +504,61 @@ export default function CalendarPage() {
                   {locations.map(l => <option key={l.id} value={l.id}>{l.label || l.suburb}</option>)}
                 </select>
               </>
+            )}
+
+            {/* Assign to a team member and remind only them */}
+            <label style={L}>Team member</label>
+            <select style={I} value={editing.assigned_to_id || ''}
+              onChange={e => {
+                const m = team.find((t: any) => t.id === e.target.value)
+                setEditing({ ...editing, assigned_to_id: e.target.value || null, assigned_to_name: m?.name || null })
+              }}>
+              <option value="">Unassigned</option>
+              {team.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+
+            {editing.assigned_to_id && (
+              <>
+                <label style={L}>Remind them via</label>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+                  {([['in_app', 'In-app'], ['email', 'Email'], ['sms', 'SMS']] as const).map(([ch, lbl]) => {
+                    const chans: string[] = editing.reminder_channels || ['in_app', 'email', 'sms']
+                    const on = chans.includes(ch)
+                    return (
+                      <button key={ch} type="button"
+                        onClick={() => {
+                          const next = on ? chans.filter(c => c !== ch) : [...chans, ch]
+                          setEditing({ ...editing, reminder_channels: next })
+                        }}
+                        style={{
+                          flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                          border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'),
+                          background: on ? 'var(--peach)' : '#fff',
+                          color: on ? 'var(--coral)' : 'var(--slate)',
+                        }}>
+                        {lbl}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* Customer reminder — only meaningful for customer-facing event types */}
+            {['delivery', 'appointment', 'booking', 'pickup'].includes(editing.event_type) && (
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '11px 12px', borderRadius: 10, background: 'var(--canvas)', margin: '8px 0 4px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={!!editing.notify_customer}
+                  onChange={e => setEditing({ ...editing, notify_customer: e.target.checked })}
+                  style={{ marginTop: 2 }} />
+                <span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', display: 'block' }}>
+                    Also remind the customer
+                  </span>
+                  <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>
+                    Sends the customer a reminder before this {TYPE_META[editing.event_type]?.label.toLowerCase() || 'event'}.
+                  </span>
+                </span>
+              </label>
             )}
 
             <label style={L}>Notes</label>
