@@ -177,7 +177,7 @@ export default function CalendarPage() {
         location_id: editing.location_id || null,
         address: editing.address || null,
         status: editing.status || 'scheduled',
-        assigned_to_id: editing.assigned_to_id || null,
+        assigned_to_id: (typeof editing.assigned_to_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editing.assigned_to_id)) ? editing.assigned_to_id : null,
         assigned_to_name: editing.assigned_to_name || null,
         assignees: editing.assignees || [],
         reminder_channels: (editing.assignees || []).length

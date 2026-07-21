@@ -510,7 +510,7 @@ function TaskDetail({ task, conv, team, companyId, me, userId, onPatch, onDelete
       <input type="date" value={task.due_date ? String(task.due_date).slice(0, 10) : ''} onChange={e => onPatch({ due_date: e.target.value ? new Date(`${e.target.value}T09:00:00`).toISOString() : null })}
         style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
       <p style={L}>Assignees</p>
-      <AssigneePicker members={team} value={assignees.map((a: any) => ({ id: a.id, name: a.name }))} onChange={(next) => onPatch({ assignees: next, assigned_to_id: next[0]?.id || null, assigned_to: next[0]?.name || null })} />
+      <AssigneePicker members={team} value={assignees.map((a: any) => ({ id: a.id, name: a.name }))} onChange={(next) => { const isUuid = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v); onPatch({ assignees: next, assigned_to_id: isUuid(next[0]?.id) ? next[0].id : null, assigned_to: next[0]?.name || null }) }} />
       <p style={L}>Linked order</p>
       {task.order_number ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#f8f9ff' }}>
@@ -603,12 +603,17 @@ function TaskEditor({ companyId, team, me, userId, onClose, onSaved }: any) {
     if (!title.trim()) return
     setSaving(true)
     const mentioned = resolveMentions(title, team as any)
+    // Only real UUIDs may go into uuid columns — a member without a user_id
+    // yet (invited, not signed in) has no auth id, so assigned_to_id must be
+    // null rather than a name/placeholder, which crashed the insert.
+    const isUuid = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+    const firstId = assignees[0]?.id
     const row: any = {
       company_id: companyId, text: title.trim(), title: title.trim(), status: 'todo', done: false, priority,
       due_date: due ? new Date(`${due}T09:00:00`).toISOString() : null,
-      assignees, assigned_to_id: assignees[0]?.id || null, assigned_to: assignees[0]?.name || null,
-      created_by: me, created_by_id: userId, mentions: mentioned.map((m: any) => ({ id: m.id, name: m.name })),
-      order_id: order?.order_id || null, order_number: order?.order_number || null, order_customer: order?.customer || null, order_total: order?.total || null,
+      assignees, assigned_to_id: isUuid(firstId) ? firstId : null, assigned_to: assignees[0]?.name || null,
+      created_by: me, created_by_id: isUuid(userId) ? userId : null, mentions: mentioned.map((m: any) => ({ id: m.id, name: m.name })),
+      order_id: order?.order_id ? String(order.order_id) : null, order_number: order?.order_number ? String(order.order_number) : null, order_customer: order?.customer || null, order_total: order?.total || null,
     }
     try {
       await (supabase as any).from('conversation_tasks').insert(row)
