@@ -603,27 +603,44 @@ function TaskEditor({ companyId, team, me, userId, onClose, onSaved }: any) {
     if (!title.trim()) return
     setSaving(true)
     const mentioned = resolveMentions(title, team as any)
-    // Only real UUIDs may go into uuid columns — a member without a user_id
-    // yet (invited, not signed in) has no auth id, so assigned_to_id must be
-    // null rather than a name/placeholder, which crashed the insert.
+    // Only real UUIDs may go into uuid columns. A member who was invited but
+    // hasn't signed in has no auth id, so their "id" can be a name-derived
+    // value — that must become null rather than crash the uuid column.
     const isUuid = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
-    const firstId = assignees[0]?.id
+    // The assignees JSONB may itself carry non-uuid ids; clean them so nothing
+    // downstream (filters, notifications) mistakes a name for an id.
+    const cleanAssignees = (assignees || []).map((a: any) => ({ id: isUuid(a.id) ? a.id : null, name: a.name }))
+    const firstUuid = cleanAssignees.map((a: any) => a.id).find((id: any) => isUuid(id)) || null
     const row: any = {
       company_id: companyId, text: title.trim(), title: title.trim(), status: 'todo', done: false, priority,
       due_date: due ? new Date(`${due}T09:00:00`).toISOString() : null,
-      assignees, assigned_to_id: isUuid(firstId) ? firstId : null, assigned_to: assignees[0]?.name || null,
-      created_by: me, created_by_id: isUuid(userId) ? userId : null, mentions: mentioned.map((m: any) => ({ id: m.id, name: m.name })),
+      assignees: cleanAssignees, assigned_to_id: firstUuid, assigned_to: cleanAssignees[0]?.name || null,
+      created_by: me, created_by_id: isUuid(userId) ? userId : null,
+      mentions: mentioned.map((m: any) => ({ id: isUuid(m.id) ? m.id : null, name: m.name })),
       order_id: order?.order_id ? String(order.order_id) : null, order_number: order?.order_number ? String(order.order_number) : null, order_customer: order?.customer || null, order_total: order?.total || null,
     }
     try {
-      await (supabase as any).from('conversation_tasks').insert(row)
+      const { error: insErr } = await (supabase as any).from('conversation_tasks').insert(row)
+      if (insErr) {
+        // A column may be typed differently than expected on this database (e.g.
+        // an old created_by defined as uuid). Retry with only the core columns
+        // so a task can always be created; the extras are best-effort.
+        console.error('[task create] full insert failed, retrying minimal', insErr, row)
+        const minimal: any = {
+          company_id: companyId, text: title.trim(), done: false,
+          due_date: row.due_date, assigned_to: cleanAssignees[0]?.name || null,
+        }
+        if (isUuid(firstUuid)) minimal.assigned_to_id = firstUuid
+        const { error: minErr } = await (supabase as any).from('conversation_tasks').insert(minimal)
+        if (minErr) throw minErr
+      }
       const notify = new Map<string, string>()
-      for (const a of assignees) { const tm = team.find((t: any) => t.user_id === a.id || t.id === a.id); if (tm?.user_id) notify.set(tm.user_id, tm.name) }
+      for (const a of cleanAssignees) { const tm = team.find((t: any) => t.user_id === a.id || t.id === a.id); if (tm?.user_id) notify.set(tm.user_id, tm.name) }
       for (const m of mentioned as any[]) { const tm = team.find((t: any) => t.id === m.id); if (tm?.user_id) notify.set(tm.user_id, tm.name) }
       notify.delete(userId)
       for (const [uid] of notify) { try { await (supabase as any).from('notifications').insert({ company_id: companyId, user_id: uid, type: 'task_assigned', title: `${me} assigned you a task`, body: title.trim().slice(0, 160), link: '/admin/tasks', is_read: false }) } catch {} }
       onSaved()
-    } catch (e: any) { alert('Could not create task: ' + e.message); setSaving(false) }
+    } catch (e: any) { console.error('[task create] payload was', row); alert('Could not create task: ' + e.message); setSaving(false) }
   }
   const L: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em', margin: '16px 0 7px' }
   return (
