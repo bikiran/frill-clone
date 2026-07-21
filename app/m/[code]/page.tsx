@@ -20,6 +20,7 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
   // every link reports "no longer available". So try the full select, and fall
   // back to the base columns if it errors.
   let link: any = null
+  let lookupError: string | null = null
   {
     const full = await db.from('short_links')
       .select('target_url, label, company_id, kind, conversation_id, media_urls, note')
@@ -29,23 +30,31 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
         .select('target_url, label, company_id, kind, conversation_id')
         .eq('code', code).maybeSingle()
       link = base.data
+      lookupError = base.error?.message || full.error.message
     } else {
       link = full.data
     }
   }
 
-  // A gallery link may have its files only in media_urls with target_url blank.
-  if (!link?.target_url && Array.isArray(link?.media_urls) && link.media_urls[0]?.url) {
+  // A gallery link keeps its files in media_urls; target_url may be blank.
+  if (link && !link.target_url && Array.isArray(link.media_urls) && link.media_urls[0]?.url) {
     link.target_url = link.media_urls[0].url
   }
+  // Even with no target_url, if there are media items we can still show them.
+  const hasMedia = link && Array.isArray(link.media_urls) && link.media_urls.length > 0
 
-  if (!link?.target_url) {
+  if (!link || (!link.target_url && !hasMedia)) {
+    if (lookupError) console.error('[media view] lookup error for', code, lookupError)
+    else if (!link) console.warn('[media view] no row for code', code)
+    else console.warn('[media view] row has no target_url or media for code', code)
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', background: '#fafafa' }}>
         <p style={{ color: '#6b7280' }}>This link is no longer available.</p>
       </div>
     )
   }
+  // Give downstream code a usable target_url even for media-only links.
+  if (!link.target_url && hasMedia) link.target_url = link.media_urls[0].url
 
   // Review links (and any plain redirect link) send the customer straight to
   // the destination — e.g. the business's Google review page.

@@ -1,5 +1,6 @@
 'use client'
 
+import AssigneePicker from '@/components/AssigneePicker'
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -30,6 +31,7 @@ export default function CalendarPage() {
   const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); return d })
   const [locationFilter, setLocationFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<any>(null)
   const [dayOpen, setDayOpen] = useState<string | null>(null)
 
@@ -122,6 +124,11 @@ export default function CalendarPage() {
   }, [cursor])
 
   const keyOf = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+  // Local YYYY-MM-DD. toISOString() converts to UTC first, which in Melbourne
+  // (UTC+10/+11) rolls a midnight-local date back to the previous day — that's
+  // why clicking the 5th opened the 4th. Build the string from local parts.
+  const localYmd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   const byDay = useMemo(() => {
     const m: Record<string, any[]> = {}
     for (const e of events) {
@@ -134,6 +141,18 @@ export default function CalendarPage() {
 
   const monthLabel = cursor.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })
   const isToday = (d: Date) => keyOf(d) === keyOf(new Date())
+
+  // Search matches title, notes and assignee names, across the loaded month.
+  const searchResults = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return null
+    return events.filter(e => {
+      const names = (Array.isArray(e.assignees) ? e.assignees.map((a: any) => a.name) : [e.assigned_to_name])
+        .filter(Boolean).join(' ')
+      return [e.title, e.notes, names].filter(Boolean)
+        .some((s: string) => dec(s).toLowerCase().includes(q))
+    }).sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
+  }, [search, events])
 
   const shift = (n: number) => setCursor(c => new Date(c.getFullYear(), c.getMonth() + n, 1))
 
@@ -200,14 +219,36 @@ export default function CalendarPage() {
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto', padding: '26px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       <style>{`
-        /* Each event pill anchors its own tooltip. The pill stays clipped; on
-           hover a tooltip appears BELOW it showing the full title, without
-           changing the pill's own size (which was distorting the grid and
-           causing the flicker). */
+        /* One column definition for BOTH the weekday header and the date cells,
+           so they can never drift out of alignment. box-sizing keeps the 1px
+           borders from pushing columns wider. */
+        .cal-row {
+          display: grid;
+          grid-template-columns: repeat(7, minmax(0, 1fr));
+        }
+        .cal-head { background: var(--canvas); border-bottom: 1px solid var(--border); }
+        .cal-hcell {
+          padding: 9px 4px; text-align: center;
+          font-size: 11.5px; font-weight: 800; color: var(--slate);
+          text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .cal-hcell-abbr { display: none; }
+        .cal-cell {
+          box-sizing: border-box;
+          min-height: 108px; padding: 7px;
+          border-right: 1px solid var(--border);
+          border-bottom: 1px solid var(--border);
+          overflow: hidden;
+        }
+        /* Remove the right border on the last column so the grid edge is clean. */
+        .cal-cell:nth-child(7n) { border-right: none; }
+
+        /* Event tooltip: anchored to its pill, shown below on hover, never
+           resizes the pill or the grid. */
         .cal-event { position: relative; }
         .cal-event .cal-tip {
           display: none;
-          position: absolute; left: 0; top: calc(100% + 3px); z-index: 20;
+          position: absolute; left: 0; top: calc(100% + 3px); z-index: 30;
           white-space: normal; width: max-content; max-width: 220px;
           background: var(--ink); color: #fff;
           padding: 6px 9px; border-radius: 7px;
@@ -215,11 +256,17 @@ export default function CalendarPage() {
           box-shadow: 0 6px 20px rgba(0,0,0,0.22);
           pointer-events: none;
         }
-        .cal-event:hover { z-index: 21; }
+        .cal-event:hover { z-index: 31; }
         .cal-event:hover .cal-tip { display: block; }
-        /* On phones the month grid scrolls sideways; give each day room. */
-        @media (max-width: 700px) {
-          .calendar-scroll-x > div { min-width: 720px !important; }
+
+        /* Phones: keep all 7 days visible without horizontal scroll by using
+           single-letter weekday labels and tighter cells — Apple/Google style. */
+        @media (max-width: 620px) {
+          .cal-grid-wrap { min-width: 0 !important; }
+          .cal-hcell-full { display: none; }
+          .cal-hcell-abbr { display: inline; }
+          .cal-hcell { padding: 7px 2px; }
+          .cal-cell { min-height: 74px; padding: 4px; }
         }
       `}</style>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
@@ -233,7 +280,7 @@ export default function CalendarPage() {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
             Reminders
           </button>
-          <button onClick={() => setEditing({ event_type: 'appointment', date: new Date().toISOString().slice(0, 10), time: '09:00', status: 'scheduled' })}
+          <button onClick={() => setEditing({ event_type: 'appointment', date: localYmd(new Date()), time: '09:00', status: 'scheduled' })}
             style={{ padding: '10px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             + Add event
           </button>
@@ -254,6 +301,17 @@ export default function CalendarPage() {
 
         <span style={{ flex: 1 }} />
 
+        {/* Search events by title, notes or assignee */}
+        <div style={{ position: 'relative' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+            style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--slate)', pointerEvents: 'none' }}>
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search events…"
+            style={{ padding: '7px 11px 7px 31px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, background: '#fff', width: 170, boxSizing: 'border-box' }} />
+        </div>
+
         {locations.length > 0 && (
           <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
             style={{ padding: '7px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, background: '#fff' }}>
@@ -268,72 +326,104 @@ export default function CalendarPage() {
         </select>
       </div>
 
-      {/* Month grid — horizontally scrollable on narrow screens so the 7 columns
-          never get crushed (they were overflowing/clipping event text on mobile). */}
-      <div style={{ border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', background: '#fff' }}>
-        <div className="calendar-scroll-x" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        <div style={{ minWidth: 640 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: 'var(--canvas)' }}>
-          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
-            <div key={d} style={{ padding: '9px 8px', fontSize: 11.5, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center' }}>{d}</div>
-          ))}
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-          {grid.map((d, i) => {
-            const k = d ? keyOf(d) : ''
-            const evs = d ? (byDay[k] || []) : []
-            const today = d && isToday(d)
+      {searchResults ? (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', background: '#fff' }}>
+          <div style={{ padding: '11px 16px', borderBottom: '1px solid var(--border)', fontSize: 12.5, fontWeight: 700, color: 'var(--slate)' }}>
+            {searchResults.length} result{searchResults.length === 1 ? '' : 's'} for “{search}”
+          </div>
+          {searchResults.length === 0 && (
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>No events match your search.</div>
+          )}
+          {searchResults.map(e => {
+            const m = TYPE_META[e.event_type] || TYPE_META.appointment
+            const when = new Date(e.starts_at)
+            const as = (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_name ? [{ name: e.assigned_to_name }] : [])
             return (
-              <div key={i}
-                onClick={() => d && (evs.length ? setDayOpen(k) : setEditing({ event_type: 'appointment', date: d.toISOString().slice(0, 10), time: '09:00', status: 'scheduled' }))}
-                style={{
-                  minHeight: 108, padding: 7, borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)',
-                  background: d ? (today ? 'var(--peach)' : '#fff') : 'var(--canvas)',
-                  cursor: d ? 'pointer' : 'default',
-                }}>
-                {d && (
-                  <>
-                    <span style={{
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      width: 22, height: 22, borderRadius: '50%', marginBottom: 5,
-                      fontSize: 12, fontWeight: today ? 800 : 600,
-                      background: today ? 'var(--coral)' : 'transparent',
-                      color: today ? '#fff' : 'var(--ink)',
-                    }}>{d.getDate()}</span>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                      {evs.slice(0, 3).map(e => {
-                        const m = TYPE_META[e.event_type] || TYPE_META.appointment
-                        return (
-                          <div key={e.id} title={dec(e.title)} className="cal-event"
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 4,
-                              padding: '2px 5px', borderRadius: 5, background: m.bg,
-                              fontSize: 10.5, fontWeight: 600, color: m.fg,
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                              opacity: ['cancelled', 'completed'].includes(e.status) ? 0.55 : 1,
-                              textDecoration: e.status === 'cancelled' ? 'line-through' : 'none',
-                            }}>
-                            <span style={{ width: 5, height: 5, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{dec(e.title)}</span>
-                            <span className="cal-tip">{dec(e.title)}</span>
-                          </div>
-                        )
-                      })}
-                      {evs.length > 3 && (
-                        <span style={{ fontSize: 10, color: 'var(--slate)', fontWeight: 700, paddingLeft: 2 }}>+{evs.length - 3} more</span>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
+              <button key={e.id} onClick={() => { setSearch(''); setEditing({ ...e, date: localYmd(new Date(e.starts_at)), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: as }) }}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '12px 16px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{dec(e.title)}</div>
+                  <div style={{ fontSize: 12, color: 'var(--slate)' }}>
+                    {when.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
+                    {' · '}{m.label}
+                    {as.length > 0 && ` · ${as.map((a: any) => a.name).join(', ')}`}
+                  </div>
+                </div>
+              </button>
             )
           })}
         </div>
+      ) : (
+      <div style={{ border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', background: '#fff' }}>
+        <div className="calendar-scroll-x" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div className="cal-grid-wrap" style={{ minWidth: 560 }}>
+          {/* Weekday header */}
+          <div className="cal-row cal-head">
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+              <div key={d} className="cal-hcell">
+                <span className="cal-hcell-full">{d}</span>
+                <span className="cal-hcell-abbr">{d[0]}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Date cells */}
+          <div className="cal-row cal-body">
+            {grid.map((d, i) => {
+              const k = d ? keyOf(d) : ''
+              const evs = d ? (byDay[k] || []) : []
+              const today = d && isToday(d)
+              return (
+                <div key={i} className="cal-cell"
+                  onClick={() => d && (evs.length ? setDayOpen(k) : setEditing({ event_type: 'appointment', date: localYmd(d), time: '09:00', status: 'scheduled' }))}
+                  style={{
+                    background: d ? (today ? 'var(--peach)' : '#fff') : 'var(--canvas)',
+                    cursor: d ? 'pointer' : 'default',
+                  }}>
+                  {d && (
+                    <>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 24, height: 24, borderRadius: '50%', marginBottom: 4,
+                        fontSize: 12.5, fontWeight: today ? 800 : 600,
+                        background: today ? 'var(--coral)' : 'transparent',
+                        color: today ? '#fff' : 'var(--ink)',
+                      }}>{d.getDate()}</span>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {evs.slice(0, 3).map(e => {
+                          const m = TYPE_META[e.event_type] || TYPE_META.appointment
+                          return (
+                            <div key={e.id} title={dec(e.title)} className="cal-event"
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 4,
+                                padding: '2px 5px', borderRadius: 5, background: m.bg,
+                                fontSize: 10.5, fontWeight: 600, color: m.fg,
+                                overflow: 'hidden', whiteSpace: 'nowrap',
+                                opacity: ['cancelled', 'completed'].includes(e.status) ? 0.55 : 1,
+                                textDecoration: e.status === 'cancelled' ? 'line-through' : 'none',
+                              }}>
+                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{dec(e.title)}</span>
+                              <span className="cal-tip">{dec(e.title)}</span>
+                            </div>
+                          )
+                        })}
+                        {evs.length > 3 && (
+                          <span style={{ fontSize: 10, color: 'var(--slate)', fontWeight: 700, paddingLeft: 2 }}>+{evs.length - 3} more</span>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
         </div>
       </div>
+      )}
 
       {/* Legend + Prexty note */}
       <div style={{ display: 'flex', gap: 14, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -479,7 +569,7 @@ export default function CalendarPage() {
                     )}
 
                     <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                      <button onClick={() => { setDayOpen(null); setEditing({ ...e, date: new Date(e.starts_at).toISOString().slice(0, 10), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_id ? [{ id: e.assigned_to_id, name: e.assigned_to_name }] : []) }) }}
+                      <button onClick={() => { setDayOpen(null); setEditing({ ...e, date: localYmd(new Date(e.starts_at)), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_id ? [{ id: e.assigned_to_id, name: e.assigned_to_name }] : []) }) }}
                         style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>
                       {e.conversation_id && (
                         <a href={`/admin/inbox?conversation=${e.conversation_id}`}
@@ -567,38 +657,17 @@ export default function CalendarPage() {
 
             {/* Assign to one or more team members and remind them */}
             <label style={L}>Team members</label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-              {team.map((m: any) => {
-                const chosen: any[] = editing.assignees || []
-                const on = chosen.some((a: any) => a.id === m.user_id)
-                return (
-                  <button key={m.id} type="button"
-                    onClick={() => {
-                      const cur: any[] = editing.assignees || []
-                      const next = on
-                        ? cur.filter((a: any) => a.id !== m.user_id)
-                        : [...cur, { id: m.user_id, name: m.name }]
-                      setEditing({
-                        ...editing,
-                        assignees: next,
-                        // Keep the legacy single field mirroring the first pick.
-                        assigned_to_id: next[0]?.id || null,
-                        assigned_to_name: next[0]?.name || null,
-                      })
-                    }}
-                    style={{
-                      padding: '6px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-                      border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'),
-                      background: on ? 'var(--peach)' : '#fff',
-                      color: on ? 'var(--coral)' : 'var(--slate)',
-                    }}>
-                    {on ? '\u2713 ' : ''}{m.name}
-                  </button>
-                )
-              })}
-              {team.length === 0 && (
-                <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>No team members found.</span>
-              )}
+            <div style={{ marginBottom: 8 }}>
+              <AssigneePicker
+                members={team as any}
+                value={editing.assignees || []}
+                onChange={(next) => setEditing({
+                  ...editing,
+                  assignees: next,
+                  assigned_to_id: next[0]?.id || null,
+                  assigned_to_name: next[0]?.name || null,
+                })}
+              />
             </div>
 
             {(editing.assignees || []).length > 0 && (

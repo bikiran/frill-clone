@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
 
     if (!code || customCode) {
       code = code || genCode()
-      await db.from('short_links').insert({
+      const { error: insErr } = await db.from('short_links').insert({
         code, company_id: companyId, target_url: target,
         label: label?.trim() || (kind === 'review' ? 'Leave a review' : 'Link'),
         kind: kind || 'redirect',
@@ -102,6 +102,26 @@ export async function POST(req: NextRequest) {
         note: note || null,
         clicks: 0,
       })
+      if (insErr) {
+        // If the media_urls/note columns don't exist yet, retry without them so
+        // the link is at least created (as a single-file link).
+        if (/media_urls|note|column/i.test(insErr.message)) {
+          const { error: retryErr } = await db.from('short_links').insert({
+            code, company_id: companyId, target_url: target,
+            label: label?.trim() || 'Link',
+            kind: kind || 'redirect',
+            link_type: classify(target),
+            conversation_id: conversationId || null,
+            sent_by: sentBy || null,
+            clicks: 0,
+          })
+          if (retryErr) {
+            return NextResponse.json({ error: `Could not create link: ${retryErr.message}` }, { status: 500 })
+          }
+        } else {
+          return NextResponse.json({ error: `Could not create link: ${insErr.message}` }, { status: 500 })
+        }
+      }
     }
 
     // Build the branded URL on the company's subdomain.
