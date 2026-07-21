@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
 import AssigneePicker from '@/components/AssigneePicker'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
+import { enrichNames } from '@/lib/team-names'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -109,8 +110,10 @@ export default function TasksPage() {
           if (cid && m.company_id && m.company_id !== cid) continue
           const uid = m.user_id || m.id
           if (members.some(x => x.user_id === uid)) continue
-          members.push({ id: m.id, user_id: uid, name: m.name || m.display_name || (m.email ? m.email.split('@')[0] : 'Team member') })
+          members.push({ id: m.id, user_id: uid, name: m.name || m.display_name || (m.email ? m.email.split('@')[0] : 'Team member'), email: m.email })
         }
+        // Replace email-username fallbacks with real profile names.
+        await enrichNames(members)
         setTeam(members)
         await loadTasks(cid)
       } finally { setLoading(false) }

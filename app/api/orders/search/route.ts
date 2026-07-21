@@ -34,22 +34,38 @@ export async function GET(req: NextRequest) {
       for (const o of rows || []) results.set(String(o.woo_order_id || o.id), o)
     }
 
-    // Order number / email — indexed text columns.
+    // Order number — woo_order_id is an integer, so match it exactly when the
+    // query is (or contains) a number. The previous `woo_order_id::text.ilike`
+    // cast doesn't work through PostgREST, so number search silently found
+    // nothing.
+    if (digits.length >= 1) {
+      const asNum = parseInt(digits, 10)
+      if (Number.isFinite(asNum)) {
+        const { data } = await db.from('woocommerce_orders')
+          .select('*').eq('company_id', companyId).eq('woo_order_id', asNum).limit(10)
+        add(data)
+      }
+    }
+
+    // Email — indexed text column.
     {
       const { data } = await db.from('woocommerce_orders')
         .select('*').eq('company_id', companyId)
-        .or(`customer_email.ilike.${like},woo_order_id::text.ilike.${like}`)
+        .ilike('customer_email', like)
         .order('order_date', { ascending: false }).limit(25)
       add(data)
     }
 
-    // Phone — normalised suffix match against billing.
+    // Phone — normalised suffix match against billing (column may not exist on
+    // older schemas, so ignore its errors).
     if (digits.length >= 4) {
-      const { data } = await db.from('woocommerce_orders')
-        .select('*').eq('company_id', companyId)
-        .ilike('billing_phone_norm', `%${digits.slice(-9)}%`)
-        .order('order_date', { ascending: false }).limit(25)
-      add(data)
+      try {
+        const { data, error } = await db.from('woocommerce_orders')
+          .select('*').eq('company_id', companyId)
+          .ilike('billing_phone_norm', `%${digits.slice(-9)}%`)
+          .order('order_date', { ascending: false }).limit(25)
+        if (!error) add(data)
+      } catch { /* column not present */ }
     }
 
     // Customer name / item name — scan a recent window and match in JS.

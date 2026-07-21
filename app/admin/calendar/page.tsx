@@ -1,5 +1,6 @@
 'use client'
 
+import { enrichNames } from '@/lib/team-names'
 import AssigneePicker from '@/components/AssigneePicker'
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { useEffect, useMemo, useState } from 'react'
@@ -104,9 +105,11 @@ export default function CalendarPage() {
         members.push({
           id: m.id, user_id: uid,
           name: m.name || m.display_name || (m.email ? m.email.split('@')[0] : 'Team member'),
+          email: m.email,
           pending: m.status === 'invited',
         })
       }
+      await enrichNames(members)
       setTeam(members)
     })()
   }, [companyId])

@@ -74,10 +74,6 @@ function SignInForm() {
         const hostname = window.location.hostname
         const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
         if (!isLocal) {
-          // Hand the session tokens to the subdomain via a dedicated handoff
-          // page that explicitly calls setSession() — more reliable than
-          // relying on Supabase's implicit-flow hash detection, which was
-          // leaving users stuck on the sign-in page.
           const accessToken = session?.access_token
           const refreshToken = session?.refresh_token
           if (accessToken && refreshToken) {
@@ -86,6 +82,29 @@ function SignInForm() {
           return `https://${ownCo.slug}.colvy.com/admin`
         }
         return '/admin'
+      }
+
+      // Own no company but a member of one (e.g. staff, or a super admin who
+      // also works inside a company) — land in that company's admin rather than
+      // nowhere. This is what lets the platform owner work as Roxy staff.
+      const { data: memberships } = await (supabase as any)
+        .from('team_members').select('company_id, role').eq('user_id', user.id)
+      const elevated = (memberships || []).find((m: any) => ['owner', 'admin', 'editor'].includes((m.role || '').toLowerCase()) && m.company_id)
+      if (elevated?.company_id) {
+        const { data: memberCo } = await (supabase as any).from('companies').select('slug').eq('id', elevated.company_id).maybeSingle()
+        if (memberCo?.slug) {
+          const hostname = window.location.hostname
+          const isLocal = hostname.includes('localhost') || hostname.includes('vercel.app')
+          if (!isLocal) {
+            const accessToken = session?.access_token
+            const refreshToken = session?.refresh_token
+            if (accessToken && refreshToken) {
+              return `https://${memberCo.slug}.colvy.com/auth/handoff#access_token=${encodeURIComponent(accessToken)}&refresh_token=${encodeURIComponent(refreshToken)}&next=${encodeURIComponent('/admin')}`
+            }
+            return `https://${memberCo.slug}.colvy.com/admin`
+          }
+          return '/admin'
+        }
       }
     }
 

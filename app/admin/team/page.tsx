@@ -35,7 +35,26 @@ export default function TeamPage() {
   const fetchMembers = async () => {
     try {
       const { data } = await supabase.from('team_members').select('*').order('created_at', { ascending: false })
-      if (data) setMembers(data)
+      let rows = data || []
+      // Fill in real profile names for members who've signed in (their name
+      // lives in auth metadata, which the client can't read for other users —
+      // so resolve it server-side).
+      const ids = Array.from(new Set(rows.map((m: any) => m.user_id).filter(Boolean)))
+      if (ids.length) {
+        try {
+          const res = await fetch('/api/team/names', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userIds: ids }),
+          })
+          const { names } = await res.json()
+          rows = rows.map((m: any) => ({
+            ...m,
+            display_name: m.name || names?.[m.user_id]?.name || null,
+            avatar_url: names?.[m.user_id]?.avatar_url || null,
+          }))
+        } catch { /* fall back to email */ }
+      }
+      setMembers(rows)
     } catch {}
     setLoading(false)
   }
@@ -255,10 +274,13 @@ export default function TeamPage() {
           members.map(m => (
             <div key={m.id} className="grid grid-cols-12 px-5 py-4 border-b last:border-b-0 items-center" style={{ borderColor: 'var(--border)' }}>
               <div className="col-span-5 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ background: '#6b7280' }}>
-                  {m.email?.[0].toUpperCase()}
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold overflow-hidden" style={{ background: '#6b7280' }}>
+                  {m.avatar_url ? <img src={m.avatar_url} alt="" className="w-full h-full object-cover" /> : (m.display_name || m.email || '?')[0].toUpperCase()}
                 </div>
-                <p className="text-sm truncate" style={{ color: 'var(--ink)' }}>{m.email}</p>
+                <div className="min-w-0">
+                  <p className="text-sm truncate" style={{ color: 'var(--ink)', fontWeight: 600 }}>{m.display_name || m.email}</p>
+                  {m.display_name && <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{m.email}</p>}
+                </div>
               </div>
               <div className="col-span-3">
                 <select value={m.role} onChange={e => updateRole(m.id, e.target.value)}

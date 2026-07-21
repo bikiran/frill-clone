@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { uploadAttachment, readJsonSafe } from '@/lib/upload-attachment'
 import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
 import { decodeEntities as dec } from '@/lib/decode-entities'
+import { enrichNames } from '@/lib/team-names'
 import FilePickerButton from '@/components/FilePickerButton'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
@@ -1190,8 +1191,10 @@ export default function InboxPage() {
         user_id: uid,
         name: m.name || m.display_name || m.email?.split('@')[0] || 'Team member',
         role: m.role || 'member',
-      })
+        email: m.email,
+      } as any)
     }
+    await enrichNames(members as any)
     setTeamMembers(members)
   }
 
