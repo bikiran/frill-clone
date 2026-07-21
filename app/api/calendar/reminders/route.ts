@@ -165,9 +165,23 @@ async function run(req: NextRequest) {
         // ── Email the team
         if (emailOn && wantEmail && process.env.RESEND_API_KEY) {
           try {
-            const { data: members } = await db.from('team_members')
-              .select('email').eq('company_id', companyId).eq('status', 'active')
-            const to = (members || []).map((m: any) => m.email).filter(Boolean)
+            let to: string[] = []
+            if (hasAssignees) {
+              // Assigned event: email ONLY the assignees, matching the in-app
+              // and SMS behaviour. (Previously this emailed the whole active
+              // team even for an assigned event.)
+              const ids = assignees.map((a: any) => a.id).filter(Boolean)
+              if (ids.length) {
+                const { data: members } = await db.from('team_members')
+                  .select('email').eq('company_id', companyId).in('user_id', ids)
+                to = (members || []).map((m: any) => m.email).filter(Boolean)
+              }
+            } else {
+              // Unassigned event: fall back to the whole active team.
+              const { data: members } = await db.from('team_members')
+                .select('email').eq('company_id', companyId).eq('status', 'active')
+              to = (members || []).map((m: any) => m.email).filter(Boolean)
+            }
 
             if (to.length) {
               const { data: ec } = await db.from('email_channels')

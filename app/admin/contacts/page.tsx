@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
+import AddContactModal from '@/components/AddContactModal'
 import { SegmentationService } from '@/lib/segmentation-service'
 
-type Contact = { id: string; name: string | null; email: string | null; phone: string | null; address: string | null; city: string | null; country: string | null; source: string; tags: string[]; subscribed_to_marketing: boolean; created_at: string; total_spend?: number; total_orders?: number; last_order_date?: string | null; rfm_category?: string; __aov?: number }
+type Contact = { id: string; name: string | null; email: string | null; phone: string | null; address: string | null; city: string | null; country: string | null; source: string; tags: string[]; subscribed_to_marketing: boolean; created_at: string; total_spend?: number; total_orders?: number; last_order_date?: string | null; rfm_category?: string; __aov?: number; relationship_type?: string; company_name?: string | null; notes?: string | null }
 
 const SOURCE_COLORS: Record<string, string> = { widget: '#dbeafe', woocommerce: '#ede9fe', import: '#dcfce7', manual: '#fef9c3', email: '#ffedd5' }
 
@@ -19,6 +20,7 @@ export default function ContactsPage() {
   const PAGE_SIZE = 100
   // ── Filters (mirrors the Users tab) ───────────────────────────────────────
   const [showFilters, setShowFilters] = useState(false)
+  const [showAddContact, setShowAddContact] = useState(false)
   const [sortBy, setSortBy] = useState<'recent_added' | 'recent_order' | 'highest_order' | 'num_orders' | 'spend' | 'loyalty'>('recent_added')
   const [fChannel, setFChannel] = useState('')
   const [fLoyalty, setFLoyalty] = useState('')
@@ -267,6 +269,10 @@ export default function ContactsPage() {
           </div>
           <input placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)}
             style={{ ...inp, maxWidth: 280, background: 'var(--canvas)' }} />
+          <button type="button" onClick={() => setShowAddContact(true)}
+            style={{ padding: '9px 15px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+            + New contact
+          </button>
           {outlets.length > 1 && (
             <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
               title="Filter by location"
@@ -509,7 +515,29 @@ export default function ContactsPage() {
                 </div>
                 <div>
                   <p style={labelStyle}>Source</p>
-                  <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: SOURCE_COLORS[selected.source] || '#f3f4f6', color: '#374151', textTransform: 'capitalize' }}>{selected.source}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: SOURCE_COLORS[selected.source] || '#f3f4f6', color: '#374151', textTransform: 'capitalize' }}>{selected.source || 'unknown'}</span>
+                </div>
+                <div>
+                  <p style={labelStyle}>Relationship</p>
+                  <select value={selected.relationship_type || 'customer'}
+                    onChange={async (e) => {
+                      const rt = e.target.value
+                      const isCustomer = rt === 'customer'
+                      setSelected(c => c ? { ...c, relationship_type: rt } : c)
+                      try {
+                        await (supabase as any).from('contacts').update({ relationship_type: rt, ...(isCustomer ? {} : { subscribed_to_marketing: false }) }).eq('id', selected.id)
+                        setContacts(cs => cs.map(c => c.id === selected.id ? { ...c, relationship_type: rt } : c))
+                      } catch {}
+                    }}
+                    style={{ fontSize: 12, fontWeight: 700, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', cursor: 'pointer', textTransform: 'capitalize' }}>
+                    <option value="customer">Customer</option>
+                    <option value="supplier">Supplier</option>
+                    <option value="wholesaler">Wholesaler</option>
+                    <option value="business">Business contact</option>
+                  </select>
+                  {(selected.relationship_type && selected.relationship_type !== 'customer') && (
+                    <p style={{ margin: '5px 0 0', fontSize: 11, color: 'var(--slate)' }}>Excluded from marketing by default.</p>
+                  )}
                 </div>
               </div>
             )}
@@ -564,6 +592,18 @@ export default function ContactsPage() {
               style={{ width: '100%', marginTop: 18, padding: '11px 0', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Close</button>
           </div>
         </div>
+      )}
+
+      {showAddContact && companyId && (
+        <AddContactModal
+          companyId={companyId}
+          onClose={() => setShowAddContact(false)}
+          onCreated={(c) => {
+            setShowAddContact(false)
+            if (c?.id) { setContacts(cs => [c, ...cs]); setSelected(c) }
+            else if (companyId) loadContacts(companyId, search)
+          }}
+        />
       )}
 
     </div>

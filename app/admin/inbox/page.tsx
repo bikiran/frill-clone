@@ -6,6 +6,7 @@ import { uploadAttachment, readJsonSafe } from '@/lib/upload-attachment'
 import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { enrichNames } from '@/lib/team-names'
+import AddContactModal from '@/components/AddContactModal'
 import FilePickerButton from '@/components/FilePickerButton'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
@@ -707,6 +708,7 @@ export default function InboxPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [showDialer, setShowDialer] = useState(false)
   const [showCompose, setShowCompose] = useState(false)
+  const [showAddContact, setShowAddContact] = useState(false)
   const [emailFromLabel, setEmailFromLabel] = useState('')
   const [linkedChannels, setLinkedChannels] = useState<any[]>([])
   const [showTimeline, setShowTimeline] = useState(false)
@@ -3893,6 +3895,14 @@ export default function InboxPage() {
         />
       )}
 
+      {showAddContact && companyId && (
+        <AddContactModal
+          companyId={companyId}
+          onClose={() => setShowAddContact(false)}
+          onCreated={() => { setShowAddContact(false); loadConversations(); showToast('Contact added'); setShowCompose(true) }}
+        />
+      )}
+
       {/* Filter panel (Coax style) */}
       {showFilters && (
         <div onClick={() => setShowFilters(false)}
@@ -4446,6 +4456,11 @@ export default function InboxPage() {
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--ink)' }}>Inbox</h2>
+            <button type="button" onClick={() => setShowAddContact(true)} title="Add a contact manually"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Contact
+            </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--peach)', color: 'var(--coral)', padding: '2px 8px', borderRadius: 20 }}>
                 {conversations.filter(c => c.is_unread && !['closed','resolved'].includes(c.status)).length} unread

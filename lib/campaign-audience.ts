@@ -265,6 +265,10 @@ export async function resolveAudience(
   for (const c of candidates) {
     // Order matters: report the most meaningful reason first.
     if (c.is_blocked) { drop(c, 'blocked'); continue }
+    // Non-customers (suppliers, wholesalers, business contacts) are excluded
+    // from marketing at the data level: the migration sets
+    // subscribed_to_marketing=false for them, so they fall out at the consent
+    // check below unless they've since been explicitly opted in.
     if (c.unsubscribed_at) { drop(c, 'unsubscribed'); continue }
     if (!c.subscribed_to_marketing || c.consent_basis === 'none') { drop(c, 'no_consent'); continue }
 
