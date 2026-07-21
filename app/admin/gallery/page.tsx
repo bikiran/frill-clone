@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { supabase } from '@/lib/supabase'
 import { useCompanyUser } from '../crm-settings/_shared'
 import MediaGallery from '@/components/MediaGallery'
 import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
@@ -259,10 +260,40 @@ export default function GalleryPage() {
   if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading…</div>
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1200, margin: '0 auto' }}>
+    <div className="gal-root" style={{ padding: '28px 32px', maxWidth: 1200, margin: '0 auto' }}>
+      <style>{`
+        .gal-toolbar-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+        .gal-layout { display: flex; gap: 20px; align-items: flex-start; }
+        .gal-sidebar { width: 210px; flex-shrink: 0; }
+        .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+        /* Horizontal category strip is hidden on desktop (the sidebar handles it). */
+        .gal-cat-strip { display: none; }
+
+        @media (max-width: 760px) {
+          .gal-root { padding: 16px 14px; }
+          /* Stack: the folder sidebar becomes a horizontal chip strip on top. */
+          .gal-layout { flex-direction: column; gap: 12px; }
+          .gal-sidebar { display: none; }
+          .gal-cat-strip {
+            display: flex; gap: 7px; overflow-x: auto; padding-bottom: 4px;
+            -webkit-overflow-scrolling: touch; scrollbar-width: none;
+          }
+          .gal-cat-strip::-webkit-scrollbar { display: none; }
+          .gal-cat-chip {
+            flex-shrink: 0; padding: 7px 14px; border-radius: 20px;
+            font-size: 12.5px; font-weight: 700; white-space: nowrap; cursor: pointer;
+            border: 1px solid var(--border); background: #fff; color: var(--slate);
+          }
+          .gal-cat-chip.on { border-color: var(--coral); background: var(--peach); color: var(--coral); }
+          /* Denser grid so thumbnails fill a phone screen. */
+          .gal-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+          /* Primary actions full width, secondary ones wrap. */
+          .gal-toolbar-btns { width: 100%; }
+        }
+      `}</style>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Media Gallery</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="gal-toolbar-btns">
           <button onClick={syncPrexty} style={{ padding: '9px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Sync from Prexty</button>
           {driveConfigured && <button onClick={() => connectSource('google_drive')} disabled={driveLoading || driveImporting} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}><GoogleDriveIcon /> {driveImporting ? 'Importing…' : 'Google Drive'}</button>}
           {categories.length > 0 && (
@@ -285,9 +316,9 @@ export default function GalleryPage() {
       <p style={{ fontSize: 14, color: 'var(--slate)', margin: '0 0 20px' }}>Store and categorise photos and videos (fish, tanks, plants…) to send to customers in chat.</p>
       {prextyStatus && <div style={{ background: 'var(--peach)', border: '1px solid var(--coral)', borderRadius: 9, padding: '9px 12px', marginBottom: 16, fontSize: 12.5, color: 'var(--ink)' }}>{prextyStatus}</div>}
 
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
-        {/* Folders sidebar */}
-        <div style={{ width: 210, flexShrink: 0 }}>
+      <div className="gal-layout">
+        {/* Folders sidebar (desktop) */}
+        <div className="gal-sidebar">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>Categories</span>
             <button onClick={createFolder} style={{ background: 'none', border: 'none', color: 'var(--coral)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>+</button>
@@ -304,6 +335,15 @@ export default function GalleryPage() {
 
         {/* Items grid */}
         <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Mobile category strip (mirrors the desktop sidebar) */}
+          <div className="gal-cat-strip">
+            <button className={'gal-cat-chip' + (activeFolder === null ? ' on' : '')} onClick={() => setActiveFolder(null)}>All media</button>
+            {folders.map(f => (
+              <button key={f.id} className={'gal-cat-chip' + (activeFolder === f.id ? ' on' : '')} onClick={() => setActiveFolder(f.id)}>
+                {f.name}{f.external_source === 'prexty' ? ' 🔄' : ''}
+              </button>
+            ))}
+          </div>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by title, SKU, description…" style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', marginBottom: 14 }} />
           {loadingData ? (
             <p style={{ color: 'var(--slate)', fontSize: 13.5 }}>Loading…</p>
@@ -364,7 +404,7 @@ export default function GalleryPage() {
               </div>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
+            <div className="gal-grid">
               {items.filter((it: any) => !catFilter || (itemCats[it.id] || []).includes(catFilter)).map((item, i) => {
                 const isSelected = selected.has(item.id)
                 return (
