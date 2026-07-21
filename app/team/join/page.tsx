@@ -53,15 +53,30 @@ function JoinTeamContent() {
       if (!co) throw new Error('Company not found. Ask your inviter to resend the invitation.')
       setCompanyData(co)
 
-      // Load invitation
-      const { data: inv } = await (supabase as any)
+      // Load invitation.
+      //
+      // Two things previously made valid invites read as "not found":
+      //   1. Emails are stored lowercased, but the link keeps the original case,
+      //      and .eq() is case-sensitive — so "John@x.com" missed "john@x.com".
+      //   2. Invited rows can have a NULL company_id (the company wasn't resolved
+      //      when the invite was created), so filtering by company_id dropped
+      //      them.
+      // Match on the email (case-insensitive) and accept either this company or
+      // a null company_id.
+      const emailLc = decodeURIComponent(email).trim().toLowerCase()
+      const { data: candidates } = await (supabase as any)
         .from('team_members')
         .select('*')
-        .eq('company_id', co.id)
-        .eq('email', email)
-        .maybeSingle()
+        .ilike('email', emailLc)
+      const inv = (candidates || []).find((r: any) =>
+        r.company_id === co.id || r.company_id == null) || (candidates || [])[0] || null
 
       if (!inv) throw new Error('Invitation not found or expired')
+      // Backfill the company link if it was missing, so acceptance works.
+      if (inv.company_id == null) {
+        try { await (supabase as any).from('team_members').update({ company_id: co.id }).eq('id', inv.id) } catch {}
+        inv.company_id = co.id
+      }
       if (inv.status === 'active') {
         setError('You are already a member of this team')
         setLoading(false)

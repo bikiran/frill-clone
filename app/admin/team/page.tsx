@@ -58,12 +58,18 @@ export default function TeamPage() {
         if (tm?.company_id) { const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', tm.company_id).maybeSingle(); company = data }
       }
 
-      const { error } = await supabase.from('team_members').insert({
+      if (!company?.id) {
+        showMsg('Could not determine your company — reload the page and try again.')
+        setWorking(false)
+        return
+      }
+
+      const { error } = await (supabase as any).from('team_members').insert({
         email: inviteEmail.trim().toLowerCase(),
         role: inviteRole,
         status: 'invited',
         invited_by: user?.id,
-        company_id: company?.id || null,
+        company_id: company.id,
       })
       if (error) throw error
 
@@ -124,7 +130,7 @@ export default function TeamPage() {
   }
 
   const updateRole = async (id: string, role: string) => {
-    await supabase.from('team_members').update({ role }).eq('id', id)
+    await (supabase as any).from('team_members').update({ role }).eq('id', id)
     fetchMembers()
   }
 
@@ -146,8 +152,18 @@ export default function TeamPage() {
         const { data } = await (supabase as any).from('companies').select('id, name, slug').eq('id', m.company_id).maybeSingle()
         company = data
       }
+      if (!company?.slug) {
+        showMsg('Could not resolve your company — reload the page and try again.')
+        setResendingId(null)
+        return
+      }
+      // If this invite row was created before company_id was enforced, backfill
+      // it so acceptance works.
+      if (!m.company_id && company.id) {
+        try { await (supabase as any).from('team_members').update({ company_id: company.id }).eq('id', m.id) } catch {}
+      }
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://colvy.com'
-      const inviteLink = `${origin}/team/join?company=${encodeURIComponent(company?.slug || '')}&email=${encodeURIComponent(m.email)}&role=${m.role}`
+      const inviteLink = `${origin}/team/join?company=${encodeURIComponent(company.slug)}&email=${encodeURIComponent(m.email)}&role=${m.role}`
       const res = await fetch('/api/send-team-invite', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

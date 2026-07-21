@@ -25,17 +25,26 @@ export async function POST(req: NextRequest) {
 
     const userEmail = String(email).trim().toLowerCase()
 
-    // Find the invitation row (by email, optionally scoped to the company slug).
+    // Find the invitation row by email (case already normalised). Don't require
+    // a matching company_id — invited rows can have a null company_id, and
+    // hard-filtering on it made valid invites read as "not found". Prefer the
+    // row for this company, then a null-company row, then the newest.
     let companyId: string | null = null
     if (companySlug) {
       const { data: co } = await admin.from('companies').select('id').eq('slug', companySlug).maybeSingle()
       companyId = co?.id || null
     }
-    let inviteQuery = admin.from('team_members').select('*').eq('email', userEmail)
-    if (companyId) inviteQuery = inviteQuery.eq('company_id', companyId)
-    const { data: invites } = await inviteQuery.order('created_at', { ascending: false }).limit(1)
-    const invite = invites?.[0]
+    const { data: invites } = await admin.from('team_members').select('*')
+      .ilike('email', userEmail).order('created_at', { ascending: false })
+    const invite = (invites || []).find((r: any) => companyId && r.company_id === companyId)
+      || (invites || []).find((r: any) => r.company_id == null)
+      || (invites || [])[0]
     if (!invite) return NextResponse.json({ error: 'Invitation not found. Ask your inviter to resend it.' }, { status: 404 })
+    // Backfill a missing company link so the membership is usable.
+    if (invite.company_id == null && companyId) {
+      try { await admin.from('team_members').update({ company_id: companyId }).eq('id', invite.id) } catch {}
+      invite.company_id = companyId
+    }
 
     // Create the account with email pre-confirmed, or reuse + set password if it
     // already exists.

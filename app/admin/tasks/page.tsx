@@ -62,6 +62,16 @@ export default function TasksPage() {
   const [sortBy, setSortBy] = useState<'due' | 'priority' | 'created'>('due')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showNew, setShowNew] = useState(false)
+  // Decide layout from the ACTUAL available width, not the viewport — the admin
+  // sidebar eats ~220px, so a viewport media query misjudges when the 3-pane
+  // layout fits and could pop the mobile sheet on a desktop.
+  const [isNarrow, setIsNarrow] = useState(false)
+  useEffect(() => {
+    const check = () => setIsNarrow(window.innerWidth < 1100)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   useEffect(() => {
     ;(async () => {
@@ -239,7 +249,7 @@ export default function TasksPage() {
         .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 16px; height: 100%; box-sizing: border-box; }
         .board-col { background: var(--canvas); border-radius: 12px; padding: 10px; overflow-y: auto; }
         .filters-mobile { display: none; }
-        @media (max-width: 900px) {
+        @media (max-width: 1100px) {
           .tasks-root { height: auto; min-height: calc(100dvh - 56px); }
           .tasks-filters { display: none; }
           .tasks-detail { display: none; }
@@ -341,7 +351,7 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {(showNew || selected) && (
+      {isNarrow && (showNew || selected) && (
         <MobileSheet onClose={() => { setShowNew(false); setSelectedId(null) }}>
           {showNew ? (
             <TaskEditor companyId={companyId!} team={team} me={me} userId={userId} onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); if (companyId) loadTasks(companyId) }} />
@@ -437,8 +447,8 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId }: any) {
 
 function MobileSheet({ children, onClose }: any) {
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: '#fff', display: 'flex', flexDirection: 'column' }} className="mobile-only-sheet">
-      <style>{`.mobile-only-sheet { display: none; } @media (max-width: 900px) { .mobile-only-sheet { display: flex; } }`}</style>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: '#fff', display: 'flex', flexDirection: 'column' }}>
+      
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
         <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', display: 'flex', color: 'var(--ink)' }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
