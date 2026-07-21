@@ -814,6 +814,9 @@ export default function InboxPage() {
   // Conversation list pagination — start at 50 and grow via "Load more" so a
   // large inbox doesn't fetch everything up front.
   const [convLimit, setConvLimit] = useState(50)
+  const convLimitRef = useRef(50)
+  useEffect(() => { convLimitRef.current = convLimit }, [convLimit])
+  const [searchExtraConvs, setSearchExtraConvs] = useState<any[]>([])
   const [hasMoreConvs, setHasMoreConvs] = useState(false)
   const [showContactEdit, setShowContactEdit] = useState(false)
   const [editContact, setEditContact] = useState<Partial<Contact>>({})
@@ -973,10 +976,10 @@ export default function InboxPage() {
     // "Closed" covers closed + resolved; "Open" is everything else.
     if (statusFilter === 'closed') q = q.in('status', ['closed', 'resolved'])
     else q = q.not('status', 'in', '("closed","resolved")')
-    const { data } = await q.order('last_message_at', { ascending: false }).limit(convLimit)
+    const { data } = await q.order('last_message_at', { ascending: false }).limit(convLimitRef.current)
     const convs = data || []
     // If we got a full page back there are probably more to load.
-    setHasMoreConvs(convs.length >= convLimit)
+    setHasMoreConvs(convs.length >= convLimitRef.current)
 
     // Attach contact details in one extra query.
     const contactIds = Array.from(new Set(convs.map((c: any) => c.contact_id).filter(Boolean)))
@@ -2053,14 +2056,26 @@ export default function InboxPage() {
 
   // Refund a paid order. This moves real money through the payment gateway, so
   // it always confirms first and states the amount.
-  const issueOrderRefund = (payload: any) => {
+  const issueOrderRefund = async (payload: any) => {
     if (!companyId) return
     const orderId = payload.order_id || payload.id
     if (!orderId) { showToast('No order id for this order'); return }
-    // Open the itemised refund modal rather than blindly refunding the whole
-    // order — refunds move real money, so the choice of what to return, whether
-    // to restock, and whether to include shipping belongs to the person.
-    const items = (payload.line_items || payload.items || []).map((li, i) => {
+
+    // The synced order row often has an empty line_items array, so fetch the
+    // real items live from WooCommerce before opening the modal. Without this
+    // the modal always said "no line items" even for multi-item orders.
+    let rawItems = payload.line_items || payload.items || []
+    if (!Array.isArray(rawItems) || rawItems.length === 0) {
+      try {
+        const res = await fetch(
+          `/api/orders/detail?companyId=${companyId}&orderId=${orderId}` +
+          (payload.integration_id ? `&integrationId=${payload.integration_id}` : ''))
+        const d = await res.json()
+        if (res.ok && Array.isArray(d.order?.line_items)) rawItems = d.order.line_items
+      } catch { /* fall through — modal will offer a full refund */ }
+    }
+
+    const items = (rawItems || []).map((li: any, i: number) => {
       const qty = Number(li.quantity || li.qty || 1)
       return {
         id: li.id ?? li.line_item_id ?? i,
@@ -2946,6 +2961,7 @@ export default function InboxPage() {
     const q = searchTerm.trim()
     if (!q || !companyId || !['all', 'messages', 'notes', 'tasks', 'activity'].includes(searchScope)) {
       setSearchMsgHits({})
+      setSearchExtraConvs([])
       return
     }
     let cancelled = false
@@ -2964,12 +2980,46 @@ export default function InboxPage() {
       if (searchScope === 'all' || searchScope === 'tasks') await collect('conversation_tasks', 'text')
       if (searchScope === 'all' || searchScope === 'activity') await collect('conversation_events', 'detail')
       if (!cancelled) setSearchMsgHits(hits)
+
+      // Pull in any matching conversations that aren't in the loaded page, so a
+      // search reaches the WHOLE inbox — Instagram, Messenger, older threads —
+      // not just the most recent 50. Without this, searching "Biki" only found
+      // conversations already on screen, which skewed heavily to recent SMS.
+      const loadedIds = new Set(conversations.map((c: any) => c.id))
+      const missing = Object.keys(hits).filter(id => !loadedIds.has(id))
+      if (missing.length && !cancelled) {
+        const extra: any[] = []
+        for (let i = 0; i < missing.length; i += 100) {
+          const { data } = await (supabase as any).from('conversations')
+            .select('*').eq('company_id', companyId).in('id', missing.slice(i, i + 100))
+          extra.push(...(data || []))
+        }
+        // Attach contacts for the newly pulled conversations.
+        const cids = Array.from(new Set(extra.map((c: any) => c.contact_id).filter(Boolean)))
+        if (cids.length) {
+          const { data: cts } = await (supabase as any).from('contacts')
+            .select('id, name, email, phone').in('id', cids)
+          const byId: Record<string, any> = {}
+          for (const ct of cts || []) byId[ct.id] = ct
+          for (const c of extra) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
+        }
+        if (!cancelled && extra.length) {
+          setSearchExtraConvs(extra)
+        }
+      } else if (!cancelled) {
+        setSearchExtraConvs([])
+      }
     }
     const t = setTimeout(run, 300)
     return () => { cancelled = true; clearTimeout(t) }
   }, [searchTerm, searchScope, companyId])
 
-  const filteredConvs = conversations.filter(c => {
+  // When searching, include conversations pulled in from the deep search that
+  // aren't in the loaded page — deduped by id.
+  const convSource = searchTerm && searchExtraConvs.length
+    ? [...conversations, ...searchExtraConvs.filter(e => !conversations.some((c: any) => c.id === e.id))]
+    : conversations
+  const filteredConvs = convSource.filter(c => {
     // Location filter (whole Inbox & CRM). "all" shows everything; otherwise
     // only conversations assigned to the chosen outlet. Conversations with no
     // location assigned show under "all" only.

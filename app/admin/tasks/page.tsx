@@ -69,9 +69,19 @@ export default function TasksPage() {
         setCompanyId(cid)
         await load(cid)
 
+        const members: any[] = []
+        const { data: co } = await (supabase as any).from('companies')
+          .select('owner_id, name').eq('id', cid).maybeSingle()
+        if (co?.owner_id) {
+          members.push({ id: co.owner_id, user_id: co.owner_id, name: co.name ? `${co.name} (Owner)` : 'Owner' })
+        }
         const { data: tm } = await (supabase as any).from('team_members')
-          .select('id, user_id, name').eq('company_id', cid)
-        setTeam(tm || [])
+          .select('id, user_id, name, display_name, email').eq('company_id', cid)
+        for (const m of (tm || [])) {
+          if (members.some(x => x.user_id === m.user_id)) continue
+          members.push({ id: m.id, user_id: m.user_id, name: m.name || m.display_name || (m.email ? m.email.split('@')[0] : 'Team member') })
+        }
+        setTeam(members)
       } finally { setLoading(false) }
     })()
   }, [])

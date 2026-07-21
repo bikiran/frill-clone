@@ -292,11 +292,11 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     .replace(/\{amount\}/g, refundedAmount)
     .replace(/\{total\}/g, `$${order.total}`)
 
-  await db.from('messages').insert({
+  const { data: autoMsg } = await db.from('messages').insert({
     conversation_id: conv.id, company_id: companyId,
     sender_type: 'agent', sender_name: businessName, content: body,
     message_type: 'text', metadata: { auto: true, order_automation: status, order_id: order.id },
-  })
+  }).select('id').maybeSingle()
 
   // Completed orders can include a Google review reminder as a follow-up line.
   if (status === 'completed' && cfg.review_url) {
@@ -334,7 +334,9 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       // Always give it the phone — the helper only uses it when the customer
       // isn't watching live chat (or when forced). Previously this was nulled
       // unless "also send SMS" was on, so anyone off live chat got nothing.
-      phone,
+      // Fall back to the linked contact's stored mobile if the order's billing
+      // phone is blank, so an SMS-only customer still gets reached.
+      phone: phone || contact?.phone || null,
       email,
       senderName: businessName,
       subject: `Update on your order #${order.number || order.id}`,
@@ -349,6 +351,18 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       via: delivery.channel,
       sent: delivery.sent,
     })
+
+    // Tag the thread message with the channel it actually went out on. The row
+    // defaults to 'chat', so without this an order update sent by SMS still
+    // showed "Live Chat" in the timeline — confusing when the whole
+    // conversation has been over SMS.
+    if (autoMsg?.id && (delivery.channel === 'sms' || delivery.channel === 'email')) {
+      try {
+        await db.from('messages')
+          .update({ delivery_channel: delivery.channel })
+          .eq('id', autoMsg.id)
+      } catch {}
+    }
   } catch (e) {
     console.error('[Order automation] delivery failed', e)
   }
