@@ -1416,10 +1416,16 @@ export default function InboxPage() {
       const { data: byPhone } = await (supabase as any).from('woocommerce_orders')
         .select('*').eq('company_id', companyId).eq('billing_phone_norm', norm(phone))
         .order('order_date', { ascending: false }).limit(50)
-      const seen = new Set(orders.map((o: any) => String(o.order_number || o.order_id)))
+      // Dedupe on the columns this table actually has. It previously keyed on
+      // order_number/order_id, neither of which exist here, so every phone-
+      // matched order stringified to "undefined" — the first one was kept and
+      // the rest silently dropped, which is why orders sometimes didn't appear.
+      const keyOf = (o: any) => String(o.woo_order_id ?? o.id ?? '')
+      const seen = new Set(orders.map(keyOf))
       for (const o of (byPhone || [])) {
-        if (!seen.has(String(o.order_number || o.order_id))) {
-          seen.add(String(o.order_number || o.order_id))
+        const k = keyOf(o)
+        if (k && !seen.has(k)) {
+          seen.add(k)
           orders.push(o)
         }
       }
@@ -1435,7 +1441,12 @@ export default function InboxPage() {
         const res = await fetch(`/api/orders/list?companyId=${companyId}&email=${encodeURIComponent(email!)}`)
         const data = await res.json()
         if (data.orders && data.orders.length > 0) {
-          const seen = new Set((orders || []).map((o: any) => String(o.order_number || o.order_id)))
+          // Synced rows carry woo_order_id; live ones carry `number`. Keying the
+          // synced set on the non-existent order_number/order_id meant nothing
+          // matched, so every live order was appended again as a duplicate.
+          const seen = new Set(
+            (orders || []).map((o: any) => String(o.woo_order_id ?? o.order_number ?? o.id ?? '')).filter(Boolean)
+          )
           const merged = [...(orders || [])]
           data.orders.forEach((o: any) => {
             const key = String(o.number)

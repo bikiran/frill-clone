@@ -79,7 +79,41 @@ export default function CalendarPage() {
     if (typeFilter) params.set('type', typeFilter)
     const res = await fetch(`/api/calendar?${params}`)
     const d = await res.json()
-    setEvents(d.events || [])
+    let evts: any[] = d.events || []
+
+    // Tasks created on the Tasks page have a due date but live in
+    // conversation_tasks, so they never appeared here. Show them alongside
+    // calendar events (read-only markers — editing happens on the Tasks page).
+    // Skipped when the user is filtering to a non-task event type.
+    if (!typeFilter || typeFilter === 'task') {
+      try {
+        const { data: rows } = await (supabase as any).from('conversation_tasks')
+          .select('*').eq('company_id', companyId)
+          .gte('due_date', from).lte('due_date', to).limit(500)
+        const taskEvents = (rows || [])
+          .filter((t: any) => t.due_date)
+          .map((t: any) => ({
+            id: `task:${t.id}`,
+            _taskId: t.id,
+            _fromTasks: true,
+            company_id: t.company_id,
+            conversation_id: t.conversation_id,
+            event_type: 'task',
+            title: t.title || t.text,
+            notes: t.text,
+            starts_at: t.due_date,
+            is_all_day: true,
+            status: (t.status === 'done' || t.done) ? 'completed'
+              : t.status === 'in_progress' ? 'in_progress' : 'scheduled',
+            assignees: Array.isArray(t.assignees) ? t.assignees : [],
+            assigned_to_name: t.assigned_to || null,
+            assigned_to_id: t.assigned_to_id || null,
+          }))
+        evts = [...evts, ...taskEvents]
+      } catch { /* tasks unavailable — just show calendar events */ }
+    }
+
+    setEvents(evts)
     setLocations(d.locations || [])
   }
 
@@ -342,7 +376,7 @@ export default function CalendarPage() {
             const when = new Date(e.starts_at)
             const as = (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_name ? [{ name: e.assigned_to_name }] : [])
             return (
-              <button key={e.id} onClick={() => { setSearch(''); setEditing({ ...e, date: localYmd(new Date(e.starts_at)), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: as }) }}
+              <button key={e.id} onClick={() => { if (e._fromTasks) { window.location.href = '/admin/tasks'; return } setSearch(''); setEditing({ ...e, date: localYmd(new Date(e.starts_at)), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: as }) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '12px 16px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -572,14 +606,24 @@ export default function CalendarPage() {
                     )}
 
                     <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                      {/* Tasks shown here live in the Tasks page, not in
+                          calendar_events — editing them here would try to save
+                          the wrong record, so send the user where they belong. */}
+                      {e._fromTasks ? (
+                        <a href="/admin/tasks"
+                          style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>Open in Tasks</a>
+                      ) : (
                       <button onClick={() => { setDayOpen(null); setEditing({ ...e, date: localYmd(new Date(e.starts_at)), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_id ? [{ id: e.assigned_to_id, name: e.assigned_to_name }] : []) }) }}
                         style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>
+                      )}
                       {e.conversation_id && (
                         <a href={`/admin/inbox?conversation=${e.conversation_id}`}
                           style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>Open chat</a>
                       )}
+                      {!e._fromTasks && (
                       <button onClick={() => remove(e.id)}
                         style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#dc2626' }}>Delete</button>
+                      )}
                     </div>
                   </div>
                 )

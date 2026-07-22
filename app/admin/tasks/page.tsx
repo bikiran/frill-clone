@@ -19,6 +19,19 @@ function parseTs(d: string | null | undefined): Date | null {
   return isNaN(p.getTime()) ? null : p
 }
 const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
+// Local YYYY-MM-DD. Slicing an ISO string gives the UTC date, which in
+// Melbourne (UTC+10/+11) is the day before — that's why picking a date showed a
+// different one. Build it from local parts instead.
+const localYmd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+// A date the user picked ("2026-07-22") should mean 9am on that day where they
+// are, not 9am UTC.
+const dueFromInput = (ymd: string): string | null => {
+  if (!ymd) return null
+  const [y, m, d] = ymd.split('-').map(Number)
+  if (!y || !m || !d) return null
+  return new Date(y, m - 1, d, 9, 0, 0).toISOString()
+}
 const fmtDay = (d: Date | null) => d ? d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : ''
 const fmtRel = (d: string | null | undefined) => {
   const p = parseTs(d); if (!p) return ''
@@ -277,10 +290,24 @@ export default function TasksPage() {
           body: JSON.stringify(payload),
         })
       } else {
-        await (supabase as any).from('conversation_tasks').update(fields).eq('id', id)
+        // Supabase returns { error } rather than throwing, so a failed write
+        // used to pass silently — the change looked saved until the next
+        // reload, when it vanished. Check it and say something.
+        const { error } = await (supabase as any).from('conversation_tasks').update(fields).eq('id', id)
+        if (error) {
+          console.error('[task update] failed', error, fields)
+          const missing = /column .* does not exist|schema cache/i.test(error.message)
+          alert(missing
+            ? `Could not save: your database is missing a column this needs (${error.message}). Run the COLVY_V203_TASK_BOARD.sql migration.`
+            : `Could not save: ${error.message}`)
+          if (companyId) loadTasks(companyId)
+        }
       }
     }
-    catch { if (companyId) loadTasks(companyId) }
+    catch (e: any) {
+      console.error('[task update] threw', e)
+      if (companyId) loadTasks(companyId)
+    }
   }
   const setStatus = (t: any, status: string) =>
     patchTask(t.id, { status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null })
@@ -557,7 +584,14 @@ function TaskDetail({ task, conv, team, companyId, me, userId, onPatch, onDelete
     if (!comment.trim()) return
     const mentioned = resolveMentions(comment, team as any)
     const row = { task_id: task.id, company_id: companyId, author_id: userId, author_name: me, body: comment.trim(), mentions: mentioned.map((m: any) => ({ id: m.id, name: m.name })) }
-    const { data } = await (supabase as any).from('task_comments').insert(row).select().maybeSingle()
+    const { data, error } = await (supabase as any).from('task_comments').insert(row).select().maybeSingle()
+    if (error) {
+      console.error('[task comment] failed', error)
+      alert(/does not exist|schema cache/i.test(error.message)
+        ? 'Could not save the comment — the task_comments table is missing. Run the COLVY_V203_TASK_BOARD.sql migration.'
+        : `Could not save the comment: ${error.message}`)
+      return
+    }
     if (data) setComments(c => [...c, data])
     for (const m of mentioned as any[]) {
       const tm = team.find((t: any) => t.id === m.id || t.name === m.name)
@@ -586,7 +620,7 @@ function TaskDetail({ task, conv, team, companyId, me, userId, onPatch, onDelete
         )})}
       </div>
       <p style={L}>Due date</p>
-      <input type="date" value={task.due_date ? String(task.due_date).slice(0, 10) : ''} onChange={e => onPatch({ due_date: e.target.value ? new Date(`${e.target.value}T09:00:00`).toISOString() : null })}
+      <input type="date" value={task.due_date ? localYmd(parseTs(task.due_date) || new Date(task.due_date)) : ''} onChange={e => onPatch({ due_date: dueFromInput(e.target.value) })}
         style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
       <p style={L}>Assignees</p>
       <AssigneePicker members={team} value={assignees.map((a: any) => ({ id: a.id, name: a.name }))} onChange={(next) => { const isUuid = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v); onPatch({ assignees: next, assigned_to_id: isUuid(next[0]?.id) ? next[0].id : null, assigned_to: next[0]?.name || null }) }} />
@@ -728,7 +762,7 @@ function TaskEditor({ companyId, team, me, userId, onClose, onSaved }: any) {
     const firstUuid = cleanAssignees.map((a: any) => a.id).find((id: any) => isUuid(id)) || null
     const row: any = {
       company_id: companyId, text: title.trim(), title: title.trim(), status: 'todo', done: false, priority,
-      due_date: due ? new Date(`${due}T09:00:00`).toISOString() : null,
+      due_date: dueFromInput(due),
       assignees: cleanAssignees, assigned_to_id: firstUuid, assigned_to: cleanAssignees[0]?.name || null,
       created_by: me, created_by_id: isUuid(userId) ? userId : null,
       mentions: mentioned.map((m: any) => ({ id: isUuid(m.id) ? m.id : null, name: m.name })),
