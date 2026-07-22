@@ -31,6 +31,11 @@ export default function AddContactModal({
   const [phone, setPhone] = useState(defaultPhone || '')
   const [email, setEmail] = useState('')
   const [companyName, setCompanyName] = useState('')
+  const [address, setAddress] = useState('')
+  const [city, setCity] = useState('')
+  const [state, setState] = useState('')
+  const [postcode, setPostcode] = useState('')
+  const [country, setCountry] = useState('Australia')
   const [relationship, setRelationship] = useState<string>('customer')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -52,6 +57,13 @@ export default function AddContactModal({
       phone: phone.trim() ? normPhone(phone) : null,
       email: email.trim() ? email.trim().toLowerCase() : null,
       company_name: companyName.trim() || null,
+      // Street line goes in `address`; the profile panel shows address, city
+      // and country the same way, so keep the same shape.
+      address: address.trim() || null,
+      city: city.trim() || null,
+      state: state.trim() || null,
+      postcode: postcode.trim() || null,
+      country: country.trim() || null,
       relationship_type: relationship,
       source: 'manual',
       notes: notes.trim() || null,
@@ -64,6 +76,9 @@ export default function AddContactModal({
       if (insErr) {
         const minimal: any = {
           company_id: companyId, name: row.name, phone: row.phone, email: row.email, source: 'manual',
+          // address/city/country have existed since the original schema, so
+          // they're safe to keep even in the fallback.
+          address: row.address, city: row.city, country: row.country,
         }
         const retry = await (supabase as any).from('contacts').insert(minimal).select().maybeSingle()
         if (retry.error) throw retry.error
@@ -116,6 +131,31 @@ export default function AddContactModal({
 
         <label style={L}>Company / business name <span style={{ fontWeight: 400 }}>(optional)</span></label>
         <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="e.g. Aqua Supplies Pty Ltd" style={I} />
+
+        <label style={L}>Address</label>
+        <input value={address} onChange={e => setAddress(e.target.value)} placeholder="5 Clunes Avenue" style={I} />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div>
+            <label style={L}>City / suburb</label>
+            <input value={city} onChange={e => setCity(e.target.value)} placeholder="Dallas" style={I} />
+          </div>
+          <div>
+            <label style={L}>State</label>
+            <input value={state} onChange={e => setState(e.target.value)} placeholder="VIC" style={I} />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div>
+            <label style={L}>Postcode</label>
+            <input value={postcode} onChange={e => setPostcode(e.target.value)} placeholder="3047" style={I} />
+          </div>
+          <div>
+            <label style={L}>Country</label>
+            <input value={country} onChange={e => setCountry(e.target.value)} placeholder="Australia" style={I} />
+          </div>
+        </div>
 
         <label style={L}>Notes <span style={{ fontWeight: 400 }}>(optional)</span></label>
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Anything worth remembering…" style={{ ...I, resize: 'vertical', fontFamily: 'inherit' }} />

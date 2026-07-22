@@ -19,6 +19,10 @@ ALTER TABLE contacts ADD COLUMN IF NOT EXISTS source                 TEXT;
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS subscribed_to_marketing BOOLEAN DEFAULT TRUE;
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS notes                  TEXT;
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS company_name           TEXT;
+-- Address: `address`, `city` and `country` already exist (V105); state and
+-- postcode are new so a manually entered address is complete.
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS state                  TEXT;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS postcode               TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_contacts_relationship
   ON contacts (company_id, relationship_type);

@@ -92,7 +92,11 @@ export async function POST(req: NextRequest) {
         contact_id: uuidOrNull(contact_id),
         conversation_id: uuidOrNull(conversation_id),
         order_id: order_id != null ? String(order_id) : null,
-        assigned_to: assigned_to || assigned_to_name || null,
+        // NOTE: `assigned_to` is a UUID column (V163) — the team member's id,
+        // NOT their name. Writing a name here was the cause of
+        // "invalid input syntax for type uuid: <person's name>". The readable
+        // name belongs in assigned_to_name (TEXT, V201).
+        assigned_to: uuidOrNull(assigned_to) || uuidOrNull(assigned_to_id),
         address: address || null,
         status: status || 'scheduled',
         // These are uuid columns — a name (e.g. an assignee whose row has no
