@@ -189,6 +189,45 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       .subscribe()
     return () => { active = false; clearInterval(iv); try { (supabase as any).removeChannel(ch) } catch {} }
   }, [company?.id])
+
+  // Tasks needing this person's attention: assigned to them, not finished, and
+  // either due today or already overdue. Same idea as the inbox badge — a count
+  // of things actually waiting on you, not a total.
+  const [taskDue, setTaskDue] = useState(0)
+  useEffect(() => {
+    if (!company?.id) return
+    let active = true
+    const load = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const uid = session?.user?.id
+        if (!uid) { if (active) setTaskDue(0); return }
+        // End of today, local time — a task due later today still counts.
+        const end = new Date(); end.setHours(23, 59, 59, 999)
+        const { data } = await (supabase as any)
+          .from('conversation_tasks')
+          .select('id, done, status, due_date, assigned_to_id, assignees')
+          .eq('company_id', company.id)
+          .lte('due_date', end.toISOString())
+          .limit(500)
+        const mine = (data || []).filter((t: any) => {
+          const finished = t.done || t.status === 'done'
+          if (finished || !t.due_date) return false
+          if (t.assigned_to_id === uid) return true
+          return Array.isArray(t.assignees) && t.assignees.some((a: any) => a?.id === uid)
+        })
+        if (active) setTaskDue(mine.length)
+      } catch { if (active) setTaskDue(0) }
+    }
+    load()
+    const iv = setInterval(load, 30000)
+    const ch = (supabase as any)
+      .channel(`tasks-badge-${company.id}-${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_tasks', filter: `company_id=eq.${company.id}` }, load)
+      .subscribe()
+    return () => { active = false; clearInterval(iv); try { (supabase as any).removeChannel(ch) } catch {} }
+  }, [company?.id])
+
   const [showWorkspaces, setShowWorkspaces] = useState(false)
   const [workspaces, setWorkspaces] = useState<any[]>([])
 
@@ -499,18 +538,32 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       transition: 'all 0.15s',
                       justifyContent: adminCollapsed ? 'center' : 'flex-start',
                     }}>
-                    <span style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65, position: 'relative' }}>
-                      {icons[item.icon]}
-                      {item.label === 'Inbox' && inboxUnread > 0 && adminCollapsed && (
-                        <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: '#ef4444', border: '1.5px solid #fff' }} />
-                      )}
-                    </span>
-                    {!adminCollapsed && item.label}
-                    {item.label === 'Inbox' && inboxUnread > 0 && !adminCollapsed && (
-                      <span style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#ef4444', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {inboxUnread > 99 ? '99+' : inboxUnread}
-                      </span>
-                    )}
+                    {/* Any section with things waiting shows a count, so you can
+                        see there's work elsewhere without navigating to it. */}
+                    {(() => {
+                      const count = item.label === 'Inbox' ? inboxUnread
+                        : item.label === 'Tasks' ? taskDue
+                        : 0
+                      const tone = item.label === 'Tasks' ? 'var(--coral)' : '#ef4444'
+                      return (
+                        <>
+                          <span style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65, position: 'relative' }}>
+                            {icons[item.icon]}
+                            {count > 0 && adminCollapsed && (
+                              <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: tone, border: '1.5px solid #fff' }} />
+                            )}
+                          </span>
+                          {!adminCollapsed && item.label}
+                          {count > 0 && !adminCollapsed && (
+                            <span
+                              title={item.label === 'Tasks' ? `${count} task${count === 1 ? '' : 's'} due or overdue` : `${count} unread`}
+                              style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: tone, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {count > 99 ? '99+' : count}
+                            </span>
+                          )}
+                        </>
+                      )
+                    })()}
                   </Link>
                 )
               })}

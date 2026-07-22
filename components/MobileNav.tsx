@@ -80,6 +80,7 @@ export default function MobileNav() {
   const [showMore, setShowMore] = useState(false)
   const [me, setMe] = useState<{ name: string; email: string } | null>(null)
   const [unread, setUnread] = useState(0)
+  const [taskDue, setTaskDue] = useState(0)
 
   useEffect(() => {
     ;(async () => {
@@ -102,6 +103,32 @@ export default function MobileNav() {
           .select('*', { count: 'exact', head: true })
           .eq('is_unread', true).neq('status', 'resolved')
         if (!cancelled) setUnread(count || 0)
+      } catch { /* badge is cosmetic */ }
+    }
+    tick()
+    const t = setInterval(tick, 30000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [])
+
+  // Tasks due or overdue for this person — the same count the sidebar shows, so
+  // work waiting elsewhere is visible from any screen.
+  useEffect(() => {
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const uid = session?.user?.id
+        if (!uid) { if (!cancelled) setTaskDue(0); return }
+        const end = new Date(); end.setHours(23, 59, 59, 999)
+        const { data } = await (supabase as any).from('conversation_tasks')
+          .select('id, done, status, due_date, assigned_to_id, assignees')
+          .lte('due_date', end.toISOString()).limit(500)
+        const mine = (data || []).filter((t: any) => {
+          if (t.done || t.status === 'done' || !t.due_date) return false
+          if (t.assigned_to_id === uid) return true
+          return Array.isArray(t.assignees) && t.assignees.some((a: any) => a?.id === uid)
+        })
+        if (!cancelled) setTaskDue(mine.length)
       } catch { /* badge is cosmetic */ }
     }
     tick()
@@ -160,16 +187,20 @@ export default function MobileNav() {
             }}>
               <span style={{ display: 'flex', position: 'relative' }}>
                 {svg(t.icon)}
-                {t.label === 'Inbox' && unread > 0 && (
-                  <span style={{
-                    position: 'absolute', top: -4, right: -7, minWidth: 16, height: 16,
-                    padding: '0 4px', borderRadius: 9, background: 'var(--coral)', color: '#fff',
-                    fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', boxSizing: 'border-box',
-                  }}>
-                    {unread > 99 ? '99+' : unread}
-                  </span>
-                )}
+                {(() => {
+                  const c = t.label === 'Inbox' ? unread : t.label === 'Tasks' ? taskDue : 0
+                  if (c <= 0) return null
+                  return (
+                    <span style={{
+                      position: 'absolute', top: -4, right: -7, minWidth: 16, height: 16,
+                      padding: '0 4px', borderRadius: 9, background: 'var(--coral)', color: '#fff',
+                      fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', boxSizing: 'border-box',
+                    }}>
+                      {c > 99 ? '99+' : c}
+                    </span>
+                  )
+                })()}
               </span>
               <span style={{ fontSize: 10.5, fontWeight: active ? 700 : 600 }}>{t.label}</span>
             </Link>

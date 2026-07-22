@@ -272,7 +272,42 @@ function extractFromText(text: string) {
       if (withState?.[0]) address = withState[0].replace(/\s+/g, ' ').trim()
     }
   }
-  return { phone: phone || null, email: email || null, address: address || null }
+  // Name: the customer introducing themselves. Deliberately narrow — only
+  // explicit self-introductions, never a guess from surrounding prose, because
+  // writing a wrong name onto a contact is worse than leaving it blank.
+  //
+  // Catches: "my name is Sara Vagg", "I'm Chelsea Groves", "this is Bikiran",
+  //          "it's Sara here", "Regards, Sara Vagg"
+  let name: string | null = null
+  {
+    const NAME = "([A-Z][a-z'\\-]{1,20}(?:\\s+[A-Z][a-z'\\-]{1,20}){0,2})"
+    const patterns = [
+      new RegExp(`(?:my name(?:'s| is)|name(?:'s| is))\\s+${NAME}`),
+      new RegExp(`(?:i am|i'm|im)\\s+${NAME}`, 'i'),
+      new RegExp(`(?:this is|it's|its)\\s+${NAME}(?:\\s+here)?`, 'i'),
+      new RegExp(`(?:regards|thanks|cheers|from)[,\\s]+${NAME}\\s*$`, 'im'),
+    ]
+    // Words that follow "I'm"/"this is" far more often than a name does.
+    const NOT_NAMES = new Set([
+      'Just', 'Still', 'Also', 'Sorry', 'Not', 'Very', 'Really', 'Happy', 'Good',
+      'Fine', 'Ok', 'Okay', 'Interested', 'Looking', 'Wondering', 'Trying',
+      'After', 'About', 'Keen', 'Hoping', 'Waiting', 'Thinking', 'Going',
+      'Hi', 'Hello', 'Hey', 'Thanks', 'Thank', 'Regards', 'Cheers',
+    ])
+    for (const re of patterns) {
+      const m = cleaned.match(re)
+      const candidate = m?.[1]?.trim()
+      if (!candidate) continue
+      const first = candidate.split(/\s+/)[0]
+      if (NOT_NAMES.has(first)) continue
+      // A bare single word is only trusted from an explicit "my name is".
+      if (!candidate.includes(' ') && !/name/i.test(m![0])) continue
+      name = candidate
+      break
+    }
+  }
+
+  return { phone: phone || null, email: email || null, address: address || null, name: name || null }
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -1322,17 +1357,25 @@ export default function InboxPage() {
       try { dismissed = JSON.parse(localStorage.getItem('colvy-ai-dismissed') || '{}') } catch {}
       const convDismissed = dismissed[conv.id] || []
       const filtered: any = {}
-      ;(['phone', 'email', 'address'] as const).forEach(k => {
+      ;(['phone', 'email', 'address', 'name'] as const).forEach(k => {
         const v = (extracted as any)[k]
         if (v && !convDismissed.includes(v)) filtered[k] = v
       })
-      if (filtered.phone || filtered.email || filtered.address) {
+      if (filtered.phone || filtered.email || filtered.address || filtered.name) {
         // Auto-save any detected field the contact doesn't already have, and
         // remember which fields AI filled (to show the AI badge).
-        ;(['phone', 'email', 'address'] as const).forEach(async (k) => {
+        ;(['phone', 'email', 'address', 'name'] as const).forEach(async (k) => {
           const val = filtered[k]
           if (!val) return
-          const already = (conv.__contact && conv.__contact[k]) // may be undefined
+          let already = (conv.__contact && conv.__contact[k]) // may be undefined
+          // A contact auto-created from a chat gets a placeholder name
+          // ("Visitor", or the raw phone number). Those aren't real names, so
+          // let a detected one replace them.
+          if (k === 'name' && already) {
+            const placeholder = /^(visitor|guest|unknown|customer)$/i.test(String(already).trim())
+              || /^\+?\d[\d\s()-]{6,}$/.test(String(already).trim())
+            if (placeholder) already = null
+          }
           if (!already) {
             try { await autoSaveAiField(conv, k, val) } catch {}
           }
@@ -3054,9 +3097,34 @@ export default function InboxPage() {
     let contactId = conv.contact_id || conv.__contact?.id
     if (contactId) {
       const { data: existing } = await (supabase as any).from('contacts').select(`${field}, ai_saved_fields`).eq('id', contactId).maybeSingle()
-      if (existing && existing[field]) return // already has a value — don't overwrite
+      let current = existing?.[field]
+      // Contacts created from a chat carry a placeholder name ("Visitor", or the
+      // raw phone number). A real name should replace those — but a name someone
+      // actually typed is never overwritten.
+      if (field === 'name' && current) {
+        const isPlaceholder = /^(visitor|guest|unknown|customer)$/i.test(String(current).trim())
+          || /^\+?\d[\d\s()-]{6,}$/.test(String(current).trim())
+        if (isPlaceholder) current = null
+      }
+      if (current) return // already has a real value — don't overwrite
       const marks = Array.from(new Set([...((existing?.ai_saved_fields as string[]) || []), field]))
       await (supabase as any).from('contacts').update({ [field]: value, ai_saved_fields: marks, updated_at: new Date().toISOString() }).eq('id', contactId)
+      // Learning the name means the thread can stop saying "+61…" or "Visitor".
+      if (field === 'name') {
+        try {
+          const subj = conv.subject || ''
+          const weakSubject = !subj || /^(visitor|guest|unknown|customer)$/i.test(subj.trim())
+            || /^\+?\d[\d\s()-]{6,}$/.test(subj.trim())
+            || /^New (SMS|Live Chat|Email) Enquiry/i.test(subj)
+          if (weakSubject) {
+            await (supabase as any).from('conversations').update({ subject: value }).eq('id', conv.id)
+            if (selectedRef.current?.id === conv.id) {
+              setSelected((c: any) => c ? { ...c, subject: value } : c)
+            }
+            setConversations(cs => cs.map(c => c.id === conv.id ? { ...c, subject: value } as any : c))
+          }
+        } catch { /* naming the thread is a nicety */ }
+      }
     } else if (companyId) {
       const contactName = conv.subject || 'Visitor'
       const { data: newContact } = await (supabase as any).from('contacts').insert({ company_id: companyId, name: contactName, [field]: value, ai_saved_fields: [field] }).select().maybeSingle()
