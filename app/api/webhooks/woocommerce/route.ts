@@ -219,12 +219,18 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const displayName = contact?.name || order.billing?.first_name || 'there'
   const convSubject = contact?.name || billingName || `Order #${order.number || order.id}`
   const isNewConv = !conv
+  // The customer's mobile, so an SMS reply threads back into THIS conversation
+  // instead of opening a separate "+61…" chat. Without it the inbound webhook
+  // had nothing to match on.
+  const convPhone = phone || contact?.phone || null
   if (!conv) {
     const { data: newConv } = await db.from('conversations').insert({
       company_id: companyId, channel: 'chat', subject: convSubject,
       contact_id: contact?.id || null, status: 'open', is_unread: true, unread_count: 1,
       last_message: '', last_message_at: new Date().toISOString(),
       order_status: status || null,
+      sms_number: convPhone,
+      sms_enabled: !!convPhone,
     }).select().maybeSingle()
     conv = newConv
   } else if (contact?.id && !conv.contact_id) {
@@ -232,6 +238,16 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     // (e.g. an order thread that showed "Visitor" / "No contact linked").
     await db.from('conversations').update({ contact_id: contact.id, subject: conv.subject?.startsWith('Order #') ? convSubject : conv.subject }).eq('id', conv.id)
     conv.contact_id = contact.id
+  }
+
+  // Backfill the number on older order threads that predate this, so their
+  // replies thread correctly too.
+  if (conv && convPhone && !conv.sms_number) {
+    try {
+      await db.from('conversations')
+        .update({ sms_number: convPhone, sms_enabled: true }).eq('id', conv.id)
+      conv.sms_number = convPhone
+    } catch { /* not fatal */ }
   }
   if (!conv) return
 

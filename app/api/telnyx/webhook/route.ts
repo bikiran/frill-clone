@@ -142,19 +142,41 @@ export async function POST(req: NextRequest) {
         .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
 
       // 2) Match the sender to an existing CONTACT by phone, then reuse that
-      //    contact's most recent conversation — so a reply to an abandoned-cart
-      //    or any prior thread lands there instead of spawning a "+61…" chat.
+      //    contact's most recent conversation — so a reply to an order,
+      //    abandoned-cart or any prior thread lands there instead of spawning a
+      //    "+61…" chat.
+      //
+      //    This used to pull the first 1000 contacts and scan them in memory,
+      //    which silently failed for any company with more contacts than that —
+      //    the customer simply wasn't in the page we fetched. Ask the database
+      //    for the number instead. Phones are stored in mixed formats
+      //    (0455…, +61455…), so match on the last 9 digits and then confirm.
       let matchedContactId: string | null = conv?.contact_id || null
-      if (!conv && fromDigits) {
+      let matchedContactName: string | null = null
+      if (!conv && fromDigits && fromDigits.length >= 8) {
+        const tail = fromDigits.slice(-9)
         const { data: contacts } = await db.from('contacts')
-          .select('id, phone, name').eq('company_id', companyId).limit(1000)
-        const contact = (contacts || []).find((c: any) => c.phone && digits(c.phone) === fromDigits)
+          .select('id, phone, name').eq('company_id', companyId)
+          .ilike('phone', `%${tail}%`).limit(10)
+        const contact = (contacts || []).find((c: any) => c.phone && digits(c.phone).endsWith(tail))
         if (contact) {
           matchedContactId = contact.id
+          matchedContactName = contact.name || null
           const { data: contactConv } = await db.from('conversations')
             .select('*').eq('company_id', companyId).eq('contact_id', contact.id)
             .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
-          if (contactConv) conv = contactConv
+          if (contactConv) {
+            conv = contactConv
+            // Stamp the number on the thread so the fast path catches the next
+            // reply without needing this lookup at all.
+            if (!contactConv.sms_number) {
+              try {
+                await db.from('conversations')
+                  .update({ sms_number: from, sms_enabled: true, channel_number: to })
+                  .eq('id', contactConv.id)
+              } catch { /* not fatal */ }
+            }
+          }
         }
       }
 
@@ -162,7 +184,8 @@ export async function POST(req: NextRequest) {
         const { data: newConv } = await db.from('conversations').insert({
           company_id: companyId,
           channel: 'sms',
-          subject: from,
+          // Show who it is when we recognise the number, rather than a bare "+61…".
+          subject: matchedContactName || from,
           sms_number: from,
           sms_enabled: true,
           channel_number: to,
