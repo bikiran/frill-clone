@@ -5,6 +5,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
+import { widgetChannelName } from '@/lib/chat-broadcast'
 import ImageViewer from '@/components/ImageViewer'
 import { getRelativeTime } from '@/lib/time-utils'
 
@@ -259,12 +260,14 @@ function WidgetContent() {
           setChatStep('chat')
           // Load existing messages for this conversation
           ;(async () => {
-            const { data: msgs } = await (supabase as any)
-              .from('messages').select('*')
-              .eq('conversation_id', parsed.convId)
-              // Internal staff-only notes must never reach the customer widget.
-              .or('is_internal.is.null,is_internal.eq.false')
-              .order('created_at', { ascending: true })
+            // Via the server, so the widget needs no read access to the
+            // messages table. Internal notes are filtered there.
+            let msgs: any[] | null = null
+            try {
+              const r = await fetch(`/api/widget/messages?companyId=${parsed.companyId || ''}&conversationId=${parsed.convId}`)
+              const d = await r.json()
+              msgs = d.messages || []
+            } catch { msgs = [] }
             if (msgs) setChatMessages2(msgs)
           })()
         }
@@ -278,18 +281,22 @@ function WidgetContent() {
     // Load latest messages when a conversation becomes active (catches anything
     // sent while the subscription was reconnecting)
     ;(async () => {
-      const { data: msgs } = await (supabase as any)
-        .from('messages').select('*')
-        .eq('conversation_id', chatConvId)
-        // Internal staff-only notes must never reach the customer widget.
-        .or('is_internal.is.null,is_internal.eq.false')
-        .order('created_at', { ascending: true })
+      let msgs: any[] | null = null
+      try {
+        const r = await fetch(`/api/widget/messages?companyId=${company?.id}&conversationId=${chatConvId}`)
+        const d = await r.json()
+        msgs = d.messages || []
+      } catch { msgs = [] }
       if (msgs && msgs.length > 0) setChatMessages2(msgs)
     })()
 
-    const ch = supabase.channel(`widget-chat-${chatConvId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${chatConvId}` }, (payload: any) => {
-        const msg = payload.new
+    // Replies arrive over Broadcast rather than by watching the messages table.
+    // Realtime enforces row level security, so a visitor watching the table
+    // meant the table had to stay readable by anyone holding the public key.
+    // The payload comes down the socket instead, so the table can be closed.
+    const ch = supabase.channel(widgetChannelName(chatConvId))
+      .on('broadcast', { event: 'message' }, (payload: any) => {
+        const msg = payload.payload
         // Internal staff-only notes must never surface to the customer, not even
         // via realtime — drop them before they reach the widget's state.
         if (msg?.is_internal) return
@@ -320,11 +327,11 @@ function WidgetContent() {
           } catch {}
         }
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${chatConvId}` }, (payload: any) => {
-        if (payload?.new?.is_internal) return
-        // Reactions and status changes are UPDATEs, not INSERTs. Without this a
-        // reaction only appeared after the customer reloaded the page.
-        setChatMessages2(prev => prev.map((m: any) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)))
+      .on('broadcast', { event: 'message_update' }, (payload: any) => {
+        const upd = payload.payload
+        if (!upd || upd.is_internal) return
+        // Reactions and status changes arrive as updates, not new messages.
+        setChatMessages2(prev => prev.map((m: any) => (m.id === upd.id ? { ...m, ...upd } : m)))
       })
       .subscribe()
 
@@ -334,12 +341,15 @@ function WidgetContent() {
     // can make the counts match even when a new agent reply exists, which meant
     // agent replies silently never appeared for the customer.
     const poll = setInterval(async () => {
-      const { data: msgs } = await (supabase as any)
-        .from('messages').select('*')
-        .eq('conversation_id', chatConvId)
-        // Internal staff-only notes must never reach the customer widget.
-        .or('is_internal.is.null,is_internal.eq.false')
-        .order('created_at', { ascending: true })
+      // Through the server, so the widget needs no read access to the table.
+      // This is also the safety net for a missed broadcast (a moment offline,
+      // a reconnect) — nothing depends on every broadcast arriving.
+      let msgs: any[] | null = null
+      try {
+        const r = await fetch(`/api/widget/messages?companyId=${company?.id}&conversationId=${chatConvId}`)
+        const d = await r.json()
+        msgs = d.messages || []
+      } catch { return }
       if (!msgs) return
 
       const knownIds = new Set(chatMessagesRef.current.map((m: any) => m.id).filter(Boolean))

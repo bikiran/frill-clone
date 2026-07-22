@@ -11,6 +11,7 @@ import SendTrackingModal from '@/components/SendTrackingModal'
 import { useDraft } from '@/lib/drafts'
 import { uploadQueue } from '@/lib/upload-queue'
 import { toPublicUrl } from '@/lib/storage-url'
+import { broadcastMessage } from '@/lib/chat-broadcast'
 import FilePickerButton from '@/components/FilePickerButton'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
@@ -1847,14 +1848,15 @@ export default function InboxPage() {
         }
 
         // ── One message carrying all of it ─────────────────────────────────
-        await (supabase as any).from('messages').insert({
+        const { data: attMsg } = await (supabase as any).from('messages').insert({
           conversation_id: convId, company_id: companyId, sender_type: 'agent',
           sender_id: user.id, sender_name: me, sender_email: user.email,
           content: plainFiles.length && !media.length ? plainFiles.map(f => `📎 ${f.name}`).join('\n') : '',
           attachments,
           metadata: galleryUrl ? { gallery_url: galleryUrl } : {},
           delivery_channel: ['instagram', 'facebook', 'email'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
-        })
+        }).select().maybeSingle()
+        if (attMsg) broadcastMessage(convId, attMsg)
 
         await (supabase as any).from('conversations').update({
           last_message: media.length ? (media.length > 1 ? `🖼️ ${media.length} photos` : '🖼️ Photo') : '📎 Attachment',
@@ -2963,7 +2965,11 @@ export default function InboxPage() {
       reply_to: replyTo?.id || null,
       delivery_channel: 'chat',
     }
-    await (supabase as any).from('messages').insert(msg)
+    const { data: sentMsg } = await (supabase as any).from('messages').insert(msg).select().maybeSingle()
+    // Push it straight to the visitor's widget. They no longer watch the
+    // messages table, so this is what makes a reply appear instantly; if it
+    // doesn't arrive, their periodic refetch picks it up.
+    broadcastMessage(selected.id, sentMsg || msg)
     await (supabase as any).from('conversations').update({
       last_message: content,
       last_message_at: new Date().toISOString(),
@@ -3007,12 +3013,13 @@ export default function InboxPage() {
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
     const smsNumber = smsDestination()
     try {
-      await (supabase as any).from('messages').insert({
+      const { data: trkMsg } = await (supabase as any).from('messages').insert({
         conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
         sender_name: me, content: text,
         metadata: { tracking: true },
         delivery_channel: smsNumber ? 'sms' : 'chat',
-      })
+      }).select().maybeSingle()
+      if (trkMsg) broadcastMessage(selected.id, trkMsg)
       await (supabase as any).from('conversations').update({
         last_message: 'Tracking sent', last_message_at: new Date().toISOString(),
       }).eq('id', selected.id)
