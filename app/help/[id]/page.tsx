@@ -364,38 +364,30 @@ export default function HelpArticlePage() {
 
       <div className="max-w-[1600px] mx-auto px-6 py-10">
         <style>{`
-          /* Explicit three-column layout rather than Tailwind's responsive grid
-             utilities — those weren't taking effect here, which dropped the
-             side panel to the bottom of the page at full width. Fixed track
-             widths for the rails and a flexible middle keeps the article
-             readable at any window size. */
+          /* Same proportions the page has always had — a four-track grid where
+             the article takes two and each rail takes one — but written as
+             plain CSS. The Tailwind responsive utilities (lg:grid-cols-4,
+             lg:col-span-*) weren't being generated on this page, so the grid
+             collapsed and the side panel fell to the bottom at full width. */
           .help-layout {
             display: grid;
             grid-template-columns: minmax(0, 1fr);
             gap: 32px;
           }
           .help-toc { display: none; }
-          .help-main { min-width: 0; }
-          .help-panel { min-width: 0; }
+          .help-main, .help-panel { min-width: 0; }
 
-          /* Article + right panel as soon as there's room for them. */
-          @media (min-width: 900px) {
-            .help-layout { grid-template-columns: minmax(0, 1fr) 300px; }
-          }
-          /* Add the "on this page" rail on wider screens. */
-          @media (min-width: 1180px) {
-            .help-layout { grid-template-columns: 210px minmax(0, 1fr) 300px; }
-            .help-toc { display: block; }
-          }
-          /* Both rails stick while the article scrolls. */
-          .help-sticky {
-            position: sticky; top: 24px;
-            max-height: calc(100vh - 48px);
-            overflow-y: auto;
-            overscroll-behavior: contain;
-          }
-          @media (max-width: 899px) {
-            .help-sticky { position: static; max-height: none; overflow: visible; }
+          @media (min-width: 1024px) {
+            .help-layout { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+            .help-toc { display: block; grid-column: span 1; }
+            .help-main { grid-column: span 2; }
+            .help-panel { grid-column: span 1; }
+            .help-sticky {
+              position: sticky; top: 24px;
+              max-height: calc(100vh - 48px);
+              overflow-y: auto;
+              overscroll-behavior: contain;
+            }
           }
         `}</style>
         <div className="help-layout">
