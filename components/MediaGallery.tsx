@@ -63,7 +63,7 @@ export default function MediaGallery({ items, index, onClose, onIndex }: {
         {current.kind === 'video' ? (
           <video src={current.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8 }} />
         ) : (
-          <img src={current.url} alt={current.name || ''} style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8, objectFit: 'contain' }} />
+          <img loading="lazy" decoding="async" src={current.url} alt={current.name || ''} style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8, objectFit: 'contain' }} />
         )}
       </div>
 
@@ -84,7 +84,7 @@ export default function MediaGallery({ items, index, onClose, onIndex }: {
               {it.kind === 'video' ? (
                 <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#222', color: '#fff', fontSize: 18 }}>▶</div>
               ) : (
-                <img src={it.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <img loading="lazy" decoding="async" src={it.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               )}
             </button>
           ))}

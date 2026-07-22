@@ -8,6 +8,7 @@ import AssigneePicker from '@/components/AssigneePicker'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { enrichNames } from '@/lib/team-names'
 import { useDraft } from '@/lib/drafts'
+import PageGreeting from '@/components/PageGreeting'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -362,8 +363,21 @@ export default function TasksPage() {
 
       <div className="tasks-top">
         <div className="tasks-title-row">
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Tasks</h1>
-          <button onClick={() => { setShowNew(true); setSelectedId(null) }}
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Tasks</h1>
+            <PageGreeting
+              name={me}
+              detail={
+                counts.overdue > 0
+                  ? `${counts.overdue} overdue`
+                  : counts.today > 0
+                    ? `${counts.today} due today`
+                    : 'nothing due today'
+              }
+              style={{ marginTop: 3 }}
+            />
+          </div>
+          <button className="press" onClick={() => { setShowNew(true); setSelectedId(null) }}
             style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>+ New task</button>
         </div>
         <div className="tasks-buckets">
@@ -488,7 +502,7 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
   const overdue = due && startOfDay(due).getTime() < startOfDay(new Date()).getTime() && statusOf(t) !== 'done'
   const assignees = (Array.isArray(t.assignees) && t.assignees.length) ? t.assignees : (t.assigned_to ? [{ name: t.assigned_to }] : [])
   return (
-    <div className={'task-card' + (selected ? ' sel' : '')} onClick={onClick}>
+    <div className={'task-card lift' + (selected ? ' sel' : '')} onClick={onClick}>
       <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
         {onToggle && <input type="checkbox" checked={statusOf(t) === 'done'} onClick={e => e.stopPropagation()} onChange={onToggle} style={{ marginTop: 2, width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />}
         <div style={{ flex: 1, minWidth: 0 }}>

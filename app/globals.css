@@ -735,3 +735,74 @@ button:hover .action-tooltip,
 .prose i, .prose em {
   font-style: italic;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOTION
+   Small, reusable classes so interactions feel considered without pulling in
+   an animation library. Everything here is transform/opacity only — those are
+   composited by the GPU, so they stay smooth on cheap phones where animating
+   width, height or box-shadow would stutter.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Cards and rows that respond to the pointer. */
+.lift {
+  transition: transform 0.16s cubic-bezier(0.2, 0, 0.2, 1),
+              box-shadow 0.16s cubic-bezier(0.2, 0, 0.2, 1),
+              border-color 0.16s ease;
+  will-change: transform;
+}
+.lift:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.07); }
+.lift:active { transform: translateY(0); transition-duration: 0.08s; }
+
+/* Buttons: a small press so a tap feels acknowledged even before the network
+   comes back. */
+.press { transition: transform 0.1s ease, opacity 0.1s ease; }
+.press:active { transform: scale(0.97); }
+
+/* Content arriving after a fetch, rather than snapping in. */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.rise { animation: riseIn 0.24s cubic-bezier(0.2, 0, 0.2, 1) both; }
+
+/* Longer lists: a brief cascade reads as "loaded" rather than "flashed".
+   Capped at 10 so a hundred rows don't animate for three seconds. */
+.cascade > * { animation: riseIn 0.24s cubic-bezier(0.2, 0, 0.2, 1) both; }
+.cascade > *:nth-child(1)  { animation-delay: 0.00s; }
+.cascade > *:nth-child(2)  { animation-delay: 0.03s; }
+.cascade > *:nth-child(3)  { animation-delay: 0.06s; }
+.cascade > *:nth-child(4)  { animation-delay: 0.09s; }
+.cascade > *:nth-child(5)  { animation-delay: 0.12s; }
+.cascade > *:nth-child(6)  { animation-delay: 0.15s; }
+.cascade > *:nth-child(7)  { animation-delay: 0.18s; }
+.cascade > *:nth-child(8)  { animation-delay: 0.21s; }
+.cascade > *:nth-child(9)  { animation-delay: 0.24s; }
+.cascade > *:nth-child(n+10) { animation-delay: 0.27s; }
+
+/* A count that changes should catch the eye once. */
+@keyframes countPop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.count-pop { animation: countPop 0.3s cubic-bezier(0.2, 0, 0.2, 1); }
+
+/* Images fade in as they decode instead of popping. */
+.img-fade { animation: imgIn 0.3s ease both; }
+@keyframes imgIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ── Respect the system setting ─────────────────────────────────────────────
+   Some people get motion sickness from interface animation, and it's also the
+   right default on low-powered devices. This was missing entirely: every
+   animation in this file previously ran regardless of the preference. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .lift:hover { transform: none; box-shadow: none; }
+  .press:active { transform: none; }
+}

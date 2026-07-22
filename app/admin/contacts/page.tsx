@@ -159,8 +159,14 @@ export default function ContactsPage() {
     // spend/loyalty/order filters as the Users tab work here too.
     if (filtersActive || showFilters) {
       try {
+        // Only the columns the enrichment below actually reads. select('*')
+        // pulled every column of up to 5000 customers — including large JSON
+        // blobs — just to build an email lookup, which is the single heaviest
+        // request on this page.
         const { data: custs } = await (supabase as any)
-          .from('woocommerce_customers').select('*').eq('company_id', id).limit(5000)
+          .from('woocommerce_customers')
+          .select('email, total_spend, total_orders, last_order_date, first_order_date, items_purchased, address')
+          .eq('company_id', id).limit(5000)
         const byEmail = new Map<string, any>()
         for (const c of (custs || [])) if (c.email) byEmail.set(String(c.email).toLowerCase(), c)
         rows = rows.map(r => {
@@ -276,7 +282,7 @@ export default function ContactsPage() {
           </div>
           <input placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)}
             style={{ ...inp, maxWidth: 280, background: 'var(--canvas)' }} />
-          <button type="button" onClick={() => setShowAddContact(true)}
+          <button type="button" className="press" onClick={() => setShowAddContact(true)}
             style={{ padding: '9px 15px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
             + New contact
           </button>

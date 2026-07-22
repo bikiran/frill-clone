@@ -556,6 +556,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                           {!adminCollapsed && item.label}
                           {count > 0 && !adminCollapsed && (
                             <span
+                              // key on the number so React remounts it and the
+                              // pop animation replays whenever the count moves.
+                              key={count}
+                              className="count-pop"
                               title={item.label === 'Tasks' ? `${count} task${count === 1 ? '' : 's'} due or overdue` : `${count} unread`}
                               style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: tone, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               {count > 99 ? '99+' : count}
