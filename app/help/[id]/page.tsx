@@ -154,6 +154,19 @@ export default function HelpArticlePage() {
   const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
   const [openMenu, setOpenMenu] = useState(false)
   const [related, setRelated] = useState<any[]>([])
+  // Layout is decided in JS from the measured window width rather than a CSS
+  // media query. Media queries and Tailwind's lg:* utilities both failed to
+  // take effect on this page, which left the side panel stacked at the bottom;
+  // inline styles always apply.
+  const [winWidth, setWinWidth] = useState(1400)
+  useEffect(() => {
+    const measure = () => setWinWidth(window.innerWidth)
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
+  const showPanelBeside = winWidth >= 860      // article + right panel
+  const showToc = winWidth >= 1150             // plus the "on this page" rail
   const [helpSearch, setHelpSearch] = useState('')
   // The business's own support address, not a hardcoded Colvy one — customers
   // emailing about an aquarium order shouldn't land in Colvy's inbox.
@@ -362,55 +375,26 @@ export default function HelpArticlePage() {
         </div>
       </div>
 
-      <div className="max-w-[1600px] mx-auto px-6 py-10">
-        <style>{`
-          /* Written as plain CSS because the Tailwind responsive utilities
-             (lg:grid-cols-4 / lg:col-span-*) weren't being generated on this
-             page, which collapsed the grid and dropped the side panel to the
-             bottom at full width.
-
-             The panel moves to the right at 860px rather than 1024px — a
-             laptop window that isn't maximised is often narrower than 1024,
-             and the panel was stacking there. The article keeps the flexible
-             track so it stays the dominant column; the rails are bounded so
-             they never get cramped or swallow the page. */
-          .help-layout {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr);
-            gap: 32px;
-          }
-          .help-toc { display: none; }
-          .help-main, .help-panel { min-width: 0; }
-
-          /* Article + right panel */
-          @media (min-width: 860px) {
-            .help-layout {
-              grid-template-columns: minmax(0, 1fr) minmax(250px, 310px);
-            }
-            .help-sticky {
-              position: sticky; top: 24px;
-              max-height: calc(100vh - 48px);
-              overflow-y: auto;
-              overscroll-behavior: contain;
-            }
-          }
-
-          /* Room for the "on this page" rail as well */
-          @media (min-width: 1150px) {
-            .help-layout {
-              grid-template-columns: minmax(170px, 210px) minmax(0, 1fr) minmax(250px, 310px);
-            }
-            .help-toc { display: block; }
-          }
-        `}</style>
-        <div className="help-layout">
+      {/* Inline rather than Tailwind utilities — several classes on this page
+          weren't being generated, so the container had no width cap or padding. */}
+      <div style={{ maxWidth: 1600, margin: '0 auto', padding: '40px 24px' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: showToc
+            ? 'minmax(170px, 210px) minmax(0, 1fr) minmax(250px, 310px)'
+            : showPanelBeside
+              ? 'minmax(0, 1fr) minmax(250px, 310px)'
+              : 'minmax(0, 1fr)',
+          gap: 32,
+          alignItems: 'start',
+        }}>
           {/* On this page — headings pulled from the article, sticky, with the
               section you're currently reading highlighted. */}
-          <aside className="help-toc">
+          <aside style={{ display: showToc ? 'block' : 'none', minWidth: 0 }}>
             {/* The nav scrolls on its own once the heading list outgrows the
                 viewport, instead of running off the bottom of the page. */}
             {toc.length > 0 && (
-              <nav className="help-sticky">
+              <nav style={{ position: 'sticky', top: 24, maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', overscrollBehavior: 'contain' }}>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>
                   On this page
                 </p>
@@ -438,7 +422,7 @@ export default function HelpArticlePage() {
           </aside>
 
           {/* Main article */}
-          <div className="help-main space-y-6">
+          <div className="space-y-6" style={{ minWidth: 0 }}>
             <div className="bg-white rounded-2xl border p-8" style={{ borderColor: 'var(--border)' }}>
               {/* Header */}
               <div className="flex items-start justify-between gap-4 mb-6">
@@ -575,8 +559,8 @@ export default function HelpArticlePage() {
           </div>
 
           {/* Right sidebar — sticks while the article scrolls */}
-          <aside className="help-panel">
-            <div className="help-sticky space-y-6">
+          <aside style={{ minWidth: 0 }}>
+            <div className="space-y-6" style={showPanelBeside ? { position: 'sticky', top: 24, maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', overscrollBehavior: 'contain' } : undefined}>
 
             {/* Search — first thing in the sidebar, so it's reachable from
                 inside an article without scrolling back to the top. */}
