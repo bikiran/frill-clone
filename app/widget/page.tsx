@@ -2269,10 +2269,22 @@ function WidgetContent() {
                         setChatInput('')
                         setChatMessages2(prev => [...prev, { sender_type: 'visitor', sender_name: chatName, content, created_at: new Date().toISOString() }])
                         try {
-                          const { error: msgErr } = await (supabase as any).from('messages').insert({ conversation_id: chatConvId, company_id: company?.id, sender_type: 'visitor', sender_name: chatName, sender_email: chatEmail || null, content, reply_to: widgetReplyTo?.id || null }); const _wr = widgetReplyTo; setWidgetReplyTo(null)
+                          // Sent through the server so the messages table stays
+                          // closed to direct writes, the conversation is checked
+                          // against the company, and flooding is rate limited.
+                          const sendRes = await fetch('/api/widget/message', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              companyId: company?.id, conversationId: chatConvId,
+                              content, senderName: chatName, senderEmail: chatEmail || null,
+                              replyTo: widgetReplyTo?.id || null,
+                            }),
+                          })
+                          const sendData = await sendRes.json().catch(() => ({}))
+                          const msgErr = sendRes.ok ? null : new Error(sendData.error || 'Message could not be sent')
+                          const _wr = widgetReplyTo; setWidgetReplyTo(null)
                           try { fetch('/api/push/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, title: `New message from ${chatName || 'a visitor'}`, body: content, conversationId: chatConvId }) }) } catch {}; try { fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company?.id, type: 'chat', message: `New message from ${chatName || 'a visitor'}: ${content.slice(0, 80)}`, actorName: chatName }) }) } catch {}; try { fetch('/api/inbox/smart-trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content }) }) } catch {}; try { fetch('/api/inbox/keyword-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, text: content, companyId: company?.id }) }) } catch {}; try { fetch('/api/ai/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId, companyId: company?.id }) }) } catch {}; try { fetch('/api/inbox/auto-reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: chatConvId }) }) } catch {}
                           if (msgErr) throw msgErr
-                          await (supabase as any).from('conversations').update({ last_message: content, last_message_at: new Date().toISOString(), is_unread: true, unread_count: 1, status: 'open', updated_at: new Date().toISOString() }).eq('id', chatConvId)
                         } catch (err) {
                           console.error('Widget message send error:', err)
                           setChatCreateError('Message could not be sent. Please try again.')
