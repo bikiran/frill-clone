@@ -17,6 +17,7 @@ export default function ProfilePage() {
   const [bio, setBio] = useState('')
   const [avatarUrl, setAvatarUrl] = useState('')
   const [editName, setEditName] = useState('')
+  const [editPhone, setEditPhone] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
@@ -39,6 +40,12 @@ export default function ProfilePage() {
       setBio(meta.bio || '')
       setAvatarUrl(meta.avatar_url || '')
       setEditName(meta.display_name || '')
+      // Mobile lives on team_members (it's a workspace detail, not an auth one).
+      try {
+        const { data: tm } = await (supabase as any).from('team_members')
+          .select('phone').eq('user_id', session.user.id).limit(1)
+        if (tm?.length && tm[0].phone) setEditPhone(tm[0].phone)
+      } catch {}
 
       const { data: ideas } = await supabase.from('ideas').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false })
       setUserIdeas(ideas || [])
@@ -115,6 +122,17 @@ export default function ProfilePage() {
       const updates: any = { data: { display_name: editName, bio, avatar_url: avatarUrl } }
       if (editEmail && editEmail !== user.email) updates.email = editEmail
       const { error } = await supabase.auth.updateUser(updates)
+      // Save the mobile on the workspace membership so SMS reminders can find it.
+      try {
+        const t = editPhone.trim()
+        let phone: string | null = null
+        if (t) {
+          let d = t.replace(/[^\d+]/g, '')
+          if (d.startsWith('+')) phone = d
+          else { d = d.replace(/\D/g, ''); phone = d.startsWith('61') ? `+${d}` : d.startsWith('0') ? `+61${d.slice(1)}` : d.length === 9 ? `+61${d}` : `+${d}` }
+        }
+        await (supabase as any).from('team_members').update({ phone }).eq('user_id', user.id)
+      } catch {}
       if (error) throw error
       setDisplayName(editName)
       setSavedMsg(editEmail !== user.email ? 'Email change requested — check your inbox!' : 'Profile saved!')
@@ -209,6 +227,11 @@ export default function ProfilePage() {
                 <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Email address</label>
                 <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="you@example.com" className="w-full px-4 py-2.5 rounded-lg border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
                 <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Changing your email requires confirmation.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Mobile number</label>
+                <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="+61 400 000 000" className="w-full px-4 py-2.5 rounded-lg border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Used to text you reminders for events you're assigned to.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Bio</label>

@@ -34,8 +34,8 @@ export default function TeamPage() {
 
   const fetchMembers = async () => {
     try {
-      const { data } = await supabase.from('team_members').select('*').order('created_at', { ascending: false })
-      let rows = data || []
+      const { data } = await (supabase as any).from('team_members').select('*').order('created_at', { ascending: false })
+      let rows: any[] = data || []
       // Fill in real profile names for members who've signed in (their name
       // lives in auth metadata, which the client can't read for other users —
       // so resolve it server-side).
@@ -153,6 +153,30 @@ export default function TeamPage() {
     fetchMembers()
   }
 
+  // Mobile number used for SMS reminders on assigned calendar events.
+  // Normalised to +61 E.164 so Telnyx accepts it — "0405 636 304" and
+  // "405636304" both become "+61405636304".
+  const normaliseAuMobile = (raw: string): string | null => {
+    const t = raw.trim()
+    if (!t) return null
+    let d = t.replace(/[^\d+]/g, '')
+    if (d.startsWith('+')) return d
+    d = d.replace(/\D/g, '')
+    if (d.startsWith('61')) return `+${d}`
+    if (d.startsWith('0')) return `+61${d.slice(1)}`
+    if (d.length === 9) return `+61${d}`
+    return `+${d}`
+  }
+
+  const updatePhone = async (id: string, raw: string) => {
+    const phone = normaliseAuMobile(raw)
+    setMembers(ms => ms.map(m => m.id === id ? { ...m, phone } : m))
+    try {
+      const { error } = await (supabase as any).from('team_members').update({ phone }).eq('id', id)
+      if (error) showMsg('Could not save the number: ' + error.message)
+    } catch (e: any) { showMsg('Could not save the number') }
+  }
+
   const removeMember = async (id: string) => {
     await supabase.from('team_members').delete().eq('id', id)
     setConfirmDelete(null)
@@ -231,9 +255,10 @@ export default function TeamPage() {
       <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
         {/* Header */}
         <div className="grid grid-cols-12 px-5 py-3 border-b text-xs font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-          <div className="col-span-5">User</div>
-          <div className="col-span-3">Role</div>
-          <div className="col-span-2">Status</div>
+          <div className="col-span-4">User</div>
+          <div className="col-span-3">Mobile (for SMS)</div>
+          <div className="col-span-2">Role</div>
+          <div className="col-span-1">Status</div>
           <div className="col-span-2 text-right">Actions</div>
         </div>
 
@@ -273,7 +298,7 @@ export default function TeamPage() {
         ) : (
           members.map(m => (
             <div key={m.id} className="grid grid-cols-12 px-5 py-4 border-b last:border-b-0 items-center" style={{ borderColor: 'var(--border)' }}>
-              <div className="col-span-5 flex items-center gap-3">
+              <div className="col-span-4 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold overflow-hidden" style={{ background: '#6b7280' }}>
                   {m.avatar_url ? <img src={m.avatar_url} alt="" className="w-full h-full object-cover" /> : (m.display_name || m.email || '?')[0].toUpperCase()}
                 </div>
@@ -282,7 +307,17 @@ export default function TeamPage() {
                   {m.display_name && <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{m.email}</p>}
                 </div>
               </div>
-              <div className="col-span-3">
+              {/* Mobile — SMS reminders for assigned events go to this number.
+                  Saved on blur so it doesn't write on every keystroke. */}
+              <div className="col-span-3 pr-3">
+                <input
+                  defaultValue={m.phone || ''}
+                  placeholder="+61…"
+                  onBlur={e => updatePhone(m.id, e.target.value)}
+                  className="text-xs px-2 py-1 rounded border focus:outline-none w-full bg-white"
+                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} />
+              </div>
+              <div className="col-span-2">
                 <select value={m.role} onChange={e => updateRole(m.id, e.target.value)}
                   className="text-xs px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white"
                   style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
@@ -291,7 +326,7 @@ export default function TeamPage() {
                   <option value="viewer">Viewer</option>
                 </select>
               </div>
-              <div className="col-span-2">
+              <div className="col-span-1">
                 <span className="text-xs px-2 py-1 rounded-full"
                   style={{ background: m.status === 'active' ? '#d1fae5' : '#fef3c7', color: m.status === 'active' ? '#059669' : '#ca8a04' }}>
                   {m.status === 'active' ? 'Active' : 'Invited'}

@@ -21,6 +21,7 @@ export default function ContactsPage() {
   // ── Filters (mirrors the Users tab) ───────────────────────────────────────
   const [showFilters, setShowFilters] = useState(false)
   const [showAddContact, setShowAddContact] = useState(false)
+  const [fRelationship, setFRelationship] = useState('')
   const [sortBy, setSortBy] = useState<'recent_added' | 'recent_order' | 'highest_order' | 'num_orders' | 'spend' | 'loyalty'>('recent_added')
   const [fChannel, setFChannel] = useState('')
   const [fLoyalty, setFLoyalty] = useState('')
@@ -30,7 +31,7 @@ export default function ContactsPage() {
   const [fPostcode, setFPostcode] = useState('')
   const [fProduct, setFProduct] = useState('')
   const filterInput: React.CSSProperties = { display: 'block', width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, background: '#fff', fontWeight: 500, color: 'var(--ink)' }
-  const filtersActive = !!(fChannel || fLoyalty || fMinSpend || fMinOrders || fState || fPostcode || fProduct || sortBy !== 'recent_added')
+  const filtersActive = !!(fChannel || fRelationship || fLoyalty || fMinSpend || fMinOrders || fState || fPostcode || fProduct || sortBy !== 'recent_added')
 
   // Shared with the inbox — the same outlet stays selected across the CRM.
   useEffect(() => {
@@ -181,6 +182,9 @@ export default function ContactsPage() {
 
       // Apply filters against the enriched rows.
       if (fChannel) rows = rows.filter(r => r.source === fChannel)
+      // Relationship: treat a missing value as 'customer', which is the default
+      // for every contact that predates the relationship field.
+      if (fRelationship) rows = rows.filter(r => (r.relationship_type || 'customer') === fRelationship)
       if (fLoyalty) rows = rows.filter(r => r.rfm_category === fLoyalty)
       if (fMinSpend) rows = rows.filter(r => (r.total_spend || 0) >= (parseFloat(fMinSpend) || 0))
       if (fMinOrders) rows = rows.filter(r => (r.total_orders || 0) >= (parseInt(fMinOrders) || 0))
@@ -215,13 +219,13 @@ export default function ContactsPage() {
   useEffect(() => {
     const t = setTimeout(() => { if (companyId) loadContacts(companyId, search) }, 350)
     return () => clearTimeout(t)
-  }, [search, locationFilter, sortBy, fChannel, fLoyalty, fMinSpend, fMinOrders, fState, fPostcode, fProduct, page])
+  }, [search, locationFilter, sortBy, fChannel, fRelationship, fLoyalty, fMinSpend, fMinOrders, fState, fPostcode, fProduct, page])
 
   // Any change to the search or filters puts you back on the first page —
   // otherwise you can land on page 40 of a 3-page result and see nothing.
   useEffect(() => {
     setPage(0)
-  }, [search, locationFilter, sortBy, fChannel, fLoyalty, fMinSpend, fMinOrders, fState, fPostcode, fProduct])
+  }, [search, locationFilter, sortBy, fChannel, fRelationship, fLoyalty, fMinSpend, fMinOrders, fState, fPostcode, fProduct])
 
   useEffect(() => {
     if (!companyId) return
@@ -312,6 +316,15 @@ export default function ContactsPage() {
                   <option value="num_orders">Number of orders</option>
                   <option value="spend">Total spend</option>
                   <option value="loyalty">Loyalty (RFM)</option>
+                </select>
+              </label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Relationship
+                <select value={fRelationship} onChange={e => setFRelationship(e.target.value)} style={filterInput}>
+                  <option value="">All types</option>
+                  <option value="customer">Customer</option>
+                  <option value="supplier">Supplier</option>
+                  <option value="wholesaler">Wholesaler</option>
+                  <option value="business">Business contact</option>
                 </select>
               </label>
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Channel

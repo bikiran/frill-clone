@@ -40,6 +40,8 @@ export default function AddContactModal({
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [existingMatch, setExistingMatch] = useState<any>(null)
+  const [allowDuplicate, setAllowDuplicate] = useState(false)
 
   const normPhone = (p: string) => p.replace(/[^\d+]/g, '')
 
@@ -49,6 +51,32 @@ export default function AddContactModal({
       return
     }
     setSaving(true); setError('')
+
+    // Don't quietly create a second record for someone already on file — match
+    // on email, or on the last 9 phone digits so 0405… and +61405… count as the
+    // same person.
+    if (!allowDuplicate) {
+      try {
+        const em = email.trim().toLowerCase()
+        const digits = phone.replace(/\D/g, '')
+        let dupe: any = null
+        if (em) {
+          const { data } = await (supabase as any).from('contacts')
+            .select('id, name, email, phone, source').eq('company_id', companyId).ilike('email', em).limit(1)
+          if (data?.length) dupe = data[0]
+        }
+        if (!dupe && digits.length >= 8) {
+          const { data } = await (supabase as any).from('contacts')
+            .select('id, name, email, phone, source').eq('company_id', companyId).ilike('phone', `%${digits.slice(-9)}%`).limit(1)
+          if (data?.length) dupe = data[0]
+        }
+        if (dupe) {
+          setExistingMatch(dupe)
+          setSaving(false)
+          return
+        }
+      } catch { /* if the check fails, continue and create */ }
+    }
     // Non-customers are not marketed to unless explicitly opted in later.
     const isCustomer = relationship === 'customer'
     const row: any = {
@@ -159,6 +187,26 @@ export default function AddContactModal({
 
         <label style={L}>Notes <span style={{ fontWeight: 400 }}>(optional)</span></label>
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Anything worth remembering…" style={{ ...I, resize: 'vertical', fontFamily: 'inherit' }} />
+
+        {existingMatch && (
+          <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 11, background: '#fffbeb', border: '1px solid #fde68a' }}>
+            <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 700, color: '#92400e' }}>This contact already exists</p>
+            <p style={{ margin: '0 0 10px', fontSize: 12.5, color: '#92400e', lineHeight: 1.45 }}>
+              {existingMatch.name || 'Unnamed'}{existingMatch.email ? ` · ${existingMatch.email}` : ''}{existingMatch.phone ? ` · ${existingMatch.phone}` : ''}
+              {existingMatch.source ? ` (added via ${existingMatch.source})` : ''}
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={() => { onCreated(existingMatch); }}
+                style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                Open existing
+              </button>
+              <button type="button" onClick={() => { setAllowDuplicate(true); setExistingMatch(null) }}
+                style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: '1px solid #fde68a', background: '#fff', color: '#92400e', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                Add anyway
+              </button>
+            </div>
+          </div>
+        )}
 
         {error && <p style={{ margin: '12px 0 0', fontSize: 13, color: '#dc2626' }}>{error}</p>}
 

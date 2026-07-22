@@ -2864,10 +2864,46 @@ export default function InboxPage() {
       await (supabase as any).from('contacts').update({ ...editContact, updated_at: new Date().toISOString() }).eq('id', contact.id)
       setContact(c => c ? { ...c, ...editContact } : c)
     } else {
-      const { data: newContact } = await (supabase as any).from('contacts').insert({ ...editContact, company_id: companyId, source: 'widget' }).select().maybeSingle()
-      if (newContact) {
-        setContact(newContact)
-        await (supabase as any).from('conversations').update({ contact_id: newContact.id }).eq('id', selected!.id)
+      // Before creating anything, look for a contact we already hold with this
+      // email or phone. Saving details on an unlinked conversation used to
+      // insert a brand-new row (hard-coded as source 'widget'), which is how
+      // the same person ended up in the list two or three times.
+      const email = (editContact.email || '').trim().toLowerCase()
+      const digits = (editContact.phone || '').replace(/\D/g, '')
+      let existing: any = null
+      try {
+        if (email) {
+          const { data } = await (supabase as any).from('contacts')
+            .select('*').eq('company_id', companyId).ilike('email', email).limit(1)
+          if (data?.length) existing = data[0]
+        }
+        if (!existing && digits.length >= 8) {
+          // Match on the last 9 digits so 0405… and +61405… are the same person.
+          const { data } = await (supabase as any).from('contacts')
+            .select('*').eq('company_id', companyId).ilike('phone', `%${digits.slice(-9)}%`).limit(1)
+          if (data?.length) existing = data[0]
+        }
+      } catch { /* fall through to creating one */ }
+
+      if (existing) {
+        // Fill in any blanks on the record we already have, rather than adding
+        // a second one.
+        const patch: any = { updated_at: new Date().toISOString() }
+        for (const [k, v] of Object.entries(editContact)) {
+          if (v !== null && v !== undefined && v !== '' && !existing[k]) patch[k] = v
+        }
+        await (supabase as any).from('contacts').update(patch).eq('id', existing.id)
+        const merged = { ...existing, ...patch }
+        setContact(merged)
+        await (supabase as any).from('conversations').update({ contact_id: existing.id }).eq('id', selected!.id)
+      } else {
+        // Genuinely new: record that it came from the inbox, not the widget.
+        const { data: newContact } = await (supabase as any).from('contacts')
+          .insert({ ...editContact, company_id: companyId, source: 'inbox' }).select().maybeSingle()
+        if (newContact) {
+          setContact(newContact)
+          await (supabase as any).from('conversations').update({ contact_id: newContact.id }).eq('id', selected!.id)
+        }
       }
     }
     setShowContactEdit(false)
@@ -6019,11 +6055,31 @@ export default function InboxPage() {
 
                 {showContactEdit ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {[['name', 'Name', 'text'], ['email', 'Email', 'email'], ['phone', 'Phone', 'tel'], ['address', 'Address', 'text'], ['city', 'City', 'text'], ['country', 'Country', 'text']].map(([field, label, type]) => (
+                    {[['name', 'Name', 'text'], ['email', 'Email', 'email'], ['phone', 'Phone', 'tel'], ['address', 'Address', 'text'], ['city', 'City', 'text'], ['state', 'State', 'text'], ['postcode', 'Postcode', 'text'], ['country', 'Country', 'text']].map(([field, label, type]) => (
                       <div key={field}>
                         <label style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>{label}</label>
-                        <input type={type} value={(editContact as any)[field] || ''} onChange={e => setEditContact(c => ({ ...c, [field]: e.target.value }))}
-                          style={{ ...inp, fontSize: 12 }} />
+                        {field === 'address' ? (
+                          // Google address lookup. Picking a suggestion fills the
+                          // street line here and splits city/state/postcode/
+                          // country into their own fields, so nothing is stored
+                          // twice.
+                          <AddressAutocomplete
+                            value={(editContact as any).address || ''}
+                            onChange={(v) => setEditContact(c => ({ ...c, address: v }))}
+                            onSelect={(parts) => setEditContact(c => ({
+                              ...c,
+                              address: parts.line1 || parts.formatted,
+                              city: parts.city || c.city,
+                              state: parts.state || (c as any).state,
+                              postcode: parts.postcode || (c as any).postcode,
+                              country: parts.country || c.country,
+                            }))}
+                            style={{ ...inp, fontSize: 12 } as any}
+                          />
+                        ) : (
+                          <input type={type} value={(editContact as any)[field] || ''} onChange={e => setEditContact(c => ({ ...c, [field]: e.target.value }))}
+                            style={{ ...inp, fontSize: 12 }} />
+                        )}
                       </div>
                     ))}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -6062,7 +6118,17 @@ export default function InboxPage() {
                       // billing address from their most recent WooCommerce order
                       // (a customer who's ordered has an address on file even if
                       // their Colvy contact record is empty).
-                      const ownAddress = [addrToString(contact.address), contact.city, contact.country].filter(Boolean).join(', ')
+                      // Join the parts, but skip any that the address line
+                      // already contains — otherwise a Google-formatted address
+                      // ("33 Magnesium St, Narangba QLD 4504, Australia") plus a
+                      // separately stored city and country rendered as
+                      // "…, Australia, Narangba, Australia".
+                      const line = addrToString(contact.address)
+                      const lineLc = line.toLowerCase()
+                      const extras = [contact.city, contact.country]
+                        .filter(Boolean)
+                        .filter((p: string) => !lineLc.includes(String(p).toLowerCase()))
+                      const ownAddress = [line, ...extras].filter(Boolean).join(', ')
                       let addressValue = ownAddress
                       let addressFromOrder = false
                       if (!ownAddress && wooOrders.length > 0) {
