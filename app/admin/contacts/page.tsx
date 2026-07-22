@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
 import AddContactModal from '@/components/AddContactModal'
+import MatchingContactsModal from '@/components/MatchingContactsModal'
+import { findMatchingContacts, applyRelationship } from '@/lib/contact-matching'
 import { SegmentationService } from '@/lib/segmentation-service'
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; address: string | null; city: string | null; country: string | null; source: string; tags: string[]; subscribed_to_marketing: boolean; created_at: string; total_spend?: number; total_orders?: number; last_order_date?: string | null; rfm_category?: string; __aov?: number; relationship_type?: string; company_name?: string | null; notes?: string | null }
@@ -22,6 +24,7 @@ export default function ContactsPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [showAddContact, setShowAddContact] = useState(false)
   const [fRelationship, setFRelationship] = useState('')
+  const [pendingMatches, setPendingMatches] = useState<{ matches: any[]; relationship: string } | null>(null)
   const [sortBy, setSortBy] = useState<'recent_added' | 'recent_order' | 'highest_order' | 'num_orders' | 'spend' | 'loyalty'>('recent_added')
   const [fChannel, setFChannel] = useState('')
   const [fLoyalty, setFLoyalty] = useState('')
@@ -538,8 +541,20 @@ export default function ContactsPage() {
                       const isCustomer = rt === 'customer'
                       setSelected(c => c ? { ...c, relationship_type: rt } : c)
                       try {
-                        await (supabase as any).from('contacts').update({ relationship_type: rt, ...(isCustomer ? {} : { subscribed_to_marketing: false }) }).eq('id', selected.id)
+                        const { error } = await (supabase as any).from('contacts')
+                          .update({ relationship_type: rt, ...(isCustomer ? {} : { subscribed_to_marketing: false }) })
+                          .eq('id', selected.id)
+                        if (error) { alert('Could not save: ' + error.message); return }
                         setContacts(cs => cs.map(c => c.id === selected.id ? { ...c, relationship_type: rt } : c))
+
+                        // The same person is often in the list more than once
+                        // (order, widget, promo capture). Offer to reclassify
+                        // those too rather than leaving them mislabelled.
+                        if (companyId) {
+                          const matches = await findMatchingContacts(companyId, selected as any)
+                          const stale = matches.filter(m => (m.relationship_type || 'customer') !== rt)
+                          if (stale.length > 0) setPendingMatches({ matches: stale, relationship: rt })
+                        }
                       } catch {}
                     }}
                     style={{ fontSize: 12, fontWeight: 700, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', cursor: 'pointer', textTransform: 'capitalize' }}>
@@ -605,6 +620,24 @@ export default function ContactsPage() {
               style={{ width: '100%', marginTop: 18, padding: '11px 0', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Close</button>
           </div>
         </div>
+      )}
+
+      {pendingMatches && (
+        <MatchingContactsModal
+          matches={pendingMatches.matches}
+          relationship={pendingMatches.relationship}
+          onClose={() => setPendingMatches(null)}
+          onApply={async (ids) => {
+            const res = await applyRelationship(ids, pendingMatches.relationship)
+            if (res.error) { alert('Could not update: ' + res.error); return }
+            const set = new Set(ids)
+            setContacts(cs => cs.map(c => set.has(c.id)
+              ? { ...c, relationship_type: pendingMatches.relationship,
+                  subscribed_to_marketing: pendingMatches.relationship === 'customer' ? c.subscribed_to_marketing : false }
+              : c))
+            setPendingMatches(null)
+          }}
+        />
       )}
 
       {showAddContact && companyId && (
