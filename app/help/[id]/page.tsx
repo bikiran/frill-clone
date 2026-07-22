@@ -363,14 +363,49 @@ export default function HelpArticlePage() {
       </div>
 
       <div className="max-w-[1600px] mx-auto px-6 py-10">
-        <div className="grid lg:grid-cols-4 gap-8">
+        <style>{`
+          /* Explicit three-column layout rather than Tailwind's responsive grid
+             utilities — those weren't taking effect here, which dropped the
+             side panel to the bottom of the page at full width. Fixed track
+             widths for the rails and a flexible middle keeps the article
+             readable at any window size. */
+          .help-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 32px;
+          }
+          .help-toc { display: none; }
+          .help-main { min-width: 0; }
+          .help-panel { min-width: 0; }
+
+          /* Article + right panel as soon as there's room for them. */
+          @media (min-width: 900px) {
+            .help-layout { grid-template-columns: minmax(0, 1fr) 300px; }
+          }
+          /* Add the "on this page" rail on wider screens. */
+          @media (min-width: 1180px) {
+            .help-layout { grid-template-columns: 210px minmax(0, 1fr) 300px; }
+            .help-toc { display: block; }
+          }
+          /* Both rails stick while the article scrolls. */
+          .help-sticky {
+            position: sticky; top: 24px;
+            max-height: calc(100vh - 48px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+          }
+          @media (max-width: 899px) {
+            .help-sticky { position: static; max-height: none; overflow: visible; }
+          }
+        `}</style>
+        <div className="help-layout">
           {/* On this page — headings pulled from the article, sticky, with the
               section you're currently reading highlighted. */}
-          <aside className="hidden lg:block lg:col-span-1">
+          <aside className="help-toc">
             {/* The nav scrolls on its own once the heading list outgrows the
                 viewport, instead of running off the bottom of the page. */}
             {toc.length > 0 && (
-              <nav className="sticky top-6" style={{ maxHeight: 'calc(100vh - 3rem)', overflowY: 'auto', overscrollBehavior: 'contain' }}>
+              <nav className="help-sticky">
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>
                   On this page
                 </p>
@@ -398,7 +433,7 @@ export default function HelpArticlePage() {
           </aside>
 
           {/* Main article */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="help-main space-y-6">
             <div className="bg-white rounded-2xl border p-8" style={{ borderColor: 'var(--border)' }}>
               {/* Header */}
               <div className="flex items-start justify-between gap-4 mb-6">
@@ -535,8 +570,8 @@ export default function HelpArticlePage() {
           </div>
 
           {/* Right sidebar — sticks while the article scrolls */}
-          <aside className="lg:col-span-1">
-            <div className="lg:sticky lg:top-6 space-y-6" style={{ maxHeight: 'calc(100vh - 3rem)', overflowY: 'auto', overscrollBehavior: 'contain' }}>
+          <aside className="help-panel">
+            <div className="help-sticky space-y-6">
 
             {/* Search — first thing in the sidebar, so it's reachable from
                 inside an article without scrolling back to the top. */}
