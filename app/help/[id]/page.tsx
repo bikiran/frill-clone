@@ -195,9 +195,23 @@ export default function HelpArticlePage() {
         const host = typeof window !== 'undefined' ? window.location.hostname : ''
         if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
           const slug = host.replace('.colvy.com', '')
+          // Select everything rather than naming columns — asking for
+          // support_email/email failed outright because this table has
+          // business_email, and a failed select silently left the generic
+          // support@colvy.com address showing on every company's help centre.
           const { data: co } = await (supabase as any).from('companies')
-            .select('support_email, email, name').eq('slug', slug).maybeSingle()
-          const addr = co?.support_email || co?.email
+            .select('*').eq('slug', slug).maybeSingle()
+          let addr = co?.support_email || co?.business_email || co?.contact_email || co?.email || null
+          // Otherwise use the address the company actually sends and receives
+          // on, so replies land somewhere they're monitoring.
+          if (!addr && co?.id) {
+            try {
+              const { data: ec } = await (supabase as any).from('email_channels')
+                .select('from_address, inbound_address')
+                .eq('company_id', co.id).eq('is_active', true).limit(1)
+              addr = ec?.[0]?.from_address || ec?.[0]?.inbound_address || null
+            } catch { /* no email channel configured */ }
+          }
           if (addr) setHelpEmail(addr)
         }
       } catch { /* keep the default */ }
@@ -363,7 +377,7 @@ export default function HelpArticlePage() {
       </div>
 
       <div className="max-w-[1600px] mx-auto px-6 py-10">
-        <div className="grid lg:grid-cols-4 gap-8 items-start">
+        <div className="grid lg:grid-cols-4 gap-8">
           {/* On this page — headings pulled from the article, sticky, with the
               section you're currently reading highlighted. */}
           <aside className="hidden lg:block lg:col-span-1">

@@ -31,6 +31,9 @@ const DEMO_ARTICLES = [
 
 export default function HelpCentrePage() {
   const [articles, setArticles] = useState<any[]>([])
+  // The company's own support address — a hardcoded support@colvy.com told
+  // every customer to email Colvy instead of the business they're buying from.
+  const [helpEmail, setHelpEmail] = useState('support@colvy.com')
   // Articles store the category SLUG; resolve it to the readable name and the
   // icon configured in Settings → Help Categories.
   const [catMap, setCatMap] = useState<Record<string, { name: string; icon: string }>>({})
@@ -108,7 +111,17 @@ export default function HelpCentrePage() {
     const h = window.location.hostname
     if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
       const slug = h.replace('.colvy.com', '')
-      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+      const { data } = await (supabase as any).from('companies').select('*').eq('slug', slug).maybeSingle()
+      let addr = data?.support_email || data?.business_email || data?.contact_email || data?.email || null
+      if (!addr && data?.id) {
+        try {
+          const { data: ec } = await (supabase as any).from('email_channels')
+            .select('from_address, inbound_address')
+            .eq('company_id', data.id).eq('is_active', true).limit(1)
+          addr = ec?.[0]?.from_address || ec?.[0]?.inbound_address || null
+        } catch { /* no email channel configured */ }
+      }
+      if (addr) setHelpEmail(addr)
       return data?.id || null
     }
     return null
@@ -356,9 +369,10 @@ export default function HelpCentrePage() {
             <div className="mb-3 flex justify-center" style={{ color: "var(--coral)" }}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>
             <h3 className="font-bold mb-2" style={{ color: 'var(--ink)' }}>Email Support</h3>
             <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Send us an email and we'll respond within 24h</p>
-            <a href="mailto:support@colvy.com" className="px-4 py-2 rounded-lg text-sm font-semibold border cursor-pointer w-full block" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+            <a href={`mailto:${helpEmail}`} className="px-4 py-2 rounded-lg text-sm font-semibold border cursor-pointer w-full block" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
               Send Email
             </a>
+            <p className="text-xs mt-2 break-all" style={{ color: 'var(--slate)' }}>{helpEmail}</p>
           </div>
         </div>
       </div>
