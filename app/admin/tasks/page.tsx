@@ -593,9 +593,23 @@ function TaskDetail({ task, conv, team, companyId, me, userId, onPatch, onDelete
       return
     }
     if (data) setComments(c => [...c, data])
-    for (const m of mentioned as any[]) {
-      const tm = team.find((t: any) => t.id === m.id || t.name === m.name)
-      if (tm?.user_id && tm.user_id !== userId) { try { await (supabase as any).from('notifications').insert({ company_id: companyId, user_id: tm.user_id, type: 'task_comment', title: `${me} mentioned you on a task`, body: comment.trim().slice(0, 160), link: '/admin/tasks', is_read: false }) } catch {} }
+    // Reach the mentioned people properly — bell, email and SMS.
+    const mentionIds = Array.from(new Set(
+      (mentioned as any[])
+        .map(m => team.find((t: any) => t.id === m.id || t.user_id === m.id || t.name === m.name)?.user_id)
+        .filter((uid: any) => uid && uid !== userId)
+    ))
+    if (mentionIds.length) {
+      try {
+        await fetch('/api/notify/members', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId, userIds: mentionIds, type: 'task_comment',
+            title: `${me} mentioned you on a task`,
+            body: comment.trim().slice(0, 200), link: '/admin/tasks',
+          }),
+        })
+      } catch { /* the comment is saved either way */ }
     }
     setComment('')
   }
@@ -623,7 +637,30 @@ function TaskDetail({ task, conv, team, companyId, me, userId, onPatch, onDelete
       <input type="date" value={task.due_date ? localYmd(parseTs(task.due_date) || new Date(task.due_date)) : ''} onChange={e => onPatch({ due_date: dueFromInput(e.target.value) })}
         style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
       <p style={L}>Assignees</p>
-      <AssigneePicker members={team} value={assignees.map((a: any) => ({ id: a.id, name: a.name }))} onChange={(next) => { const isUuid = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v); onPatch({ assignees: next, assigned_to_id: isUuid(next[0]?.id) ? next[0].id : null, assigned_to: next[0]?.name || null }) }} />
+      <AssigneePicker members={team} value={assignees.map((a: any) => ({ id: a.id, name: a.name }))}
+        onChange={async (next) => {
+          const isUuid = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+          const before = new Set(assignees.map((a: any) => a.id))
+          onPatch({ assignees: next, assigned_to_id: isUuid(next[0]?.id) ? next[0].id : null, assigned_to: next[0]?.name || null })
+
+          // Assigning someone to an existing task should tell them, the same as
+          // assigning at creation did — previously this changed silently.
+          const added = next
+            .map(a => a.id)
+            .filter(id => isUuid(id) && !before.has(id) && id !== userId)
+          if (added.length) {
+            try {
+              await fetch('/api/notify/members', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  companyId, userIds: added, type: 'task_assigned',
+                  title: `${me} assigned you a task`,
+                  body: (task.title || task.text || '').slice(0, 200), link: '/admin/tasks',
+                }),
+              })
+            } catch { /* the assignment is saved either way */ }
+          }
+        }} />
       <p style={L}>Linked order</p>
       {task.order_number ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#f8f9ff' }}>
@@ -783,11 +820,36 @@ function TaskEditor({ companyId, team, me, userId, onClose, onSaved }: any) {
         const { error: minErr } = await (supabase as any).from('conversation_tasks').insert(minimal)
         if (minErr) throw minErr
       }
-      const notify = new Map<string, string>()
-      for (const a of cleanAssignees) { const tm = team.find((t: any) => t.user_id === a.id || t.id === a.id); if (tm?.user_id) notify.set(tm.user_id, tm.name) }
-      for (const m of mentioned as any[]) { const tm = team.find((t: any) => t.id === m.id); if (tm?.user_id) notify.set(tm.user_id, tm.name) }
-      notify.delete(userId)
-      for (const [uid] of notify) { try { await (supabase as any).from('notifications').insert({ company_id: companyId, user_id: uid, type: 'task_assigned', title: `${me} assigned you a task`, body: title.trim().slice(0, 160), link: '/admin/tasks', is_read: false }) } catch {} }
+      // Tell the people involved — in-app, by email AND by SMS. Being assigned
+      // work or tagged in it should reach the person, not just sit in an app
+      // they may not have open.
+      const assignedIds = new Set<string>()
+      for (const a of cleanAssignees) {
+        const tm = team.find((t: any) => t.user_id === a.id || t.id === a.id)
+        if (tm?.user_id) assignedIds.add(tm.user_id)
+      }
+      const mentionedIds = new Set<string>()
+      for (const m of mentioned as any[]) {
+        const tm = team.find((t: any) => t.id === m.id || t.user_id === m.id)
+        // Someone both assigned and mentioned only needs telling once.
+        if (tm?.user_id && !assignedIds.has(tm.user_id)) mentionedIds.add(tm.user_id)
+      }
+      assignedIds.delete(userId as any); mentionedIds.delete(userId as any)
+
+      const notifyMembers = async (ids: string[], titleText: string, type: string) => {
+        if (ids.length === 0) return
+        try {
+          await fetch('/api/notify/members', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId, userIds: ids, type,
+              title: titleText, body: title.trim().slice(0, 200), link: '/admin/tasks',
+            }),
+          })
+        } catch { /* the task is created either way */ }
+      }
+      await notifyMembers(Array.from(assignedIds), `${me} assigned you a task`, 'task_assigned')
+      await notifyMembers(Array.from(mentionedIds), `${me} mentioned you in a task`, 'task_mention')
       await draft.discard()
       onSaved()
     } catch (e: any) { console.error('[task create] payload was', row); alert('Could not create task: ' + e.message); setSaving(false) }

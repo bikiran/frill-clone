@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     // Resolve the mentioned users' email addresses and the company details.
     const { data: members } = await db
       .from('team_members')
-      .select('user_id, name, email')
+      .select('user_id, name, email, phone')
       .eq('company_id', companyId)
       .in('user_id', userIds)
 
@@ -82,11 +82,30 @@ export async function POST(req: NextRequest) {
       )
     } catch { /* the email below is still worth attempting */ }
 
+    // Text them too. A mention is time-sensitive, and email alone is easy to
+    // miss. Runs before the email guards below so a missing Resend key can't
+    // stop the SMS going out.
+    let smsSent = 0
+    try {
+      const siteBase = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+      const withPhone = (members || []).filter((m: any) => m.phone)
+      for (const m of withPhone) {
+        try {
+          const text = `${mentionedBy || 'A teammate'} mentioned you in ${where}${safe ? `: ${String(safe).slice(0, 120)}` : ''}\n${link}`
+          const r = await fetch(`${siteBase}/api/telnyx/sms/send`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, to: m.phone, text, skipChatMessage: true }),
+          })
+          if (r.ok) smsSent++
+        } catch { /* keep going */ }
+      }
+    } catch { /* SMS is best-effort */ }
+
     if (!process.env.RESEND_API_KEY) {
-      return NextResponse.json({ ok: true, sent: 0, inApp: userIds.length, skipped: 'no RESEND_API_KEY' })
+      return NextResponse.json({ ok: true, sent: 0, sms: smsSent, inApp: userIds.length, skipped: 'no RESEND_API_KEY' })
     }
     if (recipients.length === 0) {
-      return NextResponse.json({ ok: true, sent: 0, inApp: userIds.length, skipped: 'no addresses' })
+      return NextResponse.json({ ok: true, sent: 0, sms: smsSent, inApp: userIds.length, skipped: 'no addresses' })
     }
 
     let sent = 0
@@ -129,7 +148,7 @@ export async function POST(req: NextRequest) {
       } catch { /* skip this recipient, keep going */ }
     }
 
-    return NextResponse.json({ ok: true, sent })
+    return NextResponse.json({ ok: true, sent, sms: smsSent })
   } catch (e: any) {
     // Never fail the caller — the in-app notification already exists.
     return NextResponse.json({ ok: false, error: e.message }, { status: 200 })
