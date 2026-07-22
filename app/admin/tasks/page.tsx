@@ -130,8 +130,50 @@ export default function TasksPage() {
         .eq('company_id', cid).order('created_at', { ascending: false }).limit(1000)
       data = base.data
     } else data = full.data
-    setTasks(data || [])
-    const convIds = Array.from(new Set((data || []).map((t: any) => t.conversation_id).filter(Boolean)))
+    let rows: any[] = data || []
+
+    // Calendar events of type "task" are real work too — they were only ever
+    // stored in calendar_events, so the Tasks page never saw them and a task
+    // scheduled on the calendar showed up nowhere here. Pull them in and shape
+    // them like tasks. They keep a marker so edits route back to the calendar
+    // rather than trying to write a conversation_tasks row that doesn't exist.
+    try {
+      const from = new Date(); from.setMonth(from.getMonth() - 6)
+      const to = new Date(); to.setMonth(to.getMonth() + 12)
+      const params = new URLSearchParams({
+        companyId: cid, type: 'task',
+        from: from.toISOString(), to: to.toISOString(),
+      })
+      const res = await fetch(`/api/calendar?${params}`)
+      const d = await res.json()
+      const calTasks = (d.events || []).map((e: any) => ({
+        id: `cal:${e.id}`,
+        _calendarId: e.id,
+        _source: 'calendar',
+        company_id: e.company_id,
+        conversation_id: e.conversation_id,
+        title: e.title,
+        text: e.notes || e.title,
+        due_date: e.starts_at,
+        is_all_day: e.is_all_day,
+        // Calendar statuses don't map 1:1 onto a task board, so translate them.
+        status: e.status === 'completed' ? 'done'
+          : e.status === 'in_progress' ? 'in_progress'
+          : e.status === 'cancelled' ? 'done' : 'todo',
+        done: e.status === 'completed' || e.status === 'cancelled',
+        priority: e.priority || 'normal',
+        assignees: Array.isArray(e.assignees) ? e.assignees : [],
+        assigned_to: e.assigned_to_name || null,
+        assigned_to_id: e.assigned_to_id || null,
+        order_number: e.order_id || null,
+        created_at: e.created_at,
+      }))
+      rows = [...rows, ...calTasks]
+    } catch { /* calendar unavailable — show the plain tasks */ }
+
+    setTasks(rows)
+
+    const convIds = Array.from(new Set(rows.map((t: any) => t.conversation_id).filter(Boolean)))
     if (convIds.length) {
       const m: Record<string, any> = {}
       for (let i = 0; i < convIds.length; i += 100) {
@@ -209,7 +251,34 @@ export default function TasksPage() {
 
   const patchTask = async (id: string, fields: any) => {
     setTasks(cur => cur.map(t => t.id === id ? { ...t, ...fields } : t))
-    try { await (supabase as any).from('conversation_tasks').update(fields).eq('id', id) }
+    const target = tasks.find(t => t.id === id)
+    try {
+      if (target?._source === 'calendar') {
+        // Lives in calendar_events — translate the task fields back and save it
+        // through the calendar API (which also guards the uuid columns).
+        const statusMap: Record<string, string> = { todo: 'scheduled', in_progress: 'in_progress', done: 'completed' }
+        const payload: any = { companyId, action: 'save', id: target._calendarId }
+        if (fields.status) payload.status = statusMap[fields.status] || 'scheduled'
+        if (fields.title !== undefined) payload.title = fields.title
+        if (fields.due_date !== undefined) payload.starts_at = fields.due_date
+        if (fields.assignees !== undefined) {
+          payload.assignees = fields.assignees
+          payload.assigned_to_id = fields.assigned_to_id ?? null
+          payload.assigned_to_name = fields.assigned_to ?? null
+        }
+        // The calendar API replaces the row, so send the fields it needs to keep.
+        payload.event_type = 'task'
+        payload.title = payload.title ?? target.title
+        payload.starts_at = payload.starts_at ?? target.due_date
+        payload.notes = fields.text ?? target.text
+        await fetch('/api/calendar', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+      } else {
+        await (supabase as any).from('conversation_tasks').update(fields).eq('id', id)
+      }
+    }
     catch { if (companyId) loadTasks(companyId) }
   }
   const setStatus = (t: any, status: string) =>
@@ -401,6 +470,12 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
             {due && <span style={{ fontSize: 11, fontWeight: 700, color: overdue ? '#dc2626' : 'var(--slate)' }}>{fmtRel(t.due_date)}</span>}
             {assignees.map((a: any, i: number) => <span key={i} style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)' }}>{a.name}</span>)}
             {t.order_number && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 5, background: '#eef2ff', color: '#4338ca' }}>#{t.order_number}</span>}
+            {t._source === 'calendar' && (
+              <span title="Scheduled on the calendar" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#f5f3ff', color: '#7c3aed' }}>
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                Calendar
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -468,6 +543,9 @@ function TaskDetail({ task, conv, team, companyId, me, userId, onPatch, onDelete
   const [comment, setComment] = useState('')
   const [showOrderSearch, setShowOrderSearch] = useState(false)
   useEffect(() => {
+    // task_comments references conversation_tasks, so a calendar-sourced task
+    // has no comment thread to load.
+    if (task._source === 'calendar') { setComments([]); return }
     ;(async () => {
       const { data } = await (supabase as any).from('task_comments').select('*').eq('task_id', task.id).order('created_at', { ascending: true })
       setComments(data || [])
@@ -529,6 +607,12 @@ function TaskDetail({ task, conv, team, companyId, me, userId, onPatch, onDelete
           <button onClick={() => router.push(`/admin/inbox?conversation=${task.conversation_id}`)} style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer', textAlign: 'left' }}>{conv.contact_name || conv.subject || 'Open conversation'} →</button>
         </>
       )}
+      {task._source === 'calendar' ? (
+        <div style={{ marginTop: 18, padding: '10px 12px', borderRadius: 10, background: 'var(--canvas)', fontSize: 12, color: 'var(--slate)', lineHeight: 1.45 }}>
+          This task is scheduled on the calendar. Comments are available on tasks created here in the Tasks page.
+        </div>
+      ) : (
+      <>
       <p style={L}>Comments</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10 }}>
         {comments.length === 0 && <p style={{ fontSize: 12.5, color: '#9ca3af', margin: 0 }}>No comments yet.</p>}
@@ -544,8 +628,22 @@ function TaskDetail({ task, conv, team, companyId, me, userId, onPatch, onDelete
       </div>
       <MentionInput value={comment} onChange={(v) => setComment(v)} team={team as any} placeholder="Add a comment… @ to mention" onSubmit={addComment} style={{ fontSize: 13 }} />
       <button onClick={addComment} disabled={!comment.trim()} style={{ marginTop: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: comment.trim() ? 'var(--coral)' : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: comment.trim() ? 'pointer' : 'default' }}>Comment</button>
+      </>
+      )}
       <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-        <button onClick={() => { if (confirm('Delete this task?')) { (supabase as any).from('conversation_tasks').delete().eq('id', task.id).then(onDeleted) } }} style={{ border: 'none', background: 'none', color: '#dc2626', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Delete task</button>
+        <button onClick={async () => {
+          if (!confirm('Delete this task?')) return
+          if (task._source === 'calendar') {
+            await fetch('/api/calendar', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ companyId, action: 'delete', id: task._calendarId }),
+            })
+            onDeleted()
+          } else {
+            await (supabase as any).from('conversation_tasks').delete().eq('id', task.id)
+            onDeleted()
+          }
+        }} style={{ border: 'none', background: 'none', color: '#dc2626', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Delete task</button>
       </div>
       {showOrderSearch && <OrderSearchModal companyId={companyId} onClose={() => setShowOrderSearch(false)} onPick={(o: any) => { onPatch({ order_id: o.order_id, order_number: o.order_number, order_customer: o.customer, order_total: o.total }); setShowOrderSearch(false) }} />}
     </div>

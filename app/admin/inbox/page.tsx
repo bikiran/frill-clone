@@ -5267,7 +5267,14 @@ export default function InboxPage() {
                       )}
 
                       <div style={{
-                        padding: atts.length && atts[0].kind !== 'file' ? 4 : '10px 14px',
+                        padding: (() => {
+                          const hasMedia = atts.some((a: any) => a.kind === 'image' || a.kind === 'video')
+                          // A media-only message shows the collage flush to the
+                          // bubble edge; with text it gets a small frame.
+                          if (hasMedia && !msg.content) return 0
+                          if (hasMedia) return 4
+                          return '10px 14px'
+                        })(),
                         borderRadius: isAgent ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
                         background: isAgent ? 'var(--coral)' : '#fff',
                         color: isAgent ? '#fff' : 'var(--ink)',
@@ -5291,38 +5298,83 @@ export default function InboxPage() {
                           </div>
                         )}
 
-                        {/* Attachments */}
-                        {atts.map((a: any, ai: number) => (
-                          <div key={ai} style={{ marginBottom: a.kind !== 'file' && msg.content ? 6 : 0, position: 'relative' }}
-                            className="chat-att">
-                            {a.kind === 'image' ? (
-                              <img src={a.url} alt={a.name} style={{ maxWidth: 240, maxHeight: 240, borderRadius: 10, display: 'block', cursor: 'pointer' }} onClick={() => setGalleryIndex(mediaIndexOf[a.url] ?? 0)} />
-                            ) : a.kind === 'video' ? (
-                              <div style={{ position: 'relative', cursor: 'pointer', maxWidth: 240 }} onClick={() => setGalleryIndex(mediaIndexOf[a.url] ?? 0)}>
-                                <video src={a.url} style={{ maxWidth: 240, borderRadius: 10, display: 'block', pointerEvents: 'none' }} />
-                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  <div style={{ width: 44, height: 44, borderRadius: 22, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>▶</div>
-                                </div>
-                              </div>
-                            ) : (
-                              <a href={a.url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 8, color: isAgent ? '#fff' : 'var(--coral)', textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{Icon.attach(12)}{a.name}</span>
-                              </a>
-                            )}
+                        {/* Attachments.
+                            Media is laid out as a grid collage (like WhatsApp /
+                            iMessage) rather than a stack of differently-sized
+                            images — stacking left the bubble colour showing
+                            through every gap and looked unfinished. */}
+                        {(() => {
+                          const media = atts.filter((a: any) => a.kind === 'image' || a.kind === 'video')
+                          const files = atts.filter((a: any) => a.kind !== 'image' && a.kind !== 'video')
+                          const n = media.length
+                          const shown = n > 4 ? media.slice(0, 4) : media
+                          const GRID = 246          // total collage width
+                          const GAP = 3
+                          const cell = (GRID - GAP) / 2
 
-                            {/* Forward this media to another contact — on the image
-                                itself, not just in the shared-media panel. */}
-                            {(a.kind === 'image' || a.kind === 'video') && (
-                              <button type="button"
-                                className="chat-att-fwd"
-                                onClick={e => { e.stopPropagation(); setForwarding(a); setForwardSearch(''); setForwardResults([]) }}
-                                title="Forward to another contact"
-                                style={{ position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: 7, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, backdropFilter: 'blur(3px)', opacity: 0, transition: 'opacity 0.12s' }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
-                              </button>
-                            )}
-                          </div>
-                        ))}
+                          const tileStyle = (i: number): React.CSSProperties => {
+                            if (n === 1) return { width: '100%', maxWidth: GRID, maxHeight: 300 }
+                            if (n === 2) return { width: cell, height: cell }
+                            if (n === 3) return i === 0 ? { width: GRID, height: 140 } : { width: cell, height: 118 }
+                            return { width: cell, height: cell }
+                          }
+
+                          return (
+                            <>
+                              {n > 0 && (
+                                <div style={{
+                                  display: 'flex', flexWrap: 'wrap', gap: GAP,
+                                  width: n === 1 ? 'auto' : GRID,
+                                  borderRadius: 12, overflow: 'hidden',
+                                  marginBottom: (msg.content || files.length) ? 6 : 0,
+                                }}>
+                                  {shown.map((a: any, ai: number) => {
+                                    const extra = n > 4 && ai === 3 ? n - 4 : 0
+                                    return (
+                                      <div key={ai} className="chat-att"
+                                        onClick={() => setGalleryIndex(mediaIndexOf[a.url] ?? 0)}
+                                        style={{ ...tileStyle(ai), position: 'relative', cursor: 'pointer', background: '#e5e7eb', overflow: 'hidden', flexShrink: 0 }}>
+                                        {a.kind === 'image' ? (
+                                          <img src={a.url} alt={a.name}
+                                            style={{ width: '100%', height: '100%', objectFit: n === 1 ? 'contain' : 'cover', display: 'block' }} />
+                                        ) : (
+                                          <>
+                                            <video src={a.url} style={{ width: '100%', height: '100%', objectFit: n === 1 ? 'contain' : 'cover', display: 'block', pointerEvents: 'none' }} />
+                                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                              <div style={{ width: 40, height: 40, borderRadius: 20, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>▶</div>
+                                            </div>
+                                          </>
+                                        )}
+
+                                        {/* "+3" on the last tile when there are more. */}
+                                        {extra > 0 && (
+                                          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 700 }}>
+                                            +{extra}
+                                          </div>
+                                        )}
+
+                                        {/* Forward this media to another contact. */}
+                                        <button type="button" className="chat-att-fwd"
+                                          onClick={e => { e.stopPropagation(); setForwarding(a); setForwardSearch(''); setForwardResults([]) }}
+                                          title="Forward to another contact"
+                                          style={{ position: 'absolute', top: 5, right: 5, width: 24, height: 24, borderRadius: 7, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, backdropFilter: 'blur(3px)', opacity: 0, transition: 'opacity 0.12s' }}>
+                                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
+                                        </button>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+
+                              {files.map((a: any, ai: number) => (
+                                <a key={`f${ai}`} href={a.url} target="_blank" rel="noopener"
+                                  style={{ display: 'flex', alignItems: 'center', gap: 8, color: isAgent ? '#fff' : 'var(--coral)', textDecoration: 'none', fontSize: 13, fontWeight: 600, marginBottom: msg.content ? 6 : 0 }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{Icon.attach(12)}{a.name}</span>
+                                </a>
+                              ))}
+                            </>
+                          )
+                        })()}
                         {(msg as any).metadata?.review_request ? (
                           <div style={{ padding: '4px 2px 2px' }}>
                             {/* Review-request card, shown to the agent — mirrors
