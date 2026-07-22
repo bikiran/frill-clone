@@ -883,6 +883,13 @@ export default function InboxPage() {
   const [activePanel, setActivePanel] = useState<'info' | 'timeline' | 'orders'>('info')
   const [wooCustomer, setWooCustomer] = useState<any>(null)
   const [wooOrders, setWooOrders] = useState<any[]>([])
+  // Switching chats quickly used to let a slow response from the PREVIOUS
+  // contact land after the new one and overwrite the panel. Every load takes a
+  // ticket; only the newest is allowed to write to state.
+  const wooSeqRef = useRef(0)
+  // Remembering what we already fetched makes going back to a chat instant
+  // instead of re-running the whole sequence.
+  const wooCacheRef = useRef<Map<string, { customer: any; orders: any[]; carts: any[] }>>(new Map())
   const [abandonedCarts, setAbandonedCarts] = useState<any[]>([])
   const [orderSearch, setOrderSearch] = useState('')
   const [orderDateFrom, setOrderDateFrom] = useState('')
@@ -1387,9 +1394,21 @@ export default function InboxPage() {
   }
 
   const loadWooData = async (contactId: string | null) => {
-    setWooCustomer(null)
-    setWooOrders([])
-    setAbandonedCarts([])
+    const seq = ++wooSeqRef.current
+    const isCurrent = () => wooSeqRef.current === seq
+
+    // Show what we already have for this contact immediately, then refresh
+    // behind it — the panel stops flashing empty on every switch.
+    const cached = contactId ? wooCacheRef.current.get(contactId) : null
+    if (cached) {
+      setWooCustomer(cached.customer)
+      setWooOrders(cached.orders)
+      setAbandonedCarts(cached.carts)
+    } else {
+      setWooCustomer(null)
+      setWooOrders([])
+      setAbandonedCarts([])
+    }
     if (!companyId) return
     // Resolve the contact's email + phone
     let email: string | null = null
@@ -1418,7 +1437,14 @@ export default function InboxPage() {
         if (email) p.set('email', email); else if (phone) p.set('phone', phone)
         const res = await fetch(`/api/abandoned-carts?${p}`)
         const data = await res.json()
+        if (!isCurrent()) return
         setAbandonedCarts(data.carts || [])
+        if (contactId) {
+          const prev = wooCacheRef.current.get(contactId)
+          wooCacheRef.current.set(contactId, {
+            customer: prev?.customer || null, orders: prev?.orders || [], carts: data.carts || [],
+          })
+        }
       }
     } catch {}
     if (!email && !phone) return
@@ -1443,22 +1469,31 @@ export default function InboxPage() {
         email = woo.email
       }
     }
+    if (!isCurrent()) return
     if (woo) setWooCustomer(woo)
 
     // Orders by email (covers guest orders too), and ALSO by phone via billing.
     let orders: any[] = []
-    if (email) {
-      const { data } = await (supabase as any).from('woocommerce_orders')
-        .select('*').eq('company_id', companyId).ilike('customer_email', email)
-        .order('order_date', { ascending: false }).limit(50)
-      orders = data || []
-    }
+    // Ask for both at once — these are independent queries and running them one
+    // after the other doubled the wait before the tab showed anything.
+    const [byEmailRes, byPhoneRes] = await Promise.all([
+      email
+        ? (supabase as any).from('woocommerce_orders')
+            .select('*').eq('company_id', companyId).ilike('customer_email', email)
+            .order('order_date', { ascending: false }).limit(50)
+        : Promise.resolve({ data: [] }),
+      phone
+        ? (supabase as any).from('woocommerce_orders')
+            .select('*').eq('company_id', companyId).eq('billing_phone_norm', norm(phone))
+            .order('order_date', { ascending: false }).limit(50)
+        : Promise.resolve({ data: [] }),
+    ])
+    if (!isCurrent()) return
+    orders = byEmailRes.data || []
     if (phone) {
       // Phone-matched orders via the indexed normalised column (V186 migration)
       // — no client-side scan of recent orders.
-      const { data: byPhone } = await (supabase as any).from('woocommerce_orders')
-        .select('*').eq('company_id', companyId).eq('billing_phone_norm', norm(phone))
-        .order('order_date', { ascending: false }).limit(50)
+      const byPhone = byPhoneRes.data
       // Dedupe on the columns this table actually has. It previously keyed on
       // order_number/order_id, neither of which exist here, so every phone-
       // matched order stringified to "undefined" — the first one was kept and
@@ -1474,7 +1509,12 @@ export default function InboxPage() {
       }
       orders.sort((a: any, b: any) => new Date(b.order_date || 0).getTime() - new Date(a.order_date || 0).getTime())
     }
+    if (!isCurrent()) return
     setWooOrders(orders)
+    if (contactId) {
+      const prev = wooCacheRef.current.get(contactId)
+      wooCacheRef.current.set(contactId, { customer: woo || prev?.customer || null, orders, carts: prev?.carts || [] })
+    }
     // Live WooCommerce fetch runs in the background (don't block the panel — the
     // synced orders above already render instantly; live results merge in when
     // ready, catching Colvy-created orders that haven't synced yet).
@@ -1504,7 +1544,14 @@ export default function InboxPage() {
             }
           })
           merged.sort((a: any, b: any) => new Date(b.order_date || 0).getTime() - new Date(a.order_date || 0).getTime())
+          // The live call is the slowest step; by the time it returns the agent
+          // may have moved to another chat. Only write if this is still theirs.
+          if (!isCurrent()) return
           setWooOrders(merged)
+          if (contactId) {
+            const prev = wooCacheRef.current.get(contactId)
+            wooCacheRef.current.set(contactId, { customer: prev?.customer || null, orders: merged, carts: prev?.carts || [] })
+          }
         }
       } catch {}
       })()
@@ -3320,6 +3367,28 @@ export default function InboxPage() {
         .filter(Boolean).map(String).join(', ')
     }
     return String(a)
+  }
+
+  // Join address parts WITHOUT repeating anything the first line already
+  // contains. WooCommerce billing often stores a fully formatted line in
+  // address_1 ("22 BRAMPTON AV, BUTLER WA 6036") while also holding city, state
+  // and postcode separately — naively joining them produced
+  // "22 BRAMPTON AV, BUTLER WA 6036, Butler, WA, 6036, AU".
+  const joinAddressParts = (...parts: any[]): string => {
+    const clean = parts.map(p => (p == null ? '' : String(p).trim())).filter(Boolean)
+    if (clean.length === 0) return ''
+    const out: string[] = []
+    for (const part of clean) {
+      const soFar = out.join(', ').toLowerCase()
+      // Compare loosely: case and punctuation shouldn't decide a duplicate, and
+      // "AU" shouldn't be re-added when the line already ends in "Australia".
+      const norm = part.toLowerCase().replace(/[^a-z0-9]/g, '')
+      if (!norm) continue
+      const seen = soFar.replace(/[^a-z0-9]/g, '')
+      if (seen.includes(norm)) continue
+      out.push(part)
+    }
+    return out.join(', ')
   }
   // ── Block contact / report spam ──────────────────────────────────────────
   const toggleBlockContact = async () => {
@@ -6391,18 +6460,19 @@ export default function InboxPage() {
                       // ("33 Magnesium St, Narangba QLD 4504, Australia") plus a
                       // separately stored city and country rendered as
                       // "…, Australia, Narangba, Australia".
-                      const line = addrToString(contact.address)
-                      const lineLc = line.toLowerCase()
-                      const extras = [contact.city, contact.country]
-                        .filter(Boolean)
-                        .filter((p: string) => !lineLc.includes(String(p).toLowerCase()))
-                      const ownAddress = [line, ...extras].filter(Boolean).join(', ')
+                      const ownAddress = joinAddressParts(
+                        addrToString(contact.address),
+                        (contact as any).city,
+                        (contact as any).state,
+                        (contact as any).postcode,
+                        (contact as any).country,
+                      )
                       let addressValue = ownAddress
                       let addressFromOrder = false
                       if (!ownAddress && wooOrders.length > 0) {
                         const b = wooOrders.find((o: any) => o.billing?.address_1)?.billing
                         if (b) {
-                          addressValue = [b.address_1, b.address_2, b.city, b.state, b.postcode].filter(Boolean).join(', ')
+                          addressValue = joinAddressParts(b.address_1, b.address_2, b.city, b.state, b.postcode, b.country)
                           addressFromOrder = true
                         }
                       }
@@ -6413,7 +6483,7 @@ export default function InboxPage() {
                         const c: any = abandonedCarts.find((ac: any) => ac.address || ac.billing_address_1 || ac.city || ac.address_1)
                         if (c) {
                           addressValue = addrToString(c.address)
-                            || [c.address_1 || c.billing_address_1, c.city || c.billing_city, c.state || c.billing_state, c.postcode || c.billing_postcode].filter(Boolean).join(', ')
+                            || joinAddressParts(c.address_1 || c.billing_address_1, c.city || c.billing_city, c.state || c.billing_state, c.postcode || c.billing_postcode)
                           addressFromOrder = true
                         }
                       }
