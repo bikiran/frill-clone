@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { guardAiRequest } from '@/lib/rate-limit'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
@@ -15,6 +16,9 @@ export async function POST(req: NextRequest) {
   try {
     const { companyId, reviewId } = await req.json()
     if (!companyId || !reviewId) return NextResponse.json({ error: 'companyId and reviewId required' }, { status: 400 })
+
+    const guard = await guardAiRequest(req, companyId, 'review-reply')
+    if (!guard.ok) return guard.response!
 
     const key = process.env.ANTHROPIC_API_KEY
     if (!key) return NextResponse.json({ error: 'AI is not configured (ANTHROPIC_API_KEY missing).' }, { status: 500 })

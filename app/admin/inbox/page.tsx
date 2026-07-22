@@ -2029,7 +2029,7 @@ export default function InboxPage() {
       const res = await fetch('/api/inbox/ai-summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify({ companyId,
           conversationId: selected.id,
           messages: messages.filter(m => m.sender_type !== 'system').map(m => ({ role: m.sender_type, content: m.content })),
         }),

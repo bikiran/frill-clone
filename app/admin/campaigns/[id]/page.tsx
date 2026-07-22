@@ -285,7 +285,7 @@ export default function CampaignEditorPage() {
     try {
       const res = await fetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify({ companyId,
           task: 'improve_writing',
           content:
             `Rewrite this marketing SMS so it is concise, warm and under 160 characters. ` +

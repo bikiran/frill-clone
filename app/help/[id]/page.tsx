@@ -364,7 +364,7 @@ export default function HelpArticlePage() {
   return (
     <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
       {/* Breadcrumb */}
-      <div className="border-b bg-white" style={{ borderColor: 'var(--border)' }}>
+      <div className="help-topbar border-b bg-white" style={{ borderColor: 'var(--border)' }}>
         <div className="max-w-[1600px] mx-auto px-6 py-3 flex items-center gap-2 text-sm flex-wrap" style={{ color: 'var(--slate)' }}>
           <Link href="/" className="hover:underline" style={{ color: 'var(--slate)' }}>Home</Link>
           <span>/</span>
@@ -374,6 +374,52 @@ export default function HelpArticlePage() {
           <span>/</span>
           <span className="truncate max-w-48" style={{ color: 'var(--ink)' }}>{article.title}</span>
         </div>
+
+        {/* Jump-to-section on mobile. The "On this page" rail is desktop-only,
+            so on a phone there was no way to skip ahead in a long policy
+            article — you had to scroll the whole thing. This stays pinned under
+            the breadcrumbs and reflects the section you're currently reading. */}
+        {toc.length > 1 && (
+          <div className="help-jump" style={{
+            borderTop: '1px solid var(--border)',
+            padding: '8px 24px 10px',
+            background: '#fff',
+          }}>
+            <label htmlFor="help-jump-select" className="sr-only">Jump to a section</label>
+            <div style={{ position: 'relative', maxWidth: 640, margin: '0 auto' }}>
+              <select
+                id="help-jump-select"
+                value={activeHeading || ''}
+                onChange={e => {
+                  const id = e.target.value
+                  if (!id) return
+                  const el = document.getElementById(id)
+                  if (el) {
+                    // Leave room for the pinned breadcrumb bar above.
+                    const y = el.getBoundingClientRect().top + window.scrollY - 96
+                    window.scrollTo({ top: y, behavior: 'smooth' })
+                  }
+                }}
+                style={{
+                  width: '100%', appearance: 'none',
+                  padding: '10px 34px 10px 13px',
+                  borderRadius: 10, border: '1px solid var(--border)',
+                  background: 'var(--canvas)', color: 'var(--ink)',
+                  fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                  boxSizing: 'border-box',
+                }}>
+                <option value="">Jump to a section…</option>
+                {toc.map(h => (
+                  <option key={h.id} value={h.id}>{h.text}</option>
+                ))}
+              </select>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+                style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--slate)', pointerEvents: 'none' }}>
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="max-w-[1600px] mx-auto px-6 py-10">
@@ -384,7 +430,7 @@ export default function HelpArticlePage() {
             {/* The nav scrolls on its own once the heading list outgrows the
                 viewport, instead of running off the bottom of the page. */}
             {toc.length > 0 && (
-              <nav className="sticky top-6" style={{ maxHeight: 'calc(100vh - 3rem)', overflowY: 'auto', overscrollBehavior: 'contain' }}>
+              <nav className="help-rail">
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>
                   On this page
                 </p>
@@ -527,7 +573,7 @@ export default function HelpArticlePage() {
 
           {/* Right sidebar — sticks while the article scrolls */}
           <aside className="lg:col-span-1">
-            <div className="lg:sticky lg:top-6 space-y-6" style={{ maxHeight: 'calc(100vh - 3rem)', overflowY: 'auto', overscrollBehavior: 'contain' }}>
+            <div className="help-rail space-y-6">
             {/* Like */}
             <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
               <button onClick={toggleLike}

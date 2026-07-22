@@ -441,7 +441,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({ companyId, 
           task,
           text: description,
           tone: 'professional',

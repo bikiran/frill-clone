@@ -1,13 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { guardAiRequest } from '@/lib/rate-limit'
 
 // Generates a short summary + action items for a conversation using Claude.
 // Falls back gracefully if no API key is configured.
 export async function POST(req: NextRequest) {
   try {
-    const { messages } = await req.json()
+    const { companyId, messages } = await req.json()
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: 'No messages to summarize' }, { status: 400 })
     }
+
+    const guard = await guardAiRequest(req, companyId, 'ai-summary')
+    if (!guard.ok) return guard.response!
+
+    // Cap the input as well: an enormous transcript is expensive, and nothing
+    // useful is lost by summarising the most recent stretch of a conversation.
+    const capped = messages.slice(-80)
 
     const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
     if (!ANTHROPIC_KEY) {
@@ -19,7 +27,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const transcript = messages.map((m: any) => `${m.role === 'agent' ? 'Agent' : 'Customer'}: ${m.content}`).join('\n')
+    const transcript = capped.map((m: any) => `${m.role === 'agent' ? 'Agent' : 'Customer'}: ${m.content}`).join('\n')
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

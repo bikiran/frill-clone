@@ -3,12 +3,14 @@
 import React, { useState } from 'react'
 
 interface AITextEditorProps {
+  /** Required so AI usage can be attributed and capped per workspace. */
+  companyId?: string | null
   value: string
   onChange: (value: string) => void
   placeholder?: string
 }
 
-export default function AITextEditor({ value, onChange, placeholder }: AITextEditorProps) {
+export default function AITextEditor({ value, onChange, placeholder, companyId }: AITextEditorProps) {
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState('')
 
@@ -19,7 +21,7 @@ export default function AITextEditor({ value, onChange, placeholder }: AITextEdi
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task, text: value, ...params }),
+        body: JSON.stringify({ companyId, task, text: value, ...params }),
       })
 
       if (!res.ok) {

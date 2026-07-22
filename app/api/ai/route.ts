@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { guardAiRequest } from '@/lib/rate-limit'
 import { createAIService } from '@/lib/ai-service'
 
 export async function POST(req: NextRequest) {
   try {
-    const { task, text, tone, maxLength, maxTags, topic, details, description, question } = await req.json()
+    const { companyId, task, text, tone, maxLength, maxTags, topic, details, description, question } = await req.json()
 
     if (!task) {
       return NextResponse.json({ error: 'Missing task parameter' }, { status: 400 })
     }
+
+    // This endpoint calls a paid model. It previously accepted any request from
+    // anyone, with no ceiling — a URL anyone could find and hold open.
+    const guard = await guardAiRequest(req, companyId, 'ai')
+    if (!guard.ok) return guard.response!
 
     try {
       const ai = createAIService()

@@ -556,7 +556,7 @@ function WidgetContent() {
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({ companyId: company?.id,
           task,
           text: feedback,
           tone: 'professional'
