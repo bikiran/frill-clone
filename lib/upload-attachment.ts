@@ -23,9 +23,13 @@ const BUCKET = 'chat-attachments'
 /** Longest edge, in pixels, for an uploaded photo. */
 const MAX_EDGE = 2000
 const JPEG_QUALITY = 0.82
+const THUMB_EDGE = 480
+const THUMB_QUALITY = 0.72
 
 export interface UploadedAttachment {
   url: string
+  /** Small preview used in the chat timeline; full `url` is used in the gallery. */
+  thumbUrl?: string
   name: string
   type: string
   kind: string
@@ -75,6 +79,36 @@ export async function compressImage(file: File): Promise<File> {
 }
 
 /**
+ * Build a small preview of a photo for the chat timeline.
+ *
+ * The timeline renders images at roughly 120–250px, so loading the full 2000px
+ * upload for each one is what makes a thread with photos feel slow. A ~480px
+ * thumbnail is a fraction of the bytes and is indistinguishable at that size;
+ * the full image is still used in the gallery viewer.
+ */
+export async function makeThumbnail(file: File): Promise<File | null> {
+  if (!file.type.startsWith('image/')) return null
+  if (/heic|heif/i.test(file.type)) return null
+  try {
+    const bitmap = await createImageBitmap(file)
+    const scale = Math.min(1, THUMB_EDGE / Math.max(bitmap.width, bitmap.height))
+    // Already tiny — the full image is a fine preview.
+    if (scale === 1 && file.size < 120 * 1024) return null
+    const w = Math.max(1, Math.round(bitmap.width * scale))
+    const h = Math.max(1, Math.round(bitmap.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(bitmap, 0, 0, w, h)
+    const blob: Blob | null = await new Promise(resolve =>
+      canvas.toBlob(resolve, 'image/jpeg', THUMB_QUALITY))
+    if (!blob) return null
+    return new File([blob], 'thumb.jpg', { type: 'image/jpeg', lastModified: Date.now() })
+  } catch { return null }
+}
+
+/**
  * Upload one file and return its public URL.
  * @param onProgress reports 0–1 for the compression/upload phases.
  */
@@ -109,10 +143,31 @@ export async function uploadAttachment(
   onProgress?.(0.9)
 
   const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path)
+
+  // Upload a preview next to it. Best-effort: if it fails the timeline just
+  // uses the full image, exactly as before.
+  let thumbUrl: string | undefined
+  try {
+    const thumb = await makeThumbnail(prepared)
+    if (thumb) {
+      const thumbPath = path.replace(/\.[^.]+$/, '') + '_thumb.jpg'
+      const { error: tErr } = await supabase.storage.from(BUCKET).upload(thumbPath, thumb, {
+        contentType: 'image/jpeg', upsert: true,
+        // Previews never change, so let browsers keep them for a long time.
+        cacheControl: '31536000',
+      })
+      if (!tErr) {
+        const { data: tPub } = supabase.storage.from(BUCKET).getPublicUrl(thumbPath)
+        thumbUrl = tPub.publicUrl
+      }
+    }
+  } catch { /* preview is optional */ }
+
   onProgress?.(1)
 
   return {
     url: pub.publicUrl,
+    thumbUrl,
     name: file.name,
     type: prepared.type || file.type,
     kind: kindOf(prepared.type || file.type),

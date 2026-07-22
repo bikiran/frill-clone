@@ -1666,88 +1666,113 @@ export default function InboxPage() {
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0 || !selected || !companyId) return
     setUploading(true)
+    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
     try {
+      // Upload everything FIRST, then send once. Previously each file was sent
+      // in its own message and its own SMS, so picking five photos texted the
+      // customer five separate links.
+      const attachments: any[] = []
       for (const file of Array.from(files)) {
-        // Direct-to-storage: avoids the serverless body cap that made large
-        // photos fail with an unparseable plain-text 413.
-        let data: any
         try {
-          data = await uploadAttachment(file, { companyId, conversationId: selected.id })
+          const data = await uploadAttachment(file, { companyId, conversationId: selected.id })
+          attachments.push({ url: data.url, thumbUrl: data.thumbUrl, name: data.name, type: data.type, kind: data.kind })
         } catch (e: any) {
           alert(`Could not upload ${file.name}: ${e.message}`)
-          continue
         }
-        const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
-        const attachment = { url: data.url, name: data.name, type: data.type, kind: data.kind }
+      }
+      if (attachments.length === 0) { setUploading(false); return }
 
-        // Text the customer a link to the media when we have a mobile for them.
-        // Previously the file was only inserted into the chat thread and never
-        // sent — so the customer received nothing at all.
-        const smsNumber = smsDestination()
-        if (smsNumber) {
-          try {
-            const r = await fetch('/api/telnyx/sms/send', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                companyId, conversationId: selected.id, to: smsNumber,
-                text: data.kind === 'file' ? `📎 ${data.name}` : '',
-                attachments: [attachment],   // becomes a short colvy.com/m/… link
-                senderName: me,
-                skipChatMessage: true,       // we insert our own richer message below
-              }),
-            })
-            const rd = await r.json()
-            // Never hide a failed text — otherwise the agent believes the
-            // customer received it when they didn't.
-            if (!r.ok) showToast(`Saved to the chat, but the SMS failed: ${rd.error || 'unknown error'}`)
-          } catch (e: any) { showToast('Saved to the chat, but the SMS failed to send.') }
-        }
+      const media = attachments.filter(a => a.kind === 'image' || a.kind === 'video')
+      const plainFiles = attachments.filter(a => a.kind !== 'image' && a.kind !== 'video')
+      const smsNumber = smsDestination()
+      const metaCh = activeChannel
 
-        // Meta channels (Messenger / Instagram): push the media through the
-        // Send API so the customer actually receives the photo/video/file.
-        const metaCh = activeChannel
-        let deliveredOk = true
-        if (metaCh === 'instagram' || metaCh === 'facebook') {
+      // One branded gallery link for all the media, so the customer taps once
+      // and swipes through them.
+      let galleryUrl = ''
+      if (media.length > 0) {
+        try {
+          const res = await fetch('/api/short-links/create', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId, kind: 'media',
+              url: media[0].url,
+              mediaUrls: media,
+              label: media.length > 1 ? `${media.length} photos` : (media[0].kind === 'video' ? 'Video' : 'Photo'),
+              conversationId: selected.id,
+              sentBy: me,
+            }),
+          })
+          const d = await readJsonSafe(res)
+          if (res.ok && d.url) galleryUrl = d.url
+          else console.warn('[media send] gallery link failed:', d.error)
+        } catch (e) { console.warn('[media send] gallery link error:', e) }
+      }
+
+      // ── Deliver ────────────────────────────────────────────────────────────
+      if (smsNumber && !['instagram', 'facebook', 'email'].includes(metaCh)) {
+        const parts: string[] = []
+        if (galleryUrl) parts.push(galleryUrl)
+        for (const f of plainFiles) parts.push(`📎 ${f.name}: ${f.url}`)
+        try {
+          const r = await fetch('/api/telnyx/sms/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId, conversationId: selected.id, to: smsNumber,
+              text: parts.join('\n'),
+              // The links are already in the text — passing attachments too
+              // would make the route append a second set.
+              attachments: [],
+              senderName: me, skipChatMessage: true,
+            }),
+          })
+          const rd = await readJsonSafe(r)
+          if (!r.ok) showToast(`Saved to the chat, but the SMS failed: ${rd.error || 'unknown error'}`)
+        } catch { showToast('Saved to the chat, but the SMS failed to send.') }
+      } else if (metaCh === 'instagram' || metaCh === 'facebook') {
+        // Meta's Send API takes one attachment per call.
+        for (const a of attachments) {
           try {
             const r = await fetch('/api/meta/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                conversationId: selected.id,
-                attachmentUrl: attachment.url,
-                attachmentKind: attachment.kind,
-                content: '',
-                agentName: me,
-                skipChatMessage: true,
+                conversationId: selected.id, attachmentUrl: a.url, attachmentKind: a.kind,
+                content: '', agentName: me, skipChatMessage: true,
               }),
             })
-            const rd = await r.json()
-            if (!r.ok) { deliveredOk = false; showToast(`Photo NOT delivered — ${rd.error || 'unknown error'}`) }
-          } catch (e: any) { deliveredOk = false; showToast(`Photo NOT delivered: ${e?.message || 'send failed'}`) }
-        } else if (metaCh === 'email') {
-          // Email: send the file as a link (the customer gets the full-quality
-          // original, and it works in every mail client).
-          try {
-            const r = await fetch('/api/email/reply', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                conversationId: selected.id, agentName: me,
-                content: `${data.kind === 'file' ? data.name : 'Photo'} attached:\n${attachment.url}`,
-              }),
-            })
-            const rd = await r.json()
-            if (!r.ok) { deliveredOk = false; showToast(`Email NOT sent — ${rd.error || 'unknown error'}`) }
-          } catch (e: any) { deliveredOk = false; showToast(`Email NOT sent: ${e?.message || 'failed'}`) }
+            const rd = await readJsonSafe(r)
+            if (!r.ok) showToast(`Photo NOT delivered — ${rd.error || 'unknown error'}`)
+          } catch (e: any) { showToast(`Photo NOT delivered: ${e?.message || 'send failed'}`) }
         }
-
-        await (supabase as any).from('messages').insert({
-          conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
-          sender_id: user.id, sender_name: me, sender_email: user.email,
-          content: data.kind === 'file' ? `📎 ${data.name}` : '',
-          attachments: [attachment],
-          delivery_channel: ['instagram', 'facebook', 'email'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
-        })
+      } else if (metaCh === 'email') {
+        try {
+          const body = galleryUrl
+            ? `${media.length > 1 ? `${media.length} photos` : 'Photo'} attached:\n${galleryUrl}`
+            : attachments.map(a => `${a.name}:\n${a.url}`).join('\n\n')
+          const r = await fetch('/api/email/reply', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversationId: selected.id, agentName: me, content: body }),
+          })
+          const rd = await readJsonSafe(r)
+          if (!r.ok) showToast(`Email NOT sent — ${rd.error || 'unknown error'}`)
+        } catch (e: any) { showToast(`Email NOT sent: ${e?.message || 'failed'}`) }
       }
-      await (supabase as any).from('conversations').update({ last_message: '📎 Attachment', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
+
+      // ── One message carrying all of it ─────────────────────────────────────
+      await (supabase as any).from('messages').insert({
+        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+        sender_id: user.id, sender_name: me, sender_email: user.email,
+        content: plainFiles.length && !media.length ? plainFiles.map(f => `📎 ${f.name}`).join('\n') : '',
+        attachments,
+        metadata: galleryUrl ? { gallery_url: galleryUrl } : {},
+        delivery_channel: ['instagram', 'facebook', 'email'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
+      })
+
+      await (supabase as any).from('conversations').update({
+        last_message: media.length ? (media.length > 1 ? `🖼️ ${media.length} photos` : '🖼️ Photo') : '📎 Attachment',
+        last_message_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }).eq('id', selected.id)
+
       const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
       setMessages(msgs || [])
       scrollBottom()
@@ -5377,61 +5402,97 @@ export default function InboxPage() {
                         )}
 
                         {/* Attachments.
-                            Media is laid out as a grid collage (like WhatsApp /
-                            iMessage) rather than a stack of differently-sized
-                            images — stacking left the bubble colour showing
-                            through every gap and looked unfinished. */}
+                            Facebook-style mosaic: every tile is edge-to-edge
+                            with hairline gutters, and the shape of the grid
+                            changes with the count. Tiles are cropped to fill
+                            (object-fit: cover) so there are no letterbox bars
+                            or ragged edges — that mismatch was what made the
+                            old layout look unfinished. */}
                         {(() => {
                           const media = atts.filter((a: any) => a.kind === 'image' || a.kind === 'video')
                           const files = atts.filter((a: any) => a.kind !== 'image' && a.kind !== 'video')
                           const n = media.length
-                          const shown = n > 4 ? media.slice(0, 4) : media
-                          const GRID = 246          // total collage width
-                          const GAP = 3
-                          const cell = (GRID - GAP) / 2
+                          const shown = n > 5 ? media.slice(0, 5) : media
+                          const W = 268                     // collage width
+                          const GAP = 2
 
-                          const tileStyle = (i: number): React.CSSProperties => {
-                            if (n === 1) return { width: '100%', maxWidth: GRID, maxHeight: 300 }
-                            if (n === 2) return { width: cell, height: cell }
-                            if (n === 3) return i === 0 ? { width: GRID, height: 140 } : { width: cell, height: 118 }
-                            return { width: cell, height: cell }
+                          // Facebook picks a shape per count. Each entry gives
+                          // the grid template and the row heights.
+                          const layout = (() => {
+                            switch (Math.min(n, 5)) {
+                              case 1: return { cols: '1fr', rows: 'auto' }
+                              case 2: return { cols: '1fr 1fr', rows: '180px' }
+                              case 3: return { cols: '2fr 1fr', rows: '96px 96px' }
+                              case 4: return { cols: '1fr 1fr', rows: '110px 110px' }
+                              default: return { cols: '1fr 1fr 1fr', rows: '132px 88px' }
+                            }
+                          })()
+
+                          // Which cells span more than one track.
+                          const spanOf = (i: number): React.CSSProperties => {
+                            if (n === 3 && i === 0) return { gridRow: 'span 2' }
+                            if (n >= 5) {
+                              if (i === 0) return { gridColumn: 'span 2' }
+                              if (i === 1) return { gridColumn: 'span 1' }
+                            }
+                            return {}
                           }
 
                           return (
                             <>
                               {n > 0 && (
                                 <div style={{
-                                  display: 'flex', flexWrap: 'wrap', gap: GAP,
-                                  width: n === 1 ? 'auto' : GRID,
-                                  borderRadius: 12, overflow: 'hidden',
+                                  display: 'grid',
+                                  gridTemplateColumns: layout.cols,
+                                  gridAutoRows: layout.rows.split(' ')[0],
+                                  gridTemplateRows: layout.rows,
+                                  gap: GAP,
+                                  width: n === 1 ? 'auto' : W,
+                                  maxWidth: W,
+                                  borderRadius: 14,
+                                  overflow: 'hidden',
                                   marginBottom: (msg.content || files.length) ? 6 : 0,
                                 }}>
                                   {shown.map((a: any, ai: number) => {
-                                    const extra = n > 4 && ai === 3 ? n - 4 : 0
+                                    const extra = n > 5 && ai === 4 ? n - 5 : 0
                                     return (
                                       <div key={ai} className="chat-att"
                                         onClick={() => setGalleryIndex(mediaIndexOf[a.url] ?? 0)}
-                                        style={{ ...tileStyle(ai), position: 'relative', cursor: 'pointer', background: '#e5e7eb', overflow: 'hidden', flexShrink: 0 }}>
+                                        style={{
+                                          ...spanOf(ai),
+                                          position: 'relative', cursor: 'pointer',
+                                          background: '#e5e7eb', overflow: 'hidden',
+                                          // A lone photo keeps its own shape; in a
+                                          // mosaic every tile fills its cell.
+                                          ...(n === 1 ? { maxHeight: 320 } : {}),
+                                        }}>
                                         {a.kind === 'image' ? (
-                                          <img src={a.url} alt={a.name}
-                                            style={{ width: '100%', height: '100%', objectFit: n === 1 ? 'contain' : 'cover', display: 'block' }} />
+                                          <img
+                                            /* The small preview made at upload time —
+                                               a fraction of the bytes at this size.
+                                               Falls back to the full image for older
+                                               attachments that have no preview. */
+                                            src={a.thumbUrl || a.url}
+                                            alt={a.name}
+                                            loading="lazy"
+                                            decoding="async"
+                                            style={{ width: '100%', height: n === 1 ? 'auto' : '100%', maxHeight: n === 1 ? 320 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block' }} />
                                         ) : (
                                           <>
-                                            <video src={a.url} style={{ width: '100%', height: '100%', objectFit: n === 1 ? 'contain' : 'cover', display: 'block', pointerEvents: 'none' }} />
+                                            <video src={a.url} preload="metadata" poster={a.thumbUrl}
+                                              style={{ width: '100%', height: n === 1 ? 'auto' : '100%', maxHeight: n === 1 ? 320 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block', pointerEvents: 'none' }} />
                                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                              <div style={{ width: 40, height: 40, borderRadius: 20, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>▶</div>
+                                              <div style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>▶</div>
                                             </div>
                                           </>
                                         )}
 
-                                        {/* "+3" on the last tile when there are more. */}
                                         {extra > 0 && (
-                                          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 700 }}>
+                                          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19, fontWeight: 700 }}>
                                             +{extra}
                                           </div>
                                         )}
 
-                                        {/* Forward this media to another contact. */}
                                         <button type="button" className="chat-att-fwd"
                                           onClick={e => { e.stopPropagation(); setForwarding(a); setForwardSearch(''); setForwardResults([]) }}
                                           title="Forward to another contact"
