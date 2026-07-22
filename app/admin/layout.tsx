@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import UploadQueueIndicator from '@/components/UploadQueueIndicator'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -617,6 +618,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       <MobileNav />
       <FeedbackButton companyId={company?.id} />
+      {/* Background uploads keep running as you move around the app. */}
+      <UploadQueueIndicator />
     </div>
   )
 }

@@ -9,6 +9,7 @@ import { enrichNames } from '@/lib/team-names'
 import AddContactModal from '@/components/AddContactModal'
 import SendTrackingModal from '@/components/SendTrackingModal'
 import { useDraft } from '@/lib/drafts'
+import { uploadQueue } from '@/lib/upload-queue'
 import FilePickerButton from '@/components/FilePickerButton'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
@@ -900,7 +901,6 @@ export default function InboxPage() {
   const [replyTo, setReplyTo] = useState<Message | null>(null)
   const [showEmoji, setShowEmoji] = useState(false)
   const [showReactPicker, setShowReactPicker] = useState<string | null>(null)
-  const [uploading, setUploading] = useState(false)
   const [events, setEvents] = useState<any[]>([])
   const [notes, setNotes] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
@@ -1755,119 +1755,121 @@ export default function InboxPage() {
   // ── File upload ────────────────────────────────────────────────────────────
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0 || !selected || !companyId) return
-    setUploading(true)
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
-    try {
-      // Upload everything FIRST, then send once. Previously each file was sent
-      // in its own message and its own SMS, so picking five photos texted the
-      // customer five separate links.
-      const attachments: any[] = []
-      for (const file of Array.from(files)) {
-        try {
-          const data = await uploadAttachment(file, { companyId, conversationId: selected.id })
-          attachments.push({ url: data.url, thumbUrl: data.thumbUrl, name: data.name, type: data.type, kind: data.kind })
-        } catch (e: any) {
-          alert(`Could not upload ${file.name}: ${e.message}`)
+
+    // Hand the files to the background queue and return immediately. The
+    // composer stays usable, you can switch conversations, and each file
+    // retries itself if the connection drops — which used to lose the whole
+    // batch. Everything below runs once the uploads settle.
+    const conv = selected            // capture: the agent may move on
+    const convId = conv.id
+    const smsNumber = smsDestination()
+    const metaCh = activeChannel
+
+    uploadQueue.enqueue(
+      Array.from(files),
+      { companyId, conversationId: convId },
+      async (attachments, failed) => {
+        if (attachments.length === 0) {
+          showToast(failed.length ? 'Nothing uploaded — tap Try again.' : 'Nothing to send')
+          return
         }
-      }
-      if (attachments.length === 0) { setUploading(false); return }
 
-      const media = attachments.filter(a => a.kind === 'image' || a.kind === 'video')
-      const plainFiles = attachments.filter(a => a.kind !== 'image' && a.kind !== 'video')
-      const smsNumber = smsDestination()
-      const metaCh = activeChannel
+        const media = attachments.filter(a => a.kind === 'image' || a.kind === 'video')
+        const plainFiles = attachments.filter(a => a.kind !== 'image' && a.kind !== 'video')
 
-      // One branded gallery link for all the media, so the customer taps once
-      // and swipes through them.
-      let galleryUrl = ''
-      if (media.length > 0) {
-        try {
-          const res = await fetch('/api/short-links/create', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              companyId, kind: 'media',
-              url: media[0].url,
-              mediaUrls: media,
-              label: media.length > 1 ? `${media.length} photos` : (media[0].kind === 'video' ? 'Video' : 'Photo'),
-              conversationId: selected.id,
-              sentBy: me,
-            }),
-          })
-          const d = await readJsonSafe(res)
-          if (res.ok && d.url) galleryUrl = d.url
-          else console.warn('[media send] gallery link failed:', d.error)
-        } catch (e) { console.warn('[media send] gallery link error:', e) }
-      }
-
-      // ── Deliver ────────────────────────────────────────────────────────────
-      if (smsNumber && !['instagram', 'facebook', 'email'].includes(metaCh)) {
-        const parts: string[] = []
-        if (galleryUrl) parts.push(galleryUrl)
-        for (const f of plainFiles) parts.push(`📎 ${f.name}: ${f.url}`)
-        try {
-          const r = await fetch('/api/telnyx/sms/send', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              companyId, conversationId: selected.id, to: smsNumber,
-              text: parts.join('\n'),
-              // The links are already in the text — passing attachments too
-              // would make the route append a second set.
-              attachments: [],
-              senderName: me, skipChatMessage: true,
-            }),
-          })
-          const rd = await readJsonSafe(r)
-          if (!r.ok) showToast(`Saved to the chat, but the SMS failed: ${rd.error || 'unknown error'}`)
-        } catch { showToast('Saved to the chat, but the SMS failed to send.') }
-      } else if (metaCh === 'instagram' || metaCh === 'facebook') {
-        // Meta's Send API takes one attachment per call.
-        for (const a of attachments) {
+        // One branded gallery link for all the media.
+        let galleryUrl = ''
+        if (media.length > 0) {
           try {
-            const r = await fetch('/api/meta/send', {
+            const res = await fetch('/api/short-links/create', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                conversationId: selected.id, attachmentUrl: a.url, attachmentKind: a.kind,
-                content: '', agentName: me, skipChatMessage: true,
+                companyId, kind: 'media',
+                url: media[0].url,
+                mediaUrls: media,
+                label: media.length > 1 ? `${media.length} photos` : (media[0].kind === 'video' ? 'Video' : 'Photo'),
+                conversationId: convId,
+                sentBy: me,
+              }),
+            })
+            const d = await readJsonSafe(res)
+            if (res.ok && d.url) galleryUrl = d.url
+            else console.warn('[media send] gallery link failed:', d.error)
+          } catch (e) { console.warn('[media send] gallery link error:', e) }
+        }
+
+        // ── Deliver ────────────────────────────────────────────────────────
+        if (smsNumber && !['instagram', 'facebook', 'email'].includes(metaCh)) {
+          const parts: string[] = []
+          if (galleryUrl) parts.push(galleryUrl)
+          for (const f of plainFiles) parts.push(`📎 ${f.name}: ${f.url}`)
+          try {
+            const r = await fetch('/api/telnyx/sms/send', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                companyId, conversationId: convId, to: smsNumber,
+                text: parts.join('\n'),
+                attachments: [],
+                senderName: me, skipChatMessage: true,
               }),
             })
             const rd = await readJsonSafe(r)
-            if (!r.ok) showToast(`Photo NOT delivered — ${rd.error || 'unknown error'}`)
-          } catch (e: any) { showToast(`Photo NOT delivered: ${e?.message || 'send failed'}`) }
+            if (!r.ok) showToast(`Saved to the chat, but the SMS failed: ${rd.error || 'unknown error'}`)
+          } catch { showToast('Saved to the chat, but the SMS failed to send.') }
+        } else if (metaCh === 'instagram' || metaCh === 'facebook') {
+          for (const a of attachments) {
+            try {
+              const r = await fetch('/api/meta/send', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  conversationId: convId, attachmentUrl: a.url, attachmentKind: a.kind,
+                  content: '', agentName: me, skipChatMessage: true,
+                }),
+              })
+              const rd = await readJsonSafe(r)
+              if (!r.ok) showToast(`Photo NOT delivered — ${rd.error || 'unknown error'}`)
+            } catch (e: any) { showToast(`Photo NOT delivered: ${e?.message || 'send failed'}`) }
+          }
+        } else if (metaCh === 'email') {
+          try {
+            const body = galleryUrl
+              ? `${media.length > 1 ? `${media.length} photos` : 'Photo'} attached:\n${galleryUrl}`
+              : attachments.map(a => `${a.name}:\n${a.url}`).join('\n\n')
+            const r = await fetch('/api/email/reply', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ conversationId: convId, agentName: me, content: body }),
+            })
+            const rd = await readJsonSafe(r)
+            if (!r.ok) showToast(`Email NOT sent — ${rd.error || 'unknown error'}`)
+          } catch (e: any) { showToast(`Email NOT sent: ${e?.message || 'failed'}`) }
         }
-      } else if (metaCh === 'email') {
-        try {
-          const body = galleryUrl
-            ? `${media.length > 1 ? `${media.length} photos` : 'Photo'} attached:\n${galleryUrl}`
-            : attachments.map(a => `${a.name}:\n${a.url}`).join('\n\n')
-          const r = await fetch('/api/email/reply', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ conversationId: selected.id, agentName: me, content: body }),
-          })
-          const rd = await readJsonSafe(r)
-          if (!r.ok) showToast(`Email NOT sent — ${rd.error || 'unknown error'}`)
-        } catch (e: any) { showToast(`Email NOT sent: ${e?.message || 'failed'}`) }
-      }
 
-      // ── One message carrying all of it ─────────────────────────────────────
-      await (supabase as any).from('messages').insert({
-        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
-        sender_id: user.id, sender_name: me, sender_email: user.email,
-        content: plainFiles.length && !media.length ? plainFiles.map(f => `📎 ${f.name}`).join('\n') : '',
-        attachments,
-        metadata: galleryUrl ? { gallery_url: galleryUrl } : {},
-        delivery_channel: ['instagram', 'facebook', 'email'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
-      })
+        // ── One message carrying all of it ─────────────────────────────────
+        await (supabase as any).from('messages').insert({
+          conversation_id: convId, company_id: companyId, sender_type: 'agent',
+          sender_id: user.id, sender_name: me, sender_email: user.email,
+          content: plainFiles.length && !media.length ? plainFiles.map(f => `📎 ${f.name}`).join('\n') : '',
+          attachments,
+          metadata: galleryUrl ? { gallery_url: galleryUrl } : {},
+          delivery_channel: ['instagram', 'facebook', 'email'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
+        })
 
-      await (supabase as any).from('conversations').update({
-        last_message: media.length ? (media.length > 1 ? `🖼️ ${media.length} photos` : '🖼️ Photo') : '📎 Attachment',
-        last_message_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      }).eq('id', selected.id)
+        await (supabase as any).from('conversations').update({
+          last_message: media.length ? (media.length > 1 ? `🖼️ ${media.length} photos` : '🖼️ Photo') : '📎 Attachment',
+          last_message_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        }).eq('id', convId)
 
-      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
-      setMessages(msgs || [])
-      scrollBottom()
-    } catch (e: any) { alert('Attachment failed: ' + e.message) }
-    setUploading(false)
+        // Only refresh the thread if the agent is still looking at it.
+        if (selectedRef.current?.id === convId) {
+          const { data: msgs } = await (supabase as any).from('messages')
+            .select('*').eq('conversation_id', convId).order('created_at', { ascending: true })
+          setMessages(msgs || [])
+          scrollBottom()
+        }
+        loadConversations()
+      },
+    )
   }
 
   // ── Notes & Tasks ──────────────────────────────────────────────────────────
@@ -6056,9 +6058,9 @@ export default function InboxPage() {
                     )}
                   </div>
                   {/* Attach */}
-                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} title="Attach file"
+                  <button type="button" className="press" onClick={() => fileInputRef.current?.click()} title="Attach file"
                     style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
-                    {uploading ? '⏳' : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
+                    {<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
                   </button>
                   {/* Gallery */}
                   <button type="button" onClick={openMediaPicker} title="Send from gallery"
