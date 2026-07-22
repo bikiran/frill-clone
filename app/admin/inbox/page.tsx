@@ -7,6 +7,7 @@ import MentionInput, { resolveMentions as resolveTeamMentions } from '@/componen
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { enrichNames } from '@/lib/team-names'
 import AddContactModal from '@/components/AddContactModal'
+import SendTrackingModal from '@/components/SendTrackingModal'
 import FilePickerButton from '@/components/FilePickerButton'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
@@ -709,6 +710,7 @@ export default function InboxPage() {
   const [showDialer, setShowDialer] = useState(false)
   const [showCompose, setShowCompose] = useState(false)
   const [showAddContact, setShowAddContact] = useState(false)
+  const [showTracking, setShowTracking] = useState(false)
   const [emailFromLabel, setEmailFromLabel] = useState('')
   const [linkedChannels, setLinkedChannels] = useState<any[]>([])
   const [showTimeline, setShowTimeline] = useState(false)
@@ -2857,6 +2859,42 @@ export default function InboxPage() {
   }
 
   // ── Contact save ───────────────────────────────────────────────────────────
+  const sendTrackingMessage = async (text: string) => {
+    if (!companyId || !selected) return
+    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+    const smsNumber = smsDestination()
+    try {
+      await (supabase as any).from('messages').insert({
+        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+        sender_name: me, content: text,
+        metadata: { tracking: true },
+        delivery_channel: smsNumber ? 'sms' : 'chat',
+      })
+      await (supabase as any).from('conversations').update({
+        last_message: 'Tracking sent', last_message_at: new Date().toISOString(),
+      }).eq('id', selected.id)
+
+      if (smsNumber) {
+        // The link is already in the text, so don't pass attachments — the SMS
+        // route would append a second link.
+        await fetch('/api/telnyx/sms/send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId, conversationId: selected.id, to: smsNumber,
+            text, senderName: me, skipChatMessage: true,
+          }),
+        })
+      }
+      showToast('Tracking sent')
+      const { data: msgs } = await (supabase as any).from('messages')
+        .select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+      setMessages(msgs || [])
+      scrollBottom()
+    } catch (e: any) {
+      showToast(e.message || 'Could not send tracking')
+    }
+  }
+
   const saveContact = async () => {
     if (!companyId) return
     setSavingContact(true)
@@ -3936,6 +3974,21 @@ export default function InboxPage() {
           companyId={companyId}
           onClose={() => setShowAddContact(false)}
           onCreated={() => { setShowAddContact(false); loadConversations(); showToast('Contact added'); setShowCompose(true) }}
+        />
+      )}
+
+      {showTracking && companyId && selected && (
+        <SendTrackingModal
+          companyId={companyId}
+          conversationId={selected.id}
+          contactId={contact?.id || null}
+          orderNumber={(contact as any)?.last_order_number || null}
+          senderName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
+          onClose={() => setShowTracking(false)}
+          onSent={async ({ text }) => {
+            setShowTracking(false)
+            await sendTrackingMessage(text)
+          }}
         />
       )}
 
@@ -6325,6 +6378,15 @@ export default function InboxPage() {
                         <option value="delivered">Delivered</option>
                         <option value="failed">Failed</option>
                       </select>
+
+                      {/* Send the customer a tracking link once dispatched. */}
+                      <button type="button" onClick={() => setShowTracking(true)}
+                        style={{ marginTop: 7, width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 0', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
+                        </svg>
+                        Send tracking
+                      </button>
                     </div>
 
                     {contact.subscribed_to_marketing && <span style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>✓ Subscribed to marketing</span>}
