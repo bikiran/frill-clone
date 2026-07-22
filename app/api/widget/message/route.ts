@@ -38,11 +38,17 @@ export async function POST(req: NextRequest) {
     const companyId = uuid(body.companyId)
     const conversationId = uuid(body.conversationId)
     const content = typeof body.content === 'string' ? body.content.trim() : ''
+    const attachments = Array.isArray(body.attachments) ? body.attachments.slice(0, 10) : []
+    // A visitor may only post as themselves or as a system event (e.g. "started
+    // a chat"). Anything else — notably 'agent' — is refused, so nobody can
+    // impersonate staff in a customer's thread.
+    const requested = typeof body.senderType === 'string' ? body.senderType : 'visitor'
+    const senderType = requested === 'system' ? 'system' : 'visitor'
 
     if (!companyId || !conversationId) {
       return NextResponse.json({ error: 'companyId and conversationId are required' }, { status: 400 })
     }
-    if (!content) {
+    if (!content && attachments.length === 0) {
       return NextResponse.json({ error: 'Message is empty' }, { status: 400 })
     }
     if (content.length > MAX_LENGTH) {
@@ -71,10 +77,11 @@ export async function POST(req: NextRequest) {
     const { data: message, error } = await db.from('messages').insert({
       conversation_id: conversationId,
       company_id: companyId,
-      sender_type: 'visitor',
+      sender_type: senderType,
       sender_name: (body.senderName || '').toString().slice(0, 120) || null,
       sender_email: (body.senderEmail || '').toString().slice(0, 200) || null,
       content,
+      attachments,
       reply_to: uuid(body.replyTo),
     }).select().maybeSingle()
 
@@ -84,7 +91,7 @@ export async function POST(req: NextRequest) {
     }
 
     await db.from('conversations').update({
-      last_message: content.slice(0, 200),
+      last_message: (content || '📎 Attachment').slice(0, 200),
       last_message_at: new Date().toISOString(),
       is_unread: true,
       unread_count: 1,
