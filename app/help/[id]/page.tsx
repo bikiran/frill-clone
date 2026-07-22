@@ -195,24 +195,14 @@ export default function HelpArticlePage() {
         const host = typeof window !== 'undefined' ? window.location.hostname : ''
         if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
           const slug = host.replace('.colvy.com', '')
-          // Select everything rather than naming columns — asking for
-          // support_email/email failed outright because this table has
-          // business_email, and a failed select silently left the generic
-          // support@colvy.com address showing on every company's help centre.
-          const { data: co } = await (supabase as any).from('companies')
-            .select('*').eq('slug', slug).maybeSingle()
-          let addr = co?.support_email || co?.business_email || co?.contact_email || co?.email || null
-          // Otherwise use the address the company actually sends and receives
-          // on, so replies land somewhere they're monitoring.
-          if (!addr && co?.id) {
-            try {
-              const { data: ec } = await (supabase as any).from('email_channels')
-                .select('from_address, inbound_address')
-                .eq('company_id', co.id).eq('is_active', true).limit(1)
-              addr = ec?.[0]?.from_address || ec?.[0]?.inbound_address || null
-            } catch { /* no email channel configured */ }
-          }
-          if (addr) setHelpEmail(addr)
+          // Ask the server for just the support address. Reading the
+          // company row and email_channels from the browser meant both had to
+          // be publicly readable; this exposes one field instead.
+          try {
+            const r = await fetch(`/api/help/contact?slug=${encodeURIComponent(slug)}`)
+            const d = await r.json()
+            if (d.email) setHelpEmail(d.email)
+          } catch { /* keep the default */ }
         }
       } catch { /* keep the default */ }
 

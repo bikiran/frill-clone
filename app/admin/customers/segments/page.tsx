@@ -1,14 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 import { SegmentationService, CustomerSegment } from '@/lib/segmentation-service'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
 
 export default function CustomerSegmentationPage() {
   const router = useRouter()
@@ -26,7 +21,7 @@ export default function CustomerSegmentationPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const { data: company } = await supabase
+        const { data: company } = await (supabase as any)
           .from('companies')
           .select('id')
           .eq('slug', slug)
@@ -40,7 +35,7 @@ export default function CustomerSegmentationPage() {
         setCompanyId(company.id)
 
         // Fetch all customers
-        const { data: customersData } = await supabase
+        const { data: customersData } = await (supabase as any)
           .from('woocommerce_customers')
           .select('*')
           .eq('company_id', company.id)

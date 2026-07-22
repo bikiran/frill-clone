@@ -1,14 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
 import { useSearchParams } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 import { SegmentationService } from '@/lib/segmentation-service'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-)
 
 export default function CustomerProfilePage() {
   const searchParams = useSearchParams()

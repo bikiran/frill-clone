@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 import { SkeletonList } from '@/components/Skeleton'
 import { SegmentationService } from '@/lib/segmentation-service'
 
@@ -72,10 +72,7 @@ export default function UsersPage() {
 
   const loadCustomerPage = async (page: number) => {
     try {
-      const sb = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-      )
+      const sb = supabase as any
       let companyId2: string | null = null
       if (typeof window !== 'undefined') {
         const h = window.location.hostname
@@ -125,10 +122,7 @@ export default function UsersPage() {
         return
       }
       try {
-        const sb = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-        )
+        const sb = supabase as any
         let cid2: string | null = null
         if (typeof window !== 'undefined') {
           const h = window.location.hostname
@@ -170,10 +164,7 @@ export default function UsersPage() {
     setFiltering(true)
     filterTimer.current = setTimeout(async () => {
       try {
-        const sb = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-        )
+        const sb = supabase as any
         const table = fChannel === 'shopify' ? 'shopify_customers' : 'woocommerce_customers'
         let q = (sb as any).from(table).select('*').eq('company_id', resolvedCompanyId)
         // Numeric thresholds — pushed to the DB.
@@ -243,10 +234,7 @@ export default function UsersPage() {
   useEffect(() => {
     const loadUsers = async () => {
       try {
-        const sb = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-        )
+        const sb = supabase as any
 
         // Resolve company: query slug → hostname slug → owner → team membership.
         // Previously only ?slug= was used (with a throwing .single()), so on a

@@ -111,17 +111,12 @@ export default function HelpCentrePage() {
     const h = window.location.hostname
     if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
       const slug = h.replace('.colvy.com', '')
-      const { data } = await (supabase as any).from('companies').select('*').eq('slug', slug).maybeSingle()
-      let addr = data?.support_email || data?.business_email || data?.contact_email || data?.email || null
-      if (!addr && data?.id) {
-        try {
-          const { data: ec } = await (supabase as any).from('email_channels')
-            .select('from_address, inbound_address')
-            .eq('company_id', data.id).eq('is_active', true).limit(1)
-          addr = ec?.[0]?.from_address || ec?.[0]?.inbound_address || null
-        } catch { /* no email channel configured */ }
-      }
-      if (addr) setHelpEmail(addr)
+      const { data } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
+      try {
+        const r = await fetch(`/api/help/contact?slug=${encodeURIComponent(slug)}`)
+        const d = await r.json()
+        if (d.email) setHelpEmail(d.email)
+      } catch { /* keep the default */ }
       return data?.id || null
     }
     return null

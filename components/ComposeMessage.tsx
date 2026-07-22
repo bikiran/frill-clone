@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase'
 
 interface Props {
   companyId: string
@@ -22,10 +22,7 @@ export default function ComposeMessage({ companyId, senderName, onClose, onStart
   const [error, setError] = useState('')
   const timer = useRef<any>(null)
 
-  const sb = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  )
+  const sb = supabase as any
 
   // Debounced contact search on name / phone / email.
   useEffect(() => {
