@@ -7,6 +7,7 @@ import { SkeletonList } from '@/components/Skeleton'
 import AssigneePicker from '@/components/AssigneePicker'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { enrichNames } from '@/lib/team-names'
+import { useDraft } from '@/lib/drafts'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -697,6 +698,22 @@ function TaskEditor({ companyId, team, me, userId, onClose, onSaved }: any) {
   const [order, setOrder] = useState<any>(null)
   const [showOrderSearch, setShowOrderSearch] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  // Keep a half-written task so it isn't lost on navigating away.
+  const draft = useDraft(userId, companyId, 'task', '', { title, priority, due, assignees, order },
+    { isEmpty: (v: any) => !v?.title?.trim() })
+  useEffect(() => {
+    if (draft.ready && draft.restored && !title) {
+      const r = draft.restored
+      if (r.title) setTitle(r.title)
+      if (r.priority) setPriority(r.priority)
+      if (r.due) setDue(r.due)
+      if (Array.isArray(r.assignees)) setAssignees(r.assignees)
+      if (r.order) setOrder(r.order)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.ready])
+
   const save = async () => {
     if (!title.trim()) return
     setSaving(true)
@@ -737,13 +754,22 @@ function TaskEditor({ companyId, team, me, userId, onClose, onSaved }: any) {
       for (const m of mentioned as any[]) { const tm = team.find((t: any) => t.id === m.id); if (tm?.user_id) notify.set(tm.user_id, tm.name) }
       notify.delete(userId)
       for (const [uid] of notify) { try { await (supabase as any).from('notifications').insert({ company_id: companyId, user_id: uid, type: 'task_assigned', title: `${me} assigned you a task`, body: title.trim().slice(0, 160), link: '/admin/tasks', is_read: false }) } catch {} }
+      await draft.discard()
       onSaved()
     } catch (e: any) { console.error('[task create] payload was', row); alert('Could not create task: ' + e.message); setSaving(false) }
   }
   const L: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em', margin: '16px 0 7px' }
   return (
     <div style={{ padding: 18 }}>
-      <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>New task</h3>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 12px' }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>New task</h3>
+        {draft.saved && title.trim() && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--slate)' }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Draft saved
+          </span>
+        )}
+      </div>
       <MentionInput value={title} onChange={(v) => setTitle(v)} team={team as any} multiline rows={2} placeholder="What needs doing? @ to mention" style={{ fontSize: 14 }} />
       <p style={L}>Priority</p>
       <div style={{ display: 'flex', gap: 5 }}>

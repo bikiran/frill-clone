@@ -4,17 +4,17 @@
  * ── About the URL formats ───────────────────────────────────────────────────
  * Not every carrier supports a deep link that opens a specific parcel:
  *
- *  • Aramex    — supports it properly (?l=<number> opens the parcel).
- *  • AusPost   — their tracker is a single-page app; the /track/#/details/<n>
- *                route is what most e-commerce integrations use, but Australia
- *                Post don't document it, so it may change.
- *  • Team GE   — no documented deep link at all; MyTeamGE expects the number to
- *                be typed into a field on the page.
+ *  • Aramex    — ?l=<number> opens the parcel. Verified working.
+ *  • AusPost   — /mypost/track/#/details/<n>. Verified working.
+ *  • Team GE   — /myparcel?shipmentID=<n>. Verified working.
  *
- * Where a deep link isn't reliable the customer still gets the number in the
- * message text, so they can paste it into the carrier's search box. That's why
- * `deepLink` is recorded per carrier — the UI tells the agent what to expect
- * rather than silently sending a link that lands on a search page.
+ * All three are undocumented query/hash routes rather than published APIs, so
+ * if a carrier reworks their site a link may start landing on a search page.
+ *
+ * The tracking number is always included in the message text as well, so if a
+ * link ever stops resolving the customer can still paste the number into the
+ * carrier's search box. `deepLink` records whether a carrier opens the parcel
+ * directly, so the UI can tell the agent what to expect.
  *
  * To add or correct a carrier, edit this list — nothing else needs to change.
  */
@@ -47,9 +47,9 @@ export const CARRIERS: Carrier[] = [
   {
     key: 'tge',
     label: 'Team Global Express',
-    deepLink: false,
-    url: () => 'https://teamglobalexp.com/myparcel',
-    note: "Team Global Express has no direct link — the customer enters the number on MyTeamGE. It's included in the message.",
+    deepLink: true,
+    url: n => `https://teamglobalexp.com/myparcel?shipmentID=${encodeURIComponent(n)}`,
+    note: 'Opens the parcel directly on MyTeamGE.',
   },
   {
     key: 'manual',

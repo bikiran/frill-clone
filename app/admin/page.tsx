@@ -1,5 +1,6 @@
 'use client'
 import Greeting from '@/components/Greeting'
+import LinkClicksCard from '@/components/LinkClicksCard'
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -312,6 +313,11 @@ export default function AdminDashboard() {
                 <p className="text-3xl font-bold" style={{ color: 'var(--ink)' }}>{s.value}</p>
               </Link>
             ))}
+          </div>
+
+          {/* Link performance at a glance */}
+          <div className="mb-8">
+            <LinkClicksCard companyId={companyId} />
           </div>
 
           {/* Steps */}

@@ -8,6 +8,7 @@ import { decodeEntities as dec } from '@/lib/decode-entities'
 import { enrichNames } from '@/lib/team-names'
 import AddContactModal from '@/components/AddContactModal'
 import SendTrackingModal from '@/components/SendTrackingModal'
+import { useDraft } from '@/lib/drafts'
 import FilePickerButton from '@/components/FilePickerButton'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
@@ -323,6 +324,19 @@ export default function InboxPage() {
   const [contact, setContact] = useState<Contact | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [reply, setReply] = useState('')
+
+  // Keep an unsent reply so it survives switching conversations, a reload, or
+  // coming back tomorrow. Personal to the signed-in agent.
+  const draft = useDraft(
+    user?.id || null, companyId, 'message', selected?.id || '',
+    { text: reply },
+    { enabled: !!selected, isEmpty: (v: any) => !v?.text || !v.text.trim() }
+  )
+  // Restore once the draft for this conversation has loaded.
+  useEffect(() => {
+    if (draft.ready && draft.restored?.text && !reply) setReply(draft.restored.text)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.ready, selected?.id])
   const [sending, setSending] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [locationFilter, setLocationFilter] = useState<string>('all')
@@ -2657,7 +2671,7 @@ export default function InboxPage() {
         // Deliberately NOT touching conversations.last_message — an internal
         // note shouldn't change what the conversation list shows the customer
         // said, and shouldn't mark the thread as newly active for them.
-        setReply(''); setReplyTo(null); setSending(false)
+        setReply(''); setReplyTo(null); setSending(false); draft.discard()
         setInternalMode(false); setMentionedUsers([])
         const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
         setMessages(msgs || [])
@@ -2678,7 +2692,7 @@ export default function InboxPage() {
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Message failed to send')
-        setReply(''); setReplyTo(null); setSending(false)
+        setReply(''); setReplyTo(null); setSending(false); draft.discard()
         const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
         setMessages(msgs || [])
         scrollBottom()
@@ -2699,7 +2713,7 @@ export default function InboxPage() {
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Email failed to send')
-        setReply(''); setReplyTo(null); setSending(false)
+        setReply(''); setReplyTo(null); setSending(false); draft.discard()
         const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
         setMessages(msgs || [])
         scrollBottom()
@@ -2757,7 +2771,7 @@ export default function InboxPage() {
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Email failed to send')
-        setReply(''); setReplyTo(null); setSending(false)
+        setReply(''); setReplyTo(null); setSending(false); draft.discard()
         const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
         setMessages(msgs || [])
         scrollBottom()
@@ -2790,7 +2804,7 @@ export default function InboxPage() {
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'SMS failed')
-        setReply(''); setReplyTo(null); setSending(false)
+        setReply(''); setReplyTo(null); setSending(false); draft.discard()
         const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
         setMessages(msgs || [])
         scrollBottom()
@@ -5703,6 +5717,15 @@ export default function InboxPage() {
                       <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.body}</span>
                     </button>
                   ))}
+                </div>
+              )}
+
+              {/* Unsent replies are kept per conversation, so you can leave and
+                  come back without losing what you'd written. */}
+              {draft.saved && reply.trim() && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--slate)', marginBottom: 4 }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  Draft saved
                 </div>
               )}
 
