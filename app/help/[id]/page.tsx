@@ -463,97 +463,6 @@ export default function HelpArticlePage() {
                 {renderContent(article.content)}
               </div>
 
-              {/* Was this helpful? — compact icon buttons, instant thanks, improve form on downvote */}
-              <div className="border-t mt-8 pt-6" style={{ borderColor: 'var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-                  <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--slate)' }}>Was this helpful?</span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      type="button"
-                      onClick={() => { if (!feedbackSubmitted) submitFeedback('helpful') }}
-                      title="Yes, it helped"
-                      style={{
-                        width: 46, height: 42, borderRadius: 12, cursor: feedbackSubmitted ? 'default' : 'pointer',
-                        border: feedback === 'helpful' ? '1.5px solid #86b34d' : '1.5px solid var(--border)',
-                        background: feedback === 'helpful' ? 'linear-gradient(135deg, #f2f8e8, #e5f2d3)' : '#fff',
-                        boxShadow: feedback === 'helpful' ? '0 0 0 4px rgba(134,179,77,0.12), 0 4px 14px rgba(134,179,77,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                        transform: feedback === 'helpful' ? 'scale(1.06)' : 'scale(1)',
-                      }}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill={feedback === 'helpful' ? '#6f9c3d' : 'none'} stroke={feedback === 'helpful' ? '#4d6e28' : '#9ca3af'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { if (!feedbackSubmitted) submitFeedback('not_helpful') }}
-                      title="Not really"
-                      style={{
-                        width: 46, height: 42, borderRadius: 12, cursor: feedbackSubmitted ? 'default' : 'pointer',
-                        border: feedback === 'not_helpful' ? '1.5px solid #d97706' : '1.5px solid var(--border)',
-                        background: feedback === 'not_helpful' ? 'linear-gradient(135deg, #fdf3e7, #fae5cc)' : '#fff',
-                        boxShadow: feedback === 'not_helpful' ? '0 0 0 4px rgba(217,119,6,0.12), 0 4px 14px rgba(217,119,6,0.18)' : '0 1px 3px rgba(0,0,0,0.05)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                        transform: feedback === 'not_helpful' ? 'scale(1.06)' : 'scale(1)',
-                      }}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill={feedback === 'not_helpful' ? '#c2701e' : 'none'} stroke={feedback === 'not_helpful' ? '#8a4f13' : '#9ca3af'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7 7h2.67A2.31 2.31 0 0 0 22 20v-7a2.31 2.31 0 0 0-2.33-2H17"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Upvote: instant thanks banner */}
-                {feedback === 'helpful' && (
-                  <div style={{ marginTop: 14, padding: '13px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #f2f8e8, #eaf4dc)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ width: 22, height: 22, borderRadius: '50%', border: '1.8px solid #6f9c3d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4d6e28" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    </span>
-                    <span style={{ fontSize: 15, fontWeight: 600, color: '#4d6e28' }}>Thank you for your feedback!</span>
-                  </div>
-                )}
-
-                {/* Downvote: how can we improve form */}
-                {feedback === 'not_helpful' && !feedbackSubmitted && (
-                  <div style={{ marginTop: 14 }}>
-                    <textarea value={feedbackNote} onChange={e => setFeedbackNote(e.target.value)}
-                      placeholder="How can we improve?"
-                      rows={4}
-                      style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: 'none', background: 'var(--canvas)', fontSize: 15, outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 10, fontFamily: 'inherit' }} />
-                    <input value={feedbackEmail} onChange={e => setFeedbackEmail(e.target.value)}
-                      type="email" placeholder="Your email (optional)"
-                      style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: 'none', background: 'var(--canvas)', fontSize: 15, outline: 'none', boxSizing: 'border-box', marginBottom: 12 }} />
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            if (article?.company_id) {
-                              await (supabase as any).from('help_article_feedback').insert({
-                                article_id: article.id,
-                                company_id: article.company_id,
-                                helpful: false,
-                                comment: feedbackNote.trim() ? `${feedbackNote.trim()}${feedbackEmail ? ` — ${feedbackEmail}` : ''}` : null,
-                              })
-                            }
-                          } catch {}
-                          setFeedbackSubmitted(true)
-                        }}
-                        style={{ padding: '12px 26px', borderRadius: 14, border: '1px solid var(--border)', background: '#fff', fontSize: 15, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                        Submit Feedback
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {feedback === 'not_helpful' && feedbackSubmitted && (
-                  <div style={{ marginTop: 14, padding: '13px 16px', borderRadius: 12, background: 'var(--peach)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--coral)' }}>Thanks — we'll use this to improve the article.</span>
-                  </div>
-                )}
-              </div>
             </div>
 
 
@@ -646,6 +555,98 @@ export default function HelpArticlePage() {
                   />
                 </div>
               </form>
+            </div>
+
+            {/* Was this helpful? — compact icon buttons, instant thanks, improve form on downvote */}
+            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
+                <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--slate)' }}>Was this helpful?</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => { if (!feedbackSubmitted) submitFeedback('helpful') }}
+                    title="Yes, it helped"
+                    style={{
+                      width: 46, height: 42, borderRadius: 12, cursor: feedbackSubmitted ? 'default' : 'pointer',
+                      border: feedback === 'helpful' ? '1.5px solid #86b34d' : '1.5px solid var(--border)',
+                      background: feedback === 'helpful' ? 'linear-gradient(135deg, #f2f8e8, #e5f2d3)' : '#fff',
+                      boxShadow: feedback === 'helpful' ? '0 0 0 4px rgba(134,179,77,0.12), 0 4px 14px rgba(134,179,77,0.2)' : '0 1px 3px rgba(0,0,0,0.05)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                      transform: feedback === 'helpful' ? 'scale(1.06)' : 'scale(1)',
+                    }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill={feedback === 'helpful' ? '#6f9c3d' : 'none'} stroke={feedback === 'helpful' ? '#4d6e28' : '#9ca3af'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { if (!feedbackSubmitted) submitFeedback('not_helpful') }}
+                    title="Not really"
+                    style={{
+                      width: 46, height: 42, borderRadius: 12, cursor: feedbackSubmitted ? 'default' : 'pointer',
+                      border: feedback === 'not_helpful' ? '1.5px solid #d97706' : '1.5px solid var(--border)',
+                      background: feedback === 'not_helpful' ? 'linear-gradient(135deg, #fdf3e7, #fae5cc)' : '#fff',
+                      boxShadow: feedback === 'not_helpful' ? '0 0 0 4px rgba(217,119,6,0.12), 0 4px 14px rgba(217,119,6,0.18)' : '0 1px 3px rgba(0,0,0,0.05)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                      transform: feedback === 'not_helpful' ? 'scale(1.06)' : 'scale(1)',
+                    }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill={feedback === 'not_helpful' ? '#c2701e' : 'none'} stroke={feedback === 'not_helpful' ? '#8a4f13' : '#9ca3af'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7 7h2.67A2.31 2.31 0 0 0 22 20v-7a2.31 2.31 0 0 0-2.33-2H17"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Upvote: instant thanks banner */}
+              {feedback === 'helpful' && (
+                <div style={{ marginTop: 14, padding: '13px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #f2f8e8, #eaf4dc)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ width: 22, height: 22, borderRadius: '50%', border: '1.8px solid #6f9c3d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4d6e28" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  </span>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: '#4d6e28' }}>Thank you for your feedback!</span>
+                </div>
+              )}
+
+              {/* Downvote: how can we improve form */}
+              {feedback === 'not_helpful' && !feedbackSubmitted && (
+                <div style={{ marginTop: 14 }}>
+                  <textarea value={feedbackNote} onChange={e => setFeedbackNote(e.target.value)}
+                    placeholder="How can we improve?"
+                    rows={4}
+                    style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: 'none', background: 'var(--canvas)', fontSize: 15, outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 10, fontFamily: 'inherit' }} />
+                  <input value={feedbackEmail} onChange={e => setFeedbackEmail(e.target.value)}
+                    type="email" placeholder="Your email (optional)"
+                    style={{ width: '100%', padding: '14px 16px', borderRadius: 14, border: 'none', background: 'var(--canvas)', fontSize: 15, outline: 'none', boxSizing: 'border-box', marginBottom: 12 }} />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          if (article?.company_id) {
+                            await (supabase as any).from('help_article_feedback').insert({
+                              article_id: article.id,
+                              company_id: article.company_id,
+                              helpful: false,
+                              comment: feedbackNote.trim() ? `${feedbackNote.trim()}${feedbackEmail ? ` — ${feedbackEmail}` : ''}` : null,
+                            })
+                          }
+                        } catch {}
+                        setFeedbackSubmitted(true)
+                      }}
+                      style={{ padding: '12px 26px', borderRadius: 14, border: '1px solid var(--border)', background: '#fff', fontSize: 15, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                      Submit Feedback
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {feedback === 'not_helpful' && feedbackSubmitted && (
+                <div style={{ marginTop: 14, padding: '13px 16px', borderRadius: 12, background: 'var(--peach)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--coral)' }}>Thanks — we'll use this to improve the article.</span>
+                </div>
+              )}
             </div>
 
             {/* Related articles */}
