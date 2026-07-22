@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
@@ -16,18 +17,18 @@ export async function GET(req: NextRequest) {
 
   try {
     const supabase = getDb()
-    console.log('[WIDGET API] Fetching data for slug:', slug)
+    log.info('[WIDGET API] Fetching data for slug:', slug)
     
     const { data: company, error: companyError } = await (supabase as any)
       .from('companies').select('id,name,slug,logo_url,accent_color,is_private,widget_config')
       .eq('slug', slug).single()
 
     if (companyError || !company) {
-      console.log('[WIDGET API] Company not found:', { slug, error: companyError?.message })
+      log.info('[WIDGET API] Company not found:', { slug, error: companyError?.message })
       return NextResponse.json({ error: 'Company not found' }, { status: 404 })
     }
 
-    console.log('[WIDGET API] Found company:', { id: company.id, slug: company.slug })
+    log.info('[WIDGET API] Found company:', { id: company.id, slug: company.slug })
 
     const [ideasRes, annRes, formsRes, pollsRes, surveysRes, helpRes] = await Promise.all([
       (supabase as any).from('ideas').select('id,title,votes,status,created_at,description,is_private,attachments,created_by_name,location_ids').eq('company_id', company.id)
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
         .order('created_at', { ascending: false }).limit(10),
     ])
     
-    console.log('[WIDGET API] Query results:', {
+    log.info('[WIDGET API] Query results:', {
       company_id: company.id,
       ideas: { count: ideasRes.data?.length || 0, error: ideasRes.error?.message },
       announcements: { count: annRes.data?.length || 0, error: annRes.error?.message, data: annRes.data },
@@ -61,7 +62,7 @@ export async function GET(req: NextRequest) {
     if (helpRes.error) {
       console.error('[WIDGET API] Help articles query error:', helpRes.error)
     } else {
-      console.log('[WIDGET API] Help articles raw response:', {
+      log.info('[WIDGET API] Help articles raw response:', {
         count: helpRes.data?.length,
         data: helpRes.data?.map(a => ({ id: a.id, title: a.title, status: a.status, company_id: a.company_id }))
       })
@@ -105,7 +106,7 @@ export async function GET(req: NextRequest) {
       helpArticles: (helpRes.data || []).filter(visibleAt),
     }
 
-    console.log('[WIDGET API] Returning response:', {
+    log.info('[WIDGET API] Returning response:', {
       announcements_count: responseData.announcements.length,
       help_articles_count: responseData.helpArticles.length,
     })
@@ -134,7 +135,7 @@ export async function POST(req: NextRequest) {
 
     if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
 
-    console.log('[WIDGET API POST] Creating idea:', { slug, title, attachmentCount: attachments?.length || 0 })
+    log.info('[WIDGET API POST] Creating idea:', { slug, title, attachmentCount: attachments?.length || 0 })
 
     // Process attachments - upload to Supabase Storage
     let attachmentUrls: string[] = []
@@ -152,7 +153,7 @@ export async function POST(req: NextRequest) {
           const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExtension}`
           const filePath = `ideas/${company.id}/${fileName}`
 
-          console.log('[WIDGET API POST] Uploading attachment:', { fileName, size: buffer.length })
+          log.info('[WIDGET API POST] Uploading attachment:', { fileName, size: buffer.length })
 
           // Upload to Supabase Storage
           const { data: uploadData, error: uploadError } = await (supabase as any)
@@ -175,14 +176,14 @@ export async function POST(req: NextRequest) {
             .getPublicUrl(filePath)
 
           attachmentUrls.push(publicUrl)
-          console.log('[WIDGET API POST] Upload successful:', { publicUrl })
+          log.info('[WIDGET API POST] Upload successful:', { publicUrl })
         } catch (err) {
           console.error('[WIDGET API POST] Error processing attachment:', err)
         }
       }
     }
 
-    console.log('[WIDGET API POST] Processed attachments:', { count: attachmentUrls.length, urls: attachmentUrls })
+    log.info('[WIDGET API POST] Processed attachments:', { count: attachmentUrls.length, urls: attachmentUrls })
 
     const { data: idea, error: insertError } = await (supabase as any).from('ideas').insert({
       company_id: company.id,
@@ -202,7 +203,7 @@ export async function POST(req: NextRequest) {
       throw insertError
     }
 
-    console.log('[WIDGET API POST] Idea created successfully:', { ideaId: idea?.[0]?.id, attachmentCount: attachmentUrls.length })
+    log.info('[WIDGET API POST] Idea created successfully:', { ideaId: idea?.[0]?.id, attachmentCount: attachmentUrls.length })
 
     return NextResponse.json({ ok: true, idea: idea?.[0] }, {
       headers: { 'Access-Control-Allow-Origin': '*' }

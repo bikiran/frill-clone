@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { toPublicUrl } from './storage-url'
 
 /**
  * Chat attachment uploads.
@@ -158,7 +159,7 @@ export async function uploadAttachment(
       })
       if (!tErr) {
         const { data: tPub } = supabase.storage.from(BUCKET).getPublicUrl(thumbPath)
-        thumbUrl = tPub.publicUrl
+        thumbUrl = toPublicUrl(tPub.publicUrl)
       }
     }
   } catch { /* preview is optional */ }
@@ -166,7 +167,9 @@ export async function uploadAttachment(
   onProgress?.(1)
 
   return {
-    url: pub.publicUrl,
+    // Served from the custom storage domain so customer-facing links look
+    // like the business, and the bytes bypass Vercel.
+    url: toPublicUrl(pub.publicUrl),
     thumbUrl,
     name: file.name,
     type: prepared.type || file.type,

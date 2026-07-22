@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { toPublicUrl } from '@/lib/storage-url'
 
 export const dynamic = 'force-dynamic'
 
@@ -157,9 +158,9 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
             return (
               <div key={i} className="mv-media" style={{ background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
                 {image ? (
-                  <img src={m.url} alt={m.name || `Attachment ${i + 1}`} />
+                  <img src={toPublicUrl(m.url)} alt={m.name || `Attachment ${i + 1}`} />
                 ) : video ? (
-                  <video src={m.url} controls playsInline />
+                  <video src={toPublicUrl(m.url)} controls playsInline />
                 ) : (
                   <div style={{ padding: 30, textAlign: 'center' }}>
                     <p style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', margin: '0 0 6px' }}>{m.name || 'File'}</p>
@@ -172,7 +173,7 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
                       {m.name}
                     </p>
                   )}
-                  <a href={m.url} target="_blank" rel="noopener" download={m.name || true} className="mv-dl"
+                  <a href={toPublicUrl(m.url)} target="_blank" rel="noopener" download={m.name || true} className="mv-dl"
                     style={{ background: accent, color: '#fff' }}>
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>

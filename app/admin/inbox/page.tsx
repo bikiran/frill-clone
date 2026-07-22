@@ -10,6 +10,7 @@ import AddContactModal from '@/components/AddContactModal'
 import SendTrackingModal from '@/components/SendTrackingModal'
 import { useDraft } from '@/lib/drafts'
 import { uploadQueue } from '@/lib/upload-queue'
+import { toPublicUrl } from '@/lib/storage-url'
 import FilePickerButton from '@/components/FilePickerButton'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
@@ -5611,14 +5612,14 @@ export default function InboxPage() {
                                                a fraction of the bytes at this size.
                                                Falls back to the full image for older
                                                attachments that have no preview. */
-                                            src={a.thumbUrl || a.url}
+                                            src={toPublicUrl(a.thumbUrl || a.url)}
                                             alt={a.name}
                                             loading="lazy"
                                             decoding="async"
                                             style={{ width: '100%', height: n === 1 ? 'auto' : '100%', maxHeight: n === 1 ? 320 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block' }} />
                                         ) : (
                                           <>
-                                            <video src={a.url} preload="metadata" poster={a.thumbUrl}
+                                            <video src={toPublicUrl(a.url)} preload="metadata" poster={toPublicUrl(a.thumbUrl)}
                                               style={{ width: '100%', height: n === 1 ? 'auto' : '100%', maxHeight: n === 1 ? 320 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block', pointerEvents: 'none' }} />
                                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                               <div style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>▶</div>

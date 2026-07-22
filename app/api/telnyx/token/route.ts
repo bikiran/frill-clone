@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
 import { TelnyxService } from '@/lib/telnyx-service'
 
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
         const num = await svc.getNumber(integ.phone_number)
         if (num && String(num.connection_id || '') !== String(voiceAppId)) {
           await svc.assignNumberToConnection(integ.phone_number, voiceAppId)
-          console.log('[telnyx token] pointed number at Voice API app', integ.phone_number, '->', voiceAppId)
+          log.info('[telnyx token] pointed number at Voice API app', integ.phone_number, '->', voiceAppId)
         }
       }
     } catch (e) { console.error('[telnyx token] number routing heal failed', e) }
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
       try {
         const conn = await svc.createCredentialConnection(`Colvy WebRTC ${companyId.slice(0, 8)}`)
         webrtcConnId = conn?.data?.id
-        console.log('[telnyx token] createCredentialConnection result', JSON.stringify({ id: conn?.data?.id, err: (conn as any)?.errors }))
+        log.info('[telnyx token] createCredentialConnection result', JSON.stringify({ id: conn?.data?.id, err: (conn as any)?.errors }))
         if (webrtcConnId) {
           const { error: persistErr } = await db.from('telnyx_integrations').update({ webrtc_connection_id: webrtcConnId }).eq('company_id', companyId)
           if (persistErr) console.error('[telnyx token] could not persist webrtc_connection_id (run migration V183):', persistErr.message)
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
           ...(sipUsername ? { sip_username: sipUsername } : {}),
         }).eq('company_id', companyId)
         storedSipUser = sipUsername
-        console.log('[telnyx token] created credential on WebRTC connection', { credentialId, sipUsername })
+        log.info('[telnyx token] created credential on WebRTC connection', { credentialId, sipUsername })
       }
     }
     if (!credentialId) return NextResponse.json({ error: 'Could not create WebRTC credential' }, { status: 500 })
@@ -161,7 +162,7 @@ export async function POST(req: NextRequest) {
         }).eq('company_id', companyId)
         sipUser = existingUser
         sipPassword = pass
-        console.log('[telnyx token] set connection creds + SIP URI receiving', { sipUser })
+        log.info('[telnyx token] set connection creds + SIP URI receiving', { sipUser })
       } catch (e: any) {
         console.error('[telnyx token] could not configure connection', e?.message || e)
       }

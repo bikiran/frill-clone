@@ -38,6 +38,20 @@ export async function GET(req: NextRequest) {
     const db = admin()
     const results: any[] = []
 
+    // ── 0. Cheap idle check ────────────────────────────────────────────────
+    // This runs on a schedule whether or not there's anything to do, and most
+    // runs have nothing. One tiny count query decides that, instead of paying
+    // for the full pass — which is the difference between a few milliseconds
+    // and hundreds, every single run, forever.
+    {
+      const { count } = await db.from('campaigns')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['scheduled', 'sending'])
+      if (!count) {
+        return NextResponse.json({ ok: true, processed: 0, idle: true })
+      }
+    }
+
     // ── 1. Scheduled campaigns that are now due ────────────────────────────
     const { data: due } = await db.from('campaigns')
       .select('id, company_id, name, scheduled_at, quiet_hours, timezone')

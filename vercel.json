@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/campaigns/process",
-      "schedule": "* * * * *"
+      "schedule": "*/2 * * * *"
     }
   ]
 }

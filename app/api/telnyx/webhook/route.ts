@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
@@ -288,7 +289,7 @@ export async function POST(req: NextRequest) {
       const isInbound = direction === 'incoming' || direction === 'inbound'
       const isOutbound = direction === 'outgoing' || direction === 'outbound'
 
-      console.log('[telnyx call event]', { eventType, direction, from: fromNum, to: toNum, hasCC: !!callControlId })
+      log.info('[telnyx call event]', { eventType, direction, from: fromNum, to: toNum, hasCC: !!callControlId })
 
       // Inbound call just started — answer it and ring the online agents.
       if (eventType === 'call.initiated' && isInbound) {
@@ -348,7 +349,7 @@ export async function POST(req: NextRequest) {
             const onlineCount = (online || []).length
             const anyOnline = onlineCount > 0 && !!sipUser
 
-            console.log('[telnyx inbound] routing decision', {
+            log.info('[telnyx inbound] routing decision', {
               companyId, onlineAgents: onlineCount, hasSipUsername: !!sipUser,
               sipUser: sipUser ? sipUser.slice(0, 6) + '…' : null,
               willRing: anyOnline,
@@ -365,7 +366,7 @@ export async function POST(req: NextRequest) {
               const ring = Number(integ.ring_seconds || 25)
               const sipTarget = `sip:${sipUser}@sip.telnyx.com`
               const dialConnectionId = eventConnectionId || (integ as any).voice_api_application_id || integ.connection_id
-              console.log('[telnyx inbound] dialing agent client', { sipTarget, dialConnectionId })
+              log.info('[telnyx inbound] dialing agent client', { sipTarget, dialConnectionId })
               try {
                 const child = await svc.createChildCall({
                   connection_id: dialConnectionId,
@@ -376,11 +377,11 @@ export async function POST(req: NextRequest) {
                   webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
                 })
                 const agentLegId = (child as any)?.data?.call_control_id || null
-                console.log('[telnyx inbound] child call created', { agentLegId, childKeys: Object.keys((child as any)?.data || {}) })
+                log.info('[telnyx inbound] child call created', { agentLegId, childKeys: Object.keys((child as any)?.data || {}) })
                 const { error: updErr, data: updData } = await db.from('calls')
                   .update({ status: 'ringing_agents', transcription: `[ringing ${sipTarget}]`, agent_call_control_id: agentLegId })
                   .eq('telnyx_call_control_id', callControlId).select('id, agent_call_control_id')
-                console.log('[telnyx inbound] stored agent leg', { updErr: updErr?.message, updData })
+                log.info('[telnyx inbound] stored agent leg', { updErr: updErr?.message, updData })
               } catch (dialErr: any) {
                 console.error('[telnyx inbound] createChildCall failed', dialErr?.message || dialErr)
                 // Fall back to voicemail so the caller isn't left hanging.
@@ -394,7 +395,7 @@ export async function POST(req: NextRequest) {
             } else {
               // Nobody online (or no SIP credential) — straight to voicemail.
               const reason = !sipUser ? 'no sip_username on integration (open Colvy to provision it)' : 'no agents online (heartbeat in last 2 min)'
-              console.log('[telnyx inbound] going to voicemail —', reason)
+              log.info('[telnyx inbound] going to voicemail —', reason)
               if (integ.voicemail_enabled !== false) {
                 try { await svc.answerCall(callControlId) } catch {}
                 await svc.speak(callControlId, integ.voicemail_greeting || 'Please leave a message after the tone.')
@@ -417,13 +418,13 @@ export async function POST(req: NextRequest) {
       // outbound depending on Telnyx's perspective — gating on isOutbound made
       // the bridge silently never run when the browser answered.
       if (eventType === 'call.answered') {
-        console.log('[telnyx call.answered]', { callControlId, direction, isOutbound })
+        log.info('[telnyx call.answered]', { callControlId, direction, isOutbound })
         // Is this the caller's own leg being answered by our bridge? If so, skip.
         const { data: selfRow } = await db.from('calls')
           .select('id, status').eq('telnyx_call_control_id', callControlId).maybeSingle()
         const isCallerLeg = !!selfRow && selfRow.status !== 'ringing_agents'
         if (isCallerLeg) {
-          console.log('[telnyx call.answered] this is the caller leg, not bridging')
+          log.info('[telnyx call.answered] this is the caller leg, not bridging')
           return NextResponse.json({ ok: true })
         }
         try {
@@ -452,7 +453,7 @@ export async function POST(req: NextRequest) {
               answered_at: new Date().toISOString(),
               agent_call_control_id: callControlId,
             }).eq('id', parentRow.id)
-            console.log('[telnyx bridge] bridged agent leg to caller', { agent: callControlId, caller: parentRow.telnyx_call_control_id })
+            log.info('[telnyx bridge] bridged agent leg to caller', { agent: callControlId, caller: parentRow.telnyx_call_control_id })
           } else {
             console.error('[telnyx bridge] could not bridge — missing parent or api_key', { hasParent: !!parentRow, hasKey: !!apiKey })
           }
