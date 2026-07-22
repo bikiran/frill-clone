@@ -154,19 +154,6 @@ export default function HelpArticlePage() {
   const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
   const [openMenu, setOpenMenu] = useState(false)
   const [related, setRelated] = useState<any[]>([])
-  // Layout is decided in JS from the measured window width rather than a CSS
-  // media query. Media queries and Tailwind's lg:* utilities both failed to
-  // take effect on this page, which left the side panel stacked at the bottom;
-  // inline styles always apply.
-  const [winWidth, setWinWidth] = useState(1400)
-  useEffect(() => {
-    const measure = () => setWinWidth(window.innerWidth)
-    measure()
-    window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
-  }, [])
-  const showPanelBeside = winWidth >= 860      // article + right panel
-  const showToc = winWidth >= 1150             // plus the "on this page" rail
   const [helpSearch, setHelpSearch] = useState('')
   // The business's own support address, not a hardcoded Colvy one — customers
   // emailing about an aquarium order shouldn't land in Colvy's inbox.
@@ -375,26 +362,15 @@ export default function HelpArticlePage() {
         </div>
       </div>
 
-      {/* Inline rather than Tailwind utilities — several classes on this page
-          weren't being generated, so the container had no width cap or padding. */}
-      <div style={{ maxWidth: 1600, margin: '0 auto', padding: '40px 24px' }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: showToc
-            ? 'minmax(170px, 210px) minmax(0, 1fr) minmax(250px, 310px)'
-            : showPanelBeside
-              ? 'minmax(0, 1fr) minmax(250px, 310px)'
-              : 'minmax(0, 1fr)',
-          gap: 32,
-          alignItems: 'start',
-        }}>
+      <div className="max-w-[1600px] mx-auto px-6 py-10">
+        <div className="grid lg:grid-cols-4 gap-8 items-start">
           {/* On this page — headings pulled from the article, sticky, with the
               section you're currently reading highlighted. */}
-          <aside style={{ display: showToc ? 'block' : 'none', minWidth: 0 }}>
+          <aside className="hidden lg:block lg:col-span-1">
             {/* The nav scrolls on its own once the heading list outgrows the
                 viewport, instead of running off the bottom of the page. */}
             {toc.length > 0 && (
-              <nav style={{ position: 'sticky', top: 24, maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', overscrollBehavior: 'contain' }}>
+              <nav className="sticky top-6" style={{ maxHeight: 'calc(100vh - 3rem)', overflowY: 'auto', overscrollBehavior: 'contain' }}>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>
                   On this page
                 </p>
@@ -422,7 +398,7 @@ export default function HelpArticlePage() {
           </aside>
 
           {/* Main article */}
-          <div className="space-y-6" style={{ minWidth: 0 }}>
+          <div className="lg:col-span-2 space-y-6">
             <div className="bg-white rounded-2xl border p-8" style={{ borderColor: 'var(--border)' }}>
               {/* Header */}
               <div className="flex items-start justify-between gap-4 mb-6">
@@ -535,8 +511,9 @@ export default function HelpArticlePage() {
             </div>
           </div>
 
-          {/* Sidebar */}
-          <div className="space-y-4">
+          {/* Right sidebar — sticks while the article scrolls */}
+          <aside className="lg:col-span-1">
+            <div className="lg:sticky lg:top-6 space-y-6" style={{ maxHeight: 'calc(100vh - 3rem)', overflowY: 'auto', overscrollBehavior: 'contain' }}>
             {/* Like */}
             <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
               <button onClick={toggleLike}
@@ -556,11 +533,7 @@ export default function HelpArticlePage() {
                 {(article.likes || 0) > 0 && <span className="ml-1">({article.likes})</span>}
               </button>
             </div>
-          </div>
 
-          {/* Right sidebar — sticks while the article scrolls */}
-          <aside style={{ minWidth: 0 }}>
-            <div className="space-y-6" style={showPanelBeside ? { position: 'sticky', top: 24, maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', overscrollBehavior: 'contain' } : undefined}>
 
             {/* Search — first thing in the sidebar, so it's reachable from
                 inside an article without scrolling back to the top. */}
