@@ -2748,11 +2748,49 @@ export default function InboxPage() {
     showToast('Link copied')
   }
 
+  // ── Claim on first reply ───────────────────────────────────────────────────
+  // Whoever answers an unassigned conversation owns it. That is what replying
+  // already means in practice, and leaving it unassigned lets two agents pick
+  // up the same customer without realising.
+  //
+  // Never overwrites an existing owner, and the update is guarded on
+  // assigned_to being null so a colleague who claimed it a moment earlier keeps
+  // it rather than having it taken from under them.
+  const claimIfUnassigned = async () => {
+    if (!selected || !user) return
+    if (selected.assigned_to || (selected as any).assigned_name) return
+
+    const me = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Agent'
+
+    setSelected(s => s ? ({ ...s, assigned_to: user.id, assigned_name: me, status: 'assigned' } as any) : s)
+
+    const { data, error } = await (supabase as any)
+      .from('conversations')
+      .update({ assigned_to: user.id, assigned_name: me, status: 'assigned' })
+      .eq('id', selected.id)
+      .is('assigned_to', null)
+      .select()
+
+    if (error || !data || data.length === 0) {
+      // Either it failed or someone else got there first — take their version.
+      loadConversations()
+      return
+    }
+
+    logEvent('assigned', `Auto-assigned to ${me} on first reply`)
+    showToast(`Assigned to you`)
+    loadConversations()
+  }
+
   const sendReply = async () => {
     if (!reply.trim() || !selected || !user) return
     setSending(true)
     const content = reply.trim()
     const senderName = user.user_metadata?.display_name || user.email?.split('@')[0]
+
+    // An internal note isn't taking the customer on, so it doesn't claim the
+    // conversation — only a customer-facing reply does.
+    if (!internalMode) claimIfUnassigned()
 
     // ── Internal staff-only note ────────────────────────────────────────────
     // Written straight to the messages table with is_internal = true and never
