@@ -345,7 +345,7 @@ export async function POST(req: NextRequest) {
             // registers via the connection's SIP credentials, it's reachable at
             // sip:<sip_conn_username>@sip.telnyx.com. Prefer that; fall back to
             // the telephony credential username.
-            const sipUser = (integ as any).sip_conn_username || integ.sip_username
+            const sipUser = integ.sip_username || (integ as any).sip_conn_username
             const onlineCount = (online || []).length
 
             // A phone running the app can be woken by Telnyx's own VoIP push
