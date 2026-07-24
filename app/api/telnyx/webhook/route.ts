@@ -375,21 +375,40 @@ export async function POST(req: NextRequest) {
               .gte('last_seen_at', cutoff)
               .neq('available', false)
 
-            // Dial the SIP username the browser REGISTERS with. When the client
-            // registers via the connection's SIP credentials, it's reachable at
-            // sip:<sip_conn_username>@sip.telnyx.com. Prefer that; fall back to
-            // the telephony credential username.
-            // Dial the telephony credential the clients actually register
-            // with — NOT the connection's own sip_conn_username.
+            // Build the FULL set of SIP identities to ring.
             //
-            // These are two different SIP identities on the same connection.
-            // Tokens are minted from `credential_id`, so browsers and phones
-            // register as that credential's sip_username; dialling
-            // sip_conn_username rang an identity nobody was listening on, which
-            // is why every inbound call timed out after ~24s. It also meant
-            // Telnyx never sent a VoIP push, because the credential being
-            // called wasn't the one holding the push token.
-            const sipUser = integ.sip_username || (integ as any).sip_conn_username
+            // Every client — the browser AND the mobile app — now logs in with
+            // its own per-user credential (both pass `userId` to
+            // /api/telnyx/token), so each device is reachable at
+            // sip:<per-user sip_username>@sip.telnyx.com. The shared
+            // integ.sip_username is only used by a client that logged in WITHOUT
+            // a userId, which in practice is nobody.
+            //
+            // The old code dialled ONLY the shared credential as its "primary"
+            // leg and gated the entire ring decision on it (`&& !!sipUser`). Once
+            // agents moved to per-user credentials the shared one went stale/empty,
+            // so `anyOnline` was false and every inbound call went straight to
+            // voicemail without ringing a single device. Ring every per-user
+            // credential AND the shared one, de-duplicated, and gate on having
+            // ANY target rather than on the shared credential specifically.
+            const { data: userCreds, error: credsErr } = await db.from('telnyx_user_credentials')
+              .select('sip_username, user_id')
+              .eq('company_id', companyId)
+              .not('sip_username', 'is', null)
+
+            if (credsErr) {
+              // Migration V190 not applied — we can still ring the shared
+              // credential, but say so plainly rather than failing silently.
+              console.error('[telnyx inbound] telnyx_user_credentials unavailable (run migration V190):', credsErr.message)
+            }
+
+            const sharedSip = integ.sip_username || (integ as any).sip_conn_username || null
+            const sipUsernames = Array.from(new Set([
+              ...((userCreds || []).map((c: any) => c.sip_username).filter(Boolean)),
+              ...(sharedSip ? [sharedSip] : []),
+            ]))
+            const sipTargets = sipUsernames.map((u: string) => `sip:${u}@sip.telnyx.com`)
+
             const onlineCount = (online || []).length
 
             // A phone running the app can be woken by Telnyx's own VoIP push
@@ -400,12 +419,16 @@ export async function POST(req: NextRequest) {
               .select('id').eq('company_id', companyId).limit(1)
             const anyMobile = (mobileDevices || []).length > 0
 
-            const anyOnline = (onlineCount > 0 || anyMobile) && !!sipUser
+            // Ring whenever we have at least one SIP identity to dial and anyone
+            // plausibly reachable (a live browser heartbeat, or a registered
+            // mobile device Telnyx can wake by push).
+            const anyOnline = (onlineCount > 0 || anyMobile) && sipTargets.length > 0
 
             log.info('[telnyx inbound] routing decision', {
               companyId, onlineAgents: onlineCount, mobileDevices: anyMobile,
-              hasSipUsername: !!sipUser,
-              sipUser: sipUser ? sipUser.slice(0, 6) + '…' : null,
+              sipTargetCount: sipTargets.length,
+              perUserCreds: (userCreds || []).length,
+              hasShared: !!sharedSip,
               willRing: anyOnline,
             })
 
@@ -414,93 +437,68 @@ export async function POST(req: NextRequest) {
             // to a leg that plays either dead air or ringback we control — and
             // playing media on that leg held its audio path, causing ONE-WAY
             // audio after bridge. Instead we leave the caller RINGING on the
-            // network (they hear real ringback) and dial the agent. The bridge
+            // network (they hear real ringback) and dial the agents. The bridge
             // (on agent answer) auto-answers the caller and connects both ways.
             if (anyOnline) {
               const ring = Number(integ.ring_seconds || 25)
-              const sipTarget = `sip:${sipUser}@sip.telnyx.com`
               const dialConnectionId = eventConnectionId || (integ as any).voice_api_application_id || integ.connection_id
-              log.info('[telnyx inbound] dialing agent client', { sipTarget, dialConnectionId })
-              try {
-                const child = await svc.createChildCall({
-                  connection_id: dialConnectionId,
-                  to: sipTarget,
-                  from: fromNum,
-                  timeout_secs: ring,
-                  link_to: callControlId,
-                  webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
-                })
-                const agentLegId = (child as any)?.data?.call_control_id || null
-                log.info('[telnyx inbound] child call created', { agentLegId, childKeys: Object.keys((child as any)?.data || {}) })
-                const { error: updErr, data: updData } = await db.from('calls')
-                  .update({ status: 'ringing_agents', transcription: `[ringing ${sipTarget}]`, agent_call_control_id: agentLegId })
-                  .eq('telnyx_call_control_id', callControlId).select('id, agent_call_control_id')
-                log.info('[telnyx inbound] stored agent leg', { updErr: updErr?.message, updData })
 
-                // Ring everyone else too.
-                //
-                // Each user now has their own telephony credential, so several
-                // devices can be registered simultaneously. Dial each of the
-                // others as an extra child leg; whichever answers first gets
-                // bridged and the rest are hung up (see call.answered).
+              // Dial every registered identity as a sibling child leg. Whichever
+              // answers first gets bridged; the rest are hung up (see
+              // call.answered). No artificial "primary vs fan-out" split — that
+              // asymmetry is what let a stale shared credential veto the whole
+              // ring.
+              const legIds: string[] = []
+              for (const sipTarget of sipTargets) {
                 try {
-                  const { data: creds, error: credsErr } = await db.from('telnyx_user_credentials')
-                    .select('sip_username, user_id')
-                    .eq('company_id', companyId)
-                    .not('sip_username', 'is', null)
-
-                  if (credsErr) {
-                    // Usually the migration hasn't been applied. Say so plainly
-                    // rather than quietly ringing only the shared credential.
-                    console.error('[telnyx inbound] telnyx_user_credentials unavailable — only the shared credential will ring (run migration V190):', credsErr.message)
-                  }
-
-                  const others = (creds || [])
-                    .map((c: any) => `sip:${c.sip_username}@sip.telnyx.com`)
-                    .filter((uri: string) => uri !== sipTarget)
-
-                  const extraLegs: string[] = []
-                  for (const uri of others) {
-                    try {
-                      const extra = await svc.createChildCall({
-                        connection_id: eventConnectionId,
-                        to: uri,
-                        from: fromNum,
-                        timeout_secs: ring,
-                        link_to: callControlId,
-                        webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
-                      })
-                      const legId = (extra as any)?.data?.call_control_id
-                      if (legId) extraLegs.push(legId)
-                    } catch (e: any) {
-                      console.error('[telnyx inbound] extra leg failed', uri, e?.message || e)
-                    }
-                  }
-
-                  if (extraLegs.length > 0) {
-                    // Stored so whichever leg answers can cancel the others.
-                    await db.from('calls')
-                      .update({ ringing_leg_ids: extraLegs })
-                      .eq('telnyx_call_control_id', callControlId)
-                    log.info('[telnyx inbound] ringing additional devices', { count: extraLegs.length })
-                  }
+                  const child = await svc.createChildCall({
+                    connection_id: dialConnectionId,
+                    to: sipTarget,
+                    from: fromNum,
+                    timeout_secs: ring,
+                    link_to: callControlId,
+                    webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
+                  })
+                  const legId = (child as any)?.data?.call_control_id || null
+                  if (legId) legIds.push(legId)
+                  log.info('[telnyx inbound] dialing agent', { sipTarget, legId })
                 } catch (e: any) {
-                  console.error('[telnyx inbound] fan-out failed', e?.message || e)
+                  console.error('[telnyx inbound] dial leg failed', sipTarget, e?.message || e)
                 }
-              } catch (dialErr: any) {
-                console.error('[telnyx inbound] createChildCall failed', dialErr?.message || dialErr)
-                // Fall back to voicemail so the caller isn't left hanging.
+              }
+
+              if (legIds.length > 0) {
+                // agent_call_control_id keeps the first leg for backwards-compat
+                // with the bridge's primary lookup; ringing_leg_ids holds ALL of
+                // them so any leg that answers can be matched and the losers
+                // cancelled.
+                const { error: updErr } = await db.from('calls')
+                  .update({
+                    status: 'ringing_agents',
+                    transcription: `[ringing ${legIds.length} device(s)]`,
+                    agent_call_control_id: legIds[0],
+                    ringing_leg_ids: legIds,
+                  })
+                  .eq('telnyx_call_control_id', callControlId)
+                if (updErr) console.error('[telnyx inbound] could not store ringing legs', updErr.message)
+                log.info('[telnyx inbound] ringing devices', { count: legIds.length })
+              } else {
+                // Every dial attempt failed — fall back to voicemail so the
+                // caller isn't left hanging on dead air.
+                console.error('[telnyx inbound] all dial attempts failed, going to voicemail')
                 if (integ.voicemail_enabled !== false) {
                   try { await svc.answerCall(callControlId) } catch {}
                   await svc.speak(callControlId, integ.voicemail_greeting || 'Please leave a message after the tone.')
-                  await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, transcription: `[ring failed: ${dialErr?.message || 'dial error'}]` })
+                  await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true, transcription: `[ring failed: all dial attempts failed]` })
                     .eq('telnyx_call_control_id', callControlId)
+                } else {
+                  try { await svc.hangupCall(callControlId) } catch {}
                 }
               }
             } else {
-              // Nobody online (or no SIP credential) — straight to voicemail.
-              const reason = !sipUser
-                ? 'no sip_username on integration (open Colvy to provision it)'
+              // No SIP identity to ring, or nobody reachable — straight to voicemail.
+              const reason = sipTargets.length === 0
+                ? 'no SIP credential to ring (open Colvy or the mobile app to provision one)'
                 : `no agents reachable — browser heartbeats: ${onlineCount}, mobile devices: ${anyMobile ? 'yes' : 'none registered'}`
               log.info('[telnyx inbound] going to voicemail —', reason)
               if (integ.voicemail_enabled !== false) {
