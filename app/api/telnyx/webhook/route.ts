@@ -448,7 +448,9 @@ export async function POST(req: NextRequest) {
               }
             } else {
               // Nobody online (or no SIP credential) — straight to voicemail.
-              const reason = !sipUser ? 'no sip_username on integration (open Colvy to provision it)' : 'no agents online (heartbeat in last 2 min)'
+              const reason = !sipUser
+                ? 'no sip_username on integration (open Colvy to provision it)'
+                : `no agents reachable — browser heartbeats: ${onlineCount}, mobile devices: ${anyMobile ? 'yes' : 'none registered'}`
               log.info('[telnyx inbound] going to voicemail —', reason)
               if (integ.voicemail_enabled !== false) {
                 try { await svc.answerCall(callControlId) } catch {}
