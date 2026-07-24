@@ -436,6 +436,51 @@ export async function POST(req: NextRequest) {
                   .update({ status: 'ringing_agents', transcription: `[ringing ${sipTarget}]`, agent_call_control_id: agentLegId })
                   .eq('telnyx_call_control_id', callControlId).select('id, agent_call_control_id')
                 log.info('[telnyx inbound] stored agent leg', { updErr: updErr?.message, updData })
+
+                // Ring everyone else too.
+                //
+                // Each user now has their own telephony credential, so several
+                // devices can be registered simultaneously. Dial each of the
+                // others as an extra child leg; whichever answers first gets
+                // bridged and the rest are hung up (see call.answered).
+                try {
+                  const { data: creds } = await db.from('telnyx_user_credentials')
+                    .select('sip_username, user_id')
+                    .eq('company_id', companyId)
+                    .not('sip_username', 'is', null)
+
+                  const others = (creds || [])
+                    .map((c: any) => `sip:${c.sip_username}@sip.telnyx.com`)
+                    .filter((uri: string) => uri !== sipTarget)
+
+                  const extraLegs: string[] = []
+                  for (const uri of others) {
+                    try {
+                      const extra = await svc.createChildCall({
+                        connection_id: eventConnectionId,
+                        to: uri,
+                        from: fromNum,
+                        timeout_secs: ring,
+                        link_to: callControlId,
+                        webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
+                      })
+                      const legId = (extra as any)?.data?.call_control_id
+                      if (legId) extraLegs.push(legId)
+                    } catch (e: any) {
+                      console.error('[telnyx inbound] extra leg failed', uri, e?.message || e)
+                    }
+                  }
+
+                  if (extraLegs.length > 0) {
+                    // Stored so whichever leg answers can cancel the others.
+                    await db.from('calls')
+                      .update({ ringing_leg_ids: extraLegs })
+                      .eq('telnyx_call_control_id', callControlId)
+                    log.info('[telnyx inbound] ringing additional devices', { count: extraLegs.length })
+                  }
+                } catch (e: any) {
+                  console.error('[telnyx inbound] fan-out failed', e?.message || e)
+                }
               } catch (dialErr: any) {
                 console.error('[telnyx inbound] createChildCall failed', dialErr?.message || dialErr)
                 // Fall back to voicemail so the caller isn't left hanging.
@@ -502,6 +547,15 @@ export async function POST(req: NextRequest) {
           parentRow = linked?.[0] || null
 
           if (!parentRow) {
+            // With several devices ringing, the answering leg is usually one of
+            // the extra ones rather than the first agent leg.
+            const { data: byFanout } = await db.from('calls')
+              .select('*').contains('ringing_leg_ids', [callControlId]).limit(1)
+            parentRow = byFanout?.[0] || null
+            if (parentRow) log.info('[telnyx bridge] matched parent via fan-out leg')
+          }
+
+          if (!parentRow) {
             // Fallback: a recent ringing leg, now scoped to the last two
             // minutes so a stale row can't be picked up.
             const since = new Date(Date.now() - 2 * 60 * 1000).toISOString()
@@ -550,6 +604,28 @@ export async function POST(req: NextRequest) {
               console.error('[telnyx record] could not start', e?.message || e)
             }
             log.info('[telnyx bridge] bridged agent leg to caller', { agent: callControlId, caller: parentRow.telnyx_call_control_id })
+
+            // First answer wins: stop the other devices ringing. Without this
+            // every other phone keeps ringing for the full timeout after a
+            // colleague has already picked up.
+            try {
+              const legs: string[] = Array.isArray((parentRow as any).ringing_leg_ids)
+                ? (parentRow as any).ringing_leg_ids
+                : []
+              const losers = [
+                ...legs,
+                (parentRow as any).agent_call_control_id,
+              ].filter((id: string) => id && id !== callControlId)
+
+              for (const legId of losers) {
+                try { await svc.hangupCall(legId) } catch {}
+              }
+              if (losers.length > 0) {
+                log.info('[telnyx bridge] cancelled other ringing devices', { count: losers.length })
+              }
+            } catch (e: any) {
+              console.error('[telnyx bridge] could not cancel other legs', e?.message || e)
+            }
           } else {
             console.error('[telnyx bridge] could not bridge — missing parent or api_key', {
               hasParent: !!parentRow,

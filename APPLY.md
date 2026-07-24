@@ -1,54 +1,59 @@
-# THE missing piece: inbound calls never had a database row
+# Ring every teammate's device
 
-Supersedes every earlier web patch — apply this one.
+Run the migration FIRST, then deploy.
 
+    # 1. Supabase SQL editor
+    #    paste MIGRATION_V190.sql
+
+    # 2. code
     cp -R app ~/Desktop/frill-clone/
 
-## What the log showed
+Mobile: colvy-mobile v1.54.0 (sends userId when fetching a token).
 
-    [telnyx bridge] could not bridge — missing parent or api_key
-    { hasParent: false, hasKey: false,
-      agentLeg: 'v3:pDf-wIr2wj_...', parentId: null, parentStatus: null }
+## The problem
 
-`parentId: null` — no `calls` row was found by agent leg id OR by recency.
-
-Because there wasn't one. **The webhook only ever UPDATEs `calls`. There is no
-INSERT anywhere in the file.** Inbound calls never had a row created.
-
-That one gap explains all of it:
-
-- the bridge had no parent, so the caller stayed connected to silence
-- inbound calls never appeared in the call logs
-- recordings had nothing to attach to
-- `update({ status: 'ringing_agents', agent_call_control_id })` matched zero rows
+Every client logged in with the SAME telephony credential (`credential_id` on
+telnyx_integrations). Telnyx routes an inbound call to the most recent
+registration, so the last device to sign in took the call and every other one
+stayed silent. Nothing about that is fixable while the credential is shared.
 
 ## The change
 
-On `call.initiated` for an inbound call, after the contact is matched, insert
-the row — with `company_id`, direction, numbers, caller name, contact,
-conversation, `telnyx_call_control_id` and `telnyx_call_session_id`. Guarded by
-an existence check so a retried webhook can't duplicate it.
+**token/route.ts** — accepts `userId`. Each user gets their own telephony
+credential on the same WebRTC connection, created once and stored in
+`telnyx_user_credentials`, reused afterwards. Telnyx generates the
+`sip_username`, which is read back and stored — that's the address Call Control
+dials to reach that client. Callers that don't send a userId still work on the
+shared credential, so the web keeps working until it's updated too.
 
-`conversation_id` is set too, so the call also shows inside the chat thread.
+**webhook/route.ts** —
 
-Also included from earlier patches:
-- bridge matches on `agent_call_control_id` (exact) with a 2-minute recency fallback
-- recording starts on answered calls, not only voicemail
-- `call-summary` persists `ai_todos` and `sentiment`
+- After dialling the first agent, creates an extra child leg for every OTHER
+  registered user's sip_username, all linked to the same parent. Every
+  registered device rings at once.
+- The extra leg ids are stored in `calls.ringing_leg_ids`.
+- On answer, the parent is found by agent leg id, by fan-out leg id, or by
+  recency — then the winning leg is bridged and **all other legs are hung up**,
+  so colleagues' phones stop ringing immediately.
 
 ## Verify
 
-Vercel logs, in order, for one inbound call:
+With two devices signed in as different users:
 
-    [telnyx inbound] call row created
-    [telnyx inbound] child call created
-    [telnyx inbound] stored agent leg   ← updData should now contain a row
+    select user_id, sip_username from telnyx_user_credentials
+    where company_id = 'f468f5ed-d5c7-4e4e-af64-136d36ccc74f';
+
+Two rows with different sip_usernames. Then call the number: both should ring,
+and answering on one should stop the other within a second or two.
+
+Vercel logs:
+
+    [telnyx inbound] ringing additional devices { count: 1 }
     [telnyx bridge] bridged agent leg to caller
-    [telnyx record] started for answered call
+    [telnyx bridge] cancelled other ringing devices { count: 1 }
 
-Then answer on the phone: the caller should hear you.
+## Note on the web app
 
-## Schema
-
-    alter table calls add column if not exists ai_todos jsonb;
-    alter table calls add column if not exists sentiment text;
+The web still sends no userId, so it uses the shared credential. That's fine —
+it registers as one more device. Adding `userId` to its token request gives it
+its own credential too, which is worth doing once this is proven.

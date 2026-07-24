@@ -15,7 +15,9 @@ function admin() {
 // The browser NEVER sees the API key — only this ephemeral JWT.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId } = await req.json()
+    // userId lets each client get its own credential, so several devices can be
+    // registered at once. Omitted callers still work on the shared credential.
+    const { companyId, conversationId, userId } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
@@ -114,7 +116,65 @@ export async function POST(req: NextRequest) {
     }
     if (!credentialId) return NextResponse.json({ error: 'Could not create WebRTC credential' }, { status: 500 })
 
-    const token = await svc.createCredentialToken(credentialId)
+    // ── Per-user credential ──────────────────────────────────────────────────
+    //
+    // Every client used to log in with the SAME credential, and Telnyx routes a
+    // call to the most recent registration — so whoever logged in last took the
+    // call and everyone else's device stayed silent.
+    //
+    // Each user now gets their own credential on the same WebRTC connection, so
+    // all of them can be registered at once and the webhook can ring every one.
+    // The shared credential above is kept as the fallback for callers that
+    // don't identify a user.
+    let effectiveCredentialId = credentialId
+    let effectiveSipUser: string | null = storedSipUser || null
+
+    if (userId) {
+      try {
+        const { data: existing } = await db.from('telnyx_user_credentials')
+          .select('credential_id, sip_username')
+          .eq('company_id', companyId).eq('user_id', userId)
+          .eq('connection_id', webrtcConnId)
+          .maybeSingle()
+
+        if (existing?.credential_id) {
+          effectiveCredentialId = existing.credential_id
+          effectiveSipUser = existing.sip_username
+        } else {
+          const created = await svc.createTelephonyCredential(
+            webrtcConnId,
+            `colvy-user-${userId.slice(0, 8)}`
+          )
+          const newId = (created as any)?.data?.id
+          if (newId) {
+            // Telnyx generates the sip_username; it must be read back, since
+            // that's what Call Control dials to reach this client.
+            const detail = await svc.getTelephonyCredential(newId)
+            const sipUsername = (detail as any)?.data?.sip_username || null
+
+            const { error: credErr } = await db.from('telnyx_user_credentials').insert({
+              company_id: companyId,
+              user_id: userId,
+              connection_id: webrtcConnId,
+              credential_id: newId,
+              sip_username: sipUsername,
+            })
+            if (credErr) {
+              console.error('[telnyx token] could not store user credential (run migration V190):', credErr.message)
+            }
+
+            effectiveCredentialId = newId
+            effectiveSipUser = sipUsername
+            log.info('[telnyx token] created per-user credential', { userId, sipUsername })
+          }
+        }
+      } catch (e: any) {
+        // Fall back to the shared credential rather than breaking calling.
+        console.error('[telnyx token] per-user credential failed, using shared', e?.message || e)
+      }
+    }
+
+    const token = await svc.createCredentialToken(effectiveCredentialId)
 
     // Pick the caller ID: if the conversation belongs to a location that has its
     // own number, use it; else the company's primary number; else the legacy one.
