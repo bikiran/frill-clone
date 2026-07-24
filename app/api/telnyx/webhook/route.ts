@@ -312,11 +312,13 @@ export async function POST(req: NextRequest) {
 
           // Bump the caller's conversation to the top of the inbox — an incoming
           // call is a fresh, notable event.
+          let conversationId: string | null = null
           if (contactId) {
             try {
               const { data: conv } = await db.from('conversations')
                 .select('id').eq('company_id', companyId).eq('contact_id', contactId)
                 .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+              conversationId = conv?.id || null
               if (conv?.id) {
                 await db.from('conversations').update({
                   last_message: `📞 Incoming call`,
@@ -325,6 +327,38 @@ export async function POST(req: NextRequest) {
                 }).eq('id', conv.id)
               }
             } catch {}
+          }
+
+          // Create the call row.
+          //
+          // Nothing in this webhook ever INSERTED one — every other path only
+          // updates — so inbound calls had no row at all. That's why they never
+          // appeared in the call logs, why the bridge reported
+          // "missing parent" (parentId: null), and why recordings had nothing
+          // to attach to.
+          try {
+            const { data: already } = await db.from('calls')
+              .select('id').eq('telnyx_call_control_id', callControlId).maybeSingle()
+
+            if (!already) {
+              const { error: insErr } = await db.from('calls').insert({
+                company_id: companyId,
+                direction: 'inbound',
+                from_number: fromNum,
+                to_number: toNum,
+                caller_name: callerName,
+                contact_id: contactId,
+                conversation_id: conversationId,
+                status: 'ringing',
+                telnyx_call_control_id: callControlId,
+                telnyx_call_session_id: (payload as any)?.call_session_id || null,
+                created_at: new Date().toISOString(),
+              })
+              if (insErr) console.error('[telnyx inbound] could not create call row', insErr.message)
+              else log.info('[telnyx inbound] call row created', { callControlId })
+            }
+          } catch (e: any) {
+            console.error('[telnyx inbound] call row insert threw', e?.message || e)
           }
 
           try {

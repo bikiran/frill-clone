@@ -1,61 +1,54 @@
-# Bridge fix + call recording (supersedes colvy-web-call-recording.zip)
+# THE missing piece: inbound calls never had a database row
 
-Two files. This includes the earlier recording patch, so apply this one only.
+Supersedes every earlier web patch — apply this one.
 
     cp -R app ~/Desktop/frill-clone/
 
-## 1. The caller hears nothing — bridge never happened
-
-You answer on the phone, but the person who dialled stays connected to silence.
-
-The webhook found the caller's leg like this:
-
-    const { data: parent } = await db.from('calls')
-      .select('*').eq('status', 'ringing_agents')
-      .order('created_at', { ascending: false }).limit(1)
-
-The most recent `ringing_agents` row across EVERY company, with no time bound.
-It found nothing whenever the status had already moved on — timeout, voicemail,
-a second call — producing the log you saw:
+## What the log showed
 
     [telnyx bridge] could not bridge — missing parent or api_key
-    { hasParent: false, hasKey: false }
+    { hasParent: false, hasKey: false,
+      agentLeg: 'v3:pDf-wIr2wj_...', parentId: null, parentStatus: null }
 
-(`hasKey: false` was a consequence: the api_key is only looked up if a parent
-was found.)
+`parentId: null` — no `calls` row was found by agent leg id OR by recency.
 
-**Now** it matches on `agent_call_control_id` — when the child leg was created,
-its id was stored on the parent row, so this is an exact link rather than a
-guess. A recency fallback remains, scoped to the last 2 minutes and to ringing
-statuses, and the failure log now includes the agent leg id and parent status.
+Because there wasn't one. **The webhook only ever UPDATEs `calls`. There is no
+INSERT anywhere in the file.** Inbound calls never had a row created.
 
-## 2. Recording, transcription, summary, sentiment, action items
+That one gap explains all of it:
 
-`recordStart` previously ran ONLY for voicemail greetings, so answered calls
-produced no audio and therefore no transcript or AI output.
+- the bridge had no parent, so the caller stayed connected to silence
+- inbound calls never appeared in the call logs
+- recordings had nothing to attach to
+- `update({ status: 'ringing_agents', agent_call_control_id })` matched zero rows
 
-- Recording now starts as soon as the agent leg is bridged, `channels: 'dual'`
-  so agent and caller are on separate tracks.
-- `call.recording.saved` distinguishes a voicemail from a real call before
-  filing it, saves `recording_url`, and fires `/api/telnyx/transcribe`, which
-  already chains into `call-summary`.
-- `call-summary` now persists `ai_todos` and a validated `sentiment`
-  (positive / neutral / negative), not just `ai_summary`.
+## The change
+
+On `call.initiated` for an inbound call, after the contact is matched, insert
+the row — with `company_id`, direction, numbers, caller name, contact,
+conversation, `telnyx_call_control_id` and `telnyx_call_session_id`. Guarded by
+an existence check so a retried webhook can't duplicate it.
+
+`conversation_id` is set too, so the call also shows inside the chat thread.
+
+Also included from earlier patches:
+- bridge matches on `agent_call_control_id` (exact) with a 2-minute recency fallback
+- recording starts on answered calls, not only voicemail
+- `call-summary` persists `ai_todos` and `sentiment`
+
+## Verify
+
+Vercel logs, in order, for one inbound call:
+
+    [telnyx inbound] call row created
+    [telnyx inbound] child call created
+    [telnyx inbound] stored agent leg   ← updData should now contain a row
+    [telnyx bridge] bridged agent leg to caller
+    [telnyx record] started for answered call
+
+Then answer on the phone: the caller should hear you.
 
 ## Schema
 
     alter table calls add column if not exists ai_todos jsonb;
     alter table calls add column if not exists sentiment text;
-
-## Transcription key
-
-`/api/telnyx/transcribe` needs `DEEPGRAM_API_KEY` or `OPENAI_API_KEY` in Vercel.
-Without one, recordings save and play back but there's no transcript or summary.
-
-## Verify
-
-1. Call the Telnyx number, answer on the phone, and check the CALLER can hear
-   you — that's the bridge.
-2. Vercel logs: `[telnyx record] started for answered call`.
-3. Hang up, wait a moment, open the call in Call Logs: recording, then
-   transcript, summary, sentiment and action items.
