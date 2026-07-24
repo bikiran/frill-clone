@@ -47,9 +47,17 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
 
     const connect = async () => {
       try {
+        // Send userId so this browser gets its OWN telephony credential.
+        // Sharing one credential meant Telnyx routed each call to whichever
+        // client registered most recently — so a phone signing in silenced the
+        // browser, and vice versa. With a credential each, the webhook rings
+        // every registered device.
+        const { data: sess } = await supabase.auth.getSession()
+        const userId = sess?.session?.user?.id || null
+
         const res = await fetch('/api/telnyx/token', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId }),
+          body: JSON.stringify({ companyId, userId }),
         })
         const data = await res.json()
         if (!res.ok || cancelled) return

@@ -185,9 +185,14 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       }
 
       // 1. Get an ephemeral WebRTC token from our server
+      // Same per-user credential as the inbound listener, so outbound and
+      // inbound use one identity for this browser.
+      const { data: sess } = await supabase.auth.getSession()
+      const userId = sess?.session?.user?.id || null
+
       const res = await fetch('/api/telnyx/token', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId }),
+        body: JSON.stringify({ companyId, conversationId, userId }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not get call token')

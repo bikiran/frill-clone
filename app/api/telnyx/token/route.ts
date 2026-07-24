@@ -96,15 +96,52 @@ export async function POST(req: NextRequest) {
     if (credentialId && webrtcConnId && !needFresh) {
       try {
         const existing = await svc.getTelephonyCredential(credentialId)
-        if (String(existing?.data?.connection_id || '') !== String(webrtcConnId)) needFresh = true
-        else storedSipUser = existing?.data?.sip_username || storedSipUser
-      } catch { needFresh = true }
+        const d: any = existing?.data || {}
+
+        // Telnyx exposes the owning connection as connection_id on some API
+        // versions and resource_id on others. Reading only connection_id meant
+        // the check saw '' whenever the field was absent, concluded "wrong
+        // connection", and minted a BRAND NEW credential on every token fetch —
+        // so sip_username kept moving and inbound calls dialled a credential
+        // nobody was registered on.
+        const owner = String(d.connection_id || d.resource_id || '')
+
+        if (owner && owner !== String(webrtcConnId)) {
+          // Positively on a different connection — replace it.
+          needFresh = true
+          log.info('[telnyx token] credential is on another connection, recreating', { owner, webrtcConnId })
+        } else {
+          // Either it matches, or Telnyx didn't tell us. Keep what works rather
+          // than churning a new credential on every request.
+          storedSipUser = d.sip_username || storedSipUser
+          if (!owner) log.info('[telnyx token] credential owner unknown, keeping existing', { credentialId })
+        }
+      } catch (e: any) {
+        // A genuine 404 means it's gone; anything else (rate limit, blip) must
+        // not trigger a recreate.
+        if (/not.?found|404/i.test(e?.message || '')) {
+          needFresh = true
+          log.info('[telnyx token] credential no longer exists, recreating')
+        } else {
+          console.error('[telnyx token] could not verify credential, keeping existing:', e?.message || e)
+        }
+      }
     }
 
     if (needFresh && webrtcConnId) {
       const cred = await svc.createTelephonyCredential(webrtcConnId, `colvy-${companyId.slice(0, 8)}`)
       credentialId = cred?.data?.id
-      const sipUsername = cred?.data?.sip_username || null
+      let sipUsername = cred?.data?.sip_username || null
+
+      // The create response frequently omits sip_username, which left the
+      // stored value stale while credential_id moved on — so the webhook dialled
+      // one credential while the client registered on another.
+      if (credentialId && !sipUsername) {
+        try {
+          const detail = await svc.getTelephonyCredential(credentialId)
+          sipUsername = (detail as any)?.data?.sip_username || null
+        } catch {}
+      }
       if (credentialId) {
         await db.from('telnyx_integrations').update({
           credential_id: credentialId,
