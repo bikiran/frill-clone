@@ -1,50 +1,58 @@
-# Web patch — call routing to phones, and push for mentions
+# Call recording, transcription, summary, sentiment and action items
 
-Three files changed. Copy them over:
+Two files:
 
     cp -R app ~/Desktop/frill-clone/
 
-## 1. app/api/telnyx/webhook/route.ts — THE FIX FOR CALLS
+## Why nothing was recorded
 
-Inbound calls only dialled the SIP client when `agent_presence` had a heartbeat
-from the last 2 minutes. That heartbeat only exists while a browser tab or the
-mobile app is OPEN, so with everything closed the webhook never dialled at all —
-it went straight to voicemail without ringing. That's why the SIP trace showed
-no INVITE reaching the device.
+`recordStart` was only ever called in one place: after `call.speak.ended`, when
+the call status was `voicemail_greeting`. So **only voicemails were recorded**.
 
-Now it also dials when the company has at least one registered mobile device:
+Answered calls — inbound and outbound — produced no audio, therefore no
+transcript, no summary, no sentiment, no action items. The example that DID
+show a summary was a voicemail ("reached a voicemail or automated message"),
+which is why it looked like the feature worked.
 
-    const { data: mobileDevices } = await db.from('push_tokens')
-      .select('id').eq('company_id', companyId).limit(1)
-    const anyMobile = (mobileDevices || []).length > 0
+## 1. app/api/telnyx/webhook/route.ts
 
-    const anyOnline = (onlineCount > 0 || anyMobile) && !!sipUser
+**Records answered calls.** Right after the agent leg is bridged to the caller,
+recording starts on the parent leg with `channels: 'dual'` so agent and caller
+land on separate tracks and the transcript reads as a dialogue.
 
-Telnyx then sends its own VoIP push (the `X-Telnyx-Internal-PN-Android` header
-seen in the trace), which wakes the app. The ring timeout already in place
-(`integ.ring_seconds`, default 25s) gives the phone time to attach before
-voicemail takes over.
+**Routes recordings correctly.** `call.recording.saved` now checks whether the
+call is actually a voicemail before marking it as one — otherwise every
+recorded conversation would be filed as a voicemail. For a real call it saves
+`recording_url` and fires `/api/telnyx/transcribe`, which already chains into
+`/api/telnyx/call-summary`.
 
-## 2. app/api/push/send/route.ts
+Fire-and-forget: the recording is saved either way, and transcription is slow.
 
-- `userIds: string[]` — target specific people instead of the whole company.
-  Needed for mentions and task assignments.
-- `route` — deep link for notifications that aren't about a conversation.
-- `categoryId` — enables the inline Reply / Mark read actions on Android.
-- Body truncation raised from 160 to 500 characters, so Android's expandable
-  notification actually has something to expand.
+## 2. app/api/telnyx/call-summary/route.ts
 
-## 3. app/api/mentions/notify/route.ts
+Was writing `ai_summary` only, while returning todos that went nowhere. Now
+also persists `ai_todos` and asks for a `sentiment` of positive/neutral/negative,
+validated before being written.
 
-Sends a push to the mentioned users alongside the existing email.
-Fire-and-forget, matching how the email is handled: the in-app notification is
-already written, so a push failure must never fail the action.
+Both columns are already read by the mobile call detail screen.
+
+## Check your schema
+
+If these don't exist, add them:
+
+    alter table calls add column if not exists ai_todos jsonb;
+    alter table calls add column if not exists sentiment text;
+
+## Transcription needs a key
+
+`/api/telnyx/transcribe` uses Deepgram or OpenAI Whisper. With neither key set,
+recordings still save and play back — there's just no transcript or summary.
+Check `DEEPGRAM_API_KEY` or `OPENAI_API_KEY` in your Vercel environment.
 
 ## Verify
 
-Calls: close every browser tab AND force-close the mobile app, then call the
-Telnyx number. The phone should ring. Check the server log line
-`[telnyx inbound] routing decision` — it now includes `mobileDevices`.
-
-Mentions: @mention a colleague in an internal note; their phone should get
-"<you> mentioned you".
+1. Answer an inbound call, talk for ~20 seconds, hang up.
+2. Vercel logs: `[telnyx record] started for answered call`, then
+   `[telnyx record] saved for answered call`.
+3. Open the call in Call Logs — recording, then transcript and summary once
+   transcription finishes.

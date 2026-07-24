@@ -345,6 +345,16 @@ export async function POST(req: NextRequest) {
             // registers via the connection's SIP credentials, it's reachable at
             // sip:<sip_conn_username>@sip.telnyx.com. Prefer that; fall back to
             // the telephony credential username.
+            // Dial the telephony credential the clients actually register
+            // with — NOT the connection's own sip_conn_username.
+            //
+            // These are two different SIP identities on the same connection.
+            // Tokens are minted from `credential_id`, so browsers and phones
+            // register as that credential's sip_username; dialling
+            // sip_conn_username rang an identity nobody was listening on, which
+            // is why every inbound call timed out after ~24s. It also meant
+            // Telnyx never sent a VoIP push, because the credential being
+            // called wasn't the one holding the push token.
             const sipUser = integ.sip_username || (integ as any).sip_conn_username
             const onlineCount = (online || []).length
 
@@ -463,6 +473,21 @@ export async function POST(req: NextRequest) {
               answered_at: new Date().toISOString(),
               agent_call_control_id: callControlId,
             }).eq('id', parentRow.id)
+
+            // Record the answered call. Until now recordStart only ran for
+            // voicemail greetings, so real conversations produced no audio —
+            // and therefore no transcript, summary, sentiment or action items.
+            // Dual channels keep agent and caller on separate tracks, which
+            // makes the transcript read as a dialogue.
+            try {
+              await svc.recordStart(parentRow.telnyx_call_control_id, {
+                format: 'mp3',
+                channels: 'dual',
+              })
+              log.info('[telnyx record] started for answered call', { callId: parentRow.id })
+            } catch (e: any) {
+              console.error('[telnyx record] could not start', e?.message || e)
+            }
             log.info('[telnyx bridge] bridged agent leg to caller', { agent: callControlId, caller: parentRow.telnyx_call_control_id })
           } else {
             console.error('[telnyx bridge] could not bridge — missing parent or api_key', { hasParent: !!parentRow, hasKey: !!apiKey })
@@ -515,6 +540,39 @@ export async function POST(req: NextRequest) {
       if (eventType === 'call.recording.saved') {
         try {
           const url = event.payload?.recording_urls?.mp3 || event.payload?.recording_urls?.wav || event.payload?.public_recording_urls?.mp3
+
+          // A recording can now belong to either a voicemail or an answered
+          // call, so check before marking it as voicemail — otherwise every
+          // recorded conversation would be filed as one.
+          const { data: recRow } = await db.from('calls')
+            .select('id, company_id, conversation_id, status, is_voicemail')
+            .or(`telnyx_call_control_id.eq.${callControlId},agent_call_control_id.eq.${callControlId}`)
+            .maybeSingle()
+
+          const isVoicemail = recRow?.is_voicemail ||
+            ['voicemail_greeting', 'recording_voicemail'].includes(String(recRow?.status || ''))
+
+          if (url && recRow && !isVoicemail) {
+            await db.from('calls').update({ recording_url: url }).eq('id', recRow.id)
+
+            // Transcribe, then summarise. Fire-and-forget: the recording is
+            // already saved, and transcription can take a while.
+            try {
+              fetch(`${req.nextUrl.origin}/api/telnyx/transcribe`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  callId: recRow.id,
+                  companyId: recRow.company_id,
+                  conversationId: recRow.conversation_id,
+                }),
+              }).catch(() => {})
+            } catch {}
+
+            log.info('[telnyx record] saved for answered call', { callId: recRow.id })
+            return NextResponse.json({ ok: true })
+          }
+
           if (url) {
             await db.from('calls').update({
               recording_url: url,

@@ -45,8 +45,25 @@ export async function POST(req: NextRequest) {
     const out = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim()
     try {
       const parsed = JSON.parse(out)
-      if (callId) await db.from('calls').update({ ai_summary: parsed.summary }).eq('id', callId)
-      return NextResponse.json({ summary: parsed.summary, todos: parsed.todos || [] })
+      if (callId) {
+        // Persist todos and sentiment too — both are shown on the call detail
+        // screen, and previously only the summary was stored.
+        const sentiment = ['positive', 'neutral', 'negative']
+          .includes(String(parsed.sentiment || '').toLowerCase())
+          ? String(parsed.sentiment).toLowerCase()
+          : null
+
+        await db.from('calls').update({
+          ai_summary: parsed.summary,
+          ai_todos: Array.isArray(parsed.todos) ? parsed.todos : [],
+          ...(sentiment ? { sentiment } : {}),
+        }).eq('id', callId)
+      }
+      return NextResponse.json({
+        summary: parsed.summary,
+        todos: parsed.todos || [],
+        sentiment: parsed.sentiment || null,
+      })
     } catch {
       return NextResponse.json({ summary: out.slice(0, 300) })
     }
