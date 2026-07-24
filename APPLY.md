@@ -1,45 +1,50 @@
-# Auto-assign on first reply — web
+# Web patch — call routing to phones, and push for mentions
 
-One file changed: `app/admin/inbox/page.tsx`
-
-Copy it over your copy:
+Three files changed. Copy them over:
 
     cp -R app ~/Desktop/frill-clone/
 
-## What changed
+## 1. app/api/telnyx/webhook/route.ts — THE FIX FOR CALLS
 
-Two edits, both inside the inbox page.
+Inbound calls only dialled the SIP client when `agent_presence` had a heartbeat
+from the last 2 minutes. That heartbeat only exists while a browser tab or the
+mobile app is OPEN, so with everything closed the webhook never dialled at all —
+it went straight to voicemail without ringing. That's why the SIP trace showed
+no INVITE reaching the device.
 
-**1. New helper `claimIfUnassigned()`**, added directly above `sendReply`.
+Now it also dials when the company has at least one registered mobile device:
 
-Claims an unassigned conversation for whoever replies:
+    const { data: mobileDevices } = await db.from('push_tokens')
+      .select('id').eq('company_id', companyId).limit(1)
+    const anyMobile = (mobileDevices || []).length > 0
 
-- returns immediately if `assigned_to` or `assigned_name` is already set, so an
-  existing owner is never overwritten
-- updates optimistically so the header changes straight away
-- the write is guarded with `.is('assigned_to', null)`, so if a colleague
-  claimed it moments earlier the update matches no rows and we reload to show
-  *their* name instead of stealing it
-- logs an `assigned` timeline event and shows a toast
+    const anyOnline = (onlineCount > 0 || anyMobile) && !!sipUser
 
-**2. One line inside `sendReply`**, just after `setSending(true)`:
+Telnyx then sends its own VoIP push (the `X-Telnyx-Internal-PN-Android` header
+seen in the trace), which wakes the app. The ring timeout already in place
+(`integ.ring_seconds`, default 25s) gives the phone time to attach before
+voicemail takes over.
 
-    if (!internalMode) claimIfUnassigned()
+## 2. app/api/push/send/route.ts
 
-Placed before the per-channel branches so it applies to chat, SMS, email and
-Meta replies alike, without touching each one.
+- `userIds: string[]` — target specific people instead of the whole company.
+  Needed for mentions and task assignments.
+- `route` — deep link for notifications that aren't about a conversation.
+- `categoryId` — enables the inline Reply / Mark read actions on Android.
+- Body truncation raised from 160 to 500 characters, so Android's expandable
+  notification actually has something to expand.
 
-## Behaviour notes
+## 3. app/api/mentions/notify/route.ts
 
-- Internal notes do NOT claim the conversation. Leaving a private note for a
-  colleague isn't the same as taking the customer on.
-- This matches Colvy Mobile v1.35.0, so a reply from either client behaves the
-  same way.
+Sends a push to the mentioned users alongside the existing email.
+Fire-and-forget, matching how the email is handled: the in-app notification is
+already written, so a push failure must never fail the action.
 
 ## Verify
 
-1. Open an unassigned conversation, send a reply.
-2. The header should switch from "Unassigned" to your name, and the timeline
-   should show "Auto-assigned to <you> on first reply".
-3. Open a conversation already assigned to a colleague and reply — their name
-   must stay.
+Calls: close every browser tab AND force-close the mobile app, then call the
+Telnyx number. The phone should ring. Check the server log line
+`[telnyx inbound] routing decision` — it now includes `mobileDevices`.
+
+Mentions: @mention a colleague in an internal note; their phone should get
+"<you> mentioned you".

@@ -58,6 +58,25 @@ export async function POST(req: NextRequest) {
     }
 
     const companyName = company?.name || 'your team'
+
+    // Push the mention to the named people's phones. Fire-and-forget for the
+    // same reason the email is: the in-app notification is already written, so
+    // a push failure must never surface as a failed action.
+    try {
+      const origin = req.nextUrl.origin
+      fetch(`${origin}/api/push/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          userIds,
+          title: `${mentionedBy || 'Someone'} mentioned you`,
+          body: preview || context || 'You were mentioned in a conversation.',
+          conversationId: conversationId || null,
+        }),
+      }).catch(() => {})
+    } catch {}
+
     const base = company?.slug ? `https://${company.slug}.colvy.com` : 'https://colvy.com'
     const link = conversationId
       ? `${base}/admin/inbox?conversation=${conversationId}`

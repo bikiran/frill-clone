@@ -347,10 +347,20 @@ export async function POST(req: NextRequest) {
             // the telephony credential username.
             const sipUser = (integ as any).sip_conn_username || integ.sip_username
             const onlineCount = (online || []).length
-            const anyOnline = onlineCount > 0 && !!sipUser
+
+            // A phone running the app can be woken by Telnyx's own VoIP push
+            // even with no heartbeat — the heartbeat only exists while the app
+            // is open. Gating purely on it sent every call to voicemail the
+            // moment the last browser tab closed, without so much as ringing.
+            const { data: mobileDevices } = await db.from('push_tokens')
+              .select('id').eq('company_id', companyId).limit(1)
+            const anyMobile = (mobileDevices || []).length > 0
+
+            const anyOnline = (onlineCount > 0 || anyMobile) && !!sipUser
 
             log.info('[telnyx inbound] routing decision', {
-              companyId, onlineAgents: onlineCount, hasSipUsername: !!sipUser,
+              companyId, onlineAgents: onlineCount, mobileDevices: anyMobile,
+              hasSipUsername: !!sipUser,
               sipUser: sipUser ? sipUser.slice(0, 6) + '…' : null,
               willRing: anyOnline,
             })
