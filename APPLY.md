@@ -1,58 +1,61 @@
-# Call recording, transcription, summary, sentiment and action items
+# Bridge fix + call recording (supersedes colvy-web-call-recording.zip)
 
-Two files:
+Two files. This includes the earlier recording patch, so apply this one only.
 
     cp -R app ~/Desktop/frill-clone/
 
-## Why nothing was recorded
+## 1. The caller hears nothing — bridge never happened
 
-`recordStart` was only ever called in one place: after `call.speak.ended`, when
-the call status was `voicemail_greeting`. So **only voicemails were recorded**.
+You answer on the phone, but the person who dialled stays connected to silence.
 
-Answered calls — inbound and outbound — produced no audio, therefore no
-transcript, no summary, no sentiment, no action items. The example that DID
-show a summary was a voicemail ("reached a voicemail or automated message"),
-which is why it looked like the feature worked.
+The webhook found the caller's leg like this:
 
-## 1. app/api/telnyx/webhook/route.ts
+    const { data: parent } = await db.from('calls')
+      .select('*').eq('status', 'ringing_agents')
+      .order('created_at', { ascending: false }).limit(1)
 
-**Records answered calls.** Right after the agent leg is bridged to the caller,
-recording starts on the parent leg with `channels: 'dual'` so agent and caller
-land on separate tracks and the transcript reads as a dialogue.
+The most recent `ringing_agents` row across EVERY company, with no time bound.
+It found nothing whenever the status had already moved on — timeout, voicemail,
+a second call — producing the log you saw:
 
-**Routes recordings correctly.** `call.recording.saved` now checks whether the
-call is actually a voicemail before marking it as one — otherwise every
-recorded conversation would be filed as a voicemail. For a real call it saves
-`recording_url` and fires `/api/telnyx/transcribe`, which already chains into
-`/api/telnyx/call-summary`.
+    [telnyx bridge] could not bridge — missing parent or api_key
+    { hasParent: false, hasKey: false }
 
-Fire-and-forget: the recording is saved either way, and transcription is slow.
+(`hasKey: false` was a consequence: the api_key is only looked up if a parent
+was found.)
 
-## 2. app/api/telnyx/call-summary/route.ts
+**Now** it matches on `agent_call_control_id` — when the child leg was created,
+its id was stored on the parent row, so this is an exact link rather than a
+guess. A recency fallback remains, scoped to the last 2 minutes and to ringing
+statuses, and the failure log now includes the agent leg id and parent status.
 
-Was writing `ai_summary` only, while returning todos that went nowhere. Now
-also persists `ai_todos` and asks for a `sentiment` of positive/neutral/negative,
-validated before being written.
+## 2. Recording, transcription, summary, sentiment, action items
 
-Both columns are already read by the mobile call detail screen.
+`recordStart` previously ran ONLY for voicemail greetings, so answered calls
+produced no audio and therefore no transcript or AI output.
 
-## Check your schema
+- Recording now starts as soon as the agent leg is bridged, `channels: 'dual'`
+  so agent and caller are on separate tracks.
+- `call.recording.saved` distinguishes a voicemail from a real call before
+  filing it, saves `recording_url`, and fires `/api/telnyx/transcribe`, which
+  already chains into `call-summary`.
+- `call-summary` now persists `ai_todos` and a validated `sentiment`
+  (positive / neutral / negative), not just `ai_summary`.
 
-If these don't exist, add them:
+## Schema
 
     alter table calls add column if not exists ai_todos jsonb;
     alter table calls add column if not exists sentiment text;
 
-## Transcription needs a key
+## Transcription key
 
-`/api/telnyx/transcribe` uses Deepgram or OpenAI Whisper. With neither key set,
-recordings still save and play back — there's just no transcript or summary.
-Check `DEEPGRAM_API_KEY` or `OPENAI_API_KEY` in your Vercel environment.
+`/api/telnyx/transcribe` needs `DEEPGRAM_API_KEY` or `OPENAI_API_KEY` in Vercel.
+Without one, recordings save and play back but there's no transcript or summary.
 
 ## Verify
 
-1. Answer an inbound call, talk for ~20 seconds, hang up.
-2. Vercel logs: `[telnyx record] started for answered call`, then
-   `[telnyx record] saved for answered call`.
-3. Open the call in Call Logs — recording, then transcript and summary once
-   transcription finishes.
+1. Call the Telnyx number, answer on the phone, and check the CALLER can hear
+   you — that's the bridge.
+2. Vercel logs: `[telnyx record] started for answered call`.
+3. Hang up, wait a moment, open the call in Call Logs: recording, then
+   transcript, summary, sentiment and action items.

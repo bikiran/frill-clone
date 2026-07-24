@@ -448,12 +448,37 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ ok: true })
         }
         try {
-          // Find the ringing caller leg to bridge to. The child (agent) leg was
-          // created with link_to the parent, so the most recent 'ringing_agents'
-          // call for a company is the parent.
-          const { data: parent } = await db.from('calls')
-            .select('*').eq('status', 'ringing_agents').order('created_at', { ascending: false }).limit(1)
-          const parentRow = parent?.[0]
+          // Find the caller leg to bridge to.
+          //
+          // The reliable link is agent_call_control_id: when the child leg was
+          // created we stored ITS id on the parent row, so this is an exact
+          // match rather than a guess.
+          //
+          // The old lookup took the most recent 'ringing_agents' row across ALL
+          // companies with no time bound — so it found nothing whenever the
+          // status had already moved on (timeout, voicemail, a second call),
+          // leaving the caller connected to silence. It could also have bridged
+          // a different company's call.
+          let parentRow: any = null
+
+          const { data: linked } = await db.from('calls')
+            .select('*').eq('agent_call_control_id', callControlId).limit(1)
+          parentRow = linked?.[0] || null
+
+          if (!parentRow) {
+            // Fallback: a recent ringing leg, now scoped to the last two
+            // minutes so a stale row can't be picked up.
+            const since = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+            const { data: recent } = await db.from('calls')
+              .select('*')
+              .in('status', ['ringing_agents', 'ringing'])
+              .gte('created_at', since)
+              .order('created_at', { ascending: false }).limit(1)
+            parentRow = recent?.[0] || null
+            if (parentRow) {
+              log.info('[telnyx bridge] matched parent by recency, not by agent leg id', { callId: parentRow.id })
+            }
+          }
           // Get the api_key from that call's company (reliable), not client_state.
           let apiKey: string | null = null
           if (parentRow?.company_id) {
@@ -490,7 +515,13 @@ export async function POST(req: NextRequest) {
             }
             log.info('[telnyx bridge] bridged agent leg to caller', { agent: callControlId, caller: parentRow.telnyx_call_control_id })
           } else {
-            console.error('[telnyx bridge] could not bridge — missing parent or api_key', { hasParent: !!parentRow, hasKey: !!apiKey })
+            console.error('[telnyx bridge] could not bridge — missing parent or api_key', {
+              hasParent: !!parentRow,
+              hasKey: !!apiKey,
+              agentLeg: callControlId,
+              parentId: parentRow?.id || null,
+              parentStatus: parentRow?.status || null,
+            })
           }
         } catch (e) { console.error('[telnyx bridge] failed', e) }
         return NextResponse.json({ ok: true })
