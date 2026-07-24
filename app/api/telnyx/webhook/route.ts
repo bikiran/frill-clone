@@ -444,10 +444,16 @@ export async function POST(req: NextRequest) {
                 // others as an extra child leg; whichever answers first gets
                 // bridged and the rest are hung up (see call.answered).
                 try {
-                  const { data: creds } = await db.from('telnyx_user_credentials')
+                  const { data: creds, error: credsErr } = await db.from('telnyx_user_credentials')
                     .select('sip_username, user_id')
                     .eq('company_id', companyId)
                     .not('sip_username', 'is', null)
+
+                  if (credsErr) {
+                    // Usually the migration hasn't been applied. Say so plainly
+                    // rather than quietly ringing only the shared credential.
+                    console.error('[telnyx inbound] telnyx_user_credentials unavailable — only the shared credential will ring (run migration V190):', credsErr.message)
+                  }
 
                   const others = (creds || [])
                     .map((c: any) => `sip:${c.sip_username}@sip.telnyx.com`)

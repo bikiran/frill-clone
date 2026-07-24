@@ -159,13 +159,21 @@ export async function POST(req: NextRequest) {
               credential_id: newId,
               sip_username: sipUsername,
             })
-            if (credErr) {
-              console.error('[telnyx token] could not store user credential (run migration V190):', credErr.message)
-            }
 
-            effectiveCredentialId = newId
-            effectiveSipUser = sipUsername
-            log.info('[telnyx token] created per-user credential', { userId, sipUsername })
+            if (credErr || !sipUsername) {
+              // Fail safe. The webhook can only dial credentials it can find in
+              // this table, so registering on one we couldn't store would leave
+              // the device unreachable — it would look registered and simply
+              // never ring. Stay on the shared credential instead.
+              console.error(
+                '[telnyx token] could not store per-user credential — falling back to shared (run migration V190):',
+                credErr?.message || 'no sip_username returned'
+              )
+            } else {
+              effectiveCredentialId = newId
+              effectiveSipUser = sipUsername
+              log.info('[telnyx token] created per-user credential', { userId, sipUsername })
+            }
           }
         }
       } catch (e: any) {

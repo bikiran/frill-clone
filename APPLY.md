@@ -1,59 +1,42 @@
-# Ring every teammate's device
+# Fix: phone registered on a credential nothing dials
 
-Run the migration FIRST, then deploy.
+Replaces colvy-web-ring-all-devices.zip. Run the migration, then deploy.
 
-    # 1. Supabase SQL editor
-    #    paste MIGRATION_V190.sql
+## What broke
 
-    # 2. code
-    cp -R app ~/Desktop/frill-clone/
+The token route created a per-user credential on Telnyx and used it EVEN IF
+storing it in `telnyx_user_credentials` failed:
 
-Mobile: colvy-mobile v1.54.0 (sends userId when fetching a token).
+    if (credErr) console.error('could not store user credential')
+    effectiveCredentialId = newId    // used regardless
 
-## The problem
+If the migration hadn't been applied, the table didn't exist, the insert
+failed — and the phone then registered on a credential the webhook can't find,
+because the fan-out only dials credentials listed in that table.
 
-Every client logged in with the SAME telephony credential (`credential_id` on
-telnyx_integrations). Telnyx routes an inbound call to the most recent
-registration, so the last device to sign in took the call and every other one
-stayed silent. Nothing about that is fixable while the credential is shared.
+The device looked perfectly registered and simply never rang. Two-way audio had
+been working right before, on the shared credential.
 
 ## The change
 
-**token/route.ts** — accepts `userId`. Each user gets their own telephony
-credential on the same WebRTC connection, created once and stored in
-`telnyx_user_credentials`, reused afterwards. Telnyx generates the
-`sip_username`, which is read back and stored — that's the address Call Control
-dials to reach that client. Callers that don't send a userId still work on the
-shared credential, so the web keeps working until it's updated too.
+**token/route.ts** — the per-user credential is only used if it was stored
+successfully AND Telnyx returned a sip_username. Otherwise it stays on the
+shared credential, which is always dialled. Fail safe rather than fail silent.
 
-**webhook/route.ts** —
+**webhook/route.ts** — a missing/erroring `telnyx_user_credentials` table is now
+logged explicitly instead of quietly reducing to a single target.
 
-- After dialling the first agent, creates an extra child leg for every OTHER
-  registered user's sip_username, all linked to the same parent. Every
-  registered device rings at once.
-- The extra leg ids are stored in `calls.ringing_leg_ids`.
-- On answer, the parent is found by agent leg id, by fan-out leg id, or by
-  recency — then the winning leg is bridged and **all other legs are hung up**,
-  so colleagues' phones stop ringing immediately.
+## Order
+
+1. Run MIGRATION_V190.sql in Supabase — without it there are no per-user
+   credentials and only the shared one rings.
+2. Deploy.
+3. Restart the mobile app so it fetches a fresh token.
 
 ## Verify
 
-With two devices signed in as different users:
+    select user_id, sip_username from telnyx_user_credentials;
 
-    select user_id, sip_username from telnyx_user_credentials
-    where company_id = 'f468f5ed-d5c7-4e4e-af64-136d36ccc74f';
-
-Two rows with different sip_usernames. Then call the number: both should ring,
-and answering on one should stop the other within a second or two.
-
-Vercel logs:
-
-    [telnyx inbound] ringing additional devices { count: 1 }
-    [telnyx bridge] bridged agent leg to caller
-    [telnyx bridge] cancelled other ringing devices { count: 1 }
-
-## Note on the web app
-
-The web still sends no userId, so it uses the shared credential. That's fine —
-it registers as one more device. Adding `userId` to its token request gives it
-its own credential too, which is worth doing once this is proven.
+A row per signed-in user. If it's empty after restarting the app, check the
+Vercel log for "could not store per-user credential" — calling still works via
+the shared credential, so this degrades rather than breaks.
