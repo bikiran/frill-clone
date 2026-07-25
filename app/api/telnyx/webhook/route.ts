@@ -643,8 +643,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true })
       }
 
-      // Either leg hung up — tear down the OTHER leg so a browser End (agent leg
-      // hangup) also drops the caller, and vice versa.
+      // A leg hung up. What that means depends on which leg and what phase the
+      // call is in:
+      //   • Caller hung up  → tear down EVERY agent leg (the answered/first one
+      //     AND every other device still ringing). Only cancelling
+      //     agent_call_control_id left all the other fanned-out phones ringing.
+      //   • Answered agent hung up (call already bridged) → drop the caller.
+      //   • A ringing agent declined/timed out before anyone answered → just let
+      //     that leg die; the caller must keep ringing the others. Previously,
+      //     declining the FIRST agent leg (which is agent_call_control_id) tore
+      //     down the caller and killed the call for everyone.
       if (eventType === 'call.hangup') {
         try {
           const { data: rows } = await db.from('calls')
@@ -655,9 +663,27 @@ export async function POST(req: NextRequest) {
             const { data: integRow } = await db.from('telnyx_integrations').select('api_key').eq('company_id', row.company_id).maybeSingle()
             if (integRow?.api_key) {
               const svc = new TelnyxService(integRow.api_key)
-              // The leg that DIDN'T hang up is the one to drop.
-              const other = row.telnyx_call_control_id === callControlId ? row.agent_call_control_id : row.telnyx_call_control_id
-              if (other) { try { await svc.hangupCall(other) } catch {} }
+              const isCallerLeg = row.telnyx_call_control_id === callControlId
+              const legs: string[] = Array.isArray(row.ringing_leg_ids) ? row.ringing_leg_ids : []
+              const bridged = ['in_progress', 'answered'].includes(String(row.status || ''))
+
+              if (isCallerLeg) {
+                // Cancel the answered/first agent leg plus every device still ringing.
+                const targets = Array.from(new Set([row.agent_call_control_id, ...legs].filter(Boolean)))
+                for (const t of targets) { try { await svc.hangupCall(t) } catch {} }
+                if (targets.length) log.info('[telnyx hangup] caller gone — cancelled all agent legs', { count: targets.length })
+              } else {
+                // An agent leg hung up. Drop the caller only if this leg was the
+                // one that had answered (a bridged call ending), not a decline
+                // during ringing.
+                const isAnsweredLeg = row.agent_call_control_id === callControlId && bridged
+                if (isAnsweredLeg && row.telnyx_call_control_id) {
+                  try { await svc.hangupCall(row.telnyx_call_control_id) } catch {}
+                  log.info('[telnyx hangup] answered agent ended — dropped caller')
+                } else {
+                  log.info('[telnyx hangup] a ringing agent leg ended — leaving the call up', { callControlId })
+                }
+              }
             }
           }
         } catch (e) { console.error('[telnyx hangup teardown] failed', e) }
