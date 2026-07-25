@@ -6618,6 +6618,45 @@ export default function InboxPage() {
                       })
                     })()}
 
+                    {/* ── Notes ─────────────────────────────────────────────
+                        Dedicated, editable notes section. Previously the note
+                        was a stray italic line jammed under Delivery with no
+                        label or controls; now it reads as its own section and
+                        can be edited, copied and cleared like the other fields
+                        (and matches the note you write on mobile). */}
+                    <div className="contact-field-row" style={{ position: 'relative', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                      <p style={{ margin: '0 0 4px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Notes</p>
+                      {editField === 'notes' ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <textarea autoFocus value={editFieldValue} onChange={e => setEditFieldValue(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Escape') setEditField(null) }}
+                            rows={4} style={{ ...inp, fontSize: 12.5, padding: '7px 9px', resize: 'vertical', lineHeight: 1.5 } as any} />
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                            <button type="button" onClick={() => setEditField(null)} style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                            <button type="button" onClick={() => saveSingleField('notes', editFieldValue)} style={{ padding: '5px 12px', borderRadius: 7, border: 'none', background: '#059669', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Save</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                          <p style={{ margin: 0, fontSize: 13, color: contact.notes ? 'var(--ink)' : '#c0c0c5', flex: 1, wordBreak: 'break-word', whiteSpace: 'pre-wrap', lineHeight: 1.5, fontStyle: contact.notes ? 'normal' : 'italic', cursor: contact.notes ? 'default' : 'pointer' }}
+                             onClick={() => { if (!contact.notes) { setEditField('notes'); setEditFieldValue('') } }}>
+                            {contact.notes || 'Add a note'}
+                          </p>
+                          <div className="contact-field-actions" style={{ display: 'flex', gap: 3, opacity: 0, transition: 'opacity 0.12s', flexShrink: 0 }}>
+                            <button type="button" title="Edit" onClick={() => { setEditField('notes'); setEditFieldValue(contact.notes || '') }} style={fieldBtn('var(--slate)')}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            </button>
+                            <button type="button" title="Copy" onClick={() => copyField(contact.notes)} style={fieldBtn('var(--slate)')}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            </button>
+                            <button type="button" title="Delete" onClick={async () => { if (confirm('Clear notes?')) { await (supabase as any).from('contacts').update({ notes: null }).eq('id', contact.id); setContact((c: any) => ({ ...c, notes: null })); showToast('Cleared') } }} style={fieldBtn('#dc2626')}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {/* ── Delivery (Coax-style) ─────────────────────────────
                         Scheduled delivery date + status, saved inline. */}
                     <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
@@ -6671,7 +6710,6 @@ export default function InboxPage() {
                     </div>
 
                     {contact.subscribed_to_marketing && <span style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>✓ Subscribed to marketing</span>}
-                    {contact.notes && <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)', fontStyle: 'italic' }}>{contact.notes}</p>}
                     <Link href={`/admin/customers/profile?id=${contact.id}`}
                       style={{ fontSize: 12, color: 'var(--coral)', fontWeight: 600, textDecoration: 'none' }}>
                       View full profile →
