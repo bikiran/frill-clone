@@ -304,6 +304,27 @@ export async function POST(req: NextRequest) {
           const match = (contacts || []).find((c: any) => c.phone && digitsOf(c.phone) === digitsOf(fromNum))
           if (match) { contactId = match.id; callerName = match.name }
 
+          // No saved contact — fall back to WooCommerce so a shopper still shows
+          // a name on the call log, card and voicemail alert.
+          if (!callerName) {
+            const t = digitsOf(fromNum)
+            try {
+              const { data: wooC } = await db.from('woocommerce_customers')
+                .select('first_name, last_name, phone').eq('company_id', companyId).not('phone', 'is', null).limit(1000)
+              const c = (wooC || []).find((x: any) => digitsOf(x.phone) === t)
+              if (c) callerName = `${c.first_name || ''} ${c.last_name || ''}`.trim() || null
+            } catch {}
+            if (!callerName) {
+              try {
+                const { data: wooO } = await db.from('woocommerce_orders')
+                  .select('billing').eq('company_id', companyId).eq('billing_phone_norm', t)
+                  .order('created_at', { ascending: false }).limit(1)
+                const b = (wooO || [])[0]?.billing
+                if (b) callerName = `${b.first_name || ''} ${b.last_name || ''}`.trim() || null
+              } catch {}
+            }
+          }
+
           // Remember which Voice API App the number rings through, so other code
           // paths (and the diag) know the valid Call Control connection.
           if (eventConnectionId && (integ as any).voice_api_application_id !== eventConnectionId) {
