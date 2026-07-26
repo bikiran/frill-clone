@@ -200,7 +200,7 @@ function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: st
 // Interleave conversation events (assignments, channel switches, moves) into the
 // message list in chronological order, so the thread reads like a real timeline.
 function mergeEvents(msgs: any[], events: any[]) {
-  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request', 'page_view']
+  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request', 'page_view', 'note_created']
   const evs = (events || [])
     .filter(e => SHOW.includes(e.event_type))
     .map(e => ({ ...e, __event: true }))
@@ -1908,6 +1908,15 @@ export default function InboxPage() {
           }).catch(() => {})
       }
     } catch { /* the note itself is saved either way */ }
+    // Drop a lightweight timeline event so the thread shows "A note has been
+    // created by …", the way Coax does.
+    try {
+      await (supabase as any).from('conversation_events').insert({
+        conversation_id: selected.id, company_id: companyId,
+        event_type: 'note_created', actor_name: author,
+        detail: `A note has been created by ${author}`,
+      })
+    } catch { /* the note is saved regardless */ }
     setNewNote('')
     loadConversationExtras(selected.id)
   }
@@ -1951,6 +1960,20 @@ export default function InboxPage() {
     </div>
   )
 
+  // A composer with a small submit button tucked inside the box (Coax-style),
+  // replacing the separate Add button. Enter submits single-line composers.
+  const composerBox = (o: { value: string; onChange: (v: string) => void; onSubmit: () => void; placeholder: string; multiline?: boolean; rows?: number }) => (
+    <div style={{ position: 'relative' }}>
+      <MentionInput value={o.value} onChange={o.onChange} team={teamMembers as any}
+        multiline={o.multiline} rows={o.rows} placeholder={o.placeholder} onSubmit={o.onSubmit}
+        style={{ padding: '10px 44px 10px 12px', fontSize: 13, lineHeight: 1.5 }} />
+      <button type="button" onClick={o.onSubmit} title="Add"
+        style={{ position: 'absolute', right: 7, bottom: 7, width: 30, height: 30, borderRadius: 8, border: 'none', background: o.value.trim() ? 'var(--coral)' : '#e5e7eb', color: '#fff', cursor: o.value.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'background 0.12s' }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+      </button>
+    </div>
+  )
+
   const renderNotesSection = () => (
     <div style={{ marginBottom: 18 }}>
       <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Notes</h3>
@@ -1977,12 +2000,8 @@ export default function InboxPage() {
           )}
         </div>
       ))}
-      <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'flex-start' }}>
-        <div style={{ flex: 1 }}>
-          <MentionInput value={newNote} onChange={(v) => setNewNote(v)} team={teamMembers as any} multiline rows={2}
-            placeholder="Add a note… use @ to mention someone" onSubmit={addNote} style={{ padding: '9px 11px', fontSize: 13, lineHeight: 1.5 }} />
-        </div>
-        <button type="button" onClick={addNote} style={{ padding: '9px 14px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Add</button>
+      <div style={{ marginTop: 6 }}>
+        {composerBox({ value: newNote, onChange: (v) => setNewNote(v), onSubmit: addNote, placeholder: 'Add a note… use @ to mention someone', multiline: true, rows: 2 })}
       </div>
     </div>
   )
@@ -2082,17 +2101,12 @@ export default function InboxPage() {
         </div>
       ))}
       <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
-        <MentionInput value={newTask} onChange={(v) => setNewTask(v)} team={teamMembers as any} multiline rows={2}
-          placeholder="Add a task… use @ to mention someone" onSubmit={addTask} style={{ padding: '9px 11px', fontSize: 13, lineHeight: 1.5 }} />
-        <div style={{ display: 'flex', gap: 6 }}>
-          <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}
-            style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, outline: 'none', background: '#fff', color: newTaskAssignee ? 'var(--ink)' : 'var(--slate)' }}>
-            <option value="">Unassigned</option>
-            {teamMembers.map((m: any) => (<option key={m.id} value={m.id}>{m.name}</option>))}
-          </select>
-          <button type="button" onClick={addTask}
-            style={{ padding: '8px 14px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Add</button>
-        </div>
+        {composerBox({ value: newTask, onChange: (v) => setNewTask(v), onSubmit: addTask, placeholder: 'Add a task… use @ to mention someone (Enter to add)' })}
+        <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}
+          style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, outline: 'none', background: '#fff', color: newTaskAssignee ? 'var(--ink)' : 'var(--slate)' }}>
+          <option value="">Unassigned</option>
+          {teamMembers.map((m: any) => (<option key={m.id} value={m.id}>{m.name}</option>))}
+        </select>
       </div>
     </div>
   )
