@@ -910,6 +910,9 @@ export default function InboxPage() {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editNoteText, setEditNoteText] = useState('')
   const [copiedNoteId, setCopiedNoteId] = useState<string | null>(null)
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+  const [editTaskText, setEditTaskText] = useState('')
+  const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null)
   const [newTask, setNewTask] = useState('')
   const [newTaskAssignee, setNewTaskAssignee] = useState('')
   const [refundModal, setRefundModal] = useState<any>(null)
@@ -1930,42 +1933,56 @@ export default function InboxPage() {
   // One Notes section, rendered in both the Information and Timeline tabs so
   // there's a single notes store (conversation_notes) shown in two places, with
   // @mention on add/edit and per-note copy / edit / delete.
+  // Contact-card-style icon buttons (copy / edit / delete) shared by notes and
+  // tasks so the two read identically.
+  const rowActions = (o: { onCopy: () => void; onEdit: () => void; onDelete: () => void; copied?: boolean }) => (
+    <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+      <button type="button" title="Copy" onClick={o.onCopy} style={fieldBtn(o.copied ? '#059669' : 'var(--slate)')}>
+        {o.copied
+          ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>}
+      </button>
+      <button type="button" title="Edit" onClick={o.onEdit} style={fieldBtn('var(--slate)')}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>
+      <button type="button" title="Delete" onClick={o.onDelete} style={fieldBtn('#dc2626')}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      </button>
+    </div>
+  )
+
   const renderNotesSection = () => (
     <div style={{ marginBottom: 18 }}>
       <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Notes</h3>
       {notes.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No notes.</p>}
       {notes.map(n => (
-        <div key={n.id} style={{ padding: '8px 10px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', marginBottom: 6 }}>
+        <div key={n.id} style={{ padding: '10px 12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', marginBottom: 8 }}>
           {editingNoteId === n.id ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <MentionInput value={editNoteText} onChange={setEditNoteText} team={teamMembers as any}
-                placeholder="Edit note…" onSubmit={() => saveNoteEdit(n.id)} style={{ padding: '6px 8px', fontSize: 12 }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <MentionInput value={editNoteText} onChange={setEditNoteText} team={teamMembers as any} multiline rows={3}
+                placeholder="Edit note…" onSubmit={() => saveNoteEdit(n.id)} style={{ padding: '9px 11px', fontSize: 13, lineHeight: 1.5 }} />
               <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setEditingNoteId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--slate)' }}>Cancel</button>
-                <button type="button" onClick={() => saveNoteEdit(n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 800, color: '#059669' }}>Save</button>
+                <button type="button" onClick={() => setEditingNoteId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--slate)' }}>Cancel</button>
+                <button type="button" onClick={() => saveNoteEdit(n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800, color: '#059669' }}>Save</button>
               </div>
             </div>
           ) : (
             <>
-              <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{n.content}</p>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5, gap: 8 }}>
-                <p style={{ margin: 0, fontSize: 10, color: '#9ca3af' }}>{n.author_name} · {new Date(n.created_at).toLocaleDateString()}</p>
-                <div style={{ display: 'flex', gap: 11, flexShrink: 0 }}>
-                  <button type="button" onClick={() => copyNote(n.content, n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: copiedNoteId === n.id ? '#059669' : 'var(--slate)' }}>{copiedNoteId === n.id ? 'Copied' : 'Copy'}</button>
-                  <button type="button" onClick={() => { setEditingNoteId(n.id); setEditNoteText(n.content) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--slate)' }}>Edit</button>
-                  <button type="button" onClick={() => deleteNote(n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: '#dc2626' }}>Delete</button>
-                </div>
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{n.content}</p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, gap: 8 }}>
+                <p style={{ margin: 0, fontSize: 10.5, color: '#9ca3af' }}>{n.author_name} · {new Date(n.created_at).toLocaleDateString()}</p>
+                {rowActions({ onCopy: () => copyNote(n.content, n.id), onEdit: () => { setEditingNoteId(n.id); setEditNoteText(n.content) }, onDelete: () => deleteNote(n.id), copied: copiedNoteId === n.id })}
               </div>
             </>
           )}
         </div>
       ))}
-      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+      <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'flex-start' }}>
         <div style={{ flex: 1 }}>
-          <MentionInput value={newNote} onChange={(v) => setNewNote(v)} team={teamMembers as any}
-            placeholder="Add a note… use @ to mention someone" onSubmit={addNote} style={{ padding: '7px 10px', fontSize: 12 }} />
+          <MentionInput value={newNote} onChange={(v) => setNewNote(v)} team={teamMembers as any} multiline rows={2}
+            placeholder="Add a note… use @ to mention someone" onSubmit={addNote} style={{ padding: '9px 11px', fontSize: 13, lineHeight: 1.5 }} />
         </div>
-        <button type="button" onClick={addNote} style={{ padding: '7px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
+        <button type="button" onClick={addNote} style={{ padding: '9px 14px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Add</button>
       </div>
     </div>
   )
@@ -2013,6 +2030,72 @@ export default function InboxPage() {
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, done: !t.done } : t))
     await (supabase as any).from('conversation_tasks').update({ done: !task.done }).eq('id', task.id)
   }
+  const saveTaskEdit = async (id: string) => {
+    const body = editTaskText.trim()
+    if (!body) { setEditingTaskId(null); return }
+    await (supabase as any).from('conversation_tasks').update({ text: body }).eq('id', id)
+    setEditingTaskId(null); setEditTaskText('')
+    if (selected) loadConversationExtras(selected.id)
+  }
+  const deleteTask = async (id: string) => {
+    if (!confirm('Delete this task?')) return
+    await (supabase as any).from('conversation_tasks').delete().eq('id', id)
+    if (selected) loadConversationExtras(selected.id)
+  }
+  const copyTask = (text: string, id: string) => {
+    try { navigator.clipboard.writeText(text || '') } catch {}
+    setCopiedTaskId(id); showToast('Copied')
+    setTimeout(() => setCopiedTaskId(c => (c === id ? null : c)), 1500)
+  }
+
+  // One Tasks section, rendered in both the Information and Timeline tabs — same
+  // conversation_tasks store, with assignment, @mention and copy/edit/delete.
+  const renderTasksSection = () => (
+    <div style={{ marginBottom: 18 }}>
+      <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Tasks</h3>
+      {tasks.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No tasks.</p>}
+      {tasks.map(t => (
+        <div key={t.id} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)', marginBottom: 8 }}>
+          {editingTaskId === t.id ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <MentionInput value={editTaskText} onChange={setEditTaskText} team={teamMembers as any} multiline rows={2}
+                placeholder="Edit task…" onSubmit={() => saveTaskEdit(t.id)} style={{ padding: '9px 11px', fontSize: 13, lineHeight: 1.5 }} />
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setEditingTaskId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--slate)' }}>Cancel</button>
+                <button type="button" onClick={() => saveTaskEdit(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800, color: '#059669' }}>Save</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+              <input type="checkbox" checked={t.done} onChange={() => toggleTask(t)} style={{ marginTop: 3, cursor: 'pointer', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 13, textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.55 : 1, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{t.text}</span>
+                {t.assigned_to && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6, padding: '1px 8px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700, verticalAlign: 'middle' }}>
+                    {t.assigned_to}
+                  </span>
+                )}
+              </div>
+              {rowActions({ onCopy: () => copyTask(t.text, t.id), onEdit: () => { setEditingTaskId(t.id); setEditTaskText(t.text) }, onDelete: () => deleteTask(t.id), copied: copiedTaskId === t.id })}
+            </div>
+          )}
+        </div>
+      ))}
+      <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+        <MentionInput value={newTask} onChange={(v) => setNewTask(v)} team={teamMembers as any} multiline rows={2}
+          placeholder="Add a task… use @ to mention someone" onSubmit={addTask} style={{ padding: '9px 11px', fontSize: 13, lineHeight: 1.5 }} />
+        <div style={{ display: 'flex', gap: 6 }}>
+          <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}
+            style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, outline: 'none', background: '#fff', color: newTaskAssignee ? 'var(--ink)' : 'var(--slate)' }}>
+            <option value="">Unassigned</option>
+            {teamMembers.map((m: any) => (<option key={m.id} value={m.id}>{m.name}</option>))}
+          </select>
+          <button type="button" onClick={addTask}
+            style={{ padding: '8px 14px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Add</button>
+        </div>
+      </div>
+    </div>
+  )
 
   // ── Sentiment ──────────────────────────────────────────────────────────────
   const setSentiment = async (sentiment: string) => {
@@ -6691,6 +6774,13 @@ export default function InboxPage() {
                       {renderNotesSection()}
                     </div>
 
+                    {/* ── Tasks ─────────────────────────────────────────────
+                        Same conversation_tasks as the Timeline tab, shown here
+                        below Notes with assignment + @mention + copy/edit/delete. */}
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                      {renderTasksSection()}
+                    </div>
+
                     {/* ── Delivery (Coax-style) ─────────────────────────────
                         Scheduled delivery date + status, saved inline. */}
                     <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
@@ -6956,46 +7046,7 @@ export default function InboxPage() {
                 {renderNotesSection()}
 
                 {/* Tasks */}
-                <div style={{ marginBottom: 18 }}>
-                  <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Tasks</h3>
-                  {tasks.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No tasks.</p>}
-                  {tasks.map(t => (
-                    <label key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, marginBottom: 6, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={t.done} onChange={() => toggleTask(t)} style={{ marginTop: 2 }} />
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.6 : 1, color: 'var(--ink)' }}>{t.text}</span>
-                        {t.assigned_to && (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6, padding: '1px 7px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700, verticalAlign: 'middle' }}>
-                            {t.assigned_to}
-                          </span>
-                        )}
-                      </span>
-                    </label>
-                  ))}
-                  <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
-                    <MentionInput
-                      value={newTask}
-                      onChange={(v) => setNewTask(v)}
-                      team={teamMembers as any}
-                      placeholder="Add a task… use @ to mention someone"
-                      onSubmit={addTask}
-                      style={{ padding: '7px 10px', fontSize: 12 }}
-                    />
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}
-                        style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, outline: 'none', background: '#fff', color: newTaskAssignee ? 'var(--ink)' : 'var(--slate)' }}>
-                        <option value="">Unassigned</option>
-                        {teamMembers.map((m: any) => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
-                      </select>
-                      <button type="button" onClick={addTask}
-                        style={{ padding: '7px 14px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                        Add
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                {renderTasksSection()}
 
                 {/* Page history */}
                 <div>
