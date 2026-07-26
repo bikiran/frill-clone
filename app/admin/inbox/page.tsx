@@ -907,6 +907,9 @@ export default function InboxPage() {
   const [notes, setNotes] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
   const [newNote, setNewNote] = useState('')
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [editNoteText, setEditNoteText] = useState('')
+  const [copiedNoteId, setCopiedNoteId] = useState<string | null>(null)
   const [newTask, setNewTask] = useState('')
   const [newTaskAssignee, setNewTaskAssignee] = useState('')
   const [refundModal, setRefundModal] = useState<any>(null)
@@ -1905,6 +1908,67 @@ export default function InboxPage() {
     setNewNote('')
     loadConversationExtras(selected.id)
   }
+
+  const saveNoteEdit = async (id: string) => {
+    const body = editNoteText.trim()
+    if (!body) { setEditingNoteId(null); return }
+    await (supabase as any).from('conversation_notes').update({ content: body }).eq('id', id)
+    setEditingNoteId(null); setEditNoteText('')
+    if (selected) loadConversationExtras(selected.id)
+  }
+  const deleteNote = async (id: string) => {
+    if (!confirm('Delete this note?')) return
+    await (supabase as any).from('conversation_notes').delete().eq('id', id)
+    if (selected) loadConversationExtras(selected.id)
+  }
+  const copyNote = (content: string, id: string) => {
+    try { navigator.clipboard.writeText(content || '') } catch {}
+    setCopiedNoteId(id); showToast('Copied')
+    setTimeout(() => setCopiedNoteId(c => (c === id ? null : c)), 1500)
+  }
+
+  // One Notes section, rendered in both the Information and Timeline tabs so
+  // there's a single notes store (conversation_notes) shown in two places, with
+  // @mention on add/edit and per-note copy / edit / delete.
+  const renderNotesSection = () => (
+    <div style={{ marginBottom: 18 }}>
+      <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Notes</h3>
+      {notes.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No notes.</p>}
+      {notes.map(n => (
+        <div key={n.id} style={{ padding: '8px 10px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', marginBottom: 6 }}>
+          {editingNoteId === n.id ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <MentionInput value={editNoteText} onChange={setEditNoteText} team={teamMembers as any}
+                placeholder="Edit note…" onSubmit={() => saveNoteEdit(n.id)} style={{ padding: '6px 8px', fontSize: 12 }} />
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setEditingNoteId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--slate)' }}>Cancel</button>
+                <button type="button" onClick={() => saveNoteEdit(n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 800, color: '#059669' }}>Save</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{n.content}</p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5, gap: 8 }}>
+                <p style={{ margin: 0, fontSize: 10, color: '#9ca3af' }}>{n.author_name} · {new Date(n.created_at).toLocaleDateString()}</p>
+                <div style={{ display: 'flex', gap: 11, flexShrink: 0 }}>
+                  <button type="button" onClick={() => copyNote(n.content, n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: copiedNoteId === n.id ? '#059669' : 'var(--slate)' }}>{copiedNoteId === n.id ? 'Copied' : 'Copy'}</button>
+                  <button type="button" onClick={() => { setEditingNoteId(n.id); setEditNoteText(n.content) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--slate)' }}>Edit</button>
+                  <button type="button" onClick={() => deleteNote(n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: '#dc2626' }}>Delete</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        <div style={{ flex: 1 }}>
+          <MentionInput value={newNote} onChange={(v) => setNewNote(v)} team={teamMembers as any}
+            placeholder="Add a note… use @ to mention someone" onSubmit={addNote} style={{ padding: '7px 10px', fontSize: 12 }} />
+        </div>
+        <button type="button" onClick={addNote} style={{ padding: '7px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
+      </div>
+    </div>
+  )
   const addTask = async () => {
     if (!newTask.trim() || !selected || !companyId) return
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
@@ -6619,42 +6683,12 @@ export default function InboxPage() {
                     })()}
 
                     {/* ── Notes ─────────────────────────────────────────────
-                        Dedicated, editable notes section. Previously the note
-                        was a stray italic line jammed under Delivery with no
-                        label or controls; now it reads as its own section and
-                        can be edited, copied and cleared like the other fields
-                        (and matches the note you write on mobile). */}
-                    <div className="contact-field-row" style={{ position: 'relative', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                      <p style={{ margin: '0 0 4px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Notes</p>
-                      {editField === 'notes' ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          <textarea autoFocus value={editFieldValue} onChange={e => setEditFieldValue(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Escape') setEditField(null) }}
-                            rows={4} style={{ ...inp, fontSize: 12.5, padding: '7px 9px', resize: 'vertical', lineHeight: 1.5 } as any} />
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                            <button type="button" onClick={() => setEditField(null)} style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-                            <button type="button" onClick={() => saveSingleField('notes', editFieldValue)} style={{ padding: '5px 12px', borderRadius: 7, border: 'none', background: '#059669', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Save</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                          <p style={{ margin: 0, fontSize: 13, color: contact.notes ? 'var(--ink)' : '#c0c0c5', flex: 1, wordBreak: 'break-word', whiteSpace: 'pre-wrap', lineHeight: 1.5, fontStyle: contact.notes ? 'normal' : 'italic', cursor: contact.notes ? 'default' : 'pointer' }}
-                             onClick={() => { if (!contact.notes) { setEditField('notes'); setEditFieldValue('') } }}>
-                            {contact.notes || 'Add a note'}
-                          </p>
-                          <div className="contact-field-actions" style={{ display: 'flex', gap: 3, opacity: 0, transition: 'opacity 0.12s', flexShrink: 0 }}>
-                            <button type="button" title="Edit" onClick={() => { setEditField('notes'); setEditFieldValue(contact.notes || '') }} style={fieldBtn('var(--slate)')}>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                            </button>
-                            <button type="button" title="Copy" onClick={() => copyField(contact.notes)} style={fieldBtn('var(--slate)')}>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                            </button>
-                            <button type="button" title="Delete" onClick={async () => { if (confirm('Clear notes?')) { await (supabase as any).from('contacts').update({ notes: null }).eq('id', contact.id); setContact((c: any) => ({ ...c, notes: null })); showToast('Cleared') } }} style={fieldBtn('#dc2626')}>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                        The same conversation_notes shown in the Timeline tab —
+                        one store, two locations, with @mention + edit/copy/delete
+                        and synced to mobile. Replaces the old single contact.notes
+                        field. */}
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                      {renderNotesSection()}
                     </div>
 
                     {/* ── Delivery (Coax-style) ─────────────────────────────
@@ -6919,29 +6953,7 @@ export default function InboxPage() {
                 </div>
 
                 {/* Notes */}
-                <div style={{ marginBottom: 18 }}>
-                  <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Notes</h3>
-                  {notes.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No notes.</p>}
-                  {notes.map(n => (
-                    <div key={n.id} style={{ padding: '8px 10px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', marginBottom: 6 }}>
-                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)' }}>{n.content}</p>
-                      <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af' }}>{n.author_name} · {new Date(n.created_at).toLocaleDateString()}</p>
-                    </div>
-                  ))}
-                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                    <div style={{ flex: 1 }}>
-                      <MentionInput
-                        value={newNote}
-                        onChange={(v) => setNewNote(v)}
-                        team={teamMembers as any}
-                        placeholder="Add a note… use @ to mention someone"
-                        onSubmit={addNote}
-                        style={{ padding: '7px 10px', fontSize: 12 }}
-                      />
-                    </div>
-                    <button type="button" onClick={addNote} style={{ padding: '7px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add</button>
-                  </div>
-                </div>
+                {renderNotesSection()}
 
                 {/* Tasks */}
                 <div style={{ marginBottom: 18 }}>
