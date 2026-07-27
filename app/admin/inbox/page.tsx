@@ -916,6 +916,7 @@ export default function InboxPage() {
   const [newTask, setNewTask] = useState('')
   const [newTaskAssignee, setNewTaskAssignee] = useState('')
   const [refundModal, setRefundModal] = useState<any>(null)
+  const [orderGallery, setOrderGallery] = useState<{ images: { src: string; name: string }[]; index: number } | null>(null)
   const [aiSummary, setAiSummary] = useState('')
   const [aiTodos, setAiTodos] = useState<any[]>([])
   const [generatingAi, setGeneratingAi] = useState(false)
@@ -4183,6 +4184,40 @@ export default function InboxPage() {
       )}
 
       {/* Proof of Delivery panel */}
+      {orderGallery && (
+        <div onClick={() => setOrderGallery(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <button type="button" onClick={() => setOrderGallery(null)}
+            style={{ position: 'absolute', top: 18, right: 24, background: 'none', border: 'none', color: '#fff', fontSize: 30, lineHeight: 1, cursor: 'pointer' }}>×</button>
+          <div onClick={e => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, maxWidth: '92vw' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              {orderGallery.images.length > 1 && (
+                <button type="button" onClick={() => setOrderGallery(g => g ? { ...g, index: (g.index - 1 + g.images.length) % g.images.length } : g)}
+                  style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: 40, height: 40, borderRadius: '50%', fontSize: 22, cursor: 'pointer', flexShrink: 0 }}>‹</button>
+              )}
+              <img src={orderGallery.images[orderGallery.index].src} alt=""
+                style={{ maxWidth: '80vw', maxHeight: '68vh', objectFit: 'contain', borderRadius: 10, background: '#fff' }} />
+              {orderGallery.images.length > 1 && (
+                <button type="button" onClick={() => setOrderGallery(g => g ? { ...g, index: (g.index + 1) % g.images.length } : g)}
+                  style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: 40, height: 40, borderRadius: '50%', fontSize: 22, cursor: 'pointer', flexShrink: 0 }}>›</button>
+              )}
+            </div>
+            <p style={{ color: '#fff', fontSize: 13.5, margin: 0, textAlign: 'center', maxWidth: '80vw' }}>
+              {orderGallery.images[orderGallery.index].name}
+              {orderGallery.images.length > 1 && <span style={{ color: '#9ca3af', marginLeft: 8 }}>{orderGallery.index + 1} / {orderGallery.images.length}</span>}
+            </p>
+            {orderGallery.images.length > 1 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', maxWidth: '90vw' }}>
+                {orderGallery.images.map((im, i) => (
+                  <img key={i} src={im.src} alt="" onClick={() => setOrderGallery(g => g ? { ...g, index: i } : g)}
+                    style={{ width: 50, height: 50, objectFit: 'cover', borderRadius: 7, cursor: 'pointer', border: i === orderGallery.index ? '2px solid var(--coral)' : '2px solid transparent', opacity: i === orderGallery.index ? 1 : 0.55 }} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {refundModal && (
         <div onClick={() => !refundModal.busy && setRefundModal(null)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 340, padding: 20 }}>
@@ -7190,14 +7225,37 @@ export default function InboxPage() {
                           <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: o.status === 'completed' ? '#dcfce7' : o.status === 'processing' ? '#dbeafe' : o.status === 'cancelled' || o.status === 'failed' ? '#fee2e2' : '#fef3c7', color: o.status === 'completed' ? '#059669' : o.status === 'processing' ? '#2563eb' : o.status === 'cancelled' || o.status === 'failed' ? '#dc2626' : '#d97706', fontWeight: 600, textTransform: 'capitalize' }}>{o.status}</span>
                           <span style={{ fontSize: 11, color: '#9ca3af' }}>{o.order_date ? new Date(o.order_date).toLocaleDateString('en-AU') : ''}</span>
                         </div>
-                        {Array.isArray(o.line_items) && o.line_items.length > 0 && (
-                          <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
-                            {o.line_items.slice(0, 3).map((li: any, i: number) => (
-                              <p key={i} style={{ margin: '2px 0', fontSize: 11, color: 'var(--slate)' }}>{li.quantity}× {dec(li.name)}</p>
-                            ))}
-                            {o.line_items.length > 3 && <p style={{ margin: '2px 0', fontSize: 11, color: '#9ca3af' }}>+{o.line_items.length - 3} more</p>}
-                          </div>
-                        )}
+                        {Array.isArray(o.line_items) && o.line_items.length > 0 && (() => {
+                          const withImg = o.line_items.filter((li: any) => li.image?.src)
+                          const images = withImg.map((li: any) => ({ src: li.image.src, name: dec(li.name) }))
+                          const openAt = (src?: string) => {
+                            if (!images.length) return
+                            const idx = src ? Math.max(0, images.findIndex((im: any) => im.src === src)) : 0
+                            setOrderGallery({ images, index: idx })
+                          }
+                          return (
+                            <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                              {o.line_items.slice(0, 3).map((li: any, i: number) => (
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '3px 0' }}>
+                                  {li.image?.src ? (
+                                    <img src={li.image.src} alt="" onClick={(e) => { e.stopPropagation(); openAt(li.image.src) }}
+                                      style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', border: '1px solid var(--border)', cursor: 'pointer', flexShrink: 0 }} />
+                                  ) : (
+                                    <div style={{ width: 34, height: 34, borderRadius: 6, background: 'var(--canvas)', border: '1px solid var(--border)', flexShrink: 0 }} />
+                                  )}
+                                  <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}>{li.quantity}× {dec(li.name)}</p>
+                                </div>
+                              ))}
+                              {o.line_items.length > 3 && <p style={{ margin: '2px 0 0 42px', fontSize: 11, color: '#9ca3af' }}>+{o.line_items.length - 3} more</p>}
+                              {images.length > 0 && (
+                                <button type="button" onClick={(e) => { e.stopPropagation(); openAt() }}
+                                  style={{ marginTop: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
+                                  View {images.length} product image{images.length > 1 ? 's' : ''}
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })()}
                         {/* Per-order actions */}
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
                           <button type="button" onClick={() => openOrderEditor(payload)} style={miniBtn('var(--coral)')}>Edit</button>
