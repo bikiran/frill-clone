@@ -2388,6 +2388,41 @@ export default function InboxPage() {
 
   const downloadInvoice = () => { if (invoicePreview) invoicePreview.doc.save(invoicePreview.fileName) }
 
+  // Enrich the orders shown in the panel with product images + shipping (the
+  // synced rows lack both). The detail endpoint fetches live and caches, so this
+  // runs once per order and then reads from cache.
+  const enrichedOrdersRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!companyId || wooOrders.length === 0) return
+    const toEnrich = wooOrders.filter((o: any) => {
+      const id = String(o.order_id)
+      if (!id || enrichedOrdersRef.current.has(id)) return false
+      const needsImg = !Array.isArray(o.line_items) || o.line_items.some((li: any) => !li?.image?.src)
+      const needsShip = o.shipping_total == null
+      return needsImg || needsShip
+    }).slice(0, 8)
+    if (toEnrich.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      const updates: Record<string, any> = {}
+      for (const o of toEnrich) {
+        const id = String(o.order_id)
+        enrichedOrdersRef.current.add(id)
+        try {
+          const res = await fetch(`/api/orders/detail?companyId=${companyId}&orderId=${id}` + (o.integration_id ? `&integrationId=${o.integration_id}` : ''))
+          const d = await res.json()
+          if (res.ok && d.order) updates[id] = d.order
+        } catch { /* leave this order as-is */ }
+      }
+      if (cancelled || Object.keys(updates).length === 0) return
+      setWooOrders(prev => prev.map((o: any) => {
+        const u = updates[String(o.order_id)]
+        return u ? { ...o, line_items: (Array.isArray(u.line_items) && u.line_items.length) ? u.line_items : o.line_items, shipping_total: u.shipping_total ?? o.shipping_total, shipping_method: u.shipping_method ?? o.shipping_method } : o
+      }))
+    })()
+    return () => { cancelled = true }
+  }, [wooOrders, companyId])
+
   const sendInvoiceInChat = async () => {
     if (!invoicePreview || !selected || !companyId) return
     setInvoiceSending(true)
@@ -2478,19 +2513,26 @@ export default function InboxPage() {
     const orderId = payload.order_id || payload.id
     if (!orderId) { showToast('No order id for this order'); return }
 
-    // The synced order row often has an empty line_items array, so fetch the
-    // real items live from WooCommerce before opening the modal. Without this
-    // the modal always said "no line items" even for multi-item orders.
+    // Fetch the enriched order (real line items with images + shipping) — the
+    // synced row usually lacks both, which is why shipping never appeared.
     let rawItems = payload.line_items || payload.items || []
-    if (!Array.isArray(rawItems) || rawItems.length === 0) {
-      try {
-        const res = await fetch(
-          `/api/orders/detail?companyId=${companyId}&orderId=${orderId}` +
-          (payload.integration_id ? `&integrationId=${payload.integration_id}` : ''))
-        const d = await res.json()
-        if (res.ok && Array.isArray(d.order?.line_items)) rawItems = d.order.line_items
-      } catch { /* fall through — modal will offer a full refund */ }
-    }
+    let shippingTotal = Number(payload.shipping_total || 0)
+    let shippingMethod: string | null = payload.shipping_method || null
+    let orderTotal = Number(payload.total || 0)
+    let alreadyRefunded = Math.abs(Number(payload.total_refunded ?? payload.refunded_total ?? 0))
+    try {
+      const res = await fetch(
+        `/api/orders/detail?companyId=${companyId}&orderId=${orderId}` +
+        (payload.integration_id ? `&integrationId=${payload.integration_id}` : ''))
+      const d = await res.json()
+      if (res.ok && d.order) {
+        if (Array.isArray(d.order.line_items) && d.order.line_items.length) rawItems = d.order.line_items
+        if (d.order.shipping_total != null) shippingTotal = Number(d.order.shipping_total)
+        if (d.order.shipping_method) shippingMethod = d.order.shipping_method
+        if (d.order.total != null && Number(d.order.total)) orderTotal = Number(d.order.total)
+        if (d.order.total_refunded != null) alreadyRefunded = Math.abs(Number(d.order.total_refunded))
+      }
+    } catch { /* fall through — modal will offer a full refund */ }
 
     const items = (rawItems || []).map((li: any, i: number) => {
       const qty = Number(li.quantity || li.qty || 1)
@@ -2509,13 +2551,14 @@ export default function InboxPage() {
       payload, orderId,
       orderNumber: payload.order_number || orderId,
       items,
-      shipping: Number(payload.shipping_total || 0),
+      shipping: shippingTotal,
+      shippingMethod,
       refundShipping: false,
       restock: true,
       reason: '',
       busy: false,
-      orderTotal: Number(payload.total || 0),
-      alreadyRefunded: Math.abs(Number(payload.total_refunded ?? payload.refunded_total ?? 0)),
+      orderTotal,
+      alreadyRefunded,
     })
   }
 
@@ -4374,7 +4417,7 @@ export default function InboxPage() {
               <label style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', marginBottom: 10, cursor: 'pointer' }}>
                 <input type="checkbox" checked={refundModal.refundShipping}
                   onChange={e => setRefundModal((v: any) => ({ ...v, refundShipping: e.target.checked }))} />
-                <span style={{ flex: 1, fontSize: 13.5, color: 'var(--ink)' }}>Refund shipping</span>
+                <span style={{ flex: 1, fontSize: 13.5, color: 'var(--ink)' }}>Refund shipping{refundModal.shippingMethod ? ` (${refundModal.shippingMethod})` : ''}</span>
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>${refundModal.shipping.toFixed(2)}</span>
               </label>
             )}
@@ -7364,6 +7407,12 @@ export default function InboxPage() {
                                   style={{ marginTop: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
                                   View {images.length} product image{images.length > 1 ? 's' : ''}
                                 </button>
+                              )}
+                              {(o.shipping_method || Number(o.shipping_total) > 0) && (
+                                <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span>🚚</span>
+                                  {o.shipping_method || 'Shipping'}{Number(o.shipping_total) > 0 ? ` — $${Number(o.shipping_total).toFixed(2)}` : ' — Free'}
+                                </p>
                               )}
                             </div>
                           )

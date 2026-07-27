@@ -27,11 +27,17 @@ export async function GET(req: NextRequest) {
 
     const db = admin()
 
-    // Try the stored row first — it may already have items.
+    // Try the stored row first — but only trust it if it's actually complete:
+    // it must have line items, each with a product image, and a shipping total.
+    // Synced rows are often missing images and shipping, so those go live.
     const { data: stored } = await db.from('woocommerce_orders')
       .select('*').eq('company_id', companyId)
       .or(`order_id.eq.${orderId},order_number.eq.${orderId}`).maybeSingle()
-    if (stored && Array.isArray(stored.line_items) && stored.line_items.length > 0) {
+    const complete = (o: any) =>
+      o && Array.isArray(o.line_items) && o.line_items.length > 0 &&
+      o.shipping_total != null &&
+      o.line_items.every((li: any) => li?.image?.src)
+    if (complete(stored)) {
       return NextResponse.json({ order: stored })
     }
 
@@ -48,7 +54,6 @@ export async function GET(req: NextRequest) {
       integ = r.data?.[0] || null
     }
     if (!integ?.store_url) {
-      // No live source — return the stored row even if items are empty.
       return NextResponse.json({ order: stored || { order_id: orderId, line_items: [] } })
     }
 
@@ -61,21 +66,34 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ order: stored || { order_id: orderId, line_items: [] } })
     }
 
-    // Persist the items so the next refund doesn't need a live call.
+    // WooCommerce line items already carry image:{id,src}; keep it. Shipping
+    // comes from shipping_lines (Flat Rate / Free shipping / Local pickup).
+    const lineItems = order.line_items || []
+    const shipLine = (order.shipping_lines || [])[0] || null
+    const shippingMethod = shipLine?.method_title || null
+
+    // Persist the enriched items + shipping so the next open is instant.
     try {
       await db.from('woocommerce_orders')
-        .update({ line_items: order.line_items || [], shipping_total: order.shipping_total || null })
+        .update({ line_items: lineItems, shipping_total: order.shipping_total ?? null })
         .eq('company_id', companyId).eq('order_id', order.id)
-    } catch {}
+    } catch { /* cache only */ }
 
     return NextResponse.json({
       order: {
         order_id: order.id,
         order_number: order.number,
-        line_items: order.line_items || [],
+        line_items: lineItems,
         shipping_total: order.shipping_total,
+        shipping_method: shippingMethod,
+        shipping_tax: order.shipping_tax,
+        discount_total: order.discount_total,
+        total_tax: order.total_tax,
         total: order.total,
+        total_refunded: (order.refunds || []).reduce((s: number, r: any) => s + Math.abs(parseFloat(r.total || 0)), 0),
         status: order.status,
+        billing: order.billing,
+        payment_method_title: order.payment_method_title,
       },
     })
   } catch (e: any) {
