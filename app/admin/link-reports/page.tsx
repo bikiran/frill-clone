@@ -262,7 +262,15 @@ export default function LinkReportsPage() {
   const paidConv = vConv.filter(v => v.stage === 'paid')
   const orders = new Set(paidConv.map(v => v.order_id ?? v.id)).size
   const revenue = paidConv.reduce((s, v) => s + (Number(v.revenue) || 0), 0)
-  const clickedLinks = visible.filter(l => (clicksByLink[l.id]?.length || l.clicks || 0) > 0).length
+  // Media/image links (e.g. 44962.jpg, storage URLs) get clicked but can never
+  // "convert", so they unfairly drag the rate down — exclude them from the
+  // clicked-links denominator.
+  const isMediaLink = (l: Link) => {
+    const u = `${l.target_url || ''} ${l.label || ''}`
+    return /\.(jpe?g|png|gif|webp|avif|bmp|svg|mp4|mov|webm|m4v|mp3|wav|pdf)(\?|#|$|\s)/i.test(u)
+      || /\/storage\/v1\/object\//i.test(l.target_url || '')
+  }
+  const clickedLinks = visible.filter(l => !isMediaLink(l) && (clicksByLink[l.id]?.length || l.clicks || 0) > 0).length
   const conversionRate = clickedLinks ? Math.round((orders / clickedLinks) * 100) : 0
   const aov = orders ? revenue / orders : 0
 
@@ -556,40 +564,61 @@ export default function LinkReportsPage() {
       )}
 
       {/* Per-link click detail */}
-      {selected && tab === 'links' && (
-        <div style={{ ...card, marginTop: 16 }}>
-          <h3 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Clicks on /l/{selected.code}</h3>
-          <p style={{ margin: '0 0 6px', fontSize: 12, color: 'var(--slate)', wordBreak: 'break-all' }}>{selected.target_url}</p>
-          {selected.conversation_id && (
-            <a href={`/admin/inbox?conversation=${selected.conversation_id}`}
-              style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>
-              Open the conversation →
-            </a>
-          )}
-          <div style={{ marginTop: 12, overflowX: 'auto' }}>
-            {(clicksByLink[selected.id] || []).length === 0 ? (
-              <p style={{ fontSize: 13, color: 'var(--slate)', margin: 0 }}>No clicks recorded for this link yet.</p>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 560 }}>
-                <thead><tr style={{ textAlign: 'left', color: 'var(--slate)' }}>
-                  <th style={{ padding: '6px 8px' }}>When</th><th style={{ padding: '6px 8px' }}>Where</th>
-                  <th style={{ padding: '6px 8px' }}>Device</th><th style={{ padding: '6px 8px' }}>Browser</th>
-                </tr></thead>
-                <tbody>
-                  {(clicksByLink[selected.id] || []).slice().reverse().map(c => (
-                    <tr key={c.id} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td style={{ padding: '7px 8px', color: 'var(--ink)' }}>{fmt(c.clicked_at)}</td>
-                      <td style={{ padding: '7px 8px' }}>{[c.city, c.region, c.country].filter(Boolean).join(', ') || 'Unknown'}</td>
-                      <td style={{ padding: '7px 8px', textTransform: 'capitalize' }}>{c.device || '—'}{c.os ? ` · ${c.os}` : ''}</td>
-                      <td style={{ padding: '7px 8px' }}>{c.browser || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+      {selected && tab === 'links' && (() => {
+        const clicksN = clicksByLink[selected.id]?.length || selected.clicks || 0
+        const rev = (convByLink[selected.id] || []).filter(v => v.stage === 'paid').reduce((s, v) => s + (Number(v.revenue) || 0), 0)
+        const oc = outcomeOf(selected)
+        const chip = (label: string, value: string, color?: string) => (
+          <div style={{ flex: 1, minWidth: 0, border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{label}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: color || 'var(--ink)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
           </div>
-        </div>
-      )}
+        )
+        return (
+          <>
+            <div onClick={() => setSelected(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 900 }} />
+            <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(460px, 94vw)', background: '#fff', zIndex: 901, boxShadow: '-8px 0 30px rgba(0,0,0,0.16)', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ minWidth: 0 }}>
+                  <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>/l/{selected.code}</h3>
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)', wordBreak: 'break-all' }}>{selected.label || selected.target_url}</p>
+                </div>
+                <button type="button" onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: 24, lineHeight: 1, color: 'var(--slate)', cursor: 'pointer', padding: 0 }}>×</button>
+              </div>
+              <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+                  {chip('Clicks', String(clicksN))}
+                  {chip('Outcome', oc)}
+                  {chip('Revenue', rev > 0 ? money(rev) : '—', rev > 0 ? '#15803d' : undefined)}
+                </div>
+                {selected.conversation_id && (
+                  <a href={`/admin/inbox?conversation=${selected.conversation_id}`}
+                    style={{ display: 'inline-block', marginBottom: 14, fontSize: 12.5, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>
+                    Open the conversation →
+                  </a>
+                )}
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', margin: '4px 0 8px' }}>Click history</div>
+                {(clicksByLink[selected.id] || []).length === 0 ? (
+                  <p style={{ fontSize: 13, color: 'var(--slate)', margin: 0 }}>No detailed clicks recorded yet{clicksN > 0 ? ` (counter shows ${clicksN}).` : '.'}</p>
+                ) : (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {(clicksByLink[selected.id] || []).slice().reverse().map(c => (
+                      <div key={c.id} style={{ border: '1px solid var(--border)', borderRadius: 9, padding: '9px 11px' }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>{fmt(c.clicked_at)}</div>
+                        <div style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 2 }}>
+                          {[c.city, c.region, c.country].filter(Boolean).join(', ') || 'Unknown location'}
+                          {(c.device || c.browser) ? ' · ' : ''}
+                          <span style={{ textTransform: 'capitalize' }}>{c.device || ''}</span>{c.os ? ` (${c.os})` : ''}{c.browser ? ` · ${c.browser}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )
+      })()}
     </div>
   )
 }
