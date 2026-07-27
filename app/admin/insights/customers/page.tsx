@@ -28,6 +28,9 @@ function parseTs(d: string | null | undefined): Date | null {
 }
 
 const PAID = ['processing', 'completed', 'on-hold']
+// Everything except clearly non-revenue statuses counts — WooCommerce stores
+// sometimes use custom paid statuses, so a blacklist is safer than a whitelist.
+const DEAD = ['cancelled', 'refunded', 'failed', 'trash', 'checkout-draft', 'draft', 'pending', 'pending-payment']
 
 export default function CustomerInsightsPage() {
   const [loading, setLoading] = useState(true)
@@ -85,7 +88,8 @@ export default function CustomerInsightsPage() {
 
   const stats = useMemo(() => {
     const paid = orders.filter(o => {
-      if (!PAID.includes(String(o.status || '').toLowerCase())) return false
+      const st = String(o.status || '').toLowerCase().replace(/^wc-/, '')
+      if (DEAD.includes(st)) return false
       const d = parseTs(o.order_date)
       return range === 'all' || (d && d >= window)
     })
@@ -162,20 +166,20 @@ export default function CustomerInsightsPage() {
         {rangeBtn('all', 'All time')}
       </div>
 
-      {orders.length === 0 && diag && (
+      {stats.customers === 0 && (
         <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: 16, marginBottom: 20 }}>
-          <p style={{ margin: '0 0 6px', fontSize: 13.5, fontWeight: 700, color: '#92400e' }}>No orders came back from WooCommerce</p>
+          <p style={{ margin: '0 0 6px', fontSize: 13.5, fontWeight: 700, color: '#92400e' }}>No customer data to show yet</p>
           <p style={{ margin: '0 0 8px', fontSize: 12.5, color: '#92400e' }}>
-            {diag?.debug?.reason === 'no_active_woocommerce_integration'
-              ? 'No active WooCommerce integration is connected for this company.'
-              : diag?.debug?.stores?.some((s: any) => s.httpStatus)
-                ? `The store returned an error (HTTP ${diag.debug.stores.find((s: any) => s.httpStatus)?.httpStatus}) — usually the API key lacks "Read" permission for orders, or the key/secret is wrong.`
-                : diag?.debug?.stores?.every((s: any) => (s.fetched || 0) === 0)
-                  ? 'The store connected but returned 0 orders for this key. Check the API key has Read access to Orders.'
-                  : 'See the technical detail below.'}
+            {orders.length === 0
+              ? (diag?.debug?.reason === 'no_active_woocommerce_integration'
+                  ? 'No active WooCommerce integration is connected for this company.'
+                  : diag?.debug?.stores?.some((s: any) => s.httpStatus)
+                    ? `The store returned HTTP ${diag.debug.stores.find((s: any) => s.httpStatus)?.httpStatus} — usually the API key lacks Read access to Orders, or the key/secret is wrong.`
+                    : 'The store connected but returned 0 orders — check the API key has Read access to Orders.')
+              : `Loaded ${orders.length} order${orders.length === 1 ? '' : 's'} from the store, but none counted for this period. Statuses seen: ${Array.from(new Set(orders.map(o => String(o.status || 'none')))).join(', ')}.`}
           </p>
           <pre style={{ margin: 0, fontSize: 10.5, color: '#78350f', whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: '#fffdf5', padding: 8, borderRadius: 6 }}>
-            {JSON.stringify(diag, null, 2)}
+            {JSON.stringify({ loaded: orders.length, ...diag }, null, 2)}
           </pre>
         </div>
       )}

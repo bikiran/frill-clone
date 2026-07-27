@@ -30,6 +30,7 @@ function parseTs(d: string | null | undefined): Date | null {
 }
 
 const PAID = ['processing', 'completed', 'on-hold']
+const DEAD = ['cancelled', 'refunded', 'failed', 'trash', 'checkout-draft', 'draft', 'pending', 'pending-payment']
 
 export default function LocationInsightsPage() {
   const [loading, setLoading] = useState(true)
@@ -125,7 +126,7 @@ export default function LocationInsightsPage() {
 
   // ── Aggregations ────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
-    const paid = visible.filter(o => PAID.includes(String(o.status || '').toLowerCase()))
+    const paid = visible.filter(o => !DEAD.includes(String(o.status || '').toLowerCase().replace(/^wc-/, '')))
     const bySuburb: Record<string, { revenue: number; orders: number; customers: Set<string> }> = {}
     const byCustomer: Record<string, number> = {}
     const byProduct: Record<string, { revenue: number; qty: number }> = {}
