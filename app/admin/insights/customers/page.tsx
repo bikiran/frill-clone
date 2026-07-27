@@ -67,13 +67,15 @@ export default function CustomerInsightsPage() {
           const res = await fetch(`/api/orders/all?companyId=${cid}`)
           const j = await res.json()
           if (Array.isArray(j.orders)) loaded = j.orders
-          setDiag({ count: j.count ?? (j.orders?.length || 0), debug: j.debug, error: j.error })
-        } catch (e: any) { setDiag({ error: String(e?.message || e) }) }
+          const { orders: _drop, ...rest } = j || {}
+          setDiag({ httpOk: res.ok, httpStatus: res.status, ...rest })
+        } catch (e: any) { setDiag({ clientError: String(e?.message || e) }) }
         if (loaded.length === 0) {
-          const { data } = await (supabase as any).from('woocommerce_orders')
+          const { data, error } = await (supabase as any).from('woocommerce_orders')
             .select('id, customer_email, woo_customer_id, total, order_date, status, billing')
             .eq('company_id', cid).order('order_date', { ascending: false }).limit(3000)
           loaded = data || []
+          setDiag((d: any) => ({ ...(d || {}), syncedTableRows: data?.length || 0, syncedTableError: error?.message || null }))
         }
         setOrders(loaded)
       } finally { setLoading(false) }

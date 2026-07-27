@@ -36,11 +36,12 @@ export async function GET(req: NextRequest) {
     for (const integ of integs) {
       const store: any = { url: integ.store_url, hasKey: !!integ.consumer_key, fetched: 0 }
       if (!integ.store_url) { store.error = 'no_store_url'; debug.stores.push(store); continue }
+      const base = String(integ.store_url).replace(/\/+$/, '')
       const auth = 'Basic ' + Buffer.from(`${integ.consumer_key}:${integ.consumer_secret}`).toString('base64')
       for (let page = 1; page <= maxPages; page++) {
         let batch: any[] = []
         try {
-          const res = await fetch(`${integ.store_url}/wp-json/wc/v3/orders?per_page=100&page=${page}&orderby=date&order=desc`, {
+          const res = await fetch(`${base}/wp-json/wc/v3/orders?per_page=100&page=${page}&status=any&orderby=date&order=desc`, {
             headers: { Authorization: auth, 'Content-Type': 'application/json' },
           })
           if (!res.ok) {
