@@ -135,21 +135,27 @@ export default function LinkReportsPage() {
     } catch { setConversions([]) }
 
     // Resolve the people and threads behind the links.
-    const contactIds = Array.from(new Set(linkRows.map(l => l.contact_id).filter(Boolean))) as string[]
+    // Load conversations first (including their contact_id) so links that were
+    // created without their own contact_id — most of them — can still show the
+    // customer via the thread they belong to.
+    const convIds = Array.from(new Set(linkRows.map(l => l.conversation_id).filter(Boolean))) as string[]
+    let convMap: Record<string, any> = {}
+    if (convIds.length) {
+      const { data: cv } = await (supabase as any).from('conversations')
+        .select('id, subject, channel, assigned_name, assigned_location_id, contact_id').in('id', convIds.slice(0, 500))
+      for (const c of (cv || [])) convMap[c.id] = c
+      setConvs(convMap)
+    }
+    const contactIds = Array.from(new Set([
+      ...linkRows.map(l => l.contact_id),
+      ...Object.values(convMap).map((c: any) => c.contact_id),
+    ].filter(Boolean))) as string[]
     if (contactIds.length) {
       const { data: cts } = await (supabase as any).from('contacts')
         .select('id, name, email, phone').in('id', contactIds.slice(0, 500))
       const m: Record<string, any> = {}
       for (const c of (cts || [])) m[c.id] = c
       setContacts(m)
-    }
-    const convIds = Array.from(new Set(linkRows.map(l => l.conversation_id).filter(Boolean))) as string[]
-    if (convIds.length) {
-      const { data: cv } = await (supabase as any).from('conversations')
-        .select('id, subject, channel, assigned_name, assigned_location_id').in('id', convIds.slice(0, 500))
-      const m: Record<string, any> = {}
-      for (const c of (cv || [])) m[c.id] = c
-      setConvs(m)
     }
     // The agent filter previously listed only names already stamped on links.
     // Links sent before attribution existed have sent_by = null, so the filter
@@ -236,13 +242,23 @@ export default function LinkReportsPage() {
   const vConv = useMemo(() => conversions.filter(c => visibleIds.has(c.link_id)), [conversions, visibleIds])
 
   // ── Summary ───────────────────────────────────────────────────────────────
-  const totalClicks = vClicks.length
-  const uniqueClicks = new Set(vClicks.map(c => c.contact_id || `anon:${c.id}`)).size
-  const repeatClickers = (() => {
-    const per: Record<string, number> = {}
-    for (const c of vClicks) if (c.contact_id) per[c.contact_id] = (per[c.contact_id] || 0) + 1
-    return Object.values(per).filter(n => n > 1).length
+  // Count clicks the SAME way the per-link table does: detailed link_clicks
+  // rows when present, otherwise the link's own fast counter. Historically
+  // link_clicks was empty (its insert was failing), so the headline read from
+  // link_clicks disagreed with the table's counter-based numbers.
+  const linkClickCount = (l: Link) => (clicksByLink[l.id]?.length || l.clicks || 0)
+  const totalClicks = visible.reduce((s, l) => s + linkClickCount(l), 0)
+  const uniqueClicks = (() => {
+    const set = new Set<string>()
+    let anon = 0
+    for (const l of visible) {
+      const rows = clicksByLink[l.id] || []
+      if (rows.length) rows.forEach(c => set.add(c.contact_id || `anon:${c.id}`))
+      else if ((l.clicks || 0) > 0) anon++ // counter-only (pre-fix) clicks
+    }
+    return set.size + anon
   })()
+  const repeatClickers = Math.max(0, totalClicks - uniqueClicks)
   const paidConv = vConv.filter(v => v.stage === 'paid')
   const orders = new Set(paidConv.map(v => v.order_id ?? v.id)).size
   const revenue = paidConv.reduce((s, v) => s + (Number(v.revenue) || 0), 0)
@@ -403,8 +419,10 @@ export default function LinkReportsPage() {
             <tbody>
               {visible.length === 0 && <tr><td colSpan={10} style={{ ...td, textAlign: 'center', padding: 28 }}>No links match these filters.</td></tr>}
               {visible.map(l => {
-                const ct = l.contact_id ? contacts[l.contact_id] : null
                 const cv = l.conversation_id ? convs[l.conversation_id] : null
+                // Fall back to the conversation's contact when the link itself
+                // has no contact_id (which is most links).
+                const ct = contacts[l.contact_id || cv?.contact_id] || null
                 const lc = clicksByLink[l.id] || []
                 const rev = (convByLink[l.id] || []).filter(v => v.stage === 'paid')
                   .reduce((s, v) => s + (Number(v.revenue) || 0), 0)
@@ -412,6 +430,7 @@ export default function LinkReportsPage() {
                 const col = OUTCOME_COLOR[oc]
                 const byThisCustomer = l.contact_id
                   ? vClicks.filter(c => c.contact_id === l.contact_id).length : lc.length
+                const firstClick = lc[0]?.clicked_at || l.last_clicked_at || null
                 return (
                   <tr key={l.id} onClick={() => setSelected(selected?.id === l.id ? null : l)}
                     style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === l.id ? 'var(--canvas)' : '#fff' }}>
@@ -427,7 +446,7 @@ export default function LinkReportsPage() {
                     <td style={td}>
                       <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: col.bg, color: col.fg, whiteSpace: 'nowrap' }}>{oc}</span>
                     </td>
-                    <td style={td}>{lc[0] ? fmt(lc[0].clicked_at) : '—'}</td>
+                    <td style={td}>{firstClick ? fmt(firstClick) : '—'}</td>
                     <td style={{ ...td, textAlign: 'right' }}>
                       <strong style={{ color: lc.length ? '#059669' : '#9ca3af' }}>{lc.length || l.clicks || 0}</strong>
                       {l.contact_id && byThisCustomer > lc.length && (
