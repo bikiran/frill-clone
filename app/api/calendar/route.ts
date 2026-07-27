@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
       // the whole team can see what was promised.
       if (event && conversation_id && !id) {
         try {
-          const when = new Date(starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })
+          const when = new Date(starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Australia/Melbourne' })
           const label = event_type === 'delivery' ? 'Delivery' : event_type === 'booking' ? 'Booking' : 'Appointment'
           await db.from('conversation_events').insert({
             conversation_id, company_id: companyId,

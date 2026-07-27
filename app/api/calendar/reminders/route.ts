@@ -59,6 +59,10 @@ async function run(req: NextRequest) {
 
       const leadHours = Number(cfg.lead_hours ?? 24)
       const emailOn = cfg.email !== false
+      // Render dates in the company's timezone, not the server's (UTC on
+      // Vercel). All-day events are stored as local-midnight → UTC, so in UTC
+      // they land on the previous day, which made reminders say the wrong date.
+      const tz = cfg.timezone || 'Australia/Melbourne'
       const cutoff = new Date(now.getTime() + leadHours * 3600 * 1000)
 
       for (const e of list) {
@@ -68,8 +72,8 @@ async function run(req: NextRequest) {
         if (e.reminded_at) continue
 
         const when = e.is_all_day
-          ? startsAt.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })
-          : startsAt.toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+          ? startsAt.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })
+          : startsAt.toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: tz })
 
         const overdue = startsAt < now
         const label = e.event_type === 'delivery' ? 'Delivery'
