@@ -35,6 +35,7 @@ export default function BusinessSettings() {
     await (supabase as any).from('companies').update({
       business_mobile: company.business_mobile, business_email: company.business_email,
       business_address: company.business_address, website: company.website, abn_acn: company.abn_acn,
+      invoice_footer: company.invoice_footer,
       accent_color: company.accent_color, secondary_color: company.secondary_color, font_family: company.font_family,
     }).eq('id', companyId)
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000)
@@ -58,6 +59,18 @@ export default function BusinessSettings() {
           <div style={{ gridColumn: '1 / -1' }}><label style={S.label}>Address</label><input value={company?.business_address || ''} onChange={e => set('business_address', e.target.value)} placeholder="1 Fleet Street, Somerton VIC, Australia" style={S.input} /></div>
           <div><label style={S.label}>Website</label><input value={company?.website || ''} onChange={e => set('website', e.target.value)} placeholder="https://…" style={S.input} /></div>
           <div><label style={S.label}>ABN/ACN</label><input value={company?.abn_acn || ''} onChange={e => set('abn_acn', e.target.value)} style={S.input} /></div>
+        </div>
+      </div>
+
+      {/* Invoice */}
+      <div style={S.card}>
+        <h2 style={S.h2}>Invoice</h2>
+        <p style={{ ...S.sub, marginTop: -4 }}>Generated invoices use the business details above for the header (name, ABN, address, phone, email). Add a footer note shown at the bottom of every invoice.</p>
+        <div>
+          <label style={S.label}>Footer note</label>
+          <textarea value={company?.invoice_footer || ''} onChange={e => set('invoice_footer', e.target.value)}
+            placeholder="Thank you for the business. Please note we do not provide refunds and returns on live fish…"
+            rows={3} style={{ ...S.input, resize: 'vertical', minHeight: 72, fontFamily: 'inherit' }} />
         </div>
       </div>
 

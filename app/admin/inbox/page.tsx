@@ -2309,7 +2309,8 @@ export default function InboxPage() {
       let ry = y
       doc.setFontSize(9)
       for (const line of addrLines.slice(0, 3)) { RT(line, R, ry); ry += 4.5 }
-      if (company.business_phone) { RT(`Phone : ${company.business_phone}`, R, ry); ry += 4.5 }
+      const bizPhone = company.business_phone || company.business_mobile
+      if (bizPhone) { RT(`Phone : ${bizPhone}`, R, ry); ry += 4.5 }
 
       // ── Customer (billing) ──
       const b = order.billing || {}
