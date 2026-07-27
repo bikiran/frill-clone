@@ -44,23 +44,36 @@ export async function GET(req: NextRequest) {
 
     const orders: any[] = []
     const debug: any = { integrations: integs.length, stores: [] }
+    const overallStart = Date.now()
+    // Only ask WooCommerce for the fields we actually use — a full order object
+    // is large and slow; this keeps each page small and fast.
+    const FIELDS = 'id,total,status,date_created,customer_id,billing,shipping,line_items'
     for (const integ of integs) {
       const store: any = { url: integ.store_url, hasKey: !!integ.consumer_key, fetched: 0 }
       if (!integ.store_url) { store.error = 'no_store_url'; debug.stores.push(store); continue }
       const base = String(integ.store_url).replace(/\/+$/, '')
       const auth = 'Basic ' + Buffer.from(`${integ.consumer_key}:${integ.consumer_secret}`).toString('base64')
       for (let page = 1; page <= maxPages; page++) {
+        if (Date.now() - overallStart > 40000) { store.stoppedForBudget = true; break }
         let batch: any[] = []
+        const ctrl = new AbortController()
+        const timer = setTimeout(() => ctrl.abort(), 12000)
         try {
-          const res = await fetch(`${base}/wp-json/wc/v3/orders?per_page=100&page=${page}&status=any&orderby=date&order=desc`, {
+          const res = await fetch(`${base}/wp-json/wc/v3/orders?per_page=50&page=${page}&status=any&orderby=date&order=desc&_fields=${FIELDS}`, {
             headers: { Authorization: auth, 'Content-Type': 'application/json' },
+            signal: ctrl.signal,
           })
+          clearTimeout(timer)
           if (!res.ok) {
             if (page === 1) { store.httpStatus = res.status; store.error = (await res.text().catch(() => '')).slice(0, 300) }
             break
           }
           batch = await res.json()
-        } catch (e: any) { if (page === 1) store.error = String(e?.message || e).slice(0, 200); break }
+        } catch (e: any) {
+          clearTimeout(timer)
+          if (page === 1) store.error = (e?.name === 'AbortError' ? 'timeout_after_12s' : String(e?.message || e)).slice(0, 200)
+          break
+        }
         if (!Array.isArray(batch) || batch.length === 0) break
         store.fetched += batch.length
         for (const o of batch) {
@@ -84,7 +97,7 @@ export async function GET(req: NextRequest) {
             })),
           })
         }
-        if (batch.length < 100) break
+        if (batch.length < 50) break
       }
       debug.stores.push(store)
     }
