@@ -2291,47 +2291,94 @@ export default function InboxPage() {
       if (!res.ok) throw new Error(data.error || 'Could not load order')
       const { order, company } = data
       const { jsPDF } = await import('jspdf')
-      const doc = new jsPDF()
-      let y = 18
-      doc.setFontSize(18); doc.setFont(undefined, 'bold')
-      doc.text(company.name || 'Invoice', 14, y); y += 8
-      doc.setFontSize(10); doc.setFont(undefined, 'normal')
-      if (company.business_address) { doc.text(String(company.business_address), 14, y); y += 5 }
-      if (company.business_email) { doc.text(String(company.business_email), 14, y); y += 5 }
-      if (company.abn_acn) { doc.text(`ABN/ACN: ${company.abn_acn}`, 14, y); y += 5 }
-      y += 4
-      doc.setFontSize(14); doc.setFont(undefined, 'bold')
-      doc.text(`Invoice — Order #${order.number}`, 14, y); y += 7
-      doc.setFontSize(10); doc.setFont(undefined, 'normal')
-      doc.text(`Date: ${new Date(order.date).toLocaleDateString()}`, 14, y); y += 5
-      doc.text(`Status: ${order.status}`, 14, y); y += 8
-      // Bill to
-      doc.setFont(undefined, 'bold'); doc.text('Bill to:', 14, y); y += 5; doc.setFont(undefined, 'normal')
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+      const W = 210, L = 16, R = W - 16
+      const n = (v: any) => parseFloat(v || 0)
+      const money = (v: any) => `$${n(v).toFixed(2)}`
+      const RT = (t: string, x: number, y: number) => doc.text(t, x, y, { align: 'right' })
+      const CT = (t: string, y: number) => doc.text(t, W / 2, y, { align: 'center' })
+
+      // ── Header: business (left) + address/phone (right) ──
+      let y = 20
+      doc.setFontSize(15); doc.setFont('helvetica', 'bold')
+      doc.text(company.name || 'Invoice', L, y)
+      doc.setFontSize(9); doc.setFont('helvetica', 'normal')
+      if (company.abn_acn) { doc.text(`ABN ${company.abn_acn}`, L, y + 5) }
+      // Right column: company address lines + phone.
+      const addrLines = String(company.business_address || '').split(/\n|,\s*/).map(s => s.trim()).filter(Boolean)
+      let ry = y
+      doc.setFontSize(9)
+      for (const line of addrLines.slice(0, 3)) { RT(line, R, ry); ry += 4.5 }
+      if (company.business_phone) { RT(`Phone : ${company.business_phone}`, R, ry); ry += 4.5 }
+
+      // ── Customer (billing) ──
       const b = order.billing || {}
-      doc.text(`${b.first_name || ''} ${b.last_name || ''}`.trim(), 14, y); y += 5
-      if (b.email) { doc.text(b.email, 14, y); y += 5 }
-      const addr = [b.address_1, b.city, b.state, b.postcode].filter(Boolean).join(', ')
-      if (addr) { doc.text(addr, 14, y); y += 5 }
-      y += 4
-      // Items table header
-      doc.setFont(undefined, 'bold')
-      doc.text('Item', 14, y); doc.text('Qty', 130, y); doc.text('Total', 170, y); y += 3
-      doc.line(14, y, 196, y); y += 5
-      doc.setFont(undefined, 'normal')
-      ;(order.line_items || []).forEach((li: any) => {
-        const name = doc.splitTextToSize(li.name, 100)
-        doc.text(name, 14, y); doc.text(String(li.quantity), 130, y); doc.text(`$${li.total}`, 170, y)
-        y += (name.length * 5) + 2
-        if (y > 260) { doc.addPage(); y = 20 }
-      })
-      y += 2; doc.line(14, y, 196, y); y += 6
-      const money = (v: any) => `$${parseFloat(v || 0).toFixed(2)}`
-      const right = (label: string, val: string, bold = false) => { doc.setFont(undefined, bold ? 'bold' : 'normal'); doc.text(label, 130, y); doc.text(val, 170, y); y += 6 }
-      if (parseFloat(order.discount_total) > 0) right('Discount', `-${money(order.discount_total)}`)
-      if (parseFloat(order.shipping_total) > 0) right('Shipping', money(order.shipping_total))
-      if (parseFloat(order.total_tax) > 0) right('Tax (incl.)', money(order.total_tax))
-      right('Total', `${order.currency || 'AUD'} ${money(order.total)}`, true)
-      doc.save(`invoice-${order.number}.pdf`)
+      y += 14
+      doc.setFontSize(10); doc.setFont('helvetica', 'normal')
+      const custName = `${b.first_name || ''} ${b.last_name || ''}`.trim()
+      if (custName) { doc.text(custName, L, y); y += 5 }
+      const custAddr = [b.address_1, b.address_2].filter(Boolean).join(' ')
+      if (custAddr) { doc.text(custAddr, L, y); y += 5 }
+      const cityLine = [b.city, b.state, b.country || 'Australia', b.postcode].filter(Boolean).join(', ')
+      if (cityLine) { doc.text(cityLine, L, y); y += 5 }
+      if (b.email) { doc.text(`Email : ${b.email}`, L, y); y += 5 }
+      if (b.phone) { doc.text(`Phone : ${b.phone}`, L, y); y += 5 }
+
+      // ── Title ──
+      y += 8
+      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); CT('TAX INVOICE/RECEIPT', y); y += 6
+      doc.setFontSize(9); doc.setFont('helvetica', 'normal')
+      CT(`Invoice# ${order.number || order.id || ''}`, y); y += 4.5
+      CT(new Date(order.date || Date.now()).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }), y); y += 8
+
+      // ── Line items table ──
+      const cUnit = 118, cEx = 143, cDisc = 168, cInc = R
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9)
+      doc.text('Item', L, y); RT('Unit', cUnit, y); RT('Sales (ex)', cEx, y); RT('Disc', cDisc, y); RT('Sales (inc)', cInc, y)
+      y += 2; doc.setDrawColor(200); doc.line(L, y, R, y); y += 5
+      doc.setFont('helvetica', 'normal')
+      for (const li of (order.line_items || [])) {
+        const qty = n(li.quantity) || 1
+        const ex = n(li.total)                        // ex-tax, after discount
+        const inc = ex + n(li.total_tax)              // inc-tax
+        const disc = Math.max(0, n(li.subtotal) - n(li.total))
+        const unit = qty ? (inc + n(li.subtotal_tax) - n(li.total_tax)) / qty : inc // approx unit inc-tax
+        const nameLines = doc.splitTextToSize(`${qty} X ${li.name}`, 95)
+        doc.text(nameLines, L, y)
+        RT(money(unit * qty), cUnit, y); RT(money(ex), cEx, y); RT(money(disc), cDisc, y); RT(money(inc), cInc, y)
+        y += Math.max(nameLines.length * 4.5, 5) + 2
+        if (y > 250) { doc.addPage(); y = 20 }
+      }
+      doc.setDrawColor(200); doc.line(L, y, R, y); y += 7
+
+      // ── Totals ──
+      const subtotal = n(order.total) - n(order.total_tax)
+      const totRow = (label: string, val: string, bold = false) => {
+        doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 11 : 9.5)
+        RT(label, cDisc, y); RT(val, cInc, y); y += bold ? 7 : 5.5
+      }
+      totRow('Discount', money(order.discount_total))
+      totRow('Subtotal', money(subtotal))
+      totRow('Tax (GST)', money(order.total_tax))
+      totRow('Total', money(order.total), true)
+      if (order.payment_method_title || order.payment_method) totRow(order.payment_method_title || order.payment_method, money(order.total))
+      const outstanding = Math.max(0, n(order.total) - (order.date_paid || order.status === 'completed' || order.status === 'processing' ? n(order.total) : 0))
+      y += 2; doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
+      doc.text('Outstanding:', L, y); doc.text(money(outstanding), L + 40, y); y += 10
+
+      // ── Invoice number + served by + footer ──
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
+      CT(String(order.number || order.id || ''), y); y += 5
+      const servedBy = senderName || company.name || ''
+      if (servedBy) { CT(`Served by ${servedBy}`, y); y += 4.5 }
+      CT(new Date().toLocaleString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, day: '2-digit', month: 'short', year: 'numeric' }), y); y += 8
+      const footer = company.invoice_footer || 'Thank you for the business.'
+      doc.setFontSize(8.5); doc.setTextColor(90)
+      const fLines = doc.splitTextToSize(footer, R - L)
+      for (const fl of fLines) { CT(fl, y); y += 4 }
+      doc.setTextColor(0)
+
+      doc.save(`invoice-${order.number || order.id}.pdf`)
       showToast('Invoice downloaded')
     } catch (e: any) { showToast(e.message || 'Could not generate invoice') }
   }
