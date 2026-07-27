@@ -16,7 +16,6 @@ export default function WooCommerceIntegration() {
   const searchParams = useSearchParams()
   const slug = searchParams.get('slug') || ''
 
-  const [supabase, setSupabase] = useState<any>(null)
   const [companyId, setCompanyId] = useState('')
   const [loading, setLoading] = useState(true)
   const [configuring, setConfiguring] = useState(false)
@@ -68,9 +67,8 @@ export default function WooCommerceIntegration() {
   useEffect(() => {
     const init = async () => {
       try {
-        // Lazy load Supabase client
+        // Use the imported Supabase client directly.
         const sb = supabase as any
-        setSupabase(sb)
 
         let companyId: string | null = null
         let companySlug = slug

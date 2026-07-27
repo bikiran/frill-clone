@@ -90,8 +90,10 @@ export async function POST(req: NextRequest) {
           }).eq('stripe_session_id', session.id)
           // Update the payment message's payload to 'paid'
           const { data: pay } = await (supabase as any).from('chat_payments').select('message_id, amount_cents').eq('stripe_session_id', session.id).maybeSingle()
+          let checkoutUrl = ''
           if (pay?.message_id) {
             const { data: m } = await (supabase as any).from('messages').select('message_payload').eq('id', pay.message_id).maybeSingle()
+            checkoutUrl = m?.message_payload?.checkout_url || ''
             await (supabase as any).from('messages').update({ message_payload: { ...(m?.message_payload || {}), status: 'paid' } }).eq('id', pay.message_id)
           }
           // If this payment was for a WooCommerce order, mark it processing.
@@ -121,6 +123,28 @@ export async function POST(req: NextRequest) {
             sender_type: 'system',
             content: `✅ Payment received${pay?.amount_cents ? ` — $${(pay.amount_cents / 100).toFixed(2)} AUD` : ''}. A receipt has been emailed to the customer.`,
           })
+
+          // Credit this payment link in Link Reports. The link WAS the payment,
+          // so the revenue is directly attributable — not merely "influenced".
+          // Without this, revenue paid through a payment link never showed up as
+          // an order or revenue in the report.
+          try {
+            const code = (checkoutUrl.match(/\/l\/([A-Za-z0-9_-]+)/) || [])[1]
+            if (code) {
+              const { data: link } = await (supabase as any).from('short_links')
+                .select('id, contact_id').eq('code', code).maybeSingle()
+              if (link?.id) {
+                await (supabase as any).from('link_conversions').upsert({
+                  company_id: meta.companyId, link_id: link.id, contact_id: link.contact_id || null,
+                  order_id: meta.orderId ? String(meta.orderId) : session.id,
+                  order_number: meta.orderId ? String(meta.orderId) : null,
+                  stage: 'paid',
+                  revenue: (pay?.amount_cents || 0) / 100, currency: 'aud',
+                  clicked_at: new Date().toISOString(), converted_at: new Date().toISOString(),
+                }, { onConflict: 'link_id,order_id,stage' })
+              }
+            }
+          } catch { /* analytics only — never affect payment processing */ }
           break
         }
         const { userId, tier } = meta

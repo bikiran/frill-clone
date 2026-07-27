@@ -31,12 +31,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
       const region = req.headers.get('x-vercel-ip-country-region')
       const country = req.headers.get('x-vercel-ip-country')
 
-      await db.from('link_clicks').insert({
+      const base = {
         link_id: data.id,
         company_id: data.company_id,
-        // Copied from the link so "unique clicks" (distinct recipients) can be
-        // counted without a join.
-        contact_id: data.contact_id || null,
         ip,
         city: city ? decodeURIComponent(city) : null,
         region: region || null,
@@ -44,7 +41,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
         device, os, browser,
         referrer: req.headers.get('referer') || null,
         user_agent: ua || null,
-      })
+      }
+      // contact_id lets "unique clicks" and order attribution work, but it's
+      // added by migration V192 — if that hasn't been applied the whole insert
+      // errored and NO clicks were recorded (Reports showed 0). Fall back to the
+      // base columns so a click is always logged either way.
+      const { error: ce } = await db.from('link_clicks').insert({ ...base, contact_id: data.contact_id || null })
+      if (ce) { await db.from('link_clicks').insert(base) }
     } catch { /* analytics table may not exist yet — ignore */ }
 
     // Keep the fast counter on the link itself current.
