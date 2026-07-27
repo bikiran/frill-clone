@@ -120,11 +120,11 @@ async function run(req: NextRequest) {
           await db.from('messages').insert({
             conversation_id: rr.conversation_id, company_id: rr.company_id,
             sender_type: 'agent', sender_name: business,
-            content: text, message_type: 'text',
+            content: text, message_type: 'text', is_read: true,
             metadata: { auto: true, review_request: true },
           })
           await db.from('conversations').update({
-            last_message: text.slice(0, 200), last_message_at: new Date().toISOString(), is_unread: true, review_requested: true,
+            last_message: text.slice(0, 200), last_message_at: new Date().toISOString(), review_requested: true,
           }).eq('id', rr.conversation_id)
         }
 
