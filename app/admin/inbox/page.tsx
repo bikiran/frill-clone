@@ -953,6 +953,8 @@ export default function InboxPage() {
   const [orderGallery, setOrderGallery] = useState<{ images: { src: string; name: string }[]; index: number } | null>(null)
   const [invoicePreview, setInvoicePreview] = useState<{ doc: any; url: string; fileName: string; orderNumber: string } | null>(null)
   const [invoiceSending, setInvoiceSending] = useState(false)
+  const [pickupModal, setPickupModal] = useState<{ payload: any; locationId: string } | null>(null)
+  const [pickupSending, setPickupSending] = useState(false)
   const [aiSummary, setAiSummary] = useState('')
   const [aiTodos, setAiTodos] = useState<any[]>([])
   const [generatingAi, setGeneratingAi] = useState(false)
@@ -2421,6 +2423,42 @@ export default function InboxPage() {
   }
 
   const downloadInvoice = () => { if (invoicePreview) invoicePreview.doc.save(invoicePreview.fileName) }
+
+  // Notify the customer their click-and-collect / local-pickup order is ready,
+  // at a confirmed store location.
+  const sendPickupReady = async () => {
+    if (!pickupModal || !selected || !companyId) return
+    setPickupSending(true)
+    const smsNumber = smsDestination()
+    try {
+      const loc = outlets.find(o => o.id === pickupModal.locationId)
+      const locName = loc ? [loc.label, loc.suburb].filter(Boolean).join(', ') : 'our store'
+      const orderNo = pickupModal.payload.order_number || pickupModal.payload.order_id
+      const first = contact?.name ? String(contact.name).split(' ')[0] : ''
+      const text = `Hi${first ? ' ' + first : ''}, your order #${orderNo} is ready to be collected at: ${locName}. See you soon!`
+      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      if (smsNumber) {
+        try {
+          await fetch('/api/telnyx/sms/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text, senderName: me, skipChatMessage: true }),
+          })
+        } catch {}
+      }
+      await (supabase as any).from('messages').insert({
+        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+        sender_id: user.id, sender_name: me, sender_email: user.email,
+        content: text, delivery_channel: smsNumber ? 'sms' : 'chat',
+      })
+      await (supabase as any).from('conversations').update({ last_message: text, last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
+      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+      setMessages(msgs || [])
+      showToast('Pickup notification sent')
+      setPickupModal(null); scrollBottom()
+    } catch (e: any) {
+      showToast(e.message || 'Could not send the notification')
+    } finally { setPickupSending(false) }
+  }
 
   // Enrich the orders shown in the panel with product images + shipping (the
   // synced rows lack both). The detail endpoint fetches live and caches, so this
@@ -4348,6 +4386,44 @@ export default function InboxPage() {
       )}
 
       {/* Proof of Delivery panel */}
+      {pickupModal && (() => {
+        const loc = outlets.find(o => o.id === pickupModal.locationId)
+        const locName = loc ? [loc.label, loc.suburb].filter(Boolean).join(', ') : 'our store'
+        const orderNo = pickupModal.payload.order_number || pickupModal.payload.order_id
+        const first = contact?.name ? String(contact.name).split(' ')[0] : ''
+        const preview = `Hi${first ? ' ' + first : ''}, your order #${orderNo} is ready to be collected at: ${locName}. See you soon!`
+        return (
+          <div onClick={() => !pickupSending && setPickupModal(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: 'min(440px, 96vw)', padding: 22 }}>
+              <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Ready for pickup</h3>
+              <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--slate)' }}>Confirm the collection location, then send the customer an SMS.</p>
+              <label style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Pickup location</label>
+              {outlets.length > 0 ? (
+                <select value={pickupModal.locationId} onChange={e => setPickupModal(m => m ? { ...m, locationId: e.target.value } : m)}
+                  style={{ width: '100%', marginTop: 6, marginBottom: 14, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, background: '#fff' }}>
+                  {outlets.map(o => <option key={o.id} value={o.id}>{[o.label, o.suburb].filter(Boolean).join(' · ')}{o.is_primary ? ' (default)' : ''}</option>)}
+                </select>
+              ) : (
+                <p style={{ margin: '6px 0 14px', fontSize: 12.5, color: '#b45309' }}>No store locations set up yet — add one in Settings to name the pickup spot. The message will say "our store".</p>
+              )}
+              <div style={{ background: 'var(--peach)', borderRadius: 10, padding: '11px 13px', marginBottom: 16 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', marginBottom: 4 }}>Message preview</div>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', lineHeight: 1.5 }}>{preview}</p>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="button" onClick={() => setPickupModal(null)} disabled={pickupSending}
+                  style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                <button type="button" onClick={sendPickupReady} disabled={pickupSending}
+                  style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: '#0891b2', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: pickupSending ? 0.6 : 1 }}>
+                  {pickupSending ? 'Sending…' : 'Send SMS'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {invoicePreview && (
         <div onClick={() => { if (!invoiceSending) { URL.revokeObjectURL(invoicePreview.url); setInvoicePreview(null) } }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -7447,7 +7523,10 @@ export default function InboxPage() {
                                   ) : (
                                     <div style={{ width: 34, height: 34, borderRadius: 6, background: 'var(--canvas)', border: '1px solid var(--border)', flexShrink: 0 }} />
                                   )}
-                                  <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}>{li.quantity}× {dec(li.name)}</p>
+                                  <div style={{ minWidth: 0 }}>
+                                    <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}>{li.quantity}× {dec(li.name)}</p>
+                                    {li.sku ? <p style={{ margin: '1px 0 0', fontSize: 9.5, color: '#9ca3af', letterSpacing: '0.02em' }}>SKU: {li.sku}</p> : null}
+                                  </div>
                                 </div>
                               ))}
                               {o.line_items.length > 3 && <p style={{ margin: '2px 0 0 42px', fontSize: 11, color: '#9ca3af' }}>+{o.line_items.length - 3} more</p>}
@@ -7473,6 +7552,11 @@ export default function InboxPage() {
                               useful action there is refunding it. */}
                           {String(o.status || '').toLowerCase() === 'processing' && (
                             <button type="button" onClick={() => markOrderCompleted(payload)} style={miniBtn('#15803d')}>Mark completed</button>
+                          )}
+                          {/pickup|collect/i.test(String(o.shipping_method || payload.shipping_method || '')) && (
+                            <button type="button"
+                              onClick={() => setPickupModal({ payload, locationId: (selected as any)?.assigned_location_id || outlets.find(x => x.is_primary)?.id || outlets[0]?.id || '' })}
+                              style={miniBtn('#0891b2')}>Ready for pickup</button>
                           )}
                           {['processing', 'completed'].includes(String(o.status || '').toLowerCase())
                             ? <button type="button" onClick={() => issueOrderRefund(payload)} style={miniBtn('#b45309')}>Issue refund</button>
