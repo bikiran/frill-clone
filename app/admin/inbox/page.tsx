@@ -692,6 +692,10 @@ export default function InboxPage() {
   const [agentTyping, setAgentTyping] = useState<string | null>(null)
   const typingChanRef = useRef<any>(null)
   const agentTypingClearRef = useRef<any>(null)
+  // Exclude our OWN typing by a per-session id, not by name — otherwise the same
+  // agent signed in on two devices (e.g. web + phone) would hide each other's
+  // typing, which is exactly the case when testing.
+  const mySidRef = useRef(Math.random().toString(36).slice(2))
   const myTypingName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
   useEffect(() => {
     if (!selected?.id) { setLiveTyping(''); setAgentTyping(null); return }
@@ -702,7 +706,7 @@ export default function InboxPage() {
       const p = msg?.payload
       if (!p) return
       if (p.from === 'visitor') { setLiveTyping(p.text || ''); return }
-      if (p.from === 'agent' && p.name && p.name !== myTypingName) {
+      if (p.from === 'agent' && p.name && p.sid !== mySidRef.current) {
         if (p.stopped) { setAgentTyping(null); return }
         setAgentTyping(p.name)
         if (agentTypingClearRef.current) clearTimeout(agentTypingClearRef.current)
@@ -726,11 +730,11 @@ export default function InboxPage() {
     const now = Date.now()
     if (now - lastTypingSentRef.current > 1500) {
       lastTypingSentRef.current = now
-      ch.send({ type: 'broadcast', event: 'typing', payload: { from: 'agent', name: myTypingName } })
+      ch.send({ type: 'broadcast', event: 'typing', payload: { from: 'agent', name: myTypingName, sid: mySidRef.current } })
     }
     if (typingStopRef.current) clearTimeout(typingStopRef.current)
     typingStopRef.current = setTimeout(() => {
-      ch.send({ type: 'broadcast', event: 'typing', payload: { from: 'agent', name: myTypingName, stopped: true } })
+      ch.send({ type: 'broadcast', event: 'typing', payload: { from: 'agent', name: myTypingName, sid: mySidRef.current, stopped: true } })
       lastTypingSentRef.current = 0
     }, 3000)
   }
