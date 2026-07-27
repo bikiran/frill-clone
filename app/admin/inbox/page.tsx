@@ -5479,48 +5479,9 @@ export default function InboxPage() {
           </div>
         ) : (
           <>
-            {/* AI-detected contact details — auto-saved fields show a quiet
-                confirmation; anything the AI couldn't auto-save (a conflicting
-                value) is offered as a bold "Update <x> for this contact". */}
-            {aiDetected && (() => {
-              const LABEL: Record<string, string> = { name: 'name', email: 'email', phone: 'phone number', address: 'address' }
-              const isPlaceholderName = (v?: string | null) => {
-                const s = String(v || '').trim()
-                return !s || /^(visitor|guest|unknown|customer)$/i.test(s) || /^\+?\d[\d\s()-]{6,}$/.test(s)
-              }
-              const rows = (['name', 'email', 'phone', 'address'] as const).map(f => {
-                const value = (aiDetected as any)[f] as string | null
-                if (!value) return null
-                let current = (contact as any)?.[f] as string | null | undefined
-                if (f === 'name' && current && isPlaceholderName(current)) current = null
-                const saved = aiSavedFields.has(f) || (!!current && String(current).trim() === value.trim())
-                const conflict = !!current && String(current).trim() !== value.trim()
-                return { field: f, value, saved, conflict }
-              }).filter(Boolean) as { field: 'name' | 'email' | 'phone' | 'address'; value: string; saved: boolean; conflict: boolean }[]
-              if (rows.length === 0) return null
-              return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 14px', background: '#faf9ff', borderBottom: '1px solid #eee' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="#8b5cf6"><path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z"/></svg>
-                    Detected from the conversation
-                  </span>
-                  {rows.map(r => r.saved ? (
-                    <span key={r.field} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#ecfdf3', border: '1px solid #c7f0d8', borderRadius: 20, padding: '3px 8px 3px 10px', fontSize: 12, fontWeight: 700, color: '#059669' }}>
-                      ✓ {LABEL[r.field]} added
-                      <button type="button" onClick={() => dismissAiField(r.field, r.value)} title="Dismiss" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
-                    </span>
-                  ) : (
-                    <span key={r.field} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff7ed', border: '1.5px solid #f59e0b', borderRadius: 20, padding: '3px 8px 3px 12px' }}>
-                      <button type="button" onClick={() => acceptAiField(r.field, r.value)} title={r.value}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b45309', fontSize: 12.5, fontWeight: 800, padding: 0 }}>
-                        Update {LABEL[r.field]} for this contact
-                      </button>
-                      <button type="button" onClick={() => dismissAiField(r.field, r.value)} title="Dismiss" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b45309', fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
-                    </span>
-                  ))}
-                </div>
-              )
-            })()}
+            {/* Detected contact details are auto-saved silently to empty fields;
+                the contact card marks each with a sparkle ("Colvy AI saved
+                this …"). No banner here — it was intrusive. */}
 
             {/* Thread header */}
             <div className="inbox-thread-header" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -7036,7 +6997,7 @@ export default function InboxPage() {
                               <span className="ai-spark" title="" style={{ position: 'relative', display: 'inline-flex', flexShrink: 0, color: '#8b5cf6' }}>
                                 <AiSparkIcon size={13} />
                                 <span className="ai-tip" style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', background: '#1a1a1a', color: '#fff', fontSize: 11, fontWeight: 600, padding: '5px 9px', borderRadius: 7, opacity: 0, pointerEvents: 'none', transition: 'opacity 0.12s', zIndex: 20 }}>
-                                  Auto added by Colvy AI
+                                  Colvy AI saved this {label.toLowerCase()}
                                 </span>
                               </span>
                             )}
