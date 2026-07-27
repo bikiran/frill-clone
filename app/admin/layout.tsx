@@ -90,6 +90,13 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Insights',
+    items: [
+      { label: 'Customer Insights', href: '/admin/insights/customers', icon: 'users' },
+      { label: 'Location Insights', href: '/admin/insights/location', icon: 'analytics' },
+    ],
+  },
+  {
     label: 'Support',
     items: [
       { label: 'Tickets', href: '/admin/tickets', icon: 'support' },
