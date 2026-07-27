@@ -32,6 +32,7 @@ const PAID = ['processing', 'completed', 'on-hold']
 export default function CustomerInsightsPage() {
   const [loading, setLoading] = useState(true)
   const [orders, setOrders] = useState<Order[]>([])
+  const [diag, setDiag] = useState<any>(null)
   const [range, setRange] = useState<'week' | 'month' | 'all'>('all')
 
   useEffect(() => {
@@ -63,7 +64,8 @@ export default function CustomerInsightsPage() {
           const res = await fetch(`/api/orders/all?companyId=${cid}`)
           const j = await res.json()
           if (Array.isArray(j.orders)) loaded = j.orders
-        } catch { /* fall back below */ }
+          setDiag({ count: j.count ?? (j.orders?.length || 0), debug: j.debug, error: j.error })
+        } catch (e: any) { setDiag({ error: String(e?.message || e) }) }
         if (loaded.length === 0) {
           const { data } = await (supabase as any).from('woocommerce_orders')
             .select('id, customer_email, woo_customer_id, total, order_date, status, billing')
@@ -159,6 +161,24 @@ export default function CustomerInsightsPage() {
         {rangeBtn('month', 'Last 30 days')}
         {rangeBtn('all', 'All time')}
       </div>
+
+      {orders.length === 0 && diag && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: 16, marginBottom: 20 }}>
+          <p style={{ margin: '0 0 6px', fontSize: 13.5, fontWeight: 700, color: '#92400e' }}>No orders came back from WooCommerce</p>
+          <p style={{ margin: '0 0 8px', fontSize: 12.5, color: '#92400e' }}>
+            {diag?.debug?.reason === 'no_active_woocommerce_integration'
+              ? 'No active WooCommerce integration is connected for this company.'
+              : diag?.debug?.stores?.some((s: any) => s.httpStatus)
+                ? `The store returned an error (HTTP ${diag.debug.stores.find((s: any) => s.httpStatus)?.httpStatus}) — usually the API key lacks "Read" permission for orders, or the key/secret is wrong.`
+                : diag?.debug?.stores?.every((s: any) => (s.fetched || 0) === 0)
+                  ? 'The store connected but returned 0 orders for this key. Check the API key has Read access to Orders.'
+                  : 'See the technical detail below.'}
+          </p>
+          <pre style={{ margin: 0, fontSize: 10.5, color: '#78350f', whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: '#fffdf5', padding: 8, borderRadius: 6 }}>
+            {JSON.stringify(diag, null, 2)}
+          </pre>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginBottom: 24 }}>
         {cards.map(m => (

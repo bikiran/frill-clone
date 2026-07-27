@@ -29,23 +29,28 @@ export async function GET(req: NextRequest) {
     const db = admin()
     const { data: integs } = await db.from('woocommerce_integrations')
       .select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true })
-    if (!integs || integs.length === 0) return NextResponse.json({ orders: [], reason: 'no_integration' })
+    if (!integs || integs.length === 0) return NextResponse.json({ orders: [], count: 0, debug: { reason: 'no_active_woocommerce_integration' } })
 
     const orders: any[] = []
+    const debug: any = { integrations: integs.length, stores: [] }
     for (const integ of integs) {
-      if (!integ.store_url) continue
+      const store: any = { url: integ.store_url, hasKey: !!integ.consumer_key, fetched: 0 }
+      if (!integ.store_url) { store.error = 'no_store_url'; debug.stores.push(store); continue }
       const auth = 'Basic ' + Buffer.from(`${integ.consumer_key}:${integ.consumer_secret}`).toString('base64')
       for (let page = 1; page <= maxPages; page++) {
-        const qs = new URLSearchParams({ per_page: '100', page: String(page), orderby: 'date', order: 'desc' })
         let batch: any[] = []
         try {
-          const res = await fetch(`${integ.store_url}/wp-json/wc/v3/orders?${qs.toString()}`, {
+          const res = await fetch(`${integ.store_url}/wp-json/wc/v3/orders?per_page=100&page=${page}&orderby=date&order=desc`, {
             headers: { Authorization: auth, 'Content-Type': 'application/json' },
           })
-          if (!res.ok) break
+          if (!res.ok) {
+            if (page === 1) { store.httpStatus = res.status; store.error = (await res.text().catch(() => '')).slice(0, 300) }
+            break
+          }
           batch = await res.json()
-        } catch { break }
+        } catch (e: any) { if (page === 1) store.error = String(e?.message || e).slice(0, 200); break }
         if (!Array.isArray(batch) || batch.length === 0) break
+        store.fetched += batch.length
         for (const o of batch) {
           orders.push({
             id: o.id,
@@ -69,9 +74,10 @@ export async function GET(req: NextRequest) {
         }
         if (batch.length < 100) break
       }
+      debug.stores.push(store)
     }
 
-    return NextResponse.json({ orders, count: orders.length })
+    return NextResponse.json({ orders, count: orders.length, debug })
   } catch (err: any) {
     return NextResponse.json({ error: err.message, orders: [] }, { status: 500 })
   }
