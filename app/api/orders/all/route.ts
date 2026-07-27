@@ -22,11 +22,22 @@ function admin() {
  */
 export async function GET(req: NextRequest) {
   try {
-    const companyId = req.nextUrl.searchParams.get('companyId')
-    if (!companyId) return NextResponse.json({ orders: [] })
+    let companyId = req.nextUrl.searchParams.get('companyId')
     const maxPages = Math.min(20, Math.max(1, Number(req.nextUrl.searchParams.get('pages') || 12)))
-
     const db = admin()
+
+    // Allow hitting this endpoint directly in the browser for diagnostics:
+    // resolve the company from the subdomain (roxyaquarium.colvy.com) when no
+    // companyId is passed.
+    if (!companyId) {
+      const host = req.headers.get('host') || ''
+      const m = host.match(/^([^.]+)\.colvy\.com$/)
+      if (m && m[1] !== 'www') {
+        const { data: co } = await db.from('companies').select('id').eq('slug', m[1]).maybeSingle()
+        if (co) companyId = co.id
+      }
+    }
+    if (!companyId) return NextResponse.json({ orders: [], count: 0, debug: { reason: 'no_company_resolved' } })
     const { data: integs } = await db.from('woocommerce_integrations')
       .select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true })
     if (!integs || integs.length === 0) return NextResponse.json({ orders: [], count: 0, debug: { reason: 'no_active_woocommerce_integration' } })
