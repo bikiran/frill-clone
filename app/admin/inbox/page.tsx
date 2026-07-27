@@ -686,20 +686,54 @@ export default function InboxPage() {
   // ── Live typing preview (ADMIN ONLY) ──────────────────────────────────────
   // See what the customer is typing before they send it, so agents can prepare.
   // The customer is never shown the agent's draft — this is one-way.
+  // We ALSO surface when another agent is typing in the same thread, so two
+  // agents don't reply over each other.
   const [liveTyping, setLiveTyping] = useState<string>('')
+  const [agentTyping, setAgentTyping] = useState<string | null>(null)
+  const typingChanRef = useRef<any>(null)
+  const agentTypingClearRef = useRef<any>(null)
+  const myTypingName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
   useEffect(() => {
-    if (!selected?.id) { setLiveTyping(''); return }
-    setLiveTyping('')
+    if (!selected?.id) { setLiveTyping(''); setAgentTyping(null); return }
+    setLiveTyping(''); setAgentTyping(null)
     const ch = supabase.channel(`typing-${selected.id}`)
+    typingChanRef.current = ch
     ch.on('broadcast', { event: 'typing' }, (msg: any) => {
       const p = msg?.payload
-      if (!p || p.from !== 'visitor') return
-      setLiveTyping(p.text || '')
+      if (!p) return
+      if (p.from === 'visitor') { setLiveTyping(p.text || ''); return }
+      if (p.from === 'agent' && p.name && p.name !== myTypingName) {
+        if (p.stopped) { setAgentTyping(null); return }
+        setAgentTyping(p.name)
+        if (agentTypingClearRef.current) clearTimeout(agentTypingClearRef.current)
+        agentTypingClearRef.current = setTimeout(() => setAgentTyping(null), 4000)
+      }
     }).subscribe()
     // Clear the preview if they go quiet.
     const idle = setInterval(() => setLiveTyping(t => t), 1000)
-    return () => { supabase.removeChannel(ch); clearInterval(idle) }
-  }, [selected?.id])
+    return () => {
+      supabase.removeChannel(ch); typingChanRef.current = null; clearInterval(idle)
+      if (agentTypingClearRef.current) clearTimeout(agentTypingClearRef.current)
+    }
+  }, [selected?.id, myTypingName])
+
+  // Tell other agents (and the customer's widget) that this agent is typing.
+  const lastTypingSentRef = useRef(0)
+  const typingStopRef = useRef<any>(null)
+  const broadcastAgentTyping = () => {
+    const ch = typingChanRef.current
+    if (!ch || !selected?.id) return
+    const now = Date.now()
+    if (now - lastTypingSentRef.current > 1500) {
+      lastTypingSentRef.current = now
+      ch.send({ type: 'broadcast', event: 'typing', payload: { from: 'agent', name: myTypingName } })
+    }
+    if (typingStopRef.current) clearTimeout(typingStopRef.current)
+    typingStopRef.current = setTimeout(() => {
+      ch.send({ type: 'broadcast', event: 'typing', payload: { from: 'agent', name: myTypingName, stopped: true } })
+      lastTypingSentRef.current = 0
+    }, 3000)
+  }
 
   const cardsApi = async (body: any) => {
     const res = await fetch('/api/stripe/cards', {
@@ -6394,6 +6428,7 @@ export default function InboxPage() {
               <textarea ref={textareaRef} value={reply} onChange={e => {
                   const v = e.target.value
                   setReply(v)
+                  if (v.trim()) broadcastAgentTyping()
                   // Detect an in-progress "@name" token at the caret so the
                   // mention picker can offer team members.
                   const caret = e.target.selectionStart ?? v.length
@@ -6457,6 +6492,17 @@ export default function InboxPage() {
                     <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Customer is typing</p>
                     <p style={{ margin: '2px 0 0', fontSize: 13, color: '#0c4a6e', fontStyle: 'italic', wordBreak: 'break-word' }}>{liveTyping}</p>
                   </div>
+                </div>
+              )}
+
+              {agentTyping && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', marginBottom: 8 }}>
+                  <span style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                    {[0, 1, 2].map(i => (
+                      <span key={i} style={{ width: 4, height: 4, borderRadius: '50%', background: '#8b5cf6', animation: `typingDot 1.2s ${i * 0.15}s infinite` }} />
+                    ))}
+                  </span>
+                  <p style={{ margin: 0, fontSize: 12, color: '#7c3aed', fontStyle: 'italic', fontWeight: 600 }}>{agentTyping} is typing…</p>
                 </div>
               )}
 
