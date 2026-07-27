@@ -2426,6 +2426,8 @@ export default function InboxPage() {
       restock: true,
       reason: '',
       busy: false,
+      orderTotal: Number(payload.total || 0),
+      alreadyRefunded: Math.abs(Number(payload.total_refunded ?? payload.refunded_total ?? 0)),
     })
   }
 
@@ -4247,11 +4249,20 @@ export default function InboxPage() {
               const items = refundModal.items.filter((it: any) => it.refundQty > 0)
               const itemsTotal = items.reduce((s: number, it: any) => s + it.unit * it.refundQty + (it.qty>0 ? (it.tax/it.qty)*it.refundQty : 0), 0)
               const total = itemsTotal + (refundModal.refundShipping ? refundModal.shipping : 0)
+              const available = Math.max(0, (refundModal.orderTotal || 0) - (refundModal.alreadyRefunded || 0))
+              const over = total > available + 0.001
               return (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: 11, background: 'var(--peach)', marginBottom: 16 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>Refund total</span>
-                  <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--coral)' }}>${total.toFixed(2)}</span>
-                </div>
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2px', marginBottom: 8, fontSize: 12.5, color: 'var(--slate)' }}>
+                    <span>Available to refund{refundModal.alreadyRefunded > 0 ? ` (already refunded $${refundModal.alreadyRefunded.toFixed(2)})` : ''}</span>
+                    <span style={{ fontWeight: 700, color: 'var(--ink)' }}>${available.toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: 11, background: 'var(--peach)', marginBottom: over ? 6 : 16 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>Refund total</span>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: over ? '#dc2626' : 'var(--coral)' }}>${total.toFixed(2)}</span>
+                  </div>
+                  {over && <p style={{ margin: '0 0 14px', fontSize: 11.5, color: '#dc2626' }}>This exceeds the amount available to refund.</p>}
+                </>
               )
             })()}
 
