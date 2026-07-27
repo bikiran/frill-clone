@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
         const label = status === 'cancelled' ? 'cancelled' : status === 'completed' ? 'marked paid & completed' : `set to ${status}`
         await db.from('messages').insert({
           conversation_id: conversationId, company_id: companyId, sender_type: 'system',
-          content: `🛒 Order #${result.order.number || orderId} ${label}.`,
+          content: `🛒 Order #${result.order.number || orderId} ${label}.`, is_read: true,
         })
       } catch {}
     }

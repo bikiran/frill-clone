@@ -323,7 +323,8 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const { data: autoMsg } = await db.from('messages').insert({
     conversation_id: conv.id, company_id: companyId,
     sender_type: 'agent', sender_name: businessName, content: body,
-    message_type: 'text', metadata: { auto: true, order_automation: status, order_id: order.id },
+    message_type: 'text', is_read: true,
+    metadata: { auto: true, order_automation: status, order_id: order.id },
   }).select('id').maybeSingle()
 
   // Completed orders can include a Google review reminder as a follow-up line.
@@ -332,11 +333,14 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       conversation_id: conv.id, company_id: companyId,
       sender_type: 'agent', sender_name: businessName,
       content: `We'd love your feedback — leave us a Google review here: ${cfg.review_url}`,
-      message_type: 'text', metadata: { auto: true, order_automation: 'review' },
+      message_type: 'text', is_read: true, metadata: { auto: true, order_automation: 'review' },
     })
   }
 
-  await db.from('conversations').update({ last_message: body, last_message_at: new Date().toISOString(), is_unread: true }).eq('id', conv.id)
+  // Bump the thread to the top with the latest line, but do NOT mark it unread —
+  // this is a message WE sent, so it's already read (it was counting against the
+  // agent's unread badge before).
+  await db.from('conversations').update({ last_message: body, last_message_at: new Date().toISOString() }).eq('id', conv.id)
 
   // Optional direct notification: SMS and/or email (only with the automation msg).
   const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
