@@ -102,6 +102,10 @@ export async function GET(req: NextRequest) {
       debug.stores.push(store)
     }
 
+    // ?summary=1 → tiny, paste-friendly response (no big orders array).
+    if (req.nextUrl.searchParams.get('summary')) {
+      return NextResponse.json({ count: orders.length, debug })
+    }
     return NextResponse.json({ orders, count: orders.length, debug })
   } catch (err: any) {
     return NextResponse.json({ error: err.message, orders: [] }, { status: 500 })
