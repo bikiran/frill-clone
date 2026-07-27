@@ -917,6 +917,8 @@ export default function InboxPage() {
   const [newTaskAssignee, setNewTaskAssignee] = useState('')
   const [refundModal, setRefundModal] = useState<any>(null)
   const [orderGallery, setOrderGallery] = useState<{ images: { src: string; name: string }[]; index: number } | null>(null)
+  const [invoicePreview, setInvoicePreview] = useState<{ doc: any; url: string; fileName: string; orderNumber: string } | null>(null)
+  const [invoiceSending, setInvoiceSending] = useState(false)
   const [aiSummary, setAiSummary] = useState('')
   const [aiTodos, setAiTodos] = useState<any[]>([])
   const [generatingAi, setGeneratingAi] = useState(false)
@@ -2370,7 +2372,7 @@ export default function InboxPage() {
       // ── Invoice number + served by + footer ──
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
       CT(String(order.number || order.id || ''), y); y += 5
-      const servedBy = senderName || company.name || ''
+      const servedBy = (user?.user_metadata?.display_name || user?.email?.split('@')[0] || company.name || '')
       if (servedBy) { CT(`Served by ${servedBy}`, y); y += 4.5 }
       CT(new Date().toLocaleString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true, day: '2-digit', month: 'short', year: 'numeric' }), y); y += 8
       const footer = company.invoice_footer || 'Thank you for the business.'
@@ -2379,9 +2381,46 @@ export default function InboxPage() {
       for (const fl of fLines) { CT(fl, y); y += 4 }
       doc.setTextColor(0)
 
-      doc.save(`invoice-${order.number || order.id}.pdf`)
-      showToast('Invoice downloaded')
+      const fileName = `invoice-${order.number || order.id}.pdf`
+      setInvoicePreview({ doc, url: URL.createObjectURL(doc.output('blob')), fileName, orderNumber: String(order.number || order.id) })
     } catch (e: any) { showToast(e.message || 'Could not generate invoice') }
+  }
+
+  const downloadInvoice = () => { if (invoicePreview) invoicePreview.doc.save(invoicePreview.fileName) }
+
+  const sendInvoiceInChat = async () => {
+    if (!invoicePreview || !selected || !companyId) return
+    setInvoiceSending(true)
+    const smsNumber = smsDestination()
+    try {
+      const blob: Blob = invoicePreview.doc.output('blob')
+      const file = new File([blob], invoicePreview.fileName, { type: 'application/pdf' })
+      const up = await uploadAttachment(file, { companyId, conversationId: selected.id })
+      const attachment = { url: up.url, name: up.name || invoicePreview.fileName, type: 'application/pdf', kind: 'file' }
+      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      // On an SMS conversation, text the customer a link to the invoice.
+      if (smsNumber) {
+        try {
+          await fetch('/api/telnyx/sms/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: `Invoice #${invoicePreview.orderNumber}`, attachments: [attachment], senderName: me, skipChatMessage: true }),
+          })
+        } catch {}
+      }
+      await (supabase as any).from('messages').insert({
+        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+        sender_id: user.id, sender_name: me, sender_email: user.email,
+        content: `Invoice #${invoicePreview.orderNumber}`, attachments: [attachment],
+        delivery_channel: smsNumber ? 'sms' : 'chat',
+      })
+      await (supabase as any).from('conversations').update({ last_message: '📄 Invoice', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
+      const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
+      setMessages(msgs || [])
+      showToast('Invoice sent in chat')
+      setInvoicePreview(null); scrollBottom()
+    } catch (e: any) {
+      showToast(e.message || 'Could not send the invoice')
+    } finally { setInvoiceSending(false) }
   }
 
   // Mark a processing order as completed in WooCommerce. This usually triggers
@@ -4232,6 +4271,31 @@ export default function InboxPage() {
       )}
 
       {/* Proof of Delivery panel */}
+      {invoicePreview && (
+        <div onClick={() => { if (!invoiceSending) { URL.revokeObjectURL(invoicePreview.url); setInvoicePreview(null) } }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 14, width: 'min(680px, 96vw)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Invoice #{invoicePreview.orderNumber}</h3>
+              <button type="button" onClick={() => { URL.revokeObjectURL(invoicePreview.url); setInvoicePreview(null) }}
+                style={{ background: 'none', border: 'none', fontSize: 24, lineHeight: 1, color: 'var(--slate)', cursor: 'pointer' }}>×</button>
+            </div>
+            <iframe src={invoicePreview.url} title="Invoice preview" style={{ flex: 1, width: '100%', border: 'none', minHeight: 420, background: '#f5f5f5' }} />
+            <div style={{ display: 'flex', gap: 10, padding: '14px 18px', borderTop: '1px solid var(--border)' }}>
+              <button type="button" onClick={downloadInvoice} disabled={invoiceSending}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+                Download
+              </button>
+              <button type="button" onClick={sendInvoiceInChat} disabled={invoiceSending || !selected}
+                style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: invoiceSending ? 0.6 : 1 }}>
+                {invoiceSending ? 'Sending…' : 'Send in chat'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {orderGallery && (
         <div onClick={() => setOrderGallery(null)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
