@@ -5421,13 +5421,12 @@ export default function InboxPage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 6 }}>
                   {isOverdue && (
-                    <span className="overdue-badge" style={{ position: 'relative', display: 'inline-flex', color: '#f59e0b' }}>
+                    <span title={`Waiting ${Math.floor(waitingHours)}h for a reply — reply or close this conversation.`}
+                      style={{ display: 'inline-flex', color: '#f59e0b', flexShrink: 0 }}>
                       {/* Gentle clock icon (amber, not a red alert) — a nudge, not
-                          an error about the customer. */}
+                          an error about the customer. Native title tooltip on hover;
+                          no custom CSS that could leak the text inline. */}
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
-                      <span className="overdue-tip">
-                        Waiting {Math.floor(waitingHours)}h for a reply — reply or close this conversation.
-                      </span>
                     </span>
                   )}
                   <span style={{ fontSize: 10.5, color: '#9ca3af', fontStyle: 'italic' }}>{listTime(conv.last_message_at)}</span>
