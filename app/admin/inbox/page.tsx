@@ -264,17 +264,17 @@ function extractFromText(text: string) {
     phone = cand.replace(/\s+/g, ' ').trim(); break
   }
   const email = cleaned.match(/[\w.+-]+@[\w-]+\.\w+/)?.[0] || null
-  let address = cleaned.match(/\d+[A-Za-z]?[/-]?\d*\s+[A-Za-z0-9\s,.'-]+?(Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Place|Pl|Court|Ct|Way|Boulevard|Blvd|Crescent|Cres|Terrace|Tce|Parade|Pde|Close|Cl|Highway|Hwy)\b[A-Za-z0-9\s,.'-]*/i)?.[0]?.trim() || null
-  // If we found a street address, try to extend it with a trailing AU
-  // suburb + state + 4-digit postcode (e.g. "Richmond VIC 3121").
-  if (address) {
-    const idx = cleaned.indexOf(address)
-    if (idx !== -1) {
-      const tail = cleaned.slice(idx, idx + address.length + 40)
-      const withState = tail.match(new RegExp(address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "[A-Za-z0-9\\s,.'-]*?\\b(NSW|VIC|QLD|SA|WA|TAS|ACT|NT)\\b\\s*\\d{4}", 'i'))
-      if (withState?.[0]) address = withState[0].replace(/\s+/g, ' ').trim()
-    }
-  }
+  // Street address, optionally followed by a suburb, AU state and 4-digit
+  // postcode. Bounded (word counts capped) so it captures just the address and
+  // can't run on into the rest of the message. Handles "9/175 Old Southern Road,
+  // South Nowra, NSW. 2541" including the period before the postcode.
+  const ST = '(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Place|Pl|Court|Ct|Way|Boulevard|Blvd|Crescent|Cres|Terrace|Tce|Parade|Pde|Close|Cl|Highway|Hwy)'
+  let address = cleaned.match(new RegExp(
+    `\\d+[A-Za-z]?(?:[/-]\\d+)?\\s+[A-Za-z][A-Za-z'-]*(?:\\s+[A-Za-z][A-Za-z'-]*){0,4}?\\s+${ST}\\b` +
+    `(?:[\\s,]+[A-Za-z][A-Za-z'-]*(?:\\s+[A-Za-z][A-Za-z'-]*){0,3})?` +   // suburb
+    `(?:[\\s,]+(?:NSW|VIC|QLD|SA|WA|TAS|ACT|NT)\\b)?` +                    // state
+    `(?:[\\s.,]+\\d{4}\\b)?`,                                             // postcode
+    'i'))?.[0]?.replace(/\s+/g, ' ').replace(/\s+,/g, ',').trim() || null
   // Name: the customer introducing themselves. Deliberately narrow — only
   // explicit self-introductions, never a guess from surrounding prose, because
   // writing a wrong name onto a contact is worse than leaving it blank.
@@ -880,7 +880,7 @@ export default function InboxPage() {
   const [hasMoreConvs, setHasMoreConvs] = useState(false)
   const [showContactEdit, setShowContactEdit] = useState(false)
   const [editContact, setEditContact] = useState<Partial<Contact>>({})
-  const [aiDetected, setAiDetected] = useState<{ phone?: string | null; email?: string | null; address?: string | null } | null>(null)
+  const [aiDetected, setAiDetected] = useState<{ name?: string | null; phone?: string | null; email?: string | null; address?: string | null } | null>(null)
   const [aiSavedFields, setAiSavedFields] = useState<Set<string>>(new Set())
   const [savingContact, setSavingContact] = useState(false)
   const [activePanel, setActivePanel] = useState<'info' | 'timeline' | 'orders'>('info')
@@ -3455,7 +3455,7 @@ export default function InboxPage() {
     } catch {}
   }
 
-  const dismissAiField = (field: 'phone' | 'email' | 'address', value?: string | null) => {
+  const dismissAiField = (field: 'name' | 'phone' | 'email' | 'address', value?: string | null) => {
     // Remember this value as dismissed for this conversation so it won't be
     // re-detected on the next open.
     if (selected?.id && value) {
@@ -5446,6 +5446,49 @@ export default function InboxPage() {
           </div>
         ) : (
           <>
+            {/* AI-detected contact details — auto-saved fields show a quiet
+                confirmation; anything the AI couldn't auto-save (a conflicting
+                value) is offered as a bold "Update <x> for this contact". */}
+            {aiDetected && (() => {
+              const LABEL: Record<string, string> = { name: 'name', email: 'email', phone: 'phone number', address: 'address' }
+              const isPlaceholderName = (v?: string | null) => {
+                const s = String(v || '').trim()
+                return !s || /^(visitor|guest|unknown|customer)$/i.test(s) || /^\+?\d[\d\s()-]{6,}$/.test(s)
+              }
+              const rows = (['name', 'email', 'phone', 'address'] as const).map(f => {
+                const value = (aiDetected as any)[f] as string | null
+                if (!value) return null
+                let current = (contact as any)?.[f] as string | null | undefined
+                if (f === 'name' && current && isPlaceholderName(current)) current = null
+                const saved = aiSavedFields.has(f) || (!!current && String(current).trim() === value.trim())
+                const conflict = !!current && String(current).trim() !== value.trim()
+                return { field: f, value, saved, conflict }
+              }).filter(Boolean) as { field: 'name' | 'email' | 'phone' | 'address'; value: string; saved: boolean; conflict: boolean }[]
+              if (rows.length === 0) return null
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 14px', background: '#faf9ff', borderBottom: '1px solid #eee' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="#8b5cf6"><path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z"/></svg>
+                    Detected from the conversation
+                  </span>
+                  {rows.map(r => r.saved ? (
+                    <span key={r.field} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#ecfdf3', border: '1px solid #c7f0d8', borderRadius: 20, padding: '3px 8px 3px 10px', fontSize: 12, fontWeight: 700, color: '#059669' }}>
+                      ✓ {LABEL[r.field]} added
+                      <button type="button" onClick={() => dismissAiField(r.field, r.value)} title="Dismiss" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
+                    </span>
+                  ) : (
+                    <span key={r.field} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff7ed', border: '1.5px solid #f59e0b', borderRadius: 20, padding: '3px 8px 3px 12px' }}>
+                      <button type="button" onClick={() => acceptAiField(r.field, r.value)} title={r.value}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b45309', fontSize: 12.5, fontWeight: 800, padding: 0 }}>
+                        Update {LABEL[r.field]} for this contact
+                      </button>
+                      <button type="button" onClick={() => dismissAiField(r.field, r.value)} title="Dismiss" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b45309', fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )
+            })()}
+
             {/* Thread header */}
             <div className="inbox-thread-header" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {/* Mobile: back to conversation list */}
