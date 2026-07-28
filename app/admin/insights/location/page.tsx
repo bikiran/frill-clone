@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
+import { CustomerMap, MapPoint } from './CustomerMap'
+import { AU_BY_POSTCODE, AU_STATE_CAPITAL } from './auGeo'
 
 type Order = {
   id: string
@@ -115,7 +117,7 @@ export default function LocationInsightsPage() {
   // ── Aggregations ────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
     const paid = visible.filter(o => !DEAD.includes(String(o.status || '').toLowerCase().replace(/^wc-/, '')))
-    const bySuburb: Record<string, { revenue: number; orders: number; customers: Set<string> }> = {}
+    const bySuburb: Record<string, { revenue: number; orders: number; customers: Set<string>; pc: string; state: string }> = {}
     const byCustomer: Record<string, number> = {}
     const byProduct: Record<string, { revenue: number; qty: number }> = {}
     let revenue = 0
@@ -126,10 +128,12 @@ export default function LocationInsightsPage() {
       revenue += t
       const cust = customerOf(o)
       byCustomer[cust] = (byCustomer[cust] || 0) + 1
-      ;(bySuburb[s] ||= { revenue: 0, orders: 0, customers: new Set() })
+      ;(bySuburb[s] ||= { revenue: 0, orders: 0, customers: new Set(), pc: '', state: '' })
       bySuburb[s].revenue += t
       bySuburb[s].orders += 1
       bySuburb[s].customers.add(cust)
+      if (!bySuburb[s].pc && o.billing?.postcode) bySuburb[s].pc = String(o.billing.postcode).trim()
+      if (!bySuburb[s].state && o.billing?.state) bySuburb[s].state = String(o.billing.state).trim().toUpperCase()
       for (const li of (o.line_items || [])) {
         const name = titleCase(String(li.name || 'Item'))
         ;(byProduct[name] ||= { revenue: 0, qty: 0 })
@@ -139,7 +143,7 @@ export default function LocationInsightsPage() {
     }
 
     const suburbs = Object.entries(bySuburb)
-      .map(([name, v]) => ({ name, revenue: v.revenue, orders: v.orders, customers: v.customers.size }))
+      .map(([name, v]) => ({ name, revenue: v.revenue, orders: v.orders, customers: v.customers.size, pc: v.pc, state: v.state }))
       .sort((a, b) => b.revenue - a.revenue)
 
     const products = Object.entries(byProduct)
@@ -192,6 +196,16 @@ export default function LocationInsightsPage() {
     }
     return out
   }, [stats])
+
+  const mapPoints = useMemo<MapPoint[]>(() => {
+    const pts: MapPoint[] = []
+    for (const s of stats.suburbs) {
+      const coord = (s.pc && AU_BY_POSTCODE[s.pc]) || (s.state && AU_STATE_CAPITAL[s.state]) || null
+      if (!coord) continue
+      pts.push({ name: s.name, revenue: s.revenue, customers: s.customers, orders: s.orders, lat: coord[0], lng: coord[1] })
+    }
+    return pts
+  }, [stats.suburbs])
 
   // ── UI helpers ──────────────────────────────────────────────────────────────
   const card: React.CSSProperties = { background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: 18 }
@@ -287,18 +301,24 @@ export default function LocationInsightsPage() {
         </p>
       </div>
 
-      {/* Customer Map (v1 — ranked suburbs) */}
+      {/* Customer Map — interactive */}
       <div style={{ ...card, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <h2 style={{ ...h2, margin: 0 }}>Customer Map</h2>
-          <span style={{ fontSize: 11, color: 'var(--slate)', background: 'var(--canvas)', padding: '3px 8px', borderRadius: 10 }}>Ranked by revenue</span>
+          <span style={{ fontSize: 11, color: 'var(--slate)', background: 'var(--canvas)', padding: '3px 8px', borderRadius: 10 }}>Bubble size = revenue</span>
         </div>
-        <Bars color="var(--coral)" max={stats.suburbs[0]?.revenue || 0}
-          rows={stats.suburbs.slice(0, 12).map(s => ({ name: s.name, value: s.revenue, meta: `${s.customers} cust` }))}
-          valueFmt={money} />
-        <p style={{ fontSize: 11.5, color: 'var(--slate)', margin: '12px 0 0' }}>
-          An interactive geographic map (pins on a real map) is coming next — this ranks your suburbs by revenue for now.
-        </p>
+        {mapPoints.length > 0 ? (
+          <CustomerMap points={mapPoints} />
+        ) : (
+          <p style={{ fontSize: 13, color: 'var(--slate)', margin: 0 }}>
+            {stats.orders === 0 ? 'No orders in this period.' : 'No mappable locations — orders in this period are missing postcodes.'}
+          </p>
+        )}
+        {mapPoints.length > 0 && (
+          <p style={{ fontSize: 11.5, color: 'var(--slate)', margin: '10px 0 0' }}>
+            {mapPoints.length} suburb{mapPoints.length === 1 ? '' : 's'} plotted by postcode. Tap a bubble for detail.
+          </p>
+        )}
       </div>
 
       {/* Two-column: Suburb Performance + Purchase Categories */}
