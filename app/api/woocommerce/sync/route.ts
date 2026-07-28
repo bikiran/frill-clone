@@ -3,6 +3,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 
+// Runs a Supabase upsert with a few retries when Postgres reports a transient
+// "deadlock detected" (code 40P01), which can happen when two syncs — or a sync
+// and an incoming webhook — touch the same rows at once. Combined with sorting
+// rows by their conflict key, this makes concurrent syncs safe.
+async function upsertRetry(run: () => any, tries = 4): Promise<void> {
+  for (let i = 0; i < tries; i++) {
+    const { error } = await run()
+    if (!error) return
+    const msg = String(error.message || '').toLowerCase()
+    if ((msg.includes('deadlock') || error.code === '40P01') && i < tries - 1) {
+      await new Promise(r => setTimeout(r, 120 * (i + 1) + Math.random() * 100))
+      continue
+    }
+    throw new Error(error.message)
+  }
+}
+
 /**
  * POST /api/woocommerce/sync
  * Manually trigger a sync of customers and orders from WooCommerce
@@ -127,10 +144,12 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
 
       let syncedCount = 0
       if (rows.length > 0) {
-        const { error: upsertError } = await supabase
+        // Sort by the conflict key so concurrent syncs lock rows in the same
+        // order — the usual cause of "deadlock detected" during overlapping syncs.
+        rows.sort((a: any, b: any) => (a.woo_customer_id || 0) - (b.woo_customer_id || 0))
+        await upsertRetry(() => supabase
           .from('woocommerce_customers')
-          .upsert(rows, { onConflict: 'company_id,woo_customer_id' })
-        if (upsertError) throw new Error(upsertError.message)
+          .upsert(rows, { onConflict: 'company_id,woo_customer_id' }))
         syncedCount = rows.length
       }
 
@@ -192,9 +211,10 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
       // recovery or any guest checkout never appeared in order history, even
       // after a full sync.
       if (orderRows.length > 0) {
-        // NOTE: supabase query builders are thenable but have no .catch — must try/await
+        // Consistent lock order + deadlock retry (see customer upsert note).
+        orderRows.sort((a: any, b: any) => (a.woo_order_id || 0) - (b.woo_order_id || 0))
         try {
-          await supabase.from('woocommerce_orders').upsert(orderRows, { onConflict: 'company_id,woo_order_id' })
+          await upsertRetry(() => supabase.from('woocommerce_orders').upsert(orderRows, { onConflict: 'company_id,woo_order_id' }))
         } catch {}
       }
 
@@ -294,10 +314,10 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         })
 
         if (updates.length > 0) {
-          const { error: upErr } = await supabase
+          updates.sort((a: any, b: any) => (a.woo_customer_id || 0) - (b.woo_customer_id || 0))
+          await upsertRetry(() => supabase
             .from('woocommerce_customers')
-            .upsert(updates, { onConflict: 'company_id,woo_customer_id' })
-          if (upErr) throw new Error(upErr.message)
+            .upsert(updates, { onConflict: 'company_id,woo_customer_id' }))
           updated = updates.length
         }
       }
