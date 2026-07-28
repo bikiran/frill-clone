@@ -173,7 +173,10 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
       // happened when the old code reset then crashed).
       const { data: orders, totalPages, total } = await wcFetch(`orders?per_page=${perPage}&page=${page}&orderby=id&order=asc&status=any${modifiedAfter}`)
 
-      if (page === 1) {
+      // Only wipe-and-recompute stats on a FULL sync. An incremental sync
+      // (modified_after set) only touches changed order rows, so resetting every
+      // customer to $0 would be wrong (and rewrites the whole table off disk).
+      if (page === 1 && !modifiedAfter) {
         await supabase
           .from('woocommerce_customers')
           .update({ total_spend: 0, total_orders: 0, average_order_value: 0, items_purchased: [] })
@@ -216,6 +219,21 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         try {
           await upsertRetry(() => supabase.from('woocommerce_orders').upsert(orderRows, { onConflict: 'company_id,woo_order_id' }))
         } catch {}
+      }
+
+      // Incremental sync stops here: changed order rows are refreshed, but we
+      // skip the full per-customer stat recompute (that's a full-sync job and
+      // the disk-heavy part). This keeps scheduled/incremental runs cheap.
+      if (modifiedAfter) {
+        const doneInc = page >= totalPages
+        if (doneInc) {
+          await supabase.from('woocommerce_integrations')
+            .update({ last_synced_at: new Date().toISOString() }).eq('id', integration.id)
+        }
+        return { status: 200, body: {
+          success: true, mode, page, totalPages, total, updated: orderRows.length, done: doneInc,
+          message: `Orders page ${page}/${totalPages} synced incrementally (${orderRows.length} changed)`,
+        } }
       }
 
       // 2. Aggregate this page's orders per customer — including the actual
