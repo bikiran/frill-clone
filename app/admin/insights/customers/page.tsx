@@ -45,14 +45,23 @@ export default function CustomerInsightsPage() {
       //    can throw under RLS and previously killed the whole load before the
       //    fetch ever ran — the cause of the empty "loaded: 0".)
       let loaded: any[] = []
+      // Reuse a recent fetch across the two Insights pages within the session.
+      const CK = 'insights_orders_v1'
       try {
-        const res = await fetch('/api/orders/all')
-        const j = await res.json()
-        if (Array.isArray(j.orders)) loaded = j.orders
-        const { orders: _drop, ...rest } = j || {}
-        setDiag({ httpOk: res.ok, httpStatus: res.status, ...rest })
-      } catch (e: any) {
-        setDiag({ clientError: String(e?.message || e) })
+        const c = sessionStorage.getItem(CK)
+        if (c) { const p = JSON.parse(c); if (Date.now() - p.t < 300000 && Array.isArray(p.orders) && p.orders.length) loaded = p.orders }
+      } catch {}
+      if (loaded.length === 0) {
+        try {
+          const res = await fetch('/api/orders/all')
+          const j = await res.json()
+          if (Array.isArray(j.orders)) loaded = j.orders
+          const { orders: _drop, ...rest } = j || {}
+          setDiag({ httpOk: res.ok, httpStatus: res.status, ...rest })
+          if (loaded.length) { try { sessionStorage.setItem(CK, JSON.stringify({ t: Date.now(), orders: loaded })) } catch {} }
+        } catch (e: any) {
+          setDiag({ clientError: String(e?.message || e) })
+        }
       }
       // 2) Fallback to the synced table only if the live fetch was empty.
       if (loaded.length === 0) {
