@@ -61,16 +61,18 @@ export default function CustomerInsightsPage() {
             }
           }
         }
-        if (!cid) { setLoading(false); return }
+        // Don't block on the browser-side company lookup — it can fail under
+        // RLS where the server can't. The endpoint resolves the company from the
+        // request host itself, so we call it either way.
         let loaded: any[] = []
         try {
-          const res = await fetch(`/api/orders/all?companyId=${cid}`)
+          const res = await fetch(`/api/orders/all${cid ? `?companyId=${cid}` : ''}`)
           const j = await res.json()
           if (Array.isArray(j.orders)) loaded = j.orders
           const { orders: _drop, ...rest } = j || {}
           setDiag({ httpOk: res.ok, httpStatus: res.status, ...rest })
         } catch (e: any) { setDiag({ clientError: String(e?.message || e) }) }
-        if (loaded.length === 0) {
+        if (loaded.length === 0 && cid) {
           const { data, error } = await (supabase as any).from('woocommerce_orders')
             .select('id, customer_email, woo_customer_id, total, order_date, status, billing')
             .eq('company_id', cid).order('order_date', { ascending: false }).limit(3000)

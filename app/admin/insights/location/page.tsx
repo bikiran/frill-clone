@@ -64,18 +64,16 @@ export default function LocationInsightsPage() {
             }
           }
         }
-        if (!cid) { setLoading(false); return }
-        setCompanyId(cid)
-        // The synced woocommerce_orders table only holds orders Colvy touched —
-        // too sparse for analytics. Pull the full history live; fall back to the
-        // synced table if the store isn't reachable.
+        if (cid) setCompanyId(cid)
+        // Don't block on the browser company lookup (RLS can null it). The
+        // endpoint resolves the company from the request host itself.
         let loaded: any[] = []
         try {
-          const res = await fetch(`/api/orders/all?companyId=${cid}`)
+          const res = await fetch(`/api/orders/all${cid ? `?companyId=${cid}` : ''}`)
           const j = await res.json()
           if (Array.isArray(j.orders)) loaded = j.orders
         } catch { /* fall back below */ }
-        if (loaded.length === 0) {
+        if (loaded.length === 0 && cid) {
           const { data } = await (supabase as any).from('woocommerce_orders')
             .select('id, customer_email, woo_customer_id, total, order_date, status, line_items, billing')
             .eq('company_id', cid).order('order_date', { ascending: false }).limit(3000)
