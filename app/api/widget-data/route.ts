@@ -11,9 +11,33 @@ function getDb() {
   return createClient(url, key)
 }
 
+// In-memory response cache (per serverless instance). Widget data is public and
+// changes slowly, but the widget is hit by every visitor — without caching that
+// was ~8 Supabase queries per pageview, which overwhelmed the DB under load and
+// caused 504s. FRESH_MS serves from memory; STALE_MS lets us serve slightly old
+// data when Supabase is failing, so the widget degrades gracefully instead of
+// erroring.
+const FRESH_MS = 30_000
+const STALE_MS = 10 * 60_000
+const cache = new Map<string, { at: number; data: any }>()
+
+const cacheHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
+}
+
 export async function GET(req: NextRequest) {
   const slug = req.nextUrl.searchParams.get('slug')
   if (!slug) return NextResponse.json({ error: 'slug required' }, { status: 400 })
+  const location = req.nextUrl.searchParams.get('location') || ''
+  const cacheKey = `${slug}|${location}`
+  const now = Date.now()
+
+  const hit = cache.get(cacheKey)
+  if (hit && now - hit.at < FRESH_MS) {
+    return NextResponse.json(hit.data, { headers: cacheHeaders })
+  }
 
   try {
     const supabase = getDb()
@@ -111,15 +135,16 @@ export async function GET(req: NextRequest) {
       help_articles_count: responseData.helpArticles.length,
     })
 
-    return NextResponse.json(responseData, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Cache-Control': 'no-store',
-      }
-    })
+    cache.set(cacheKey, { at: Date.now(), data: responseData })
+    return NextResponse.json(responseData, { headers: cacheHeaders })
   } catch (e: any) {
     console.error('[WIDGET API] Error:', e.message)
+    // Supabase is failing — serve the last good response if we have one, so the
+    // widget keeps working instead of 504-ing (which is what cascaded).
+    const stale = cache.get(cacheKey)
+    if (stale && Date.now() - stale.at < STALE_MS) {
+      return NextResponse.json(stale.data, { headers: cacheHeaders })
+    }
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
