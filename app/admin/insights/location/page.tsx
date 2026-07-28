@@ -43,44 +43,34 @@ export default function LocationInsightsPage() {
 
   useEffect(() => {
     ;(async () => {
+      // Live fetch FIRST — endpoint resolves the company from the host, so no
+      // client-side lookup (which can throw under RLS) blocks it.
+      let loaded: any[] = []
       try {
-        let cid: string | null = null
-        if (typeof window !== 'undefined') {
-          const host = window.location.hostname
+        const res = await fetch('/api/orders/all')
+        const j = await res.json()
+        if (Array.isArray(j.orders)) loaded = j.orders
+      } catch { /* fall back below */ }
+      if (loaded.length === 0) {
+        try {
+          let cid: string | null = null
+          const host = typeof window !== 'undefined' ? window.location.hostname : ''
           if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
             const slug = host.replace('.colvy.com', '')
             const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
             if (co) cid = co.id
           }
-        }
-        if (!cid) {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (session?.user) {
-            const { data: own } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-            if (own?.id) cid = own.id
-            else {
-              const { data: mem } = await (supabase as any).from('team_members').select('company_id').eq('user_id', session.user.id).limit(1)
-              if (mem?.length) cid = mem[0].company_id
-            }
+          if (cid) {
+            setCompanyId(cid)
+            const { data } = await (supabase as any).from('woocommerce_orders')
+              .select('id, customer_email, woo_customer_id, total, order_date, status, line_items, billing')
+              .eq('company_id', cid).order('order_date', { ascending: false }).limit(3000)
+            loaded = data || []
           }
-        }
-        if (cid) setCompanyId(cid)
-        // Don't block on the browser company lookup (RLS can null it). The
-        // endpoint resolves the company from the request host itself.
-        let loaded: any[] = []
-        try {
-          const res = await fetch(`/api/orders/all${cid ? `?companyId=${cid}` : ''}`)
-          const j = await res.json()
-          if (Array.isArray(j.orders)) loaded = j.orders
-        } catch { /* fall back below */ }
-        if (loaded.length === 0 && cid) {
-          const { data } = await (supabase as any).from('woocommerce_orders')
-            .select('id, customer_email, woo_customer_id, total, order_date, status, line_items, billing')
-            .eq('company_id', cid).order('order_date', { ascending: false }).limit(3000)
-          loaded = data || []
-        }
-        setOrders(loaded)
-      } finally { setLoading(false) }
+        } catch { /* leave empty */ }
+      }
+      setOrders(loaded)
+      setLoading(false)
     })()
   }, [])
 

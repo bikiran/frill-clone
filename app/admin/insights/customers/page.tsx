@@ -40,47 +40,43 @@ export default function CustomerInsightsPage() {
 
   useEffect(() => {
     ;(async () => {
+      // 1) Live fetch FIRST. The endpoint resolves the company from the request
+      //    host, so no client-side company lookup is needed here. (That lookup
+      //    can throw under RLS and previously killed the whole load before the
+      //    fetch ever ran — the cause of the empty "loaded: 0".)
+      let loaded: any[] = []
       try {
-        let cid: string | null = null
-        if (typeof window !== 'undefined') {
-          const host = window.location.hostname
+        const res = await fetch('/api/orders/all')
+        const j = await res.json()
+        if (Array.isArray(j.orders)) loaded = j.orders
+        const { orders: _drop, ...rest } = j || {}
+        setDiag({ httpOk: res.ok, httpStatus: res.status, ...rest })
+      } catch (e: any) {
+        setDiag({ clientError: String(e?.message || e) })
+      }
+      // 2) Fallback to the synced table only if the live fetch was empty.
+      if (loaded.length === 0) {
+        try {
+          let cid: string | null = null
+          const host = typeof window !== 'undefined' ? window.location.hostname : ''
           if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
             const slug = host.replace('.colvy.com', '')
             const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
             if (co) cid = co.id
           }
-        }
-        if (!cid) {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (session?.user) {
-            const { data: own } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-            if (own?.id) cid = own.id
-            else {
-              const { data: mem } = await (supabase as any).from('team_members').select('company_id').eq('user_id', session.user.id).limit(1)
-              if (mem?.length) cid = mem[0].company_id
-            }
+          if (cid) {
+            const { data } = await (supabase as any).from('woocommerce_orders')
+              .select('id, customer_email, woo_customer_id, total, order_date, status, billing')
+              .eq('company_id', cid).order('order_date', { ascending: false }).limit(3000)
+            loaded = data || []
+            setDiag((d: any) => ({ ...(d || {}), syncedTableRows: data?.length || 0 }))
           }
+        } catch (e: any) {
+          setDiag((d: any) => ({ ...(d || {}), fallbackError: String(e?.message || e) }))
         }
-        // Don't block on the browser-side company lookup — it can fail under
-        // RLS where the server can't. The endpoint resolves the company from the
-        // request host itself, so we call it either way.
-        let loaded: any[] = []
-        try {
-          const res = await fetch(`/api/orders/all${cid ? `?companyId=${cid}` : ''}`)
-          const j = await res.json()
-          if (Array.isArray(j.orders)) loaded = j.orders
-          const { orders: _drop, ...rest } = j || {}
-          setDiag({ httpOk: res.ok, httpStatus: res.status, ...rest })
-        } catch (e: any) { setDiag({ clientError: String(e?.message || e) }) }
-        if (loaded.length === 0 && cid) {
-          const { data, error } = await (supabase as any).from('woocommerce_orders')
-            .select('id, customer_email, woo_customer_id, total, order_date, status, billing')
-            .eq('company_id', cid).order('order_date', { ascending: false }).limit(3000)
-          loaded = data || []
-          setDiag((d: any) => ({ ...(d || {}), syncedTableRows: data?.length || 0, syncedTableError: error?.message || null }))
-        }
-        setOrders(loaded)
-      } finally { setLoading(false) }
+      }
+      setOrders(loaded)
+      setLoading(false)
     })()
   }, [])
 
