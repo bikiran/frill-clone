@@ -140,6 +140,11 @@ export default function TasksPage() {
   const [showFilters, setShowFilters] = useState(false)    // top filter dropdown
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showNew, setShowNew] = useState(false)
+  // Bulk selection (list view): pick several tasks, then delete or change their
+  // status/priority in one go.
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const toggleSelect = (id: string) => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const [newTaskSeed, setNewTaskSeed] = useState<any>(null) // prefill for "end repeat & create new"
   // Decide layout from the ACTUAL available width, not the viewport — the admin
   // sidebar eats ~220px, so a viewport media query misjudges when the 3-pane
@@ -467,6 +472,34 @@ export default function TasksPage() {
   const setStatus = (t: any, status: string) =>
     patchTask(t.id, { status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null })
 
+  // Bulk actions operate on real conversation_tasks only — calendar-sourced rows
+  // (id "cal:…") live elsewhere and are silently skipped.
+  const realSelectedIds = () => Array.from(selectedIds).filter(id => !String(id).startsWith('cal:'))
+  const exitSelect = () => { setSelectMode(false); setSelectedIds(new Set()) }
+  const bulkDelete = async () => {
+    const ids = realSelectedIds()
+    if (!ids.length) return
+    if (!confirm(`Delete ${ids.length} task${ids.length === 1 ? '' : 's'}? This can't be undone.`)) return
+    try { await (supabase as any).from('conversation_tasks').delete().in('id', ids) } catch (e: any) { alert('Could not delete: ' + e.message); return }
+    if (selectedId && ids.includes(selectedId)) setSelectedId(null)
+    exitSelect()
+    if (companyId) loadTasks(companyId)
+  }
+  const bulkStatus = async (status: string) => {
+    const ids = realSelectedIds()
+    if (!ids.length) return
+    try { await (supabase as any).from('conversation_tasks').update({ status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null }).in('id', ids) } catch (e: any) { alert('Could not update: ' + e.message); return }
+    exitSelect()
+    if (companyId) loadTasks(companyId)
+  }
+  const bulkPriority = async (priority: string) => {
+    const ids = realSelectedIds()
+    if (!ids.length) return
+    try { await (supabase as any).from('conversation_tasks').update({ priority }).in('id', ids) } catch (e: any) { alert('Could not update: ' + e.message); return }
+    exitSelect()
+    if (companyId) loadTasks(companyId)
+  }
+
   // Apply an edit to a whole recurring series. scope: 'this' | 'following' | 'all'.
   // Falls back to a single-row patch when the task isn't part of a series.
   const patchScoped = async (task: any, fields: any, scope?: string) => {
@@ -637,6 +670,14 @@ export default function TasksPage() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             Calendar
           </button>
+          {/* Bulk select — multi-select the list for delete / status / priority. */}
+          {view === 'list' && (
+            <button className="ctl" onClick={() => selectMode ? exitSelect() : setSelectMode(true)}
+              style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, border: '1px solid ' + (selectMode ? 'var(--coral)' : 'var(--border)'), background: selectMode ? 'var(--peach)' : '#fff', color: selectMode ? 'var(--coral)' : 'var(--ink)' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              {selectMode ? 'Done' : 'Select'}
+            </button>
+          )}
           {/* Filters live in a top dropdown now (moved off the left rail). */}
           {(() => {
             const activeN = [assigneeFilter, priorityFilter, outletFilter, dateFilter].filter(Boolean).length
@@ -722,10 +763,35 @@ export default function TasksPage() {
             <TaskCalendar tasks={calendarTasks} statusOf={statusOf} onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} onToggle={(t: any) => setStatus(t, isDone(t) ? 'todo' : 'done')} selectedId={selectedId} />
           ) : (
             <div style={{ padding: 16 }}>
+              {/* Bulk selection toolbar */}
+              {selectMode && (
+                <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '10px 12px', marginBottom: 12, borderRadius: 12, background: 'var(--peach)', border: '1px solid var(--coral)' }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 700, color: 'var(--coral)', cursor: 'pointer' }}>
+                    <input type="checkbox"
+                      checked={visible.length > 0 && visible.every(t => selectedIds.has(t.id))}
+                      ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && !visible.every(t => selectedIds.has(t.id)) }}
+                      onChange={e => setSelectedIds(e.target.checked ? new Set(visible.map(t => t.id)) : new Set())}
+                      style={{ width: 16, height: 16, cursor: 'pointer' }} />
+                    {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select all'}
+                  </label>
+                  <span style={{ flex: 1 }} />
+                  {selectedIds.size > 0 && (<>
+                    <button onClick={() => bulkStatus('done')} style={bulkBtn}>Mark done</button>
+                    <button onClick={() => bulkStatus('todo')} style={bulkBtn}>Mark to-do</button>
+                    <select onChange={e => { if (e.target.value) bulkPriority(e.target.value); e.target.value = '' }} defaultValue="" style={{ ...bulkBtn, cursor: 'pointer' }}>
+                      <option value="" disabled>Priority…</option>
+                      <option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
+                    </select>
+                    <button onClick={bulkDelete} style={{ ...bulkBtn, borderColor: '#dc2626', color: '#dc2626' }}>Delete</button>
+                  </>)}
+                </div>
+              )}
               {visible.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--slate)', fontSize: 13.5 }}>No tasks in “{BUCKETS.find(b => b.key === bucket)?.label}”.</div>}
               {visible.map(t => (
                 <TaskCard key={t.id} t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id}
-                  onClick={() => { setSelectedId(t.id); setShowNew(false) }} statusOf={statusOf} onToggle={() => setStatus(t, isDone(t) ? 'todo' : 'done')} />
+                  selectMode={selectMode} checked={selectedIds.has(t.id)} onSelect={() => toggleSelect(t.id)}
+                  onClick={() => { if (selectMode) { toggleSelect(t.id) } else { setSelectedId(t.id); setShowNew(false) } }}
+                  statusOf={statusOf} onToggle={() => setStatus(t, isDone(t) ? 'todo' : 'done')} />
               ))}
             </div>
           )}
@@ -767,6 +833,7 @@ export default function TasksPage() {
 }
 
 const selectStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', cursor: 'pointer' }
+const bulkBtn: React.CSSProperties = { padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }
 function FilterField({ label, hidden, children }: { label: string; hidden?: boolean; children: React.ReactNode }) {
   if (hidden) return null
   return (
@@ -794,16 +861,20 @@ function FilterRail({ team, assigneeFilter, setAssigneeFilter, priorityFilter, s
   )
 }
 
-function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusButtons, statusOf }: any) {
+function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusButtons, statusOf, selectMode, checked, onSelect }: any) {
   const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
   const due = parseTs(t.due_date)
   const overdue = due && startOfDay(due).getTime() < startOfDay(new Date()).getTime() && statusOf(t) !== 'done'
   const assignees = (Array.isArray(t.assignees) && t.assignees.length) ? t.assignees : (t.assigned_to ? [{ name: t.assigned_to }] : [])
+  // Colour-coded tasks get a soft tinted background rather than a left bar.
+  const bg = selectMode && checked ? 'var(--peach)' : (t.color ? tint(t.color, 0.10) : undefined)
   return (
-    <div className={'task-card lift' + (selected ? ' sel' : '')} onClick={onClick}
-      style={t.color ? { borderLeft: `4px solid ${t.color}`, paddingLeft: 10 } : undefined}>
+    <div className={'task-card lift' + ((selected || (selectMode && checked)) ? ' sel' : '')} onClick={onClick}
+      style={(bg || t.color) ? { background: bg, borderColor: selectMode && checked ? 'var(--coral)' : (t.color ? tint(t.color, 0.45) : undefined) } : undefined}>
       <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-        {onToggle && <input type="checkbox" checked={statusOf(t) === 'done'} onClick={e => e.stopPropagation()} onChange={onToggle} style={{ marginTop: 2, width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />}
+        {selectMode
+          ? <input type="checkbox" checked={!!checked} onClick={e => e.stopPropagation()} onChange={onSelect} style={{ marginTop: 2, width: 16, height: 16, flexShrink: 0, cursor: 'pointer', accentColor: 'var(--coral)' }} />
+          : onToggle && <input type="checkbox" checked={statusOf(t) === 'done'} onClick={e => e.stopPropagation()} onChange={onToggle} style={{ marginTop: 2, width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />}
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.4, textDecoration: statusOf(t) === 'done' ? 'line-through' : 'none', opacity: statusOf(t) === 'done' ? 0.55 : 1 }}>{t.title || t.text}</p>
           <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginTop: 7, flexWrap: 'wrap' }}>
@@ -1209,8 +1280,15 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
           </div>
         ))}
       </div>
-      <MentionInput value={comment} onChange={(v) => setComment(v)} team={team as any} placeholder="Add a comment… @ to mention" onSubmit={addComment} style={{ fontSize: 13 }} />
-      <button onClick={addComment} disabled={!comment.trim()} style={{ marginTop: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: comment.trim() ? 'var(--coral)' : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: comment.trim() ? 'pointer' : 'default' }}>Comment</button>
+      {/* Coax-style composer: rounded input with the submit tucked into the
+          corner, matching the Inbox notes/tasks composer. */}
+      <div style={{ position: 'relative' }}>
+        <MentionInput value={comment} onChange={(v) => setComment(v)} team={team as any} placeholder="Add a comment… @ to mention" onSubmit={addComment} style={{ fontSize: 13, padding: '11px 46px 11px 13px', borderRadius: 12, lineHeight: 1.5 }} />
+        <button type="button" onClick={addComment} title="Comment" disabled={!comment.trim()}
+          style={{ position: 'absolute', right: 8, bottom: 8, width: 30, height: 30, borderRadius: '50%', border: 'none', background: comment.trim() ? 'var(--coral)' : '#eef0f2', color: comment.trim() ? '#fff' : '#9aa1ab', cursor: comment.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'all 0.14s', boxShadow: comment.trim() ? '0 1px 4px rgba(255,122,107,0.4)' : 'none' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg>
+        </button>
+      </div>
       </>
       )}
       <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>

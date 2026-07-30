@@ -1806,8 +1806,13 @@ export default function InboxPage() {
     return 'Sent in chat'
   }
 
+  const sendingMediaRef = useRef(false)
   const sendGalleryMedia = async () => {
     if (!companyId || !selected || gallerySelected.size === 0) return
+    // Guard against a double-fire (fast double-click / re-entry) — that sent the
+    // same media into the thread twice.
+    if (sendingMediaRef.current) return
+    sendingMediaRef.current = true
     const chosen = galleryItems.filter(it => gallerySelected.has(it.id))
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
     const smsNumber = smsDestination()
@@ -1846,6 +1851,7 @@ export default function InboxPage() {
       setMessages(msgs || [])
       setShowMediaPicker(false); scrollBottom()
     } catch (e: any) { showToast('Could not send media') }
+    finally { sendingMediaRef.current = false }
   }
 
   // ── File upload ────────────────────────────────────────────────────────────
@@ -6228,7 +6234,10 @@ export default function InboxPage() {
                                   gridAutoRows: layout.rows.split(' ')[0],
                                   gridTemplateRows: layout.rows,
                                   gap: GAP,
-                                  width: n === 1 ? 'auto' : W,
+                                  // A lone video wraps tightly (fit-content) so a
+                                  // portrait clip isn't letterboxed into a tall
+                                  // grey box; a lone image still fills the width.
+                                  width: n === 1 ? (shown[0]?.kind === 'video' ? 'fit-content' : 'auto') : W,
                                   maxWidth: W,
                                   borderRadius: 14,
                                   overflow: 'hidden',
@@ -6261,7 +6270,7 @@ export default function InboxPage() {
                                         ) : (
                                           <>
                                             <video src={toPublicUrl(a.url)} preload="metadata" poster={toPublicUrl(a.thumbUrl)}
-                                              style={{ width: '100%', height: n === 1 ? 'auto' : '100%', maxHeight: n === 1 ? 320 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block', pointerEvents: 'none' }} />
+                                              style={{ width: n === 1 ? 'auto' : '100%', height: n === 1 ? 'auto' : '100%', maxWidth: '100%', maxHeight: n === 1 ? 280 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block', pointerEvents: 'none' }} />
                                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                               <div style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>▶</div>
                                             </div>
