@@ -949,6 +949,9 @@ export default function InboxPage() {
   const [events, setEvents] = useState<any[]>([])
   const [notes, setNotes] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
+  // Collapsible Notes/Tasks panels (Coax-style headers with a chevron).
+  const [notesOpen, setNotesOpen] = useState(true)
+  const [tasksOpen, setTasksOpen] = useState(true)
   const [newNote, setNewNote] = useState('')
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editNoteText, setEditNoteText] = useState('')
@@ -2015,23 +2018,50 @@ export default function InboxPage() {
     </div>
   )
 
-  // A composer with a small submit button tucked inside the box (Coax-style),
+  // A composer with a round submit button tucked into the corner (Coax-style),
   // replacing the separate Add button. Enter submits single-line composers.
-  const composerBox = (o: { value: string; onChange: (v: string) => void; onSubmit: () => void; placeholder: string; multiline?: boolean; rows?: number }) => (
+  const composerBox = (o: { value: string; onChange: (v: string) => void; onSubmit: () => void; placeholder: string; multiline?: boolean; rows?: number }) => {
+    const active = !!o.value.trim()
+    return (
     <div style={{ position: 'relative' }}>
       <MentionInput value={o.value} onChange={o.onChange} team={teamMembers as any}
         multiline={o.multiline} rows={o.rows} placeholder={o.placeholder} onSubmit={o.onSubmit}
-        style={{ padding: '10px 44px 10px 12px', fontSize: 13, lineHeight: 1.5 }} />
-      <button type="button" onClick={o.onSubmit} title="Add"
-        style={{ position: 'absolute', right: 7, bottom: 7, width: 30, height: 30, borderRadius: 8, border: 'none', background: o.value.trim() ? 'var(--coral)' : '#e5e7eb', color: '#fff', cursor: o.value.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'background 0.12s' }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        style={{ padding: '11px 46px 11px 13px', fontSize: 13, lineHeight: 1.5, borderRadius: 12 }} />
+      <button type="button" onClick={o.onSubmit} title="Send" disabled={!active}
+        style={{ position: 'absolute', right: 8, bottom: 8, width: 30, height: 30, borderRadius: '50%', border: 'none', background: active ? 'var(--coral)' : '#eef0f2', color: active ? '#fff' : '#9aa1ab', cursor: active ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'all 0.14s', boxShadow: active ? '0 1px 4px rgba(255,122,107,0.4)' : 'none' }}>
+        {/* Return/enter arrow — matches the Coax composer affordance. */}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg>
       </button>
     </div>
-  )
+    )
+  }
+
+  // Render plain message text with any URLs turned into clickable, selectable
+  // links. Admin chat used to show tracking/short links as dead text that you
+  // couldn't open or easily copy. Links inherit the bubble's colour and stay
+  // underlined so they read as links on both agent and visitor bubbles.
+  const renderTextWithLinks = (text: string) => {
+    if (!text) return text
+    const parts = text.split(/(https?:\/\/[^\s]+)/g)
+    return parts.map((part, i) =>
+      /^https?:\/\//.test(part) ? (
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          style={{ color: 'inherit', textDecoration: 'underline', wordBreak: 'break-all' }}>{part}</a>
+      ) : (
+        <span key={i}>{part}</span>
+      )
+    )
+  }
 
   const renderNotesSection = () => (
     <div style={{ marginBottom: 18 }}>
-      <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Notes</h3>
+      <button type="button" onClick={() => setNotesOpen(v => !v)} aria-expanded={notesOpen}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', margin: '0 0 8px', padding: 0, background: 'none', border: 'none', cursor: 'pointer' }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Notes</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, transform: notesOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.18s ease' }}><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {notesOpen && <>
       {notes.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No notes.</p>}
       {notes.map(n => (
         <div key={n.id} style={{ padding: '10px 12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', marginBottom: 8 }}>
@@ -2058,6 +2088,7 @@ export default function InboxPage() {
       <div style={{ marginTop: 6 }}>
         {composerBox({ value: newNote, onChange: (v) => setNewNote(v), onSubmit: addNote, placeholder: 'Add a note… use @ to mention someone', multiline: true, rows: 2 })}
       </div>
+      </>}
     </div>
   )
   const addTask = async () => {
@@ -2126,7 +2157,12 @@ export default function InboxPage() {
   // conversation_tasks store, with assignment, @mention and copy/edit/delete.
   const renderTasksSection = () => (
     <div style={{ marginBottom: 18 }}>
-      <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Tasks</h3>
+      <button type="button" onClick={() => setTasksOpen(v => !v)} aria-expanded={tasksOpen}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', margin: '0 0 8px', padding: 0, background: 'none', border: 'none', cursor: 'pointer' }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Tasks</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, transform: tasksOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.18s ease' }}><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {tasksOpen && <>
       {tasks.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No tasks.</p>}
       {tasks.map(t => (
         <div key={t.id} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)', marginBottom: 8 }}>
@@ -2163,6 +2199,7 @@ export default function InboxPage() {
           {teamMembers.map((m: any) => (<option key={m.id} value={m.id}>{m.name}</option>))}
         </select>
       </div>
+      </>}
     </div>
   )
 
@@ -6230,10 +6267,10 @@ export default function InboxPage() {
                               )
                             })()}
                             {/* The message text (with the /m/ link) below the card. */}
-                            <div style={{ marginTop: 8, fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</div>
+                            <div style={{ marginTop: 8, fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
                           </div>
                         ) : (
-                          msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0 }}>{msg.content}</div>
+                          msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
                         )}
                         {msg.message_type === 'payment' && msg.message_payload && (
                           <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', color: 'var(--ink)' }}>
