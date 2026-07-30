@@ -129,6 +129,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [adminCollapsed, setAdminCollapsed] = useState(false)
   const [company, setCompany] = useState<any>(null)
 
+  // Per-section collapse. Not everyone needs every group expanded, so each
+  // titled nav group can be minimised. The choice is remembered for the tab
+  // session (sessionStorage) — a fresh browser session starts fully expanded.
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {}
+    try { return JSON.parse(sessionStorage.getItem('colvy:nav-collapsed') || '{}') } catch { return {} }
+  })
+  const toggleGroup = (label: string) => {
+    setCollapsedGroups(prev => {
+      const next = { ...prev, [label]: !prev[label] }
+      try { sessionStorage.setItem('colvy:nav-collapsed', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
+
   // ── Email auto-sync ───────────────────────────────────────────────────────
   // Email only arrived when someone pressed "Sync now". A Vercel cron would be
   // the clean way to do this, but the Hobby plan only allows DAILY crons — a
@@ -468,9 +483,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <line x1={adminCollapsed ? '19' : '5'} y1="5" x2={adminCollapsed ? '19' : '5'} y2="19" />
           </svg>
         </button>
-        {/* Company info — workspace switcher */}
+        {/* Company info — workspace switcher. In the collapsed rail we hide the
+            name/chevron so no clipped text renders behind the avatar. */}
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', position: 'relative' }}>
           <button type="button" onClick={() => { setShowWorkspaces(v => !v); if (!workspaces.length) loadWorkspaces() }}
+            title={adminCollapsed ? (company?.name || 'Workspace') : undefined}
             style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
             {company?.logo_url ? (
               <img src={company.logo_url} alt={company.name}
@@ -480,15 +497,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div style={{ width: 32, height: 32, borderRadius: 8, background: company?.accent_color || 'var(--coral)', display: company?.logo_url ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
               {(company?.name?.[0] || user?.email?.[0] || '?').toUpperCase()}
             </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
+            {!adminCollapsed && <div style={{ minWidth: 0, flex: 1 }}>
               <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {company?.name || user?.email?.split('@')[0] || 'My Board'}
               </p>
               <p style={{ fontSize: 11, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {company ? `${company.slug}.colvy.com` : typeof window !== 'undefined' ? window.location.hostname : 'colvy.com'}
               </p>
-            </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, transform: showWorkspaces ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9" /></svg>
+            </div>}
+            {!adminCollapsed && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, transform: showWorkspaces ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9" /></svg>}
           </button>
 
           {/* Workspace switcher dropdown */}
@@ -524,14 +541,28 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         {/* Nav groups */}
         <nav style={{ flex: 1, padding: '10px 8px' }}>
-          {NAV_GROUPS.map((group, gi) => (
-            <div key={gi} style={{ marginBottom: 20 }}>
+          {NAV_GROUPS.map((group, gi) => {
+            // Groups without a title (the lone Dashboard link) are never
+            // collapsible. In the icon-only sidebar there are no titles to click,
+            // so everything stays visible regardless of the saved state.
+            const groupCollapsed = !!group.label && !adminCollapsed && !!collapsedGroups[group.label]
+            return (
+            <div key={gi} style={{ marginBottom: groupCollapsed ? 6 : 20 }}>
               {group.label && !adminCollapsed && (
-                <p style={{ padding: '0 10px', marginBottom: 4, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--slate)' }}>
-                  {group.label}
-                </p>
+                <button type="button" onClick={() => toggleGroup(group.label!)}
+                  aria-expanded={!groupCollapsed}
+                  title={groupCollapsed ? `Show ${group.label}` : `Hide ${group.label}`}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '0 10px', marginBottom: 4, background: 'none', border: 'none', cursor: 'pointer' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--slate)' }}>
+                    {group.label}
+                  </span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+                    style={{ flexShrink: 0, opacity: 0.6, transform: groupCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s ease' }}>
+                    <polyline points="18 15 12 9 6 15" />
+                  </svg>
+                </button>
               )}
-              {group.items.map(item => {
+              {!groupCollapsed && group.items.map(item => {
                 const active = isActive(item.href)
                 return (
                   <Link key={item.href + item.label} href={item.href}
@@ -580,7 +611,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 )
               })}
             </div>
-          ))}
+          )})}
 
           {/* Super admin */}
           {isSuperAdmin && (
@@ -602,15 +633,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           )}
         </nav>
 
-        {/* Upgrade CTA */}
+        {/* Upgrade CTA — collapses to a single centred icon so its text can't
+            overflow the 60px rail and clip ("Upgrade / to Pro / Unloc…"). */}
         <div style={{ padding: 12, borderTop: '1px solid var(--border)' }}>
           <Link href="/admin/billing"
-            style={{ display: 'block', padding: '10px 14px', borderRadius: 12, background: 'var(--peach)', textDecoration: 'none', textAlign: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            title={adminCollapsed ? 'Upgrade to Pro' : undefined}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: adminCollapsed ? '10px 0' : '10px 14px', borderRadius: 12, background: 'var(--peach)', textDecoration: 'none', textAlign: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--coral)' }}>
               {icons.upgrade}
-              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>Upgrade to Pro</p>
+              {!adminCollapsed && <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>Upgrade to Pro</p>}
             </div>
-            <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 2 }}>Unlock all features</p>
+            {!adminCollapsed && <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 2 }}>Unlock all features</p>}
           </Link>
         </div>
       </aside>
