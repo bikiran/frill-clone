@@ -17,6 +17,8 @@ const ACTION_CATALOGUE: { key: string; label: string; desc: string; icon: string
   { key: 'custom_form', label: 'Custom Form', desc: 'Send any form you have built as an action.', icon: '📝', formBased: true },
 ]
 
+const DEFAULT_CLAIM_OFFER = `Hi {name}, it looks like you may have an issue with an order. Would you like to start a claim? We can pre-fill most of the details for you — you'll just need to check they're correct. 📋`
+
 export default function ConversationActionsSettings() {
   const { companyId, loading } = useCompanyUser()
   const [config, setConfig] = useState<Record<string, any>>({})
@@ -80,6 +82,29 @@ export default function ConversationActionsSettings() {
             </div>
           )
         })}
+
+        {/* Auto claim-offer: the message Colvy sends when a customer reports an
+            issue (dead/faulty/refund…) and matches an order. */}
+        <div style={{ borderTop: '2px solid var(--border)', paddingTop: 16, marginTop: 4 }}>
+          <ToggleRow
+            title="🤖 Auto-offer a claim"
+            desc="When a customer mentions an issue (dead, faulty, refund, damaged…) and matches a WooCommerce order, automatically offer to start a claim — once per conversation."
+            checked={config.claim_auto_offer?.enabled !== false}
+            onChange={(v) => setConfig(c => ({ ...c, claim_auto_offer: { ...(c.claim_auto_offer || {}), enabled: v } }))}
+          />
+          {config.claim_auto_offer?.enabled !== false && (
+            <div style={{ marginTop: 10, marginLeft: 4 }}>
+              <label style={S.label}>Message</label>
+              <textarea
+                value={config.claim_auto_offer?.message ?? DEFAULT_CLAIM_OFFER}
+                onChange={e => setConfig(c => ({ ...c, claim_auto_offer: { ...(c.claim_auto_offer || {}), message: e.target.value } }))}
+                rows={3}
+                style={{ ...S.input, width: '100%', maxWidth: 620, resize: 'vertical' }}
+              />
+              <p style={S.hint}>Placeholders: <code>{'{name}'}</code> (customer's first name), <code>{'{business}'}</code>. This still only sends when a claim action above is enabled and the customer matches an order.</p>
+            </div>
+          )}
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
           <button onClick={save} disabled={saving} style={S.btn}>{saving ? 'Saving…' : 'Save actions'}</button>

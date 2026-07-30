@@ -41,6 +41,12 @@ export async function POST(req: NextRequest) {
     const claimKey = ['doa', 'return_refund', 'warranty'].find(k => actions[k]?.enabled)
     if (!claimKey) return NextResponse.json({ ok: true, triggered: false, reason: 'no claim action enabled' })
 
+    // Respect the "Auto-offer a claim" toggle (Settings → Conversation Actions).
+    // Default ON for existing companies that never set it.
+    if (actions.claim_auto_offer?.enabled === false) {
+      return NextResponse.json({ ok: true, triggered: false, reason: 'auto offer disabled' })
+    }
+
     // Match the customer against WooCommerce (by email or phone on the contact).
     let matched = false
     let contact: any = null
@@ -67,7 +73,9 @@ export async function POST(req: NextRequest) {
     // we post an offer message + a system flag the widget renders as a button.
     const businessName = company?.name || 'us'
     const firstName = contact?.name ? contact.name.split(' ')[0] : 'there'
-    const offerText = `Hi ${firstName}, it looks like you may have an issue with an order. Would you like to start a claim? We can pre-fill most of the details for you — you'll just need to check they're correct. 📋`
+    const template = actions.claim_auto_offer?.message
+      || `Hi {name}, it looks like you may have an issue with an order. Would you like to start a claim? We can pre-fill most of the details for you — you'll just need to check they're correct. 📋`
+    const offerText = template.replace(/\{name\}/g, firstName).replace(/\{business\}/g, businessName)
 
     // If the enabled action is linked to a form, attach it so the widget renders it.
     let payload: any = { kind: 'claim_offer', action: claimKey }
