@@ -24,7 +24,15 @@ export async function POST(req: NextRequest) {
     const form = await req.formData()
     const token = form.get('token') as string | null
     const file = form.get('file') as File | null
-    if (!token || !file) return NextResponse.json({ error: 'Missing token or file' }, { status: 400 })
+    // Large files (video, full-quality photos) are uploaded straight to storage
+    // from the browser and only their URL is registered here — otherwise the
+    // file body would exceed the serverless request-size limit and every video
+    // upload failed. Small files may still come through directly as `file`.
+    const preUrl = form.get('url') as string | null
+    const preName = (form.get('name') as string | null) || 'file'
+    const preType = (form.get('type') as string | null) || 'application/octet-stream'
+    const preSize = Number(form.get('size')) || 0
+    if (!token || (!file && !preUrl)) return NextResponse.json({ error: 'Missing token or file' }, { status: 400 })
 
     const db = admin()
     const { data: request } = await db.from('media_requests').select('*').eq('token', token).maybeSingle()
@@ -33,7 +41,10 @@ export async function POST(req: NextRequest) {
     if (request.expires_at && new Date(request.expires_at).getTime() < Date.now()) return NextResponse.json({ error: 'This link has expired.' }, { status: 410 })
 
     // Enforce accepted kinds + max files.
-    const kind = kindOf(file.type)
+    const fileType = file ? file.type : preType
+    const fileName = file ? file.name : preName
+    const fileSize = file ? file.size : preSize
+    const kind = kindOf(fileType)
     if (Array.isArray(request.accept) && request.accept.length && !request.accept.includes(kind)) {
       return NextResponse.json({ error: `${kind} files aren't accepted for this request.` }, { status: 400 })
     }
@@ -42,21 +53,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Maximum number of files reached.' }, { status: 400 })
     }
 
-    // Ensure bucket
-    try {
-      const { data: buckets } = await db.storage.listBuckets()
-      if (!buckets?.some(b => b.id === 'media-requests')) await db.storage.createBucket('media-requests', { public: true })
-    } catch {}
+    let publicUrl: string
+    if (preUrl) {
+      // Already stored (browser → storage). Just register the URL.
+      publicUrl = preUrl
+    } else {
+      // Small file routed through the function — store it in Supabase.
+      try {
+        const { data: buckets } = await db.storage.listBuckets()
+        if (!buckets?.some(b => b.id === 'media-requests')) await db.storage.createBucket('media-requests', { public: true })
+      } catch {}
 
-    const bytes = new Uint8Array(await file.arrayBuffer())
-    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const path = `${request.company_id}/${token}/${Date.now()}-${safe}`
-    const { error: upErr } = await db.storage.from('media-requests').upload(path, bytes, { contentType: file.type || 'application/octet-stream', upsert: true })
-    if (upErr) return NextResponse.json({ error: `Upload failed: ${upErr.message}` }, { status: 500 })
-    const { data: pub } = db.storage.from('media-requests').getPublicUrl(path)
+      const bytes = new Uint8Array(await file!.arrayBuffer())
+      const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `${request.company_id}/${token}/${Date.now()}-${safe}`
+      const { error: upErr } = await db.storage.from('media-requests').upload(path, bytes, { contentType: fileType || 'application/octet-stream', upsert: true })
+      if (upErr) return NextResponse.json({ error: `Upload failed: ${upErr.message}` }, { status: 500 })
+      publicUrl = db.storage.from('media-requests').getPublicUrl(path).data.publicUrl
+    }
 
     await db.from('media_request_files').insert({
-      request_id: request.id, company_id: request.company_id, url: pub.publicUrl, name: file.name, kind, size_bytes: file.size,
+      request_id: request.id, company_id: request.company_id, url: publicUrl, name: fileName, kind, size_bytes: fileSize,
     })
 
     // Drop the uploaded file into the conversation as a customer attachment.
@@ -64,14 +81,14 @@ export async function POST(req: NextRequest) {
       await db.from('messages').insert({
         conversation_id: request.conversation_id, company_id: request.company_id,
         sender_type: 'visitor', content: '',
-        attachments: [{ url: pub.publicUrl, name: file.name, type: file.type, kind, from_request: true }],
+        attachments: [{ url: publicUrl, name: fileName, type: fileType, kind, from_request: true }],
       })
       await db.from('conversations').update({ last_message: 'Customer uploaded a file', last_message_at: new Date().toISOString(), is_unread: true }).eq('id', request.conversation_id)
     }
     // Mark fulfilled
     await db.from('media_requests').update({ status: 'fulfilled' }).eq('id', request.id)
 
-    return NextResponse.json({ ok: true, url: pub.publicUrl, kind })
+    return NextResponse.json({ ok: true, url: publicUrl, kind })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

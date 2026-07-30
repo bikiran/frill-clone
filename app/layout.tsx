@@ -552,7 +552,10 @@ export default function RootLayout({
     && (window.location.hostname === 'colvy.com' || window.location.hostname === 'www.colvy.com')
     && (pathname === '/' || pathname === '/landing')
   // Pathname-based full-page routes are safe on the server (no window needed).
-  const isFullPageRoute = ['/landing', '/pricing', '/features', '/platform-admin', '/forms/', '/widget', '/auth/handoff'].some(p => pathname?.startsWith(p))
+  // `/u/` = the customer secure-upload page. It carries its own branded card
+  // header, so the app nav on top was redundant and left a big gap above the
+  // card. Render it standalone like the other full-page routes.
+  const isFullPageRoute = ['/landing', '/pricing', '/features', '/platform-admin', '/forms/', '/widget', '/auth/handoff', '/u/'].some(p => pathname?.startsWith(p))
   const isFullPage = isEmbed || isMarketingRoot || isFullPageRoute
 
   if (isFullPage) {

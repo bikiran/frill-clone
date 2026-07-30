@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
+import { uploadDirect } from '@/lib/upload-attachment'
 
 const ACCEPT_MIME: Record<string, string> = {
   image: 'image/*', video: 'video/*', pdf: 'application/pdf', audio: 'audio/*',
@@ -41,7 +42,22 @@ export default function UploadPage() {
     for (const file of toUpload) {
       try {
         const fd = new FormData()
-        fd.append('token', token); fd.append('file', file)
+        fd.append('token', token)
+        // Upload straight to storage first (browser → R2). Videos and
+        // full-quality photos are far larger than the serverless function's
+        // request-body limit, so posting the bytes through the API failed every
+        // time — we now only send the resulting URL. If direct upload isn't
+        // available (R2 not configured) we fall back to posting the file itself.
+        let directUrl: string | null = null
+        try { directUrl = await uploadDirect(file, `media-requests/${token}`, file.name) } catch {}
+        if (directUrl) {
+          fd.append('url', directUrl)
+          fd.append('name', file.name)
+          fd.append('type', file.type)
+          fd.append('size', String(file.size))
+        } else {
+          fd.append('file', file)
+        }
         const res = await fetch('/api/media-requests/upload', { method: 'POST', body: fd })
         const d = await res.json()
         if (!res.ok) { setError(d.error || 'Upload failed'); continue }
