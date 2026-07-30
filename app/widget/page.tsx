@@ -2,6 +2,7 @@
 
 
 import React, { useState, useEffect, useRef } from 'react'
+import { compressImage } from '@/lib/upload-attachment'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -616,8 +617,13 @@ function WidgetContent() {
     if (!file || !chatConvId || !company?.id) return
     setChatUploading(true)
     try {
+      // Compress images in the browser before they ever reach the server.
+      let toSend: File = file
+      try {
+        if (file.type.startsWith('image/')) toSend = await compressImage(file)
+      } catch {}
       const fd = new FormData()
-      fd.append('file', file)
+      fd.append('file', toSend)
       fd.append('companyId', company.id)
       fd.append('conversationId', chatConvId)
       const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })

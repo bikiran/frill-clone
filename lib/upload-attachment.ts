@@ -26,6 +26,11 @@ const MAX_EDGE = 2000
 const JPEG_QUALITY = 0.82
 const THUMB_EDGE = 480
 const THUMB_QUALITY = 0.72
+// Adaptive compression target: quality steps down until the encoded file is
+// under this size (or hits the quality floor). ~450KB keeps full photos crisp
+// while cutting typical 4–8MB phone shots by ~90%.
+const TARGET_BYTES = 450 * 1024
+const MIN_QUALITY = 0.5
 
 export interface UploadedAttachment {
   url: string
@@ -54,7 +59,7 @@ export async function compressImage(file: File): Promise<File> {
   if (!file.type.startsWith('image/')) return file
   // HEIC can't be decoded by canvas in most browsers; leave it alone.
   if (/heic|heif/i.test(file.type)) return file
-  if (file.size < 600 * 1024) return file
+  if (file.size < 200 * 1024) return file // already tiny — not worth it
 
   try {
     const bitmap = await createImageBitmap(file)
@@ -66,10 +71,20 @@ export async function compressImage(file: File): Promise<File> {
     canvas.width = w; canvas.height = h
     const ctx = canvas.getContext('2d')
     if (!ctx) return file
+    ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(bitmap, 0, 0, w, h)
 
-    const blob: Blob | null = await new Promise(resolve =>
-      canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY))
+    // Adaptive quality: start high (preserve quality) and step down only until
+    // the file is under the target size. Simple images stay near-lossless; large
+    // photos compress hard — the way compressjpeg-style tools behave.
+    const encode = (q: number): Promise<Blob | null> =>
+      new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', q))
+    let quality = 0.85
+    let blob = await encode(quality)
+    while (blob && blob.size > TARGET_BYTES && quality > MIN_QUALITY) {
+      quality = Math.round((quality - 0.08) * 100) / 100
+      blob = await encode(quality)
+    }
     if (!blob || blob.size >= file.size) return file
 
     const name = file.name.replace(/\.[^.]+$/, '') + '.jpg'

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { compressImage } from '@/lib/upload-attachment'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser } from '../crm-settings/_shared'
 import MediaGallery from '@/components/MediaGallery'
@@ -198,8 +199,14 @@ export default function GalleryPage() {
     setUploading(true)
     try {
       for (const file of files) {
+        // Compress images in the browser before upload (same as the inbox) —
+        // saves storage + bandwidth. Non-images (video/pdf) pass through.
+        let toSend: File = file
+        try {
+          if (file.type.startsWith('image/')) toSend = await compressImage(file)
+        } catch {}
         const fd = new FormData()
-        fd.append('file', file); fd.append('companyId', companyId)
+        fd.append('file', toSend); fd.append('companyId', companyId)
         if (activeFolder) fd.append('folderId', activeFolder)
         await fetch('/api/media/upload', { method: 'POST', body: fd })
       }
