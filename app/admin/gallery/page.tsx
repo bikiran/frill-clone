@@ -18,6 +18,11 @@ export default function GalleryPage() {
   const [loadingData, setLoadingData] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [showQR, setShowQR] = useState(false)
+  // Optimistic upload tiles: a local preview shows in the grid the instant a
+  // file is picked, so uploading feels immediate instead of waiting on the
+  // round trip. Each { id, previewUrl, kind, name, status } is reconciled away
+  // once the server refetch brings back the real item.
+  const [pending, setPending] = useState<any[]>([])
 
   // ── Categories: a photo can belong to several at once ────────────────────
   const [categories, setCategories] = useState<any[]>([])
@@ -220,36 +225,80 @@ export default function GalleryPage() {
   const uploadFiles = async (files: File[]) => {
     if (!files.length || !companyId) return
     setUploading(true)
-    try {
-      for (const file of files) {
-        // Compress images in the browser before upload (same as the inbox).
-        let toSend: File = file
-        try {
-          if (file.type.startsWith('image/')) toSend = await compressImage(file)
-        } catch {}
 
-        // Big files (videos) go straight to R2 via a presigned URL, then we
-        // register the gallery item with just the URL.
-        const isLarge = toSend.type.startsWith('video/') || toSend.size > 4 * 1024 * 1024
-        if (isLarge) {
-          const url = await uploadDirect(toSend, `media-gallery/${companyId}/${activeFolder || 'unfiled'}`, file.name)
-          if (url) {
-            const fd = new FormData()
-            fd.append('companyId', companyId)
-            if (activeFolder) fd.append('folderId', activeFolder)
-            fd.append('url', url); fd.append('name', file.name); fd.append('type', toSend.type)
-            await fetch('/api/media/upload', { method: 'POST', body: fd })
-            continue
-          }
+    // Show a local preview tile for every file up front, before any bytes move.
+    const drafts = files.map((file, i) => ({
+      id: `pending-${Date.now()}-${i}`,
+      previewUrl: URL.createObjectURL(file),
+      kind: file.type.startsWith('video/') ? 'video' : 'image',
+      name: file.name,
+      status: 'uploading' as 'uploading' | 'error',
+    }))
+    setPending(prev => [...drafts, ...prev])
+
+    // Upload each file independently so one failure can't abort the batch — a
+    // failed tile is marked with an error badge and left in place for retry.
+    const uploadOne = async (file: File): Promise<boolean> => {
+      // Compress images in the browser before upload (same as the inbox).
+      let toSend: File = file
+      try {
+        if (file.type.startsWith('image/')) toSend = await compressImage(file)
+      } catch {}
+
+      // Big files (videos) go straight to R2 via a presigned URL, then we
+      // register the gallery item with just the URL.
+      const isLarge = toSend.type.startsWith('video/') || toSend.size > 4 * 1024 * 1024
+      if (isLarge) {
+        const url = await uploadDirect(toSend, `media-gallery/${companyId}/${activeFolder || 'unfiled'}`, file.name)
+        if (url) {
+          const fd = new FormData()
+          fd.append('companyId', companyId!)
+          if (activeFolder) fd.append('folderId', activeFolder)
+          fd.append('url', url); fd.append('name', file.name); fd.append('type', toSend.type)
+          const res = await fetch('/api/media/upload', { method: 'POST', body: fd })
+          return res.ok
         }
-
-        const fd = new FormData()
-        fd.append('file', toSend); fd.append('companyId', companyId)
-        if (activeFolder) fd.append('folderId', activeFolder)
-        await fetch('/api/media/upload', { method: 'POST', body: fd })
       }
-      load()
-    } catch {} finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
+
+      const fd = new FormData()
+      fd.append('file', toSend); fd.append('companyId', companyId!)
+      if (activeFolder) fd.append('folderId', activeFolder)
+      const res = await fetch('/api/media/upload', { method: 'POST', body: fd })
+      return res.ok
+    }
+
+    // Upload one at a time (as before) so a big batch doesn't spike memory
+    // compressing everything at once or flood R2 with parallel transfers.
+    let anySucceeded = false
+    for (let i = 0; i < files.length; i++) {
+      const draftId = drafts[i].id
+      let ok = false
+      try { ok = await uploadOne(files[i]) } catch { ok = false }
+      if (ok) anySucceeded = true
+      else setPending(prev => prev.map(p => p.id === draftId ? { ...p, status: 'error' } : p))
+    }
+
+    // Reconcile: refetch the real items, then drop the optimistic tiles that
+    // landed (keeping any that errored so the failure stays visible). Revoke the
+    // object URLs we created to avoid leaking them.
+    if (anySucceeded) await load()
+    setPending(prev => {
+      const keep = prev.filter(p => p.status === 'error')
+      prev.forEach(p => { if (p.status !== 'error') { try { URL.revokeObjectURL(p.previewUrl) } catch {} } })
+      return keep
+    })
+
+    setUploading(false)
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
+  // Dismiss a failed optimistic tile.
+  const dismissPending = (id: string) => {
+    setPending(prev => {
+      const gone = prev.find(p => p.id === id)
+      if (gone) { try { URL.revokeObjectURL(gone.previewUrl) } catch {} }
+      return prev.filter(p => p.id !== id)
+    })
   }
 
   const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -311,6 +360,8 @@ export default function GalleryPage() {
         .gal-layout { display: flex; gap: 20px; align-items: flex-start; }
         .gal-sidebar { width: 210px; flex-shrink: 0; }
         .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+        .gal-spin { animation: gal-spin-kf 0.7s linear infinite; }
+        @keyframes gal-spin-kf { to { transform: rotate(360deg); } }
         /* Horizontal category strip is hidden on desktop (the sidebar handles it). */
         .gal-cat-strip { display: none; }
 
@@ -392,7 +443,7 @@ export default function GalleryPage() {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by title, SKU, description…" style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', marginBottom: 14 }} />
           {loadingData ? (
             <p style={{ color: 'var(--slate)', fontSize: 13.5 }}>Loading…</p>
-          ) : items.length === 0 ? (
+          ) : items.length === 0 && pending.length === 0 ? (
             <div
               onDragOver={e => { e.preventDefault(); setDragOver(true) }}
               onDragLeave={e => { e.preventDefault(); setDragOver(false) }}
@@ -450,6 +501,36 @@ export default function GalleryPage() {
             </div>
           ) : (
             <div className="gal-grid">
+              {/* Optimistic upload tiles — local previews shown while the file
+                  is still being uploaded, before the real item exists. */}
+              {pending.map((p: any) => {
+                const errored = p.status === 'error'
+                return (
+                  <div key={p.id} style={{ border: `1px solid ${errored ? '#dc2626' : 'var(--border)'}`, borderRadius: 12, background: '#fff', position: 'relative' }}>
+                    <div style={{ position: 'relative', paddingTop: '75%', background: 'var(--canvas)', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}>
+                      {p.kind === 'video' ? (
+                        <video src={p.previewUrl} muted style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.55 }} />
+                      ) : (
+                        <img src={p.previewUrl} alt={p.name} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.55 }} />
+                      )}
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'rgba(255,255,255,0.35)' }}>
+                        {errored ? (
+                          <>
+                            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#dc2626' }}>Upload failed</span>
+                            <button type="button" onClick={() => dismissPending(p.id)}
+                              style={{ fontSize: 11, padding: '3px 12px', borderRadius: 6, border: '1px solid #dc2626', background: '#fff', color: '#dc2626', cursor: 'pointer', fontWeight: 600 }}>Dismiss</button>
+                          </>
+                        ) : (
+                          <div className="gal-spin" style={{ width: 26, height: 26, borderRadius: '50%', border: '3px solid var(--peach)', borderTopColor: 'var(--coral)' }} />
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ padding: '7px 9px', fontSize: 11, color: errored ? '#dc2626' : 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {errored ? p.name : 'Uploading…'}
+                    </div>
+                  </div>
+                )
+              })}
               {items.filter((it: any) => !catFilter || (itemCats[it.id] || []).includes(catFilter)).map((item, i) => {
                 const isSelected = selected.has(item.id)
                 return (
