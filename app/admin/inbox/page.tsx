@@ -385,6 +385,25 @@ export default function InboxPage() {
   const [locationFilter, setLocationFilter] = useState<string>('all')
   // All / Assigned to me / Unassigned tabs above the conversation list.
   const [assignFilter, setAssignFilter] = useState<'all' | 'mine' | 'unassigned' | 'unread'>('all')
+  // Coax-style arrow scrolling for the assignment strip: arrows appear only when
+  // the row overflows, and dim at each end.
+  const assignScrollRef = useRef<HTMLDivElement>(null)
+  const [assignArrows, setAssignArrows] = useState({ l: false, r: false })
+  const updateAssignArrows = useCallback(() => {
+    const el = assignScrollRef.current
+    if (!el) return
+    const l = el.scrollLeft > 2
+    const r = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
+    setAssignArrows(prev => (prev.l === l && prev.r === r) ? prev : { l, r })
+  }, [])
+  useEffect(() => {
+    updateAssignArrows()
+    const el = assignScrollRef.current
+    if (!el) return
+    el.addEventListener('scroll', updateAssignArrows, { passive: true })
+    window.addEventListener('resize', updateAssignArrows)
+    return () => { el.removeEventListener('scroll', updateAssignArrows); window.removeEventListener('resize', updateAssignArrows) }
+  }, [updateAssignArrows])
 
   // Persist the chosen location across navigation within Inbox & CRM.
   useEffect(() => {
@@ -4246,6 +4265,10 @@ export default function InboxPage() {
         @keyframes typingDot { 0%, 60%, 100% { opacity: 0.25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
         @keyframes livePulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); } 50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(34,197,94,0); } }
         .ai-spark:hover .ai-tip { opacity: 1 !important; }
+        /* Hide the assignment-strip scrollbar on every screen size — the chevron
+           buttons drive scrolling now, so the raw grey scrollbar isn't wanted. */
+        .inbox-assign-tabs { scrollbar-width: none; -ms-overflow-style: none; }
+        .inbox-assign-tabs::-webkit-scrollbar { display: none; width: 0; height: 0; }
       `}</style>
 
       {/* Forward media to another contact */}
@@ -5348,23 +5371,29 @@ export default function InboxPage() {
               </button>
             )}
           </div>
-          {/* Scope pills — refine what the search looks at. Shown while typing. */}
+          {/* Scope pills — refine what the search looks at. Shown while typing.
+              Themed to match the assignment tabs (coral/peach) rather than a
+              one-off blue, and evenly spaced so the row reads cleanly. */}
           {searchTerm.trim() && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 10 }}>
               {([
                 ['all', 'All'], ['contact', 'Contact'], ['messages', 'Messages'],
                 ['activity', 'Activity & Marketing'], ['tasks', 'Tasks'], ['notes', 'Notes'],
-              ] as const).map(([key, label]) => (
+              ] as const).map(([key, label]) => {
+                const on = searchScope === key
+                return (
                 <button key={key} type="button" onClick={() => setSearchScope(key)}
                   style={{
-                    padding: '4px 11px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-                    border: '1px solid ' + (searchScope === key ? '#2563eb' : 'var(--border)'),
-                    background: searchScope === key ? '#2563eb' : '#fff',
-                    color: searchScope === key ? '#fff' : 'var(--slate)',
+                    padding: '6px 13px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'),
+                    background: on ? 'var(--peach)' : '#fff',
+                    color: on ? 'var(--coral)' : 'var(--slate)',
+                    whiteSpace: 'nowrap', transition: 'all 0.12s',
                   }}>
                   {label}
                 </button>
-              ))}
+                )
+              })}
             </div>
           )}
           {/* Location filter — scopes the whole inbox to one outlet. Only shown
@@ -5386,30 +5415,50 @@ export default function InboxPage() {
             </div>
           )}
 
-          {/* Assignment tabs — a horizontally scrollable strip (Coax style) so
-              extra views can be added without wrapping the row. */}
-          <div className="inbox-assign-tabs" style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
-            {([
-              ['all', 'All'],
-              ['unread', 'Unread'],
-              ['mine', 'Assigned to me'],
-              ['unassigned', 'Unassigned'],
-            ] as const).map(([key, label]) => {
-              const unreadN = key === 'unread' ? conversations.filter(c => c.is_unread && !['closed', 'resolved'].includes(c.status)).length : 0
-              return (
-              <button key={key} type="button" onClick={() => setAssignFilter(key)}
-                style={{
-                  flexShrink: 0, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
-                  border: '1px solid ' + (assignFilter === key ? 'var(--coral)' : 'var(--border)'),
-                  background: assignFilter === key ? 'var(--peach)' : '#fff',
-                  color: assignFilter === key ? 'var(--coral)' : 'var(--slate)',
-                  fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', transition: 'all 0.12s',
-                }}>
-                {label}{key === 'unread' && unreadN > 0 ? ` (${unreadN})` : ''}
+          {/* Assignment tabs — a horizontally scrollable strip (Coax style).
+              Instead of a raw scrollbar, chevron buttons flank the row and appear
+              only when it overflows, dimming at each end. */}
+          {(() => {
+            const showArrows = assignArrows.l || assignArrows.r
+            const arrowBtn = (dir: 'l' | 'r', enabled: boolean) => (
+              <button type="button" aria-label={dir === 'l' ? 'Scroll left' : 'Scroll right'}
+                onClick={() => assignScrollRef.current?.scrollBy({ left: dir === 'l' ? -150 : 150, behavior: 'smooth' })}
+                disabled={!enabled}
+                style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'opacity 0.12s' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points={dir === 'l' ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} />
+                </svg>
               </button>
-              )
-            })}
-          </div>
+            )
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
+                {showArrows && arrowBtn('l', assignArrows.l)}
+                <div ref={assignScrollRef} className="inbox-assign-tabs" style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: 1, paddingBottom: 0 }}>
+                  {([
+                    ['all', 'All'],
+                    ['unread', 'Unread'],
+                    ['mine', 'Assigned to me'],
+                    ['unassigned', 'Unassigned'],
+                  ] as const).map(([key, label]) => {
+                    const unreadN = key === 'unread' ? conversations.filter(c => c.is_unread && !['closed', 'resolved'].includes(c.status)).length : 0
+                    return (
+                    <button key={key} type="button" onClick={() => setAssignFilter(key)}
+                      style={{
+                        flexShrink: 0, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
+                        border: '1px solid ' + (assignFilter === key ? 'var(--coral)' : 'var(--border)'),
+                        background: assignFilter === key ? 'var(--peach)' : '#fff',
+                        color: assignFilter === key ? 'var(--coral)' : 'var(--slate)',
+                        fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', transition: 'all 0.12s',
+                      }}>
+                      {label}{key === 'unread' && unreadN > 0 ? ` (${unreadN})` : ''}
+                    </button>
+                    )
+                  })}
+                </div>
+                {showArrows && arrowBtn('r', assignArrows.r)}
+              </div>
+            )
+          })()}
           {/* Open / Closed tabs (Coax style) + filter */}
           <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
             <div style={{ flex: 1, display: 'flex', background: 'var(--canvas)', borderRadius: 10, padding: 3 }}>
