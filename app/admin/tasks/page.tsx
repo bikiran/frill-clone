@@ -55,6 +55,48 @@ const PRIORITY = {
   low: { label: 'Low', color: '#2563eb', bg: '#eff6ff' },
 } as const
 
+// Preset colours for colour-coding a task. Stored as the hex string on the task.
+const TASK_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899', '#64748b']
+const tint = (hex: string, a: number) => {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+  return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})` : hex
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+type Recurrence = { freq: 'daily' | 'weekly' | 'monthly'; interval: number; days?: number[]; count: number }
+
+// Pre-generate the due dates for a repeating task. Bounded so a bad rule can't
+// create thousands of rows.
+function recurrenceDates(base: Date, rec: Recurrence): Date[] {
+  const out: Date[] = []
+  const count = Math.max(1, Math.min(rec.count || 1, 60))
+  const interval = Math.max(1, rec.interval || 1)
+  const atStart = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
+  const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
+  const start = atStart(base)
+  if (rec.freq === 'weekly' && rec.days && rec.days.length) {
+    const days = [...rec.days].sort((a, b) => a - b)
+    let weekStart = addDays(start, -start.getDay())   // Sunday of the base week
+    let guard = 0
+    while (out.length < count && guard++ < 400) {
+      for (const dow of days) {
+        const d = addDays(weekStart, dow)
+        if (d >= start && out.length < count) out.push(d)
+      }
+      weekStart = addDays(weekStart, 7 * interval)
+    }
+  } else {
+    const d = new Date(start)
+    for (let i = 0; i < count; i++) {
+      out.push(new Date(d))
+      if (rec.freq === 'daily') d.setDate(d.getDate() + interval)
+      else if (rec.freq === 'weekly') d.setDate(d.getDate() + 7 * interval)
+      else d.setMonth(d.getMonth() + interval)   // monthly
+    }
+  }
+  return out.slice(0, count)
+}
+
 const COLUMNS = [
   { key: 'todo', label: 'To do' },
   { key: 'in_progress', label: 'In progress' },
@@ -80,7 +122,11 @@ export default function TasksPage() {
   const [search, setSearch] = useState('')
   const [assigneeFilter, setAssigneeFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
+  const [outletFilter, setOutletFilter] = useState('')     // '' = all outlets
+  const [dateFilter, setDateFilter] = useState('')         // '' = any day; else YYYY-MM-DD
   const [sortBy, setSortBy] = useState<'due' | 'priority' | 'created'>('due')
+  const [outlets, setOutlets] = useState<any[]>([])
+  const [showFilters, setShowFilters] = useState(false)    // top filter dropdown
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showNew, setShowNew] = useState(false)
   // Decide layout from the ACTUAL available width, not the viewport — the admin
@@ -135,6 +181,12 @@ export default function TasksPage() {
         // Replace email-username fallbacks with real profile names.
         await enrichNames(members)
         setTeam(members)
+        // Outlets for the outlet filter + task tagging.
+        try {
+          const { data: locs } = await (supabase as any).from('company_locations')
+            .select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })
+          setOutlets(locs || [])
+        } catch {}
         await loadTasks(cid)
       } finally { setLoading(false) }
     })()
@@ -252,6 +304,13 @@ export default function TasksPage() {
         if (!ok) return false
       }
       if (priorityFilter && (t.priority || 'normal') !== priorityFilter) return false
+      if (outletFilter && t.location_id !== outletFilter) return false
+      if (dateFilter) {
+        const d = parseTs(t.due_date)
+        if (!d) return false
+        const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        if (ymd !== dateFilter) return false
+      }
       if (q) {
         const hay = [t.title, t.text, t.assigned_to, t.order_number, t.order_customer].filter(Boolean).join(' ').toLowerCase()
         if (!hay.includes(q)) return false
@@ -266,7 +325,7 @@ export default function TasksPage() {
       return da - db_
     })
     return list
-  }, [tasks, bucket, search, assigneeFilter, priorityFilter, sortBy, assignedToMe])
+  }, [tasks, bucket, search, assigneeFilter, priorityFilter, outletFilter, dateFilter, sortBy, assignedToMe])
 
   // For the calendar view we want the whole month regardless of the Today/
   // Overdue/… bucket — only the assignee/priority/search filters apply, so a
@@ -280,13 +339,14 @@ export default function TasksPage() {
         if (!ok) return false
       }
       if (priorityFilter && (t.priority || 'normal') !== priorityFilter) return false
+      if (outletFilter && t.location_id !== outletFilter) return false
       if (q) {
         const hay = [t.title, t.text, t.assigned_to, t.order_number, t.order_customer].filter(Boolean).join(' ').toLowerCase()
         if (!hay.includes(q)) return false
       }
       return true
     })
-  }, [tasks, search, assigneeFilter, priorityFilter, assignedToMe])
+  }, [tasks, search, assigneeFilter, priorityFilter, outletFilter, assignedToMe])
 
   const selected = useMemo(() => tasks.find(t => t.id === selectedId) || null, [tasks, selectedId])
 
@@ -433,26 +493,62 @@ export default function TasksPage() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             Calendar
           </button>
-          <div className="filters-mobile">
-            <select className="ctl" value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}>
-              <option value="">Anyone</option><option value="me">Assigned to me</option>
-              {team.map(m => <option key={m.id} value={m.user_id}>{m.name}</option>)}
-            </select>
-            <select className="ctl" value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}>
-              <option value="">Any priority</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
-            </select>
-            <select className="ctl" value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
-              <option value="due">Sort: Due date</option><option value="priority">Sort: Priority</option><option value="created">Sort: Newest</option>
-            </select>
-          </div>
+          {/* Filters live in a top dropdown now (moved off the left rail). */}
+          {(() => {
+            const activeN = [assigneeFilter, priorityFilter, outletFilter, dateFilter].filter(Boolean).length
+            return (
+              <div style={{ position: 'relative' }}>
+                <button className="ctl" onClick={() => setShowFilters(v => !v)}
+                  style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, border: '1px solid ' + (activeN > 0 ? 'var(--coral)' : 'var(--border)'), background: activeN > 0 ? 'var(--peach)' : '#fff', color: activeN > 0 ? 'var(--coral)' : 'var(--ink)' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                  Filters{activeN > 0 ? <span style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: 'var(--coral)', color: '#fff', fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{activeN}</span> : null}
+                </button>
+                {showFilters && (
+                  <>
+                    <div onClick={() => setShowFilters(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                    <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 264, maxWidth: '86vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 44px rgba(0,0,0,0.14)', zIndex: 50, padding: 14 }}>
+                      <FilterField label="Outlet" hidden={outlets.length === 0}>
+                        <select className="ctl" style={selectStyle} value={outletFilter} onChange={e => setOutletFilter(e.target.value)}>
+                          <option value="">All outlets</option>
+                          {outlets.map(o => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
+                        </select>
+                      </FilterField>
+                      <FilterField label="Assignee">
+                        <select className="ctl" style={selectStyle} value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}>
+                          <option value="">Anyone</option><option value="me">Assigned to me</option>
+                          {team.map(m => <option key={m.id} value={m.user_id}>{m.name}</option>)}
+                        </select>
+                      </FilterField>
+                      <FilterField label="Due on day">
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <input type="date" className="ctl" style={{ ...selectStyle, flex: 1 }} value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
+                          {dateFilter && <button className="ctl" onClick={() => setDateFilter('')} style={{ cursor: 'pointer' }}>Clear</button>}
+                        </div>
+                      </FilterField>
+                      <FilterField label="Priority">
+                        <select className="ctl" style={selectStyle} value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}>
+                          <option value="">Any priority</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
+                        </select>
+                      </FilterField>
+                      <FilterField label="Sort by">
+                        <select className="ctl" style={selectStyle} value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
+                          <option value="due">Due date</option><option value="priority">Priority</option><option value="created">Newest</option>
+                        </select>
+                      </FilterField>
+                      {activeN > 0 && (
+                        <button onClick={() => { setAssigneeFilter(''); setPriorityFilter(''); setOutletFilter(''); setDateFilter('') }}
+                          style={{ width: '100%', marginTop: 6, padding: '8px 0', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Clear all filters</button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )
+          })()}
         </div>
       </div>
 
       <div className="tasks-body">
-        <div className="tasks-filters">
-          <FilterRail team={team} assigneeFilter={assigneeFilter} setAssigneeFilter={setAssigneeFilter}
-            priorityFilter={priorityFilter} setPriorityFilter={setPriorityFilter} sortBy={sortBy} setSortBy={setSortBy} />
-        </div>
         <div className="tasks-main">
           {view === 'board' ? (
             <div className="board">
@@ -486,7 +582,7 @@ export default function TasksPage() {
         </div>
         <div className="tasks-detail">
           {showNew ? (
-            <TaskEditor companyId={companyId!} team={team} me={me} userId={userId} onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); if (companyId) loadTasks(companyId) }} />
+            <TaskEditor companyId={companyId!} team={team} outlets={outlets} me={me} userId={userId} onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); if (companyId) loadTasks(companyId) }} />
           ) : selected ? (
             <TaskDetail key={selected.id} task={selected} conv={convs[selected.conversation_id]} team={team} companyId={companyId!} me={me} userId={userId}
               onPatch={(f: any) => patchTask(selected.id, f)} onDeleted={() => { setSelectedId(null); if (companyId) loadTasks(companyId) }} router={router} />
@@ -499,13 +595,24 @@ export default function TasksPage() {
       {isNarrow && (showNew || selected) && (
         <MobileSheet onClose={() => { setShowNew(false); setSelectedId(null) }}>
           {showNew ? (
-            <TaskEditor companyId={companyId!} team={team} me={me} userId={userId} onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); if (companyId) loadTasks(companyId) }} />
+            <TaskEditor companyId={companyId!} team={team} outlets={outlets} me={me} userId={userId} onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); if (companyId) loadTasks(companyId) }} />
           ) : selected ? (
             <TaskDetail key={selected.id} task={selected} conv={convs[selected.conversation_id]} team={team} companyId={companyId!} me={me} userId={userId}
               onPatch={(f: any) => patchTask(selected.id, f)} onDeleted={() => { setSelectedId(null); if (companyId) loadTasks(companyId) }} router={router} />
           ) : null}
         </MobileSheet>
       )}
+    </div>
+  )
+}
+
+const selectStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', cursor: 'pointer' }
+function FilterField({ label, hidden, children }: { label: string; hidden?: boolean; children: React.ReactNode }) {
+  if (hidden) return null
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <p style={{ margin: '0 0 5px', fontSize: 10.5, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+      {children}
     </div>
   )
 }
@@ -533,7 +640,8 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
   const overdue = due && startOfDay(due).getTime() < startOfDay(new Date()).getTime() && statusOf(t) !== 'done'
   const assignees = (Array.isArray(t.assignees) && t.assignees.length) ? t.assignees : (t.assigned_to ? [{ name: t.assigned_to }] : [])
   return (
-    <div className={'task-card lift' + (selected ? ' sel' : '')} onClick={onClick}>
+    <div className={'task-card lift' + (selected ? ' sel' : '')} onClick={onClick}
+      style={t.color ? { borderLeft: `4px solid ${t.color}`, paddingLeft: 10 } : undefined}>
       <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
         {onToggle && <input type="checkbox" checked={statusOf(t) === 'done'} onClick={e => e.stopPropagation()} onChange={onToggle} style={{ marginTop: 2, width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />}
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -543,6 +651,12 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
             {due && <span style={{ fontSize: 11, fontWeight: 700, color: overdue ? '#dc2626' : 'var(--slate)' }}>{fmtRel(t.due_date)}</span>}
             {assignees.map((a: any, i: number) => <span key={i} style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)' }}>{a.name}</span>)}
             {t.order_number && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 5, background: '#eef2ff', color: '#4338ca' }}>#{t.order_number}</span>}
+            {t.recurrence && (
+              <span title="Repeating task" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#ecfeff', color: '#0e7490' }}>
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                {t.recurrence.freq}
+              </span>
+            )}
             {t._source === 'calendar' && (
               <span title="Scheduled on the calendar" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#f5f3ff', color: '#7c3aed' }}>
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -621,10 +735,15 @@ function TaskCalendar({ tasks, statusOf, onSelect, selectedId }: any) {
                 const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
                 const done = statusOf(t) === 'done'
                 const sel = selectedId === t.id
+                // Colour-coded tasks use their own colour for the chip; others
+                // fall back to the priority colour.
+                const cBg = t.color ? tint(t.color, 0.16) : pr.bg
+                const cFg = t.color || pr.color
+                const cDot = t.color || pr.color
                 return (
                   <button key={t.id} onClick={() => onSelect(t.id)} title={t.title || t.text}
-                    style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', padding: '2px 5px', borderRadius: 5, background: sel ? 'var(--coral)' : pr.bg, color: sel ? '#fff' : pr.color, fontSize: 10.5, fontWeight: 700 }}>
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: sel ? '#fff' : pr.color, flexShrink: 0 }} />
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', padding: '2px 5px', borderRadius: 5, background: sel ? 'var(--coral)' : cBg, color: sel ? '#fff' : cFg, fontSize: 10.5, fontWeight: 700 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: sel ? '#fff' : cDot, flexShrink: 0 }} />
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: done ? 'line-through' : 'none', opacity: done ? 0.6 : 1 }}>{t.title || t.text}</span>
                   </button>
                 )
@@ -900,17 +1019,22 @@ function OrderSearchModal({ companyId, onClose, onPick }: any) {
   )
 }
 
-function TaskEditor({ companyId, team, me, userId, onClose, onSaved }: any) {
+function TaskEditor({ companyId, team, outlets = [], me, userId, onClose, onSaved }: any) {
   const [title, setTitle] = useState('')
   const [priority, setPriority] = useState('normal')
   const [due, setDue] = useState('')
   const [assignees, setAssignees] = useState<any[]>([])
   const [order, setOrder] = useState<any>(null)
+  const [color, setColor] = useState<string>('')          // hex or '' (none)
+  const [locationId, setLocationId] = useState<string>('') // outlet
+  const [repeat, setRepeat] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none')
+  const [repeatDays, setRepeatDays] = useState<number[]>([]) // weekly: 0..6
+  const [repeatCount, setRepeatCount] = useState(6)
   const [showOrderSearch, setShowOrderSearch] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // Keep a half-written task so it isn't lost on navigating away.
-  const draft = useDraft(userId, companyId, 'task', '', { title, priority, due, assignees, order },
+  const draft = useDraft(userId, companyId, 'task', '', { title, priority, due, assignees, order, color, locationId, repeat, repeatDays, repeatCount },
     { isEmpty: (v: any) => !v?.title?.trim() })
   useEffect(() => {
     if (draft.ready && draft.restored && !title) {
@@ -920,6 +1044,11 @@ function TaskEditor({ companyId, team, me, userId, onClose, onSaved }: any) {
       if (r.due) setDue(r.due)
       if (Array.isArray(r.assignees)) setAssignees(r.assignees)
       if (r.order) setOrder(r.order)
+      if (r.color) setColor(r.color)
+      if (r.locationId) setLocationId(r.locationId)
+      if (r.repeat) setRepeat(r.repeat)
+      if (Array.isArray(r.repeatDays)) setRepeatDays(r.repeatDays)
+      if (r.repeatCount) setRepeatCount(r.repeatCount)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.ready])
@@ -936,27 +1065,42 @@ function TaskEditor({ companyId, team, me, userId, onClose, onSaved }: any) {
     // downstream (filters, notifications) mistakes a name for an id.
     const cleanAssignees = (assignees || []).map((a: any) => ({ id: isUuid(a.id) ? a.id : null, name: a.name }))
     const firstUuid = cleanAssignees.map((a: any) => a.id).find((id: any) => isUuid(id)) || null
-    const row: any = {
+    const baseDue = dueFromInput(due)
+
+    // Repeating tasks pre-generate a series of dated occurrences. Everything
+    // else is a single row on the chosen due date (or none).
+    const rec: Recurrence | null = repeat === 'none' ? null
+      : { freq: repeat, interval: 1, count: repeatCount, ...(repeat === 'weekly' ? { days: repeatDays.length ? repeatDays : [new Date().getDay()] } : {}) }
+    let dueDates: (string | null)[] = [baseDue]
+    if (rec) {
+      const start = baseDue ? new Date(baseDue) : new Date()
+      dueDates = recurrenceDates(start, rec).map(d => d.toISOString())
+      if (!dueDates.length) dueDates = [baseDue]
+    }
+
+    const common: any = {
       company_id: companyId, text: title.trim(), title: title.trim(), status: 'todo', done: false, priority,
-      due_date: dueFromInput(due),
       assignees: cleanAssignees, assigned_to_id: firstUuid, assigned_to: cleanAssignees[0]?.name || null,
       created_by: me, created_by_id: isUuid(userId) ? userId : null,
       mentions: mentioned.map((m: any) => ({ id: isUuid(m.id) ? m.id : null, name: m.name })),
       order_id: order?.order_id ? String(order.order_id) : null, order_number: order?.order_number ? String(order.order_number) : null, order_customer: order?.customer || null, order_total: order?.total || null,
+      color: color || null, location_id: locationId || null, recurrence: rec,
     }
+    const rows = dueDates.map(d => ({ ...common, due_date: d }))
+    const row = rows[0]
     try {
-      const { error: insErr } = await (supabase as any).from('conversation_tasks').insert(row)
+      const { error: insErr } = await (supabase as any).from('conversation_tasks').insert(rows)
       if (insErr) {
-        // A column may be typed differently than expected on this database (e.g.
-        // an old created_by defined as uuid). Retry with only the core columns
-        // so a task can always be created; the extras are best-effort.
+        // A column may be missing/typed differently on this database (e.g. before
+        // the V211 migration adds color/location_id/recurrence). Retry with only
+        // the core columns so a task can always be created; extras are best-effort.
         console.error('[task create] full insert failed, retrying minimal', insErr, row)
-        const minimal: any = {
-          company_id: companyId, text: title.trim(), done: false,
-          due_date: row.due_date, assigned_to: cleanAssignees[0]?.name || null,
-        }
-        if (isUuid(firstUuid)) minimal.assigned_to_id = firstUuid
-        const { error: minErr } = await (supabase as any).from('conversation_tasks').insert(minimal)
+        const minimalRows = dueDates.map(d => {
+          const m: any = { company_id: companyId, text: title.trim(), done: false, due_date: d, assigned_to: cleanAssignees[0]?.name || null }
+          if (isUuid(firstUuid)) m.assigned_to_id = firstUuid
+          return m
+        })
+        const { error: minErr } = await (supabase as any).from('conversation_tasks').insert(minimalRows)
         if (minErr) throw minErr
       }
       // Tell the people involved — in-app, by email AND by SMS. Being assigned
@@ -1014,6 +1158,58 @@ function TaskEditor({ companyId, team, me, userId, onClose, onSaved }: any) {
       </div>
       <p style={L}>Due date</p>
       <input type="date" value={due} onChange={e => setDue(e.target.value)} style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
+
+      {/* Repeat — pre-generates a series of dated occurrences on save. */}
+      <p style={L}>Repeat</p>
+      <div style={{ display: 'flex', gap: 5 }}>
+        {(['none', 'daily', 'weekly', 'monthly'] as const).map(r => (
+          <button key={r} onClick={() => setRepeat(r)} style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize', border: '1px solid ' + (repeat === r ? 'var(--coral)' : 'var(--border)'), background: repeat === r ? 'var(--peach)' : '#fff', color: repeat === r ? 'var(--coral)' : 'var(--slate)' }}>{r === 'none' ? 'None' : r}</button>
+        ))}
+      </div>
+      {repeat === 'weekly' && (
+        <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
+          {WEEKDAYS.map((w, i) => {
+            const on = repeatDays.includes(i)
+            return (
+              <button key={i} onClick={() => setRepeatDays(prev => on ? prev.filter(x => x !== i) : [...prev, i])}
+                title={`Repeat on ${w}`}
+                style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--coral)' : '#fff', color: on ? '#fff' : 'var(--slate)' }}>{w[0]}</button>
+            )
+          })}
+        </div>
+      )}
+      {repeat !== 'none' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <span style={{ fontSize: 12.5, color: 'var(--slate)', fontWeight: 600 }}>Create</span>
+          <input type="number" min={1} max={60} value={repeatCount}
+            onChange={e => setRepeatCount(Math.max(1, Math.min(60, parseInt(e.target.value) || 1)))}
+            style={{ width: 64, padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
+          <span style={{ fontSize: 12.5, color: 'var(--slate)', fontWeight: 600 }}>occurrences</span>
+        </div>
+      )}
+
+      {/* Colour code */}
+      <p style={L}>Colour</p>
+      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+        <button onClick={() => setColor('')} title="No colour"
+          style={{ width: 26, height: 26, borderRadius: '50%', cursor: 'pointer', border: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', position: 'relative' }}>
+          {color === '' && <span style={{ width: 12, height: 2, background: 'var(--slate)', transform: 'rotate(-45deg)', position: 'absolute' }} />}
+        </button>
+        {TASK_COLORS.map(c => (
+          <button key={c} onClick={() => setColor(c)} title={c}
+            style={{ width: 26, height: 26, borderRadius: '50%', cursor: 'pointer', background: c, border: color === c ? '2px solid var(--ink)' : '2px solid transparent', boxShadow: color === c ? `0 0 0 2px ${tint(c, 0.4)}` : 'none' }} />
+        ))}
+      </div>
+
+      {outlets.length > 0 && (<>
+        <p style={L}>Outlet</p>
+        <select value={locationId} onChange={e => setLocationId(e.target.value)}
+          style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
+          <option value="">No outlet</option>
+          {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
+        </select>
+      </>)}
+
       <p style={L}>Assignees</p>
       <AssigneePicker members={team} value={assignees} onChange={setAssignees} />
       <p style={L}>Linked order</p>
@@ -1030,7 +1226,7 @@ function TaskEditor({ companyId, team, me, userId, onClose, onSaved }: any) {
       )}
       <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
         <button onClick={onClose} style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-        <button onClick={save} disabled={!title.trim() || saving} style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: title.trim() ? 'pointer' : 'default', opacity: title.trim() && !saving ? 1 : 0.6 }}>{saving ? 'Creating…' : 'Create task'}</button>
+        <button onClick={save} disabled={!title.trim() || saving} style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: title.trim() ? 'pointer' : 'default', opacity: title.trim() && !saving ? 1 : 0.6 }}>{saving ? 'Creating…' : repeat !== 'none' ? `Create ${repeatCount} tasks` : 'Create task'}</button>
       </div>
       {showOrderSearch && <OrderSearchModal companyId={companyId} onClose={() => setShowOrderSearch(false)} onPick={(o: any) => { setOrder(o); setShowOrderSearch(false) }} />}
     </div>
