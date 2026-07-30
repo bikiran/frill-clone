@@ -138,53 +138,35 @@ export async function uploadAttachment(
   const prepared = await compressImage(file)
   onProgress?.(0.35)
 
-  const ext = (prepared.name.split('.').pop() || 'bin').toLowerCase()
-  const safeExt = ext.replace(/[^a-z0-9]/g, '') || 'bin'
-  const path = `${companyId}/${conversationId || 'general'}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`
+  const prefix = `chat-attachments/${companyId}/${conversationId || 'general'}`
 
-  const { error } = await supabase.storage.from(BUCKET).upload(path, prepared, {
-    contentType: prepared.type || 'application/octet-stream',
-    upsert: false,
-    cacheControl: '3600',
-  })
-
-  if (error) {
-    // Storage errors are readable, unlike the HTML a 413 produces.
-    throw new Error(
-      /bucket/i.test(error.message)
-        ? 'The attachments storage bucket is missing — send one message with an attachment from the composer first, or create a "chat-attachments" bucket in Supabase.'
-        : error.message
-    )
+  // Upload via the server, which stores on Cloudflare R2 (falling back to
+  // Supabase). Keeps the R2 secret server-side; the compressed bytes go up once.
+  const putViaServer = async (f: File, pfx: string): Promise<string> => {
+    const fd = new FormData()
+    fd.append('file', f)
+    fd.append('prefix', pfx)
+    const res = await fetch('/api/storage/put', { method: 'POST', body: fd })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data?.url) throw new Error(data?.error || 'Upload failed')
+    return data.url as string
   }
-  onProgress?.(0.9)
 
-  const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path)
+  const url = await putViaServer(prepared, prefix)
+  onProgress?.(0.9)
 
   // Upload a preview next to it. Best-effort: if it fails the timeline just
   // uses the full image, exactly as before.
   let thumbUrl: string | undefined
   try {
     const thumb = await makeThumbnail(prepared)
-    if (thumb) {
-      const thumbPath = path.replace(/\.[^.]+$/, '') + '_thumb.jpg'
-      const { error: tErr } = await supabase.storage.from(BUCKET).upload(thumbPath, thumb, {
-        contentType: 'image/jpeg', upsert: true,
-        // Previews never change, so let browsers keep them for a long time.
-        cacheControl: '31536000',
-      })
-      if (!tErr) {
-        const { data: tPub } = supabase.storage.from(BUCKET).getPublicUrl(thumbPath)
-        thumbUrl = toPublicUrl(tPub.publicUrl)
-      }
-    }
+    if (thumb) thumbUrl = await putViaServer(thumb, `${prefix}/thumbs`)
   } catch { /* preview is optional */ }
 
   onProgress?.(1)
 
   return {
-    // Served from the custom storage domain so customer-facing links look
-    // like the business, and the bytes bypass Vercel.
-    url: toPublicUrl(pub.publicUrl),
+    url,
     thumbUrl,
     name: file.name,
     type: prepared.type || file.type,
