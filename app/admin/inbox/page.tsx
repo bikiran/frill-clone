@@ -379,7 +379,7 @@ export default function InboxPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [locationFilter, setLocationFilter] = useState<string>('all')
   // All / Assigned to me / Unassigned tabs above the conversation list.
-  const [assignFilter, setAssignFilter] = useState<'all' | 'mine' | 'unassigned'>('all')
+  const [assignFilter, setAssignFilter] = useState<'all' | 'mine' | 'unassigned' | 'unread'>('all')
 
   // Persist the chosen location across navigation within Inbox & CRM.
   useEffect(() => {
@@ -3707,6 +3707,8 @@ export default function InboxPage() {
       if (!user?.id || (c as any).assigned_to !== user.id) return false
     } else if (assignFilter === 'unassigned') {
       if ((c as any).assigned_to) return false
+    } else if (assignFilter === 'unread') {
+      if (!(c as any).is_unread) return false
     }
     if (locationFilter !== 'all') {
       const loc = (c as any).assigned_location_id || (c as any).location_id || null
@@ -5262,7 +5264,7 @@ export default function InboxPage() {
               Contact
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--peach)', color: 'var(--coral)', padding: '2px 8px', borderRadius: 20 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--peach)', color: 'var(--coral)', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap', flexShrink: 0 }}>
                 {conversations.filter(c => c.is_unread && !['closed','resolved'].includes(c.status)).length} unread
               </span>
               <Link href="/admin/crm-settings/profile" title="Inbox settings"
@@ -5329,9 +5331,12 @@ export default function InboxPage() {
           <div className="inbox-assign-tabs" style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
             {([
               ['all', 'All'],
+              ['unread', 'Unread'],
               ['mine', 'Assigned to me'],
               ['unassigned', 'Unassigned'],
-            ] as const).map(([key, label]) => (
+            ] as const).map(([key, label]) => {
+              const unreadN = key === 'unread' ? conversations.filter(c => c.is_unread && !['closed', 'resolved'].includes(c.status)).length : 0
+              return (
               <button key={key} type="button" onClick={() => setAssignFilter(key)}
                 style={{
                   flexShrink: 0, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
@@ -5340,9 +5345,10 @@ export default function InboxPage() {
                   color: assignFilter === key ? 'var(--coral)' : 'var(--slate)',
                   fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', transition: 'all 0.12s',
                 }}>
-                {label}
+                {label}{key === 'unread' && unreadN > 0 ? ` (${unreadN})` : ''}
               </button>
-            ))}
+              )
+            })}
           </div>
           {/* Open / Closed tabs (Coax style) + filter */}
           <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
@@ -5528,14 +5534,16 @@ export default function InboxPage() {
                 )}
               </span>
 
-              <p style={{ margin: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {conv.last_message || 'No messages yet'}
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {conv.last_message || 'No messages yet'}
+                </p>
+                {conv.unread_count > 0 && (
+                  <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, background: 'var(--coral)', color: '#fff', minWidth: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', borderRadius: 20, boxSizing: 'border-box' }}>{conv.unread_count}</span>
+                )}
+              </div>
               {conv.assigned_name && (
                 <span style={{ fontSize: 10, color: '#2563eb', marginTop: 3, display: 'block' }}>Assigned: {conv.assigned_name}</span>
-              )}
-              {conv.unread_count > 0 && (
-                <span style={{ float: 'right', marginTop: -14, fontSize: 10, fontWeight: 700, background: 'var(--coral)', color: '#fff', padding: '1px 6px', borderRadius: 20 }}>{conv.unread_count}</span>
               )}
             </button>
             )
