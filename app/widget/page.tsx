@@ -56,6 +56,7 @@ function WidgetContent() {
   }, [chatInput])
   const [chatSending, setChatSending] = useState(false)
   const [chatUploading, setChatUploading] = useState(false)
+  const [chatUploadPct, setChatUploadPct] = useState<number | null>(null)
   const [copiedCoupon, setCopiedCoupon] = useState<string | null>(null)
   const [showSharedMedia, setShowSharedMedia] = useState(false)
   const [widgetReplyTo, setWidgetReplyTo] = useState<any>(null)
@@ -628,7 +629,8 @@ function WidgetContent() {
       // them straight to R2 with a presigned URL.
       const isLarge = toSend.type.startsWith('video/') || toSend.size > 4 * 1024 * 1024
       if (isLarge) {
-        const url = await uploadDirect(toSend, `chat-attachments/${company.id}/${chatConvId}`, file.name)
+        setChatUploadPct(0)
+        const url = await uploadDirect(toSend, `chat-attachments/${company.id}/${chatConvId}`, file.name, p => setChatUploadPct(Math.round(p * 100)))
         if (url) att = { url, name: file.name, type: toSend.type, kind: toSend.type.startsWith('video/') ? 'video' : 'file' }
       }
 
@@ -655,6 +657,7 @@ function WidgetContent() {
       })
     } catch (e: any) { alert('Attachment failed: ' + e.message) }
     setChatUploading(false)
+    setChatUploadPct(null)
   }
 
   const submitFeedback = async () => {
@@ -2245,7 +2248,7 @@ function WidgetContent() {
                       title="Attach a photo, video or file"
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: chatConvId ? 'pointer' : 'default', color: '#9ca3af', fontSize: 11.5, padding: 0 }}>
                       {chatUploading ? (
-                        <span>Uploading…</span>
+                        <span>{chatUploadPct !== null ? `Uploading… ${chatUploadPct}%` : 'Uploading…'}</span>
                       ) : (
                         <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> Attach</>
                       )}

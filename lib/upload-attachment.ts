@@ -37,7 +37,9 @@ const MIN_QUALITY = 0.5
  * the serverless function. Used for large/video files. Returns the public URL,
  * or null if presigning isn't available (caller then falls back to the server).
  */
-export async function uploadDirect(file: File | Blob, prefix: string, filename?: string): Promise<string | null> {
+export async function uploadDirect(
+  file: File | Blob, prefix: string, filename?: string, onProgress?: (p: number) => void
+): Promise<string | null> {
   try {
     const name = filename || (file as File).name || 'file'
     const contentType = (file as File).type || 'application/octet-stream'
@@ -47,8 +49,17 @@ export async function uploadDirect(file: File | Blob, prefix: string, filename?:
     })
     const d = await res.json().catch(() => ({}))
     if (!d.ok || !d.uploadUrl) return null
-    const put = await fetch(d.uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: file })
-    if (!put.ok) return null
+    // XHR (not fetch) so we can report upload progress for big videos.
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('PUT', d.uploadUrl)
+      xhr.setRequestHeader('Content-Type', contentType)
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total) }
+      xhr.onload = () => ((xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error('PUT ' + xhr.status)))
+      xhr.onerror = () => reject(new Error('network error'))
+      xhr.send(file)
+    })
+    onProgress?.(1)
     return d.publicUrl as string
   } catch {
     return null
@@ -180,7 +191,7 @@ export async function uploadAttachment(
   // compressed images keep the simple server path.
   const isLarge = prepared.type.startsWith('video/') || prepared.size > 4 * 1024 * 1024
   const url = isLarge
-    ? (await uploadDirect(prepared, prefix)) || (await putViaServer(prepared, prefix))
+    ? (await uploadDirect(prepared, prefix, prepared.name, p => onProgress?.(0.35 + p * 0.55))) || (await putViaServer(prepared, prefix))
     : await putViaServer(prepared, prefix)
   onProgress?.(0.9)
 
