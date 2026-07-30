@@ -32,6 +32,29 @@ const THUMB_QUALITY = 0.72
 const TARGET_BYTES = 450 * 1024
 const MIN_QUALITY = 0.5
 
+/**
+ * Upload a file straight to R2 via a presigned PUT URL (browser → R2), skipping
+ * the serverless function. Used for large/video files. Returns the public URL,
+ * or null if presigning isn't available (caller then falls back to the server).
+ */
+export async function uploadDirect(file: File | Blob, prefix: string, filename?: string): Promise<string | null> {
+  try {
+    const name = filename || (file as File).name || 'file'
+    const contentType = (file as File).type || 'application/octet-stream'
+    const res = await fetch('/api/storage/presign', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefix, filename: name, contentType }),
+    })
+    const d = await res.json().catch(() => ({}))
+    if (!d.ok || !d.uploadUrl) return null
+    const put = await fetch(d.uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: file })
+    if (!put.ok) return null
+    return d.publicUrl as string
+  } catch {
+    return null
+  }
+}
+
 export interface UploadedAttachment {
   url: string
   /** Small preview used in the chat timeline; full `url` is used in the gallery. */
@@ -152,7 +175,13 @@ export async function uploadAttachment(
     return data.url as string
   }
 
-  const url = await putViaServer(prepared, prefix)
+  // Big files (videos especially) can't go through the serverless function
+  // (~4.5MB cap). Upload those straight to R2 with a presigned URL; small
+  // compressed images keep the simple server path.
+  const isLarge = prepared.type.startsWith('video/') || prepared.size > 4 * 1024 * 1024
+  const url = isLarge
+    ? (await uploadDirect(prepared, prefix)) || (await putViaServer(prepared, prefix))
+    : await putViaServer(prepared, prefix)
   onProgress?.(0.9)
 
   // Upload a preview next to it. Best-effort: if it fails the timeline just

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { compressImage } from '@/lib/upload-attachment'
+import { compressImage, uploadDirect } from '@/lib/upload-attachment'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser } from '../crm-settings/_shared'
 import MediaGallery from '@/components/MediaGallery'
@@ -199,12 +199,27 @@ export default function GalleryPage() {
     setUploading(true)
     try {
       for (const file of files) {
-        // Compress images in the browser before upload (same as the inbox) —
-        // saves storage + bandwidth. Non-images (video/pdf) pass through.
+        // Compress images in the browser before upload (same as the inbox).
         let toSend: File = file
         try {
           if (file.type.startsWith('image/')) toSend = await compressImage(file)
         } catch {}
+
+        // Big files (videos) go straight to R2 via a presigned URL, then we
+        // register the gallery item with just the URL.
+        const isLarge = toSend.type.startsWith('video/') || toSend.size > 4 * 1024 * 1024
+        if (isLarge) {
+          const url = await uploadDirect(toSend, `media-gallery/${companyId}/${activeFolder || 'unfiled'}`, file.name)
+          if (url) {
+            const fd = new FormData()
+            fd.append('companyId', companyId)
+            if (activeFolder) fd.append('folderId', activeFolder)
+            fd.append('url', url); fd.append('name', file.name); fd.append('type', toSend.type)
+            await fetch('/api/media/upload', { method: 'POST', body: fd })
+            continue
+          }
+        }
+
         const fd = new FormData()
         fd.append('file', toSend); fd.append('companyId', companyId)
         if (activeFolder) fd.append('folderId', activeFolder)

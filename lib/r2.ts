@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 // Cloudflare R2 (S3-compatible) storage. Uploads happen server-side so the
 // secret never touches the browser. Falls back gracefully: callers check
@@ -44,4 +45,22 @@ export async function uploadToR2(key: string, body: Uint8Array | Buffer, content
     CacheControl: 'public, max-age=31536000, immutable',
   }))
   return `${R2_DOMAIN()}/${cleanKey}`
+}
+
+/**
+ * Presigned PUT URL so a browser/app can upload a large file DIRECTLY to R2,
+ * bypassing our serverless function (which caps request bodies at ~4.5MB and
+ * would time out on big videos). The client must PUT with the same Content-Type.
+ */
+export async function presignPutUrl(
+  key: string, contentType: string, expiresIn = 600
+): Promise<{ uploadUrl: string; publicUrl: string; key: string }> {
+  const cleanKey = key.replace(/^\/+/, '')
+  const cmd = new PutObjectCommand({
+    Bucket: R2_BUCKET(),
+    Key: cleanKey,
+    ContentType: contentType || 'application/octet-stream',
+  })
+  const uploadUrl = await getSignedUrl(client(), cmd, { expiresIn })
+  return { uploadUrl, publicUrl: `${R2_DOMAIN()}/${cleanKey}`, key: cleanKey }
 }

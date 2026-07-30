@@ -20,6 +20,20 @@ export async function POST(req: NextRequest) {
     const folderId = (form.get('folderId') as string | null) || null
     const title = (form.get('title') as string | null) || null
     const sku = (form.get('sku') as string | null) || null
+    // A large file (video) may already be uploaded to R2 via a presigned URL —
+    // then we just register the media_items row instead of receiving bytes.
+    const preUrl = form.get('url') as string | null
+    if (preUrl) {
+      const db = admin()
+      const preType = (form.get('type') as string | null) || ''
+      const preName = (form.get('name') as string | null) || title || 'file'
+      const kind = preType.startsWith('video/') ? 'video' : 'image'
+      const { data: item } = await db.from('media_items').insert({
+        company_id: companyId, folder_id: folderId, title: title || preName,
+        url: preUrl, thumbnail_url: preUrl, kind, sku,
+      }).select().maybeSingle()
+      return NextResponse.json({ ok: true, item })
+    }
     if (!file || !companyId) return NextResponse.json({ error: 'Missing file or companyId' }, { status: 400 })
 
     const db = admin()

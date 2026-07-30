@@ -2,7 +2,7 @@
 
 
 import React, { useState, useEffect, useRef } from 'react'
-import { compressImage } from '@/lib/upload-attachment'
+import { compressImage, uploadDirect } from '@/lib/upload-attachment'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -622,15 +622,28 @@ function WidgetContent() {
       try {
         if (file.type.startsWith('image/')) toSend = await compressImage(file)
       } catch {}
-      const fd = new FormData()
-      fd.append('file', toSend)
-      fd.append('companyId', company.id)
-      fd.append('conversationId', chatConvId)
-      const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
-      const data = await res.json()
-      if (!res.ok) { alert('Attachment failed: ' + (data.error || 'upload error')); setChatUploading(false); return }
-      const att = { url: data.url, name: data.name, type: data.type, kind: data.kind }
-      const newMsg: any = { sender_type: 'visitor', sender_name: chatName, content: data.kind === 'file' ? `📎 ${data.name}` : '', attachments: [att], created_at: new Date().toISOString() }
+
+      let att: any = null
+      // Big files (videos) can't go through the serverless function — upload
+      // them straight to R2 with a presigned URL.
+      const isLarge = toSend.type.startsWith('video/') || toSend.size > 4 * 1024 * 1024
+      if (isLarge) {
+        const url = await uploadDirect(toSend, `chat-attachments/${company.id}/${chatConvId}`, file.name)
+        if (url) att = { url, name: file.name, type: toSend.type, kind: toSend.type.startsWith('video/') ? 'video' : 'file' }
+      }
+
+      if (!att) {
+        const fd = new FormData()
+        fd.append('file', toSend)
+        fd.append('companyId', company.id)
+        fd.append('conversationId', chatConvId)
+        const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+        const data = await res.json()
+        if (!res.ok) { alert('Attachment failed: ' + (data.error || 'upload error')); setChatUploading(false); return }
+        att = { url: data.url, name: data.name, type: data.type, kind: data.kind }
+      }
+
+      const newMsg: any = { sender_type: 'visitor', sender_name: chatName, content: att.kind === 'file' ? `📎 ${att.name}` : '', attachments: [att], created_at: new Date().toISOString() }
       setChatMessages2(prev => [...prev, newMsg])
       await fetch('/api/widget/message', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
