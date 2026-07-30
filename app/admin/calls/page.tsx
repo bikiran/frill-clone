@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 
 type Call = {
   id: string
@@ -19,15 +20,17 @@ type Call = {
 }
 
 export default function CallsPage() {
-  const [calls, setCalls] = useState<Call[]>([])
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const seededCid = peekCompanyUser()?.companyId ?? null
+  const seededCalls = seededCid ? readCache<Call[]>(`calls:${seededCid}`) : undefined
+  const [calls, setCalls] = useState<Call[]>(seededCalls ?? [])
+  const [companyId, setCompanyId] = useState<string | null>(seededCid)
+  const [loading, setLoading] = useState(!seededCalls)
   const [filter, setFilter] = useState<'all' | 'inbound' | 'outbound' | 'missed' | 'voicemail'>('all')
 
   useEffect(() => {
     const init = async () => {
-      let cid: string | null = null
-      if (typeof window !== 'undefined') {
+      let cid: string | null = seededCid
+      if (!cid && typeof window !== 'undefined') {
         const h = window.location.hostname
         if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
           const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
@@ -52,6 +55,7 @@ export default function CallsPage() {
     const { data } = await (supabase as any).from('calls')
       .select('*').eq('company_id', cid).order('created_at', { ascending: false }).limit(300)
     setCalls(data || [])
+    writeCache(`calls:${cid}`, data || [])
   }
 
   // Live updates — new calls and status changes (ringing → voicemail/completed)

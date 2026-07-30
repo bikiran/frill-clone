@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 
 function StatCard({ label, value, sub, color }: any) {
   return (
@@ -16,6 +17,9 @@ function StatCard({ label, value, sub, color }: any) {
 
 export default function AnalyticsPage() {
   const getMyCompanyId = async () => {
+    // Resolve once per session from the shared identity cache when possible.
+    const peeked = peekCompanyUser()?.companyId
+    if (peeked) return peeked
     if (typeof window !== 'undefined') {
       const h = window.location.hostname
       if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
@@ -33,18 +37,22 @@ export default function AnalyticsPage() {
   }
 
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const seededCu = peekCompanyUser()
+  // The last snapshot we rendered for the default (30d) view, if any — lets a
+  // revisit paint the stat cards instantly instead of flashing zeros.
+  const seededAnalytics = seededCu?.companyId ? readCache<any>(`analytics:${seededCu.companyId}:30d::`) : undefined
+  const [user, setUser] = useState<any>(seededCu?.user ?? null)
+  const [loading, setLoading] = useState(!seededAnalytics)
   const [timeRange, setTimeRange] = useState<'today' | 'yesterday' | '7d' | '30d' | 'month' | 'all' | 'custom'>('30d')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
 
   // Ideas stats
-  const [stats, setStats] = useState({ totalIdeas: 0, totalVotes: 0, totalComments: 0, topIdeas: [] as any[], recentIdeas: [] as any[] })
+  const [stats, setStats] = useState(seededAnalytics?.stats ?? { totalIdeas: 0, totalVotes: 0, totalComments: 0, topIdeas: [] as any[], recentIdeas: [] as any[] })
   // Help stats
-  const [helpStats, setHelpStats] = useState({ totalArticles: 0, totalViews: 0, totalLikes: 0, totalTickets: 0, openTickets: 0, topArticles: [] as any[], ticketsByStatus: {} as any })
+  const [helpStats, setHelpStats] = useState(seededAnalytics?.helpStats ?? { totalArticles: 0, totalViews: 0, totalLikes: 0, totalTickets: 0, openTickets: 0, topArticles: [] as any[], ticketsByStatus: {} as any })
   // Widget stats
-  const [widgetStats, setWidgetStats] = useState({ totalViews: 0, byTab: {} as Record<string, number>, avgViewsPerDay: 0 })
+  const [widgetStats, setWidgetStats] = useState(seededAnalytics?.widgetStats ?? { totalViews: 0, byTab: {} as Record<string, number>, avgViewsPerDay: 0 })
 
   // Calculate date range
   const getDateRange = () => {
@@ -91,6 +99,17 @@ export default function AnalyticsPage() {
       if (!cid) return
 
       const { start, end, daysBack } = getDateRange()
+
+      // Instant paint on revisit / range switch: hydrate the stat cards from the
+      // last snapshot for this exact range while fresh numbers load behind them.
+      const cacheKey = `analytics:${cid}:${timeRange}:${customStart}:${customEnd}`
+      const cachedA = readCache<any>(cacheKey)
+      if (cachedA) {
+        setStats(cachedA.stats)
+        setHelpStats(cachedA.helpStats)
+        setWidgetStats(cachedA.widgetStats)
+        setLoading(false)
+      }
 
       // Ideas with proper company_id filtering
       const { data: ideas } = await (supabase as any)
@@ -142,13 +161,14 @@ export default function AnalyticsPage() {
       const top = [...ideasList].sort((a: any, b: any) => (b.votes || 0) - (a.votes || 0)).slice(0, 5)
       const recent = [...ideasList].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 5)
 
-      setStats({ 
-        totalIdeas: ideasList.length, 
-        totalVotes, 
-        totalComments: commentsCount, 
-        topIdeas: top, 
-        recentIdeas: recent 
-      })
+      const statsObj = {
+        totalIdeas: ideasList.length,
+        totalVotes,
+        totalComments: commentsCount,
+        topIdeas: top,
+        recentIdeas: recent,
+      }
+      setStats(statsObj)
 
       // Help articles
       const { data: articles } = await (supabase as any)
@@ -185,7 +205,7 @@ export default function AnalyticsPage() {
         if (viewCount !== null) helpViews = viewCount
       } catch {}
 
-      setHelpStats({
+      const helpObj = {
         totalArticles: artList.length,
         totalViews: helpViews,
         totalLikes: helpLikes,
@@ -193,7 +213,8 @@ export default function AnalyticsPage() {
         openTickets: byStatus['open'] || 0,
         topArticles: [...artList].sort((a: any, b: any) => (b.views || 0) - (a.views || 0)).slice(0, 5),
         ticketsByStatus: byStatus,
-      })
+      }
+      setHelpStats(helpObj)
 
       // Widget analytics — created_at is the tracked timestamp column
       let widgetEvents: any[] = []
@@ -214,13 +235,16 @@ export default function AnalyticsPage() {
         if (e.tab) byTab[e.tab] = (byTab[e.tab] || 0) + 1
       })
 
-      setWidgetStats({
+      const widgetObj = {
         totalViews: viewEvents.length,
         byTab,
         avgViewsPerDay: daysBack > 0 ? Math.round(viewEvents.length / daysBack) : 0,
-      })
-    } catch (err) { 
-      console.error('Analytics error:', err) 
+      }
+      setWidgetStats(widgetObj)
+
+      writeCache(cacheKey, { stats: statsObj, helpStats: helpObj, widgetStats: widgetObj })
+    } catch (err) {
+      console.error('Analytics error:', err)
     }
     setLoading(false)
   }

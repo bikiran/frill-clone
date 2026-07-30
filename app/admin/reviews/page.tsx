@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 
 type Review = {
   id: string
@@ -15,10 +16,12 @@ type Review = {
 }
 
 export default function ReviewsPage() {
-  const [reviews, setReviews] = useState<Review[]>([])
-  const [companyId, setCompanyId] = useState<string | null>(null)
+  const seededCid = peekCompanyUser()?.companyId ?? null
+  const seededReviews = seededCid ? readCache<Review[]>(`reviews:${seededCid}`) : undefined
+  const [reviews, setReviews] = useState<Review[]>(seededReviews ?? [])
+  const [companyId, setCompanyId] = useState<string | null>(seededCid)
   const [companyName, setCompanyName] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!seededReviews)
   const [replyingTo, setReplyingTo] = useState<string | null>(null)
   const [replyText, setReplyText] = useState('')
   const [posting, setPosting] = useState(false)
@@ -30,23 +33,33 @@ export default function ReviewsPage() {
 
   useEffect(() => {
     const init = async () => {
-      let cid: string | null = null
-      if (typeof window !== 'undefined') {
+      let cid: string | null = seededCid
+      let nameResolved = false
+      if (!cid && typeof window !== 'undefined') {
         const h = window.location.hostname
         if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
           const { data: co } = await (supabase as any).from('companies').select('id, name').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
-          if (co) { cid = co.id; setCompanyName(co.name) }
+          if (co) { cid = co.id; setCompanyName(co.name); nameResolved = true }
         }
       }
       if (!cid) {
         const { data: { session } } = await supabase.auth.getSession()
         if (session?.user) {
           const { data: ownCo } = await (supabase as any).from('companies').select('id, name').eq('owner_id', session.user.id).maybeSingle()
-          if (ownCo?.id) { cid = ownCo.id; setCompanyName(ownCo.name) }
+          if (ownCo?.id) { cid = ownCo.id; setCompanyName(ownCo.name); nameResolved = true }
         }
       }
       setCompanyId(cid)
-      if (cid) await load(cid)
+      if (cid) {
+        // If the company id came from the shared cache, the name lookups above
+        // were skipped — backfill the header label in the background so it isn't
+        // blank, without delaying the reviews paint.
+        if (!nameResolved) {
+          ;(supabase as any).from('companies').select('name').eq('id', cid).maybeSingle()
+            .then(({ data }: any) => { if (data?.name) setCompanyName(data.name) })
+        }
+        await load(cid)
+      }
       setLoading(false)
     }
     init()
@@ -56,6 +69,7 @@ export default function ReviewsPage() {
     const { data } = await (supabase as any).from('google_reviews')
       .select('*').eq('company_id', cid).order('review_created_at', { ascending: false }).limit(500)
     setReviews(data || [])
+    writeCache(`reviews:${cid}`, data || [])
   }
 
   const sync = async () => {
