@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { uploadAttachment, readJsonSafe } from '@/lib/upload-attachment'
 import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
 import { decodeEntities as dec } from '@/lib/decode-entities'
@@ -315,10 +316,14 @@ function extractFromText(text: string) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function InboxPage() {
-  const [companyId, setCompanyId] = useState<string | null>(null)
+  // Seed from the shared identity cache + the last conversation list we rendered
+  // so a revisit shows the inbox instantly instead of "Loading inbox…".
+  const seededCid = peekCompanyUser()?.companyId ?? null
+  const seededConvs = seededCid ? readCache<Conversation[]>(`inbox-convs:${seededCid}:open`) : undefined
+  const [companyId, setCompanyId] = useState<string | null>(seededCid)
   const [companyInfo, setCompanyInfo] = useState<any>(null)
   const [user, setUser] = useState<any>(null)
-  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [conversations, setConversations] = useState<Conversation[]>(seededConvs ?? [])
   const [selected, setSelected] = useState<Conversation | null>(null)
   const selectedRef = useRef<Conversation | null>(null)
   const loadWooDataRef = useRef<((id: string | null) => void) | null>(null)
@@ -936,7 +941,7 @@ export default function InboxPage() {
   const [orderDateFrom, setOrderDateFrom] = useState('')
   const [orderDateTo, setOrderDateTo] = useState('')
   const [showOrderSearch, setShowOrderSearch] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!seededConvs)
   // New chat features
   const [replyTo, setReplyTo] = useState<Message | null>(null)
   const [showEmoji, setShowEmoji] = useState(false)
@@ -1057,8 +1062,8 @@ export default function InboxPage() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user) return
       setUser(session.user)
-      let cid: string | null = null
-      if (typeof window !== 'undefined') {
+      let cid: string | null = seededCid
+      if (!cid && typeof window !== 'undefined') {
         const h = window.location.hostname
         if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
           const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
@@ -1087,6 +1092,12 @@ export default function InboxPage() {
     // NOTE: conversations.contact_id has no FK to contacts in some deployments,
     // so a PostgREST embed (`contacts(...)`) fails the WHOLE query and returns
     // nothing (blank inbox). Fetch conversations plainly, then attach contacts.
+    // Instant paint on revisit / filter switch: show the last list we rendered
+    // for this filter while the fresh rows load in the background.
+    const cacheKey = `inbox-convs:${id}:${statusFilter}`
+    const cachedConvs = readCache<Conversation[]>(cacheKey)
+    if (cachedConvs && cachedConvs.length) setConversations(cachedConvs)
+
     let q = (supabase as any).from('conversations').select('*').eq('company_id', id)
     // "Closed" covers closed + resolved; "Open" is everything else.
     if (statusFilter === 'closed') q = q.in('status', ['closed', 'resolved'])
@@ -1107,6 +1118,7 @@ export default function InboxPage() {
     }
 
     setConversations(convs)
+    writeCache(cacheKey, convs)
     // On first load (desktop), OPEN the top conversation — including its messages
     // and contact — instead of just highlighting it (which left the pane blank).
     if (data && data.length > 0 && !selectedRef.current && typeof window !== 'undefined' && window.innerWidth >= 768) {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import AddContactModal from '@/components/AddContactModal'
 import MatchingContactsModal from '@/components/MatchingContactsModal'
@@ -13,7 +14,10 @@ type Contact = { id: string; name: string | null; email: string | null; phone: s
 const SOURCE_COLORS: Record<string, string> = { widget: '#dbeafe', woocommerce: '#ede9fe', import: '#dcfce7', manual: '#fef9c3', email: '#ffedd5' }
 
 export default function ContactsPage() {
-  const [companyId, setCompanyId] = useState<string | null>(null)
+  // Seed the company from the shared identity cache so a revisit resolves it
+  // synchronously and skips the extra companies lookup.
+  const seededCid = peekCompanyUser()?.companyId ?? null
+  const [companyId, setCompanyId] = useState<string | null>(seededCid)
   const [contacts, setContacts] = useState<Contact[]>([])
   const [search, setSearch] = useState('')
   const [outlets, setOutlets] = useState<any[]>([])
@@ -108,8 +112,8 @@ export default function ContactsPage() {
 
   useEffect(() => {
     const init = async () => {
-      let cid: string | null = null
-      if (typeof window !== 'undefined') {
+      let cid: string | null = seededCid
+      if (!cid && typeof window !== 'undefined') {
         const h = window.location.hostname
         if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
           const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
@@ -132,7 +136,17 @@ export default function ContactsPage() {
   const loadContacts = async (cid?: string | null, q?: string) => {
     const id = cid || companyId
     if (!id) return
-    setLoading(true)
+    // Instant paint on revisit: show the last rows we rendered for this exact
+    // query while the fresh data loads in the background.
+    const cacheKey = `contacts:${id}:${locationFilter}:${page}:${(q || '').trim()}:${sortBy}:${fChannel}:${fRelationship}:${fLoyalty}:${fMinSpend}:${fMinOrders}:${fState}:${fPostcode}:${fProduct}`
+    const cached = readCache<{ rows: Contact[]; count: number }>(cacheKey)
+    if (cached) {
+      setContacts(cached.rows)
+      setTotalCount(cached.count)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
     let query = (supabase as any).from('contacts').select('*', { count: 'exact' }).eq('company_id', id)
     if (locationFilter !== 'all') query = query.eq('location_id', locationFilter)
     if (q && q.trim()) {
@@ -223,9 +237,15 @@ export default function ContactsPage() {
     setContacts(rows)
     setTotalCount(count || 0)
     setLoading(false)
+    writeCache(cacheKey, { rows, count: count || 0 })
   }
 
+  // Skip this effect's initial mount run: the first load is driven by `init`
+  // above. Without this guard, seeding companyId would make it fire a duplicate
+  // load on mount. Subsequent search/filter changes flow through here (debounced).
+  const filterEffectRan = useRef(false)
   useEffect(() => {
+    if (!filterEffectRan.current) { filterEffectRan.current = true; return }
     const t = setTimeout(() => { if (companyId) loadContacts(companyId, search) }, 350)
     return () => clearTimeout(t)
   }, [search, locationFilter, sortBy, fChannel, fRelationship, fLoyalty, fMinSpend, fMinOrders, fState, fPostcode, fProduct, page])
