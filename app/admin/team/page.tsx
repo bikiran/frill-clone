@@ -11,6 +11,7 @@ export default function TeamPage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [members, setMembers] = useState<any[]>([])
+  const [outlets, setOutlets] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showInvite, setShowInvite] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
@@ -55,8 +56,23 @@ export default function TeamPage() {
         } catch { /* fall back to email */ }
       }
       setMembers(rows)
+      // Outlets for the "default outlet" picker (scoped to this company).
+      const cid = rows.find((m: any) => m.company_id)?.company_id || null
+      if (cid) {
+        try {
+          const { data: locs } = await (supabase as any).from('company_locations')
+            .select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })
+          setOutlets(locs || [])
+        } catch {}
+      }
     } catch {}
     setLoading(false)
+  }
+
+  const updateDefaultOutlet = async (id: string, locId: string) => {
+    setMembers(ms => ms.map(m => m.id === id ? { ...m, default_location_id: locId || null } : m))
+    try { await (supabase as any).from('team_members').update({ default_location_id: locId || null }).eq('id', id) }
+    catch { /* best effort — the column may need the V213 migration */ }
   }
 
   const showMsg = (text: string) => {
@@ -305,6 +321,15 @@ export default function TeamPage() {
                 <div className="min-w-0">
                   <p className="text-sm truncate" style={{ color: 'var(--ink)', fontWeight: 600 }}>{m.display_name || m.email}</p>
                   {m.display_name && <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{m.email}</p>}
+                  {outlets.length > 0 && (
+                    <select value={m.default_location_id || ''} onChange={e => updateDefaultOutlet(m.id, e.target.value)}
+                      title="Default outlet — used to pre-filter their Tasks page"
+                      className="text-xs mt-1 px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white max-w-full"
+                      style={{ borderColor: 'var(--border)', color: m.default_location_id ? 'var(--coral)' : 'var(--slate)' }}>
+                      <option value="">No default outlet</option>
+                      {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
+                    </select>
+                  )}
                 </div>
               </div>
               {/* Mobile — SMS reminders for assigned events go to this number.

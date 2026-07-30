@@ -130,6 +130,7 @@ export default function TasksPage() {
   const [showFilters, setShowFilters] = useState(false)    // top filter dropdown
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showNew, setShowNew] = useState(false)
+  const [newTaskSeed, setNewTaskSeed] = useState<any>(null) // prefill for "end repeat & create new"
   // Decide layout from the ACTUAL available width, not the viewport — the admin
   // sidebar eats ~220px, so a viewport media query misjudges when the 3-pane
   // layout fits and could pop the mobile sheet on a desktop.
@@ -182,6 +183,17 @@ export default function TasksPage() {
         // Replace email-username fallbacks with real profile names.
         await enrichNames(members)
         setTeam(members)
+
+        // Team members land on their own work: default to "assigned to me" and,
+        // if they have a home outlet set, pre-filter to it. The owner sees
+        // everything (no defaults).
+        const uid = session?.user?.id
+        const myMembership = (tm || []).find((m: any) => (m.user_id || m.id) === uid && (!m.company_id || m.company_id === cid))
+        if (uid && co?.owner_id !== uid && myMembership) {
+          setAssigneeFilter('me')
+          if (myMembership.default_location_id) setOutletFilter(myMembership.default_location_id)
+        }
+
         // Outlets for the outlet filter + task tagging.
         try {
           const { data: locs } = await (supabase as any).from('company_locations')
@@ -454,6 +466,23 @@ export default function TasksPage() {
     await q
   }
 
+  // End a repeat at a card and open the create form pre-filled, so the user can
+  // pick a NEW repeat rule for the rest of the run (change daily→weekly, etc.).
+  const endRepeatAndCreate = async (task: any) => {
+    await deleteScoped(task, 'following')   // drop this occurrence + all later ones
+    setNewTaskSeed({
+      title: task.title || task.text || '',
+      priority: task.priority || 'normal',
+      color: task.color || '',
+      locationId: task.location_id || '',
+      assignees: Array.isArray(task.assignees) ? task.assignees : [],
+      due: task.due_date ? localYmd(parseTs(task.due_date) || new Date(task.due_date)) : '',
+    })
+    setSelectedId(null)
+    setShowNew(true)
+    if (companyId) loadTasks(companyId)
+  }
+
   if (loading) return <div style={{ padding: 20 }}><SkeletonList rows={7} /></div>
 
   const BUCKETS: { key: Bucket; label: string; n: number }[] = [
@@ -643,10 +672,10 @@ export default function TasksPage() {
         </div>
         <div className="tasks-detail">
           {showNew ? (
-            <TaskEditor companyId={companyId!} team={team} outlets={outlets} me={me} userId={userId} onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); if (companyId) loadTasks(companyId) }} />
+            <TaskEditor companyId={companyId!} team={team} outlets={outlets} me={me} userId={userId} initial={newTaskSeed} onClose={() => { setShowNew(false); setNewTaskSeed(null) }} onSaved={() => { setShowNew(false); setNewTaskSeed(null); if (companyId) loadTasks(companyId) }} />
           ) : selected ? (
             <TaskDetail key={selected.id} task={selected} conv={convs[selected.conversation_id]} team={team} outlets={outlets} companyId={companyId!} me={me} userId={userId}
-              onPatch={(f: any, scope?: string) => patchScoped(selected, f, scope)} onDeleteScoped={(scope?: string) => deleteScoped(selected, scope)} onDeleted={() => { setSelectedId(null); if (companyId) loadTasks(companyId) }} router={router} />
+              onPatch={(f: any, scope?: string) => patchScoped(selected, f, scope)} onDeleteScoped={(scope?: string) => deleteScoped(selected, scope)} onEndRepeatNew={() => endRepeatAndCreate(selected)} onDeleted={() => { setSelectedId(null); if (companyId) loadTasks(companyId) }} router={router} />
           ) : (
             <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>Select a task to see details, or create a new one.</div>
           )}
@@ -656,10 +685,10 @@ export default function TasksPage() {
       {isNarrow && (showNew || selected) && (
         <MobileSheet onClose={() => { setShowNew(false); setSelectedId(null) }}>
           {showNew ? (
-            <TaskEditor companyId={companyId!} team={team} outlets={outlets} me={me} userId={userId} onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); if (companyId) loadTasks(companyId) }} />
+            <TaskEditor companyId={companyId!} team={team} outlets={outlets} me={me} userId={userId} initial={newTaskSeed} onClose={() => { setShowNew(false); setNewTaskSeed(null) }} onSaved={() => { setShowNew(false); setNewTaskSeed(null); if (companyId) loadTasks(companyId) }} />
           ) : selected ? (
             <TaskDetail key={selected.id} task={selected} conv={convs[selected.conversation_id]} team={team} outlets={outlets} companyId={companyId!} me={me} userId={userId}
-              onPatch={(f: any, scope?: string) => patchScoped(selected, f, scope)} onDeleteScoped={(scope?: string) => deleteScoped(selected, scope)} onDeleted={() => { setSelectedId(null); if (companyId) loadTasks(companyId) }} router={router} />
+              onPatch={(f: any, scope?: string) => patchScoped(selected, f, scope)} onDeleteScoped={(scope?: string) => deleteScoped(selected, scope)} onEndRepeatNew={() => endRepeatAndCreate(selected)} onDeleted={() => { setSelectedId(null); if (companyId) loadTasks(companyId) }} router={router} />
           ) : null}
         </MobileSheet>
       )}
@@ -927,7 +956,7 @@ function MobileSheet({ children, onClose }: any) {
   )
 }
 
-function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onPatch, onDeleteScoped, onDeleted, router }: any) {
+function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onPatch, onDeleteScoped, onEndRepeatNew, onDeleted, router }: any) {
   const [comments, setComments] = useState<any[]>([])
   const [comment, setComment] = useState('')
   const [showOrderSearch, setShowOrderSearch] = useState(false)
@@ -1108,13 +1137,22 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       <button onClick={addComment} disabled={!comment.trim()} style={{ marginTop: 7, padding: '8px 16px', borderRadius: 8, border: 'none', background: comment.trim() ? 'var(--coral)' : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: comment.trim() ? 'pointer' : 'default' }}>Comment</button>
       </>
       )}
-      <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+      <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
+        {isSeries && onEndRepeatNew && (
+          <button onClick={async () => {
+            if (!confirm('End the repeat at this card (this and all following cards are removed) and start a new repeat from here?')) return
+            await onEndRepeatNew()
+          }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #0e7490', background: '#ecfeff', color: '#0e7490', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '8px 12px', borderRadius: 9 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            End repeat here &amp; create new…
+          </button>
+        )}
         <button onClick={async () => {
           const label = isSeries ? (scope === 'all' ? 'all cards in this series' : scope === 'following' ? 'this and all following cards' : 'this card') : 'this task'
           if (!confirm(`Delete ${label}?`)) return
           await onDeleteScoped(isSeries ? scope : 'this')
           onDeleted()
-        }} style={{ border: 'none', background: 'none', color: '#dc2626', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+        }} style={{ border: 'none', background: 'none', color: '#dc2626', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
           {isSeries ? (scope === 'all' ? 'Delete all in series' : scope === 'following' ? 'Delete this & following' : 'Delete this card') : 'Delete task'}
         </button>
       </div>
@@ -1162,14 +1200,15 @@ function OrderSearchModal({ companyId, onClose, onPick }: any) {
   )
 }
 
-function TaskEditor({ companyId, team, outlets = [], me, userId, onClose, onSaved }: any) {
-  const [title, setTitle] = useState('')
-  const [priority, setPriority] = useState('normal')
-  const [due, setDue] = useState('')
-  const [assignees, setAssignees] = useState<any[]>([])
+function TaskEditor({ companyId, team, outlets = [], me, userId, initial, onClose, onSaved }: any) {
+  // `initial` seeds the form (used by "end repeat & create new").
+  const [title, setTitle] = useState(initial?.title || '')
+  const [priority, setPriority] = useState(initial?.priority || 'normal')
+  const [due, setDue] = useState(initial?.due || '')
+  const [assignees, setAssignees] = useState<any[]>(initial?.assignees || [])
   const [order, setOrder] = useState<any>(null)
-  const [color, setColor] = useState<string>('')          // hex or '' (none)
-  const [locationId, setLocationId] = useState<string>('') // outlet
+  const [color, setColor] = useState<string>(initial?.color || '')          // hex or '' (none)
+  const [locationId, setLocationId] = useState<string>(initial?.locationId || '') // outlet
   const [repeat, setRepeat] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none')
   const [repeatDays, setRepeatDays] = useState<number[]>([]) // weekly: 0..6
   const [repeatCount, setRepeatCount] = useState(6)
@@ -1180,6 +1219,8 @@ function TaskEditor({ companyId, team, outlets = [], me, userId, onClose, onSave
   const draft = useDraft(userId, companyId, 'task', '', { title, priority, due, assignees, order, color, locationId, repeat, repeatDays, repeatCount },
     { isEmpty: (v: any) => !v?.title?.trim() })
   useEffect(() => {
+    // Don't overwrite a seeded form (from "end repeat & create new") with a draft.
+    if (initial) return
     if (draft.ready && draft.restored && !title) {
       const r = draft.restored
       if (r.title) setTitle(r.title)
@@ -1287,7 +1328,7 @@ function TaskEditor({ companyId, team, outlets = [], me, userId, onClose, onSave
   return (
     <div style={{ padding: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 12px' }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>New task</h3>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>{initial ? 'Continue repeat as new' : 'New task'}</h3>
         {draft.saved && title.trim() && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--slate)' }}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
