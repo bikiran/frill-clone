@@ -46,7 +46,16 @@ const fmtRel = (d: string | null | undefined) => {
   return fmtDay(p)
 }
 
-type Bucket = 'today' | 'overdue' | 'upcoming' | 'completed' | 'all'
+type Bucket = 'today' | 'overdue' | 'upcoming' | 'completed' | 'all' | 'day' | 'week' | 'month' | 'date'
+
+// Start/end (ms) of the day / week (Sun–Sat) / month containing `ref`.
+function periodRange(ref: Date, period: 'day' | 'week' | 'month'): { start: number; end: number } {
+  const d = new Date(ref); d.setHours(0, 0, 0, 0)
+  if (period === 'day') { const e = new Date(d); e.setDate(e.getDate() + 1); return { start: d.getTime(), end: e.getTime() } }
+  if (period === 'week') { const s = new Date(d); s.setDate(s.getDate() - s.getDay()); const e = new Date(s); e.setDate(e.getDate() + 7); return { start: s.getTime(), end: e.getTime() } }
+  const s = new Date(d.getFullYear(), d.getMonth(), 1); const e = new Date(d.getFullYear(), d.getMonth() + 1, 1)
+  return { start: s.getTime(), end: e.getTime() }
+}
 type ViewMode = 'list' | 'board' | 'timeline' | 'calendar'
 
 const PRIORITY = {
@@ -118,6 +127,7 @@ export default function TasksPage() {
   const [team, setTeam] = useState<any[]>([])
 
   const [bucket, setBucket] = useState<Bucket>('today')
+  const [bucketDate, setBucketDate] = useState('')   // for the "Date" bucket
   const [view, setView] = useState<ViewMode>('list')
   const [search, setSearch] = useState('')
   const [assigneeFilter, setAssigneeFilter] = useState('')
@@ -180,9 +190,10 @@ export default function TasksPage() {
           if (members.some(x => x.user_id === uid)) continue
           members.push({ id: m.id, user_id: uid, name: m.name || m.display_name || (m.email ? m.email.split('@')[0] : 'Team member'), email: m.email })
         }
-        // Replace email-username fallbacks with real profile names.
-        await enrichNames(members)
+        // Paint the team with raw names immediately; resolve real profile names
+        // in the background so they never block the task list from showing.
         setTeam(members)
+        enrichNames(members).then(() => setTeam(members.slice())).catch(() => {})
 
         // Team members land on their own work: default to "assigned to me" and,
         // if they have a home outlet set, pre-filter to it. The owner sees
@@ -194,12 +205,14 @@ export default function TasksPage() {
           if (myMembership.default_location_id) setOutletFilter(myMembership.default_location_id)
         }
 
-        // Outlets for the outlet filter + task tagging.
-        try {
-          const { data: locs } = await (supabase as any).from('company_locations')
-            .select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })
-          setOutlets(locs || [])
-        } catch {}
+        // Outlets load in the background too — not needed for the first paint.
+        ;(async () => {
+          try {
+            const { data: locs } = await (supabase as any).from('company_locations')
+              .select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })
+            setOutlets(locs || [])
+          } catch {}
+        })()
         await loadTasks(cid)
       } finally { setLoading(false) }
     })()
@@ -216,6 +229,11 @@ export default function TasksPage() {
       data = base.data
     } else data = full.data
     let rows: any[] = data || []
+
+    // Paint the real tasks immediately, before the (slower) calendar merge and
+    // conversation enrichment — so the list shows up straight away.
+    setTasks(rows)
+    setLoading(false)
 
     // Calendar events of type "task" are real work too — they were only ever
     // stored in calendar_events, so the Tasks page never saw them and a task
@@ -282,16 +300,23 @@ export default function TasksPage() {
   }, [userId])
 
   const counts = useMemo(() => {
-    const today = startOfDay(new Date()).getTime()
-    const c = { today: 0, overdue: 0, upcoming: 0, completed: 0, all: tasks.length }
+    const now = new Date()
+    const today = startOfDay(now).getTime()
+    const wk = periodRange(now, 'week'); const mo = periodRange(now, 'month')
+    const c = { today: 0, overdue: 0, upcoming: 0, completed: 0, all: tasks.length, day: 0, week: 0, month: 0 }
     for (const t of tasks) {
       if (isDone(t)) { c.completed++; continue }
       const due = parseTs(t.due_date)
-      if (!due) { c.upcoming++; continue }
+      // An undated task counts as "Today" so freshly-added tasks surface there.
+      if (!due) { c.today++; continue }
+      const dTime = due.getTime()
       const d = startOfDay(due).getTime()
       if (d < today) c.overdue++
       else if (d === today) c.today++
       else c.upcoming++
+      if (d === today) c.day++
+      if (dTime >= wk.start && dTime < wk.end) c.week++
+      if (dTime >= mo.start && dTime < mo.end) c.month++
     }
     return c
   }, [tasks])
@@ -318,6 +343,7 @@ export default function TasksPage() {
         }
       }
     }
+    const nowRef = new Date()
     let list = tasks.filter(t => {
       if (bucket !== 'all') {
         if (bucket === 'completed') { if (!isDone(t)) return false }
@@ -325,9 +351,19 @@ export default function TasksPage() {
           if (isDone(t)) return false
           const due = parseTs(t.due_date)
           const d = due ? startOfDay(due).getTime() : null
-          if (bucket === 'today' && d !== today) return false
+          const dTime = due ? due.getTime() : null
+          // Today now includes undated tasks (freshly-added ones surface here).
+          if (bucket === 'today' && !(d === today || d == null)) return false
           if (bucket === 'overdue' && !(d != null && d < today)) return false
-          if (bucket === 'upcoming' && !(d == null || d > today)) return false
+          if (bucket === 'upcoming' && !(d != null && d > today)) return false
+          if (bucket === 'day' && d !== today) return false
+          if (bucket === 'week') { const r = periodRange(nowRef, 'week'); if (dTime == null || dTime < r.start || dTime >= r.end) return false }
+          if (bucket === 'month') { const r = periodRange(nowRef, 'month'); if (dTime == null || dTime < r.start || dTime >= r.end) return false }
+          if (bucket === 'date') {
+            if (!bucketDate || dTime == null) return false
+            const r = periodRange(new Date(bucketDate + 'T00:00:00'), 'day')
+            if (dTime < r.start || dTime >= r.end) return false
+          }
         }
       }
       if (assigneeFilter === 'me' && !assignedToMe(t)) return false
@@ -357,7 +393,7 @@ export default function TasksPage() {
       return da - db_
     })
     return list
-  }, [tasks, bucket, search, assigneeFilter, priorityFilter, outletFilter, dateFilter, datePeriod, sortBy, assignedToMe])
+  }, [tasks, bucket, bucketDate, search, assigneeFilter, priorityFilter, outletFilter, dateFilter, datePeriod, sortBy, assignedToMe])
 
   // For the calendar view we want the whole month regardless of the Today/
   // Overdue/… bucket — only the assignee/priority/search filters apply, so a
@@ -491,6 +527,10 @@ export default function TasksPage() {
     { key: 'upcoming', label: 'Upcoming', n: counts.upcoming },
     { key: 'completed', label: 'Completed', n: counts.completed },
     { key: 'all', label: 'All', n: counts.all },
+    { key: 'day', label: 'Day', n: counts.day },
+    { key: 'week', label: 'Week', n: counts.week },
+    { key: 'month', label: 'Month', n: counts.month },
+    { key: 'date', label: 'Date', n: 0 },
   ]
 
   return (
@@ -509,13 +549,28 @@ export default function TasksPage() {
         .tasks-body { flex: 1; display: flex; min-height: 0; }
         .tasks-filters { width: 210px; flex-shrink: 0; border-right: 1px solid var(--border); padding: 16px; overflow-y: auto; }
         .tasks-main { flex: 1; overflow-y: auto; min-width: 0; }
-        .tasks-detail { width: 360px; flex-shrink: 0; border-left: 1px solid var(--border); overflow-y: auto; }
+        /* Detail is a slide-out panel from the right (~half screen). */
+        .tasks-detail {
+          position: fixed; top: 56px; right: 0; height: calc(100vh - 56px);
+          width: 48vw; max-width: 640px; min-width: 380px;
+          background: #fff; border-left: 1px solid var(--border);
+          box-shadow: -14px 0 44px rgba(0,0,0,0.14);
+          overflow-y: auto; z-index: 60;
+          transform: translateX(100%);
+          transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .tasks-detail.open { transform: translateX(0); }
+        .tasks-detail-overlay { position: fixed; inset: 56px 0 0 0; background: rgba(0,0,0,0.22); z-index: 55; opacity: 0; pointer-events: none; transition: opacity 0.32s ease; }
+        .tasks-detail-overlay.open { opacity: 1; pointer-events: auto; }
         .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
         .seg button { padding: 7px 12px; border: none; background: #fff; font-size: 12.5px; font-weight: 700; cursor: pointer; color: var(--slate); }
         .seg button.on { background: var(--peach); color: var(--coral); }
         .ctl { padding: 8px 11px; border-radius: 9px; border: 1px solid var(--border); font-size: 12.5px; background: #fff; color: var(--ink); }
         .task-card { border: 1px solid var(--border); border-radius: 11px; background: #fff; padding: 13px; margin-bottom: 8px; cursor: pointer; }
         .task-card:hover { border-color: var(--coral); }
+        .cal-pill .cal-tick { opacity: 0; transition: opacity 0.12s ease; }
+        .cal-pill:hover .cal-tick, .cal-tick.done { opacity: 1; }
+        .cal-cell { cursor: pointer; }
         .task-card.sel { border-color: var(--coral); box-shadow: 0 0 0 2px var(--peach); }
         .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 16px; height: 100%; box-sizing: border-box; }
         .board-col { background: var(--canvas); border-radius: 12px; padding: 10px; overflow-y: auto; }
@@ -556,6 +611,11 @@ export default function TasksPage() {
               {b.label}{b.n > 0 && <span className="bucket-n">{b.n}</span>}
             </button>
           ))}
+          {/* The "Date" bucket reveals an inline picker to jump to a specific day. */}
+          {bucket === 'date' && (
+            <input type="date" value={bucketDate} onChange={e => setBucketDate(e.target.value)}
+              style={{ flexShrink: 0, padding: '6px 10px', borderRadius: 20, border: '1px solid var(--coral)', fontSize: 12.5, fontWeight: 700, color: 'var(--coral)', background: 'var(--peach)' }} />
+          )}
         </div>
         <div className="tasks-controls">
           <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 160 }}>
@@ -659,7 +719,7 @@ export default function TasksPage() {
           ) : view === 'timeline' ? (
             <Timeline tasks={visible} convs={convs} statusOf={statusOf} onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} selectedId={selectedId} />
           ) : view === 'calendar' ? (
-            <TaskCalendar tasks={calendarTasks} statusOf={statusOf} onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} selectedId={selectedId} />
+            <TaskCalendar tasks={calendarTasks} statusOf={statusOf} onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} onToggle={(t: any) => setStatus(t, isDone(t) ? 'todo' : 'done')} selectedId={selectedId} />
           ) : (
             <div style={{ padding: 16 }}>
               {visible.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--slate)', fontSize: 13.5 }}>No tasks in “{BUCKETS.find(b => b.key === bucket)?.label}”.</div>}
@@ -670,15 +730,25 @@ export default function TasksPage() {
             </div>
           )}
         </div>
-        <div className="tasks-detail">
+        {/* Backdrop for the slide-out (desktop). */}
+        <div className={'tasks-detail-overlay' + ((selected || showNew) && !isNarrow ? ' open' : '')}
+          onClick={() => { setSelectedId(null); setShowNew(false); setNewTaskSeed(null) }} />
+        <div className={'tasks-detail' + ((selected || showNew) && !isNarrow ? ' open' : '')}>
+          {(selected || showNew) && (
+            <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>{showNew ? (newTaskSeed ? 'Continue repeat' : 'New task') : 'Task details'}</span>
+              <button onClick={() => { setSelectedId(null); setShowNew(false); setNewTaskSeed(null) }} title="Close"
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--slate)', display: 'flex', padding: 4, borderRadius: 8 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          )}
           {showNew ? (
             <TaskEditor companyId={companyId!} team={team} outlets={outlets} me={me} userId={userId} initial={newTaskSeed} onClose={() => { setShowNew(false); setNewTaskSeed(null) }} onSaved={() => { setShowNew(false); setNewTaskSeed(null); if (companyId) loadTasks(companyId) }} />
           ) : selected ? (
             <TaskDetail key={selected.id} task={selected} conv={convs[selected.conversation_id]} team={team} outlets={outlets} companyId={companyId!} me={me} userId={userId}
               onPatch={(f: any, scope?: string) => patchScoped(selected, f, scope)} onDeleteScoped={(scope?: string) => deleteScoped(selected, scope)} onEndRepeatNew={() => endRepeatAndCreate(selected)} onDeleted={() => { setSelectedId(null); if (companyId) loadTasks(companyId) }} router={router} />
-          ) : (
-            <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>Select a task to see details, or create a new one.</div>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -771,7 +841,7 @@ const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 
 // An in-page month calendar of the tasks, plotted on their due dates. Clicking a
 // task opens it in the detail pane, same as the other views.
-function TaskCalendar({ tasks, statusOf, onSelect, selectedId }: any) {
+function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) {
   const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d })
   const [dayPopup, setDayPopup] = useState<{ date: Date; tasks: any[] } | null>(null)
   const year = cursor.getFullYear()
@@ -821,9 +891,10 @@ function TaskCalendar({ tasks, statusOf, onSelect, selectedId }: any) {
           const isToday = key === todayKey
           const openDay = () => setDayPopup({ date: new Date(year, month, d), tasks: dayTasks })
           return (
-            <div key={i} style={{ border: `1px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 10, padding: 6, background: isToday ? 'var(--peach)' : '#fff', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <button onClick={openDay} title={`${dayTasks.length} task${dayTasks.length === 1 ? '' : 's'} — view all`}
-                style={{ alignSelf: 'flex-start', border: 'none', background: 'none', padding: 0, cursor: 'pointer', fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? 'var(--coral)' : 'var(--slate)' }}>{d}</button>
+            // Clicking anywhere in the cell (not a task pill) opens the day popup.
+            <div key={i} className="cal-cell" onClick={openDay}
+              style={{ border: `1px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 10, padding: 6, background: isToday ? 'var(--peach)' : '#fff', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span style={{ alignSelf: 'flex-start', fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? 'var(--coral)' : 'var(--slate)' }}>{d}</span>
               {dayTasks.slice(0, 3).map((t: any) => {
                 const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
                 const done = statusOf(t) === 'done'
@@ -834,15 +905,20 @@ function TaskCalendar({ tasks, statusOf, onSelect, selectedId }: any) {
                 const cFg = t.color || pr.color
                 const cDot = t.color || pr.color
                 return (
-                  <button key={t.id} onClick={() => onSelect(t.id)} title={t.title || t.text}
-                    style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', padding: '2px 5px', borderRadius: 5, background: sel ? 'var(--coral)' : cBg, color: sel ? '#fff' : cFg, fontSize: 10.5, fontWeight: 700 }}>
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: sel ? '#fff' : cDot, flexShrink: 0 }} />
+                  <div key={t.id} className="cal-pill" onClick={(e) => { e.stopPropagation(); onSelect(t.id) }} title={t.title || t.text}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%', textAlign: 'left', cursor: 'pointer', padding: '2px 5px', borderRadius: 5, background: sel ? 'var(--coral)' : cBg, color: sel ? '#fff' : cFg, fontSize: 10.5, fontWeight: 700 }}>
+                    {/* Hover tick to complete without opening the task. */}
+                    <button type="button" className={'cal-tick' + (done ? ' done' : '')} title={done ? 'Mark not done' : 'Mark done'}
+                      onClick={(e) => { e.stopPropagation(); onToggle?.(t) }}
+                      style={{ flexShrink: 0, width: 13, height: 13, borderRadius: '50%', border: '1.5px solid ' + (done ? '#22c55e' : (sel ? '#fff' : cDot)), background: done ? '#22c55e' : 'transparent', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {done && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                    </button>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: done ? 'line-through' : 'none', opacity: done ? 0.6 : 1 }}>{t.title || t.text}</span>
-                  </button>
+                  </div>
                 )
               })}
               {dayTasks.length > 3 && (
-                <button onClick={openDay} style={{ alignSelf: 'flex-start', border: 'none', background: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 700, color: 'var(--coral)', padding: '0 0 0 2px' }}>+{dayTasks.length - 3} more</button>
+                <button onClick={(e) => { e.stopPropagation(); openDay() }} style={{ alignSelf: 'flex-start', border: 'none', background: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 700, color: 'var(--coral)', padding: '0 0 0 2px' }}>+{dayTasks.length - 3} more</button>
               )}
             </div>
           )
