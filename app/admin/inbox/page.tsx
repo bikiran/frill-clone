@@ -1204,12 +1204,22 @@ export default function InboxPage() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `company_id=eq.${companyId}` }, (payload: any) => {
         // selectedRef, not `selected` — the closure captured at subscribe time
         // would otherwise be stale and drop messages.
-        if (selectedRef.current?.id === payload.new.conversation_id) {
+        const isOpen = selectedRef.current?.id === payload.new.conversation_id
+        if (isOpen) {
           setMessages(prev => {
             if (prev.some((m: any) => m.id === payload.new.id)) return prev
             return [...prev, payload.new]
           })
           scrollBottom()
+          // The agent is looking at this thread, so anything landing in it is
+          // already "read". Clear its unread counter — this is what stopped the
+          // badge from climbing on the very conversation you're replying to (an
+          // inbound reply mid-chat, or your own outbound echoing back, used to
+          // bump/keep the count even though you'd obviously seen it).
+          ;(supabase as any).from('conversations')
+            .update({ is_unread: false, unread_count: 0 })
+            .eq('id', payload.new.conversation_id)
+            .then(() => loadConversationsRef.current(), () => {})
           // An order automation message means a new order just landed for this
           // customer. Refresh the order panel so the Orders tab populates
           // without a manual page reload.
@@ -1222,10 +1232,11 @@ export default function InboxPage() {
         // Float the conversation that just got a message to the top of the list
         // immediately, so an active thread that had drifted to the bottom (buried
         // by newer conversations) comes back up without waiting for a reload or a
-        // manual scroll.
+        // manual scroll. If it's the open thread, also zero its badge locally so
+        // it never flashes an unread count while you're in it.
         setConversations(prev => prev.map((c: any) =>
           c.id === payload.new.conversation_id
-            ? { ...c, last_message_at: payload.new.created_at || new Date().toISOString() }
+            ? { ...c, last_message_at: payload.new.created_at || new Date().toISOString(), ...(isOpen ? { is_unread: false, unread_count: 0 } : {}) }
             : c
         ))
         loadConversationsRef.current()

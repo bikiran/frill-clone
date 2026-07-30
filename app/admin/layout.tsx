@@ -440,6 +440,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           .admin-main { margin-left: 0 !important; }
           .admin-mobile-overlay.open { display: block !important; }
         }
+        /* Collapsible nav-group header — a proper padded, rounded row that
+           highlights on hover, with the chevron fading in a touch. */
+        .nav-group-header {
+          display: flex; align-items: center; justify-content: space-between;
+          width: 100%; padding: 5px 10px; margin-bottom: 4px; border-radius: 8px;
+          background: transparent; border: none; cursor: pointer;
+          transition: background 0.14s ease;
+        }
+        .nav-group-header:hover { background: #f1f2f4; }
+        .nav-group-header .nav-group-chevron { opacity: 0.45; transition: transform 0.18s ease, opacity 0.14s ease; }
+        .nav-group-header:hover .nav-group-chevron { opacity: 0.85; }
+        .nav-group-header.is-collapsed { background: #f5f6f8; }
+        .nav-group-header.is-collapsed:hover { background: #ececf0; }
       `}</style>
 
       {/* NOTE: the old floating mobile hamburger was removed. It used
@@ -547,17 +560,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             // so everything stays visible regardless of the saved state.
             const groupCollapsed = !!group.label && !adminCollapsed && !!collapsedGroups[group.label]
             return (
-            <div key={gi} style={{ marginBottom: groupCollapsed ? 6 : 20 }}>
+            <div key={gi} style={{ marginBottom: groupCollapsed ? 8 : 20 }}>
               {group.label && !adminCollapsed && (
                 <button type="button" onClick={() => toggleGroup(group.label!)}
                   aria-expanded={!groupCollapsed}
                   title={groupCollapsed ? `Show ${group.label}` : `Hide ${group.label}`}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '0 10px', marginBottom: 4, background: 'none', border: 'none', cursor: 'pointer' }}>
+                  className={`nav-group-header${groupCollapsed ? ' is-collapsed' : ''}`}>
                   <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--slate)' }}>
                     {group.label}
                   </span>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
-                    style={{ flexShrink: 0, opacity: 0.6, transform: groupCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s ease' }}>
+                  <svg className="nav-group-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+                    style={{ flexShrink: 0, transform: groupCollapsed ? 'rotate(180deg)' : 'none' }}>
                     <polyline points="18 15 12 9 6 15" />
                   </svg>
                 </button>
