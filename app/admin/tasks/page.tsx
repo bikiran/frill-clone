@@ -279,6 +279,31 @@ export default function TasksPage() {
       rows = [...rows, ...calTasks]
     } catch { /* calendar unavailable — show the plain tasks */ }
 
+    // Backfill series_id for repeats created before the series link existed, so
+    // their occurrences can be edited/deleted as one series (the This/Following/
+    // All scope selector only shows for tasks that carry a series_id). Occurrences
+    // of one repeat share creator + title + recurrence rule. Runs once — after
+    // this, the rows carry a series_id and there's nothing left to link.
+    try {
+      const unlinked = rows.filter((t: any) => t.recurrence && !t.series_id && t._source !== 'calendar' && !String(t.id).startsWith('cal:'))
+      if (unlinked.length > 1) {
+        const groups = new Map<string, any[]>()
+        for (const t of unlinked) {
+          const key = `${t.created_by_id || ''}|${t.title || t.text || ''}|${JSON.stringify(t.recurrence)}`
+          const arr = groups.get(key) || []; arr.push(t); groups.set(key, arr)
+        }
+        const idToSeries: Record<string, string> = {}
+        for (const arr of groups.values()) {
+          if (arr.length < 2) continue   // a lone occurrence isn't a series
+          const sid = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.round(Math.random() * 1e9)}`
+          const ids = arr.map((t: any) => t.id)
+          try { await (supabase as any).from('conversation_tasks').update({ series_id: sid }).in('id', ids) } catch {}
+          for (const id of ids) idToSeries[id] = sid
+        }
+        if (Object.keys(idToSeries).length) rows = rows.map((t: any) => idToSeries[t.id] ? { ...t, series_id: idToSeries[t.id] } : t)
+      }
+    } catch { /* backfill is best-effort */ }
+
     setTasks(rows)
     writeCache(`tasks:${cid}`, rows)
 
