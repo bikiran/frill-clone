@@ -123,7 +123,8 @@ export default function TasksPage() {
   const [assigneeFilter, setAssigneeFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
   const [outletFilter, setOutletFilter] = useState('')     // '' = all outlets
-  const [dateFilter, setDateFilter] = useState('')         // '' = any day; else YYYY-MM-DD
+  const [dateFilter, setDateFilter] = useState('')         // '' = any; else a reference YYYY-MM-DD
+  const [datePeriod, setDatePeriod] = useState<'day' | 'week' | 'month'>('day')
   const [sortBy, setSortBy] = useState<'due' | 'priority' | 'created'>('due')
   const [outlets, setOutlets] = useState<any[]>([])
   const [showFilters, setShowFilters] = useState(false)    // top filter dropdown
@@ -286,6 +287,25 @@ export default function TasksPage() {
   const visible = useMemo(() => {
     const today = startOfDay(new Date()).getTime()
     const q = search.trim().toLowerCase()
+    // Day / week / month window around the chosen reference date.
+    let dateRange: { start: number; end: number } | null = null
+    if (dateFilter) {
+      const ref = new Date(dateFilter + 'T00:00:00')
+      if (!isNaN(ref.getTime())) {
+        if (datePeriod === 'day') {
+          const s = new Date(ref); const e = new Date(ref); e.setDate(e.getDate() + 1)
+          dateRange = { start: s.getTime(), end: e.getTime() }
+        } else if (datePeriod === 'week') {
+          const s = new Date(ref); s.setDate(s.getDate() - s.getDay())   // Sunday
+          const e = new Date(s); e.setDate(e.getDate() + 7)
+          dateRange = { start: s.getTime(), end: e.getTime() }
+        } else {
+          const s = new Date(ref.getFullYear(), ref.getMonth(), 1)
+          const e = new Date(ref.getFullYear(), ref.getMonth() + 1, 1)
+          dateRange = { start: s.getTime(), end: e.getTime() }
+        }
+      }
+    }
     let list = tasks.filter(t => {
       if (bucket !== 'all') {
         if (bucket === 'completed') { if (!isDone(t)) return false }
@@ -305,11 +325,11 @@ export default function TasksPage() {
       }
       if (priorityFilter && (t.priority || 'normal') !== priorityFilter) return false
       if (outletFilter && t.location_id !== outletFilter) return false
-      if (dateFilter) {
+      if (dateFilter && dateRange) {
         const d = parseTs(t.due_date)
         if (!d) return false
-        const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-        if (ymd !== dateFilter) return false
+        const time = d.getTime()
+        if (time < dateRange.start || time >= dateRange.end) return false
       }
       if (q) {
         const hay = [t.title, t.text, t.assigned_to, t.order_number, t.order_customer].filter(Boolean).join(' ').toLowerCase()
@@ -325,7 +345,7 @@ export default function TasksPage() {
       return da - db_
     })
     return list
-  }, [tasks, bucket, search, assigneeFilter, priorityFilter, outletFilter, dateFilter, sortBy, assignedToMe])
+  }, [tasks, bucket, search, assigneeFilter, priorityFilter, outletFilter, dateFilter, datePeriod, sortBy, assignedToMe])
 
   // For the calendar view we want the whole month regardless of the Today/
   // Overdue/… bucket — only the assignee/priority/search filters apply, so a
@@ -398,6 +418,41 @@ export default function TasksPage() {
   }
   const setStatus = (t: any, status: string) =>
     patchTask(t.id, { status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null })
+
+  // Apply an edit to a whole recurring series. scope: 'this' | 'following' | 'all'.
+  // Falls back to a single-row patch when the task isn't part of a series.
+  const patchScoped = async (task: any, fields: any, scope?: string) => {
+    if (!task.series_id || !scope || scope === 'this' || task._source === 'calendar') {
+      return patchTask(task.id, fields)
+    }
+    // Optimistic local update across the affected rows.
+    setTasks(cur => cur.map(t => {
+      if (t.series_id !== task.series_id) return t
+      if (scope === 'following' && parseTs(t.due_date) && parseTs(task.due_date) && (parseTs(t.due_date)! < parseTs(task.due_date)!)) return t
+      return { ...t, ...fields }
+    }))
+    try {
+      let q = (supabase as any).from('conversation_tasks').update(fields).eq('series_id', task.series_id)
+      if (scope === 'following' && task.due_date) q = q.gte('due_date', task.due_date)
+      const { error } = await q
+      if (error) { console.error('[task scoped update] failed', error); if (companyId) loadTasks(companyId) }
+    } catch (e) { console.error('[task scoped update] threw', e); if (companyId) loadTasks(companyId) }
+  }
+
+  // Delete a task, or a scoped slice of its series.
+  const deleteScoped = async (task: any, scope?: string) => {
+    if (task._source === 'calendar') {
+      await fetch('/api/calendar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete', id: task._calendarId }) })
+      return
+    }
+    if (!task.series_id || !scope || scope === 'this') {
+      await (supabase as any).from('conversation_tasks').delete().eq('id', task.id)
+      return
+    }
+    let q = (supabase as any).from('conversation_tasks').delete().eq('series_id', task.series_id)
+    if (scope === 'following' && task.due_date) q = q.gte('due_date', task.due_date)
+    await q
+  }
 
   if (loading) return <div style={{ padding: 20 }}><SkeletonList rows={7} /></div>
 
@@ -519,7 +574,13 @@ export default function TasksPage() {
                           {team.map(m => <option key={m.id} value={m.user_id}>{m.name}</option>)}
                         </select>
                       </FilterField>
-                      <FilterField label="Due on day">
+                      <FilterField label="Due in">
+                        <div className="seg" style={{ display: 'flex', width: '100%', marginBottom: 6 }}>
+                          {(['day', 'week', 'month'] as const).map(p => (
+                            <button key={p} className={datePeriod === p ? 'on' : ''} onClick={() => setDatePeriod(p)}
+                              style={{ flex: 1, padding: '6px 0', border: 'none', background: datePeriod === p ? 'var(--peach)' : '#fff', color: datePeriod === p ? 'var(--coral)' : 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>{p}</button>
+                          ))}
+                        </div>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <input type="date" className="ctl" style={{ ...selectStyle, flex: 1 }} value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
                           {dateFilter && <button className="ctl" onClick={() => setDateFilter('')} style={{ cursor: 'pointer' }}>Clear</button>}
@@ -584,8 +645,8 @@ export default function TasksPage() {
           {showNew ? (
             <TaskEditor companyId={companyId!} team={team} outlets={outlets} me={me} userId={userId} onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); if (companyId) loadTasks(companyId) }} />
           ) : selected ? (
-            <TaskDetail key={selected.id} task={selected} conv={convs[selected.conversation_id]} team={team} companyId={companyId!} me={me} userId={userId}
-              onPatch={(f: any) => patchTask(selected.id, f)} onDeleted={() => { setSelectedId(null); if (companyId) loadTasks(companyId) }} router={router} />
+            <TaskDetail key={selected.id} task={selected} conv={convs[selected.conversation_id]} team={team} outlets={outlets} companyId={companyId!} me={me} userId={userId}
+              onPatch={(f: any, scope?: string) => patchScoped(selected, f, scope)} onDeleteScoped={(scope?: string) => deleteScoped(selected, scope)} onDeleted={() => { setSelectedId(null); if (companyId) loadTasks(companyId) }} router={router} />
           ) : (
             <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>Select a task to see details, or create a new one.</div>
           )}
@@ -597,8 +658,8 @@ export default function TasksPage() {
           {showNew ? (
             <TaskEditor companyId={companyId!} team={team} outlets={outlets} me={me} userId={userId} onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); if (companyId) loadTasks(companyId) }} />
           ) : selected ? (
-            <TaskDetail key={selected.id} task={selected} conv={convs[selected.conversation_id]} team={team} companyId={companyId!} me={me} userId={userId}
-              onPatch={(f: any) => patchTask(selected.id, f)} onDeleted={() => { setSelectedId(null); if (companyId) loadTasks(companyId) }} router={router} />
+            <TaskDetail key={selected.id} task={selected} conv={convs[selected.conversation_id]} team={team} outlets={outlets} companyId={companyId!} me={me} userId={userId}
+              onPatch={(f: any, scope?: string) => patchScoped(selected, f, scope)} onDeleteScoped={(scope?: string) => deleteScoped(selected, scope)} onDeleted={() => { setSelectedId(null); if (companyId) loadTasks(companyId) }} router={router} />
           ) : null}
         </MobileSheet>
       )}
@@ -683,6 +744,7 @@ const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 // task opens it in the detail pane, same as the other views.
 function TaskCalendar({ tasks, statusOf, onSelect, selectedId }: any) {
   const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d })
+  const [dayPopup, setDayPopup] = useState<{ date: Date; tasks: any[] } | null>(null)
   const year = cursor.getFullYear()
   const month = cursor.getMonth()
   const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
@@ -728,9 +790,11 @@ function TaskCalendar({ tasks, statusOf, onSelect, selectedId }: any) {
           const key = dayKey(new Date(year, month, d))
           const dayTasks = byDay.m[key] || []
           const isToday = key === todayKey
+          const openDay = () => setDayPopup({ date: new Date(year, month, d), tasks: dayTasks })
           return (
             <div key={i} style={{ border: `1px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 10, padding: 6, background: isToday ? 'var(--peach)' : '#fff', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? 'var(--coral)' : 'var(--slate)' }}>{d}</div>
+              <button onClick={openDay} title={`${dayTasks.length} task${dayTasks.length === 1 ? '' : 's'} — view all`}
+                style={{ alignSelf: 'flex-start', border: 'none', background: 'none', padding: 0, cursor: 'pointer', fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? 'var(--coral)' : 'var(--slate)' }}>{d}</button>
               {dayTasks.slice(0, 3).map((t: any) => {
                 const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
                 const done = statusOf(t) === 'done'
@@ -748,7 +812,9 @@ function TaskCalendar({ tasks, statusOf, onSelect, selectedId }: any) {
                   </button>
                 )
               })}
-              {dayTasks.length > 3 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--slate)', paddingLeft: 2 }}>+{dayTasks.length - 3} more</span>}
+              {dayTasks.length > 3 && (
+                <button onClick={openDay} style={{ alignSelf: 'flex-start', border: 'none', background: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 700, color: 'var(--coral)', padding: '0 0 0 2px' }}>+{dayTasks.length - 3} more</button>
+              )}
             </div>
           )
         })}
@@ -769,6 +835,43 @@ function TaskCalendar({ tasks, statusOf, onSelect, selectedId }: any) {
                 </button>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Day popup — the full list of tasks for a clicked date. */}
+      {dayPopup && (
+        <div onClick={() => setDayPopup(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 380, maxWidth: '95vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>{dayPopup.date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)' }}>{dayPopup.tasks.length} task{dayPopup.tasks.length === 1 ? '' : 's'}</p>
+              </div>
+              <button onClick={() => setDayPopup(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--slate)', display: 'flex' }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
+              {dayPopup.tasks.length === 0 && <p style={{ padding: 20, textAlign: 'center', fontSize: 13, color: 'var(--slate)' }}>No tasks on this day.</p>}
+              {dayPopup.tasks.map((t: any) => {
+                const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
+                const done = statusOf(t) === 'done'
+                return (
+                  <button key={t.id} onClick={() => { onSelect(t.id); setDayPopup(null) }}
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 9, width: '100%', textAlign: 'left', border: '1px solid var(--border)', borderLeft: `4px solid ${t.color || pr.color}`, borderRadius: 10, background: '#fff', padding: '10px 12px', marginBottom: 8, cursor: 'pointer' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', textDecoration: done ? 'line-through' : 'none', opacity: done ? 0.55 : 1 }}>{t.title || t.text}</p>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 5, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 5, color: pr.color, background: pr.bg }}>{pr.label}</span>
+                        {t.assigned_to && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)' }}>{t.assigned_to}</span>}
+                        {t.recurrence && <span style={{ fontSize: 10, fontWeight: 700, color: '#0e7490' }}>↻ {t.recurrence.freq}</span>}
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -824,10 +927,16 @@ function MobileSheet({ children, onClose }: any) {
   )
 }
 
-function TaskDetail({ task, conv, team, companyId, me, userId, onPatch, onDeleted, router }: any) {
+function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onPatch, onDeleteScoped, onDeleted, router }: any) {
   const [comments, setComments] = useState<any[]>([])
   const [comment, setComment] = useState('')
   const [showOrderSearch, setShowOrderSearch] = useState(false)
+  // Edit scope for a recurring series. Only shown when the task is part of one.
+  const isSeries = !!task.series_id
+  const [scope, setScope] = useState<'this' | 'following' | 'all'>('this')
+  useEffect(() => { setScope('this') }, [task.id])
+  // Every field edit routes through here so it honours the chosen scope.
+  const patch = (fields: any) => onPatch(fields, isSeries ? scope : 'this')
   useEffect(() => {
     // task_comments references conversation_tasks, so a calendar-sourced task
     // has no comment thread to load.
@@ -875,31 +984,70 @@ function TaskDetail({ task, conv, team, companyId, me, userId, onPatch, onDelete
   const curStatus = task.status || (task.done ? 'done' : 'todo')
   return (
     <div style={{ padding: 18 }}>
-      <textarea value={task.title || task.text || ''} onChange={e => onPatch({ title: e.target.value })} rows={2}
+      <textarea value={task.title || task.text || ''} onChange={e => patch({ title: e.target.value })} rows={2}
         style={{ width: '100%', border: 'none', fontSize: 16.5, fontWeight: 700, color: 'var(--ink)', resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.35 }} />
       {task.text && task.title && <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>{task.text}</p>}
+
+      {/* Edit scope for a repeating task — every change (and the delete) below
+          applies to the chosen slice of the series. */}
+      {isSeries && (
+        <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: '#ecfeff', border: '1px solid #a5f3fc' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: '#0e7490', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 7 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            Repeating task — apply changes to
+          </div>
+          <div style={{ display: 'flex', gap: 5 }}>
+            {([['this', 'This card'], ['following', 'This & following'], ['all', 'All cards']] as const).map(([k, l]) => (
+              <button key={k} onClick={() => setScope(k)} style={{ flex: 1, padding: '7px 4px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (scope === k ? '#0e7490' : 'var(--border)'), background: scope === k ? '#0e7490' : '#fff', color: scope === k ? '#fff' : 'var(--slate)' }}>{l}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <p style={L}>Status</p>
       <div style={{ display: 'flex', gap: 5 }}>
         {COLUMNS.map(c => { const on = curStatus === c.key; return (
-          <button key={c.key} onClick={() => onPatch({ status: c.key, done: c.key === 'done', completed_at: c.key === 'done' ? new Date().toISOString() : null })}
+          <button key={c.key} onClick={() => patch({ status: c.key, done: c.key === 'done', completed_at: c.key === 'done' ? new Date().toISOString() : null })}
             style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)' }}>{c.label}</button>
         )})}
       </div>
       <p style={L}>Priority</p>
       <div style={{ display: 'flex', gap: 5 }}>
         {(['high', 'normal', 'low'] as const).map(p => { const on = (task.priority || 'normal') === p; return (
-          <button key={p} onClick={() => onPatch({ priority: p })} style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? PRIORITY[p].color : 'var(--border)'), background: on ? PRIORITY[p].bg : '#fff', color: on ? PRIORITY[p].color : 'var(--slate)' }}>{PRIORITY[p].label}</button>
+          <button key={p} onClick={() => patch({ priority: p })} style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? PRIORITY[p].color : 'var(--border)'), background: on ? PRIORITY[p].bg : '#fff', color: on ? PRIORITY[p].color : 'var(--slate)' }}>{PRIORITY[p].label}</button>
         )})}
       </div>
       <p style={L}>Due date</p>
-      <input type="date" value={task.due_date ? localYmd(parseTs(task.due_date) || new Date(task.due_date)) : ''} onChange={e => onPatch({ due_date: dueFromInput(e.target.value) })}
+      <input type="date" value={task.due_date ? localYmd(parseTs(task.due_date) || new Date(task.due_date)) : ''} onChange={e => patch({ due_date: dueFromInput(e.target.value) })}
         style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
+
+      <p style={L}>Colour</p>
+      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+        <button onClick={() => patch({ color: null })} title="No colour"
+          style={{ width: 26, height: 26, borderRadius: '50%', cursor: 'pointer', border: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+          {!task.color && <span style={{ width: 12, height: 2, background: 'var(--slate)', transform: 'rotate(-45deg)', position: 'absolute' }} />}
+        </button>
+        {TASK_COLORS.map(c => (
+          <button key={c} onClick={() => patch({ color: c })} title={c}
+            style={{ width: 26, height: 26, borderRadius: '50%', cursor: 'pointer', background: c, border: task.color === c ? '2px solid var(--ink)' : '2px solid transparent', boxShadow: task.color === c ? `0 0 0 2px ${tint(c, 0.4)}` : 'none' }} />
+        ))}
+      </div>
+
+      {outlets.length > 0 && (<>
+        <p style={L}>Outlet</p>
+        <select value={task.location_id || ''} onChange={e => patch({ location_id: e.target.value || null })}
+          style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
+          <option value="">No outlet</option>
+          {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
+        </select>
+      </>)}
+
       <p style={L}>Assignees</p>
       <AssigneePicker members={team} value={assignees.map((a: any) => ({ id: a.id, name: a.name }))}
         onChange={async (next) => {
           const isUuid = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
           const before = new Set(assignees.map((a: any) => a.id))
-          onPatch({ assignees: next, assigned_to_id: isUuid(next[0]?.id) ? next[0].id : null, assigned_to: next[0]?.name || null })
+          patch({ assignees: next, assigned_to_id: isUuid(next[0]?.id) ? next[0].id : null, assigned_to: next[0]?.name || null })
 
           // Assigning someone to an existing task should tell them, the same as
           // assigning at creation did — previously this changed silently.
@@ -926,7 +1074,7 @@ function TaskDetail({ task, conv, team, companyId, me, userId, onPatch, onDelete
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>#{task.order_number}</div>
             <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{task.order_customer}{task.order_total ? ` · $${Number(task.order_total).toFixed(2)}` : ''}</div>
           </div>
-          <button onClick={() => onPatch({ order_id: null, order_number: null, order_customer: null, order_total: null })} style={{ border: 'none', background: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>Remove</button>
+          <button onClick={() => patch({ order_id: null, order_number: null, order_customer: null, order_total: null })} style={{ border: 'none', background: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>Remove</button>
         </div>
       ) : (
         <button onClick={() => setShowOrderSearch(true)} style={{ width: '100%', padding: '10px', borderRadius: 9, border: '1px dashed var(--border)', background: 'var(--canvas)', color: 'var(--slate)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Link to order</button>
@@ -962,20 +1110,15 @@ function TaskDetail({ task, conv, team, companyId, me, userId, onPatch, onDelete
       )}
       <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
         <button onClick={async () => {
-          if (!confirm('Delete this task?')) return
-          if (task._source === 'calendar') {
-            await fetch('/api/calendar', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ companyId, action: 'delete', id: task._calendarId }),
-            })
-            onDeleted()
-          } else {
-            await (supabase as any).from('conversation_tasks').delete().eq('id', task.id)
-            onDeleted()
-          }
-        }} style={{ border: 'none', background: 'none', color: '#dc2626', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Delete task</button>
+          const label = isSeries ? (scope === 'all' ? 'all cards in this series' : scope === 'following' ? 'this and all following cards' : 'this card') : 'this task'
+          if (!confirm(`Delete ${label}?`)) return
+          await onDeleteScoped(isSeries ? scope : 'this')
+          onDeleted()
+        }} style={{ border: 'none', background: 'none', color: '#dc2626', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+          {isSeries ? (scope === 'all' ? 'Delete all in series' : scope === 'following' ? 'Delete this & following' : 'Delete this card') : 'Delete task'}
+        </button>
       </div>
-      {showOrderSearch && <OrderSearchModal companyId={companyId} onClose={() => setShowOrderSearch(false)} onPick={(o: any) => { onPatch({ order_id: o.order_id, order_number: o.order_number, order_customer: o.customer, order_total: o.total }); setShowOrderSearch(false) }} />}
+      {showOrderSearch && <OrderSearchModal companyId={companyId} onClose={() => setShowOrderSearch(false)} onPick={(o: any) => { patch({ order_id: o.order_id, order_number: o.order_number, order_customer: o.customer, order_total: o.total }); setShowOrderSearch(false) }} />}
     </div>
   )
 }
@@ -1078,13 +1221,16 @@ function TaskEditor({ companyId, team, outlets = [], me, userId, onClose, onSave
       if (!dueDates.length) dueDates = [baseDue]
     }
 
+    // A shared id ties the occurrences of a repeat together so they can be
+    // edited/deleted as a series later.
+    const seriesId = rec ? (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.round(Math.random() * 1e9)}`) : null
     const common: any = {
       company_id: companyId, text: title.trim(), title: title.trim(), status: 'todo', done: false, priority,
       assignees: cleanAssignees, assigned_to_id: firstUuid, assigned_to: cleanAssignees[0]?.name || null,
       created_by: me, created_by_id: isUuid(userId) ? userId : null,
       mentions: mentioned.map((m: any) => ({ id: isUuid(m.id) ? m.id : null, name: m.name })),
       order_id: order?.order_id ? String(order.order_id) : null, order_number: order?.order_number ? String(order.order_number) : null, order_customer: order?.customer || null, order_total: order?.total || null,
-      color: color || null, location_id: locationId || null, recurrence: rec,
+      color: color || null, location_id: locationId || null, recurrence: rec, series_id: seriesId,
     }
     const rows = dueDates.map(d => ({ ...common, due_date: d }))
     const row = rows[0]
