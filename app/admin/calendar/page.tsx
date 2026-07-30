@@ -5,6 +5,7 @@ import AssigneePicker from '@/components/AssigneePicker'
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 
 const TYPE_META: Record<string, { label: string; bg: string; fg: string; dot: string }> = {
   delivery:    { label: 'Delivery',    bg: '#fff4f1', fg: '#c2410c', dot: '#f97316' },
@@ -24,8 +25,11 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
 }
 
 export default function CalendarPage() {
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Seed from the shared identity cache so a revisit resolves the company
+  // synchronously and the month's events load without a blank gate.
+  const seed = peekCompanyUser()
+  const [companyId, setCompanyId] = useState<string | null>(seed?.companyId ?? null)
+  const [loading, setLoading] = useState(!seed?.companyId)
   const [events, setEvents] = useState<any[]>([])
   const [locations, setLocations] = useState<any[]>([])
   const [team, setTeam] = useState<any[]>([])
@@ -74,6 +78,14 @@ export default function CalendarPage() {
     if (!companyId) return
     const from = new Date(cursor.getFullYear(), cursor.getMonth(), 1).toISOString()
     const to = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 23, 59, 59).toISOString()
+    // Instant paint on revisit / month re-navigation: show the last events we
+    // rendered for this exact view while the fresh data loads in the background.
+    const cacheKey = `calendar:${companyId}:${from}:${locationFilter}:${typeFilter}`
+    const cached = readCache<{ events: any[]; locations: any[] }>(cacheKey)
+    if (cached) {
+      setEvents(cached.events)
+      setLocations(cached.locations)
+    }
     const params = new URLSearchParams({ companyId, from, to })
     if (locationFilter) params.set('locationId', locationFilter)
     if (typeFilter) params.set('type', typeFilter)
@@ -113,8 +125,10 @@ export default function CalendarPage() {
       } catch { /* tasks unavailable — just show calendar events */ }
     }
 
+    const locs = d.locations || []
     setEvents(evts)
-    setLocations(d.locations || [])
+    setLocations(locs)
+    writeCache(cacheKey, { events: evts, locations: locs })
   }
 
   useEffect(() => { load() }, [companyId, cursor, locationFilter, typeFilter])

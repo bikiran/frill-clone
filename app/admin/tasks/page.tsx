@@ -9,6 +9,7 @@ import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { enrichNames } from '@/lib/team-names'
 import { useDraft } from '@/lib/drafts'
 import PageGreeting from '@/components/PageGreeting'
+import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -62,11 +63,15 @@ const COLUMNS = [
 
 export default function TasksPage() {
   const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [companyId, setCompanyId] = useState<string | null>(null)
+  // Seed identity + the last task list from cache so a revisit paints instantly
+  // instead of blanking to a skeleton while the company re-resolves and refetches.
+  const seed = peekCompanyUser()
+  const seededTasks = seed?.companyId ? readCache<any[]>(`tasks:${seed.companyId}`) : undefined
+  const [loading, setLoading] = useState(!seededTasks)
+  const [companyId, setCompanyId] = useState<string | null>(seed?.companyId ?? null)
   const [userId, setUserId] = useState<string | null>(null)
   const [me, setMe] = useState('')
-  const [tasks, setTasks] = useState<any[]>([])
+  const [tasks, setTasks] = useState<any[]>(seededTasks ?? [])
   const [convs, setConvs] = useState<Record<string, any>>({})
   const [team, setTeam] = useState<any[]>([])
 
@@ -187,6 +192,7 @@ export default function TasksPage() {
     } catch { /* calendar unavailable — show the plain tasks */ }
 
     setTasks(rows)
+    writeCache(`tasks:${cid}`, rows)
 
     const convIds = Array.from(new Set(rows.map((t: any) => t.conversation_id).filter(Boolean)))
     if (convIds.length) {

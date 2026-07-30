@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { compressImage, uploadDirect } from '@/lib/upload-attachment'
 import { supabase } from '@/lib/supabase'
+import { readCache, writeCache } from '@/lib/client-cache'
 import { useCompanyUser } from '../crm-settings/_shared'
 import MediaGallery from '@/components/MediaGallery'
 import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
@@ -30,11 +31,20 @@ export default function GalleryPage() {
 
   const loadCategories = useCallback(async () => {
     if (!companyId) return
+    const cacheKey = `media-cats:${companyId}`
+    const cached = readCache<{ categories: any[]; byItem: Record<string, string[]> }>(cacheKey)
+    if (cached) {
+      setCategories(cached.categories)
+      setItemCats(cached.byItem)
+    }
     try {
       const res = await fetch(`/api/media/categories?companyId=${companyId}`)
       const d = await res.json()
-      setCategories(d.categories || [])
-      setItemCats(d.byItem || {})
+      const categories = d.categories || []
+      const byItem = d.byItem || {}
+      setCategories(categories)
+      setItemCats(byItem)
+      writeCache(cacheKey, { categories, byItem })
     } catch {}
   }, [companyId])
 
@@ -159,15 +169,28 @@ export default function GalleryPage() {
 
   const load = useCallback(async () => {
     if (!companyId) return
-    setLoadingData(true)
+    const cacheKey = `media:${companyId}:${activeFolder || ''}:${search.trim()}`
+    // Instant paint: if we've shown this view before, render the cached items
+    // right away and refresh in the background instead of blanking to a spinner.
+    const cached = readCache<{ folders: any[]; items: any[] }>(cacheKey)
+    if (cached) {
+      setFolders(cached.folders)
+      setItems(cached.items)
+      setLoadingData(false)
+    } else {
+      setLoadingData(true)
+    }
     try {
       const params = new URLSearchParams({ companyId })
       if (activeFolder) params.set('folderId', activeFolder)
       if (search.trim()) params.set('q', search.trim())
       const res = await fetch(`/api/media?${params}`)
       const data = await res.json()
-      setFolders(data.folders || [])
-      setItems(data.items || [])
+      const folders = data.folders || []
+      const items = data.items || []
+      setFolders(folders)
+      setItems(items)
+      writeCache(cacheKey, { folders, items })
     } catch {} finally { setLoadingData(false) }
   }, [companyId, activeFolder, search])
 
