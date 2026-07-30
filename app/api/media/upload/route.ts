@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { uploadToR2, r2Configured } from '@/lib/r2'
 
 function admin() {
   return createClient(
@@ -22,29 +23,37 @@ export async function POST(req: NextRequest) {
     if (!file || !companyId) return NextResponse.json({ error: 'Missing file or companyId' }, { status: 400 })
 
     const db = admin()
-    try {
-      const { data: buckets } = await db.storage.listBuckets()
-      if (!buckets?.some(b => b.id === 'media-gallery')) {
-        await db.storage.createBucket('media-gallery', { public: true })
-      }
-    } catch (e) { console.warn('Bucket check warning:', e) }
-
     const arrayBuffer = await file.arrayBuffer()
     const bytes = new Uint8Array(arrayBuffer)
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
     const path = `${companyId}/${folderId || 'unfiled'}/${Date.now()}-${safeName}`
-
-    const { error: upErr } = await db.storage.from('media-gallery').upload(path, bytes, {
-      contentType: file.type || 'application/octet-stream', upsert: true,
-    })
-    if (upErr) return NextResponse.json({ error: `Upload failed: ${upErr.message}` }, { status: 500 })
-
-    const { data: pub } = db.storage.from('media-gallery').getPublicUrl(path)
     const kind = file.type.startsWith('video/') ? 'video' : 'image'
 
+    let publicUrl: string | null = null
+    if (r2Configured()) {
+      try {
+        publicUrl = await uploadToR2(`media-gallery/${path}`, bytes, file.type || 'application/octet-stream')
+      } catch (e: any) { console.warn('R2 upload failed, falling back to Supabase:', e?.message) }
+    }
+
+    if (!publicUrl) {
+      try {
+        const { data: buckets } = await db.storage.listBuckets()
+        if (!buckets?.some(b => b.id === 'media-gallery')) {
+          await db.storage.createBucket('media-gallery', { public: true })
+        }
+      } catch (e) { console.warn('Bucket check warning:', e) }
+
+      const { error: upErr } = await db.storage.from('media-gallery').upload(path, bytes, {
+        contentType: file.type || 'application/octet-stream', upsert: true,
+      })
+      if (upErr) return NextResponse.json({ error: `Upload failed: ${upErr.message}` }, { status: 500 })
+      publicUrl = db.storage.from('media-gallery').getPublicUrl(path).data.publicUrl
+    }
+
     const { data: item } = await db.from('media_items').insert({
-      company_id: companyId, folder_id: folderId, title: title || file.name, url: pub.publicUrl,
-      thumbnail_url: pub.publicUrl, kind, sku,
+      company_id: companyId, folder_id: folderId, title: title || file.name, url: publicUrl,
+      thumbnail_url: publicUrl, kind, sku,
     }).select().maybeSingle()
 
     return NextResponse.json({ ok: true, item })
