@@ -429,8 +429,24 @@ export default function GalleryPage() {
           ))}
         </div>
 
-        {/* Items grid */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Items grid — the whole column is a drop target, so files can be
+            dragged in whether the gallery is empty or already full. */}
+        <div style={{ flex: 1, minWidth: 0, position: 'relative' }}
+          onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true) }}
+          onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }}
+          onDrop={e => { e.preventDefault(); setDragOver(false); uploadFiles(Array.from(e.dataTransfer.files || [])) }}>
+          {/* Drop hint over a populated grid (the empty state shows its own). */}
+          {dragOver && (items.length > 0 || pending.length > 0) && (
+            <div style={{
+              position: 'absolute', inset: 0, zIndex: 20, pointerEvents: 'none',
+              borderRadius: 16, border: '2px dashed var(--coral)',
+              background: 'rgba(255,244,241,0.82)', backdropFilter: 'blur(1px)',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
+            }}>
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--coral)', margin: 0 }}>Drop to upload</p>
+            </div>
+          )}
           {/* Mobile category strip (mirrors the desktop sidebar) */}
           <div className="gal-cat-strip">
             <button className={'gal-cat-chip' + (activeFolder === null ? ' on' : '')} onClick={() => setActiveFolder(null)}>All media</button>
@@ -445,9 +461,6 @@ export default function GalleryPage() {
             <p style={{ color: 'var(--slate)', fontSize: 13.5 }}>Loading…</p>
           ) : items.length === 0 && pending.length === 0 ? (
             <div
-              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-              onDragLeave={e => { e.preventDefault(); setDragOver(false) }}
-              onDrop={e => { e.preventDefault(); setDragOver(false); uploadFiles(Array.from(e.dataTransfer.files || [])) }}
               onClick={() => fileRef.current?.click()}
               style={{
                 position: 'relative', textAlign: 'center', padding: '54px 24px', cursor: 'pointer', overflow: 'hidden',
