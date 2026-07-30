@@ -47,7 +47,7 @@ const fmtRel = (d: string | null | undefined) => {
 }
 
 type Bucket = 'today' | 'overdue' | 'upcoming' | 'completed' | 'all'
-type ViewMode = 'list' | 'board' | 'timeline'
+type ViewMode = 'list' | 'board' | 'timeline' | 'calendar'
 
 const PRIORITY = {
   high: { label: 'High', color: '#dc2626', bg: '#fef2f2' },
@@ -268,6 +268,26 @@ export default function TasksPage() {
     return list
   }, [tasks, bucket, search, assigneeFilter, priorityFilter, sortBy, assignedToMe])
 
+  // For the calendar view we want the whole month regardless of the Today/
+  // Overdue/… bucket — only the assignee/priority/search filters apply, so a
+  // task shows up on its due date no matter which bucket is active.
+  const calendarTasks = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return tasks.filter(t => {
+      if (assigneeFilter === 'me' && !assignedToMe(t)) return false
+      else if (assigneeFilter && assigneeFilter !== 'me') {
+        const ok = t.assigned_to_id === assigneeFilter || (Array.isArray(t.assignees) && t.assignees.some((a: any) => a.id === assigneeFilter))
+        if (!ok) return false
+      }
+      if (priorityFilter && (t.priority || 'normal') !== priorityFilter) return false
+      if (q) {
+        const hay = [t.title, t.text, t.assigned_to, t.order_number, t.order_customer].filter(Boolean).join(' ').toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      return true
+    })
+  }, [tasks, search, assigneeFilter, priorityFilter, assignedToMe])
+
   const selected = useMemo(() => tasks.find(t => t.id === selectedId) || null, [tasks, selectedId])
 
   const patchTask = async (id: string, fields: any) => {
@@ -406,7 +426,10 @@ export default function TasksPage() {
             <button className={view === 'board' ? 'on' : ''} onClick={() => setView('board')}>Board</button>
             <button className={view === 'timeline' ? 'on' : ''} onClick={() => setView('timeline')}>Timeline</button>
           </div>
-          <button className="ctl" onClick={() => router.push('/admin/calendar')} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+          {/* Calendar is now an in-page view of the tasks (by due date) rather
+              than a jump to the separate Calendar page. */}
+          <button className="ctl" onClick={() => setView(view === 'calendar' ? 'list' : 'calendar')}
+            style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, border: '1px solid ' + (view === 'calendar' ? 'var(--coral)' : 'var(--border)'), background: view === 'calendar' ? 'var(--peach)' : '#fff', color: view === 'calendar' ? 'var(--coral)' : 'var(--ink)' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             Calendar
           </button>
@@ -449,6 +472,8 @@ export default function TasksPage() {
             </div>
           ) : view === 'timeline' ? (
             <Timeline tasks={visible} convs={convs} statusOf={statusOf} onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} selectedId={selectedId} />
+          ) : view === 'calendar' ? (
+            <TaskCalendar tasks={calendarTasks} statusOf={statusOf} onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} selectedId={selectedId} />
           ) : (
             <div style={{ padding: 16 }}>
               {visible.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--slate)', fontSize: 13.5 }}>No tasks in “{BUCKETS.find(b => b.key === bucket)?.label}”.</div>}
@@ -532,6 +557,100 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
           {COLUMNS.map(c => (
             <button key={c.key} onClick={() => onStatus(c.key)} style={{ flex: 1, padding: '5px 0', borderRadius: 6, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (statusOf(t) === c.key ? 'var(--coral)' : 'var(--border)'), background: statusOf(t) === c.key ? 'var(--peach)' : '#fff', color: statusOf(t) === c.key ? 'var(--coral)' : 'var(--slate)' }}>{c.label}</button>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+
+// An in-page month calendar of the tasks, plotted on their due dates. Clicking a
+// task opens it in the detail pane, same as the other views.
+function TaskCalendar({ tasks, statusOf, onSelect, selectedId }: any) {
+  const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d })
+  const year = cursor.getFullYear()
+  const month = cursor.getMonth()
+  const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+  const startWeekday = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const todayKey = dayKey(new Date())
+
+  const byDay = useMemo(() => {
+    const m: Record<string, any[]> = {}
+    const noDate: any[] = []
+    for (const t of tasks) {
+      const due = parseTs(t.due_date)
+      if (!due) { noDate.push(t); continue }
+      ;(m[dayKey(due)] ||= []).push(t)
+    }
+    return { m, noDate }
+  }, [tasks])
+
+  const cells: (number | null)[] = []
+  for (let i = 0; i < startWeekday; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const navBtn: React.CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <button aria-label="Previous month" onClick={() => setCursor(new Date(year, month - 1, 1))} style={navBtn}>‹</button>
+        <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', minWidth: 140, textAlign: 'center' }}>{monthLabel}</span>
+        <button aria-label="Next month" onClick={() => setCursor(new Date(year, month + 1, 1))} style={navBtn}>›</button>
+        <button onClick={() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); setCursor(d) }} style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12 }}>Today</button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6, marginBottom: 6 }}>
+        {WD.map(w => <div key={w} style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--slate)', textAlign: 'center', textTransform: 'uppercase' }}>{w}</div>)}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gridAutoRows: 'minmax(90px, auto)', gap: 6 }}>
+        {cells.map((d, i) => {
+          if (d == null) return <div key={i} />
+          const key = dayKey(new Date(year, month, d))
+          const dayTasks = byDay.m[key] || []
+          const isToday = key === todayKey
+          return (
+            <div key={i} style={{ border: `1px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 10, padding: 6, background: isToday ? 'var(--peach)' : '#fff', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? 'var(--coral)' : 'var(--slate)' }}>{d}</div>
+              {dayTasks.slice(0, 3).map((t: any) => {
+                const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
+                const done = statusOf(t) === 'done'
+                const sel = selectedId === t.id
+                return (
+                  <button key={t.id} onClick={() => onSelect(t.id)} title={t.title || t.text}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', padding: '2px 5px', borderRadius: 5, background: sel ? 'var(--coral)' : pr.bg, color: sel ? '#fff' : pr.color, fontSize: 10.5, fontWeight: 700 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: sel ? '#fff' : pr.color, flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: done ? 'line-through' : 'none', opacity: done ? 0.6 : 1 }}>{t.title || t.text}</span>
+                  </button>
+                )
+              })}
+              {dayTasks.length > 3 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--slate)', paddingLeft: 2 }}>+{dayTasks.length - 3} more</span>}
+            </div>
+          )
+        })}
+      </div>
+
+      {byDay.noDate.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', margin: '0 0 8px' }}>No due date ({byDay.noDate.length})</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {byDay.noDate.map((t: any) => {
+              const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
+              const sel = selectedId === t.id
+              return (
+                <button key={t.id} onClick={() => onSelect(t.id)} title={t.title || t.text}
+                  style={{ maxWidth: 220, display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${sel ? 'var(--coral)' : 'var(--border)'}`, background: sel ? 'var(--peach)' : '#fff', color: sel ? 'var(--coral)' : 'var(--ink)', borderRadius: 20, padding: '5px 11px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: pr.color, flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title || t.text}</span>
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>
