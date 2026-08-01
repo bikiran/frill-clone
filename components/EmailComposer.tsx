@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { uploadDirect } from '@/lib/upload-attachment'
 
 // Coax-style email composer: From (the mailbox) · To · Cc · Subject · Signature
 // · body. The signature is chosen from the company's saved library (or "None"),
@@ -42,6 +43,44 @@ export default function EmailComposer({
   const exec = (cmd: string, val?: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); syncBody() }
   const insertAtCursor = (text: string) => { editorRef.current?.focus(); document.execCommand('insertText', false, text); syncBody() }
   const EMOJIS = ['😀', '😊', '🙏', '👍', '🎉', '✅', '❤️', '🐟', '📦', '⭐', '😅', '🙌']
+
+  // Insert an image inline (uploaded to storage, referenced by URL so it renders
+  // in the customer's email client).
+  const imgInputRef = useRef<HTMLInputElement>(null)
+  const [imgBusy, setImgBusy] = useState(false)
+  const onPickImage = async (file: File | null) => {
+    if (!file) return
+    setImgBusy(true); setErr('')
+    try {
+      const url = await uploadDirect(file, `email-inline/${companyId || 'x'}`, file.name)
+      if (!url) throw new Error('Upload failed')
+      editorRef.current?.focus()
+      document.execCommand('insertHTML', false, `<img src="${url}" alt="${(file.name || '').replace(/"/g, '')}" style="max-width:100%;border-radius:8px" /><br>`)
+      syncBody()
+    } catch (e: any) { setErr(e.message || 'Could not add image') }
+    finally { setImgBusy(false); if (imgInputRef.current) imgInputRef.current.value = '' }
+  }
+
+  // AI assist: rewrite the current draft more clearly/professionally.
+  const [aiBusy, setAiBusy] = useState(false)
+  const improveWithAI = async () => {
+    const text = bodyText()
+    if (!text) { setErr('Write a draft first, then improve it with AI'); return }
+    setAiBusy(true); setErr('')
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, task: 'improve', text, tone: 'professional' }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d.result) throw new Error(d.error || 'AI could not help right now')
+      if (editorRef.current) {
+        editorRef.current.innerHTML = String(d.result).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+        syncBody()
+      }
+    } catch (e: any) { setErr(e.message || 'AI could not help right now') }
+    finally { setAiBusy(false) }
+  }
 
   // ── Signatures ─────────────────────────────────────────────────────────────
   // 'mailbox' = the mailbox's built-in signature; '' = none; otherwise a library id.
@@ -224,6 +263,11 @@ export default function EmailComposer({
           style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: showEmoji ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
         </button>
+        <button type="button" title="Insert image" disabled={imgBusy} onMouseDown={e => { e.preventDefault(); imgInputRef.current?.click() }}
+          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: imgBusy ? 'wait' : 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        </button>
+        <input ref={imgInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => onPickImage(e.target.files?.[0] || null)} />
         {showEmoji && (
           <div style={{ position: 'absolute', top: '100%', left: 8, zIndex: 20, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.12)', padding: 8, display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 2 }}>
             {EMOJIS.map(em => (
@@ -249,13 +293,20 @@ export default function EmailComposer({
         <span style={{ fontSize: 12, color: err ? '#dc2626' : 'var(--slate)' }}>
           {err || (sigPreview ? 'Signature will be appended' : ' ')}
         </span>
-        <button type="button" onClick={send} disabled={sending}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button type="button" onClick={improveWithAI} disabled={aiBusy} title="Improve this draft with AI"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 12px', borderRadius: 9, border: '1px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 12.5, fontWeight: 700, cursor: aiBusy ? 'wait' : 'pointer' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+            {aiBusy ? 'Improving…' : 'AI improve'}
+          </button>
+          <button type="button" onClick={send} disabled={sending}
           style={{ padding: '9px 20px', borderRadius: 9, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: sending ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 7 }}>
           {sending ? 'Sending…' : 'Send email'}
           {!sending && (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           )}
-        </button>
+          </button>
+        </div>
       </div>
     </div>
   )
