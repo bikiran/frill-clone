@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 // Coax-style email composer: From (the mailbox) · To · Cc · Subject · Signature
 // · body. The signature is chosen from the company's saved library (or "None"),
@@ -28,9 +28,20 @@ export default function EmailComposer({
   const [bcc, setBcc] = useState('')
   const [showBcc, setShowBcc] = useState(false)
   const [subject, setSubject] = useState(defaultSubject)
-  const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState('')
+
+  // Rich-text body (contentEditable). We keep an html snapshot in state to
+  // drive the empty/placeholder + send-enabled checks, and read the live DOM on
+  // send so formatting is preserved.
+  const editorRef = useRef<HTMLDivElement>(null)
+  const [bodyHtml, setBodyHtml] = useState('')
+  const [showEmoji, setShowEmoji] = useState(false)
+  const syncBody = () => setBodyHtml(editorRef.current?.innerHTML || '')
+  const bodyText = () => (editorRef.current?.innerText || '').trim()
+  const exec = (cmd: string, val?: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); syncBody() }
+  const insertAtCursor = (text: string) => { editorRef.current?.focus(); document.execCommand('insertText', false, text); syncBody() }
+  const EMOJIS = ['😀', '😊', '🙏', '👍', '🎉', '✅', '❤️', '🐟', '📦', '⭐', '😅', '🙌']
 
   // ── Signatures ─────────────────────────────────────────────────────────────
   // 'mailbox' = the mailbox's built-in signature; '' = none; otherwise a library id.
@@ -84,7 +95,8 @@ export default function EmailComposer({
 
   const send = async () => {
     if (!to.trim()) { setErr('Add a recipient'); return }
-    if (!body.trim()) { setErr('Write a message'); return }
+    const text = bodyText()
+    if (!text) { setErr('Write a message'); return }
     setSending(true); setErr('')
     try {
       const res = await fetch('/api/email/reply', {
@@ -92,13 +104,16 @@ export default function EmailComposer({
         body: JSON.stringify({
           conversationId, to: to.trim(), cc: cc.trim() || null, bcc: bcc.trim() || null,
           subject: subject.trim() || defaultSubject,
-          content: body, agentName,
-          signature: selectedSigBody(),   // explicit — '' means no signature
+          content: text,                      // plain-text version (preview / fallback)
+          html: editorRef.current?.innerHTML || '',
+          agentName,
+          signature: selectedSigBody(),       // explicit — '' means no signature
         }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Send failed')
-      setBody(''); setCc(''); setShowCc(false); setBcc(''); setShowBcc(false)
+      if (editorRef.current) editorRef.current.innerHTML = ''
+      setBodyHtml(''); setCc(''); setShowCc(false); setBcc(''); setShowBcc(false)
       onSent()
     } catch (e: any) {
       setErr(e.message || 'Could not send')
@@ -183,9 +198,44 @@ export default function EmailComposer({
         </div>
       )}
 
-      <textarea value={body} onChange={e => setBody(e.target.value)} rows={7}
-        placeholder="Write your reply…"
-        style={{ width: '100%', border: 'none', outline: 'none', resize: 'vertical', padding: '12px', fontSize: 13.5, fontFamily: 'inherit', lineHeight: 1.55, color: 'var(--ink)', boxSizing: 'border-box' }} />
+      {/* Rich-text formatting toolbar */}
+      <style>{`.email-rte[data-empty="true"]:before{content:attr(data-ph);color:#9ca3af;pointer-events:none;}`}</style>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '6px 8px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', position: 'relative' }}>
+        {([
+          ['bold', 'B', { fontWeight: 800 }],
+          ['italic', 'i', { fontStyle: 'italic', fontFamily: 'Georgia, serif' }],
+          ['underline', 'U', { textDecoration: 'underline' }],
+          ['strikeThrough', 'S', { textDecoration: 'line-through' }],
+        ] as const).map(([cmd, label, st]) => (
+          <button key={cmd} type="button" title={cmd} onMouseDown={e => { e.preventDefault(); exec(cmd) }}
+            style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)', fontSize: 14, ...st }}>{label}</button>
+        ))}
+        <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
+        <button type="button" title="Bullet list" onMouseDown={e => { e.preventDefault(); exec('insertUnorderedList') }}
+          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        </button>
+        <button type="button" title="Numbered list" onMouseDown={e => { e.preventDefault(); exec('insertOrderedList') }}
+          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+        </button>
+        <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
+        <button type="button" title="Emoji" onMouseDown={e => { e.preventDefault(); setShowEmoji(v => !v) }}
+          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: showEmoji ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+        </button>
+        {showEmoji && (
+          <div style={{ position: 'absolute', top: '100%', left: 8, zIndex: 20, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.12)', padding: 8, display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 2 }}>
+            {EMOJIS.map(em => (
+              <button key={em} type="button" onMouseDown={e => { e.preventDefault(); insertAtCursor(em); setShowEmoji(false) }}
+                style={{ width: 30, height: 30, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 18, borderRadius: 6 }}>{em}</button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div ref={editorRef} contentEditable suppressContentEditableWarning onInput={syncBody}
+        className="email-rte" data-ph="Write your reply…" data-empty={(!bodyHtml || bodyHtml === '<br>') ? 'true' : 'false'}
+        style={{ minHeight: 130, maxHeight: 300, overflowY: 'auto', outline: 'none', padding: '12px', fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)' }} />
 
       {sigPreview && (
         <div style={{ padding: '0 12px 8px' }}>

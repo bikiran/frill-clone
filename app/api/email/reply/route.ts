@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendGmail } from '@/lib/gmail'
+import { sendGmail, sanitizeEmailHtml } from '@/lib/gmail'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +14,7 @@ const admin = () => createClient(
 // message so it lands in the same email conversation on their side.
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, content, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride } = await req.json()
+    const { conversationId, content, html: htmlOverride, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride } = await req.json()
     if (!conversationId || !content) {
       return NextResponse.json({ error: 'conversationId and content are required' }, { status: 400 })
     }
@@ -85,9 +85,13 @@ export async function POST(req: NextRequest) {
     const fullText = `${content}${signature}`
     const escapeHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     const linkify = (t: string) => t.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>')
-    const bodyHtml = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a">${
-      linkify(escapeHtml(fullText)).replace(/\n/g, '<br>')
-    }</div>`
+    // When the composer sends formatted HTML (rich-text toolbar), send it as-is
+    // (sanitised) with the signature appended as HTML; otherwise build HTML from
+    // the plain text as before.
+    const sigHtml = chosenSig ? `<br><br>${escapeHtml(chosenSig).replace(/\n/g, '<br>')}` : ''
+    const bodyHtml = (htmlOverride && String(htmlOverride).trim())
+      ? `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a">${sanitizeEmailHtml(String(htmlOverride))}${sigHtml}</div>`
+      : `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a">${linkify(escapeHtml(fullText)).replace(/\n/g, '<br>')}</div>`
 
     const fromLabel = `${fromName} <${channel.inbound_address || channel.from_address}>`
 
