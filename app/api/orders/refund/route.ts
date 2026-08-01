@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
     try {
       await db.from('woocommerce_orders')
         .update({ status: 'refunded' })
-        .eq('company_id', companyId).eq('order_id', orderId)
+        .eq('company_id', companyId).eq('woo_order_id', orderId)
     } catch {}
 
     // Leave a trace in the conversation.

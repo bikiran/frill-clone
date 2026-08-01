@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     // Synced rows are often missing images and shipping, so those go live.
     const { data: stored } = await db.from('woocommerce_orders')
       .select('*').eq('company_id', companyId)
-      .or(`order_id.eq.${orderId},order_number.eq.${orderId}`).maybeSingle()
+      .or(`woo_order_id.eq.${orderId},order_number.eq.${orderId}`).maybeSingle()
     const complete = (o: any) =>
       o && Array.isArray(o.line_items) && o.line_items.length > 0 &&
       o.shipping_total != null &&
@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
     try {
       await db.from('woocommerce_orders')
         .update({ line_items: lineItems, shipping_total: order.shipping_total ?? null })
-        .eq('company_id', companyId).eq('order_id', order.id)
+        .eq('company_id', companyId).eq('woo_order_id', order.id)
     } catch { /* cache only */ }
 
     return NextResponse.json({
