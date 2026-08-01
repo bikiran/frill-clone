@@ -64,6 +64,7 @@ const NAV = [
   { key: 'webhooks',   label: 'Webhook Explorer', icon: 'system' },
   { key: 'jobs',       label: 'Background Jobs',  icon: 'system' },
   { key: 'apilogs',    label: 'API Logs',         icon: 'audit' },
+  { key: 'devices',    label: 'Mobile Devices',   icon: 'users' },
   { key: 'integrations', label: 'Integrations',   icon: 'system' },
   { section: 'Platform' },
   { key: 'billing',    label: 'Billing',          icon: 'billing' },
@@ -1207,6 +1208,165 @@ function ApiLogsPage() {
         </>
       )}
       {sel && <ApiLogDetail row={sel} coName={coName(sel.company_id)} onClose={() => setSel(null)} />}
+    </div>
+  )
+}
+
+// Operations · Mobile Devices — the fleet of registered mobile apps (push_tokens)
+// cross-referenced with live agent heartbeats (agent_presence). All real data,
+// no new backend: push_tokens = devices reachable by push, agent_presence =
+// who has a live session (browser or app) right now.
+const PRESENCE_WINDOW_MS = 120000   // "online" = heartbeat in the last 2 minutes
+
+function MobileDeviceDetail({ d, onClose }: { d: any; onClose: () => void }) {
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  const plat = String(d.platform || '').toLowerCase()
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 520, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: plat === 'ios' ? '#111' : '#3ddc84', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{plat === 'ios' ? '' : '🤖'}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{d.device_name || 'Unnamed device'}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{d.coName}</p>
+          </div>
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: d.online ? '#10b981' : '#6b7280', padding: '3px 10px', borderRadius: 999, background: (d.online ? '#10b981' : '#6b7280') + '22' }}>{d.online ? 'Online' : 'Offline'}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          <Row k="Device" v={d.device_name} />
+          <Row k="Platform" v={plat ? (plat === 'ios' ? 'iOS' : plat[0].toUpperCase() + plat.slice(1)) : '—'} />
+          <Row k="Business" v={d.coName} />
+          <Row k="User" v={d.email} />
+          <Row k="Live session" v={d.online ? `Yes · heartbeat ${d.lastSeenAgo}` : (d.lastSeenAgo ? `No · last seen ${d.lastSeenAgo}` : 'No heartbeat recorded')} />
+          <Row k="Push reachable" v="Yes (registered token)" />
+          <Row k="Registered" v={d.created_at ? new Date(d.created_at).toLocaleString() : '—'} />
+          <Row k="Last updated" v={d.updated_at ? new Date(d.updated_at).toLocaleString() : '—'} />
+          <div style={{ marginTop: 16 }}>
+            <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 6px' }}>Push token</p>
+            <p style={{ fontSize: 11, color: 'var(--sa-text)', margin: 0, wordBreak: 'break-all', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', padding: 12, borderRadius: 9, background: 'var(--sa-card)', border: '1px solid var(--sa-border)' }}>{d.expo_token || '—'}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MobileDevicesPage() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  const [onlineAgents, setOnlineAgents] = useState<number | null>(null)
+  const [q, setQ] = useState('')
+  const [plat, setPlat] = useState('all')
+  const [sel, setSel] = useState<any>(null)
+  const load = async () => {
+    const [co, pt, ap, tm] = await Promise.all([
+      (supabase as any).from('companies').select('id,name,slug'),
+      (supabase as any).from('push_tokens').select('*').order('updated_at', { ascending: false }).limit(500),
+      (supabase as any).from('agent_presence').select('company_id,user_id,last_seen_at'),
+      (supabase as any).from('team_members').select('user_id, email'),
+    ])
+    if (pt.error) { if (/does not exist|schema cache/i.test(pt.error.message)) setMissing(true); setRows([]); return }
+    const coMap: Record<string, any> = {}; (co.data || []).forEach((x: any) => { coMap[x.id] = x })
+    const emailMap: Record<string, string> = {}; (tm.data || []).forEach((x: any) => { if (x.user_id) emailMap[x.user_id] = x.email })
+    const presMap: Record<string, string> = {}
+    ;(ap.data || []).forEach((x: any) => { if (x.user_id) presMap[`${x.company_id}:${x.user_id}`] = x.last_seen_at })
+    setOnlineAgents((ap.data || []).filter((x: any) => x.last_seen_at && (Date.now() - new Date(x.last_seen_at).getTime()) < PRESENCE_WINDOW_MS).length)
+    const ago = (d: string) => {
+      if (!d) return ''
+      const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000)
+      if (m < 1) return 'just now'; if (m < 60) return `${m}m ago`
+      const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`
+      return `${Math.floor(h / 24)}d ago`
+    }
+    const list = (pt.data || []).map((d: any) => {
+      const seen = presMap[`${d.company_id}:${d.user_id}`]
+      const online = seen ? (Date.now() - new Date(seen).getTime()) < PRESENCE_WINDOW_MS : false
+      return { ...d, coName: coMap[d.company_id]?.name || coMap[d.company_id]?.slug || '—', email: emailMap[d.user_id] || null, online, lastSeenAgo: seen ? ago(seen) : '' }
+    })
+    setRows(list)
+  }
+  useEffect(() => { load() }, [])
+  const all = rows || []
+  const list = all.filter(d => {
+    if (plat !== 'all' && String(d.platform || '').toLowerCase() !== plat) return false
+    if (q.trim()) {
+      const hay = `${d.device_name || ''} ${d.coName || ''} ${d.email || ''} ${d.platform || ''}`.toLowerCase()
+      if (!hay.includes(q.trim().toLowerCase())) return false
+    }
+    return true
+  })
+  const ios = all.filter(d => String(d.platform || '').toLowerCase() === 'ios').length
+  const android = all.filter(d => String(d.platform || '').toLowerCase() !== 'ios').length
+  const businesses = new Set(all.map(d => d.company_id)).size
+  const onlineDevices = all.filter(d => d.online).length
+  const kpis = [
+    { label: 'Registered devices', value: all.length, color: '#6366f1' },
+    { label: 'Online now', value: onlineDevices, color: '#10b981' },
+    { label: 'iOS', value: ios, color: '#111827' },
+    { label: 'Android', value: android, color: '#3ddc84' },
+    { label: 'Businesses with app', value: businesses, color: '#f59e0b' },
+    { label: 'Live agent sessions', value: onlineAgents ?? '…', color: '#0891b2' },
+  ]
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const chip = (active: boolean): React.CSSProperties => ({ padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? '#ff7a6b' : 'var(--sa-border)'}`, background: active ? '#ff7a6b22' : 'var(--sa-card)', color: active ? '#ff7a6b' : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' })
+  return (
+    <div>
+      <SectionHeader title="Mobile Devices" sub="Registered mobile apps across every business, with live status"
+        action={<button onClick={() => { setRows(null); load() }} style={paBtn()}>Refresh</button>} />
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Mobile push isn't set up yet — run <b>COLVY_V122_PUSH.sql</b> to start tracking registered devices.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 12, marginBottom: 18 }}>
+            {kpis.map(k => (
+              <div key={k.label} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+                <p style={{ fontSize: 24, fontWeight: 800, color: k.color, margin: 0 }}>{rows === null ? '…' : k.value}</p>
+                <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{k.label}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <SearchBar placeholder="Search device, business, user…" value={q} onChange={setQ} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['all', 'All'], ['ios', 'iOS'], ['android', 'Android']].map(([k, l]) => (
+                <button key={k} onClick={() => setPlat(k)} style={chip(plat === k)}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+              <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Status', 'Device', 'Platform', 'Business', 'User', 'Registered', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows === null ? <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                : list.length === 0 ? <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{all.length === 0 ? 'No mobile devices registered yet.' : 'No devices match these filters.'}</td></tr>
+                : list.map((d, i) => {
+                  const p = String(d.platform || '').toLowerCase()
+                  return (
+                    <tr key={d.id} onClick={() => setSel(d)} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none', cursor: 'pointer' }}>
+                      <td style={td}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: d.online ? '#10b981' : '#6b7280' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: d.online ? '#10b981' : '#9ca3af' }} />{d.online ? 'Online' : 'Offline'}</span></td>
+                      <td style={td}>{d.device_name || 'Unnamed device'}</td>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: p === 'ios' ? 'var(--sa-text)' : '#0a7d43' }}>{p === 'ios' ? 'iOS' : (p ? p[0].toUpperCase() + p.slice(1) : '—')}</span></td>
+                      <td style={td}>{d.coName}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{d.email || '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{d.created_at ? new Date(d.created_at).toLocaleDateString() : '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', textAlign: 'right' }}>›</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '12px 2px 0' }}>Online status reflects a live agent heartbeat (browser or app) in the last 2 minutes. Every registered device is reachable by push notification even when offline.</p>
+        </>
+      )}
+      {sel && <MobileDeviceDetail d={sel} onClose={() => setSel(null)} />}
     </div>
   )
 }
@@ -2662,6 +2822,7 @@ export default function SuperAdmin() {
           {page === 'webhooks'     && <WebhookExplorerPage />}
           {page === 'jobs'         && <BackgroundJobsPage />}
           {page === 'apilogs'      && <ApiLogsPage />}
+          {page === 'devices'      && <MobileDevicesPage />}
           {page === 'integrations' && <IntegrationsPage />}
           {page === 'billing'    && <BillingPage />}
           {page === 'legal'      && <LegalAdminPage />}
