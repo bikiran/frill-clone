@@ -1756,7 +1756,19 @@ function CompaniesPage() {
       })
       const d = await res.json()
       if (!res.ok) { setImp((s: any) => ({ ...s, busy: false, err: d.error || 'Could not start session' })); return }
-      window.open(`https://${imp.co.slug}.colvy.com/admin?imp=${d.id}`, '_blank')
+      // Bypass the workspace login by carrying the super-admin's OWN session to
+      // the company subdomain. Supabase sessions live in per-origin localStorage,
+      // so a session on admin.colvy.com doesn't exist on {slug}.colvy.com — which
+      // is why the workspace was showing its sign-in page. /auth/handoff calls
+      // setSession() with these tokens, then forwards to /admin?imp=<id> so the
+      // admin layout (which already grants the super admin access to any company)
+      // lets us straight in and the impersonation banner shows.
+      const at = session?.access_token, rt = session?.refresh_token
+      const next = encodeURIComponent(`/admin?imp=${d.id}`)
+      const url = at && rt
+        ? `https://${imp.co.slug}.colvy.com/auth/handoff#access_token=${encodeURIComponent(at)}&refresh_token=${encodeURIComponent(rt)}&next=${next}`
+        : `https://${imp.co.slug}.colvy.com/admin?imp=${d.id}`
+      window.open(url, '_blank')
       setImp(null)
     } catch (e: any) { setImp((s: any) => ({ ...s, busy: false, err: e.message })) }
   }
