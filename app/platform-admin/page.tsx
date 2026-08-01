@@ -61,6 +61,7 @@ const NAV = [
   { section: 'Operations' },
   { key: 'imp',        label: 'Impersonation',    icon: 'audit' },
   { key: 'calls',      label: 'Call Diagnostics', icon: 'chat' },
+  { key: 'webhooks',   label: 'Webhook Explorer', icon: 'system' },
   { key: 'integrations', label: 'Integrations',   icon: 'system' },
   { section: 'Platform' },
   { key: 'billing',    label: 'Billing',          icon: 'billing' },
@@ -715,6 +716,171 @@ function CallDiagnosticsPage() {
         </>
       )}
       {sel && <CallDetail call={sel} coName={coName(sel.company_id)} onClose={() => setSel(null)} />}
+    </div>
+  )
+}
+
+// Operations · Webhook Explorer — a live feed of every inbound webhook Colvy
+// receives (Telnyx, Stripe, Meta, WooCommerce, email), with per-event payload
+// inspection. Real data from webhook_events (COLVY_V217).
+const WH_SOURCES: Record<string, { label: string; color: string }> = {
+  telnyx: { label: 'Telnyx', color: '#0891b2' },
+  stripe: { label: 'Stripe', color: '#635bff' },
+  meta: { label: 'Meta', color: '#0866ff' },
+  woocommerce: { label: 'WooCommerce', color: '#96588a' },
+  email: { label: 'Email', color: '#8b5cf6' },
+}
+
+function WebhookDetail({ ev, coName, onClose }: { ev: any; coName: string; onClose: () => void }) {
+  const src = WH_SOURCES[ev.source] || { label: ev.source, color: '#6b7280' }
+  const pretty = (() => { try { return JSON.stringify(ev.payload, null, 2) } catch { return String(ev.payload) } })()
+  const [copied, setCopied] = useState(false)
+  const copy = () => { try { navigator.clipboard.writeText(pretty); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {} }
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  const statusColor: Record<string, string> = { received: '#6366f1', processed: '#10b981', ignored: '#6b7280', error: '#ef4444', rejected: '#f59e0b' }
+  const sc = statusColor[String(ev.status)] || '#6b7280'
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 620, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: src.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>{src.label[0]}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{src.label}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.event_type || '—'}</p>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: sc, padding: '3px 10px', borderRadius: 999, background: sc + '22' }}>{ev.status || '—'}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          <Row k="Source" v={src.label} />
+          <Row k="Event type" v={ev.event_type} />
+          <Row k="Business" v={coName} />
+          <Row k="Status" v={ev.status} />
+          {ev.error && <Row k="Error" v={ev.error} />}
+          <Row k="Received" v={ev.created_at ? new Date(ev.created_at).toLocaleString() : '—'} />
+          <div style={{ marginTop: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Payload</p>
+              {ev.payload != null && <button onClick={copy} style={{ marginLeft: 'auto', ...paBtn() }}>{copied ? 'Copied' : 'Copy'}</button>}
+            </div>
+            {ev.payload == null ? (
+              <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>No payload captured for this event.</p>
+            ) : (
+              <pre style={{ margin: 0, padding: 14, borderRadius: 10, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 11.5, lineHeight: 1.5, color: 'var(--sa-text)', overflowX: 'auto', whiteSpace: 'pre', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{pretty}</pre>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function WebhookExplorerPage() {
+  const [cos, setCos] = useState<Record<string, any>>({})
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  const [q, setQ] = useState('')
+  const [src, setSrc] = useState('all')
+  const [stat, setStat] = useState('all')
+  const [sel, setSel] = useState<any>(null)
+  const load = async () => {
+    const [c, r] = await Promise.all([
+      (supabase as any).from('companies').select('id,name,slug'),
+      (supabase as any).from('webhook_events').select('*').order('created_at', { ascending: false }).limit(300),
+    ])
+    const map: Record<string, any> = {}; (c.data || []).forEach((x: any) => { map[x.id] = x })
+    setCos(map)
+    if (r.error) { if (/does not exist|schema cache/i.test(r.error.message)) setMissing(true); setRows([]) }
+    else setRows(r.data || [])
+  }
+  useEffect(() => { load() }, [])
+  const coName = (id: string) => cos[id]?.name || cos[id]?.slug || '—'
+  const all = rows || []
+  const list = all.filter(r => {
+    if (src !== 'all' && r.source !== src) return false
+    if (stat === 'errors' && !['error', 'rejected'].includes(r.status)) return false
+    if (stat === 'ok' && ['error', 'rejected'].includes(r.status)) return false
+    if (q.trim()) {
+      const hay = `${r.source} ${r.event_type || ''} ${r.error || ''} ${coName(r.company_id)}`.toLowerCase()
+      if (!hay.includes(q.trim().toLowerCase())) return false
+    }
+    return true
+  })
+  const errors = all.filter(r => ['error', 'rejected'].includes(r.status)).length
+  const bySource = Object.keys(WH_SOURCES).map(k => ({ k, ...WH_SOURCES[k], n: all.filter(r => r.source === k).length }))
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const chip = (active: boolean, color?: string): React.CSSProperties => ({ padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? (color || '#ff7a6b') : 'var(--sa-border)'}`, background: active ? (color || '#ff7a6b') + '22' : 'var(--sa-card)', color: active ? (color || '#ff7a6b') : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' })
+  const statusColor: Record<string, string> = { received: '#6366f1', processed: '#10b981', ignored: '#6b7280', error: '#ef4444', rejected: '#f59e0b' }
+  return (
+    <div>
+      <SectionHeader title="Webhook Explorer" sub="Live feed of every inbound webhook across the platform"
+        action={<button onClick={() => { setRows(null); load() }} style={paBtn()}>Refresh</button>} />
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V217_WEBHOOK_EVENTS.sql</b> to start capturing inbound webhooks. New events appear here automatically once the table exists.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 12, marginBottom: 18 }}>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: '#6366f1', margin: 0 }}>{rows === null ? '…' : all.length}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Recent events</p>
+            </div>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: errors ? '#ef4444' : '#10b981', margin: 0 }}>{rows === null ? '…' : errors}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Errors / rejected</p>
+            </div>
+            {bySource.map(s => (
+              <div key={s.k} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+                <p style={{ fontSize: 24, fontWeight: 800, color: s.color, margin: 0 }}>{rows === null ? '…' : s.n}</p>
+                <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{s.label}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <SearchBar placeholder="Search type, business, error…" value={q} onChange={setQ} />
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button onClick={() => setSrc('all')} style={chip(src === 'all')}>All sources</button>
+              {Object.keys(WH_SOURCES).map(k => (
+                <button key={k} onClick={() => setSrc(k)} style={chip(src === k, WH_SOURCES[k].color)}>{WH_SOURCES[k].label}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['all', 'Any'], ['ok', 'OK'], ['errors', 'Errors']].map(([k, l]) => (
+                <button key={k} onClick={() => setStat(k)} style={chip(stat === k)}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
+              <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Source', 'Event type', 'Business', 'Status', 'Received', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows === null ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                : list.length === 0 ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{all.length === 0 ? 'No webhooks received yet.' : 'No events match these filters.'}</td></tr>
+                : list.map((r, i) => {
+                  const s = WH_SOURCES[r.source] || { label: r.source, color: '#6b7280' }
+                  const sc = statusColor[String(r.status)] || '#6b7280'
+                  return (
+                    <tr key={r.id} onClick={() => setSel(r)} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none', cursor: 'pointer' }}>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: s.color }}>{s.label}</span></td>
+                      <td style={{ ...td, maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.event_type}>{r.event_type || '—'}</td>
+                      <td style={td}>{coName(r.company_id)}</td>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: sc + '22', color: sc }}>{r.status || '—'}</span></td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', textAlign: 'right' }}>›</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {sel && <WebhookDetail ev={sel} coName={coName(sel.company_id)} onClose={() => setSel(null)} />}
     </div>
   )
 }
@@ -2167,6 +2333,7 @@ export default function SuperAdmin() {
           {page === 'moderation' && <ModerationPage />}
           {page === 'imp'          && <ImpersonationSessionsPage />}
           {page === 'calls'        && <CallDiagnosticsPage />}
+          {page === 'webhooks'     && <WebhookExplorerPage />}
           {page === 'integrations' && <IntegrationsPage />}
           {page === 'billing'    && <BillingPage />}
           {page === 'legal'      && <LegalAdminPage />}

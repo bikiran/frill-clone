@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
 import { TelnyxService } from '@/lib/telnyx-service'
+import { logWebhookEvent } from '@/lib/webhook-log'
 
 function admin() {
   return createClient(
@@ -22,6 +23,9 @@ export async function POST(req: NextRequest) {
     const event = body?.data
     const eventType: string = event?.event_type || ''
     const db = admin()
+
+    // Record the event for the Super Admin webhook explorer (best-effort).
+    logWebhookEvent({ source: 'telnyx', eventType, payload: body })
 
     // ── Delivery receipts ────────────────────────────────────────────────────
     // Telnyx reports the outcome of an outbound message with message.finalized
@@ -843,6 +847,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   } catch (err: any) {
     console.error('Telnyx webhook error:', err)
+    await logWebhookEvent({ source: 'telnyx', status: 'error', error: err?.message })
     // Always 200 so Telnyx doesn't retry-storm us
     return NextResponse.json({ ok: true })
   }

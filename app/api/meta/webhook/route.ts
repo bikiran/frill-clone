@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile } from '@/lib/meta'
 import { linkContactIdentity } from '@/lib/identity'
+import { logWebhookEvent } from '@/lib/webhook-log'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,6 +38,7 @@ function validSignature(raw: string, sig: string | null): boolean {
 export async function POST(req: NextRequest) {
   const raw = await req.text()
   if (!validSignature(raw, req.headers.get('x-hub-signature-256'))) {
+    await logWebhookEvent({ source: 'meta', status: 'rejected', error: 'bad signature' })
     return NextResponse.json({ error: 'bad signature' }, { status: 401 })
   }
 
@@ -47,6 +49,9 @@ export async function POST(req: NextRequest) {
 
   // `object` tells us the platform: 'page' = Messenger, 'instagram' = IG DM.
   const platform: 'facebook' | 'instagram' = body.object === 'instagram' ? 'instagram' : 'facebook'
+
+  // Record the event for the Super Admin webhook explorer (best-effort).
+  logWebhookEvent({ source: 'meta', eventType: body.object || platform, payload: body })
 
   for (const entry of body.entry || []) {
     // The recipient of the webhook is the Page (Messenger) or IG account (IG).

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
 import { passesRules } from '@/lib/gmail'
+import { logWebhookEvent } from '@/lib/webhook-log'
 
 export const dynamic = 'force-dynamic'
 
@@ -94,6 +95,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, reason: `No email channel configured for ${to.email}` })
     }
     const companyId = channel.company_id
+
+    // Record the event for the Super Admin webhook explorer (best-effort).
+    logWebhookEvent({ source: 'email', eventType: 'inbound', companyId, payload: { from: from.email, to: to.email, subject, messageId } })
 
     // Respect this mailbox's allow/block rules before importing anything.
     if (!(await passesRules(db, channel, from.email))) {
@@ -207,6 +211,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     // Never 500 — providers disable webhooks that keep failing.
     console.error('[email webhook]', e)
+    await logWebhookEvent({ source: 'email', status: 'error', error: e?.message })
     return NextResponse.json({ ok: false, error: e.message })
   }
 }
