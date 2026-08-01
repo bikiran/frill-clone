@@ -3,6 +3,7 @@
 import { useParams } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import MarketingFooter from '@/components/MarketingFooter'
 
 function useInView() {
   const ref = useRef<HTMLDivElement>(null)
@@ -424,6 +425,7 @@ export default function FeaturePage() {
           </div>
         </div>
       </section>
+      <MarketingFooter dark={dark} />
     </div>
   )
 }
