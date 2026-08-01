@@ -63,6 +63,7 @@ const NAV = [
   { key: 'calls',      label: 'Call Diagnostics', icon: 'chat' },
   { key: 'webhooks',   label: 'Webhook Explorer', icon: 'system' },
   { key: 'jobs',       label: 'Background Jobs',  icon: 'system' },
+  { key: 'apilogs',    label: 'API Logs',         icon: 'audit' },
   { key: 'integrations', label: 'Integrations',   icon: 'system' },
   { section: 'Platform' },
   { key: 'billing',    label: 'Billing',          icon: 'billing' },
@@ -1051,6 +1052,161 @@ function BackgroundJobsPage() {
         </>
       )}
       {sel && <JobRunDetail run={sel} onClose={() => setSel(null)} />}
+    </div>
+  )
+}
+
+// Operations · API Logs — the stream of server-side warnings and errors from
+// across the API routes and libraries (captured from console.error/warn via
+// instrumentation.ts). Real data from api_logs (COLVY_V219).
+const LOG_LEVEL_COLOR: Record<string, string> = { error: '#ef4444', warn: '#f59e0b', info: '#6366f1' }
+
+function ApiLogDetail({ row, coName, onClose }: { row: any; coName: string; onClose: () => void }) {
+  const lc = LOG_LEVEL_COLOR[String(row.level)] || '#6b7280'
+  const meta = (() => { try { return row.meta != null ? JSON.stringify(row.meta, null, 2) : null } catch { return String(row.meta) } })()
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 620, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '4px 10px', borderRadius: 8, background: lc + '22', color: lc }}>{row.level}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{row.source || 'app'}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{row.created_at ? new Date(row.created_at).toLocaleString() : '—'}</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          <Row k="Level" v={row.level} />
+          <Row k="Source" v={row.source} />
+          {row.route && <Row k="Route" v={row.route} />}
+          {row.company_id && <Row k="Business" v={coName} />}
+          <Row k="Time" v={row.created_at ? new Date(row.created_at).toLocaleString() : '—'} />
+          <div style={{ marginTop: 18 }}>
+            <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Message</p>
+            <pre style={{ margin: 0, padding: 14, borderRadius: 10, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 11.5, lineHeight: 1.5, color: 'var(--sa-text)', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{row.message || '—'}</pre>
+          </div>
+          {meta && (
+            <div style={{ marginTop: 16 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Metadata</p>
+              <pre style={{ margin: 0, padding: 14, borderRadius: 10, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 11.5, lineHeight: 1.5, color: 'var(--sa-text)', overflowX: 'auto', whiteSpace: 'pre', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{meta}</pre>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ApiLogsPage() {
+  const [cos, setCos] = useState<Record<string, any>>({})
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  const [q, setQ] = useState('')
+  const [level, setLevel] = useState('all')
+  const [source, setSource] = useState('all')
+  const [sel, setSel] = useState<any>(null)
+  const load = async () => {
+    const [c, r] = await Promise.all([
+      (supabase as any).from('companies').select('id,name,slug'),
+      (supabase as any).from('api_logs').select('*').order('created_at', { ascending: false }).limit(300),
+    ])
+    const map: Record<string, any> = {}; (c.data || []).forEach((x: any) => { map[x.id] = x })
+    setCos(map)
+    if (r.error) { if (/does not exist|schema cache/i.test(r.error.message)) setMissing(true); setRows([]) }
+    else setRows(r.data || [])
+  }
+  useEffect(() => { load() }, [])
+  const coName = (id: string) => cos[id]?.name || cos[id]?.slug || '—'
+  const all = rows || []
+  const dayAgo = Date.now() - 86400000
+  const in24 = (r: any) => r.created_at && new Date(r.created_at).getTime() > dayAgo
+  const sources = Array.from(new Set(all.map(r => r.source || 'app')))
+    .map(s => ({ s, n: all.filter(r => (r.source || 'app') === s).length }))
+    .sort((a, b) => b.n - a.n).slice(0, 8)
+  const list = all.filter(r => {
+    if (level !== 'all' && r.level !== level) return false
+    if (source !== 'all' && (r.source || 'app') !== source) return false
+    if (q.trim()) {
+      const hay = `${r.source || ''} ${r.message || ''} ${r.route || ''}`.toLowerCase()
+      if (!hay.includes(q.trim().toLowerCase())) return false
+    }
+    return true
+  })
+  const errors24 = all.filter(r => r.level === 'error' && in24(r)).length
+  const warns24 = all.filter(r => r.level === 'warn' && in24(r)).length
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const chip = (active: boolean, color?: string): React.CSSProperties => ({ padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? (color || '#ff7a6b') : 'var(--sa-border)'}`, background: active ? (color || '#ff7a6b') + '22' : 'var(--sa-card)', color: active ? (color || '#ff7a6b') : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' })
+  return (
+    <div>
+      <SectionHeader title="API Logs" sub="Server-side warnings and errors from across the platform"
+        action={<button onClick={() => { setRows(null); load() }} style={paBtn()}>Refresh</button>} />
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V219_API_LOGS.sql</b> to start capturing server logs. Once the table exists, every warning and error from the API routes flows here automatically.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 12, marginBottom: 18 }}>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: errors24 ? '#ef4444' : '#10b981', margin: 0 }}>{rows === null ? '…' : errors24}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Errors (24h)</p>
+            </div>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: warns24 ? '#f59e0b' : '#10b981', margin: 0 }}>{rows === null ? '…' : warns24}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Warnings (24h)</p>
+            </div>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: '#6366f1', margin: 0 }}>{rows === null ? '…' : sources.length}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Active sources</p>
+            </div>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--sa-text)', margin: '4px 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{rows === null ? '…' : (sources[0]?.s || '—')}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Noisiest source{sources[0] ? ` · ${sources[0].n}` : ''}</p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <SearchBar placeholder="Search message, source, route…" value={q} onChange={setQ} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['all', 'All'], ['error', 'Errors'], ['warn', 'Warnings']].map(([k, l]) => (
+                <button key={k} onClick={() => setLevel(k)} style={chip(level === k, k === 'error' ? '#ef4444' : k === 'warn' ? '#f59e0b' : undefined)}>{l}</button>
+              ))}
+            </div>
+            {sources.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button onClick={() => setSource('all')} style={chip(source === 'all')}>All sources</button>
+                {sources.map(s => <button key={s.s} onClick={() => setSource(s.s)} style={chip(source === s.s)}>{s.s}</button>)}
+              </div>
+            )}
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+              <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Level', 'Source', 'Message', 'Time', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows === null ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                : list.length === 0 ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{all.length === 0 ? 'No logs captured yet — nothing has errored since the table was created.' : 'No logs match these filters.'}</td></tr>
+                : list.map((r, i) => {
+                  const lc = LOG_LEVEL_COLOR[String(r.level)] || '#6b7280'
+                  return (
+                    <tr key={r.id} onClick={() => setSel(r)} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none', cursor: 'pointer' }}>
+                      <td style={td}><span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 6, background: lc + '22', color: lc }}>{r.level}</span></td>
+                      <td style={td}><span style={{ fontWeight: 600 }}>{r.source || 'app'}</span></td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', maxWidth: 460, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5 }} title={r.message}>{r.message || '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', textAlign: 'right' }}>›</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {sel && <ApiLogDetail row={sel} coName={coName(sel.company_id)} onClose={() => setSel(null)} />}
     </div>
   )
 }
@@ -2505,6 +2661,7 @@ export default function SuperAdmin() {
           {page === 'calls'        && <CallDiagnosticsPage />}
           {page === 'webhooks'     && <WebhookExplorerPage />}
           {page === 'jobs'         && <BackgroundJobsPage />}
+          {page === 'apilogs'      && <ApiLogsPage />}
           {page === 'integrations' && <IntegrationsPage />}
           {page === 'billing'    && <BillingPage />}
           {page === 'legal'      && <LegalAdminPage />}
