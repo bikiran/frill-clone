@@ -461,7 +461,7 @@ function WidgetContent() {
           setHelpArticles(data.helpArticles || [])
         }
       })()
-    }, 5000) // Refetch every 5 seconds
+    }, 20000) // Refetch every 20s — widget content (ideas, announcements, help) rarely changes, so a tight 5s poll just added HTTP load for no real freshness gain
     
     return () => clearInterval(interval)
   }, [slug])
