@@ -188,6 +188,82 @@ function SearchBar({ placeholder, value, onChange }: { placeholder: string; valu
 // PAGE COMPONENTS
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Attention Required — surfaces businesses that need a look right now, computed
+// purely from companies.plan + created_at (no invented columns, no backend).
+function AttentionPanel() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any).from('companies').select('id,name,slug,plan,created_at').limit(1000)
+        if (active) setRows(data || [])
+      } catch { if (active) setRows([]) }
+    })()
+    return () => { active = false }
+  }, [])
+
+  const now = Date.now()
+  const ageDays = (d: string) => d ? (now - new Date(d).getTime()) / 86400000 : 0
+  const list = rows || []
+  const p = (c: any) => String(c.plan || '').toLowerCase()
+  const buckets = [
+    { key: 'suspended', color: '#ef4444', icon: '⛔', label: 'Suspended businesses', hint: 'Review or reactivate',
+      items: list.filter(c => p(c) === 'suspended') },
+    { key: 'trial_ending', color: '#f59e0b', icon: '⏳', label: 'Trials ending soon', hint: 'Assuming a 14-day trial — under ~3 days left',
+      items: list.filter(c => p(c) === 'trial' && ageDays(c.created_at) >= 11 && ageDays(c.created_at) <= 14) },
+    { key: 'trial_stale', color: '#ef4444', icon: '💤', label: 'Stale trials', hint: 'On trial 21+ days and never converted',
+      items: list.filter(c => p(c) === 'trial' && ageDays(c.created_at) > 21) },
+    { key: 'new_signup', color: '#10b981', icon: '✨', label: 'New signups to onboard', hint: 'Joined in the last 2 days',
+      items: list.filter(c => ['trial', 'free'].includes(p(c)) && ageDays(c.created_at) < 2) },
+    { key: 'free_long', color: '#6366f1', icon: '📈', label: 'Long-time free (upsell)', hint: 'On the free plan 45+ days',
+      items: list.filter(c => p(c) === 'free' && ageDays(c.created_at) > 45) },
+  ].filter(b => b.items.length > 0)
+  const total = buckets.reduce((n, b) => n + b.items.length, 0)
+
+  return (
+    <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20, marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Attention Required</p>
+        {rows !== null && (
+          <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: total ? '#ef444422' : '#10b98122', color: total ? '#ef4444' : '#10b981' }}>{total}</span>
+        )}
+      </div>
+      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 14px' }}>Businesses that need a look right now</p>
+      {rows === null ? (
+        <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Loading…</p>
+      ) : buckets.length === 0 ? (
+        <p style={{ fontSize: 13, color: '#10b981', fontWeight: 600, margin: 0 }}>✓ All clear — nothing needs attention.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {buckets.map(b => (
+            <div key={b.key} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, background: b.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{b.icon}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)' }}>{b.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 999, background: b.color + '22', color: b.color }}>{b.items.length}</span>
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '2px 0 7px' }}>{b.hint}</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {b.items.slice(0, 10).map((c: any) => (
+                    <a key={c.id} href={`https://${c.slug}.colvy.com/admin`} target="_blank" rel="noopener"
+                      title={`Open ${c.name || c.slug} workspace`}
+                      style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-text)', textDecoration: 'none' }}>
+                      {c.name || c.slug || 'Untitled'}
+                    </a>
+                  ))}
+                  {b.items.length > 10 && <span style={{ fontSize: 11.5, color: 'var(--sa-muted)', alignSelf: 'center' }}>+{b.items.length - 10} more</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function OverviewPage({ data }: { data: any }) {
   const sparkA = [12,18,15,22,19,28,25,32,30,38,35,42]
   const sparkB = [5,8,6,11,9,14,12,16,14,19,17,22]
@@ -237,6 +313,9 @@ function OverviewPage({ data }: { data: any }) {
         <KPI label="Total Ideas" value={data.ideas?.toLocaleString() ?? '—'} sub="across all boards" color="#f59e0b" />
         <KPI label="Help Articles" value={data.articles?.toLocaleString() ?? '—'} sub="published" color="#0891b2" />
       </div>
+
+      {/* Attention Required */}
+      <AttentionPanel />
 
       {/* Charts row */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 24 }}>
