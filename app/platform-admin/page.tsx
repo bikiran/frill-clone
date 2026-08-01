@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import LegalAdminPage from '../admin/legal/page'
 import PlatformBannerAdmin from '@/components/PlatformBannerAdmin'
 import { SmsPricing, DEFAULT_PRICING, calculateCost, aud, audRate, parsePricingRow } from '@/lib/sms-pricing'
+import { PLAN_FEATURES, PLAN_LIMITS, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -347,6 +348,45 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
     setSubMsg(next ? 'Account marked complimentary.' : 'Complimentary status removed.')
   }
 
+  // ── Entitlements & limits overrides ────────────────────────────────────────
+  // features/limits maps hold ONLY explicit overrides; an absent key = plan default.
+  const [entFeatures, setEntFeatures] = useState<Record<string, boolean>>({})
+  const [entLimits, setEntLimits] = useState<Record<string, any>>({})
+  const [entReason, setEntReason] = useState('')
+  const [entLoaded, setEntLoaded] = useState(false)
+  const [entMissing, setEntMissing] = useState(false)
+  const [savingEnt, setSavingEnt] = useState(false)
+  const [entMsg, setEntMsg] = useState('')
+  useEffect(() => {
+    ;(async () => {
+      const { data, error } = await (supabase as any).from('company_entitlements').select('*').eq('company_id', co.id).maybeSingle()
+      if (error) { if (/does not exist|schema cache/i.test(error.message)) setEntMissing(true) }
+      else if (data) { setEntFeatures(data.features || {}); setEntLimits(data.limits || {}); setEntReason(data.reason || '') }
+      setEntLoaded(true)
+    })()
+  }, [co.id])
+  const planKey = (co.plan || 'free') as Plan
+  const planHasFeature = (k: string) => {
+    const f = PLAN_FEATURES[planKey] || []
+    return planKey === 'enterprise' || f.includes('*') || f.includes(k)
+  }
+  const planLimit = (k: string) => (PLAN_LIMITS[planKey] || {})[k]
+  const fmtLimit = (v: any) => v === Infinity || v === 'unlimited' ? 'unlimited' : (v == null ? '—' : String(v))
+  const saveEnt = async () => {
+    if (!entReason.trim()) { setEntMsg('A reason is required (audited).'); return }
+    setSavingEnt(true); setEntMsg('')
+    const { data: { session } } = await supabase.auth.getSession()
+    const { error } = await (supabase as any).from('company_entitlements').upsert({
+      company_id: co.id, features: entFeatures, limits: entLimits, reason: entReason.trim(),
+      updated_by: session?.user?.email || null, updated_at: new Date().toISOString(),
+    }, { onConflict: 'company_id' })
+    setSavingEnt(false)
+    if (error) { setEntMsg(/does not exist|schema cache/i.test(error.message) ? 'Run COLVY_V222_COMPANY_ENTITLEMENTS.sql, then reload.' : error.message); return }
+    const fCount = Object.keys(entFeatures).length, lCount = Object.keys(entLimits).length
+    await auditChange(`Updated entitlements (${fCount} feature + ${lCount} limit override${fCount + lCount === 1 ? '' : 's'}) — ${entReason.trim()}`)
+    setEntMsg('Overrides saved.')
+  }
+
   // Simple account-health heuristic from real signals.
   const ageDays = co.created_at ? (Date.now() - new Date(co.created_at).getTime()) / 86400000 : 0
   const plan = String(co.plan || '').toLowerCase()
@@ -365,7 +405,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
       <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
     </div>
   )
-  const TABS = [['overview', 'Overview'], ['plan', 'Subscription'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
+  const TABS = [['overview', 'Overview'], ['plan', 'Subscription'], ['ent', 'Entitlements'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
@@ -473,6 +513,63 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
               </div>
             )
           })()}
+
+          {tab === 'ent' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: 0, lineHeight: 1.5 }}>Override features and usage limits for this business without changing its plan ({co.plan || 'free'}). Blank = use the plan default. Every change is audited.</p>
+              {entMissing && <div style={{ padding: '12px 14px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 12.5, color: 'var(--sa-text)' }}>Run <b>COLVY_V222_COMPANY_ENTITLEMENTS.sql</b> to store entitlement overrides, then reload.</div>}
+              {entMsg && <div style={{ padding: '9px 12px', borderRadius: 9, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 12.5, color: 'var(--sa-text)' }}>{entMsg}</div>}
+              <input value={entReason} onChange={e => setEntReason(e.target.value)} placeholder="Reason for these overrides (required, audited)…" style={paInput} />
+
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px' }}>Feature overrides</p>
+                <div style={{ border: '1px solid var(--sa-border)', borderRadius: 12, overflow: 'hidden' }}>
+                  {OVERRIDABLE_FEATURES.map((f, i) => {
+                    const def = planHasFeature(f.key)
+                    const ov = entFeatures[f.key]                  // undefined = default
+                    const val = ov === undefined ? 'default' : (ov ? 'on' : 'off')
+                    return (
+                      <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderTop: i ? '1px solid var(--sa-border)' : 'none' }}>
+                        <span style={{ flex: 1, fontSize: 13, color: 'var(--sa-text)' }}>{f.label}</span>
+                        <span style={{ fontSize: 11, color: def ? '#10b981' : 'var(--sa-muted)' }}>plan: {def ? 'on' : 'off'}</span>
+                        <select value={val} onChange={e => {
+                          const v = e.target.value
+                          setEntFeatures(prev => { const n = { ...prev }; if (v === 'default') delete n[f.key]; else n[f.key] = v === 'on'; return n })
+                        }} style={{ ...paInput, width: 'auto', padding: '6px 10px' }}>
+                          <option value="default">Plan default</option>
+                          <option value="on">Force on</option>
+                          <option value="off">Force off</option>
+                        </select>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px' }}>Usage-limit overrides</p>
+                <div style={{ border: '1px solid var(--sa-border)', borderRadius: 12, overflow: 'hidden' }}>
+                  {OVERRIDABLE_LIMITS.map((l, i) => {
+                    const has = entLimits[l.key] !== undefined
+                    return (
+                      <div key={l.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderTop: i ? '1px solid var(--sa-border)' : 'none' }}>
+                        <span style={{ flex: 1, fontSize: 13, color: 'var(--sa-text)' }}>{l.label} <span style={{ fontSize: 11, color: 'var(--sa-muted)' }}>plan: {fmtLimit(planLimit(l.key))}</span></span>
+                        <select value={has ? 'custom' : 'default'} onChange={e => {
+                          setEntLimits(prev => { const n = { ...prev }; if (e.target.value === 'default') delete n[l.key]; else n[l.key] = typeof planLimit(l.key) === 'number' && isFinite(planLimit(l.key)) ? planLimit(l.key) : 0; return n })
+                        }} style={{ ...paInput, width: 'auto', padding: '6px 10px' }}>
+                          <option value="default">Plan default</option>
+                          <option value="custom">Custom</option>
+                        </select>
+                        {has && <input type="number" value={entLimits[l.key]} onChange={e => setEntLimits(prev => ({ ...prev, [l.key]: parseInt(e.target.value) || 0 }))} style={{ ...paInput, width: 90, padding: '6px 10px' }} />}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <button onClick={saveEnt} disabled={savingEnt || !entLoaded} style={{ ...paBtn('#ff7a6b', true), alignSelf: 'flex-start' }}>{savingEnt ? 'Saving…' : 'Save overrides'}</button>
+            </div>
+          )}
 
           {tab === 'users' && (
             users === null ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>Loading…</p>

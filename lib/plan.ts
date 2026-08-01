@@ -39,6 +39,60 @@ export const PLAN_PRICES: Record<Plan, number | null> = {
   free: 0, trial: 0, pro: 99, enterprise: null,
 }
 
+// Features/limits the super admin can override per-company (a curated subset of
+// the plan matrix — the base features every plan has are always on). Keys match
+// PLAN_FEATURES / PLAN_LIMITS above.
+export const OVERRIDABLE_FEATURES: { key: string; label: string }[] = [
+  { key: 'polls', label: 'Polls' },
+  { key: 'surveys', label: 'Surveys' },
+  { key: 'apiAccess', label: 'API access' },
+  { key: 'webhooks', label: 'Webhooks' },
+  { key: 'advancedAnalytics', label: 'Advanced analytics' },
+  { key: 'customFields', label: 'Custom fields' },
+  { key: 'segments', label: 'Segments' },
+  { key: 'boostAnnouncements', label: 'Boosted announcements' },
+  { key: 'whiteListing', label: 'White-labelling' },
+  { key: 'removesBranding', label: 'Remove Colvy branding' },
+  { key: 'customDomain', label: 'Custom domain' },
+  { key: 'prioritySupport', label: 'Priority support' },
+]
+export const OVERRIDABLE_LIMITS: { key: string; label: string }[] = [
+  { key: 'teamMembers', label: 'Team members' },
+  { key: 'ideas', label: 'Ideas' },
+  { key: 'surveys', label: 'Surveys' },
+  { key: 'apiCalls', label: 'API calls / period' },
+]
+
+export interface EffectiveEntitlements {
+  features: Record<string, boolean>
+  limits: Record<string, any>
+  overrides: { features?: Record<string, boolean>; limits?: Record<string, any>; reason?: string } | null
+}
+
+/**
+ * The effective features and limits for a company: the plan defaults, with any
+ * per-company overrides from company_entitlements applied on top. A feature/limit
+ * key absent from the overrides means "use the plan default". Accepts any
+ * supabase-like client (browser or service).
+ */
+export async function resolveEntitlements(db: any, companyId: string, plan: Plan): Promise<EffectiveEntitlements> {
+  const planFeatures = PLAN_FEATURES[plan] || []
+  const featureOn = (k: string) => plan === 'enterprise' || planFeatures.includes('*') || planFeatures.includes(k)
+  const baseFeatures: Record<string, boolean> = {}
+  OVERRIDABLE_FEATURES.forEach(f => { baseFeatures[f.key] = featureOn(f.key) })
+  const baseLimits: Record<string, any> = { ...(PLAN_LIMITS[plan] || {}) }
+  let overrides: any = null
+  try {
+    const { data } = await db.from('company_entitlements').select('*').eq('company_id', companyId).maybeSingle()
+    overrides = data || null
+  } catch { /* table may not exist yet */ }
+  return {
+    features: { ...baseFeatures, ...(overrides?.features || {}) },
+    limits: { ...baseLimits, ...(overrides?.limits || {}) },
+    overrides,
+  }
+}
+
 let _cachedPlan: Plan | null = null
 let _cacheTime = 0
 const CACHE_TTL = 5 * 60 * 1000
