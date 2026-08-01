@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { uploadDirect } from '@/lib/upload-attachment'
+import { supabase } from '@/lib/supabase'
 
 // Coax-style email composer: From (the mailbox) · To · Cc · Subject · Signature
 // · body. The signature is chosen from the company's saved library (or "None"),
@@ -59,6 +60,25 @@ export default function EmailComposer({
       syncBody()
     } catch (e: any) { setErr(e.message || 'Could not add image') }
     finally { setImgBusy(false); if (imgInputRef.current) imgInputRef.current.value = '' }
+  }
+
+  // Templates (saved quick responses) — insert a canned reply into the body.
+  const [templates, setTemplates] = useState<{ id: string; title: string; body: string; shortcut?: string }[]>([])
+  const [showTemplates, setShowTemplates] = useState(false)
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any).from('quick_responses').select('*').eq('company_id', companyId).order('created_at', { ascending: true })
+        setTemplates(data || [])
+      } catch {}
+    })()
+  }, [companyId])
+  const insertTemplate = (t: { body?: string }) => {
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    editorRef.current?.focus()
+    document.execCommand('insertHTML', false, esc(t.body || '').replace(/\n/g, '<br>') + '<br>')
+    syncBody(); setShowTemplates(false)
   }
 
   // AI assist: rewrite the current draft more clearly/professionally.
@@ -268,6 +288,24 @@ export default function EmailComposer({
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
         </button>
         <input ref={imgInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => onPickImage(e.target.files?.[0] || null)} />
+        {templates.length > 0 && (
+          <button type="button" title="Insert a saved template" onMouseDown={e => { e.preventDefault(); setShowTemplates(v => !v) }}
+            style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: showTemplates ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          </button>
+        )}
+        {showTemplates && templates.length > 0 && (
+          <div style={{ position: 'absolute', top: '100%', left: 8, zIndex: 20, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.12)', padding: 6, width: 260, maxHeight: 260, overflowY: 'auto' }}>
+            <p style={{ margin: '2px 8px 6px', fontSize: 11, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase' }}>Templates</p>
+            {templates.map(t => (
+              <button key={t.id} type="button" onMouseDown={e => { e.preventDefault(); insertTemplate(t) }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer', padding: '7px 8px', borderRadius: 8 }}>
+                <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{t.title || t.shortcut || 'Template'}</span>
+                <span style={{ display: 'block', fontSize: 11.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(t.body || '').slice(0, 60)}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {showEmoji && (
           <div style={{ position: 'absolute', top: '100%', left: 8, zIndex: 20, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.12)', padding: 8, display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 2 }}>
             {EMOJIS.map(em => (
