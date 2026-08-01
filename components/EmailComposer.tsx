@@ -81,6 +81,22 @@ export default function EmailComposer({
     syncBody(); setShowTemplates(false)
   }
 
+  // File attachments (sent as real email attachments).
+  const attInputRef = useRef<HTMLInputElement>(null)
+  const [attachments, setAttachments] = useState<{ url: string; name: string; type?: string }[]>([])
+  const [attBusy, setAttBusy] = useState(false)
+  const onPickFiles = async (files: FileList | null) => {
+    if (!files || !files.length) return
+    setAttBusy(true); setErr('')
+    try {
+      for (const f of Array.from(files)) {
+        const url = await uploadDirect(f, `email-attachments/${companyId || 'x'}`, f.name)
+        if (url) setAttachments(prev => [...prev, { url, name: f.name, type: f.type }])
+      }
+    } catch (e: any) { setErr(e.message || 'Could not attach file') }
+    finally { setAttBusy(false); if (attInputRef.current) attInputRef.current.value = '' }
+  }
+
   // AI assist: rewrite the current draft more clearly/professionally.
   const [aiBusy, setAiBusy] = useState(false)
   const improveWithAI = async () => {
@@ -167,12 +183,13 @@ export default function EmailComposer({
           html: editorRef.current?.innerHTML || '',
           agentName,
           signature: selectedSigBody(),       // explicit — '' means no signature
+          attachments,
         }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Send failed')
       if (editorRef.current) editorRef.current.innerHTML = ''
-      setBodyHtml(''); setCc(''); setShowCc(false); setBcc(''); setShowBcc(false)
+      setBodyHtml(''); setCc(''); setShowCc(false); setBcc(''); setShowBcc(false); setAttachments([])
       onSent()
     } catch (e: any) {
       setErr(e.message || 'Could not send')
@@ -288,6 +305,11 @@ export default function EmailComposer({
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
         </button>
         <input ref={imgInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => onPickImage(e.target.files?.[0] || null)} />
+        <button type="button" title="Attach file" disabled={attBusy} onMouseDown={e => { e.preventDefault(); attInputRef.current?.click() }}
+          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: attBusy ? 'wait' : 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        </button>
+        <input ref={attInputRef} type="file" multiple style={{ display: 'none' }} onChange={e => onPickFiles(e.target.files)} />
         {templates.length > 0 && (
           <button type="button" title="Insert a saved template" onMouseDown={e => { e.preventDefault(); setShowTemplates(v => !v) }}
             style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: showTemplates ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -318,6 +340,22 @@ export default function EmailComposer({
       <div ref={editorRef} contentEditable suppressContentEditableWarning onInput={syncBody}
         className="email-rte" data-ph="Write your reply…" data-empty={(!bodyHtml || bodyHtml === '<br>') ? 'true' : 'false'}
         style={{ minHeight: 130, maxHeight: 300, overflowY: 'auto', outline: 'none', padding: '12px', fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)' }} />
+
+      {(attachments.length > 0 || attBusy) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 12px 8px' }}>
+          {attachments.map((a, i) => (
+            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 8, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 12, color: 'var(--ink)', maxWidth: 220 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
+              <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} title="Remove"
+                style={{ border: 'none', background: 'none', color: '#dc2626', cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </span>
+          ))}
+          {attBusy && <span style={{ fontSize: 12, color: 'var(--slate)', alignSelf: 'center' }}>Uploading…</span>}
+        </div>
+      )}
 
       {sigPreview && (
         <div style={{ padding: '0 12px 8px' }}>

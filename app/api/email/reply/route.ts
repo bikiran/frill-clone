@@ -14,7 +14,12 @@ const admin = () => createClient(
 // message so it lands in the same email conversation on their side.
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, content, html: htmlOverride, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride } = await req.json()
+    const { conversationId, content, html: htmlOverride, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride, attachments } = await req.json()
+    // Normalise attachments to {url,name,type} + a display kind for the thread.
+    const atts = (Array.isArray(attachments) ? attachments : [])
+      .filter((a: any) => a && a.url)
+      .map((a: any) => ({ url: String(a.url), name: String(a.name || 'file'), type: a.type || undefined }))
+    const displayAtts = atts.map(a => ({ ...a, kind: String(a.type || '').startsWith('image') ? 'image' : String(a.type || '').startsWith('video') ? 'video' : 'file' }))
     if (!conversationId || !content) {
       return NextResponse.json({ error: 'conversationId and content are required' }, { status: 400 })
     }
@@ -102,6 +107,7 @@ export async function POST(req: NextRequest) {
         to: toEmail, cc: ccEmail, bcc: bccEmail, subject, body: fullText, html: bodyHtml,
         inReplyTo,
         threadId: conv.email_message_id || null,
+        attachments: atts,
       })
       if (out.error) return NextResponse.json({ error: out.error }, { status: 502 })
 
@@ -119,6 +125,7 @@ export async function POST(req: NextRequest) {
         email_cc: ccEmail,
         email_subject: subject,
         email_html: bodyHtml,
+        ...(displayAtts.length ? { attachments: displayAtts } : {}),
       })
       await db.from('conversations').update({
         last_message: content.slice(0, 200),
@@ -158,6 +165,7 @@ export async function POST(req: NextRequest) {
         text: fullText,
         html: bodyHtml,
         reply_to: channel.inbound_address || fromAddress,
+        ...(atts.length ? { attachments: atts.map(a => ({ filename: a.name, path: a.url })) } : {}),
         ...(Object.keys(headers).length ? { headers } : {}),
       }),
     })
@@ -181,6 +189,7 @@ export async function POST(req: NextRequest) {
       email_cc: ccEmail,
       email_subject: subject,
       email_html: bodyHtml,
+      ...(displayAtts.length ? { attachments: displayAtts } : {}),
     })
 
     await db.from('conversations').update({

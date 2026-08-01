@@ -403,6 +403,7 @@ export async function sendGmail(channel: any, opts: {
   html?: string | null
   inReplyTo?: string | null
   threadId?: string | null
+  attachments?: { url: string; name: string; type?: string }[]
 }): Promise<{ id?: string; error?: string }> {
   const token = await getGmailToken(channel)
   if (!token) return { error: 'Google connection expired — reconnect the account.' }
@@ -420,8 +421,48 @@ export async function sendGmail(channel: any, opts: {
     headerLines.push(`References: ${opts.inReplyTo}`)
   }
 
+  // Fetch + base64-encode any file attachments (line-wrapped for MIME).
+  const attParts: string[] = []
+  for (const a of (opts.attachments || [])) {
+    try {
+      const r = await fetch(a.url)
+      if (!r.ok) continue
+      const b64 = Buffer.from(await r.arrayBuffer()).toString('base64').replace(/(.{76})/g, '$1\r\n')
+      const safeName = String(a.name || 'file').replace(/["\r\n]/g, '')
+      attParts.push([
+        `Content-Type: ${a.type || 'application/octet-stream'}; name="${safeName}"`,
+        `Content-Disposition: attachment; filename="${safeName}"`,
+        'Content-Transfer-Encoding: base64',
+        '',
+        b64,
+      ].join('\r\n'))
+    } catch { /* skip a broken attachment rather than fail the whole send */ }
+  }
+
   let mime: string
-  if (opts.html) {
+  if (attParts.length) {
+    // multipart/mixed: the message body (as alternative or plain) + each file.
+    const altBoundary = `colvy_alt_${Math.random().toString(36).slice(2)}`
+    const contentPart = opts.html
+      ? [
+          `Content-Type: multipart/alternative; boundary="${altBoundary}"`, '',
+          `--${altBoundary}`, 'Content-Type: text/plain; charset="UTF-8"', '', opts.body,
+          `--${altBoundary}`, 'Content-Type: text/html; charset="UTF-8"', '', opts.html,
+          `--${altBoundary}--`,
+        ].join('\r\n')
+      : ['Content-Type: text/plain; charset="UTF-8"', '', opts.body].join('\r\n')
+    const mixed = `colvy_mix_${Math.random().toString(36).slice(2)}`
+    mime = [
+      ...headerLines,
+      'MIME-Version: 1.0',
+      `Content-Type: multipart/mixed; boundary="${mixed}"`,
+      '',
+      `--${mixed}`,
+      contentPart,
+      ...attParts.map(p => `--${mixed}\r\n${p}`),
+      `--${mixed}--`,
+    ].join('\r\n')
+  } else if (opts.html) {
     // Send both plain and HTML so every client renders it well.
     const boundary = `colvy_${Math.random().toString(36).slice(2)}`
     mime = [
