@@ -128,16 +128,23 @@ export default function GalleryPage() {
   const selectAll = () => setSelected(new Set(items.map((i: any) => i.id)))
   const clearSelection = () => setSelected(new Set())
 
-  const bulkDelete = async () => {
-    if (!confirm(`Delete ${selected.size} item${selected.size === 1 ? '' : 's'}? This can't be undone.`)) return
-    setBulkBusy(true)
-    try {
-      await (supabase as any).from('media_items').delete().in('id', Array.from(selected))
-      clearSelection()
-      await load()
-    } catch (e: any) {
-      alert('Could not delete: ' + e.message)
-    } finally { setBulkBusy(false) }
+  const bulkDelete = () => {
+    const n = selected.size
+    askConfirm({
+      title: `Delete ${n} item${n === 1 ? '' : 's'}`,
+      message: `This permanently removes ${n === 1 ? 'this item' : 'these items'} from the gallery. This can't be undone.`,
+      confirmLabel: `Delete ${n} item${n === 1 ? '' : 's'}`, danger: true,
+      onConfirm: async () => {
+        setBulkBusy(true)
+        try {
+          await (supabase as any).from('media_items').delete().in('id', Array.from(selected))
+          clearSelection()
+          await load()
+        } catch (e: any) {
+          alert('Could not delete: ' + e.message)
+        } finally { setBulkBusy(false) }
+      },
+    })
   }
 
   const bulkMove = async (folderId: string | null) => {
@@ -169,8 +176,17 @@ export default function GalleryPage() {
   }
   const [dragOver, setDragOver] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)   // details slideout for the lightbox item
   const fileRef = useRef<HTMLInputElement>(null)
   const [prextyStatus, setPrextyStatus] = useState('')
+
+  // In-app confirmation dialog (replaces the browser's native confirm()).
+  const [confirmState, setConfirmState] = useState<null | {
+    title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void
+  }>(null)
+  const askConfirm = (opts: {
+    title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void
+  }) => setConfirmState(opts)
 
   const load = useCallback(async () => {
     if (!companyId) return
@@ -215,11 +231,18 @@ export default function GalleryPage() {
     load()
   }
 
-  const deleteFolder = async (f: any) => {
-    if (!companyId || !confirm(`Delete folder "${f.name}"? Its media will move to Unfiled.`)) return
-    await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete_folder', folderId: f.id }) })
-    if (activeFolder === f.id) setActiveFolder(null)
-    load()
+  const deleteFolder = (f: any) => {
+    if (!companyId) return
+    askConfirm({
+      title: 'Delete category',
+      message: `Delete “${f.name}”? Its media won't be removed — it will move to Unfiled.`,
+      confirmLabel: 'Delete category', danger: true,
+      onConfirm: async () => {
+        await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete_folder', folderId: f.id }) })
+        if (activeFolder === f.id) setActiveFolder(null)
+        load()
+      },
+    })
   }
 
   const uploadFiles = async (files: File[]) => {
@@ -329,10 +352,17 @@ export default function GalleryPage() {
     alert("Canva import isn't connected yet. Once we set up the Canva app, you'll be able to pick designs here. For now, export from Canva and use Upload media.")
   }
 
-  const deleteItem = async (item: any) => {
-    if (!companyId || !confirm('Delete this media?')) return
-    await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete_item', itemId: item.id }) })
-    load()
+  const deleteItem = (item: any) => {
+    if (!companyId) return
+    askConfirm({
+      title: 'Delete media',
+      message: `Delete “${item.title || 'this item'}” from the gallery? This can't be undone.`,
+      confirmLabel: 'Delete', danger: true,
+      onConfirm: async () => {
+        await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete_item', itemId: item.id }) })
+        load()
+      },
+    })
   }
 
   const moveItem = async (item: any, folderId: string | null) => {
@@ -353,6 +383,10 @@ export default function GalleryPage() {
 
   if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading…</div>
 
+  // The grid and the lightbox must see the same list, otherwise a category
+  // filter would open the wrong item (the click index is into this list).
+  const visibleItems = items.filter((it: any) => !catFilter || (itemCats[it.id] || []).includes(catFilter))
+
   return (
     <div className="gal-root" style={{ padding: '28px 36px' }}>
       <style>{`
@@ -367,6 +401,26 @@ export default function GalleryPage() {
         .gal-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.10); }
         .gal-card .gal-thumb img, .gal-card .gal-thumb video { transition: transform 0.28s ease; }
         .gal-card:hover .gal-thumb img, .gal-card:hover .gal-thumb video { transform: scale(1.04); }
+
+        /* Category rows: the edit/delete actions stay hidden until you hover the
+           row, so the list reads clean. Icons animate in and react on hover. */
+        .gal-folder-row { position: relative; display: flex; align-items: center; gap: 2px; border-radius: 8px; padding-right: 2px; transition: background 0.14s ease; }
+        .gal-folder-row:hover { background: #f6f7f9; }
+        .gal-folder-actions { display: flex; align-items: center; gap: 2px; opacity: 0; transform: translateX(6px); transition: opacity 0.16s ease, transform 0.16s ease; }
+        .gal-folder-row:hover .gal-folder-actions, .gal-folder-row:focus-within .gal-folder-actions { opacity: 1; transform: translateX(0); }
+        .gal-icon-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: transparent; border-radius: 8px; cursor: pointer; color: var(--slate); flex-shrink: 0; transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease; }
+        .gal-icon-btn svg { transition: transform 0.2s ease; }
+        .gal-icon-btn.edit:hover { background: var(--peach); color: var(--coral); transform: translateY(-1px); }
+        .gal-icon-btn.edit:hover svg { transform: rotate(-14deg) scale(1.1); }
+        .gal-icon-btn.del:hover { background: #fee2e2; color: #dc2626; transform: translateY(-1px); }
+        .gal-icon-btn.del:hover svg { animation: gal-shake 0.42s ease; }
+        @keyframes gal-shake { 0%,100% { transform: rotate(0) scale(1.08); } 25% { transform: rotate(-10deg) scale(1.08); } 75% { transform: rotate(10deg) scale(1.08); } }
+
+        /* In-app dialog + details slideout animations. */
+        @keyframes gal-fade { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes gal-pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes gal-slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
         /* Horizontal category strip is hidden on desktop (the sidebar handles it). */
         .gal-cat-strip { display: none; }
 
@@ -426,10 +480,16 @@ export default function GalleryPage() {
           </div>
           <button onClick={() => setActiveFolder(null)} style={folderBtn(activeFolder === null)}>All media</button>
           {folders.map(f => (
-            <div key={f.id} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => setActiveFolder(f.id)} style={{ ...folderBtn(activeFolder === f.id), flex: 1 }}>{f.name}{f.external_source === 'prexty' ? ' 🔄' : ''}</button>
-              <button onClick={() => renameFolder(f)} title="Rename" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', fontSize: 12 }}>✎</button>
-              <button onClick={() => deleteFolder(f)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 14 }}>×</button>
+            <div key={f.id} className="gal-folder-row">
+              <button onClick={() => setActiveFolder(f.id)} style={{ ...folderBtn(activeFolder === f.id), flex: 1, marginBottom: 0 }}>{f.name}{f.external_source === 'prexty' ? ' 🔄' : ''}</button>
+              <span className="gal-folder-actions">
+                <button className="gal-icon-btn edit" onClick={() => renameFolder(f)} title="Rename">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                </button>
+                <button className="gal-icon-btn del" onClick={() => deleteFolder(f)} title="Delete">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                </button>
+              </span>
             </div>
           ))}
         </div>
@@ -549,7 +609,7 @@ export default function GalleryPage() {
                   </div>
                 )
               })}
-              {items.filter((it: any) => !catFilter || (itemCats[it.id] || []).includes(catFilter)).map((item, i) => {
+              {visibleItems.map((item, i) => {
                 const isSelected = selected.has(item.id)
                 return (
                 <div key={item.id} className="gal-card" style={{ border: `1px solid ${isSelected ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 12, background: '#fff', boxShadow: isSelected ? '0 0 0 2px var(--peach)' : 'none', position: 'relative' }}>
@@ -661,12 +721,36 @@ export default function GalleryPage() {
         </div>
       </div>
 
-      {lightboxIndex !== null && items[lightboxIndex] && (
+      {lightboxIndex !== null && visibleItems[lightboxIndex] && (
         <MediaGallery
-          items={items.map(it => ({ url: it.url, kind: it.kind, name: it.title }))}
+          items={visibleItems.map(it => ({ url: it.url, kind: it.kind, name: it.title }))}
           index={lightboxIndex}
           onIndex={setLightboxIndex}
-          onClose={() => setLightboxIndex(null)}
+          onClose={() => { setLightboxIndex(null); setDetailsOpen(false) }}
+          onViewDetails={() => setDetailsOpen(true)}
+        />
+      )}
+
+      {/* Details slideout for the current lightbox item */}
+      {detailsOpen && lightboxIndex !== null && visibleItems[lightboxIndex] && (
+        <MediaDetailsPanel
+          item={visibleItems[lightboxIndex]}
+          folders={folders}
+          categories={categories}
+          itemCats={itemCats}
+          onClose={() => setDetailsOpen(false)}
+        />
+      )}
+
+      {/* In-app confirmation dialog (no more native browser popups) */}
+      {confirmState && (
+        <ConfirmDialog
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmLabel={confirmState.confirmLabel}
+          danger={confirmState.danger}
+          onCancel={() => setConfirmState(null)}
+          onConfirm={() => { const fn = confirmState.onConfirm; setConfirmState(null); fn() }}
         />
       )}
 
@@ -705,10 +789,16 @@ export default function GalleryPage() {
                           style={{ width: 16, height: 16, accentColor: 'var(--coral)' }} />
                         <span style={{ fontSize: 13.5, fontWeight: on ? 700 : 500, color: 'var(--ink)' }}>{c.name}</span>
                       </span>
-                      <button onClick={async (e) => {
+                      <button onClick={(e) => {
                         e.preventDefault(); e.stopPropagation()
-                        if (!confirm(`Delete the "${c.name}" category? Photos aren't deleted.`)) return
-                        try { await catApi({ action: 'delete', id: c.id }); await loadCategories() } catch (err: any) { alert(err.message) }
+                        askConfirm({
+                          title: 'Delete category',
+                          message: `Delete the “${c.name}” category? Your photos aren't deleted — they just leave this category.`,
+                          confirmLabel: 'Delete category', danger: true,
+                          onConfirm: async () => {
+                            try { await catApi({ action: 'delete', id: c.id }); await loadCategories() } catch (err: any) { alert(err.message) }
+                          },
+                        })
                       }}
                         style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 15, padding: 0 }}>×</button>
                     </label>
@@ -787,6 +877,178 @@ export default function GalleryPage() {
           onUploaded={load}
         />
       )}
+    </div>
+  )
+}
+
+// ── In-app confirmation dialog ────────────────────────────────────────────
+// A themed replacement for window.confirm(): keyboard-friendly (Esc cancels,
+// Enter confirms), with a danger variant for destructive actions.
+function ConfirmDialog({ title, message, confirmLabel = 'Confirm', danger, onConfirm, onCancel }: {
+  title: string; message: string; confirmLabel?: string; danger?: boolean
+  onConfirm: () => void; onCancel: () => void
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel()
+      else if (e.key === 'Enter') onConfirm()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onConfirm, onCancel])
+
+  return (
+    <div onClick={onCancel}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(13,15,20,0.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100050, padding: 20, animation: 'gal-fade 0.14s ease' }}>
+      <div onClick={e => e.stopPropagation()} role="alertdialog" aria-label={title}
+        style={{ width: 400, maxWidth: '92vw', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.30)', animation: 'gal-pop 0.16s ease' }}>
+        <div style={{ width: 46, height: 46, borderRadius: 13, background: danger ? '#fee2e2' : 'var(--peach)', color: danger ? '#dc2626' : 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+          {danger ? (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          ) : (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          )}
+        </div>
+        <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>{title}</h3>
+        <p style={{ margin: '0 0 22px', fontSize: 13.5, color: 'var(--slate)', lineHeight: 1.5 }}>{message}</p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={onCancel}
+            style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+          <button onClick={onConfirm} autoFocus
+            style={{ padding: '10px 18px', borderRadius: 10, border: 'none', background: danger ? '#dc2626' : 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Media details slideout ────────────────────────────────────────────────
+// A right-hand panel showing everything we know (and can measure) about one
+// media item. Dimensions, duration and file size are read live in the browser,
+// since they aren't stored on the row.
+function MediaDetailsPanel({ item, folders, categories, itemCats, onClose }: {
+  item: any; folders: any[]; categories: any[]; itemCats: Record<string, string[]>; onClose: () => void
+}) {
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
+  const [duration, setDuration] = useState<number | null>(null)
+  const [sizeBytes, setSizeBytes] = useState<number | null>(null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  // Measure dimensions / duration by loading the media, and file size via a
+  // best-effort HEAD request (may be blocked by CORS — we degrade to “—”).
+  useEffect(() => {
+    let cancelled = false
+    setDims(null); setDuration(null); setSizeBytes(null)
+    if (!item?.url) return
+    if (item.kind === 'video') {
+      const v = document.createElement('video')
+      v.preload = 'metadata'
+      v.onloadedmetadata = () => { if (!cancelled) { setDims({ w: v.videoWidth, h: v.videoHeight }); setDuration(v.duration || null) } }
+      v.src = item.url
+    } else {
+      const img = new window.Image()
+      img.onload = () => { if (!cancelled) setDims({ w: img.naturalWidth, h: img.naturalHeight }) }
+      img.src = item.url
+    }
+    fetch(item.url, { method: 'HEAD' })
+      .then(r => { const len = r.headers.get('content-length'); if (!cancelled && len) setSizeBytes(parseInt(len, 10)) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [item?.id, item?.url, item?.kind])
+
+  const fileName = (() => {
+    try {
+      const base = decodeURIComponent(new URL(item.url).pathname.split('/').pop() || '')
+      return base.replace(/^\d{10,}-/, '') || item.title || 'file'   // strip the upload timestamp prefix
+    } catch { return item.title || 'file' }
+  })()
+  const ext = (fileName.split('.').pop() || '').toUpperCase()
+  const fileType = /^(JPG|JPEG|PNG|WEBP|GIF|MP4|MOV|WEBM|AVIF|HEIC)$/.test(ext)
+    ? (ext === 'JPEG' ? 'JPG' : ext)
+    : (item.kind === 'video' ? 'Video' : 'Image')
+
+  const fmtSize = (b: number) => b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`
+  const fmtDur = (s: number) => { const m = Math.floor(s / 60); const sec = Math.round(s % 60); return `${m}:${String(sec).padStart(2, '0')}` }
+  const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a)
+  const ratio = dims && dims.w && dims.h ? (() => {
+    const g = gcd(dims.w, dims.h) || 1
+    const rw = dims.w / g, rh = dims.h / g
+    return (rw <= 32 && rh <= 32) ? `${rw}:${rh}` : `${(dims.w / dims.h).toFixed(2)}:1`
+  })() : null
+  const orientation = dims ? (dims.w > dims.h ? 'Landscape' : dims.w < dims.h ? 'Portrait' : 'Square') : null
+  const fmtDate = (d?: string) => d ? new Date(d).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'
+  const source = item.external_source === 'prexty' ? 'Prexty'
+    : item.external_source === 'google_drive' ? 'Google Drive'
+    : item.external_source === 'phone' ? 'Phone upload'
+    : item.external_source ? String(item.external_source)
+    : 'Manual upload'
+  const folder = folders.find((f: any) => f.id === item.folder_id)
+  const cats = (itemCats[item.id] || []).map(cid => categories.find((c: any) => c.id === cid)).filter(Boolean)
+
+  const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--slate)', flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', textAlign: 'right', wordBreak: 'break-word' }}>{value ?? '—'}</span>
+    </div>
+  )
+
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 100060, background: 'rgba(0,0,0,0.35)', display: 'flex', justifyContent: 'flex-end', animation: 'gal-fade 0.14s ease' }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ width: 360, maxWidth: '92vw', height: '100%', background: '#fff', boxShadow: '-12px 0 40px rgba(0,0,0,0.22)', display: 'flex', flexDirection: 'column', animation: 'gal-slide-in 0.22s cubic-bezier(0.22,0.61,0.36,1)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>Details</h3>
+          <button onClick={onClose} aria-label="Close details"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', display: 'flex', padding: 4 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div style={{ overflowY: 'auto', padding: 18 }}>
+          {/* Preview */}
+          <div style={{ borderRadius: 12, overflow: 'hidden', background: 'var(--canvas)', marginBottom: 16, aspectRatio: '4 / 3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {item.kind === 'video'
+              ? <video src={item.url} controls style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              : <img src={item.url} alt={item.title || ''} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+          </div>
+
+          <p style={{ margin: '0 0 4px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)' }}>Basic information</p>
+          <Row label="File name" value={fileName} />
+          <Row label="Display title" value={item.title || 'Untitled'} />
+          <Row label="Description" value={item.description || '—'} />
+          <Row label="File type" value={fileType} />
+          <Row label="File size" value={sizeBytes != null ? fmtSize(sizeBytes) : '—'} />
+          <Row label="Dimensions" value={dims ? `${dims.w} × ${dims.h} px` : '—'} />
+          <Row label="Aspect ratio" value={ratio || '—'} />
+          <Row label="Orientation" value={orientation || '—'} />
+          {item.kind === 'video' && <Row label="Duration" value={duration != null ? fmtDur(duration) : '—'} />}
+          {item.sku && <Row label="SKU" value={item.sku} />}
+          <Row label="Category" value={folder?.name || 'Unfiled'} />
+          <Row label="Tags" value={cats.length ? (
+            <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
+              {cats.map((c: any) => <span key={c.id} style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 5, background: 'var(--peach)', color: 'var(--coral)' }}>{c.name}</span>)}
+            </span>
+          ) : '—'} />
+
+          <p style={{ margin: '16px 0 4px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)' }}>Origin</p>
+          <Row label="Source" value={source} />
+          <Row label="Uploaded" value={fmtDate(item.created_at)} />
+          <Row label="Uploaded by" value={item.uploaded_by || '—'} />
+          <Row label="Last updated" value={item.updated_at ? fmtDate(item.updated_at) : '—'} />
+
+          <a href={item.url} target="_blank" rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 18, padding: '9px 14px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 12.5, fontWeight: 700, textDecoration: 'none' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Open original
+          </a>
+        </div>
+      </div>
     </div>
   )
 }
