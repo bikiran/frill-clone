@@ -288,6 +288,65 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
   const togglePin = async (n: any) => { await (supabase as any).from('company_admin_notes').update({ pinned: !n.pinned }).eq('id', n.id); loadNotes() }
   const delNote = async (n: any) => { await (supabase as any).from('company_admin_notes').delete().eq('id', n.id); loadNotes() }
 
+  // ── Subscription management (change plan, trial, complimentary) ─────────────
+  const [sub, setSub] = useState({
+    plan: co.plan || 'free',
+    trial_ends_at: co.trial_ends_at || '',
+    is_complimentary: !!co.is_complimentary,
+    complimentary_reason: co.complimentary_reason || '',
+  })
+  const [savingSub, setSavingSub] = useState('')
+  const [subMsg, setSubMsg] = useState('')
+  const subErr = (e: any) => setSubMsg(/does not exist|schema cache|column/i.test(e?.message || '') ? 'Run COLVY_V221_COMPANY_SUBSCRIPTION_FIELDS.sql, then reload.' : (e?.message || 'Could not save'))
+  // Every subscription change is recorded as an admin note so it shows in Audit Logs.
+  const auditChange = async (body: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      await (supabase as any).from('company_admin_notes').insert({
+        company_id: co.id, author_id: session?.user?.id || null, author_email: session?.user?.email || null,
+        body, category: 'billing',
+      })
+    } catch {}
+    loadNotes()
+  }
+  const applyPlan = async (newPlan: string) => {
+    if (newPlan === sub.plan) return
+    setSavingSub('plan'); setSubMsg('')
+    const { error } = await (supabase as any).from('companies').update({ plan: newPlan, plan_changed_at: new Date().toISOString() }).eq('id', co.id)
+    setSavingSub('')
+    if (error) { subErr(error); return }
+    co.plan = newPlan; setSub(s => ({ ...s, plan: newPlan }))
+    await auditChange(`Changed plan: ${sub.plan} → ${newPlan}`)
+    setSubMsg(`Plan set to ${newPlan}.`)
+  }
+  const extendTrial = async (days: number) => {
+    const base = sub.trial_ends_at ? new Date(sub.trial_ends_at).getTime() : Date.now()
+    const end = new Date(Math.max(base, Date.now()) + days * 86400000).toISOString()
+    setSavingSub('trial'); setSubMsg('')
+    const upd: any = { trial_ends_at: end }
+    if (sub.plan !== 'trial') upd.plan = 'trial'
+    const { error } = await (supabase as any).from('companies').update(upd).eq('id', co.id)
+    setSavingSub('')
+    if (error) { subErr(error); return }
+    co.trial_ends_at = end; if (upd.plan) co.plan = upd.plan
+    setSub(s => ({ ...s, trial_ends_at: end, plan: upd.plan || s.plan }))
+    await auditChange(`Extended trial by ${days} days → ${new Date(end).toLocaleDateString()}`)
+    setSubMsg(`Trial now ends ${new Date(end).toLocaleDateString()}.`)
+  }
+  const toggleComp = async () => {
+    const next = !sub.is_complimentary
+    if (next && !sub.complimentary_reason.trim()) { setSubMsg('A reason is required to comp an account.'); return }
+    setSavingSub('comp'); setSubMsg('')
+    const { error } = await (supabase as any).from('companies').update({
+      is_complimentary: next, complimentary_reason: next ? sub.complimentary_reason.trim() : null,
+    }).eq('id', co.id)
+    setSavingSub('')
+    if (error) { subErr(error); return }
+    co.is_complimentary = next; setSub(s => ({ ...s, is_complimentary: next }))
+    await auditChange(next ? `Marked complimentary — ${sub.complimentary_reason.trim()}` : 'Removed complimentary status')
+    setSubMsg(next ? 'Account marked complimentary.' : 'Complimentary status removed.')
+  }
+
   // Simple account-health heuristic from real signals.
   const ageDays = co.created_at ? (Date.now() - new Date(co.created_at).getTime()) / 86400000 : 0
   const plan = String(co.plan || '').toLowerCase()
@@ -306,7 +365,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
       <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
     </div>
   )
-  const TABS = [['overview', 'Overview'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
+  const TABS = [['overview', 'Overview'], ['plan', 'Subscription'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
@@ -345,7 +404,8 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
               </div>
               <Row k="Business name" v={co.name} />
               <Row k="Slug" v={co.slug} />
-              <Row k="Plan" v={plan || 'free'} />
+              <Row k="Plan" v={(sub.plan || 'free') + (sub.is_complimentary ? ' · complimentary' : '')} />
+              <Row k="Trial ends" v={sub.trial_ends_at ? new Date(sub.trial_ends_at).toLocaleDateString() : '—'} />
               <Row k="Industry" v={co.industry} />
               <Row k="Owner ID" v={co.owner_id} />
               <Row k="Business email" v={co.business_email} />
@@ -355,6 +415,64 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
               <Row k="Team members" v={users?.length ?? '…'} />
             </div>
           )}
+
+          {tab === 'plan' && (() => {
+            const PLANS = ['free', 'trial', 'pro', 'enterprise', 'suspended']
+            const planColor: Record<string, string> = { free: '#6b7280', trial: '#6366f1', pro: '#10b981', enterprise: '#8b5cf6', suspended: '#ef4444' }
+            const trialLeft = sub.trial_ends_at ? Math.ceil((new Date(sub.trial_ends_at).getTime() - Date.now()) / 86400000) : null
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {subMsg && <div style={{ padding: '9px 12px', borderRadius: 9, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 12.5, color: 'var(--sa-text)' }}>{subMsg}</div>}
+
+                {/* Current state */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)', background: 'var(--sa-card)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: planColor[sub.plan] || 'var(--sa-text)' }}>{(sub.plan || 'free').toUpperCase()}</span>
+                    {sub.is_complimentary && <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: '#10b98122', color: '#10b981' }}>COMPLIMENTARY</span>}
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>
+                    {sub.trial_ends_at ? `Trial ends ${new Date(sub.trial_ends_at).toLocaleDateString()}${trialLeft != null ? ` (${trialLeft} day${trialLeft === 1 ? '' : 's'} left)` : ''}` : 'No trial end set'}
+                    {co.stripe_customer_id ? ' · Stripe customer linked' : ' · no Stripe customer'}
+                  </p>
+                  {co.stripe_customer_id && <a href={`https://dashboard.stripe.com/customers/${co.stripe_customer_id}`} target="_blank" rel="noopener" style={{ fontSize: 12.5, color: '#635BFF', fontWeight: 600 }}>Open in Stripe ↗</a>}
+                </div>
+
+                {/* Change plan */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 3px' }}>Change plan</p>
+                  <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Sets the company's plan directly. Recorded in the audit log.</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {PLANS.map(pl => (
+                      <button key={pl} onClick={() => applyPlan(pl)} disabled={savingSub === 'plan'}
+                        style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${sub.plan === pl ? (planColor[pl] || '#ff7a6b') : 'var(--sa-border)'}`, background: sub.plan === pl ? (planColor[pl] || '#ff7a6b') + '22' : 'transparent', color: sub.plan === pl ? (planColor[pl] || '#ff7a6b') : 'var(--sa-text)', fontSize: 12.5, fontWeight: sub.plan === pl ? 700 : 500, cursor: 'pointer', textTransform: 'capitalize' }}>{pl}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Trial */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 3px' }}>Extend trial</p>
+                  <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Pushes the trial end date out and puts the account on the trial plan.</p>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[7, 14, 30].map(d => (
+                      <button key={d} onClick={() => extendTrial(d)} disabled={savingSub === 'trial'} style={paBtn()}>+{d} days</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Complimentary */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 3px' }}>Make complimentary</p>
+                  <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Flags the account as comped (e.g. partner, internal). Doesn't change the plan; a reason is required.</p>
+                  {!sub.is_complimentary && (
+                    <input value={sub.complimentary_reason} onChange={e => setSub(s => ({ ...s, complimentary_reason: e.target.value }))} placeholder="Reason (required)…" style={{ ...paInput, marginBottom: 8 }} />
+                  )}
+                  {sub.is_complimentary && sub.complimentary_reason && <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 8px' }}>Reason: {sub.complimentary_reason}</p>}
+                  <button onClick={toggleComp} disabled={savingSub === 'comp'} style={paBtn(sub.is_complimentary ? '#ef4444' : '#10b981', true)}>{sub.is_complimentary ? 'Remove complimentary' : 'Mark complimentary'}</button>
+                </div>
+              </div>
+            )
+          })()}
 
           {tab === 'users' && (
             users === null ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>Loading…</p>
