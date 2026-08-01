@@ -310,11 +310,22 @@ export default function TasksPage() {
     const convIds = Array.from(new Set(rows.map((t: any) => t.conversation_id).filter(Boolean)))
     if (convIds.length) {
       const m: Record<string, any> = {}
+      const contactIds = new Set<string>()
       for (let i = 0; i < convIds.length; i += 100) {
+        // conversations has no contact_name column — the customer's name lives on
+        // contacts (via contact_id), so pull the id here and resolve names below.
         const { data: cs } = await (supabase as any).from('conversations')
-          .select('id, subject, contact_name, channel').in('id', convIds.slice(i, i + 100))
-        for (const c of (cs || [])) m[c.id] = c
+          .select('id, subject, contact_id, channel').in('id', convIds.slice(i, i + 100))
+        for (const c of (cs || [])) { m[c.id] = c; if (c.contact_id) contactIds.add(c.contact_id) }
       }
+      const ids = Array.from(contactIds)
+      const names: Record<string, string> = {}
+      for (let i = 0; i < ids.length; i += 100) {
+        const { data: cts } = await (supabase as any).from('contacts')
+          .select('id, name').in('id', ids.slice(i, i + 100))
+        for (const ct of (cts || [])) names[ct.id] = ct.name
+      }
+      for (const id in m) { const cid = m[id].contact_id; if (cid && names[cid]) m[id].contact_name = names[cid] }
       setConvs(m)
     }
   }, [])
