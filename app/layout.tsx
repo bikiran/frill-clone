@@ -725,12 +725,7 @@ export default function RootLayout({
                   <span style={{ color: 'var(--coral)' }}>{company.name}</span>
                 </>
               ) : (
-                <>
-                  <img src="/logo.png" alt="Colvy" className="h-7 w-auto"
-                    onLoad={(e: any) => { const span = e.target.nextSibling; if (span) span.style.display = 'none' }}
-                    onError={(e: any) => { e.target.style.display = 'none' }} />
-                  <span style={{ color: 'var(--coral)' }}>Colvy</span>
-                </>
+                <span style={{ color: 'var(--coral)' }}>Colvy</span>
               )}
             </Link>
             </div>
