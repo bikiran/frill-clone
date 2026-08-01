@@ -53,7 +53,9 @@ export default function ImpersonationBanner() {
       })
     } catch {}
     try { sessionStorage.removeItem('colvy:imp') } catch {}
-    window.location.href = 'https://admin.colvy.com/platform-admin'
+    // The console lives at the bare host — the explicit /platform-admin path
+    // 404s (admin.colvy.com root redirects/rewrites to the panel).
+    window.location.href = 'https://admin.colvy.com'
   }
 
   // Countdown + auto-exit on expiry.

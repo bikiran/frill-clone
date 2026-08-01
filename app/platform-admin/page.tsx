@@ -7,6 +7,29 @@ import PlatformBannerAdmin from '@/components/PlatformBannerAdmin'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
+// The URL of the platform console. It lives at the bare host — the root
+// redirects/rewrites to the panel, while the explicit /platform-admin path
+// 404s — so every "back to the console" navigation must target the root.
+const PLATFORM_HOME = 'https://admin.colvy.com'
+
+// Open a company workspace WITHOUT its login screen. Supabase sessions live in
+// per-origin localStorage, so the super admin's session on admin.colvy.com does
+// not exist on {slug}.colvy.com — visiting it directly shows that workspace's
+// sign-in page. /auth/handoff calls setSession() with the super admin's OWN
+// tokens on the target origin, then forwards to `next`. The admin layout already
+// grants the super admin access to any company, so this lands straight inside.
+async function enterWorkspace(slug: string, next: string = '/admin') {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    const at = session?.access_token, rt = session?.refresh_token
+    if (at && rt) {
+      window.open(`https://${slug}.colvy.com/auth/handoff#access_token=${encodeURIComponent(at)}&refresh_token=${encodeURIComponent(rt)}&next=${encodeURIComponent(next)}`, '_blank')
+      return
+    }
+  } catch {}
+  window.open(`https://${slug}.colvy.com${next}`, '_blank')
+}
+
 // ── Icons ──────────────────────────────────────────────────────────────────
 const I = {
   overview:   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>,
@@ -1756,19 +1779,9 @@ function CompaniesPage() {
       })
       const d = await res.json()
       if (!res.ok) { setImp((s: any) => ({ ...s, busy: false, err: d.error || 'Could not start session' })); return }
-      // Bypass the workspace login by carrying the super-admin's OWN session to
-      // the company subdomain. Supabase sessions live in per-origin localStorage,
-      // so a session on admin.colvy.com doesn't exist on {slug}.colvy.com — which
-      // is why the workspace was showing its sign-in page. /auth/handoff calls
-      // setSession() with these tokens, then forwards to /admin?imp=<id> so the
-      // admin layout (which already grants the super admin access to any company)
-      // lets us straight in and the impersonation banner shows.
-      const at = session?.access_token, rt = session?.refresh_token
-      const next = encodeURIComponent(`/admin?imp=${d.id}`)
-      const url = at && rt
-        ? `https://${imp.co.slug}.colvy.com/auth/handoff#access_token=${encodeURIComponent(at)}&refresh_token=${encodeURIComponent(rt)}&next=${next}`
-        : `https://${imp.co.slug}.colvy.com/admin?imp=${d.id}`
-      window.open(url, '_blank')
+      // Enter carrying the super-admin's own session, landing on /admin?imp=<id>
+      // so the impersonation banner shows.
+      await enterWorkspace(imp.co.slug, `/admin?imp=${d.id}`)
       setImp(null)
     } catch (e: any) { setImp((s: any) => ({ ...s, busy: false, err: e.message })) }
   }
@@ -2011,7 +2024,7 @@ function UsersPage() {
                 <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : 'never'}</td>
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    {u.companies[0]?.slug && <button onClick={() => window.open(`https://${u.companies[0].slug}.colvy.com/admin`, '_blank')} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: 'pointer', fontSize: 12 }}>Login as</button>}
+                    {u.companies[0]?.slug && <button onClick={() => enterWorkspace(u.companies[0].slug)} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: 'pointer', fontSize: 12 }}>Login as</button>}
                   </div>
                 </td>
               </tr>

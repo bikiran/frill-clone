@@ -314,7 +314,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       // admin. Any /admin/* URL there must go to the platform panel instead of
       // falling through to a company lookup that resolves nothing and 404s.
       if (typeof window !== 'undefined' && window.location.hostname === 'admin.colvy.com') {
-        window.location.replace('/platform-admin'); return
+        // The console lives at the bare host root, not the explicit
+        // /platform-admin path (which 404s).
+        window.location.replace('/'); return
       }
       const u = data?.session?.user
       if (!u) { router.push('/signin'); return }
@@ -336,7 +338,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           // A subdomain with no company (typo, deleted workspace) has nothing to
           // administer — send the super admin to the platform panel rather than
           // rendering a company-less admin that reads as a broken 404.
-          if (!co) { window.location.replace('/platform-admin'); return }
+          if (!co) { window.location.href = 'https://admin.colvy.com'; return }
           setCompany(co)
         } else {
           const co = await getCompanyByOwner(u.id)
@@ -650,7 +652,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <span style={{ flexShrink: 0, display: 'flex', opacity: 0.65 }}>{icons.company}</span>
                 Create Company
               </Link>
-              <a href="https://admin.colvy.com/platform-admin"
+              <a href="https://admin.colvy.com"
                 style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px', borderRadius: 8, fontSize: 13, textDecoration: 'none', color: 'var(--slate)', background: 'transparent' }}>
                 <span style={{ flexShrink: 0, display: 'flex', opacity: 0.65 }}>{icons.lock || icons.company}</span>
                 Platform panel
