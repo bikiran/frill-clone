@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
 import OmniInboxDemo from '@/components/OmniInboxDemo'
+import MarketingFooter from '@/components/MarketingFooter'
 
 function useInView(threshold = 0.12) {
   const ref = useRef<HTMLDivElement>(null)
@@ -200,17 +201,39 @@ export default function InboxCrmPage() {
         .orbx{position:absolute;border-radius:50%;filter:blur(70px);pointer-events:none}
         .demo-float{animation:ifloat 7s ease-in-out infinite}
         @media(max-width:820px){ .split{grid-template-columns:1fr !important} .split-rev>div:first-child{order:2} }
+        .im-menu{display:none}
+        @media(min-width:900px){ .im-menu{display:flex} }
+        @media(max-width:420px){ .im-signin{display:none} }
       `}</style>
 
       {/* NAV */}
       <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: navBg, borderBottom: `1px solid ${scrollY > 30 ? border : 'transparent'}`, backdropFilter: scrollY > 30 ? 'blur(20px)' : 'none', transition: 'all 0.3s' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <a href="/landing" style={{ fontWeight: 800, fontSize: 20, color: '#ff7a6b', textDecoration: 'none' }}>Colvy</a>
+
+          {/* Center menu (desktop) */}
+          <div className="im-menu" style={{ alignItems: 'center', gap: 4 }}>
+            {[
+              { label: 'Inbox & CRM', href: '/inbox-crm', active: true },
+              { label: 'Ideas', href: '/features/ideas' },
+              { label: 'Roadmap', href: '/features/roadmap' },
+              { label: 'Announcements', href: '/features/announcements' },
+              { label: 'Knowledgebase', href: '/features/knowledgebase' },
+              { label: 'Pricing', href: '/pricing' },
+            ].map((n: any) => (
+              <a key={n.label} href={n.href} style={{ padding: '8px 13px', borderRadius: 10, fontSize: 14, fontWeight: n.active ? 700 : 500, color: n.active ? '#ff7a6b' : sub, textDecoration: 'none', transition: 'all 0.2s' }}
+                onMouseEnter={e => (e.currentTarget.style.background = dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                {n.label}
+              </a>
+            ))}
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button onClick={() => setDark(!dark)} style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${border}`, background: card, color: text, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {dark ? '☀' : '☾'}
             </button>
-            <a href="/landing" style={{ fontSize: 14, fontWeight: 500, color: sub, textDecoration: 'none' }} className="hidden md:inline">All features</a>
+            {!user && <a href="/signin" style={{ fontSize: 14, fontWeight: 500, color: sub, textDecoration: 'none' }} className="im-signin">Sign in</a>}
             <button onClick={go} className="cta" style={{ padding: '9px 20px', borderRadius: 12, background: '#ff7a6b', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer', border: 'none' }}>
               {user ? 'Dashboard →' : 'Get started free'}
             </button>
@@ -245,7 +268,6 @@ export default function InboxCrmPage() {
         <div className="demo-float" style={{ position: 'relative', marginTop: 52, opacity: hero.v ? 1 : 0, transform: hero.v ? 'none' : 'translateY(40px)', transition: 'all 0.9s cubic-bezier(0.16,1,0.3,1)' }}>
           <OmniInboxDemo dark={dark} />
         </div>
-        <p style={{ fontSize: 12.5, color: dim, marginTop: 16 }}>Live demo — it runs right here in your browser</p>
       </section>
 
       {/* CHANNELS */}
@@ -286,10 +308,7 @@ export default function InboxCrmPage() {
       </section>
 
       {/* FOOTER */}
-      <footer style={{ padding: '40px 24px', borderTop: `1px solid ${border}`, textAlign: 'center' }}>
-        <a href="/landing" style={{ fontWeight: 800, fontSize: 18, color: '#ff7a6b', textDecoration: 'none' }}>Colvy</a>
-        <p style={{ fontSize: 13, color: dim, marginTop: 10 }}>© 2026 Colvy · <a href="/landing" style={{ color: sub, textDecoration: 'none' }}>All features</a> · <a href="/pricing" style={{ color: sub, textDecoration: 'none' }}>Pricing</a></p>
-      </footer>
+      <MarketingFooter dark={dark} />
     </div>
   )
 }

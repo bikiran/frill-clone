@@ -555,7 +555,7 @@ export default function RootLayout({
   // `/u/` = the customer secure-upload page. It carries its own branded card
   // header, so the app nav on top was redundant and left a big gap above the
   // card. Render it standalone like the other full-page routes.
-  const isFullPageRoute = ['/landing', '/pricing', '/features', '/platform-admin', '/forms/', '/widget', '/auth/handoff', '/u/'].some(p => pathname?.startsWith(p))
+  const isFullPageRoute = ['/landing', '/inbox-crm', '/pricing', '/features', '/platform-admin', '/forms/', '/widget', '/auth/handoff', '/u/'].some(p => pathname?.startsWith(p))
   const isFullPage = isEmbed || isMarketingRoot || isFullPageRoute
 
   if (isFullPage) {
