@@ -29,6 +29,24 @@ const CHANNELS = [
   { n: 'Email', c: '#8b5cf6' }, { n: 'SMS', c: '#0891b2' }, { n: 'Live chat', c: '#ff7a6b' },
 ]
 
+// Capabilities — Colvy-accurate, inspired by the "answer fast, sell faster" idea.
+const CAPS = [
+  { c: '#ff7a6b', t: 'Calls & voicemail', d: 'Make, receive and log calls with context and AI summaries.', p: 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z' },
+  { c: '#6366f1', t: 'Every channel', d: 'WhatsApp, Instagram, Messenger, email, SMS, chat & forms — one thread.', p: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
+  { c: '#8b5cf6', t: 'AI assistant', d: 'Drafts replies in your tone and can handle whole conversations.', p: 'M12 2a3 3 0 0 1 3 3v1a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z M5 11h14 M5 11a7 7 0 0 0 14 0 M9 21h6' },
+  { c: '#10b981', t: 'Customer context', d: 'Who’s messaging, their orders and history — before you reply.', p: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z' },
+  { c: '#96588a', t: 'Payments & orders', d: 'Send payment links, take orders and issue refunds in-thread.', p: 'M1 4h22v16H1z M1 10h22' },
+  { c: '#f59e0b', t: 'Google reviews', d: 'Request reviews automatically and reply from the same inbox.', p: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z' },
+  { c: '#0891b2', t: 'Link tracking', d: 'Trackable links with clicks, unique customers and revenue.', p: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7 M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7' },
+  { c: '#ec4899', t: 'Automations', d: 'Workflows and follow-ups that run while you sleep or are away.', p: 'M12 2v4 M12 18v4 M4.9 4.9l2.8 2.8 M16.3 16.3l2.8 2.8 M2 12h4 M18 12h4 M4.9 19.1l2.8-2.8 M16.3 7.7l2.8-2.8' },
+]
+
+const AISTEPS = [
+  { n: '01', t: 'Start in the Playground', d: 'Test your assistant in a safe space. Ask it anything and tune its knowledge until you’re happy.' },
+  { n: '02', t: 'Turn on draft replies', d: 'It drafts responses for you to approve. You stay in control while it learns your tone and style.' },
+  { n: '03', t: 'Let it answer everything', d: 'Once it acts like an employee, let it handle incoming questions. Step in only when you want to.' },
+]
+
 // Deep-dive blocks. `mock` renders a small themed visual for the section.
 const BLOCKS = (dark: boolean, card: string, border: string, ink: string, sub: string) => [
   {
@@ -292,6 +310,57 @@ export default function InboxCrmPage() {
         )
       })}
 
+      {/* CAPABILITIES — answer fast, sell faster */}
+      <section style={{ padding: '90px 24px', background: dark ? '#0a0a0a' : '#f8f8f8', borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}` }}>
+        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 48 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#ff7a6b', marginBottom: 12 }}>Answering fast is how you win</p>
+            <h2 style={{ fontSize: 'clamp(28px,4.5vw,46px)', fontWeight: 900, letterSpacing: '-0.02em', color: text, lineHeight: 1.12 }}>
+              Everything to reply fast<br /><span className="grad">and turn chats into sales</span>
+            </h2>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(230px,1fr))', gap: 16 }}>
+            {CAPS.map((c, i) => (
+              <Reveal key={c.t} style={{ transitionDelay: `${(i % 4) * 0.05}s` }}>
+                <div className="lift" style={{ padding: 22, borderRadius: 16, background: dark ? 'rgba(255,255,255,0.03)' : '#fff', border: `1px solid ${border}`, height: '100%' }}>
+                  <div style={{ width: 42, height: 42, borderRadius: 12, background: c.c + '18', color: c.c, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={c.p} /></svg>
+                  </div>
+                  <h3 style={{ fontSize: 15.5, fontWeight: 700, color: text, marginBottom: 6 }}>{c.t}</h3>
+                  <p style={{ fontSize: 13, lineHeight: 1.6, color: sub }}>{c.d}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* AI ASSISTANT */}
+      <section style={{ padding: '90px 24px' }}>
+        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 20 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#8b5cf6', marginBottom: 12 }}>AI assistant</p>
+            <h2 style={{ fontSize: 'clamp(28px,4.5vw,46px)', fontWeight: 900, letterSpacing: '-0.02em', color: text, lineHeight: 1.12 }}>
+              Draft and reply<br /><span className="grad">without lifting a finger</span>
+            </h2>
+            <p style={{ fontSize: 17, color: sub, marginTop: 14, maxWidth: 560, margin: '14px auto 0', lineHeight: 1.6 }}>
+              Your tone, your knowledge, your control. Roll it out at your own pace — from suggestions to full autopilot.
+            </p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 20, marginTop: 44 }}>
+            {AISTEPS.map((s, i) => (
+              <Reveal key={s.n} style={{ transitionDelay: `${i * 0.08}s` }}>
+                <div style={{ padding: 24, borderRadius: 18, background: dark ? 'rgba(255,255,255,0.03)' : '#f8f8f8', border: `1px solid ${border}`, height: '100%' }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#8b5cf6', letterSpacing: '0.1em', marginBottom: 10 }}>{s.n}</div>
+                  <h3 style={{ fontSize: 17, fontWeight: 700, color: text, marginBottom: 8 }}>{s.t}</h3>
+                  <p style={{ fontSize: 14, lineHeight: 1.65, color: sub }}>{s.d}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* CTA */}
       <section style={{ padding: '90px 24px' }}>
         <div style={{ maxWidth: 720, margin: '0 auto', textAlign: 'center', padding: '64px 40px', borderRadius: 28, background: 'linear-gradient(135deg,rgba(255,122,107,0.12),rgba(167,139,250,0.12))', border: `1px solid ${border}`, position: 'relative', overflow: 'hidden' }}>
@@ -311,6 +380,11 @@ export default function InboxCrmPage() {
       <MarketingFooter dark={dark} />
     </div>
   )
+}
+
+function Reveal({ children, style }: any) {
+  const { ref, v } = useInView()
+  return <div ref={ref as any} style={{ opacity: v ? 1 : 0, transform: v ? 'none' : 'translateY(24px)', transition: 'all 0.7s cubic-bezier(0.16,1,0.3,1)', ...style }}>{children}</div>
 }
 
 function Block({ b, rev, dark, card, border, text, sub }: any) {
