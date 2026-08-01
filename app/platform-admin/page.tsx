@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import LegalAdminPage from '../admin/legal/page'
 import PlatformBannerAdmin from '@/components/PlatformBannerAdmin'
+import { SmsPricing, DEFAULT_PRICING, calculateCost, aud, audRate, parsePricingRow } from '@/lib/sms-pricing'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -114,6 +115,7 @@ const NAV = [
   { key: 'devices',    label: 'Mobile Devices',   icon: 'users' },
   { key: 'integrations', label: 'Integrations',   icon: 'system' },
   { section: 'Platform' },
+  { key: 'sms',        label: 'SMS Pricing',      icon: 'billing' },
   { key: 'billing',    label: 'Billing',          icon: 'billing' },
   { key: 'flags',      label: 'Feature Flags',    icon: 'flags' },
   { key: 'system',     label: 'System Health',    icon: 'system' },
@@ -2700,6 +2702,113 @@ function BillingPage() {
   )
 }
 
+// Platform · SMS Pricing — the GLOBAL SMS pricing set by the super admin, which
+// applies to every organisation. Stored in platform_settings (key 'sms_pricing')
+// and read by the campaign cost estimator (resolveSmsPricing). Moved here from
+// the customer dashboard: what a customer is charged is a platform decision.
+function SmsPricingPage() {
+  const [p, setP] = useState<SmsPricing>(DEFAULT_PRICING)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [savedAt, setSavedAt] = useState('')
+  const [missing, setMissing] = useState(false)
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data, error } = await (supabase as any).from('platform_settings').select('value').eq('key', 'sms_pricing').maybeSingle()
+        if (error) { if (/does not exist|schema cache/i.test(error.message)) setMissing(true) }
+        else if (data?.value) setP(parsePricingRow(data.value))
+      } finally { setLoading(false) }
+    })()
+  }, [])
+  const save = async () => {
+    setSaving(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const { error } = await (supabase as any).from('platform_settings').upsert({
+        key: 'sms_pricing', value: p, updated_by: session?.user?.email || null, updated_at: new Date().toISOString(),
+      }, { onConflict: 'key' })
+      if (error) { if (/does not exist|schema cache/i.test(error.message)) { setMissing(true); return } throw error }
+      setSavedAt(new Date().toLocaleTimeString())
+    } catch (e: any) { alert('Could not save: ' + e.message) } finally { setSaving(false) }
+  }
+  const costAud = p.fx_rate > 0 ? p.carrier_cost / p.fx_rate : 0
+  const marginAt = (price: number) => {
+    const ex = p.gst_inclusive ? price / (1 + p.gst_rate) : price
+    const m = ex - costAud
+    return { ex, m, pct: ex > 0 ? (m / ex) * 100 : 0 }
+  }
+  const std = marginAt(p.price_per_part)
+  const card: React.CSSProperties = { background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20, marginBottom: 14 }
+  const input: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 13, boxSizing: 'border-box' }
+  const label: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 10 }
+  const sub: React.CSSProperties = { fontSize: 12.5, color: 'var(--sa-muted)', display: 'block', marginBottom: 5 }
+  const mColor = (pct: number) => pct > 25 ? '#10b981' : pct > 10 ? '#f59e0b' : '#ef4444'
+  if (loading) return <div><SectionHeader title="SMS Pricing" sub="Global pricing for all organisations" /><p style={{ color: 'var(--sa-muted)' }}>Loading…</p></div>
+  return (
+    <div style={{ maxWidth: 860 }}>
+      <SectionHeader title="SMS Pricing" sub="Global SMS pricing — applies to every organisation's campaign cost estimates"
+        action={<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{savedAt && <span style={{ fontSize: 12, color: '#10b981' }}>Saved {savedAt}</span>}<button onClick={save} disabled={saving} style={paBtn('#ff7a6b', true)}>{saving ? 'Saving…' : 'Save pricing'}</button></div>} />
+      {missing && <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)', marginBottom: 14 }}>Run <b>COLVY_V220_PLATFORM_SETTINGS.sql</b> to store the global pricing. Until then the built-in default applies.</div>}
+      <div style={card}>
+        <label style={label}>Price charged to customers</label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div><span style={sub}>Per SMS part (AUD)</span><input type="number" step="0.001" value={p.price_per_part} onChange={e => setP(v => ({ ...v, price_per_part: parseFloat(e.target.value) || 0 }))} style={input} /></div>
+          <div><span style={sub}>GST rate</span><input type="number" step="0.01" value={p.gst_rate} onChange={e => setP(v => ({ ...v, gst_rate: parseFloat(e.target.value) || 0 }))} style={input} /></div>
+        </div>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, cursor: 'pointer', color: 'var(--sa-text)', fontSize: 13 }}>
+          <input type="checkbox" checked={p.gst_inclusive} onChange={e => setP(v => ({ ...v, gst_inclusive: e.target.checked }))} /> Price includes GST
+        </label>
+      </div>
+      <div style={card}>
+        <label style={label}>Platform cost</label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <div><span style={sub}>Carrier cost / part</span><input type="number" step="0.001" value={p.carrier_cost} onChange={e => setP(v => ({ ...v, carrier_cost: parseFloat(e.target.value) || 0 }))} style={input} /></div>
+          <div><span style={sub}>Currency</span><input value={p.carrier_currency} onChange={e => setP(v => ({ ...v, carrier_currency: e.target.value }))} style={input} /></div>
+          <div><span style={sub}>AUD/{p.carrier_currency} rate</span><input type="number" step="0.001" value={p.fx_rate} onChange={e => setP(v => ({ ...v, fx_rate: parseFloat(e.target.value) || 0 }))} style={input} /></div>
+        </div>
+        <p style={{ margin: '12px 0 0', fontSize: 12.5, color: 'var(--sa-muted)' }}>Cost per part in AUD: <b style={{ color: 'var(--sa-text)' }}>{audRate(costAud)}</b> · margin at standard rate: <b style={{ color: mColor(std.pct) }}>{audRate(std.m)} ({std.pct.toFixed(1)}%)</b></p>
+      </div>
+      <div style={card}>
+        <label style={label}>Volume discounts</label>
+        {p.volume_tiers.map((t, i) => {
+          const m = marginAt(t.price)
+          return (
+            <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+              <input type="number" value={t.min} onChange={e => setP(v => { const tiers = [...v.volume_tiers]; tiers[i] = { ...tiers[i], min: parseInt(e.target.value) || 0 }; return { ...v, volume_tiers: tiers } })} style={{ ...input, width: 120 }} />
+              <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>parts and above →</span>
+              <input type="number" step="0.001" value={t.price} onChange={e => setP(v => { const tiers = [...v.volume_tiers]; tiers[i] = { ...tiers[i], price: parseFloat(e.target.value) || 0 }; return { ...v, volume_tiers: tiers } })} style={{ ...input, width: 110 }} />
+              <span style={{ fontSize: 12, color: mColor(m.pct), fontWeight: 600 }}>{m.pct.toFixed(1)}% margin</span>
+              <button onClick={() => setP(v => ({ ...v, volume_tiers: v.volume_tiers.filter((_, j) => j !== i) }))} style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Remove</button>
+            </div>
+          )
+        })}
+        <button onClick={() => setP(v => ({ ...v, volume_tiers: [...v.volume_tiers, { min: 1000, price: v.price_per_part }] }))} style={paBtn()}>+ Add tier</button>
+      </div>
+      <div style={card}>
+        <label style={label}>What campaigns would cost</label>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <thead><tr style={{ textAlign: 'left', color: 'var(--sa-muted)' }}>{['Campaign', 'Parts', 'Rate', 'Charged', 'Margin'].map(h => <th key={h} style={{ padding: '5px 6px', fontWeight: 700 }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {[[1, 300], [1, 842], [1, 1240], [3, 200], [1, 5000]].map(([seg, rec], i) => {
+              const c = calculateCost(p, seg, rec)
+              return (
+                <tr key={i} style={{ borderTop: '1px solid var(--sa-border)' }}>
+                  <td style={{ padding: '6px', color: 'var(--sa-text)' }}>{seg} seg × {rec.toLocaleString()}</td>
+                  <td style={{ padding: '6px', color: 'var(--sa-muted)' }}>{c.parts.toLocaleString()}</td>
+                  <td style={{ padding: '6px', color: 'var(--sa-muted)' }}>{audRate(c.pricePerPart)}</td>
+                  <td style={{ padding: '6px', color: 'var(--sa-text)', fontWeight: 600 }}>{aud(c.totalIncGst)}</td>
+                  <td style={{ padding: '6px', color: mColor(c.marginPct), fontWeight: 600 }}>{aud(c.margin)} ({c.marginPct.toFixed(0)}%)</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function SettingsPage() {
   const [me, setMe] = useState<any>(null)
   useEffect(() => { supabase.auth.getSession().then(({ data }: any) => setMe(data?.session?.user || null)) }, [])
@@ -2983,6 +3092,7 @@ export default function SuperAdmin() {
           {page === 'billing'    && <BillingPage />}
           {page === 'legal'      && <LegalAdminPage />}
           {page === 'banner'     && <PlatformBannerAdmin />}
+          {page === 'sms'        && <SmsPricingPage />}
           {page === 'settings'   && <SettingsPage />}
         </div>
       </main>

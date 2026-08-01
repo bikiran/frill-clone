@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { resolveAudience, AudienceFilter, isValidAuMobile } from './campaign-audience'
 import { renderVariables, analyseSms } from './sms-segments'
-import { calculateCost, DEFAULT_PRICING, SmsPricing } from './sms-pricing'
+import { calculateCost, DEFAULT_PRICING, SmsPricing, resolveSmsPricing } from './sms-pricing'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,19 +26,9 @@ export function isWithinSendingHours(d = new Date(), tz = 'Australia/Melbourne')
 }
 
 async function loadPricing(db: any, companyId: string): Promise<SmsPricing> {
-  try {
-    const { data } = await db.from('sms_pricing').select('*').eq('company_id', companyId).maybeSingle()
-    if (!data) return DEFAULT_PRICING
-    return {
-      price_per_part: Number(data.price_per_part) || DEFAULT_PRICING.price_per_part,
-      gst_rate: Number(data.gst_rate) ?? DEFAULT_PRICING.gst_rate,
-      gst_inclusive: data.gst_inclusive !== false,
-      carrier_cost: Number(data.carrier_cost) || DEFAULT_PRICING.carrier_cost,
-      carrier_currency: data.carrier_currency || 'USD',
-      fx_rate: Number(data.fx_rate) || DEFAULT_PRICING.fx_rate,
-      volume_tiers: Array.isArray(data.volume_tiers) ? data.volume_tiers : DEFAULT_PRICING.volume_tiers,
-    }
-  } catch { return DEFAULT_PRICING }
+  // SMS pricing is a platform decision (super-admin global default), with an
+  // optional per-company override. resolveSmsPricing handles that precedence.
+  return resolveSmsPricing(db, companyId)
 }
 
 /**
