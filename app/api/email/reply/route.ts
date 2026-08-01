@@ -14,7 +14,7 @@ const admin = () => createClient(
 // message so it lands in the same email conversation on their side.
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, content, agentName, to, cc, bcc, subject: subjectOverride } = await req.json()
+    const { conversationId, content, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride } = await req.json()
     if (!conversationId || !content) {
       return NextResponse.json({ error: 'conversationId and content are required' }, { status: 400 })
     }
@@ -77,7 +77,11 @@ export async function POST(req: NextRequest) {
     // Append the mailbox signature, if any, and build an HTML version so the
     // reply renders with paragraph breaks and clickable links on the customer's
     // side (a plain-text-only reply looked flat next to their formatted email).
-    const signature = channel.signature ? `\n\n${channel.signature}` : ''
+    // The composer may pick a specific signature (from the library) — honour it
+    // exactly, including an explicit "no signature" (empty string). Only fall
+    // back to the mailbox's own signature when the caller didn't specify one.
+    const chosenSig = sigOverride !== undefined ? String(sigOverride || '') : (channel.signature || '')
+    const signature = chosenSig ? `\n\n${chosenSig}` : ''
     const fullText = `${content}${signature}`
     const escapeHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     const linkify = (t: string) => t.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>')
