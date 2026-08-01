@@ -93,6 +93,29 @@ export async function resolveEntitlements(db: any, companyId: string, plan: Plan
   }
 }
 
+/**
+ * Server-side one-liners for API routes: does this company have a feature /
+ * what's its effective limit, honouring per-company overrides. Pass a
+ * service-role supabase client. The company's plan is read if not supplied.
+ */
+export async function companyHasFeature(db: any, companyId: string, feature: string, plan?: Plan): Promise<boolean> {
+  try {
+    let p = plan
+    if (!p) { const { data } = await db.from('companies').select('plan').eq('id', companyId).maybeSingle(); p = (data?.plan || 'free') as Plan }
+    const eff = await resolveEntitlements(db, companyId, p)
+    if (feature in eff.features) return !!eff.features[feature]
+    return canAccess(p, feature)
+  } catch { return false }
+}
+export async function companyLimit(db: any, companyId: string, key: string, plan?: Plan): Promise<any> {
+  try {
+    let p = plan
+    if (!p) { const { data } = await db.from('companies').select('plan').eq('id', companyId).maybeSingle(); p = (data?.plan || 'free') as Plan }
+    const eff = await resolveEntitlements(db, companyId, p)
+    return eff.limits[key]
+  } catch { return undefined }
+}
+
 let _cachedPlan: Plan | null = null
 let _cacheTime = 0
 const CACHE_TTL = 5 * 60 * 1000

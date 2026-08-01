@@ -1,10 +1,14 @@
 'use client'
 
 import Link from 'next/link'
+import { useEntitlements } from '@/lib/entitlements-client'
 
 interface ProGateProps {
   feature: string
-  plan: 'free' | 'pro' | 'enterprise'
+  // Optional now: the gate resolves the company's EFFECTIVE entitlements
+  // (plan + super-admin overrides). `plan` is only a fallback used before the
+  // async resolve completes, so pro users don't briefly see the locked state.
+  plan?: 'free' | 'trial' | 'pro' | 'enterprise'
   children: React.ReactNode
   inline?: boolean
 }
@@ -20,9 +24,17 @@ const FEATURE_LABELS: Record<string, string> = {
   removesBranding: 'Remove Branding',
 }
 
-export default function ProGate({ feature, plan, children, inline }: ProGateProps) {
-  const isPro = plan === 'pro' || plan === 'enterprise'
-  if (isPro) return <>{children}</>
+export default function ProGate({ feature, plan = 'free', children, inline }: ProGateProps) {
+  const ent = useEntitlements()
+  // Once entitlements have resolved, a per-company override wins: force-on
+  // unlocks the feature even on a lower plan, force-off locks it even on Pro.
+  // For features without an override entry, fall back to the plan's default
+  // (Pro/Enterprise). Before the resolve completes, use the `plan` prop so the
+  // UI doesn't flash the locked state at a Pro user.
+  const allowed = ent.ready
+    ? (feature in ent.features ? ent.hasFeature(feature) : (ent.plan === 'pro' || ent.plan === 'enterprise'))
+    : (plan === 'pro' || plan === 'enterprise')
+  if (allowed) return <>{children}</>
 
   if (inline) {
     return (
