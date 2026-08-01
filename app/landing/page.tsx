@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
+import OmniInboxDemo from '@/components/OmniInboxDemo'
 
 function useInView(threshold = 0.1) {
   const ref = useRef<HTMLDivElement>(null)
@@ -116,6 +117,25 @@ const STATS = [
   { value: '4 min', label: 'Setup time', key: null },
 ]
 
+// Business platform (Colvy admin) features — the omnichannel inbox/CRM suite.
+const P = (d: string) => () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
+)
+const PLATFORM = [
+  { Icon: P('M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z M8 9h8 M8 13h5'), title: 'Omnichannel Inbox & CRM', color: '#ff7a6b', href: '/inbox-crm',
+    desc: 'WhatsApp, Instagram, Messenger, email, SMS and live chat in one shared inbox — every message tied to a full customer profile.' },
+  { Icon: P('M3 3h18v14H3z M3 13l5-4 4 3 4-5 5 6 M3 21h18'), title: 'Unified Media Gallery', color: '#8b5cf6', href: '/inbox-crm#gallery',
+    desc: 'Store, categorise and send photos & videos to customers mid-chat — with notes, @mentions and one-click sharing.' },
+  { Icon: P('M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z M3 6h18 M16 10a4 4 0 0 1-8 0'), title: 'Advanced WooCommerce', color: '#96588a', href: '/inbox-crm#woo',
+    desc: 'Live order lookups, refunds, abandoned-cart recovery and full purchase history — right beside the conversation.' },
+  { Icon: P('M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7 M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7'), title: 'Link Generator & Reports', color: '#0891b2', href: '/inbox-crm#links',
+    desc: 'Create trackable short links and see clicks, unique recipients and the orders each link actually influenced.' },
+  { Icon: P('M22 12h-4l-3 9L9 3l-3 9H2'), title: 'Customer & Location Insights', color: '#10b981', href: '/inbox-crm#insights',
+    desc: 'Understand spend, order history and behaviour by customer and by outlet, with location-aware analytics.' },
+  { Icon: P('M9 11l3 3L22 4 M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11'), title: 'Tasks, Calendar & Automations', color: '#f59e0b', href: '/inbox-crm#tasks',
+    desc: 'Turn any conversation into an assignable task, schedule it on a calendar, and automate replies and follow-ups.' },
+]
+
 export default function LandingPage() {
   const [user, setUser] = useState<any>(null)
   const [realStats, setRealStats] = useState({ teams: 0, ideas: 0 })
@@ -125,6 +145,8 @@ export default function LandingPage() {
   const { ref: featRef, v: featV } = useInView()
   const { ref: statsRef, v: statsV } = useInView()
   const { ref: socialRef, v: socialV } = useInView()
+  const { ref: platRef, v: platV } = useInView()
+  const { ref: demoRef, v: demoV } = useInView()
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => setUser(data?.session?.user))
@@ -195,14 +217,14 @@ export default function LandingPage() {
           {/* Desktop Nav — hide Features/Pricing for logged-in users */}
           <div className="hidden md:flex" style={{ alignItems: 'center', gap: 4 }}>
             {!user && [
+              { label: 'Inbox & CRM', href: '/inbox-crm', hot: true },
               { label: 'Ideas', href: '/features/ideas' },
               { label: 'Roadmap', href: '/features/roadmap' },
               { label: 'Announcements', href: '/features/announcements' },
               { label: 'Knowledgebase', href: '/features/knowledgebase' },
-              { label: 'Import', href: '/features/import' },
               { label: 'Pricing', href: '/pricing' },
-            ].map(n => (
-              <a key={n.label} href={n.href} style={{ padding: '8px 14px', borderRadius: 10, fontSize: 14, fontWeight: 500, color: textMuted, textDecoration: 'none', transition: 'all 0.2s' }}
+            ].map((n: any) => (
+              <a key={n.label} href={n.href} style={{ padding: '8px 14px', borderRadius: 10, fontSize: 14, fontWeight: n.hot ? 700 : 500, color: n.hot ? '#ff7a6b' : textMuted, textDecoration: 'none', transition: 'all 0.2s' }}
                 onMouseEnter={e => (e.currentTarget.style.background = dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                 {n.label}
@@ -249,6 +271,7 @@ export default function LandingPage() {
         {mobileOpen && (
           <div style={{ background: dark ? '#0f0f0f' : '#fff', borderTop: `1px solid ${cardBorder}`, padding: '16px 24px 24px' }}>
             {!user && [
+              { label: 'Inbox & CRM', href: '/inbox-crm' },
               { label: 'Ideas', href: '/features/ideas' },
               { label: 'Roadmap', href: '/features/roadmap' },
               { label: 'Announcements', href: '/features/announcements' },
@@ -271,9 +294,9 @@ export default function LandingPage() {
 
       {/* HERO */}
       <section style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '100px 24px 60px', overflow: 'hidden' }}>
-        <div className="orb" style={{ width: 600, height: 600, background: 'radial-gradient(circle,rgba(255,122,107,0.18) 0%,transparent 65%)', top: '5%', left: '5%' }} />
-        <div className="orb" style={{ width: 500, height: 500, background: 'radial-gradient(circle,rgba(99,102,241,0.14) 0%,transparent 65%)', top: '20%', right: '5%' }} />
-        <div className="orb" style={{ width: 400, height: 400, background: 'radial-gradient(circle,rgba(16,185,129,0.1) 0%,transparent 65%)', bottom: '10%', left: '30%' }} />
+        <div className="orb" style={{ width: 600, height: 600, background: 'radial-gradient(circle,rgba(255,122,107,0.18) 0%,transparent 65%)', top: '5%', left: '5%', transform: `translateY(${scrollY * 0.18}px)` }} />
+        <div className="orb" style={{ width: 500, height: 500, background: 'radial-gradient(circle,rgba(99,102,241,0.14) 0%,transparent 65%)', top: '20%', right: '5%', transform: `translateY(${scrollY * 0.28}px)` }} />
+        <div className="orb" style={{ width: 400, height: 400, background: 'radial-gradient(circle,rgba(16,185,129,0.1) 0%,transparent 65%)', bottom: '10%', left: '30%', transform: `translateY(${scrollY * -0.12}px)` }} />
 
         {/* Grid */}
         <div style={{ position: 'absolute', inset: 0, backgroundImage: `linear-gradient(${dark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.04)'} 1px,transparent 1px),linear-gradient(90deg,${dark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.04)'} 1px,transparent 1px)`, backgroundSize: '60px 60px', WebkitMaskImage: 'radial-gradient(ellipse at center,black 40%,transparent 75%)', maskImage: 'radial-gradient(ellipse at center,black 40%,transparent 75%)', pointerEvents: 'none' }} />
@@ -291,8 +314,8 @@ export default function LandingPage() {
             want
           </h1>
 
-          <p className="slide-up d3" style={{ fontSize: 'clamp(16px,2vw,20px)', color: textMuted, lineHeight: 1.7, marginBottom: 40, maxWidth: 540, margin: '0 auto 40px' }}>
-            One platform for feedback, roadmap, changelog, and help centre. Your users will love it.
+          <p className="slide-up d3" style={{ fontSize: 'clamp(16px,2vw,20px)', color: textMuted, lineHeight: 1.7, marginBottom: 40, maxWidth: 580, margin: '0 auto 40px' }}>
+            An omnichannel inbox &amp; CRM, media gallery, WooCommerce, link tracking and customer insights — plus feedback, roadmap and changelog. Everything to talk to customers and sell more, in one place.
           </p>
 
           <div className="slide-up d4" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
@@ -371,6 +394,50 @@ export default function LandingPage() {
       </section>
 
 
+
+      {/* ── BUSINESS PLATFORM (Inbox & CRM suite) ─────────────────────────── */}
+      <section id="platform" ref={demoRef as any} style={{ position: 'relative', padding: '100px 24px', background: dark ? '#0a0a0a' : '#f8f8f8', borderTop: `1px solid ${cardBorder}`, overflow: 'hidden' }}>
+        <div className="orb" style={{ width: 520, height: 520, background: 'radial-gradient(circle,rgba(255,122,107,0.14) 0%,transparent 65%)', top: '-10%', right: '-5%', transform: `translateY(${scrollY * 0.05}px)` }} />
+        <div style={{ maxWidth: 1000, margin: '0 auto', position: 'relative' }}>
+          <div style={{ textAlign: 'center', marginBottom: 20 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#ff7a6b', marginBottom: 12 }}>The business platform</p>
+            <h2 style={{ fontSize: 'clamp(30px,5vw,52px)', fontWeight: 900, letterSpacing: '-0.02em', color: text, lineHeight: 1.1 }}>
+              Every customer conversation,<br /><span className="grad-text">and everything behind it</span>
+            </h2>
+            <p style={{ fontSize: 18, color: textMuted, marginTop: 14, maxWidth: 640, margin: '14px auto 0', lineHeight: 1.6 }}>
+              Watch a WhatsApp message become a sale — media from your gallery, a live Woo order, a payment link and a task, without leaving the thread.
+            </p>
+          </div>
+
+          {/* Live animated demo */}
+          <div style={{ margin: '44px auto 8px', opacity: demoV ? 1 : 0, transform: demoV ? 'none' : 'translateY(40px)', transition: 'all 0.8s cubic-bezier(0.16,1,0.3,1)' }}>
+            <OmniInboxDemo dark={dark} />
+          </div>
+          <p style={{ textAlign: 'center', fontSize: 12.5, color: textDim, marginBottom: 56 }}>Live demo · no video, it runs in your browser</p>
+
+          {/* Platform feature grid */}
+          <div ref={platRef as any} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 20 }}>
+            {PLATFORM.map(({ Icon, title, href, color, desc }, i) => (
+              <a key={title} href={href} className="feat-card" style={{ padding: 26, borderRadius: 20, background: dark ? 'rgba(255,255,255,0.03)' : '#fff', border: `1px solid ${cardBorder}`, textDecoration: 'none', display: 'block', opacity: platV ? 1 : 0, transform: platV ? 'none' : 'translateY(30px)', transition: `all 0.6s cubic-bezier(0.16,1,0.3,1) ${0.05 * i}s` }}>
+                <div className="feat-icon" style={{ width: 48, height: 48, borderRadius: 14, background: color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, color }}>
+                  <Icon />
+                </div>
+                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: text }}>{title}</h3>
+                <p style={{ fontSize: 14, lineHeight: 1.65, color: textMuted, marginBottom: 16 }}>{desc}</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color }}>
+                  {href === '/inbox-crm' ? 'Explore Inbox & CRM' : 'Learn more'} <ArrowRightIcon />
+                </div>
+              </a>
+            ))}
+          </div>
+
+          <div style={{ textAlign: 'center', marginTop: 44 }}>
+            <a href="/inbox-crm" className="btn-main" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '14px 32px', borderRadius: 16, background: 'linear-gradient(135deg,#ff7a6b,#ff5247)', color: '#fff', fontWeight: 800, fontSize: 16, textDecoration: 'none' }}>
+              See the full Inbox &amp; CRM <ArrowRightIcon />
+            </a>
+          </div>
+        </div>
+      </section>
 
       {/* IMPORT DEMO */}
       <section style={{ padding: '80px 24px', background: dark ? '#050505' : '#f8f8f8', borderTop: `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
@@ -574,6 +641,7 @@ export default function LandingPage() {
               <p style={{ fontSize: 13, color: textMuted, lineHeight: 1.6 }}>Beautiful feedback for product teams.</p>
             </div>
             {[
+              { title: 'Platform', links: [{ l: 'Inbox & CRM', h: '/inbox-crm' }, { l: 'Media Gallery', h: '/inbox-crm#gallery' }, { l: 'WooCommerce', h: '/inbox-crm#woo' }, { l: 'Link Reports', h: '/inbox-crm#links' }, { l: 'Insights', h: '/inbox-crm#insights' }] },
               { title: 'Product', links: [{ l: 'Ideas', h: '/features/ideas' }, { l: 'Roadmap', h: '/features/roadmap' }, { l: 'Announcements', h: '/features/announcements' }, { l: 'Knowledgebase', h: '/features/knowledgebase' }] },
               { title: 'Company', links: [{ l: 'Pricing', h: '/pricing' }, { l: 'Sign up', h: '/signup' }, { l: 'Sign in', h: '/signin' }] },
               { title: 'Legal', links: [{ l: 'Privacy', h: '/privacy' }, { l: 'Terms', h: '/terms' }] },
