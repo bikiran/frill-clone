@@ -354,14 +354,19 @@ export default function GalleryPage() {
   if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading…</div>
 
   return (
-    <div className="gal-root" style={{ padding: '28px 32px', maxWidth: 1200, margin: '0 auto' }}>
+    <div className="gal-root" style={{ padding: '28px 36px' }}>
       <style>{`
         .gal-toolbar-btns { display: flex; gap: 8px; flex-wrap: wrap; }
-        .gal-layout { display: flex; gap: 20px; align-items: flex-start; }
-        .gal-sidebar { width: 210px; flex-shrink: 0; }
-        .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+        .gal-layout { display: flex; gap: 24px; align-items: flex-start; }
+        .gal-sidebar { width: 210px; flex-shrink: 0; position: sticky; top: 16px; }
+        .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 16px; }
         .gal-spin { animation: gal-spin-kf 0.7s linear infinite; }
         @keyframes gal-spin-kf { to { transform: rotate(360deg); } }
+        /* Smoother cards: lift on hover, gentle image zoom, softer shadows. */
+        .gal-card { transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease; }
+        .gal-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.10); }
+        .gal-card .gal-thumb img, .gal-card .gal-thumb video { transition: transform 0.28s ease; }
+        .gal-card:hover .gal-thumb img, .gal-card:hover .gal-thumb video { transform: scale(1.04); }
         /* Horizontal category strip is hidden on desktop (the sidebar handles it). */
         .gal-cat-strip { display: none; }
 
@@ -547,8 +552,8 @@ export default function GalleryPage() {
               {items.filter((it: any) => !catFilter || (itemCats[it.id] || []).includes(catFilter)).map((item, i) => {
                 const isSelected = selected.has(item.id)
                 return (
-                <div key={item.id} style={{ border: `1px solid ${isSelected ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 12, background: '#fff', boxShadow: isSelected ? '0 0 0 2px var(--peach)' : 'none', transition: 'all 0.12s', position: 'relative' }}>
-                  <div style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: 'var(--canvas)', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}
+                <div key={item.id} className="gal-card" style={{ border: `1px solid ${isSelected ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 12, background: '#fff', boxShadow: isSelected ? '0 0 0 2px var(--peach)' : 'none', position: 'relative' }}>
+                  <div className="gal-thumb" style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: 'var(--canvas)', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}
                     onClick={() => selectMode ? toggleSelect(item.id) : setLightboxIndex(i)}>
                     {item.kind === 'video' ? (
                       <video src={item.url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
