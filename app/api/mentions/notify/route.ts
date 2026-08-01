@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     // Resolve the mentioned users' email addresses and the company details.
     const { data: members } = await db
       .from('team_members')
-      .select('user_id, name, email, phone')
+      .select('user_id, email, phone')     // team_members has no name column — derive it from email
       .eq('company_id', companyId)
       .in('user_id', userIds)
 
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       .from('companies').select('name, slug, owner_id').eq('id', companyId).maybeSingle()
 
     const recipients: any[] = (members || []).filter((m: any) => m.email)
+      .map((m: any) => ({ ...m, name: String(m.email).split('@')[0] }))
 
     // The company OWNER is mentionable but usually has no team_members row, so
     // the lookup above misses them entirely. Fall back to their auth record.
