@@ -58,6 +58,9 @@ const NAV = [
   { key: 'chat',       label: 'Live Chat',        icon: 'chat' },
   { key: 'tickets',    label: 'Support Tickets',  icon: 'tickets' },
   { key: 'moderation', label: 'Moderation',       icon: 'moderation' },
+  { section: 'Operations' },
+  { key: 'imp',        label: 'Impersonation',    icon: 'audit' },
+  { key: 'integrations', label: 'Integrations',   icon: 'system' },
   { section: 'Platform' },
   { key: 'billing',    label: 'Billing',          icon: 'billing' },
   { key: 'flags',      label: 'Feature Flags',    icon: 'flags' },
@@ -371,6 +374,131 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
             </div>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Operations · Impersonation Sessions — the audit trail of admins entering
+// customer workspaces (real data from impersonation_sessions).
+function ImpersonationSessionsPage() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  useEffect(() => {
+    ;(async () => {
+      const { data, error } = await (supabase as any).from('impersonation_sessions').select('*').order('started_at', { ascending: false }).limit(200)
+      if (error) { if (/does not exist|schema cache/i.test(error.message)) setMissing(true); setRows([]) }
+      else setRows(data || [])
+    })()
+  }, [])
+  const now = Date.now()
+  const statusOf = (s: any) => s.ended_at ? { l: 'Ended', c: '#6b7280' } : (s.expires_at && new Date(s.expires_at).getTime() < now ? { l: 'Expired', c: '#f59e0b' } : { l: 'Active', c: '#10b981' })
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  return (
+    <div>
+      <SectionHeader title="Impersonation Sessions" sub="Every time an admin entered a customer workspace" />
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V215_IMPERSONATION.sql</b> to start recording impersonation sessions.</div>
+      ) : (
+        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+            <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Admin', 'Business', 'Reason', 'Mode', 'Started', 'Status'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {rows === null ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+              : rows.length === 0 ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>No impersonation sessions yet.</td></tr>
+              : rows.map((s, i) => {
+                const st = statusOf(s)
+                return (
+                  <tr key={s.id} style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+                    <td style={td}>{s.admin_email || '—'}</td>
+                    <td style={td}>{s.company_name || s.company_slug || '—'}</td>
+                    <td style={{ ...td, maxWidth: 260, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={s.reason}>{s.reason || '—'}</td>
+                    <td style={td}>{s.mode === 'read_only' ? 'Read-only' : 'Full'}</td>
+                    <td style={{ ...td, color: 'var(--sa-muted)' }}>{s.started_at ? new Date(s.started_at).toLocaleString() : '—'}</td>
+                    <td style={td}><span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: st.c + '22', color: st.c }}>{st.l}</span></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Operations · Integrations — connected channels across every business, with
+// status (real data: email_channels, woocommerce_integrations, telnyx).
+function IntegrationsPage() {
+  const [cos, setCos] = useState<Record<string, any>>({})
+  const [rows, setRows] = useState<any[] | null>(null)
+  useEffect(() => {
+    ;(async () => {
+      const [c, e, w, t] = await Promise.all([
+        (supabase as any).from('companies').select('id,name,slug'),
+        (supabase as any).from('email_channels').select('*'),
+        (supabase as any).from('woocommerce_integrations').select('*'),
+        (supabase as any).from('telnyx_integrations').select('*'),
+      ])
+      const map: Record<string, any> = {}; (c.data || []).forEach((x: any) => { map[x.id] = x })
+      setCos(map)
+      const staleDays = (d: string) => d ? (Date.now() - new Date(d).getTime()) / 86400000 : Infinity
+      const all: any[] = [
+        ...(e.data || []).map((x: any) => ({ type: 'Email', color: '#8b5cf6', company_id: x.company_id, detail: x.inbound_address, active: x.is_active !== false, last: x.created_at, note: '' })),
+        ...(w.data || []).map((x: any) => ({ type: 'WooCommerce', color: '#96588a', company_id: x.company_id, detail: x.store_url, active: x.is_active !== false, last: x.last_synced_at || x.created_at, note: staleDays(x.last_synced_at) > 2 ? 'Sync stale' : '' })),
+        ...(t.data || []).map((x: any) => ({ type: 'Phone (Telnyx)', color: '#0891b2', company_id: x.company_id, detail: x.phone_number, active: x.is_active === true, last: x.created_at, note: x.is_active ? '' : 'Inactive' })),
+      ]
+      setRows(all)
+    })()
+  }, [])
+  const list = rows || []
+  const byType = (t: string) => list.filter(r => r.type === t)
+  const summary = [
+    { type: 'Email', color: '#8b5cf6' },
+    { type: 'WooCommerce', color: '#96588a' },
+    { type: 'Phone (Telnyx)', color: '#0891b2' },
+  ].map(s => ({ ...s, total: byType(s.type).length, active: byType(s.type).filter(r => r.active).length, warn: byType(s.type).filter(r => r.note).length }))
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  return (
+    <div>
+      <SectionHeader title="Integrations" sub="Connected channels across every business" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 12, marginBottom: 20 }}>
+        {summary.map(s => (
+          <div key={s.type} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: s.color }} />
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)' }}>{s.type}</span>
+            </div>
+            <p style={{ fontSize: 24, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{rows === null ? '…' : s.total}</p>
+            <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{s.active} active{s.warn ? ` · ${s.warn} need attention` : ''}</p>
+          </div>
+        ))}
+      </div>
+      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+          <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Type', 'Business', 'Detail', 'Last activity', 'Status'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {rows === null ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+            : list.length === 0 ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>No connected integrations.</td></tr>
+            : list.map((r, i) => (
+              <tr key={i} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+                <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: r.color }}>{r.type}</span></td>
+                <td style={td}>{cos[r.company_id]?.name || cos[r.company_id]?.slug || '—'}</td>
+                <td style={{ ...td, color: 'var(--sa-muted)', maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.detail}>{r.detail || '—'}</td>
+                <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.last ? new Date(r.last).toLocaleDateString() : '—'}</td>
+                <td style={td}>
+                  {r.note
+                    ? <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: '#f59e0b22', color: '#f59e0b' }}>{r.note}</span>
+                    : r.active
+                      ? <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: '#10b98122', color: '#10b981' }}>Connected</span>
+                      : <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: '#6b728022', color: '#6b7280' }}>Inactive</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -1822,6 +1950,8 @@ export default function SuperAdmin() {
           {page === 'chat'       && <LiveChatPage />}
           {page === 'tickets'    && <TicketsPage />}
           {page === 'moderation' && <ModerationPage />}
+          {page === 'imp'          && <ImpersonationSessionsPage />}
+          {page === 'integrations' && <IntegrationsPage />}
           {page === 'billing'    && <BillingPage />}
           {page === 'legal'      && <LegalAdminPage />}
           {page === 'banner'     && <PlatformBannerAdmin />}
