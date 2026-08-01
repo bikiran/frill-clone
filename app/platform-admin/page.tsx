@@ -1371,6 +1371,91 @@ function MobileDevicesPage() {
   )
 }
 
+// Platform · Audit Logs — a chronological trail of privileged platform actions.
+// Merges the two records that actually capture admin activity and are readable
+// cross-company: impersonation sessions (an admin entered a workspace) and
+// company admin notes (an admin annotated a business). Both are real data.
+function AuditPage() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [q, setQ] = useState('')
+  const [kind, setKind] = useState('all')
+  const load = async () => {
+    const [co, imp, notes] = await Promise.all([
+      (supabase as any).from('companies').select('id,name,slug'),
+      (supabase as any).from('impersonation_sessions').select('*').order('started_at', { ascending: false }).limit(200),
+      (supabase as any).from('company_admin_notes').select('*').order('created_at', { ascending: false }).limit(200),
+    ])
+    const coMap: Record<string, any> = {}; (co.data || []).forEach((x: any) => { coMap[x.id] = x })
+    const events: any[] = []
+    ;(imp.data || []).forEach((s: any) => events.push({
+      id: `imp-${s.id}`, kind: 'impersonation', at: s.started_at || s.created_at,
+      actor: s.admin_email || 'admin',
+      business: s.company_name || s.company_slug || coMap[s.company_id]?.name || '—',
+      detail: `Entered workspace${s.mode === 'read_only' ? ' (read-only)' : ''}${s.reason ? ` — ${s.reason}` : ''}`,
+    }))
+    ;(notes.data || []).forEach((n: any) => events.push({
+      id: `note-${n.id}`, kind: 'note', at: n.created_at,
+      actor: n.author_email || 'admin',
+      business: coMap[n.company_id]?.name || coMap[n.company_id]?.slug || '—',
+      detail: `Added ${n.category || 'general'} note — ${String(n.body || '').slice(0, 120)}`,
+    }))
+    events.sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime())
+    setRows(events)
+  }
+  useEffect(() => { load() }, [])
+  const all = rows || []
+  const list = all.filter(e => {
+    if (kind !== 'all' && e.kind !== kind) return false
+    if (q.trim()) {
+      const hay = `${e.actor} ${e.business} ${e.detail}`.toLowerCase()
+      if (!hay.includes(q.trim().toLowerCase())) return false
+    }
+    return true
+  })
+  const meta: Record<string, { label: string; color: string }> = {
+    impersonation: { label: 'Impersonation', color: '#f59e0b' },
+    note: { label: 'Admin note', color: '#6366f1' },
+  }
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const chip = (active: boolean): React.CSSProperties => ({ padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? '#ff7a6b' : 'var(--sa-border)'}`, background: active ? '#ff7a6b22' : 'var(--sa-card)', color: active ? '#ff7a6b' : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' })
+  return (
+    <div>
+      <SectionHeader title="Audit Logs" sub="A trail of privileged platform actions across every business"
+        action={<button onClick={() => { setRows(null); load() }} style={paBtn()}>Refresh</button>} />
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+        <SearchBar placeholder="Search actor, business, detail…" value={q} onChange={setQ} />
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[['all', 'All'], ['impersonation', 'Impersonation'], ['note', 'Admin notes']].map(([k, l]) => (
+            <button key={k} onClick={() => setKind(k)} style={chip(kind === k)}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+          <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Action', 'Admin', 'Business', 'Detail', 'When'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {rows === null ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+            : list.length === 0 ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{all.length === 0 ? 'No privileged actions recorded yet.' : 'No entries match these filters.'}</td></tr>
+            : list.map((e, i) => {
+              const m = meta[e.kind] || { label: e.kind, color: '#6b7280' }
+              return (
+                <tr key={e.id} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+                  <td style={td}><span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: m.color + '22', color: m.color }}>{m.label}</span></td>
+                  <td style={td}>{e.actor}</td>
+                  <td style={td}>{e.business}</td>
+                  <td style={{ ...td, color: 'var(--sa-muted)', maxWidth: 340, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={e.detail}>{e.detail}</td>
+                  <td style={{ ...td, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{e.at ? new Date(e.at).toLocaleString() : '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // Attention Required — surfaces businesses that need a look right now, computed
 // purely from companies.plan + created_at (no invented columns, no backend).
 function AttentionPanel() {
@@ -2646,10 +2731,36 @@ function PlaceholderPage({ title, sub }: { title: string; sub: string }) {
 // ══════════════════════════════════════════════════════════════════════════════
 export default function SuperAdmin() {
   const [authed, setAuthed] = useState<boolean | null>(null)
-  const [dark, setDark] = useState(true)
-  const [page, setPage] = useState('overview')
+  // Default to LIGHT. The choice is remembered in localStorage so it no longer
+  // flips back on every reload. Initial state is deterministic (light) for SSR,
+  // then the stored preference is applied on mount below.
+  const [dark, setDarkState] = useState(false)
+  // The active tab is mirrored in the URL hash so a reload stays on the same
+  // page instead of snapping back to Overview.
+  const [page, setPageState] = useState('overview')
   const [data, setData] = useState<any>({})
   const [collapsed, setCollapsed] = useState(false)
+
+  const setDark = (v: boolean) => {
+    setDarkState(v)
+    try { localStorage.setItem('colvy:pa-theme', v ? 'dark' : 'light') } catch {}
+  }
+  const setPage = (p: string) => {
+    setPageState(p)
+    try { window.history.replaceState(null, '', `#${p}`) } catch {}
+  }
+
+  // On mount: restore the remembered theme and the tab from the URL hash.
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem('colvy:pa-theme')
+      if (t === 'dark') setDarkState(true)
+    } catch {}
+    try {
+      const h = window.location.hash.replace(/^#/, '')
+      if (h) setPageState(h)
+    } catch {}
+  }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: s }: any) => {
