@@ -472,9 +472,28 @@ function CompaniesPage() {
     })()
   }, [])
 
+  const [imp, setImp] = useState<any>(null)
+  const startImpersonation = async () => {
+    if (!imp?.reason?.trim()) { setImp((s: any) => ({ ...s, err: 'A reason is required.' })); return }
+    setImp((s: any) => ({ ...s, busy: true, err: '' }))
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/platform-admin/impersonate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ action: 'start', companyId: imp.co.id, slug: imp.co.slug, name: imp.co.name, reason: imp.reason, mode: imp.mode, minutes: imp.minutes }),
+      })
+      const d = await res.json()
+      if (!res.ok) { setImp((s: any) => ({ ...s, busy: false, err: d.error || 'Could not start session' })); return }
+      window.open(`https://${imp.co.slug}.colvy.com/admin?imp=${d.id}`, '_blank')
+      setImp(null)
+    } catch (e: any) { setImp((s: any) => ({ ...s, busy: false, err: e.message })) }
+  }
+
   const action = async (type: string, co: any) => {
     setMsg('')
-    if (type === 'impersonate') { window.open(`https://${co.slug}.colvy.com/admin`, '_blank'); return }
+    // Safe impersonation: capture a reason + mode, record an audit session,
+    // then open the workspace with the session id so it shows the banner.
+    if (type === 'impersonate') { setImp({ co, reason: '', mode: 'full', minutes: 60, busy: false, err: '' }); return }
     if (type === 'view') { window.open(`https://${co.slug}.colvy.com`, '_blank'); return }
     if (type === 'suspend') {
       await (supabase as any).from('companies').update({ plan: 'suspended' }).eq('id', co.id)
@@ -506,6 +525,33 @@ function CompaniesPage() {
         </div>}
       />
       {msg && <div style={{ padding: '10px 16px', borderRadius: 10, background: '#d1fae5', color: '#065f46', fontSize: 13, marginBottom: 16, fontWeight: 500 }}>{msg}</div>}
+
+      {/* Safe impersonation modal */}
+      {imp && (
+        <div onClick={() => !imp.busy && setImp(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '94vw', background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 24 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: '0 0 4px' }}>Enter {imp.co.name} workspace</p>
+            <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '0 0 18px', lineHeight: 1.5 }}>You'll enter as super admin using your own account. This session is recorded in the audit log, and a banner shows inside the workspace until you exit.</p>
+            <label style={paLabel}>Reason (required)</label>
+            <input value={imp.reason} onChange={e => setImp((s: any) => ({ ...s, reason: e.target.value }))} placeholder="e.g. Investigating support ticket #1042" style={paInput} autoFocus />
+            <label style={paLabel}>Mode</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[['full', 'Full support'], ['read_only', 'Read-only']].map(([v, l]) => (
+                <button key={v} onClick={() => setImp((s: any) => ({ ...s, mode: v }))} style={{ flex: 1, padding: '9px', borderRadius: 9, border: `1px solid ${imp.mode === v ? '#ff7a6b' : 'var(--sa-border)'}`, background: imp.mode === v ? '#ff7a6b22' : 'transparent', color: imp.mode === v ? '#ff7a6b' : 'var(--sa-muted)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>{l}</button>
+              ))}
+            </div>
+            <label style={paLabel}>Auto-expire after</label>
+            <select value={imp.minutes} onChange={e => setImp((s: any) => ({ ...s, minutes: Number(e.target.value) }))} style={paInput}>
+              {[15, 30, 60, 120, 240].map(m => <option key={m} value={m}>{m} minutes</option>)}
+            </select>
+            {imp.err && <p style={{ fontSize: 12, color: '#ef4444', margin: '12px 0 0' }}>{imp.err}</p>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+              <button onClick={() => setImp(null)} disabled={imp.busy} style={{ padding: '9px 16px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={startImpersonation} disabled={imp.busy} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: '#ff7a6b', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{imp.busy ? 'Entering…' : 'Enter workspace →'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' as const }}>
         <SearchBar placeholder="Search companies..." value={search} onChange={setSearch} />
