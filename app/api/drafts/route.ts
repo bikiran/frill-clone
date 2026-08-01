@@ -87,10 +87,11 @@ export async function POST(req: NextRequest) {
               id: contentId,
               company_id: companyId,
               title: data.title || 'Untitled Form',
-              description: data.description || '',
-              fields: data.fields || [],
-              status: 'draft',
-              updated_at: new Date().toISOString()
+              // The forms table stores its steps in `questions` and has no
+              // form-level `description`/`status` columns — write only what the
+              // real form editor writes, so the draft actually saves.
+              questions: data.questions ?? data.fields ?? [],
+              is_published: false,
             },
             { onConflict: contentId ? 'id' : undefined }
           )
@@ -124,10 +125,10 @@ export async function POST(req: NextRequest) {
             {
               id: contentId,
               company_id: companyId,
-              title: data.title || 'Untitled Poll',
+              // The polls table's prompt column is `question`, not `title`.
+              question: data.title || 'Untitled Poll',
               options: data.options || [],
               status: 'draft',
-              updated_at: new Date().toISOString()
             },
             { onConflict: contentId ? 'id' : undefined }
           )
