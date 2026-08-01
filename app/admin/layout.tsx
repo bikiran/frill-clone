@@ -309,6 +309,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }
 
       supabase.auth.getSession().then(async ({ data }: any) => {
+      // admin.colvy.com is the platform super-admin domain — never a company
+      // admin. Any /admin/* URL there must go to the platform panel instead of
+      // falling through to a company lookup that resolves nothing and 404s.
+      if (typeof window !== 'undefined' && window.location.hostname === 'admin.colvy.com') {
+        window.location.replace('/platform-admin'); return
+      }
       const u = data?.session?.user
       if (!u) { router.push('/signin'); return }
       setUser(u)
@@ -326,6 +332,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // Load the company for display (could be any company if on a subdomain)
         if (subdomain) {
           const { data: co } = await (supabase as any).from('companies').select('*').eq('slug', subdomain).maybeSingle()
+          // A subdomain with no company (typo, deleted workspace) has nothing to
+          // administer — send the super admin to the platform panel rather than
+          // rendering a company-less admin that reads as a broken 404.
+          if (!co) { window.location.replace('/platform-admin'); return }
           setCompany(co)
         } else {
           const co = await getCompanyByOwner(u.id)
