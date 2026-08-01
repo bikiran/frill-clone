@@ -7411,19 +7411,35 @@ export default function InboxPage() {
                   </div>
                 )}
 
-                {/* Shared Media — everything image/video shared in this conversation */}
+                {/* Shared media & files — chat attachments PLUS anything that
+                    arrived on an email in this thread (images shown as thumbs,
+                    other files as document tiles). */}
                 {(() => {
+                  // Chat image/video keeps the lightbox gallery (indices must
+                  // match the thread's gallery source, so this stays separate).
                   const media: any[] = []
                   messages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
-                    { const isImg = a.kind === 'image' || String(a.type||'').startsWith('image'); const isVid = a.kind === 'video' || String(a.type||'').startsWith('video'); if ((isImg || isVid) && a.url) media.push({ ...a, kind: isVid ? 'video' : 'image' }) }
+                    const isImg = a.kind === 'image' || String(a.type||'').startsWith('image'); const isVid = a.kind === 'video' || String(a.type||'').startsWith('video'); if ((isImg || isVid) && a.url) media.push({ ...a, kind: isVid ? 'video' : 'image' })
                   }))
-                  if (media.length === 0) return null
+                  // Email attachments (Gmail streams via /api/email/attachment;
+                  // webhook emails carry a direct url).
+                  const emailAtts: any[] = []
+                  messages.forEach(m => (Array.isArray(m.email_attachments) ? m.email_attachments : []).forEach((a: any) => {
+                    const url = a.url || (m.gmail_message_id && a.attachmentId
+                      ? `/api/email/attachment?messageId=${encodeURIComponent(m.gmail_message_id)}&attachmentId=${encodeURIComponent(a.attachmentId)}&name=${encodeURIComponent(a.name || 'file')}&conversationId=${encodeURIComponent(m.conversation_id)}`
+                      : null)
+                    if (!url) return
+                    const mime = String(a.mime || a.type || '')
+                    emailAtts.push({ url, name: a.name || 'file', isImage: mime.startsWith('image'), isVideo: mime.startsWith('video') })
+                  }))
+                  const total = media.length + emailAtts.length
+                  if (total === 0) return null
                   return (
                     <div style={{ marginTop: 18 }}>
-                      <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Shared Media ({media.length})</h3>
+                      <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Shared media &amp; files ({total})</h3>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
                         {media.map((a, i) => (
-                          <div key={i}
+                          <div key={`c${i}`}
                             style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', background: 'var(--canvas)' }}>
                             <div onClick={() => setGalleryIndex(i)} style={{ position: 'absolute', inset: 0 }}>
                               {(a.kind === 'video' || String(a.type).startsWith('video'))
@@ -7438,6 +7454,21 @@ export default function InboxPage() {
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
                             </button>
                           </div>
+                        ))}
+                        {emailAtts.map((a, i) => (
+                          <a key={`e${i}`} href={a.url} target="_blank" rel="noopener noreferrer" title={a.name}
+                            style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', background: 'var(--canvas)', display: 'block', textDecoration: 'none' }}>
+                            {a.isImage ? (
+                              <img src={a.url} alt={a.name} loading="lazy" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : a.isVideo ? (
+                              <video src={a.url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, padding: 4, color: '#64748b' }}>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                <span style={{ fontSize: 9, fontWeight: 700, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{a.name}</span>
+                              </div>
+                            )}
+                          </a>
                         ))}
                       </div>
                     </div>
