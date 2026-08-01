@@ -60,6 +60,7 @@ const NAV = [
   { key: 'moderation', label: 'Moderation',       icon: 'moderation' },
   { section: 'Operations' },
   { key: 'imp',        label: 'Impersonation',    icon: 'audit' },
+  { key: 'calls',      label: 'Call Diagnostics', icon: 'chat' },
   { key: 'integrations', label: 'Integrations',   icon: 'system' },
   { section: 'Platform' },
   { key: 'billing',    label: 'Billing',          icon: 'billing' },
@@ -500,6 +501,220 @@ function IntegrationsPage() {
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+// Operations · Call Diagnostics — every voice call across the platform, with a
+// per-call detail drawer (status, hangup cause, recording, transcript, sentiment,
+// AI to-dos). Real data only, from the `calls` table (COLVY_V115_TELNYX + ALTERs).
+function CallDetail({ call, coName, onClose }: { call: any; coName: string; onClose: () => void }) {
+  const dur = (s: number) => {
+    if (!s && s !== 0) return '—'
+    const m = Math.floor(s / 60), r = s % 60
+    return m > 0 ? `${m}m ${r}s` : `${r}s`
+  }
+  const statusColor: Record<string, string> = {
+    completed: '#10b981', answered: '#10b981', ringing: '#f59e0b', initiated: '#6366f1',
+    busy: '#f59e0b', failed: '#ef4444', 'no-answer': '#ef4444',
+  }
+  const sc = statusColor[String(call.status)] || '#6b7280'
+  const sentColor = (v: string) => v === 'positive' ? '#10b981' : v === 'negative' ? '#ef4444' : '#6b7280'
+  const segs: any[] = Array.isArray(call.transcript_segments) ? call.transcript_segments : []
+  const todos: any[] = Array.isArray(call.ai_todos) ? call.ai_todos : []
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 560, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: call.direction === 'inbound' ? '#6366f1' : '#0891b2', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{call.direction === 'inbound' ? '↙' : '↗'}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{call.direction === 'inbound' ? 'Inbound call' : 'Outbound call'}{call.is_voicemail ? ' · Voicemail' : ''}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{coName} · {call.started_at ? new Date(call.started_at).toLocaleString() : '—'}</p>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: sc, padding: '3px 10px', borderRadius: 999, background: sc + '22' }}>{call.status || '—'}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          <Row k="Direction" v={call.direction === 'inbound' ? 'Inbound' : 'Outbound'} />
+          <Row k="From" v={call.from_number} />
+          <Row k="To" v={call.to_number} />
+          <Row k="Caller" v={call.caller_name || call.contact_name} />
+          <Row k="Status" v={call.status} />
+          <Row k="Hangup cause" v={call.cause} />
+          <Row k="Duration" v={dur(call.duration_seconds)} />
+          <Row k="Answered by" v={call.answered_by} />
+          <Row k="Started" v={call.started_at ? new Date(call.started_at).toLocaleString() : '—'} />
+          <Row k="Ended" v={call.ended_at ? new Date(call.ended_at).toLocaleString() : '—'} />
+          <Row k="Voicemail" v={call.is_voicemail ? 'Yes' : 'No'} />
+          {call.sentiment && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+              <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Sentiment</span>
+              <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: sentColor(call.sentiment) + '22', color: sentColor(call.sentiment) }}>{call.sentiment}</span>
+            </div>
+          )}
+
+          {call.recording_url ? (
+            <div style={{ marginTop: 18 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Recording{call.recording_duration ? ` · ${dur(call.recording_duration)}` : ''}</p>
+              <audio controls src={call.recording_url} style={{ width: '100%' }} />
+            </div>
+          ) : call.recording_error ? (
+            <p style={{ marginTop: 18, fontSize: 12, color: '#f59e0b' }}>Recording unavailable: {call.recording_error}</p>
+          ) : null}
+
+          {todos.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>AI follow-ups</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {todos.map((t, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 9, border: '1px solid var(--sa-border)' }}>
+                    <span style={{ color: '#6366f1', fontSize: 13 }}>›</span>
+                    <span style={{ fontSize: 12.5, color: 'var(--sa-text)', lineHeight: 1.4 }}>{typeof t === 'string' ? t : (t.text || t.task || JSON.stringify(t))}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {segs.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Transcript</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {segs.map((s, i) => (
+                  <div key={i} style={{ padding: '8px 11px', borderRadius: 9, background: 'var(--sa-card)', border: '1px solid var(--sa-border)' }}>
+                    <p style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--sa-muted)', margin: '0 0 3px' }}>{s.speaker || 'Speaker'}{s.start != null ? ` · ${dur(Math.floor(Number(s.start)))}` : ''}</p>
+                    <p style={{ fontSize: 12.5, color: 'var(--sa-text)', margin: 0, lineHeight: 1.5 }}>{s.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CallDiagnosticsPage() {
+  const [cos, setCos] = useState<Record<string, any>>({})
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  const [q, setQ] = useState('')
+  const [dir, setDir] = useState('all')
+  const [stat, setStat] = useState('all')
+  const [sel, setSel] = useState<any>(null)
+  useEffect(() => {
+    ;(async () => {
+      const [c, r] = await Promise.all([
+        (supabase as any).from('companies').select('id,name,slug'),
+        (supabase as any).from('calls').select('*').order('created_at', { ascending: false }).limit(300),
+      ])
+      const map: Record<string, any> = {}; (c.data || []).forEach((x: any) => { map[x.id] = x })
+      setCos(map)
+      if (r.error) { if (/does not exist|schema cache/i.test(r.error.message)) setMissing(true); setRows([]) }
+      else setRows(r.data || [])
+    })()
+  }, [])
+  const coName = (id: string) => cos[id]?.name || cos[id]?.slug || '—'
+  const all = rows || []
+  const answered = (s: string) => s === 'completed' || s === 'answered'
+  const list = all.filter(r => {
+    if (dir !== 'all' && r.direction !== dir) return false
+    if (stat === 'answered' && !answered(r.status)) return false
+    if (stat === 'missed' && answered(r.status)) return false
+    if (stat === 'voicemail' && !r.is_voicemail) return false
+    if (q.trim()) {
+      const hay = `${r.from_number} ${r.to_number} ${r.caller_name || ''} ${r.contact_name || ''} ${coName(r.company_id)}`.toLowerCase()
+      if (!hay.includes(q.trim().toLowerCase())) return false
+    }
+    return true
+  })
+  const answeredN = all.filter(r => answered(r.status)).length
+  const answerRate = all.length ? Math.round((answeredN / all.length) * 100) : 0
+  const durs = all.filter(r => answered(r.status) && r.duration_seconds).map(r => r.duration_seconds)
+  const avgDur = durs.length ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) : 0
+  const kpis = [
+    { label: 'Total calls', value: all.length, color: '#6366f1' },
+    { label: 'Answer rate', value: `${answerRate}%`, color: '#10b981' },
+    { label: 'Avg duration', value: avgDur ? `${Math.floor(avgDur / 60)}m ${avgDur % 60}s` : '—', color: '#0891b2' },
+    { label: 'Voicemails', value: all.filter(r => r.is_voicemail).length, color: '#f59e0b' },
+    { label: 'Failed / missed', value: all.filter(r => !answered(r.status) && !r.is_voicemail).length, color: '#ef4444' },
+  ]
+  const statusColor: Record<string, string> = {
+    completed: '#10b981', answered: '#10b981', ringing: '#f59e0b', initiated: '#6366f1',
+    busy: '#f59e0b', failed: '#ef4444', 'no-answer': '#ef4444',
+  }
+  const dur = (s: number) => {
+    if (!s && s !== 0) return '—'
+    const m = Math.floor(s / 60), r = s % 60
+    return m > 0 ? `${m}m ${r}s` : `${r}s`
+  }
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const chip = (active: boolean): React.CSSProperties => ({ padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? '#ff7a6b' : 'var(--sa-border)'}`, background: active ? '#ff7a6b22' : 'var(--sa-card)', color: active ? '#ff7a6b' : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' })
+  return (
+    <div>
+      <SectionHeader title="Call Diagnostics" sub="Every voice call across the platform — status, recordings and transcripts" />
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Voice calling isn't set up yet — run <b>COLVY_V115_TELNYX.sql</b> to start recording calls.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(170px,1fr))', gap: 12, marginBottom: 18 }}>
+            {kpis.map(k => (
+              <div key={k.label} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+                <p style={{ fontSize: 24, fontWeight: 800, color: k.color, margin: 0 }}>{rows === null ? '…' : k.value}</p>
+                <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{k.label}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <SearchBar placeholder="Search number, caller, business…" value={q} onChange={setQ} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['all', 'All'], ['inbound', 'Inbound'], ['outbound', 'Outbound']].map(([k, l]) => (
+                <button key={k} onClick={() => setDir(k)} style={chip(dir === k)}>{l}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['all', 'Any status'], ['answered', 'Answered'], ['missed', 'Missed'], ['voicemail', 'Voicemail']].map(([k, l]) => (
+                <button key={k} onClick={() => setStat(k)} style={chip(stat === k)}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+              <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Business', 'Direction', 'From', 'To', 'Status', 'Duration', 'Started', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows === null ? <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                : list.length === 0 ? <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{all.length === 0 ? 'No calls recorded yet.' : 'No calls match these filters.'}</td></tr>
+                : list.map((r, i) => {
+                  const sc = statusColor[String(r.status)] || '#6b7280'
+                  return (
+                    <tr key={r.id} onClick={() => setSel(r)} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none', cursor: 'pointer' }}>
+                      <td style={td}>{coName(r.company_id)}</td>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: r.direction === 'inbound' ? '#6366f1' : '#0891b2' }}>{r.direction === 'inbound' ? '↙ Inbound' : '↗ Outbound'}</span></td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.from_number || '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.to_number || '—'}</td>
+                      <td style={td}>
+                        <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: sc + '22', color: sc }}>{r.is_voicemail ? 'voicemail' : (r.status || '—')}</span>
+                      </td>
+                      <td style={td}>{dur(r.duration_seconds)}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.started_at ? new Date(r.started_at).toLocaleString() : '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', textAlign: 'right' }}>›</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {sel && <CallDetail call={sel} coName={coName(sel.company_id)} onClose={() => setSel(null)} />}
     </div>
   )
 }
@@ -1951,6 +2166,7 @@ export default function SuperAdmin() {
           {page === 'tickets'    && <TicketsPage />}
           {page === 'moderation' && <ModerationPage />}
           {page === 'imp'          && <ImpersonationSessionsPage />}
+          {page === 'calls'        && <CallDiagnosticsPage />}
           {page === 'integrations' && <IntegrationsPage />}
           {page === 'billing'    && <BillingPage />}
           {page === 'legal'      && <LegalAdminPage />}
