@@ -62,6 +62,7 @@ const NAV = [
   { key: 'imp',        label: 'Impersonation',    icon: 'audit' },
   { key: 'calls',      label: 'Call Diagnostics', icon: 'chat' },
   { key: 'webhooks',   label: 'Webhook Explorer', icon: 'system' },
+  { key: 'jobs',       label: 'Background Jobs',  icon: 'system' },
   { key: 'integrations', label: 'Integrations',   icon: 'system' },
   { section: 'Platform' },
   { key: 'billing',    label: 'Billing',          icon: 'billing' },
@@ -881,6 +882,175 @@ function WebhookExplorerPage() {
         </>
       )}
       {sel && <WebhookDetail ev={sel} coName={coName(sel.company_id)} onClose={() => setSel(null)} />}
+    </div>
+  )
+}
+
+// Operations · Background Jobs — health of the scheduled workers (email sync,
+// campaign sender) with cadence, duration, throughput and failures. Real data
+// from job_runs (COLVY_V218). The registry lists the jobs Colvy actually runs.
+const JOBS: { key: string; label: string; schedule: string; desc: string; color: string }[] = [
+  { key: 'email-sync', label: 'Email Sync', schedule: 'Every 5 min', desc: 'Pulls new mail into every connected Gmail mailbox', color: '#8b5cf6' },
+  { key: 'campaigns-process', label: 'Campaign Worker', schedule: 'Every 2 min', desc: 'Starts scheduled campaigns and drips the next sending batch', color: '#ff7a6b' },
+]
+const JOB_STATUS_COLOR: Record<string, string> = { success: '#10b981', idle: '#6b7280', error: '#ef4444', running: '#6366f1' }
+
+function JobRunDetail({ run, onClose }: { run: any; onClose: () => void }) {
+  const job = JOBS.find(j => j.key === run.job)
+  const sc = JOB_STATUS_COLOR[String(run.status)] || '#6b7280'
+  const pretty = (() => { try { return JSON.stringify(run.detail, null, 2) } catch { return String(run.detail) } })()
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 560, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: job?.color || '#6366f1', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>{(job?.label || run.job)[0]}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{job?.label || run.job}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{run.started_at ? new Date(run.started_at).toLocaleString() : '—'}</p>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: sc, padding: '3px 10px', borderRadius: 999, background: sc + '22' }}>{run.status || '—'}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          <Row k="Job" v={job?.label || run.job} />
+          <Row k="Status" v={run.status} />
+          <Row k="Started" v={run.started_at ? new Date(run.started_at).toLocaleString() : '—'} />
+          <Row k="Finished" v={run.finished_at ? new Date(run.finished_at).toLocaleString() : '—'} />
+          <Row k="Duration" v={run.duration_ms != null ? `${run.duration_ms} ms` : '—'} />
+          {run.error && <Row k="Error" v={run.error} />}
+          {run.detail != null && (
+            <div style={{ marginTop: 18 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Run summary</p>
+              <pre style={{ margin: 0, padding: 14, borderRadius: 10, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 11.5, lineHeight: 1.5, color: 'var(--sa-text)', overflowX: 'auto', whiteSpace: 'pre', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{pretty}</pre>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BackgroundJobsPage() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  const [jobFilter, setJobFilter] = useState('all')
+  const [sel, setSel] = useState<any>(null)
+  const load = async () => {
+    const { data, error } = await (supabase as any).from('job_runs').select('*').order('created_at', { ascending: false }).limit(300)
+    if (error) { if (/does not exist|schema cache/i.test(error.message)) setMissing(true); setRows([]) }
+    else setRows(data || [])
+  }
+  useEffect(() => { load() }, [])
+  const all = rows || []
+  const dayAgo = Date.now() - 86400000
+  const stat = (key: string) => {
+    const runs = all.filter(r => r.job === key)
+    const last = runs[0]
+    const last24 = runs.filter(r => r.created_at && new Date(r.created_at).getTime() > dayAgo)
+    const errored = last24.filter(r => r.status === 'error').length
+    const worked = last24.filter(r => r.status === 'success' || r.status === 'idle').length
+    const durs = runs.filter(r => r.duration_ms != null).slice(0, 30).map(r => r.duration_ms)
+    const avg = durs.length ? Math.round(durs.reduce((a: number, b: number) => a + b, 0) / durs.length) : null
+    const rate = last24.length ? Math.round((worked / last24.length) * 100) : null
+    return { last, runs24: last24.length, errored, avg, rate }
+  }
+  const list = all.filter(r => jobFilter === 'all' || r.job === jobFilter)
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const chip = (active: boolean): React.CSSProperties => ({ padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? '#ff7a6b' : 'var(--sa-border)'}`, background: active ? '#ff7a6b22' : 'var(--sa-card)', color: active ? '#ff7a6b' : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' })
+  const ago = (d: string) => {
+    if (!d) return 'never'
+    const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000)
+    if (m < 1) return 'just now'
+    if (m < 60) return `${m}m ago`
+    const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`
+    return `${Math.floor(h / 24)}d ago`
+  }
+  return (
+    <div>
+      <SectionHeader title="Background Jobs" sub="Health of the scheduled workers that keep Colvy running"
+        action={<button onClick={() => { setRows(null); load() }} style={paBtn()}>Refresh</button>} />
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V218_JOB_RUNS.sql</b> to start recording job runs. The workers keep running either way — this just gives them a visible heartbeat here.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14, marginBottom: 22 }}>
+            {JOBS.map(j => {
+              const s = stat(j.key)
+              const lastColor = s.last ? (JOB_STATUS_COLOR[String(s.last.status)] || '#6b7280') : '#6b7280'
+              const stale = s.last?.created_at ? (Date.now() - new Date(s.last.created_at).getTime()) > 3600000 : true
+              return (
+                <div key={j.key} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 18 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, background: j.color + '22', color: j.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>{j.label[0]}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 14, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{j.label}</p>
+                      <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}>{j.schedule}</p>
+                    </div>
+                    {rows !== null && (
+                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 999, background: (s.last && !stale ? '#10b981' : s.last ? '#f59e0b' : '#6b7280') + '22', color: s.last && !stale ? '#10b981' : s.last ? '#f59e0b' : '#6b7280' }}>{s.last ? (stale ? 'Stale' : 'Healthy') : 'No runs'}</span>
+                    )}
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 14px', lineHeight: 1.4 }}>{j.desc}</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
+                    <div>
+                      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 2px' }}>Last run</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: lastColor, margin: 0 }}>{rows === null ? '…' : s.last ? `${s.last.status} · ${ago(s.last.created_at)}` : 'never'}</p>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 2px' }}>Runs (24h)</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>{rows === null ? '…' : s.runs24}{s.errored ? <span style={{ color: '#ef4444' }}> · {s.errored} failed</span> : null}</p>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 2px' }}>Avg duration</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>{rows === null ? '…' : s.avg != null ? `${s.avg} ms` : '—'}</p>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 2px' }}>Success (24h)</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: s.rate != null && s.rate < 90 ? '#f59e0b' : '#10b981', margin: 0 }}>{rows === null ? '…' : s.rate != null ? `${s.rate}%` : '—'}</p>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+            <button onClick={() => setJobFilter('all')} style={chip(jobFilter === 'all')}>All jobs</button>
+            {JOBS.map(j => <button key={j.key} onClick={() => setJobFilter(j.key)} style={chip(jobFilter === j.key)}>{j.label}</button>)}
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+              <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Job', 'Status', 'Started', 'Duration', 'Summary', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows === null ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                : list.length === 0 ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>No job runs recorded yet.</td></tr>
+                : list.map((r, i) => {
+                  const job = JOBS.find(j => j.key === r.job)
+                  const sc = JOB_STATUS_COLOR[String(r.status)] || '#6b7280'
+                  const summary = r.detail ? Object.entries(r.detail).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}: ${v}`).join(' · ') : ''
+                  return (
+                    <tr key={r.id} onClick={() => setSel(r)} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none', cursor: 'pointer' }}>
+                      <td style={td}><span style={{ fontWeight: 600 }}>{job?.label || r.job}</span></td>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: sc + '22', color: sc }}>{r.status || '—'}</span></td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.started_at ? new Date(r.started_at).toLocaleString() : (r.created_at ? new Date(r.created_at).toLocaleString() : '—')}</td>
+                      <td style={td}>{r.duration_ms != null ? `${r.duration_ms} ms` : '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', maxWidth: 280, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.error || summary}>{r.error ? <span style={{ color: '#ef4444' }}>{r.error}</span> : (summary || '—')}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', textAlign: 'right' }}>›</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {sel && <JobRunDetail run={sel} onClose={() => setSel(null)} />}
     </div>
   )
 }
@@ -2334,6 +2504,7 @@ export default function SuperAdmin() {
           {page === 'imp'          && <ImpersonationSessionsPage />}
           {page === 'calls'        && <CallDiagnosticsPage />}
           {page === 'webhooks'     && <WebhookExplorerPage />}
+          {page === 'jobs'         && <BackgroundJobsPage />}
           {page === 'integrations' && <IntegrationsPage />}
           {page === 'billing'    && <BillingPage />}
           {page === 'legal'      && <LegalAdminPage />}
