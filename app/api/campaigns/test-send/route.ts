@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { renderVariables } from '@/lib/sms-segments'
+import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest) {
     if (!companyId || !campaignId || !to) {
       return NextResponse.json({ error: 'Missing companyId, campaignId or destination' }, { status: 400 })
     }
+    if (await isExternalSendBlocked(companyId)) { logBlockedSend(companyId, 'campaign_test'); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
 
     // One destination only. Reject anything that looks like a list.
     if (/[,;]/.test(String(to))) {

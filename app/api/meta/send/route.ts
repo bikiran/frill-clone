@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendMetaMessage, sendMetaAttachment } from '@/lib/meta'
+import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest) {
     const db = admin()
     const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    if (await isExternalSendBlocked(conv.company_id, db)) { logBlockedSend(conv.company_id, 'meta', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
     if (!['instagram', 'facebook'].includes(conv.channel)) {
       return NextResponse.json({ error: 'Not a Meta conversation' }, { status: 400 })
     }

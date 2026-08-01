@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendGmail, sanitizeEmailHtml } from '@/lib/gmail'
+import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
 
     const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    if (await isExternalSendBlocked(conv.company_id, db)) { logBlockedSend(conv.company_id, 'email', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
     if (conv.channel !== 'email') {
       return NextResponse.json({ error: 'This conversation is not an email thread' }, { status: 400 })
     }
