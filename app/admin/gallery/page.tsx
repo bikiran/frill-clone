@@ -6,11 +6,16 @@ import { supabase } from '@/lib/supabase'
 import { readCache, writeCache } from '@/lib/client-cache'
 import { useCompanyUser } from '../crm-settings/_shared'
 import MediaGallery from '@/components/MediaGallery'
+import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
 
 export default function GalleryPage() {
-  const { companyId, loading } = useCompanyUser()
+  const { companyId, user, loading } = useCompanyUser()
+  const userId: string | null = user?.id ?? null
+  const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Me'
+  // Team roster for @mentions in item notes.
+  const [team, setTeam] = useState<{ id: string; user_id: string; name: string; email?: string }[]>([])
   const [folders, setFolders] = useState<any[]>([])
   const [items, setItems] = useState<any[]>([])
   const [activeFolder, setActiveFolder] = useState<string | null>(null) // null = all
@@ -54,6 +59,27 @@ export default function GalleryPage() {
   }, [companyId])
 
   useEffect(() => { loadCategories() }, [loadCategories])
+
+  // Load the team roster (owner + members) so item notes can @mention people.
+  useEffect(() => {
+    if (!companyId) return
+    let active = true
+    ;(async () => {
+      try {
+        const members: { id: string; user_id: string; name: string; email?: string }[] = []
+        const { data: co } = await (supabase as any).from('companies').select('owner_id, name').eq('id', companyId).maybeSingle()
+        if (co?.owner_id) members.push({ id: co.owner_id, user_id: co.owner_id, name: co.name ? `${co.name} (Owner)` : 'Owner' })
+        const { data: tm } = await (supabase as any).from('team_members').select('*').eq('company_id', companyId)
+        for (const m of (tm || [])) {
+          const uid = m.user_id || m.id
+          if (members.some(x => x.user_id === uid)) continue
+          members.push({ id: m.id, user_id: uid, name: m.name || m.display_name || (m.email ? m.email.split('@')[0] : 'Team member'), email: m.email })
+        }
+        if (active) setTeam(members)
+      } catch { /* notes still work without the roster */ }
+    })()
+    return () => { active = false }
+  }, [companyId])
 
   const catApi = async (body: any) => {
     const res = await fetch('/api/media/categories', {
@@ -444,6 +470,8 @@ export default function GalleryPage() {
           .gal-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
           /* Primary actions full width, secondary ones wrap. */
           .gal-toolbar-btns { width: 100%; }
+          /* Details slideout takes the full width on a phone. */
+          .gal-details-panel { width: 100% !important; max-width: 100% !important; }
         }
       `}</style>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
@@ -738,6 +766,10 @@ export default function GalleryPage() {
           folders={folders}
           categories={categories}
           itemCats={itemCats}
+          companyId={companyId}
+          userId={userId}
+          me={me}
+          team={team}
           onClose={() => setDetailsOpen(false)}
         />
       )}
@@ -926,12 +958,78 @@ function ConfirmDialog({ title, message, confirmLabel = 'Confirm', danger, onCon
 // A right-hand panel showing everything we know (and can measure) about one
 // media item. Dimensions, duration and file size are read live in the browser,
 // since they aren't stored on the row.
-function MediaDetailsPanel({ item, folders, categories, itemCats, onClose }: {
-  item: any; folders: any[]; categories: any[]; itemCats: Record<string, string[]>; onClose: () => void
+function MediaDetailsPanel({ item, folders, categories, itemCats, companyId, userId, me, team, onClose }: {
+  item: any; folders: any[]; categories: any[]; itemCats: Record<string, string[]>
+  companyId: string | null; userId: string | null; me: string; team: { id: string; user_id: string; name: string; email?: string }[]
+  onClose: () => void
 }) {
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
   const [duration, setDuration] = useState<number | null>(null)
   const [sizeBytes, setSizeBytes] = useState<number | null>(null)
+
+  // ── Notes thread ─────────────────────────────────────────────────────────
+  const [notes, setNotes] = useState<any[]>([])
+  const [notesLoading, setNotesLoading] = useState(false)
+  const [noteText, setNoteText] = useState('')
+  const [noteMentions, setNoteMentions] = useState<any[]>([])
+  const [posting, setPosting] = useState(false)
+  const [notesMissing, setNotesMissing] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setNotes([]); setNotesMissing(false)
+    if (!item?.id) return
+    setNotesLoading(true)
+    ;(async () => {
+      const { data, error } = await (supabase as any)
+        .from('media_item_notes').select('*')
+        .eq('item_id', item.id).order('created_at', { ascending: true })
+      if (!active) return
+      if (error) { if (/does not exist|schema cache/i.test(error.message)) setNotesMissing(true) }
+      else setNotes(data || [])
+      setNotesLoading(false)
+    })()
+    return () => { active = false }
+  }, [item?.id])
+
+  const postNote = async () => {
+    const body = noteText.trim()
+    if (!body || posting) return
+    setPosting(true)
+    const mentioned = resolveMentions(body, team as any)
+    const row = {
+      item_id: item.id, company_id: companyId, body,
+      author_id: userId, author_name: me,
+      mentions: mentioned.map((m: any) => ({ id: m.id, name: m.name })),
+    }
+    const { data, error } = await (supabase as any).from('media_item_notes').insert(row).select().maybeSingle()
+    if (error) {
+      if (/does not exist|schema cache/i.test(error.message)) setNotesMissing(true)
+      else alert(`Could not save the note: ${error.message}`)
+      setPosting(false)
+      return
+    }
+    if (data) setNotes(n => [...n, data])
+    setNoteText(''); setNoteMentions([])
+    // Reach @mentioned teammates via the shared notifier (bell/email/SMS).
+    const ids = Array.from(new Set(
+      mentioned.map((m: any) => team.find(t => t.id === m.id || t.user_id === m.id || t.name === m.name)?.user_id)
+        .filter((uid: any) => uid && uid !== userId)
+    ))
+    if (ids.length && companyId) {
+      try {
+        await fetch('/api/notify/members', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId, userIds: ids, type: 'media_note',
+            title: `${me} mentioned you on a media item`,
+            body: body.slice(0, 200), link: '/admin/gallery',
+          }),
+        })
+      } catch { /* the note is saved regardless */ }
+    }
+    setPosting(false)
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -990,6 +1088,25 @@ function MediaDetailsPanel({ item, folders, categories, itemCats, onClose }: {
   const folder = folders.find((f: any) => f.id === item.folder_id)
   const cats = (itemCats[item.id] || []).map(cid => categories.find((c: any) => c.id === cid)).filter(Boolean)
 
+  const fmtWhen = (d?: string) => d ? new Date(d).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''
+  // Highlight @mentions of known teammates in a note body.
+  const renderNoteBody = (text: string): React.ReactNode => {
+    const names = team.map(t => t.name).filter(Boolean)
+    if (!text || !names.length) return text
+    const escaped = names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).sort((a, b) => b.length - a.length)
+    const re = new RegExp(`@(${escaped.join('|')})`, 'g')
+    const out: React.ReactNode[] = []
+    let last = 0, m: RegExpExecArray | null
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) out.push(text.slice(last, m.index))
+      out.push(<span key={m.index} style={{ color: 'var(--coral)', fontWeight: 700 }}>{m[0]}</span>)
+      last = m.index + m[0].length
+    }
+    if (last < text.length) out.push(text.slice(last))
+    return out
+  }
+  const initial = (n?: string) => (n || '?').trim().charAt(0).toUpperCase()
+
   const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
       <span style={{ fontSize: 12.5, color: 'var(--slate)', flexShrink: 0 }}>{label}</span>
@@ -1000,8 +1117,8 @@ function MediaDetailsPanel({ item, folders, categories, itemCats, onClose }: {
   return (
     <div onClick={onClose}
       style={{ position: 'fixed', inset: 0, zIndex: 100060, background: 'rgba(0,0,0,0.35)', display: 'flex', justifyContent: 'flex-end', animation: 'gal-fade 0.14s ease' }}>
-      <div onClick={e => e.stopPropagation()}
-        style={{ width: 360, maxWidth: '92vw', height: '100%', background: '#fff', boxShadow: '-12px 0 40px rgba(0,0,0,0.22)', display: 'flex', flexDirection: 'column', animation: 'gal-slide-in 0.22s cubic-bezier(0.22,0.61,0.36,1)' }}>
+      <div onClick={e => e.stopPropagation()} className="gal-details-panel"
+        style={{ width: 380, maxWidth: '92vw', height: '100%', background: '#fff', boxShadow: '-12px 0 40px rgba(0,0,0,0.22)', display: 'flex', flexDirection: 'column', animation: 'gal-slide-in 0.22s cubic-bezier(0.22,0.61,0.36,1)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>Details</h3>
           <button onClick={onClose} aria-label="Close details"
@@ -1047,6 +1164,70 @@ function MediaDetailsPanel({ item, folders, categories, itemCats, onClose }: {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             Open original
           </a>
+
+          {/* ── Notes ─────────────────────────────────────────────────── */}
+          <div style={{ marginTop: 22, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
+            <p style={{ margin: '0 0 10px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)' }}>
+              Notes {notes.length > 0 && <span style={{ color: 'var(--coral)' }}>· {notes.length}</span>}
+            </p>
+
+            {notesMissing ? (
+              <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--slate)', lineHeight: 1.5, background: 'var(--peach)', border: '1px solid var(--coral)', borderRadius: 9, padding: '9px 11px' }}>
+                Notes need a quick database update — run <b>COLVY_V214_MEDIA_NOTES.sql</b> in Supabase, then reload.
+              </p>
+            ) : (
+              <>
+                {notesLoading ? (
+                  <p style={{ fontSize: 12, color: 'var(--slate)', margin: '0 0 12px' }}>Loading…</p>
+                ) : notes.length === 0 ? (
+                  <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '0 0 12px', lineHeight: 1.5 }}>
+                    No notes yet. Leave context for your team or <b>@mention</b> someone.
+                  </p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }}>
+                    {notes.map((n: any) => (
+                      <div key={n.id} style={{ display: 'flex', gap: 9 }}>
+                        <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                          {initial(n.author_name)}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>{n.author_name || 'Someone'}</span>
+                            <span style={{ fontSize: 11, color: 'var(--slate)' }}>{fmtWhen(n.created_at)}</span>
+                          </div>
+                          <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--ink)', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            {renderNoteBody(n.body)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Composer */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <MentionInput
+                    value={noteText}
+                    onChange={(v, mentions) => { setNoteText(v); setNoteMentions(mentions) }}
+                    team={team as any}
+                    multiline
+                    rows={2}
+                    placeholder="Add a note… use @ to mention a teammate"
+                    onSubmit={postNote}
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 11, color: 'var(--slate)' }}>
+                      {noteMentions.length > 0 ? `Notifying ${noteMentions.map((m: any) => m.name).join(', ')}` : 'Type @ to mention a teammate'}
+                    </span>
+                    <button onClick={postNote} disabled={posting || !noteText.trim()}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, border: 'none', background: noteText.trim() ? 'var(--coral)' : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: noteText.trim() ? 'pointer' : 'default' }}>
+                      {posting ? 'Adding…' : 'Add note'}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

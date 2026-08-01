@@ -50,6 +50,10 @@ export default function MediaGallery({ items, index, onClose, onIndex, onViewDet
         .mg-detail-btn:hover { background: rgba(255,255,255,0.28) !important; }
         .mg-detail-btn svg { transition: transform .2s ease; }
         .mg-detail-btn:hover svg { transform: rotate(8deg); }
+        @media (max-width: 480px) {
+          .mg-detail-label { display: none; }
+          .mg-detail-btn { padding: 0 11px !important; }
+        }
       `}</style>
       {/* Close */}
       <button className="mg-icon-btn" onClick={(e) => { e.stopPropagation(); onClose() }} aria-label="Close"
@@ -62,7 +66,7 @@ export default function MediaGallery({ items, index, onClose, onIndex, onViewDet
         <button className="mg-detail-btn" onClick={(e) => { e.stopPropagation(); onViewDetails(index) }}
           style={{ position: 'absolute', top: 18, right: 70, height: 38, padding: '0 15px', borderRadius: 19, background: 'rgba(255,255,255,0.14)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7, backdropFilter: 'blur(4px)', zIndex: 2 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          View details
+          <span className="mg-detail-label">View details</span>
         </button>
       )}
 
