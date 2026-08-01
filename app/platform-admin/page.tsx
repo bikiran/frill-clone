@@ -30,6 +30,30 @@ async function enterWorkspace(slug: string, next: string = '/admin') {
   window.open(`https://${slug}.colvy.com${next}`, '_blank')
 }
 
+// Record an impersonation session (audit trail) and THEN enter the workspace,
+// landing on /admin?imp=<id> so the banner shows. Used by both the full
+// "Enter workspace" flow and the quick "Login as" button, so every admin entry
+// is logged. Returns an error string the caller can surface.
+async function auditedEnterWorkspace(
+  co: { id?: string; slug: string; name?: string },
+  reason: string, mode: string = 'full', minutes: number = 60
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/platform-admin/impersonate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ action: 'start', companyId: co.id, slug: co.slug, name: co.name, reason, mode, minutes }),
+    })
+    const d = await res.json()
+    if (!res.ok) return { ok: false, error: d.error || 'Could not start session' }
+    await enterWorkspace(co.slug, `/admin?imp=${d.id}`)
+    return { ok: true }
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'Could not start session' }
+  }
+}
+
 // ── Icons ──────────────────────────────────────────────────────────────────
 const I = {
   overview:   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>,
@@ -1771,19 +1795,9 @@ function CompaniesPage() {
   const startImpersonation = async () => {
     if (!imp?.reason?.trim()) { setImp((s: any) => ({ ...s, err: 'A reason is required.' })); return }
     setImp((s: any) => ({ ...s, busy: true, err: '' }))
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/platform-admin/impersonate', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ action: 'start', companyId: imp.co.id, slug: imp.co.slug, name: imp.co.name, reason: imp.reason, mode: imp.mode, minutes: imp.minutes }),
-      })
-      const d = await res.json()
-      if (!res.ok) { setImp((s: any) => ({ ...s, busy: false, err: d.error || 'Could not start session' })); return }
-      // Enter carrying the super-admin's own session, landing on /admin?imp=<id>
-      // so the impersonation banner shows.
-      await enterWorkspace(imp.co.slug, `/admin?imp=${d.id}`)
-      setImp(null)
-    } catch (e: any) { setImp((s: any) => ({ ...s, busy: false, err: e.message })) }
+    const r = await auditedEnterWorkspace(imp.co, imp.reason, imp.mode, imp.minutes)
+    if (!r.ok) { setImp((s: any) => ({ ...s, busy: false, err: r.error })); return }
+    setImp(null)
   }
 
   const action = async (type: string, co: any) => {
@@ -2024,7 +2038,13 @@ function UsersPage() {
                 <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : 'never'}</td>
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    {u.companies[0]?.slug && <button onClick={() => enterWorkspace(u.companies[0].slug)} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: 'pointer', fontSize: 12 }}>Login as</button>}
+                    {u.companies[0]?.slug && <button onClick={async () => {
+                      const co = u.companies[0]
+                      const reason = window.prompt(`Reason for entering ${co.name || co.slug} as an admin — recorded in the audit log:`, 'Support / troubleshooting')
+                      if (!reason || !reason.trim()) return
+                      const r = await auditedEnterWorkspace({ id: co.id, slug: co.slug, name: co.name }, reason.trim())
+                      if (!r.ok) alert(r.error || 'Could not start session')
+                    }} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: 'pointer', fontSize: 12 }}>Login as</button>}
                   </div>
                 </td>
               </tr>
