@@ -188,6 +188,194 @@ function SearchBar({ placeholder, value, onChange }: { placeholder: string; valu
 // PAGE COMPONENTS
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Business detail — a deep-dive drawer for one company with tabs. Uses only
+// real data (company row, team_members, company_admin_notes).
+function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => void; onAction: (type: string, co: any) => void }) {
+  const [tab, setTab] = useState('overview')
+  const [users, setUsers] = useState<any[] | null>(null)
+  const [notes, setNotes] = useState<any[] | null>(null)
+  const [noteBody, setNoteBody] = useState('')
+  const [noteCat, setNoteCat] = useState('general')
+  const [savingNote, setSavingNote] = useState(false)
+  const [notesMissing, setNotesMissing] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      const { data } = await (supabase as any).from('team_members').select('*').eq('company_id', co.id)
+      if (active) setUsers(data || [])
+    })()
+    return () => { active = false }
+  }, [co.id])
+
+  const loadNotes = async () => {
+    const { data, error } = await (supabase as any).from('company_admin_notes').select('*')
+      .eq('company_id', co.id).order('pinned', { ascending: false }).order('created_at', { ascending: false })
+    if (error) { if (/does not exist|schema cache/i.test(error.message)) setNotesMissing(true); setNotes([]) }
+    else { setNotesMissing(false); setNotes(data || []) }
+  }
+  useEffect(() => { loadNotes() }, [co.id])
+
+  const addNote = async () => {
+    if (!noteBody.trim() || savingNote) return
+    setSavingNote(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const { error } = await (supabase as any).from('company_admin_notes').insert({
+      company_id: co.id, author_id: session?.user?.id || null, author_email: session?.user?.email || null,
+      body: noteBody.trim(), category: noteCat,
+    })
+    setSavingNote(false)
+    if (error) { if (/does not exist|schema cache/i.test(error.message)) setNotesMissing(true); return }
+    setNoteBody(''); loadNotes()
+  }
+  const togglePin = async (n: any) => { await (supabase as any).from('company_admin_notes').update({ pinned: !n.pinned }).eq('id', n.id); loadNotes() }
+  const delNote = async (n: any) => { await (supabase as any).from('company_admin_notes').delete().eq('id', n.id); loadNotes() }
+
+  // Simple account-health heuristic from real signals.
+  const ageDays = co.created_at ? (Date.now() - new Date(co.created_at).getTime()) / 86400000 : 0
+  const plan = String(co.plan || '').toLowerCase()
+  let health = 100
+  if (plan === 'suspended') health -= 60
+  if (plan === 'trial' && ageDays > 21) health -= 25
+  if ((users?.length || 0) === 0) health -= 20
+  if (plan === 'free' && ageDays > 45) health -= 10
+  health = Math.max(0, Math.min(100, health))
+  const healthColor = health >= 75 ? '#10b981' : health >= 45 ? '#f59e0b' : '#ef4444'
+
+  const catColor: Record<string, string> = { general: '#6366f1', billing: '#10b981', support: '#f59e0b', technical: '#0891b2', risk: '#ef4444' }
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  const TABS = [['overview', 'Overview'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 560, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* header */}
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: co.accent_color || '#ff7a6b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>{co.name?.[0]?.toUpperCase()}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{co.name}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{co.slug}.colvy.com · {plan || 'free'}</p>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: healthColor, padding: '3px 10px', borderRadius: 999, background: healthColor + '22' }}>{health}/100</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        {/* action bar */}
+        <div style={{ display: 'flex', gap: 8, padding: '12px 20px', borderBottom: '1px solid var(--sa-border)', flexWrap: 'wrap' }}>
+          <button onClick={() => onAction('impersonate', co)} style={paBtn('#ff7a6b', true)}>Enter workspace</button>
+          <a href={`https://${co.slug}.colvy.com`} target="_blank" rel="noopener" style={{ ...paBtn(), textDecoration: 'none' }}>View public</a>
+          {plan === 'suspended'
+            ? <button onClick={() => { onAction('reactivate', co); onClose() }} style={paBtn()}>Reactivate</button>
+            : <button onClick={() => { onAction('suspend', co); onClose() }} style={paBtn('#ef4444')}>Suspend</button>}
+        </div>
+        {/* tabs */}
+        <div style={{ display: 'flex', gap: 4, padding: '10px 16px 0', borderBottom: '1px solid var(--sa-border)' }}>
+          {TABS.map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ padding: '8px 12px', borderRadius: '8px 8px 0 0', border: 'none', borderBottom: tab === k ? '2px solid #ff7a6b' : '2px solid transparent', background: 'transparent', color: tab === k ? 'var(--sa-text)' : 'var(--sa-muted)', fontSize: 13, fontWeight: tab === k ? 700 : 500, cursor: 'pointer' }}>{l}</button>
+          ))}
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          {tab === 'overview' && (
+            <div>
+              <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: healthColor + '18', border: `1px solid ${healthColor}44` }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: healthColor }}>Account health {health}/100</span>
+                <span style={{ fontSize: 11.5, color: 'var(--sa-muted)', marginLeft: 8 }}>{plan === 'suspended' ? 'Suspended' : (users?.length || 0) === 0 ? 'No team members yet' : 'Looking healthy'}</span>
+              </div>
+              <Row k="Business name" v={co.name} />
+              <Row k="Slug" v={co.slug} />
+              <Row k="Plan" v={plan || 'free'} />
+              <Row k="Industry" v={co.industry} />
+              <Row k="Owner ID" v={co.owner_id} />
+              <Row k="Business email" v={co.business_email} />
+              <Row k="Business mobile" v={co.business_mobile} />
+              <Row k="Website" v={co.website} />
+              <Row k="Created" v={co.created_at ? new Date(co.created_at).toLocaleString() : '—'} />
+              <Row k="Team members" v={users?.length ?? '…'} />
+            </div>
+          )}
+
+          {tab === 'users' && (
+            users === null ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>Loading…</p>
+            : users.length === 0 ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>No team members.</p>
+            : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {users.map(u => (
+                  <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--sa-border)' }}>
+                    <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#6366f1', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{(u.email || '?')[0]?.toUpperCase()}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', margin: 0 }}>{u.email || '—'}</p>
+                      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: 0 }}>{u.role || 'member'} · {u.status || 'active'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+
+          {tab === 'notes' && (
+            <div>
+              {notesMissing ? (
+                <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', lineHeight: 1.5, padding: '10px 12px', borderRadius: 9, border: '1px solid #f59e0b55', background: '#f59e0b18' }}>Admin notes need a database update — run <b>COLVY_V216_ADMIN_NOTES.sql</b>, then reload.</p>
+              ) : (
+                <>
+                  <div style={{ marginBottom: 16 }}>
+                    <textarea value={noteBody} onChange={e => setNoteBody(e.target.value)} placeholder="Add an internal note about this business…" rows={3} style={{ ...paInput, resize: 'vertical' }} />
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                      <select value={noteCat} onChange={e => setNoteCat(e.target.value)} style={{ ...paInput, width: 'auto', padding: '7px 10px' }}>
+                        {['general', 'billing', 'support', 'technical', 'risk'].map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <button onClick={addNote} disabled={savingNote || !noteBody.trim()} style={{ ...paBtn('#ff7a6b', true), marginLeft: 'auto' }}>{savingNote ? 'Saving…' : 'Add note'}</button>
+                    </div>
+                  </div>
+                  {notes === null ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>Loading…</p>
+                  : notes.length === 0 ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>No notes yet.</p>
+                  : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {notes.map(n => (
+                        <div key={n.id} style={{ padding: '11px 13px', borderRadius: 10, border: `1px solid ${n.pinned ? '#ff7a6b55' : 'var(--sa-border)'}`, background: n.pinned ? '#ff7a6b12' : 'transparent' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                            <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '1px 7px', borderRadius: 5, background: (catColor[n.category] || '#6366f1') + '22', color: catColor[n.category] || '#6366f1' }}>{n.category || 'general'}</span>
+                            <span style={{ fontSize: 11, color: 'var(--sa-muted)' }}>{n.author_email || 'admin'} · {new Date(n.created_at).toLocaleDateString()}</span>
+                            <button onClick={() => togglePin(n)} title={n.pinned ? 'Unpin' : 'Pin'} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: n.pinned ? '#ff7a6b' : 'var(--sa-muted)', fontSize: 13 }}>📌</button>
+                            <button onClick={() => delNote(n)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 13 }}>🗑</button>
+                          </div>
+                          <p style={{ fontSize: 13, color: 'var(--sa-text)', margin: 0, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{n.body}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {tab === 'danger' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ padding: 14, borderRadius: 12, border: '1px solid #ef444455', background: '#ef444410' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 4px' }}>Suspend business</p>
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Sets the plan to suspended. The workspace stays but is flagged.</p>
+                {plan === 'suspended'
+                  ? <button onClick={() => { onAction('reactivate', co); onClose() }} style={paBtn('#10b981', true)}>Reactivate</button>
+                  : <button onClick={() => { onAction('suspend', co); onClose() }} style={paBtn('#ef4444', true)}>Suspend business</button>}
+              </div>
+              <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 4px' }}>Seed sample data</p>
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Clears and re-seeds example ideas for this workspace.</p>
+                <button onClick={() => { onAction('seed', co); onClose() }} style={paBtn()}>Seed sample data</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Attention Required — surfaces businesses that need a look right now, computed
 // purely from companies.plan + created_at (no invented columns, no backend).
 function AttentionPanel() {
@@ -408,6 +596,9 @@ function OverviewPage({ data }: { data: any }) {
   )
 }
 
+function paBtn(color = 'var(--sa-muted)', filled = false): React.CSSProperties {
+  return { padding: '7px 13px', borderRadius: 9, border: filled ? 'none' : '1px solid var(--sa-border)', background: filled ? color : 'transparent', color: filled ? '#fff' : color, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-block' }
+}
 const paLabel: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--sa-muted)', marginTop: 14, marginBottom: 5 }
 const paInput: React.CSSProperties = { width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 13.5, boxSizing: 'border-box', fontFamily: 'inherit' }
 function paQuick(color: string): React.CSSProperties {
@@ -473,6 +664,7 @@ function CompaniesPage() {
   }, [])
 
   const [imp, setImp] = useState<any>(null)
+  const [detailCo, setDetailCo] = useState<any>(null)
   const startImpersonation = async () => {
     if (!imp?.reason?.trim()) { setImp((s: any) => ({ ...s, err: 'A reason is required.' })); return }
     setImp((s: any) => ({ ...s, busy: true, err: '' }))
@@ -553,6 +745,8 @@ function CompaniesPage() {
         </div>
       )}
 
+      {detailCo && <BusinessDetail co={detailCo} onClose={() => setDetailCo(null)} onAction={action} />}
+
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' as const }}>
         <SearchBar placeholder="Search companies..." value={search} onChange={setSearch} />
         <div style={{ display: 'flex', gap: 6 }}>
@@ -589,7 +783,9 @@ function CompaniesPage() {
                       {co.name?.[0]?.toUpperCase()}
                     </div>
                     <div>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--sa-text)' }}>{co.name}</p>
+                      <p onClick={() => setDetailCo(co)} title="Open business detail" style={{ fontSize: 13, fontWeight: 600, color: 'var(--sa-text)', cursor: 'pointer' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = '#ff7a6b')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--sa-text)')}>{co.name}</p>
                       <p style={{ fontSize: 11, color: 'var(--sa-muted)' }}>{co.industry || 'No industry'}</p>
                     </div>
                   </div>
