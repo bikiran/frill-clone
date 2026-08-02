@@ -60,6 +60,22 @@ function periodRange(ref: Date, period: 'day' | 'week' | 'month'): { start: numb
 }
 type ViewMode = 'list' | 'board' | 'timeline' | 'calendar'
 
+const isDoneT = (t: any) => (t.status ? t.status === 'done' : !!t.done)
+// Order tasks within a day / list: completed always last, then the manual
+// drag order (sort_order), then due date, then creation. Used everywhere so a
+// dragged order and "done to the bottom" hold in every view.
+function orderCmp(a: any, b: any): number {
+  const dr = (isDoneT(a) ? 1 : 0) - (isDoneT(b) ? 1 : 0)
+  if (dr) return dr
+  const sa = a.sort_order == null ? Infinity : a.sort_order
+  const sb = b.sort_order == null ? Infinity : b.sort_order
+  if (sa !== sb) return sa - sb
+  const ta = parseTs(a.due_date)?.getTime() ?? Infinity
+  const tb = parseTs(b.due_date)?.getTime() ?? Infinity
+  if (ta !== tb) return ta - tb
+  return (parseTs(a.created_at)?.getTime() ?? 0) - (parseTs(b.created_at)?.getTime() ?? 0)
+}
+
 const PRIORITY = {
   high: { label: 'High', color: '#dc2626', bg: '#fef2f2' },
   normal: { label: 'Normal', color: '#6b7280', bg: '#f9fafb' },
@@ -273,6 +289,7 @@ export default function TasksPage() {
         location_id: e.location_id || null,
         location_ids: Array.isArray(e.location_ids) ? e.location_ids : (e.location_id ? [e.location_id] : []),
         attachments: Array.isArray(e.attachments) ? e.attachments : [],
+        sort_order: e.sort_order ?? null,
         // Calendar statuses don't map 1:1 onto a task board, so translate them.
         status: e.status === 'completed' ? 'done'
           : e.status === 'in_progress' ? 'in_progress'
@@ -440,8 +457,14 @@ export default function TasksPage() {
       return true
     })
     list = [...list].sort((a, b) => {
+      // Completed tasks always sink to the bottom, whatever the sort.
+      const dr = (isDoneT(a) ? 1 : 0) - (isDoneT(b) ? 1 : 0)
+      if (dr) return dr
       if (sortBy === 'priority') { const rank = (p: string) => ({ high: 0, normal: 1, low: 2 } as any)[p || 'normal']; return rank(a.priority) - rank(b.priority) }
       if (sortBy === 'created') return (parseTs(b.created_at)?.getTime() || 0) - (parseTs(a.created_at)?.getTime() || 0)
+      const sa = a.sort_order == null ? Infinity : a.sort_order
+      const sb = b.sort_order == null ? Infinity : b.sort_order
+      if (sa !== sb) return sa - sb
       const da = parseTs(a.due_date)?.getTime() ?? Infinity
       const db_ = parseTs(b.due_date)?.getTime() ?? Infinity
       return da - db_
@@ -514,6 +537,7 @@ export default function TasksPage() {
           notify_customer: !!raw.notify_customer,
           customer_contact_id: raw.customer_contact_id ?? null,
           attachments: fields.attachments !== undefined ? fields.attachments : (raw.attachments ?? []),
+          sort_order: fields.sort_order !== undefined ? fields.sort_order : (raw.sort_order ?? null),
         }
         await fetch('/api/calendar', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -523,13 +547,22 @@ export default function TasksPage() {
         // Supabase returns { error } rather than throwing, so a failed write
         // used to pass silently — the change looked saved until the next
         // reload, when it vanished. Check it and say something.
-        const { error } = await (supabase as any).from('conversation_tasks').update(fields).eq('id', id)
+        let payload = { ...fields }
+        let { error } = await (supabase as any).from('conversation_tasks').update(payload).eq('id', id)
+        // Tolerate a column the DB hasn't had migrated yet (e.g. sort_order
+        // before COLVY_V228): drop it and retry so the rest still saves,
+        // rather than nagging on every drag.
+        for (let attempt = 0; error && attempt < 3; attempt++) {
+          const m = /Could not find the '([^']+)'|column "?([a-z_]+)"? .* does not exist/i.exec(error.message || '')
+          const bad = m?.[1] || m?.[2]
+          if (!bad || !(bad in payload)) break
+          delete (payload as any)[bad]
+          if (!Object.keys(payload).length) { error = null as any; break }
+          ;({ error } = await (supabase as any).from('conversation_tasks').update(payload).eq('id', id))
+        }
         if (error) {
           console.error('[task update] failed', error, fields)
-          const missing = /column .* does not exist|schema cache/i.test(error.message)
-          alert(missing
-            ? `Could not save: your database is missing a column this needs (${error.message}). Run the COLVY_V203_TASK_BOARD.sql migration.`
-            : `Could not save: ${error.message}`)
+          alert(`Could not save: ${error.message}`)
           if (companyId) loadTasks(companyId)
         }
       }
@@ -541,6 +574,18 @@ export default function TasksPage() {
   }
   const setStatus = (t: any, status: string) =>
     patchTask(t.id, { status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null })
+
+  // Drag reorder from the Timeline: `orderedIds` is the target day's new order.
+  // Each gets a fresh sort_order; the moved task also picks up the target date
+  // (so cross-day drags reschedule). Persists per task via patchTask, which
+  // routes native tasks and calendar-sourced rows to the right place.
+  const reorderDay = (movedId: string, targetYmd: string, orderedIds: string[]) => {
+    orderedIds.forEach((id, i) => {
+      const fields: any = { sort_order: i * 1000 }
+      if (id === movedId) fields.due_date = targetYmd ? dueFromInput(targetYmd) : null
+      patchTask(id, fields)
+    })
+  }
 
   // Bulk actions operate on real conversation_tasks only — calendar-sourced rows
   // (id "cal:…") live elsewhere and are silently skipped.
@@ -863,7 +908,8 @@ export default function TasksPage() {
             <Timeline tasks={calendarTasks} convs={convs} statusOf={statusOf} outlets={outlets}
               onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} selectedId={selectedId}
               onToggle={(t: any) => setStatus(t, isDone(t) ? 'todo' : 'done')}
-              onAdd={(d: Date) => { setNewTaskSeed({ due: localYmd(d) }); setShowNew(true); setSelectedId(null) }} />
+              onAdd={(d: Date) => { setNewTaskSeed({ due: localYmd(d) }); setShowNew(true); setSelectedId(null) }}
+              onReorder={reorderDay} />
           ) : view === 'calendar' ? (
             <TaskCalendar tasks={calendarTasks} statusOf={statusOf} onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} onToggle={(t: any) => setStatus(t, isDone(t) ? 'todo' : 'done')} selectedId={selectedId} />
           ) : (
@@ -1057,6 +1103,8 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
       if (!due) { noDate.push(t); continue }
       ;(m[dayKey(due)] ||= []).push(t)
     }
+    for (const k in m) m[k].sort(orderCmp)
+    noDate.sort(orderCmp)
     return { m, noDate }
   }, [tasks])
 
@@ -1235,12 +1283,16 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
   )
 }
 
-function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onToggle, onAdd }: any) {
+function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onToggle, onAdd, onReorder }: any) {
   // A continuous day axis (Planyway-style): every day is a column, ordered
   // left→right into the future, empty days included. Scroll right (swipe left)
   // to reach upcoming dates; each column scrolls down through its own tasks.
   const scrollRef = useRef<HTMLDivElement>(null)
   const COL_W = 256
+  // Drag & drop: reorder within a day or move a task to another day (which
+  // changes its due date). The dragged task's id lives here mid-drag.
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null)
 
   const byDay = useMemo(() => {
     const m = new Map<string, any[]>()
@@ -1252,6 +1304,8 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
       if (!m.has(k)) m.set(k, [])
       m.get(k)!.push(t)
     }
+    for (const list of m.values()) list.sort(orderCmp)
+    noDate.sort(orderCmp)
     return { m, noDate }
   }, [tasks])
 
@@ -1292,15 +1346,38 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   const todayKey = dayKey(startOfDay(new Date()))
   const navBtn: React.CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
 
+  const targetYmd = (dateObj: Date | null) => dateObj ? localYmd(dateObj) : ''
+  const dropBefore = (dateObj: Date | null, list: any[], beforeId: string | null) => {
+    if (!dragId || !onReorder) return
+    const ids = list.map((x: any) => x.id).filter((id: string) => id !== dragId)
+    const at = beforeId ? ids.indexOf(beforeId) : -1
+    if (at < 0) ids.push(dragId); else ids.splice(at, 0, dragId)
+    onReorder(dragId, targetYmd(dateObj), ids)
+    setDragId(null); setDragOverKey(null)
+  }
+
   const renderColumn = (key: string, header: string, sub: string, isToday: boolean, weekend: boolean, list: any[], dateObj: Date | null) => (
-    <div key={key} className="tl-col" style={{ width: COL_W, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff') }}>
+    <div key={key} className="tl-col"
+      onDragOver={(e) => { if (dragId) { e.preventDefault(); setDragOverKey(key) } }}
+      onDragLeave={() => setDragOverKey(k => k === key ? null : k)}
+      onDrop={(e) => { e.preventDefault(); dropBefore(dateObj, list, null) }}
+      style={{ width: COL_W, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: dragOverKey === key ? 'var(--peach)' : (isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff')), outline: dragOverKey === key ? '2px dashed var(--coral)' : 'none', outlineOffset: -2 }}>
       <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '8px 10px', borderBottom: `2px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, background: 'inherit', display: 'flex', alignItems: 'baseline', gap: 6 }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)' }}>{header}</span>
         {sub && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>{sub}</span>}
         {list.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: 'var(--slate)', background: 'rgba(0,0,0,0.06)', borderRadius: 10, padding: '0 6px' }}>{list.length}</span>}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 8px' }}>
-        {list.map((t: any) => <TaskCard key={t.id} t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id} onClick={() => onSelect(t.id)} statusOf={statusOf} outlets={outlets} onToggle={onToggle ? () => onToggle(t) : undefined} />)}
+        {list.map((t: any) => (
+          <div key={t.id} draggable
+            onDragStart={(e) => { setDragId(t.id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', t.id) } catch {} }}
+            onDragEnd={() => { setDragId(null); setDragOverKey(null) }}
+            onDragOver={(e) => { if (dragId) { e.preventDefault(); e.stopPropagation(); setDragOverKey(key) } }}
+            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); dropBefore(dateObj, list, t.id) }}
+            style={{ opacity: dragId === t.id ? 0.4 : 1, cursor: 'grab' }}>
+            <TaskCard t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id} onClick={() => onSelect(t.id)} statusOf={statusOf} outlets={outlets} onToggle={onToggle ? () => onToggle(t) : undefined} />
+          </div>
+        ))}
         {dateObj && (
           // Add a task straight onto this day. Always present at the foot of the
           // column, and a hover "+" (see .tl-col:hover .tl-add) makes it obvious.
