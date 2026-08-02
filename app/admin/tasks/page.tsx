@@ -48,7 +48,7 @@ const fmtRel = (d: string | null | undefined) => {
   return fmtDay(p)
 }
 
-type Bucket = 'today' | 'threedays' | 'overdue' | 'upcoming' | 'completed' | 'all' | 'day' | 'week' | 'month' | 'date'
+type Bucket = 'today' | 'overdue' | 'upcoming' | 'completed' | 'all' | 'day' | 'week' | 'month' | 'date'
 
 // Start/end (ms) of the day / week (Sun–Sat) / month containing `ref`.
 function periodRange(ref: Date, period: 'day' | 'week' | 'month'): { start: number; end: number } {
@@ -57,36 +57,6 @@ function periodRange(ref: Date, period: 'day' | 'week' | 'month'): { start: numb
   if (period === 'week') { const s = new Date(d); s.setDate(s.getDate() - s.getDay()); const e = new Date(s); e.setDate(e.getDate() + 7); return { start: s.getTime(), end: e.getTime() } }
   const s = new Date(d.getFullYear(), d.getMonth(), 1); const e = new Date(d.getFullYear(), d.getMonth() + 1, 1)
   return { start: s.getTime(), end: e.getTime() }
-}
-
-// Does a task belong in the given bucket? Shared by every view (List, Board,
-// Timeline, Calendar) so the date filters mean the same thing everywhere.
-function inBucket(t: any, bucket: Bucket, bucketDate: string): boolean {
-  const done = t.status ? t.status === 'done' : !!t.done
-  if (bucket === 'all') return true
-  if (bucket === 'completed') return done
-  if (done) return false
-  const today = startOfDay(new Date()).getTime()
-  const due = parseTs(t.due_date)
-  const d = due ? startOfDay(due).getTime() : null
-  const dTime = due ? due.getTime() : null
-  const nowRef = new Date()
-  switch (bucket) {
-    // Today includes undated tasks so freshly-added ones surface somewhere.
-    case 'today': return d === today || d == null
-    case 'overdue': return d != null && d < today
-    case 'upcoming': return d != null && d > today
-    case 'day': return d === today
-    case 'threedays': return dTime != null && dTime >= today && dTime < today + 3 * 86400000
-    case 'week': { const r = periodRange(nowRef, 'week'); return dTime != null && dTime >= r.start && dTime < r.end }
-    case 'month': { const r = periodRange(nowRef, 'month'); return dTime != null && dTime >= r.start && dTime < r.end }
-    case 'date': {
-      if (!bucketDate || dTime == null) return false
-      const r = periodRange(new Date(bucketDate + 'T00:00:00'), 'day')
-      return dTime >= r.start && dTime < r.end
-    }
-    default: return true
-  }
 }
 type ViewMode = 'list' | 'board' | 'timeline' | 'calendar'
 
@@ -382,8 +352,7 @@ export default function TasksPage() {
     const now = new Date()
     const today = startOfDay(now).getTime()
     const wk = periodRange(now, 'week'); const mo = periodRange(now, 'month')
-    const threeEnd = today + 3 * 86400000
-    const c = { today: 0, threedays: 0, overdue: 0, upcoming: 0, completed: 0, all: tasks.length, day: 0, week: 0, month: 0 }
+    const c = { today: 0, overdue: 0, upcoming: 0, completed: 0, all: tasks.length, day: 0, week: 0, month: 0 }
     for (const t of tasks) {
       if (isDone(t)) { c.completed++; continue }
       const due = parseTs(t.due_date)
@@ -395,7 +364,6 @@ export default function TasksPage() {
       else if (d === today) c.today++
       else c.upcoming++
       if (d === today) c.day++
-      if (dTime >= today && dTime < threeEnd) c.threedays++
       if (dTime >= wk.start && dTime < wk.end) c.week++
       if (dTime >= mo.start && dTime < mo.end) c.month++
     }
@@ -403,6 +371,7 @@ export default function TasksPage() {
   }, [tasks])
 
   const visible = useMemo(() => {
+    const today = startOfDay(new Date()).getTime()
     const q = search.trim().toLowerCase()
     // Day / week / month window around the chosen reference date.
     let dateRange: { start: number; end: number } | null = null
@@ -423,8 +392,29 @@ export default function TasksPage() {
         }
       }
     }
+    const nowRef = new Date()
     let list = tasks.filter(t => {
-      if (!inBucket(t, bucket, bucketDate)) return false
+      if (bucket !== 'all') {
+        if (bucket === 'completed') { if (!isDone(t)) return false }
+        else {
+          if (isDone(t)) return false
+          const due = parseTs(t.due_date)
+          const d = due ? startOfDay(due).getTime() : null
+          const dTime = due ? due.getTime() : null
+          // Today now includes undated tasks (freshly-added ones surface here).
+          if (bucket === 'today' && !(d === today || d == null)) return false
+          if (bucket === 'overdue' && !(d != null && d < today)) return false
+          if (bucket === 'upcoming' && !(d != null && d > today)) return false
+          if (bucket === 'day' && d !== today) return false
+          if (bucket === 'week') { const r = periodRange(nowRef, 'week'); if (dTime == null || dTime < r.start || dTime >= r.end) return false }
+          if (bucket === 'month') { const r = periodRange(nowRef, 'month'); if (dTime == null || dTime < r.start || dTime >= r.end) return false }
+          if (bucket === 'date') {
+            if (!bucketDate || dTime == null) return false
+            const r = periodRange(new Date(bucketDate + 'T00:00:00'), 'day')
+            if (dTime < r.start || dTime >= r.end) return false
+          }
+        }
+      }
       if (assigneeFilter === 'me' && !assignedToMe(t)) return false
       else if (assigneeFilter && assigneeFilter !== 'me') {
         const ok = t.assigned_to_id === assigneeFilter || (Array.isArray(t.assignees) && t.assignees.some((a: any) => a.id === assigneeFilter))
@@ -457,13 +447,12 @@ export default function TasksPage() {
     return list
   }, [tasks, bucket, bucketDate, search, assigneeFilter, priorityFilter, outletFilter, dateFilter, datePeriod, sortBy, assignedToMe])
 
-  // The calendar view honours the same bucket as the other views, so a "3 days"
-  // or "Week" filter narrows the pills too — plus the assignee/priority/outlet/
-  // search filters.
+  // For the calendar view we want the whole month regardless of the Today/
+  // Overdue/… bucket — only the assignee/priority/search filters apply, so a
+  // task shows up on its due date no matter which bucket is active.
   const calendarTasks = useMemo(() => {
     const q = search.trim().toLowerCase()
     return tasks.filter(t => {
-      if (!inBucket(t, bucket, bucketDate)) return false
       if (assigneeFilter === 'me' && !assignedToMe(t)) return false
       else if (assigneeFilter && assigneeFilter !== 'me') {
         const ok = t.assigned_to_id === assigneeFilter || (Array.isArray(t.assignees) && t.assignees.some((a: any) => a.id === assigneeFilter))
@@ -480,7 +469,7 @@ export default function TasksPage() {
       }
       return true
     })
-  }, [tasks, bucket, bucketDate, search, assigneeFilter, priorityFilter, outletFilter, assignedToMe])
+  }, [tasks, search, assigneeFilter, priorityFilter, outletFilter, assignedToMe])
 
   const selected = useMemo(() => tasks.find(t => t.id === selectedId) || null, [tasks, selectedId])
 
@@ -634,7 +623,6 @@ export default function TasksPage() {
 
   const BUCKETS: { key: Bucket; label: string; n: number }[] = [
     { key: 'today', label: 'Today', n: counts.today },
-    { key: 'threedays', label: '3 days', n: counts.threedays },
     { key: 'overdue', label: 'Overdue', n: counts.overdue },
     { key: 'upcoming', label: 'Upcoming', n: counts.upcoming },
     { key: 'completed', label: 'Completed', n: counts.completed },
@@ -1016,14 +1004,14 @@ const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 // An in-page month calendar of the tasks, plotted on their due dates. Clicking a
 // task opens it in the detail pane, same as the other views.
 function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) {
-  const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d })
+  // View scope: a day / 3 days / week / month window the user can switch and
+  // page through. `cursor` is the anchor day of the current window.
+  type Scope = 'today' | '3day' | 'week' | 'month'
+  const [scope, setScope] = useState<Scope>('month')
+  const [cursor, setCursor] = useState(() => startOfDay(new Date()))
   const [dayPopup, setDayPopup] = useState<{ date: Date; tasks: any[] } | null>(null)
-  const year = cursor.getFullYear()
-  const month = cursor.getMonth()
-  const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-  const startWeekday = new Date(year, month, 1).getDay()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
   const todayKey = dayKey(new Date())
+  const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
 
   const byDay = useMemo(() => {
     const m: Record<string, any[]> = {}
@@ -1036,6 +1024,30 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
     return { m, noDate }
   }, [tasks])
 
+  const year = cursor.getFullYear()
+  const month = cursor.getMonth()
+  const startWeekday = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  // The individual days shown for the day/3-day/week scopes (month has its own grid).
+  const scopeDays: Date[] =
+    scope === 'today' ? [cursor]
+    : scope === '3day' ? [0, 1, 2].map(i => addDays(cursor, i))
+    : scope === 'week' ? Array.from({ length: 7 }, (_, i) => addDays(addDays(cursor, -cursor.getDay()), i))
+    : []
+
+  const shift = (dir: number) => {
+    if (scope === 'month') setCursor(new Date(year, month + dir, 1))
+    else if (scope === 'week') setCursor(addDays(cursor, 7 * dir))
+    else if (scope === '3day') setCursor(addDays(cursor, 3 * dir))
+    else setCursor(addDays(cursor, dir))
+  }
+  const label = scope === 'month'
+    ? cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+    : scope === 'today'
+      ? cursor.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
+      : `${scopeDays[0].toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${scopeDays[scopeDays.length - 1].toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`
+
   const cells: (number | null)[] = []
   for (let i = 0; i < startWeekday; i++) cells.push(null)
   for (let d = 1; d <= daysInMonth; d++) cells.push(d)
@@ -1044,15 +1056,44 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
   const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const navBtn: React.CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
 
+  // One task pill, shared by every scope's cells.
+  const renderPill = (t: any) => {
+    const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
+    const done = statusOf(t) === 'done'
+    const sel = selectedId === t.id
+    const cBg = t.color ? tint(t.color, 0.16) : pr.bg
+    const cFg = t.color || pr.color
+    const cDot = t.color || pr.color
+    return (
+      <div key={t.id} className="cal-pill" onClick={(e) => { e.stopPropagation(); onSelect(t.id) }} title={t.title || t.text}
+        style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%', textAlign: 'left', cursor: 'pointer', padding: '2px 5px', borderRadius: 5, background: sel ? 'var(--coral)' : cBg, color: sel ? '#fff' : cFg, fontSize: 10.5, fontWeight: 700 }}>
+        <button type="button" className={'cal-tick' + (done ? ' done' : '')} title={done ? 'Mark not done' : 'Mark done'}
+          onClick={(e) => { e.stopPropagation(); onToggle?.(t) }}
+          style={{ flexShrink: 0, width: 13, height: 13, borderRadius: '50%', border: '1.5px solid ' + (done ? '#22c55e' : (sel ? '#fff' : cDot)), background: done ? '#22c55e' : 'transparent', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {done && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+        </button>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: done ? 'line-through' : 'none', opacity: done ? 0.6 : 1 }}>{t.title || t.text}</span>
+      </div>
+    )
+  }
+
   return (
     <div style={{ padding: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <button aria-label="Previous month" onClick={() => setCursor(new Date(year, month - 1, 1))} style={navBtn}>‹</button>
-        <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', minWidth: 140, textAlign: 'center' }}>{monthLabel}</span>
-        <button aria-label="Next month" onClick={() => setCursor(new Date(year, month + 1, 1))} style={navBtn}>›</button>
-        <button onClick={() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); setCursor(d) }} style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12 }}>Today</button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <button aria-label="Previous" onClick={() => shift(-1)} style={navBtn}>‹</button>
+        <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', minWidth: 150, textAlign: 'center' }}>{label}</span>
+        <button aria-label="Next" onClick={() => shift(1)} style={navBtn}>›</button>
+        <button onClick={() => setCursor(startOfDay(new Date()))} style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12 }}>Today</button>
+        <span style={{ flex: 1 }} />
+        {/* View scope switcher */}
+        <div className="seg">
+          {([['today', 'Today'], ['3day', '3 Day'], ['week', '1 Week'], ['month', '1 Month']] as const).map(([k, l]) => (
+            <button key={k} className={scope === k ? 'on' : ''} onClick={() => { setScope(k); setCursor(startOfDay(new Date())) }}>{l}</button>
+          ))}
+        </div>
       </div>
 
+      {scope === 'month' ? (<>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6, marginBottom: 6 }}>
         {WD.map(w => <div key={w} style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--slate)', textAlign: 'center', textTransform: 'uppercase' }}>{w}</div>)}
       </div>
@@ -1069,28 +1110,7 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
             <div key={i} className="cal-cell" onClick={openDay}
               style={{ border: `1px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 10, padding: 6, background: isToday ? 'var(--peach)' : '#fff', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 3 }}>
               <span style={{ alignSelf: 'flex-start', fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? 'var(--coral)' : 'var(--slate)' }}>{d}</span>
-              {dayTasks.slice(0, 3).map((t: any) => {
-                const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
-                const done = statusOf(t) === 'done'
-                const sel = selectedId === t.id
-                // Colour-coded tasks use their own colour for the chip; others
-                // fall back to the priority colour.
-                const cBg = t.color ? tint(t.color, 0.16) : pr.bg
-                const cFg = t.color || pr.color
-                const cDot = t.color || pr.color
-                return (
-                  <div key={t.id} className="cal-pill" onClick={(e) => { e.stopPropagation(); onSelect(t.id) }} title={t.title || t.text}
-                    style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%', textAlign: 'left', cursor: 'pointer', padding: '2px 5px', borderRadius: 5, background: sel ? 'var(--coral)' : cBg, color: sel ? '#fff' : cFg, fontSize: 10.5, fontWeight: 700 }}>
-                    {/* Hover tick to complete without opening the task. */}
-                    <button type="button" className={'cal-tick' + (done ? ' done' : '')} title={done ? 'Mark not done' : 'Mark done'}
-                      onClick={(e) => { e.stopPropagation(); onToggle?.(t) }}
-                      style={{ flexShrink: 0, width: 13, height: 13, borderRadius: '50%', border: '1.5px solid ' + (done ? '#22c55e' : (sel ? '#fff' : cDot)), background: done ? '#22c55e' : 'transparent', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {done && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                    </button>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: done ? 'line-through' : 'none', opacity: done ? 0.6 : 1 }}>{t.title || t.text}</span>
-                  </div>
-                )
-              })}
+              {dayTasks.slice(0, 3).map((t: any) => renderPill(t))}
               {dayTasks.length > 3 && (
                 <button onClick={(e) => { e.stopPropagation(); openDay() }} style={{ alignSelf: 'flex-start', border: 'none', background: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 700, color: 'var(--coral)', padding: '0 0 0 2px' }}>+{dayTasks.length - 3} more</button>
               )}
@@ -1098,6 +1118,27 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
           )
         })}
       </div>
+      </>) : (
+      // Day / 3-day / week: taller columns that list every task for the day.
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${scopeDays.length},1fr)`, gap: 6 }}>
+        {scopeDays.map(dd => {
+          const key = dayKey(dd)
+          const dayTasks = byDay.m[key] || []
+          const isToday = key === todayKey
+          return (
+            <div key={key} className="cal-cell" onClick={() => setDayPopup({ date: dd, tasks: dayTasks })}
+              style={{ border: `1px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 10, padding: 8, background: isToday ? 'var(--peach)' : '#fff', minHeight: 360, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ marginBottom: 4 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--slate)', textTransform: 'uppercase' }}>{dd.toLocaleDateString(undefined, { weekday: 'short' })}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)' }}>{dd.getDate()}</div>
+              </div>
+              {dayTasks.map((t: any) => renderPill(t))}
+              {dayTasks.length === 0 && <span style={{ fontSize: 11, color: '#c3c7cd' }}>—</span>}
+            </div>
+          )
+        })}
+      </div>
+      )}
 
       {byDay.noDate.length > 0 && (
         <div style={{ marginTop: 14 }}>
@@ -1159,6 +1200,9 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
 }
 
 function Timeline({ tasks, convs, statusOf, onSelect, selectedId }: any) {
+  // A horizontal timeline: each due date is a column, ordered left→right into the
+  // future. Scroll right (swipe left) to reach upcoming dates; each column
+  // scrolls down through its tasks.
   const groups = useMemo(() => {
     const m = new Map<string, any[]>()
     for (const t of tasks) {
@@ -1170,23 +1214,27 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId }: any) {
     return Array.from(m.entries()).sort((a, b) => { if (a[0] === 'none') return 1; if (b[0] === 'none') return -1; return new Date(a[0]).getTime() - new Date(b[0]).getTime() })
   }, [tasks])
   if (tasks.length === 0) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>No tasks to show on the timeline.</div>
+  const todayKey = startOfDay(new Date()).toISOString()
   return (
-    <div style={{ padding: 16 }}>
-      {groups.map(([key, list]) => {
-        const d = key === 'none' ? null : new Date(key)
-        return (
-          <div key={key} style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>{d ? fmtRel(key) : 'No due date'}</span>
-              {d && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>{d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}</span>}
-              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+    <div style={{ height: '100%', overflowX: 'auto', overflowY: 'hidden', padding: 16, WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', height: '100%', minWidth: 'min-content' }}>
+        {groups.map(([key, list]) => {
+          const d = key === 'none' ? null : new Date(key)
+          const isToday = key === todayKey
+          return (
+            <div key={key} style={{ width: 288, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, paddingBottom: 8, marginBottom: 10, borderBottom: `2px solid ${isToday ? 'var(--coral)' : 'var(--border)'}` }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)' }}>{d ? fmtRel(key) : 'No due date'}</span>
+                {d && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>{d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>}
+                <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: 'var(--slate)', background: 'rgba(0,0,0,0.06)', borderRadius: 10, padding: '0 6px' }}>{list.length}</span>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', paddingRight: 2 }}>
+                {list.map((t: any) => <TaskCard key={t.id} t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id} onClick={() => onSelect(t.id)} statusOf={statusOf} />)}
+              </div>
             </div>
-            <div style={{ paddingLeft: 6, borderLeft: '2px solid var(--border)' }}>
-              {list.map((t: any) => <div key={t.id} style={{ marginLeft: 10 }}><TaskCard t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id} onClick={() => onSelect(t.id)} statusOf={statusOf} /></div>)}
-            </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
     </div>
   )
 }
