@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
@@ -705,6 +705,9 @@ export default function TasksPage() {
           <button className="press" onClick={() => { setShowNew(true); setSelectedId(null) }}
             style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>+ New task</button>
         </div>
+        {/* The Timeline is its own continuous day axis — the date buckets don't
+            apply there, so hide them and let the timeline scroll through dates. */}
+        {view !== 'timeline' && (
         <div className="tasks-buckets">
           {BUCKETS.map(b => (
             <button key={b.key} className={'bucket-chip' + (bucket === b.key ? ' on' : '')} onClick={() => setBucket(b.key)}>
@@ -717,6 +720,7 @@ export default function TasksPage() {
               style={{ flexShrink: 0, padding: '6px 10px', borderRadius: 20, border: '1px solid var(--coral)', fontSize: 12.5, fontWeight: 700, color: 'var(--coral)', background: 'var(--peach)' }} />
           )}
         </div>
+        )}
         <div className="tasks-controls">
           <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 160 }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
@@ -837,7 +841,7 @@ export default function TasksPage() {
               ))}
             </div>
           ) : view === 'timeline' ? (
-            <Timeline tasks={visible} convs={convs} statusOf={statusOf} onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} selectedId={selectedId} />
+            <Timeline tasks={calendarTasks} convs={convs} statusOf={statusOf} onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} selectedId={selectedId} />
           ) : view === 'calendar' ? (
             <TaskCalendar tasks={calendarTasks} statusOf={statusOf} onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} onToggle={(t: any) => setStatus(t, isDone(t) ? 'todo' : 'done')} selectedId={selectedId} />
           ) : (
@@ -1200,40 +1204,100 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
 }
 
 function Timeline({ tasks, convs, statusOf, onSelect, selectedId }: any) {
-  // A horizontal timeline: each due date is a column, ordered left→right into the
-  // future. Scroll right (swipe left) to reach upcoming dates; each column
-  // scrolls down through its tasks.
-  const groups = useMemo(() => {
+  // A continuous day axis (Planyway-style): every day is a column, ordered
+  // left→right into the future, empty days included. Scroll right (swipe left)
+  // to reach upcoming dates; each column scrolls down through its own tasks.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const COL_W = 256
+
+  const byDay = useMemo(() => {
     const m = new Map<string, any[]>()
+    const noDate: any[] = []
     for (const t of tasks) {
       const due = parseTs(t.due_date)
-      const key = due ? startOfDay(due).toISOString() : 'none'
-      if (!m.has(key)) m.set(key, [])
-      m.get(key)!.push(t)
+      if (!due) { noDate.push(t); continue }
+      const k = dayKey(due)
+      if (!m.has(k)) m.set(k, [])
+      m.get(k)!.push(t)
     }
-    return Array.from(m.entries()).sort((a, b) => { if (a[0] === 'none') return 1; if (b[0] === 'none') return -1; return new Date(a[0]).getTime() - new Date(b[0]).getTime() })
+    return { m, noDate }
   }, [tasks])
+
+  // The span of days to render: at least [today−3, today+30], stretched to cover
+  // every dated task, and capped so a far-off outlier can't create 1000 columns.
+  const { days, todayIdx } = useMemo(() => {
+    const today = startOfDay(new Date())
+    let minMs = today.getTime() - 3 * 86400000
+    let maxMs = today.getTime() + 30 * 86400000
+    for (const t of tasks) {
+      const due = parseTs(t.due_date); if (!due) continue
+      const ms = startOfDay(due).getTime()
+      if (ms < minMs) minMs = ms
+      if (ms > maxMs) maxMs = ms
+    }
+    let total = Math.round((maxMs - minMs) / 86400000) + 1
+    if (total > 366) total = 366
+    const out: Date[] = []
+    let idx = 0
+    for (let i = 0; i < total; i++) {
+      const d = new Date(minMs + i * 86400000)
+      if (dayKey(d) === dayKey(today)) idx = i
+      out.push(d)
+    }
+    return { days: out, todayIdx: idx }
+  }, [tasks])
+
+  // Land on today when the timeline first shows / the data loads.
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollLeft = Math.max(0, todayIdx * COL_W - COL_W)
+  }, [todayIdx])
+
+  const scrollBy = (cols: number) => { if (scrollRef.current) scrollRef.current.scrollBy({ left: cols * COL_W, behavior: 'smooth' }) }
+  const goToday = () => { if (scrollRef.current) scrollRef.current.scrollTo({ left: Math.max(0, todayIdx * COL_W - COL_W), behavior: 'smooth' }) }
+
   if (tasks.length === 0) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>No tasks to show on the timeline.</div>
-  const todayKey = startOfDay(new Date()).toISOString()
+
+  const todayKey = dayKey(startOfDay(new Date()))
+  const navBtn: React.CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
+
+  const renderColumn = (key: string, header: string, sub: string, isToday: boolean, weekend: boolean, list: any[]) => (
+    <div key={key} style={{ width: COL_W, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff') }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '8px 10px', borderBottom: `2px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, background: 'inherit', display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)' }}>{header}</span>
+        {sub && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>{sub}</span>}
+        {list.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: 'var(--slate)', background: 'rgba(0,0,0,0.06)', borderRadius: 10, padding: '0 6px' }}>{list.length}</span>}
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '10px 8px' }}>
+        {list.map((t: any) => <TaskCard key={t.id} t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id} onClick={() => onSelect(t.id)} statusOf={statusOf} />)}
+      </div>
+    </div>
+  )
+
   return (
-    <div style={{ height: '100%', overflowX: 'auto', overflowY: 'hidden', padding: 16, WebkitOverflowScrolling: 'touch' }}>
-      <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', height: '100%', minWidth: 'min-content' }}>
-        {groups.map(([key, list]) => {
-          const d = key === 'none' ? null : new Date(key)
-          const isToday = key === todayKey
-          return (
-            <div key={key} style={{ width: 288, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, paddingBottom: 8, marginBottom: 10, borderBottom: `2px solid ${isToday ? 'var(--coral)' : 'var(--border)'}` }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)' }}>{d ? fmtRel(key) : 'No due date'}</span>
-                {d && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>{d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>}
-                <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: 'var(--slate)', background: 'rgba(0,0,0,0.06)', borderRadius: 10, padding: '0 6px' }}>{list.length}</span>
-              </div>
-              <div style={{ flex: 1, overflowY: 'auto', paddingRight: 2 }}>
-                {list.map((t: any) => <TaskCard key={t.id} t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id} onClick={() => onSelect(t.id)} statusOf={statusOf} />)}
-              </div>
-            </div>
-          )
-        })}
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px 10px' }}>
+        <button aria-label="Scroll back" onClick={() => scrollBy(-5)} style={navBtn}>‹</button>
+        <button onClick={goToday} style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12 }}>Today</button>
+        <button aria-label="Scroll forward" onClick={() => scrollBy(5)} style={navBtn}>›</button>
+        <span style={{ fontSize: 12.5, color: 'var(--slate)', marginLeft: 4 }}>Scroll right for upcoming days →</span>
+      </div>
+      <div ref={scrollRef} style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', borderTop: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'stretch', height: '100%', minWidth: 'min-content' }}>
+          {days.map(d => {
+            const k = dayKey(d)
+            const list = byDay.m.get(k) || []
+            const isToday = k === todayKey
+            const weekend = d.getDay() === 0 || d.getDay() === 6
+            const showMonth = d.getDate() === 1 || k === dayKey(days[0])
+            return renderColumn(
+              k,
+              `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${d.getDate()}`,
+              showMonth ? d.toLocaleDateString(undefined, { month: 'short' }) : '',
+              isToday, weekend, list,
+            )
+          })}
+          {byDay.noDate.length > 0 && renderColumn('nodate', 'No due date', '', false, false, byDay.noDate)}
+        </div>
       </div>
     </div>
   )
