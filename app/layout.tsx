@@ -557,7 +557,7 @@ export default function RootLayout({
   // `/u/` = the customer secure-upload page. It carries its own branded card
   // header, so the app nav on top was redundant and left a big gap above the
   // card. Render it standalone like the other full-page routes.
-  const isFullPageRoute = ['/landing', '/inbox-crm', '/pricing', '/features', '/platform-admin', '/forms/', '/widget', '/auth/handoff', '/u/'].some(p => pathname?.startsWith(p))
+  const isFullPageRoute = ['/landing', '/inbox-crm', '/pricing', '/features', '/platform-admin', '/forms/', '/widget', '/auth/handoff', '/u/', '/demo'].some(p => pathname?.startsWith(p))
   // admin.colvy.com is the Super Admin console — it has its own dark chrome, so
   // the marketing/board nav must never render on top of it (regardless of the
   // path the proxy serves it under). Whole host is full-page.

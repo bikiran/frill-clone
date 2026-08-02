@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 import IncomingCallListener from '@/components/IncomingCallListener'
 import AdminBanner from '@/components/AdminBanner'
 import ImpersonationBanner from '@/components/ImpersonationBanner'
+import DemoBanner from '@/components/DemoBanner'
 import { getCompanyByOwner } from '@/lib/board'
 import { useRouter } from 'next/navigation'
 import MobileNav from '@/components/MobileNav'
@@ -441,6 +442,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div style={{ display: 'flex', minHeight: 'calc(100vh - 56px)' }}>
       {/* Super-admin impersonation banner (shows only when a session is active) */}
       <ImpersonationBanner />
+      {/* Demo showcase banner (shows only inside a demo workspace) */}
+      <DemoBanner company={company} />
       {/* Inbound calls: the WebRTC client used to register ONLY on the inbox
           page. Anywhere else in the admin, no endpoint was registered with
           Telnyx — so a customer ringing the business number got a BUSY tone
