@@ -65,6 +65,17 @@ const PRIORITY = {
   low: { label: 'Low', color: '#2563eb', bg: '#eff6ff' },
 } as const
 
+// Calendar event types — deliveries, appointments, bookings and pickups
+// scheduled on the Calendar also surface here, tagged with their type. Colours
+// match the Calendar tab so the two pages read the same.
+const EVENT_TYPE_META: Record<string, { label: string; color: string; bg: string }> = {
+  delivery:    { label: 'Delivery',    color: '#c2410c', bg: '#fff4f1' },
+  appointment: { label: 'Appointment', color: '#4338ca', bg: '#eef2ff' },
+  booking:     { label: 'Booking',     color: '#15803d', bg: '#ecfdf5' },
+  task:        { label: 'Task',        color: '#7c3aed', bg: '#f5f3ff' },
+  pickup:      { label: 'Pickup',      color: '#a16207', bg: '#fefce8' },
+}
+
 // Preset colours for colour-coding a task. Stored as the hex string on the task.
 const TASK_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899', '#64748b']
 const tint = (hex: string, a: number) => {
@@ -241,16 +252,17 @@ export default function TasksPage() {
     setTasks(rows)
     setLoading(false)
 
-    // Calendar events of type "task" are real work too — they were only ever
-    // stored in calendar_events, so the Tasks page never saw them and a task
-    // scheduled on the calendar showed up nowhere here. Pull them in and shape
-    // them like tasks. They keep a marker so edits route back to the calendar
-    // rather than trying to write a conversation_tasks row that doesn't exist.
+    // Everything scheduled on the Calendar — deliveries, appointments,
+    // bookings, pickups and calendar-native tasks — is real work too, but it
+    // lives in calendar_events, so the Tasks page never saw it. Pull it all in
+    // and shape it like tasks, tagged with its event type. Each keeps a marker
+    // so edits route back to the calendar rather than trying to write a
+    // conversation_tasks row that doesn't exist.
     try {
       const from = new Date(); from.setMonth(from.getMonth() - 6)
       const to = new Date(); to.setMonth(to.getMonth() + 12)
       const params = new URLSearchParams({
-        companyId: cid, type: 'task',
+        companyId: cid,
         from: from.toISOString(), to: to.toISOString(),
       })
       const res = await fetch(`/api/calendar?${params}`)
@@ -259,12 +271,17 @@ export default function TasksPage() {
         id: `cal:${e.id}`,
         _calendarId: e.id,
         _source: 'calendar',
+        _calRaw: e,            // full event, so edits/status changes don't drop fields
+        event_type: e.event_type || 'task',
         company_id: e.company_id,
         conversation_id: e.conversation_id,
         title: e.title,
         text: e.notes || e.title,
         due_date: e.starts_at,
         is_all_day: e.is_all_day,
+        location_id: e.location_id || null,
+        location_ids: Array.isArray(e.location_ids) ? e.location_ids : (e.location_id ? [e.location_id] : []),
+        attachments: Array.isArray(e.attachments) ? e.attachments : [],
         // Calendar statuses don't map 1:1 onto a task board, so translate them.
         status: e.status === 'completed' ? 'done'
           : e.status === 'in_progress' ? 'in_progress'
@@ -472,24 +489,39 @@ export default function TasksPage() {
     try {
       if (target?._source === 'calendar') {
         // Lives in calendar_events — translate the task fields back and save it
-        // through the calendar API (which also guards the uuid columns).
+        // through the calendar API (which also guards the uuid columns). The
+        // API replaces the whole row, so we seed the payload from the original
+        // event and overlay only what changed — otherwise marking a delivery
+        // done here would wipe its address, time window, outlets, attachments
+        // and customer link.
         const statusMap: Record<string, string> = { todo: 'scheduled', in_progress: 'in_progress', done: 'completed' }
-        const payload: any = { companyId, action: 'save', id: target._calendarId }
-        if (fields.status) payload.status = statusMap[fields.status] || 'scheduled'
-        if (fields.title !== undefined) payload.title = fields.title
-        if (fields.due_date !== undefined) payload.starts_at = fields.due_date
-        if (fields.assignees !== undefined) {
-          payload.assignees = fields.assignees
-          payload.assigned_to_id = fields.assigned_to_id ?? null
-          payload.assigned_to_name = fields.assigned_to ?? null
+        const raw = target._calRaw || {}
+        const payload: any = {
+          companyId, action: 'save', id: target._calendarId,
+          event_type: target.event_type || raw.event_type || 'task',
+          title: fields.title ?? target.title ?? raw.title,
+          notes: fields.text ?? target.text ?? raw.notes ?? null,
+          starts_at: fields.due_date ?? target.due_date ?? raw.starts_at,
+          ends_at: raw.ends_at ?? null,
+          is_all_day: raw.is_all_day ?? true,
+          time_window: raw.time_window ?? null,
+          location_id: (fields.location_id !== undefined ? fields.location_id : raw.location_id) ?? null,
+          location_ids: fields.location_ids !== undefined
+            ? fields.location_ids
+            : (raw.location_ids ?? (raw.location_id ? [raw.location_id] : [])),
+          contact_id: raw.contact_id ?? null,
+          conversation_id: raw.conversation_id ?? null,
+          order_id: raw.order_id ?? null,
+          address: raw.address ?? null,
+          status: fields.status ? (statusMap[fields.status] || 'scheduled') : (raw.status || 'scheduled'),
+          assigned_to_id: fields.assignees !== undefined ? (fields.assigned_to_id ?? null) : (raw.assigned_to_id ?? null),
+          assigned_to_name: fields.assignees !== undefined ? (fields.assigned_to ?? null) : (raw.assigned_to_name ?? null),
+          assignees: fields.assignees !== undefined ? fields.assignees : (raw.assignees ?? []),
+          reminder_channels: raw.reminder_channels ?? null,
+          notify_customer: !!raw.notify_customer,
+          customer_contact_id: raw.customer_contact_id ?? null,
+          attachments: fields.attachments !== undefined ? fields.attachments : (raw.attachments ?? []),
         }
-        // The calendar API replaces the row, so send the fields it needs to keep.
-        payload.event_type = 'task'
-        payload.title = payload.title ?? target.title
-        payload.starts_at = payload.starts_at ?? target.due_date
-        payload.notes = fields.text ?? target.text
-        if (fields.attachments !== undefined) payload.attachments = fields.attachments
-        if (fields.location_ids !== undefined) { payload.location_ids = fields.location_ids; payload.location_id = fields.location_id ?? (fields.location_ids?.[0] || null) }
         await fetch('/api/calendar', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -954,12 +986,15 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
                 {t.recurrence.freq}
               </span>
             )}
-            {t._source === 'calendar' && (
-              <span title="Scheduled on the calendar" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#f5f3ff', color: '#7c3aed' }}>
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                Calendar
-              </span>
-            )}
+            {t._source === 'calendar' && (() => {
+              const et = EVENT_TYPE_META[t.event_type || 'task'] || EVENT_TYPE_META.task
+              return (
+                <span title={`${et.label} scheduled on the calendar`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: et.bg, color: et.color }}>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  {et.label}
+                </span>
+              )
+            })()}
           </div>
         </div>
       </div>
@@ -1226,6 +1261,15 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
   const curStatus = task.status || (task.done ? 'done' : 'todo')
   return (
     <div style={{ padding: 18 }}>
+      {task._source === 'calendar' && (() => {
+        const et = EVENT_TYPE_META[task.event_type || 'task'] || EVENT_TYPE_META.task
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '3px 8px', borderRadius: 6, background: et.bg, color: et.color, marginBottom: 8 }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            {et.label}
+          </span>
+        )
+      })()}
       <textarea value={task.title || task.text || ''} onChange={e => patch({ title: e.target.value })} rows={2}
         style={{ width: '100%', border: 'none', fontSize: 16.5, fontWeight: 700, color: 'var(--ink)', resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.35 }} />
       {task.text && task.title && <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>{task.text}</p>}
@@ -1345,7 +1389,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       )}
       {task._source === 'calendar' ? (
         <div style={{ marginTop: 18, padding: '10px 12px', borderRadius: 10, background: 'var(--canvas)', fontSize: 12, color: 'var(--slate)', lineHeight: 1.45 }}>
-          This task is scheduled on the calendar. Comments are available on tasks created here in the Tasks page.
+          This {(EVENT_TYPE_META[task.event_type || 'task'] || EVENT_TYPE_META.task).label.toLowerCase()} is scheduled on the calendar. Comments are available on tasks created here in the Tasks page.
         </div>
       ) : (
       <>
