@@ -7,6 +7,7 @@ import { SkeletonList } from '@/components/Skeleton'
 import AssigneePicker from '@/components/AssigneePicker'
 import AttachmentUploader from '@/components/AttachmentUploader'
 import TaskEditor from '@/components/TaskEditor'
+import RichTextEditor from '@/components/RichTextEditor'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { enrichNames } from '@/lib/team-names'
 import { useDraft } from '@/lib/drafts'
@@ -311,6 +312,7 @@ export default function TasksPage() {
         location_ids: Array.isArray(e.location_ids) ? e.location_ids : (e.location_id ? [e.location_id] : []),
         attachments: Array.isArray(e.attachments) ? e.attachments : [],
         checklist: Array.isArray(e.checklist) ? e.checklist : [],
+        description: e.description ?? '',
         sort_order: e.sort_order ?? null,
         // Calendar statuses don't map 1:1 onto a task board, so translate them.
         status: e.status === 'completed' ? 'done'
@@ -560,6 +562,7 @@ export default function TasksPage() {
           customer_contact_id: raw.customer_contact_id ?? null,
           attachments: fields.attachments !== undefined ? fields.attachments : (raw.attachments ?? []),
           checklist: fields.checklist !== undefined ? fields.checklist : (raw.checklist ?? []),
+          description: fields.description !== undefined ? fields.description : (raw.description ?? null),
           sort_order: fields.sort_order !== undefined ? fields.sort_order : (raw.sort_order ?? null),
         }
         await fetch('/api/calendar', {
@@ -1540,6 +1543,9 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       <textarea value={task.title || task.text || ''} onChange={e => patch({ title: e.target.value })} rows={2}
         style={{ width: '100%', border: 'none', fontSize: 16.5, fontWeight: 700, color: 'var(--ink)', resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.35 }} />
       {task.text && task.title && <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>{task.text}</p>}
+
+      <p style={L}>Description</p>
+      <RichTextEditor key={task.id} value={task.description || ''} onChange={(html) => patch({ description: html })} />
 
       <p style={L}>Photos &amp; videos</p>
       <AttachmentUploader companyId={companyId} value={task.attachments || []} onChange={(a) => patch({ attachments: a })} folder="task" compact />
