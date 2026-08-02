@@ -1371,7 +1371,11 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   // left→right into the future, empty days included. Scroll right (swipe left)
   // to reach upcoming dates; each column scrolls down through its own tasks.
   const scrollRef = useRef<HTMLDivElement>(null)
-  const COL_W = 256
+  // How many day-columns fill the visible width at once (still scrollable for
+  // more). Columns are sized to the measured viewport ÷ this count.
+  const [daysShown, setDaysShown] = useState(5)
+  const [viewW, setViewW] = useState(0)
+  const COL_W = viewW ? viewW / daysShown : 256
   // Drag & drop: reorder within a day or move a task to another day (which
   // changes its due date). dropTarget is the live insertion point (which column,
   // and the index within it) so we can show a precise drop line.
@@ -1422,10 +1426,21 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
     return { days: out, todayIdx: idx }
   }, [tasks])
 
-  // Land on today when the timeline first shows / the data loads.
+  // Track the visible width so columns can be sized to fit exactly `daysShown`.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || typeof ResizeObserver === 'undefined') { if (el) setViewW(el.clientWidth); return }
+    const ro = new ResizeObserver(() => setViewW(el.clientWidth))
+    ro.observe(el); setViewW(el.clientWidth)
+    return () => ro.disconnect()
+  }, [])
+
+  // Land on today when the timeline first shows, the data loads, or the density
+  // changes.
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollLeft = Math.max(0, todayIdx * COL_W - COL_W)
-  }, [todayIdx])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayIdx, COL_W])
 
   const scrollBy = (cols: number) => { if (scrollRef.current) scrollRef.current.scrollBy({ left: cols * COL_W, behavior: 'smooth' }) }
   const goToday = () => { if (scrollRef.current) scrollRef.current.scrollTo({ left: Math.max(0, todayIdx * COL_W - COL_W), behavior: 'smooth' }) }
@@ -1456,7 +1471,7 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
     <div key={key} className="tl-col"
       onDragOver={(e) => { if (dragId) { e.preventDefault(); setDrop(key, list.length) } }}
       onDrop={(e) => { e.preventDefault(); doDrop(dateObj, list, overCol ? dropTarget!.index : list.length) }}
-      style={{ width: COL_W, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff'), outline: overCol ? '2px dashed var(--coral)' : 'none', outlineOffset: -2 }}>
+      style={{ width: COL_W, boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff'), outline: overCol ? '2px dashed var(--coral)' : 'none', outlineOffset: -2 }}>
       <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '8px 10px', borderBottom: `2px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, background: 'inherit', display: 'flex', alignItems: 'baseline', gap: 6 }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)' }}>{header}</span>
         {sub && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>{sub}</span>}
@@ -1498,11 +1513,23 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px 10px' }}>
-        <button aria-label="Scroll back" onClick={() => scrollBy(-5)} style={navBtn}>‹</button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px 10px', flexWrap: 'wrap' }}>
+        <button aria-label="Scroll back" onClick={() => scrollBy(-daysShown)} style={navBtn}>‹</button>
         <button onClick={goToday} style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12 }}>Today</button>
-        <button aria-label="Scroll forward" onClick={() => scrollBy(5)} style={navBtn}>›</button>
+        <button aria-label="Scroll forward" onClick={() => scrollBy(daysShown)} style={navBtn}>›</button>
         <span style={{ fontSize: 12.5, color: 'var(--slate)', marginLeft: 4 }}>Scroll right for upcoming days →</span>
+        <span style={{ flex: 1 }} />
+        {/* How many days fill the screen at once. */}
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--slate)' }}>Show</span>
+        <div className="seg">
+          {[3, 5, 7].map(n => (
+            <button key={n} className={daysShown === n ? 'on' : ''} onClick={() => setDaysShown(n)}>{n}</button>
+          ))}
+        </div>
+        <input type="number" min={1} max={7} value={daysShown}
+          onChange={e => setDaysShown(Math.max(1, Math.min(7, parseInt(e.target.value) || 1)))}
+          style={{ width: 48, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
+        <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>days</span>
       </div>
       <div ref={scrollRef} style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', borderTop: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'stretch', height: '100%', minWidth: 'min-content' }}>
