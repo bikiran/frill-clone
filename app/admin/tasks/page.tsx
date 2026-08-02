@@ -47,6 +47,27 @@ const fmtRel = (d: string | null | undefined) => {
   if (days < 7) return `In ${days} days`
   return fmtDay(p)
 }
+// Clock-style relative time for comments: "just now", "a minute ago", "3 hours
+// ago", "yesterday", then a date. Pair with a title of the exact timestamp.
+const fmtAgo = (d: string | null | undefined): string => {
+  const p = parseTs(d); if (!p) return ''
+  const s = Math.floor((Date.now() - p.getTime()) / 1000)
+  if (s < 45) return 'just now'
+  if (s < 90) return 'a minute ago'
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m} minutes ago`
+  if (m < 90) return 'an hour ago'
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} hours ago`
+  const days = Math.floor(h / 24)
+  if (days === 1) return 'yesterday'
+  if (days < 7) return `${days} days ago`
+  return p.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+}
+const fmtExact = (d: string | null | undefined): string => {
+  const p = parseTs(d); if (!p) return ''
+  return p.toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+}
 
 type Bucket = 'today' | 'overdue' | 'upcoming' | 'completed' | 'all' | 'day' | 'week' | 'month' | 'date'
 
@@ -289,6 +310,7 @@ export default function TasksPage() {
         location_id: e.location_id || null,
         location_ids: Array.isArray(e.location_ids) ? e.location_ids : (e.location_id ? [e.location_id] : []),
         attachments: Array.isArray(e.attachments) ? e.attachments : [],
+        checklist: Array.isArray(e.checklist) ? e.checklist : [],
         sort_order: e.sort_order ?? null,
         // Calendar statuses don't map 1:1 onto a task board, so translate them.
         status: e.status === 'completed' ? 'done'
@@ -537,6 +559,7 @@ export default function TasksPage() {
           notify_customer: !!raw.notify_customer,
           customer_contact_id: raw.customer_contact_id ?? null,
           attachments: fields.attachments !== undefined ? fields.attachments : (raw.attachments ?? []),
+          checklist: fields.checklist !== undefined ? fields.checklist : (raw.checklist ?? []),
           sort_order: fields.sort_order !== undefined ? fields.sort_order : (raw.sort_order ?? null),
         }
         await fetch('/api/calendar', {
@@ -1042,6 +1065,16 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
                 </span>
               )
             })()}
+            {Array.isArray(t.checklist) && t.checklist.length > 0 && (() => {
+              const done = t.checklist.filter((i: any) => i.done).length
+              const all = t.checklist.length
+              return (
+                <span title="Checklist" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: done === all ? '#dcfce7' : '#f4f4f5', color: done === all ? '#15803d' : 'var(--slate)' }}>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                  {done}/{all}
+                </span>
+              )
+            })()}
             {t.recurrence && (
               <span title="Repeating task" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#ecfeff', color: '#0e7490' }}>
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
@@ -1439,6 +1472,8 @@ function MobileSheet({ children, onClose }: any) {
 function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onPatch, onDeleteScoped, onEndRepeatNew, onDeleted, router }: any) {
   const [comments, setComments] = useState<any[]>([])
   const [comment, setComment] = useState('')
+  const [showAllComments, setShowAllComments] = useState(false)
+  const [checkText, setCheckText] = useState('')
   const [showOrderSearch, setShowOrderSearch] = useState(false)
   // Edit scope for a recurring series. Only shown when the task is part of one.
   const isSeries = !!task.series_id
@@ -1509,6 +1544,48 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       <p style={L}>Photos &amp; videos</p>
       <AttachmentUploader companyId={companyId} value={task.attachments || []} onChange={(a) => patch({ attachments: a })} folder="task" compact />
 
+      {/* Checklist — a list of sub-steps with their own progress. */}
+      {(() => {
+        const items: any[] = Array.isArray(task.checklist) ? task.checklist : []
+        const doneN = items.filter(i => i.done).length
+        const setItems = (next: any[]) => patch({ checklist: next })
+        const addItem = () => {
+          const text = checkText.trim(); if (!text) return
+          const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.round(Math.random() * 1e6)}`
+          setItems([...items, { id, text, done: false }]); setCheckText('')
+        }
+        return (
+          <>
+            <p style={L}>Checklist{items.length > 0 ? ` — ${doneN}/${items.length}` : ''}</p>
+            {items.length > 0 && (
+              <div style={{ height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden', marginBottom: 8 }}>
+                <div style={{ height: '100%', width: `${Math.round((doneN / items.length) * 100)}%`, background: '#22c55e', transition: 'width 0.2s' }} />
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+              {items.map((it, idx) => (
+                <div key={it.id || idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px' }}>
+                  <input type="checkbox" checked={!!it.done}
+                    onChange={() => setItems(items.map((x, j) => j === idx ? { ...x, done: !x.done } : x))}
+                    style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer', accentColor: 'var(--coral)' }} />
+                  <input value={it.text} onChange={e => setItems(items.map((x, j) => j === idx ? { ...x, text: e.target.value } : x))}
+                    style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', fontSize: 13, background: 'transparent', color: 'var(--ink)', textDecoration: it.done ? 'line-through' : 'none', opacity: it.done ? 0.6 : 1 }} />
+                  <button onClick={() => setItems(items.filter((_, j) => j !== idx))} title="Remove"
+                    style={{ border: 'none', background: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 2, flexShrink: 0 }}>×</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input value={checkText} onChange={e => setCheckText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
+                placeholder="Add a checklist item…"
+                style={{ flex: 1, padding: '8px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
+              <button onClick={addItem} disabled={!checkText.trim()}
+                style={{ padding: '8px 14px', borderRadius: 9, border: 'none', background: checkText.trim() ? 'var(--coral)' : '#eef0f2', color: checkText.trim() ? '#fff' : '#9aa1ab', fontSize: 13, fontWeight: 700, cursor: checkText.trim() ? 'pointer' : 'default' }}>Add</button>
+            </div>
+          </>
+        )
+      })()}
 
       {/* Edit scope for a repeating task — every change (and the delete) below
           applies to the chosen slice of the series. */}
@@ -1625,19 +1702,33 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
         </div>
       ) : (
       <>
-      <p style={L}>Comments</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10 }}>
-        {comments.length === 0 && <p style={{ fontSize: 12.5, color: '#9ca3af', margin: 0 }}>No comments yet.</p>}
-        {comments.map(c => (
-          <div key={c.id} style={{ display: 'flex', gap: 9 }}>
-            <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{(c.author_name || '?').charAt(0).toUpperCase()}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>{c.author_name} <span style={{ fontWeight: 400, color: '#9ca3af' }}>· {fmtRel(c.created_at)}</span></div>
-              <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{c.body}</div>
-            </div>
+      <p style={L}>Comments{comments.length > 0 ? ` (${comments.length})` : ''}</p>
+      {(() => {
+        // Newest first, and collapse to a few until "See more" is clicked.
+        const ordered = [...comments].reverse()
+        const PREVIEW = 3
+        const shown = showAllComments ? ordered : ordered.slice(0, PREVIEW)
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10 }}>
+            {ordered.length === 0 && <p style={{ fontSize: 12.5, color: '#9ca3af', margin: 0 }}>No comments yet.</p>}
+            {shown.map(c => (
+              <div key={c.id} style={{ display: 'flex', gap: 9 }}>
+                <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{(c.author_name || '?').charAt(0).toUpperCase()}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>{c.author_name} <span title={fmtExact(c.created_at)} style={{ fontWeight: 400, color: '#9ca3af' }}>· {fmtAgo(c.created_at)}</span></div>
+                  <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{c.body}</div>
+                </div>
+              </div>
+            ))}
+            {ordered.length > PREVIEW && (
+              <button onClick={() => setShowAllComments(v => !v)}
+                style={{ alignSelf: 'flex-start', border: 'none', background: 'none', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
+                {showAllComments ? 'Show less' : `See ${ordered.length - PREVIEW} more`}
+              </button>
+            )}
           </div>
-        ))}
-      </div>
+        )
+      })()}
       {/* Coax-style composer: rounded input with the submit tucked into the
           corner, matching the Inbox notes/tasks composer. */}
       <div style={{ position: 'relative' }}>

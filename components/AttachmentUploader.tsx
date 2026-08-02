@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import MediaLightbox from '@/components/MediaLightbox'
 
 // Reusable image/video attachment uploader. Uploads through the existing
 // /api/inbox/upload endpoint (R2 or Supabase storage) and keeps a list of
@@ -20,6 +21,7 @@ export default function AttachmentUploader({
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [viewer, setViewer] = useState<number | null>(null)   // open lightbox index
   const list = Array.isArray(value) ? value : []
 
   const pick = () => inputRef.current?.click()
@@ -52,7 +54,8 @@ export default function AttachmentUploader({
     <div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {list.map((a, i) => (
-          <div key={i} style={{ position: 'relative', width: thumb, height: thumb, borderRadius: 9, overflow: 'hidden', border: '1px solid var(--border)', background: '#f4f4f5', flexShrink: 0 }}>
+          <div key={i} onClick={() => setViewer(i)} title={a.name || 'View'}
+            style={{ position: 'relative', width: thumb, height: thumb, borderRadius: 9, overflow: 'hidden', border: '1px solid var(--border)', background: '#f4f4f5', flexShrink: 0, cursor: 'pointer' }}>
             {a.kind === 'image' || (a.type || '').startsWith('image/') ? (
               <img src={a.url} alt={a.name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : a.kind === 'video' || (a.type || '').startsWith('video/') ? (
@@ -60,7 +63,7 @@ export default function AttachmentUploader({
             ) : (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>📄</div>
             )}
-            <button type="button" onClick={() => remove(i)} title="Remove"
+            <button type="button" onClick={(e) => { e.stopPropagation(); remove(i) }} title="Remove"
               style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, lineHeight: '18px', cursor: 'pointer', padding: 0, textAlign: 'center' }}>×</button>
           </div>
         ))}
@@ -71,6 +74,7 @@ export default function AttachmentUploader({
       </div>
       {err && <p style={{ fontSize: 11.5, color: '#dc2626', margin: '6px 0 0' }}>{err}</p>}
       <input ref={inputRef} type="file" accept="image/*,video/*" multiple style={{ display: 'none' }} onChange={e => onFiles(e.target.files)} />
+      {viewer !== null && <MediaLightbox items={list} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} />}
     </div>
   )
 }

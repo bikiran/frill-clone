@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
         location_id, location_ids, contact_id, conversation_id, order_id, assigned_to,
         address, status, created_by,
         assigned_to_id, assigned_to_name, reminder_channels,
-        notify_customer, customer_contact_id, assignees, attachments, sort_order,
+        notify_customer, customer_contact_id, assignees, attachments, sort_order, checklist,
       } = body
 
       if (!title || !starts_at) {
@@ -112,6 +112,7 @@ export async function POST(req: NextRequest) {
         customer_contact_id: uuidOrNull(customer_contact_id) || uuidOrNull(contact_id),
         attachments: Array.isArray(attachments) ? attachments : [],
         sort_order: (sort_order === null || sort_order === undefined) ? null : Number(sort_order),
+        checklist: Array.isArray(checklist) ? checklist : [],
         updated_at: new Date().toISOString(),
       }
 
