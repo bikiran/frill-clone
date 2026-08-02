@@ -386,7 +386,7 @@ export default function CalendarPage() {
           {/* Tasks shown here live in the Tasks page, not in calendar_events —
               editing them here would try to save the wrong record. */}
           {e._fromTasks ? (
-            <a href="/admin/tasks"
+            <a href={`/admin/tasks?task=${e._taskId}&date=${localYmd(new Date(e.starts_at))}`}
               style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>Open in Tasks</a>
           ) : (
             <button onClick={() => { setDayOpen(null); setSelectedEvent(null); setEditing({ ...e, date: localYmd(new Date(e.starts_at)), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_id ? [{ id: e.assigned_to_id, name: e.assigned_to_name }] : []) }) }}
@@ -410,7 +410,7 @@ export default function CalendarPage() {
   const dayEvents = dayOpen ? (byDay[dayOpen] || []) : []
 
   return (
-    <div style={{ maxWidth: 1080, margin: '0 auto', padding: '26px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div style={{ maxWidth: 'none', margin: 0, padding: '26px 32px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       <style>{`
         /* One column definition for BOTH the weekday header and the date cells,
            so they can never drift out of alignment. box-sizing keeps the 1px
@@ -765,7 +765,20 @@ export default function CalendarPage() {
             <label style={L}>Type</label>
             <div style={{ display: 'flex', gap: 5, marginBottom: 14, flexWrap: 'wrap' }}>
               {Object.entries(TYPE_META).map(([k, v]) => (
-                <button key={k} onClick={() => setEditing({ ...editing, event_type: k })}
+                <button key={k} onClick={() => {
+                  // A new "Task" is a real task, not a calendar-only event — send
+                  // the user to the full Tasks editor (priority, repeats, colour,
+                  // order link) rather than the trimmed-down event form. Existing
+                  // task-type events keep editing here.
+                  if (k === 'task' && !editing.id) {
+                    const params = new URLSearchParams({ new: '1' })
+                    if (editing.date) params.set('date', editing.date)
+                    if (editing.title) params.set('title', editing.title)
+                    window.location.href = `/admin/tasks?${params.toString()}`
+                    return
+                  }
+                  setEditing({ ...editing, event_type: k })
+                }}
                   style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${editing.event_type === k ? v.dot : 'var(--border)'}`, background: editing.event_type === k ? v.bg : '#fff', color: editing.event_type === k ? v.fg : 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
                   {v.label}
                 </button>

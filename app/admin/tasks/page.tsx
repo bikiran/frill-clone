@@ -235,6 +235,29 @@ export default function TasksPage() {
     })()
   }, [])
 
+  // Deep links from the Calendar page:
+  //   ?date=YYYY-MM-DD  → jump the list to that day (so "Open in Tasks" on a
+  //                       Monday task lands on Monday, not today)
+  //   ?task=<id>        → open that task's detail
+  //   ?new=1&title=&date= → open the New task drawer, prefilled
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const p = new URLSearchParams(window.location.search)
+    const date = p.get('date')
+    const task = p.get('task')
+    const isNew = p.get('new')
+    if (date) { setBucket('date' as Bucket); setBucketDate(date) }
+    if (task) setSelectedId(task)
+    if (isNew) {
+      setShowNew(true)
+      setNewTaskSeed({ title: p.get('title') || '', due: date || '' })
+    }
+    // Tidy the URL so a refresh doesn't reopen the drawer / re-jump.
+    if (date || task || isNew) {
+      try { window.history.replaceState({}, '', '/admin/tasks') } catch {}
+    }
+  }, [])
+
   const loadTasks = useCallback(async (cid: string) => {
     let data: any[] | null = null
     const full = await (supabase as any).from('conversation_tasks')
