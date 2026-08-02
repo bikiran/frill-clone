@@ -41,6 +41,8 @@ export default function CalendarPage() {
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<any>(null)
   const [dayOpen, setDayOpen] = useState<string | null>(null)
+  // The single event opened in the right slide-out (from a pill click).
+  const [selectedEvent, setSelectedEvent] = useState<any>(null)
 
   // ── Reminder settings ────────────────────────────────────────────────────
   const [showReminders, setShowReminders] = useState(false)
@@ -266,8 +268,142 @@ export default function CalendarPage() {
     await load()
   }
 
+  // Mark done / not done straight from the calendar — the tick on each pill and
+  // the button in the slide-out both call this. Updates the UI optimistically so
+  // the tick fills in instantly, then persists. Tasks (which live in
+  // conversation_tasks) and calendar events are handled separately.
+  const applyStatusLocal = (id: string, status: string) => {
+    setEvents(cur => cur.map(x => x.id === id ? { ...x, status } : x))
+    setSelectedEvent((prev: any) => prev && prev.id === id ? { ...prev, status } : prev)
+  }
+  const toggleDone = async (e: any) => {
+    if (!companyId) return
+    const wasDone = e.status === 'completed'
+    const next = wasDone ? 'scheduled' : 'completed'
+    applyStatusLocal(e.id, next)
+    try {
+      if (e._fromTasks) {
+        const done = !wasDone
+        await (supabase as any).from('conversation_tasks')
+          .update({ done, status: done ? 'done' : 'todo', completed_at: done ? new Date().toISOString() : null })
+          .eq('id', e._taskId)
+      } else {
+        await fetch('/api/calendar', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId, action: 'set_status', id: e.id, status: next, notifyCustomer: false }),
+        })
+      }
+    } catch { /* optimistic state stays; next load reconciles */ }
+    load()
+  }
+
   const L: any = { display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }
   const I: any = { width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', marginBottom: 12 }
+
+  // One rich event card, shared by the day popup and the right slide-out so
+  // both stay in sync. Actions close whichever container they were opened from.
+  const EventCard = (e: any) => {
+    const m = TYPE_META[e.event_type] || TYPE_META.appointment
+    const st = STATUS_META[e.status] || STATUS_META.scheduled
+    const locIds: string[] = (e.location_ids && e.location_ids.length) ? e.location_ids : (e.location_id ? [e.location_id] : [])
+    const locNames = locIds.map(id => locations.find(l => l.id === id)).filter(Boolean).map((l: any) => l.label || l.suburb)
+    const done = e.status === 'completed'
+    return (
+      <div key={e.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 7px', borderRadius: 5, background: m.bg, color: m.fg }}>{m.label}</span>
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: st.color }}>{st.label}</span>
+          {locNames.length > 0 && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>· {locNames.join(', ')}</span>}
+        </div>
+
+        <p style={{ margin: '0 0 3px', fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{dec(e.title)}</p>
+        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>
+          {e.is_all_day ? 'All day' : new Date(e.starts_at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}
+          {e.time_window ? ` · ${e.time_window}` : ''}
+          {e.contact ? ` · ${e.contact.name || e.contact.email}` : ''}
+        </p>
+        {e.address && <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>{e.address}</p>}
+        {e.notes && <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.45 }}>{dec(e.notes)}</p>}
+        {Array.isArray(e.attachments) && e.attachments.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+            {e.attachments.slice(0, 6).map((a: any, i: number) => {
+              const isImg = a.kind === 'image' || (a.type || '').startsWith('image/')
+              const isVid = a.kind === 'video' || (a.type || '').startsWith('video/')
+              return (
+                <a key={i} href={a.url} target="_blank" rel="noopener" title={a.name || ''}
+                  style={{ width: 48, height: 48, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isImg ? '#f4f4f5' : '#111', color: '#fff', textDecoration: 'none', flexShrink: 0 }}>
+                  {isImg ? <img src={a.url} alt={a.name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 18 }}>{isVid ? '▶' : '📄'}</span>}
+                </a>
+              )
+            })}
+            {e.attachments.length > 6 && <span style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--slate)' }}>+{e.attachments.length - 6}</span>}
+          </div>
+        )}
+        {(() => {
+          const as = (Array.isArray(e.assignees) && e.assignees.length)
+            ? e.assignees
+            : (e.assigned_to_name ? [{ name: e.assigned_to_name }] : [])
+          if (!as.length) return null
+          return (
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
+              {as.map((a: any, i: number) => (
+                <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 11, fontWeight: 700 }}>
+                  {a.name}
+                </span>
+              ))}
+            </div>
+          )
+        })()}
+
+        {/* Delivery status actions */}
+        {e.event_type === 'delivery' && (
+          <div style={{ display: 'flex', gap: 5, marginTop: 10, flexWrap: 'wrap' }}>
+            {[
+              ['confirmed', 'Confirm'],
+              ['in_progress', 'On its way'],
+              ['completed', 'Delivered'],
+              ['missed', 'Missed'],
+            ].map(([k, label]) => (
+              <button key={k} onClick={() => setStatus(e.id, k, e.conversation_id ? confirm(`Tell the customer? ("${label}")`) : false)}
+                style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: e.status === k ? 'var(--peach)' : '#fff', color: e.status === k ? 'var(--coral)' : 'var(--ink)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Mark done — for everything that isn't a delivery (deliveries use "Delivered"). */}
+        {e.event_type !== 'delivery' && (
+          <div style={{ marginTop: 10 }}>
+            <button onClick={() => toggleDone(e)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid ' + (done ? '#22c55e' : 'var(--border)'), background: done ? '#ecfdf5' : '#fff', color: done ? '#15803d' : 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              {done ? '✓ Done — mark not done' : 'Mark done'}
+            </button>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+          {/* Tasks shown here live in the Tasks page, not in calendar_events —
+              editing them here would try to save the wrong record. */}
+          {e._fromTasks ? (
+            <a href="/admin/tasks"
+              style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>Open in Tasks</a>
+          ) : (
+            <button onClick={() => { setDayOpen(null); setSelectedEvent(null); setEditing({ ...e, date: localYmd(new Date(e.starts_at)), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_id ? [{ id: e.assigned_to_id, name: e.assigned_to_name }] : []) }) }}
+              style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>
+          )}
+          {e.conversation_id && (
+            <a href={`/admin/inbox?conversation=${e.conversation_id}`}
+              style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>Open chat</a>
+          )}
+          {!e._fromTasks && (
+            <button onClick={() => remove(e.id)}
+              style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#dc2626' }}>Delete</button>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   if (loading) return <div style={{ padding: 28 }}>Loading…</div>
 
@@ -315,6 +451,15 @@ export default function CalendarPage() {
         }
         .cal-event:hover { z-index: 31; }
         .cal-event:hover .cal-tip { display: block; }
+
+        /* Hover tick to complete an event without opening it — mirrors the
+           Tasks calendar. Always laid out (so the pill doesn't jump), hidden
+           until hover, and kept visible once done. */
+        .cal-event .cal-tick { opacity: 0; transition: opacity 0.12s ease; }
+        .cal-event:hover .cal-tick, .cal-event .cal-tick.done { opacity: 1; }
+
+        /* Right slide-out panel for a clicked event. */
+        @keyframes calSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
 
         /* Phones: keep all 7 days visible without horizontal scroll by using
            single-letter weekday labels and tighter cells — Apple/Google style. */
@@ -451,17 +596,24 @@ export default function CalendarPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                         {evs.slice(0, 3).map(e => {
                           const m = TYPE_META[e.event_type] || TYPE_META.appointment
+                          const done = e.status === 'completed'
                           return (
                             <div key={e.id} title={dec(e.title)} className="cal-event"
+                              onClick={(ev) => { ev.stopPropagation(); setSelectedEvent(e) }}
                               style={{
                                 display: 'flex', alignItems: 'center', gap: 4,
                                 padding: '2px 5px', borderRadius: 5, background: m.bg,
                                 fontSize: 10.5, fontWeight: 600, color: m.fg,
-                                overflow: 'hidden', whiteSpace: 'nowrap',
+                                overflow: 'hidden', whiteSpace: 'nowrap', cursor: 'pointer',
                                 opacity: ['cancelled', 'completed'].includes(e.status) ? 0.55 : 1,
                                 textDecoration: e.status === 'cancelled' ? 'line-through' : 'none',
                               }}>
-                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
+                              {/* Hover tick to complete without opening the event. */}
+                              <button type="button" className={'cal-tick' + (done ? ' done' : '')} title={done ? 'Mark not done' : 'Mark done'}
+                                onClick={(ev) => { ev.stopPropagation(); toggleDone(e) }}
+                                style={{ flexShrink: 0, width: 12, height: 12, borderRadius: '50%', border: '1.5px solid ' + (done ? '#22c55e' : m.dot), background: done ? '#22c55e' : 'transparent', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {done && <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                              </button>
                               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{dec(e.title)}</span>
                               {Array.isArray(e.attachments) && e.attachments.length > 0 && (
                                 <span style={{ flexShrink: 0, marginLeft: 'auto', fontSize: 9.5, fontWeight: 700, opacity: 0.85 }}>📎{e.attachments.length}</span>
@@ -575,99 +727,27 @@ export default function CalendarPage() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {dayEvents.map(e => {
-                const m = TYPE_META[e.event_type] || TYPE_META.appointment
-                const st = STATUS_META[e.status] || STATUS_META.scheduled
-                const locIds: string[] = (e.location_ids && e.location_ids.length) ? e.location_ids : (e.location_id ? [e.location_id] : [])
-                const locNames = locIds.map(id => locations.find(l => l.id === id)).filter(Boolean).map((l: any) => l.label || l.suburb)
-                return (
-                  <div key={e.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 7px', borderRadius: 5, background: m.bg, color: m.fg }}>{m.label}</span>
-                      <span style={{ fontSize: 11.5, fontWeight: 700, color: st.color }}>{st.label}</span>
-                      {locNames.length > 0 && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>· {locNames.join(', ')}</span>}
-                    </div>
-
-                    <p style={{ margin: '0 0 3px', fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{dec(e.title)}</p>
-                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>
-                      {e.is_all_day ? 'All day' : new Date(e.starts_at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}
-                      {e.time_window ? ` · ${e.time_window}` : ''}
-                      {e.contact ? ` · ${e.contact.name || e.contact.email}` : ''}
-                    </p>
-                    {e.address && <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>{e.address}</p>}
-                    {e.notes && <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.45 }}>{dec(e.notes)}</p>}
-                    {Array.isArray(e.attachments) && e.attachments.length > 0 && (
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                        {e.attachments.slice(0, 6).map((a: any, i: number) => {
-                          const isImg = a.kind === 'image' || (a.type || '').startsWith('image/')
-                          const isVid = a.kind === 'video' || (a.type || '').startsWith('video/')
-                          return (
-                            <a key={i} href={a.url} target="_blank" rel="noopener" title={a.name || ''}
-                              style={{ width: 48, height: 48, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isImg ? '#f4f4f5' : '#111', color: '#fff', textDecoration: 'none', flexShrink: 0 }}>
-                              {isImg ? <img src={a.url} alt={a.name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 18 }}>{isVid ? '▶' : '📄'}</span>}
-                            </a>
-                          )
-                        })}
-                        {e.attachments.length > 6 && <span style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--slate)' }}>+{e.attachments.length - 6}</span>}
-                      </div>
-                    )}
-                    {(() => {
-                      const as = (Array.isArray(e.assignees) && e.assignees.length)
-                        ? e.assignees
-                        : (e.assigned_to_name ? [{ name: e.assigned_to_name }] : [])
-                      if (!as.length) return null
-                      return (
-                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
-                          {as.map((a: any, i: number) => (
-                            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 11, fontWeight: 700 }}>
-                              {a.name}
-                            </span>
-                          ))}
-                        </div>
-                      )
-                    })()}
-
-                    {/* Delivery status actions */}
-                    {e.event_type === 'delivery' && (
-                      <div style={{ display: 'flex', gap: 5, marginTop: 10, flexWrap: 'wrap' }}>
-                        {[
-                          ['confirmed', 'Confirm'],
-                          ['in_progress', 'On its way'],
-                          ['completed', 'Delivered'],
-                          ['missed', 'Missed'],
-                        ].map(([k, label]) => (
-                          <button key={k} onClick={() => setStatus(e.id, k, e.conversation_id ? confirm(`Tell the customer? ("${label}")`) : false)}
-                            style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: e.status === k ? 'var(--peach)' : '#fff', color: e.status === k ? 'var(--coral)' : 'var(--ink)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                      {/* Tasks shown here live in the Tasks page, not in
-                          calendar_events — editing them here would try to save
-                          the wrong record, so send the user where they belong. */}
-                      {e._fromTasks ? (
-                        <a href="/admin/tasks"
-                          style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>Open in Tasks</a>
-                      ) : (
-                      <button onClick={() => { setDayOpen(null); setEditing({ ...e, date: localYmd(new Date(e.starts_at)), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_id ? [{ id: e.assigned_to_id, name: e.assigned_to_name }] : []) }) }}
-                        style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>
-                      )}
-                      {e.conversation_id && (
-                        <a href={`/admin/inbox?conversation=${e.conversation_id}`}
-                          style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>Open chat</a>
-                      )}
-                      {!e._fromTasks && (
-                      <button onClick={() => remove(e.id)}
-                        style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#dc2626' }}>Delete</button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+              {dayEvents.map(e => EventCard(e))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Right slide-out — a single event's detail, opened by clicking its pill. */}
+      {selectedEvent && (
+        <div onClick={() => setSelectedEvent(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', justifyContent: 'flex-end', zIndex: 310 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 440, maxWidth: '96vw', height: '100%', overflowY: 'auto', background: '#fff', boxShadow: '-10px 0 40px rgba(0,0,0,0.16)', padding: 24, animation: 'calSlideIn 0.18s ease' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>
+                {(TYPE_META[selectedEvent.event_type] || TYPE_META.appointment).label}
+              </h2>
+              <button onClick={() => setSelectedEvent(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', display: 'flex' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            {EventCard(selectedEvent)}
           </div>
         </div>
       )}
