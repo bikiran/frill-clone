@@ -463,6 +463,9 @@ export default function CalendarPage() {
                               }}>
                               <span style={{ width: 5, height: 5, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
                               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{dec(e.title)}</span>
+                              {Array.isArray(e.attachments) && e.attachments.length > 0 && (
+                                <span style={{ flexShrink: 0, marginLeft: 'auto', fontSize: 9.5, fontWeight: 700, opacity: 0.85 }}>📎{e.attachments.length}</span>
+                              )}
                               <span className="cal-tip">{dec(e.title)}</span>
                             </div>
                           )
@@ -575,13 +578,14 @@ export default function CalendarPage() {
               {dayEvents.map(e => {
                 const m = TYPE_META[e.event_type] || TYPE_META.appointment
                 const st = STATUS_META[e.status] || STATUS_META.scheduled
-                const loc = locations.find(l => l.id === e.location_id)
+                const locIds: string[] = (e.location_ids && e.location_ids.length) ? e.location_ids : (e.location_id ? [e.location_id] : [])
+                const locNames = locIds.map(id => locations.find(l => l.id === id)).filter(Boolean).map((l: any) => l.label || l.suburb)
                 return (
                   <div key={e.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 7px', borderRadius: 5, background: m.bg, color: m.fg }}>{m.label}</span>
                       <span style={{ fontSize: 11.5, fontWeight: 700, color: st.color }}>{st.label}</span>
-                      {loc && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>· {loc.label || loc.suburb}</span>}
+                      {locNames.length > 0 && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>· {locNames.join(', ')}</span>}
                     </div>
 
                     <p style={{ margin: '0 0 3px', fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{dec(e.title)}</p>
@@ -592,6 +596,21 @@ export default function CalendarPage() {
                     </p>
                     {e.address && <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>{e.address}</p>}
                     {e.notes && <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.45 }}>{dec(e.notes)}</p>}
+                    {Array.isArray(e.attachments) && e.attachments.length > 0 && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                        {e.attachments.slice(0, 6).map((a: any, i: number) => {
+                          const isImg = a.kind === 'image' || (a.type || '').startsWith('image/')
+                          const isVid = a.kind === 'video' || (a.type || '').startsWith('video/')
+                          return (
+                            <a key={i} href={a.url} target="_blank" rel="noopener" title={a.name || ''}
+                              style={{ width: 48, height: 48, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isImg ? '#f4f4f5' : '#111', color: '#fff', textDecoration: 'none', flexShrink: 0 }}>
+                              {isImg ? <img src={a.url} alt={a.name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 18 }}>{isVid ? '▶' : '📄'}</span>}
+                            </a>
+                          )
+                        })}
+                        {e.attachments.length > 6 && <span style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--slate)' }}>+{e.attachments.length - 6}</span>}
+                      </div>
+                    )}
                     {(() => {
                       const as = (Array.isArray(e.assignees) && e.assignees.length)
                         ? e.assignees

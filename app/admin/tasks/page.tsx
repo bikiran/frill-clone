@@ -920,6 +920,15 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
             {due && <span style={{ fontSize: 11, fontWeight: 700, color: overdue ? '#dc2626' : 'var(--slate)' }}>{fmtRel(t.due_date)}</span>}
             {assignees.map((a: any, i: number) => <span key={i} style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)' }}>{a.name}</span>)}
             {t.order_number && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 5, background: '#eef2ff', color: '#4338ca' }}>#{t.order_number}</span>}
+            {Array.isArray(t.attachments) && t.attachments.length > 0 && (() => {
+              const img = t.attachments.find((a: any) => a.kind === 'image' || (a.type || '').startsWith('image/'))
+              return (
+                <span title={`${t.attachments.length} attachment${t.attachments.length === 1 ? '' : 's'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#f4f4f5', color: 'var(--slate)' }}>
+                  {img ? <img src={img.url} alt="" style={{ width: 14, height: 14, borderRadius: 3, objectFit: 'cover' }} /> : <span>📎</span>}
+                  {t.attachments.length}
+                </span>
+              )
+            })()}
             {t.recurrence && (
               <span title="Repeating task" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#ecfeff', color: '#0e7490' }}>
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
