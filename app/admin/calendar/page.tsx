@@ -2,6 +2,7 @@
 
 import { enrichNames } from '@/lib/team-names'
 import AssigneePicker from '@/components/AssigneePicker'
+import CustomerPicker from '@/components/CustomerPicker'
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -223,6 +224,9 @@ export default function CalendarPage() {
         is_all_day: !!editing.is_all_day,
         time_window: editing.time_window || null,
         location_id: editing.location_id || null,
+        location_ids: (editing.location_ids && editing.location_ids.length)
+          ? editing.location_ids
+          : (editing.location_id ? [editing.location_id] : []),
         address: editing.address || null,
         status: editing.status || 'scheduled',
         assigned_to_id: (typeof editing.assigned_to_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editing.assigned_to_id)) ? editing.assigned_to_id : null,
@@ -705,16 +709,33 @@ export default function CalendarPage() {
               </>
             )}
 
-            {locations.length > 0 && (
-              <>
-                <label style={L}>Outlet</label>
-                <select style={I} value={editing.location_id || ''}
-                  onChange={e => setEditing({ ...editing, location_id: e.target.value })}>
-                  <option value="">Not tied to an outlet</option>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.label || l.suburb}</option>)}
-                </select>
-              </>
-            )}
+            {locations.length > 0 && (() => {
+              // Multiple outlets: an event can involve more than one store.
+              const selIds: string[] = (editing.location_ids && editing.location_ids.length)
+                ? editing.location_ids
+                : (editing.location_id ? [editing.location_id] : [])
+              const toggle = (id: string) => {
+                const next = selIds.includes(id) ? selIds.filter(x => x !== id) : [...selIds, id]
+                setEditing({ ...editing, location_ids: next, location_id: next[0] || null })
+              }
+              return (
+                <>
+                  <label style={L}>Outlets <span style={{ fontWeight: 400, color: 'var(--slate)' }}>— select one or more</span></label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                    {locations.map(l => {
+                      const on = selIds.includes(l.id)
+                      return (
+                        <button key={l.id} type="button" onClick={() => toggle(l.id)}
+                          style={{ padding: '8px 13px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)' }}>
+                          {on ? '✓ ' : ''}{l.label || l.suburb}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {selIds.length === 0 && <p style={{ fontSize: 11.5, color: 'var(--slate)', margin: '-6px 0 12px' }}>Not tied to an outlet.</p>}
+                </>
+              )
+            })()}
 
             {/* Assign to one or more team members and remind them */}
             <label style={L}>Team members</label>
@@ -760,19 +781,31 @@ export default function CalendarPage() {
 
             {/* Customer reminder — only meaningful for customer-facing event types */}
             {['delivery', 'appointment', 'booking', 'pickup'].includes(editing.event_type) && (
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '11px 12px', borderRadius: 10, background: 'var(--canvas)', margin: '8px 0 4px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={!!editing.notify_customer}
-                  onChange={e => setEditing({ ...editing, notify_customer: e.target.checked })}
-                  style={{ marginTop: 2 }} />
-                <span>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', display: 'block' }}>
-                    Also remind the customer
+              <div style={{ margin: '8px 0 4px' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '11px 12px', borderRadius: 10, background: 'var(--canvas)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!editing.notify_customer}
+                    onChange={e => setEditing({ ...editing, notify_customer: e.target.checked })}
+                    style={{ marginTop: 2 }} />
+                  <span>
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', display: 'block' }}>
+                      Also remind the customer
+                    </span>
+                    <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>
+                      Sends the customer a reminder before this {TYPE_META[editing.event_type]?.label.toLowerCase() || 'event'}.
+                    </span>
                   </span>
-                  <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>
-                    Sends the customer a reminder before this {TYPE_META[editing.event_type]?.label.toLowerCase() || 'event'}.
-                  </span>
-                </span>
-              </label>
+                </label>
+                {editing.notify_customer && (
+                  <div style={{ marginTop: 8 }}>
+                    <CustomerPicker
+                      companyId={companyId}
+                      value={editing.customer_contact_id || null}
+                      valueName={editing.customer_name || null}
+                      onChange={(id, nm) => setEditing({ ...editing, customer_contact_id: id, customer_name: nm })}
+                    />
+                  </div>
+                )}
+              </div>
             )}
 
             <label style={L}>Notes</label>

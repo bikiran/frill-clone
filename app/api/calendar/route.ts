@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     if (!action || action === 'save') {
       const {
         id, event_type, title, notes, starts_at, ends_at, is_all_day, time_window,
-        location_id, contact_id, conversation_id, order_id, assigned_to,
+        location_id, location_ids, contact_id, conversation_id, order_id, assigned_to,
         address, status, created_by,
         assigned_to_id, assigned_to_name, reminder_channels,
         notify_customer, customer_contact_id, assignees,
@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
         is_all_day: !!is_all_day,
         time_window: time_window || null,
         location_id: uuidOrNull(location_id),
+        location_ids: Array.isArray(location_ids) ? location_ids.map(uuidOrNull).filter(Boolean) : [],
         contact_id: uuidOrNull(contact_id),
         conversation_id: uuidOrNull(conversation_id),
         order_id: order_id != null ? String(order_id) : null,
@@ -112,17 +113,25 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString(),
       }
 
-      let event: any
-      if (id) {
-        const { data, error } = await db.from('calendar_events').update(row).eq('id', id).select().maybeSingle()
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-        event = data
-      } else {
-        row.created_by = uuidOrNull(created_by)
-        const { data, error } = await db.from('calendar_events').insert(row).select().maybeSingle()
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-        event = data
+      // Tolerate a DB that hasn't had COLVY_V225 applied yet: if location_ids
+      // isn't a column, drop it and retry (the single location_id still saves).
+      const writeRow = async (r: any) => {
+        const run = (payload: any) => id
+          ? db.from('calendar_events').update(payload).eq('id', id).select().maybeSingle()
+          : db.from('calendar_events').insert(payload).select().maybeSingle()
+        let res = await run(r)
+        if (res.error && /location_ids/.test(res.error.message || '') && /column|schema cache|find/i.test(res.error.message || '')) {
+          const { location_ids, ...rest } = r
+          res = await run(rest)
+        }
+        return res
       }
+
+      let event: any
+      if (!id) row.created_by = uuidOrNull(created_by)
+      const { data, error } = await writeRow(row)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      event = data
 
       // If it was scheduled from a chat, note it on the conversation timeline so
       // the whole team can see what was promised.
