@@ -109,6 +109,7 @@ const NAV = [
   { key: 'moderation', label: 'Moderation',       icon: 'moderation' },
   { section: 'Operations' },
   { key: 'imp',        label: 'Impersonation',    icon: 'audit' },
+  { key: 'demos',      label: 'Demo Workspaces',  icon: 'companies' },
   { key: 'calls',      label: 'Call Diagnostics', icon: 'chat' },
   { key: 'webhooks',   label: 'Webhook Explorer', icon: 'system' },
   { key: 'jobs',       label: 'Background Jobs',  icon: 'system' },
@@ -1720,6 +1721,167 @@ function AuditPage() {
   )
 }
 
+// Operations · Demo Workspaces — create and manage the public showcase and
+// private, branded prospect demos. Backed by /api/platform-admin/demos.
+const DEMO_TYPE_META: Record<string, { label: string; color: string }> = {
+  shared_showcase: { label: 'Shared showcase', color: '#10b981' },
+  private_sales: { label: 'Private sales', color: '#6366f1' },
+  internal_testing: { label: 'Internal testing', color: '#f59e0b' },
+  trial: { label: 'Trial', color: '#0891b2' },
+}
+const DEMO_STATUS_COLOR: Record<string, string> = { active: '#10b981', disabled: '#6b7280', expired: '#f59e0b', converted: '#8b5cf6' }
+const DEMO_TEMPLATES = [['cafe', 'Café & hospitality'], ['retail', 'Retail & ecommerce'], ['automotive', 'Automotive workshop'], ['aquarium', 'Aquarium & pet store']]
+
+function DemoWorkspacesPage() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState('')
+  const [showNew, setShowNew] = useState(false)
+  const [form, setForm] = useState<any>({ businessName: '', template: 'cafe', demoType: 'private_sales', contactName: '', contactEmail: '', salesperson: '', days: 14, notes: '' })
+  const [creating, setCreating] = useState(false)
+
+  const authFetch = async (init?: RequestInit) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    return fetch('/api/platform-admin/demos', { ...init, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}`, ...(init?.headers || {}) } })
+  }
+  const load = async () => {
+    try {
+      const res = await authFetch()
+      const d = await res.json()
+      if (d.missing) { setMissing(true); setRows([]); return }
+      setRows(d.demos || [])
+    } catch { setRows([]) }
+  }
+  useEffect(() => { load() }, [])
+
+  const act = async (op: string, id: string, extra?: any) => {
+    setBusy(id + op); setMsg('')
+    try {
+      const res = await authFetch({ method: 'POST', body: JSON.stringify({ op, id, ...extra }) })
+      const d = await res.json()
+      if (!res.ok) { setMsg(d.error || 'Action failed'); return }
+      setMsg(`Done: ${op}`)
+      await load()
+    } finally { setBusy('') }
+  }
+  const create = async () => {
+    if (!form.businessName.trim()) { setMsg('Business name is required.'); return }
+    setCreating(true); setMsg('')
+    try {
+      const res = await authFetch({ method: 'POST', body: JSON.stringify({ op: 'create', ...form }) })
+      const d = await res.json()
+      if (!res.ok) { setMsg(d.error || 'Could not create demo'); return }
+      setShowNew(false); setForm({ businessName: '', template: 'cafe', demoType: 'private_sales', contactName: '', contactEmail: '', salesperson: '', days: 14, notes: '' })
+      setMsg(`Created ${d.slug} (${Object.values(d.counts || {}).reduce((a: any, b: any) => a + b, 0)} sample records)`)
+      await load()
+    } finally { setCreating(false) }
+  }
+
+  const list = rows || []
+  const byType = (t: string) => list.filter(r => r.demo_type === t).length
+  const th: React.CSSProperties = { padding: '12px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }
+  const td: React.CSSProperties = { padding: '10px 14px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const expLabel = (r: any) => { const e = r.expires_at || r.company?.demo_expires_at; if (!e) return '—'; const days = Math.ceil((new Date(e).getTime() - Date.now()) / 86400000); return days < 0 ? 'expired' : `${days}d` }
+
+  return (
+    <div>
+      <SectionHeader title="Demo Workspaces" sub="The public showcase and private, branded prospect demos"
+        action={<button onClick={() => setShowNew(true)} style={paBtn('#ff7a6b', true)}>+ New demo</button>} />
+      {msg && <div style={{ padding: '9px 12px', borderRadius: 9, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 12.5, color: 'var(--sa-text)', marginBottom: 12 }}>{msg}</div>}
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V223_DEMO.sql</b> to enable demo workspaces.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 12, marginBottom: 18 }}>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: '#6366f1', margin: 0 }}>{rows === null ? '…' : list.length}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Total demos</p>
+            </div>
+            {Object.keys(DEMO_TYPE_META).map(t => (
+              <div key={t} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+                <p style={{ fontSize: 24, fontWeight: 800, color: DEMO_TYPE_META[t].color, margin: 0 }}>{rows === null ? '…' : byType(t)}</p>
+                <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{DEMO_TYPE_META[t].label}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+              <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Business', 'Type', 'Template', 'Slug', 'Status', 'Expiry', 'Contact', 'Actions'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows === null ? <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                : list.length === 0 ? <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>No demo workspaces yet. Create one, or seed the public showcase from the SMS-free /demo page.</td></tr>
+                : list.map((r, i) => {
+                  const tm = DEMO_TYPE_META[r.demo_type] || { label: r.demo_type, color: '#6b7280' }
+                  const sc = DEMO_STATUS_COLOR[r.status] || '#6b7280'
+                  const slug = r.slug || r.company?.slug
+                  return (
+                    <tr key={r.id} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+                      <td style={{ ...td, fontWeight: 600 }}>{r.business_name || r.company?.name || '—'}</td>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: tm.color }}>{tm.label}</span></td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', textTransform: 'capitalize' }}>{r.template || '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{slug || '—'}</td>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: sc + '22', color: sc }}>{r.status}</span></td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{expLabel(r)}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.contact_email || ''}>{r.contact_name || r.contact_email || '—'}</td>
+                      <td style={td}>
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                          {slug && <button onClick={() => enterWorkspace(slug)} style={paBtn('#6366f1')}>Open</button>}
+                          <button onClick={() => act('reset', r.id)} disabled={!!busy} style={paBtn()}>{busy === r.id + 'reset' ? '…' : 'Reset'}</button>
+                          <button onClick={() => act('extend', r.id, { days: 14 })} disabled={!!busy} style={paBtn()}>+14d</button>
+                          {r.status === 'disabled'
+                            ? <button onClick={() => act('enable', r.id)} disabled={!!busy} style={paBtn('#10b981')}>Enable</button>
+                            : <button onClick={() => act('disable', r.id)} disabled={!!busy} style={paBtn('#f59e0b')}>Disable</button>}
+                          {r.status !== 'converted' && <button onClick={() => act('convert', r.id)} disabled={!!busy} style={paBtn('#8b5cf6')}>Convert</button>}
+                          <button onClick={() => { if (confirm('Delete this demo workspace and all its sample data? This cannot be undone.')) act('delete', r.id) }} disabled={!!busy} style={paBtn('#ef4444')}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {showNew && (
+        <div onClick={() => setShowNew(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 480, maxWidth: '96vw', maxHeight: '90vh', overflowY: 'auto', background: 'var(--sa-bg)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: '0 0 14px' }}>New demo workspace</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Business name *</label><input value={form.businessName} onChange={e => setForm({ ...form, businessName: e.target.value })} placeholder="Bright Auto" style={paInput} /></div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Industry template</label>
+                  <select value={form.template} onChange={e => setForm({ ...form, template: e.target.value })} style={paInput}>{DEMO_TEMPLATES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+                <div style={{ flex: 1 }}><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Demo type</label>
+                  <select value={form.demoType} onChange={e => setForm({ ...form, demoType: e.target.value })} style={paInput}>
+                    <option value="private_sales">Private sales</option>
+                    <option value="internal_testing">Internal testing</option>
+                    <option value="trial">Trial (sending on)</option>
+                  </select></div>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Contact name</label><input value={form.contactName} onChange={e => setForm({ ...form, contactName: e.target.value })} style={paInput} /></div>
+                <div style={{ flex: 1 }}><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Contact email</label><input value={form.contactEmail} onChange={e => setForm({ ...form, contactEmail: e.target.value })} style={paInput} /></div>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Salesperson</label><input value={form.salesperson} onChange={e => setForm({ ...form, salesperson: e.target.value })} style={paInput} /></div>
+                <div style={{ width: 110 }}><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Expiry (days)</label><input type="number" value={form.days} onChange={e => setForm({ ...form, days: parseInt(e.target.value) || 14 })} style={paInput} /></div>
+              </div>
+              <div><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Internal notes</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} style={{ ...paInput, resize: 'vertical' }} /></div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button onClick={() => setShowNew(false)} style={paBtn()}>Cancel</button>
+              <button onClick={create} disabled={creating || !form.businessName.trim()} style={paBtn('#ff7a6b', true)}>{creating ? 'Creating & seeding…' : 'Create & seed'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Attention Required — surfaces businesses that need a look right now, computed
 // purely from companies.plan + created_at (no invented columns, no backend).
 function AttentionPanel() {
@@ -3298,6 +3460,7 @@ export default function SuperAdmin() {
           {page === 'tickets'    && <TicketsPage />}
           {page === 'moderation' && <ModerationPage />}
           {page === 'imp'          && <ImpersonationSessionsPage />}
+          {page === 'demos'        && <DemoWorkspacesPage />}
           {page === 'calls'        && <CallDiagnosticsPage />}
           {page === 'webhooks'     && <WebhookExplorerPage />}
           {page === 'jobs'         && <BackgroundJobsPage />}
