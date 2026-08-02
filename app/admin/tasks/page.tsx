@@ -483,6 +483,7 @@ export default function TasksPage() {
         payload.starts_at = payload.starts_at ?? target.due_date
         payload.notes = fields.text ?? target.text
         if (fields.attachments !== undefined) payload.attachments = fields.attachments
+        if (fields.location_ids !== undefined) { payload.location_ids = fields.location_ids; payload.location_id = fields.location_id ?? (fields.location_ids?.[0] || null) }
         await fetch('/api/calendar', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -1260,14 +1261,26 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
         ))}
       </div>
 
-      {outlets.length > 0 && (<>
-        <p style={L}>Outlet</p>
-        <select value={task.location_id || ''} onChange={e => patch({ location_id: e.target.value || null })}
-          style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
-          <option value="">No outlet</option>
-          {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
-        </select>
-      </>)}
+      {outlets.length > 0 && (() => {
+        const selIds: string[] = (Array.isArray(task.location_ids) && task.location_ids.length) ? task.location_ids : (task.location_id ? [task.location_id] : [])
+        return (
+          <>
+            <p style={L}>Outlets</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {outlets.map((o: any) => {
+                const on = selIds.includes(o.id)
+                return (
+                  <button key={o.id} type="button"
+                    onClick={() => { const next = on ? selIds.filter(x => x !== o.id) : [...selIds, o.id]; patch({ location_ids: next, location_id: next[0] || null }) }}
+                    style={{ padding: '7px 12px', borderRadius: 9, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)' }}>
+                    {on ? '✓ ' : ''}{o.label || o.suburb || 'Outlet'}
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        )
+      })()}
 
       <p style={L}>Assignees</p>
       <AssigneePicker members={team} value={assignees.map((a: any) => ({ id: a.id, name: a.name }))}
@@ -1413,7 +1426,8 @@ function TaskEditor({ companyId, team, outlets = [], me, userId, initial, onClos
   const [assignees, setAssignees] = useState<any[]>(initial?.assignees || [])
   const [order, setOrder] = useState<any>(null)
   const [color, setColor] = useState<string>(initial?.color || '')          // hex or '' (none)
-  const [locationId, setLocationId] = useState<string>(initial?.locationId || '') // outlet
+  const [locationIds, setLocationIds] = useState<string[]>(initial?.locationIds || (initial?.locationId ? [initial.locationId] : [])) // outlets (multi)
+  const [attachments, setAttachments] = useState<any[]>(initial?.attachments || [])
   const [repeat, setRepeat] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none')
   const [repeatDays, setRepeatDays] = useState<number[]>([]) // weekly: 0..6
   const [repeatCount, setRepeatCount] = useState(6)
@@ -1421,7 +1435,7 @@ function TaskEditor({ companyId, team, outlets = [], me, userId, initial, onClos
   const [saving, setSaving] = useState(false)
 
   // Keep a half-written task so it isn't lost on navigating away.
-  const draft = useDraft(userId, companyId, 'task', '', { title, priority, due, assignees, order, color, locationId, repeat, repeatDays, repeatCount },
+  const draft = useDraft(userId, companyId, 'task', '', { title, priority, due, assignees, order, color, locationIds, attachments, repeat, repeatDays, repeatCount },
     { isEmpty: (v: any) => !v?.title?.trim() })
   useEffect(() => {
     // Don't overwrite a seeded form (from "end repeat & create new") with a draft.
@@ -1434,7 +1448,8 @@ function TaskEditor({ companyId, team, outlets = [], me, userId, initial, onClos
       if (Array.isArray(r.assignees)) setAssignees(r.assignees)
       if (r.order) setOrder(r.order)
       if (r.color) setColor(r.color)
-      if (r.locationId) setLocationId(r.locationId)
+      if (Array.isArray(r.locationIds)) setLocationIds(r.locationIds)
+      if (Array.isArray(r.attachments)) setAttachments(r.attachments)
       if (r.repeat) setRepeat(r.repeat)
       if (Array.isArray(r.repeatDays)) setRepeatDays(r.repeatDays)
       if (r.repeatCount) setRepeatCount(r.repeatCount)
@@ -1476,7 +1491,7 @@ function TaskEditor({ companyId, team, outlets = [], me, userId, initial, onClos
       created_by: me, created_by_id: isUuid(userId) ? userId : null,
       mentions: mentioned.map((m: any) => ({ id: isUuid(m.id) ? m.id : null, name: m.name })),
       order_id: order?.order_id ? String(order.order_id) : null, order_number: order?.order_number ? String(order.order_number) : null, order_customer: order?.customer || null, order_total: order?.total || null,
-      color: color || null, location_id: locationId || null, recurrence: rec, series_id: seriesId,
+      color: color || null, location_id: locationIds[0] || null, location_ids: locationIds, attachments, recurrence: rec, series_id: seriesId,
     }
     const rows = dueDates.map(d => ({ ...common, due_date: d }))
     const row = rows[0]
@@ -1594,13 +1609,24 @@ function TaskEditor({ companyId, team, outlets = [], me, userId, initial, onClos
       </div>
 
       {outlets.length > 0 && (<>
-        <p style={L}>Outlet</p>
-        <select value={locationId} onChange={e => setLocationId(e.target.value)}
-          style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', background: '#fff', cursor: 'pointer' }}>
-          <option value="">No outlet</option>
-          {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
-        </select>
+        <p style={L}>Outlets <span style={{ textTransform: 'none', fontWeight: 400, color: 'var(--slate)' }}>— select one or more</span></p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {outlets.map((o: any) => {
+            const on = locationIds.includes(o.id)
+            return (
+              <button key={o.id} type="button"
+                onClick={() => setLocationIds(prev => on ? prev.filter(x => x !== o.id) : [...prev, o.id])}
+                style={{ padding: '8px 13px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)' }}>
+                {on ? '✓ ' : ''}{o.label || o.suburb || 'Outlet'}
+              </button>
+            )
+          })}
+        </div>
+        {locationIds.length === 0 && <p style={{ fontSize: 11.5, color: 'var(--slate)', margin: '6px 0 0' }}>Not tied to an outlet.</p>}
       </>)}
+
+      <p style={L}>Photos &amp; videos</p>
+      <AttachmentUploader companyId={companyId} value={attachments} onChange={setAttachments} folder="task" compact />
 
       <p style={L}>Assignees</p>
       <AssigneePicker members={team} value={assignees} onChange={setAssignees} />
