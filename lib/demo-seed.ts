@@ -224,11 +224,12 @@ export async function seedSampleData(db: any, companyId: string, template: Templ
     counts.reviews = (data || []).length
   } catch { counts.reviews = 0 }
 
-  // Orders (drive customer spend / AOV in profiles + map).
+  // Orders (drive customer spend / AOV in profiles + map). total must be a
+  // NUMBER (the column is NUMERIC) — a string 400s the whole batch.
   try {
     const orders: any[] = []
     for (let i = 0; i < 25; i++) {
-      const total = (20 + Math.floor(r() * 480)).toFixed(2)
+      const total = 20 + Math.floor(r() * 480)
       orders.push({
         company_id: companyId, woo_order_id: 1000 + i,
         customer_email: contacts[Math.floor(r() * contacts.length)]?.email || 'guest@example.com',
@@ -239,8 +240,13 @@ export async function seedSampleData(db: any, companyId: string, template: Templ
         created_at: daysAgo(Math.floor(r() * 90)),
       })
     }
-    const { data } = await db.from('woocommerce_orders').insert(orders).select('id')
-    counts.orders = (data || []).length
+    const { data, error } = await db.from('woocommerce_orders').insert(orders).select('id')
+    if (error) {
+      // Fall back to row-by-row so one rejected row can't drop them all.
+      let ok = 0
+      for (const o of orders) { const { error: e } = await db.from('woocommerce_orders').insert(o); if (!e) ok++ }
+      counts.orders = ok
+    } else counts.orders = (data || []).length
   } catch { counts.orders = 0 }
 
   // Tasks (base columns only).

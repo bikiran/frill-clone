@@ -21,7 +21,12 @@ export async function POST(_req: NextRequest) {
     } else {
       try {
         const { count } = await admin.from('conversations').select('id', { count: 'exact', head: true }).eq('company_id', co.id)
-        if ((count || 0) < 20) await seedHarbourBean(admin)
+        let needsReseed = (count || 0) < 20
+        if (!needsReseed) {
+          const { count: oc } = await admin.from('woocommerce_orders').select('id', { count: 'exact', head: true }).eq('company_id', co.id)
+          if ((oc || 0) === 0) needsReseed = true
+        }
+        if (needsReseed) await seedHarbourBean(admin)
       } catch {}
     }
     // Sign in as the demo user with the anon client to get real session tokens.
