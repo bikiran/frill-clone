@@ -18,6 +18,24 @@ export function demoAdmin() {
   )
 }
 
+// Insert rows, adapting to schema drift: if PostgREST reports a column that
+// doesn't exist (PGRST204 — common on older tables where a migration's ALTERs
+// never ran), strip that column from every row and retry. Returns inserted count.
+async function insertAdaptive(db: any, table: string, rows: any[]): Promise<number> {
+  if (!rows.length) return 0
+  let cur = rows
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const { data, error } = await db.from(table).insert(cur).select('id')
+    if (!error) return (data || []).length
+    const m = /Could not find the '([^']+)' column/i.exec(error.message || '')
+    if (m) { const bad = m[1]; cur = cur.map((r: any) => { const c = { ...r }; delete c[bad]; return c }); continue }
+    break   // a different error — fall through to row-by-row
+  }
+  let ok = 0
+  for (const r of cur) { try { const { error: e } = await db.from(table).insert(r); if (!e) ok++ } catch {} }
+  return ok
+}
+
 // Deterministic pseudo-random so re-seeds produce the same showcase.
 function rng(seed: number) { let s = seed % 2147483647; if (s <= 0) s += 2147483646; return () => (s = (s * 16807) % 2147483647) / 2147483647 }
 const pick = <T,>(arr: T[], r: number) => arr[Math.floor(r * arr.length) % arr.length]
@@ -240,13 +258,7 @@ export async function seedSampleData(db: any, companyId: string, template: Templ
         created_at: daysAgo(Math.floor(r() * 90)),
       })
     }
-    const { data, error } = await db.from('woocommerce_orders').insert(orders).select('id')
-    if (error) {
-      // Fall back to row-by-row so one rejected row can't drop them all.
-      let ok = 0
-      for (const o of orders) { const { error: e } = await db.from('woocommerce_orders').insert(o); if (!e) ok++ }
-      counts.orders = ok
-    } else counts.orders = (data || []).length
+    counts.orders = await insertAdaptive(db, 'woocommerce_orders', orders)
   } catch { counts.orders = 0 }
 
   // Tasks (base columns only).
