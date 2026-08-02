@@ -111,6 +111,7 @@ export default function TasksPage() {
   const [search, setSearch] = useState('')
   const [assigneeFilter, setAssigneeFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
+  const [colorFilter, setColorFilter] = useState('')              // '' = any colour
   const [outletFilter, setOutletFilter] = useState<string[]>([])  // [] = all outlets; else match any
   const [dateFilter, setDateFilter] = useState('')         // '' = any; else a reference YYYY-MM-DD
   const [datePeriod, setDatePeriod] = useState<'day' | 'week' | 'month'>('day')
@@ -421,6 +422,7 @@ export default function TasksPage() {
         if (!ok) return false
       }
       if (priorityFilter && (t.priority || 'normal') !== priorityFilter) return false
+      if (colorFilter && (t.color || '') !== colorFilter) return false
       if (outletFilter.length) {
         const outs = (Array.isArray(t.location_ids) && t.location_ids.length) ? t.location_ids : (t.location_id ? [t.location_id] : [])
         if (!outs.some((o: string) => outletFilter.includes(o))) return false
@@ -445,7 +447,7 @@ export default function TasksPage() {
       return da - db_
     })
     return list
-  }, [tasks, bucket, bucketDate, search, assigneeFilter, priorityFilter, outletFilter, dateFilter, datePeriod, sortBy, assignedToMe])
+  }, [tasks, bucket, bucketDate, search, assigneeFilter, priorityFilter, colorFilter, outletFilter, dateFilter, datePeriod, sortBy, assignedToMe])
 
   // For the calendar view we want the whole month regardless of the Today/
   // Overdue/… bucket — only the assignee/priority/search filters apply, so a
@@ -459,6 +461,7 @@ export default function TasksPage() {
         if (!ok) return false
       }
       if (priorityFilter && (t.priority || 'normal') !== priorityFilter) return false
+      if (colorFilter && (t.color || '') !== colorFilter) return false
       if (outletFilter.length) {
         const outs = (Array.isArray(t.location_ids) && t.location_ids.length) ? t.location_ids : (t.location_id ? [t.location_id] : [])
         if (!outs.some((o: string) => outletFilter.includes(o))) return false
@@ -469,7 +472,7 @@ export default function TasksPage() {
       }
       return true
     })
-  }, [tasks, search, assigneeFilter, priorityFilter, outletFilter, assignedToMe])
+  }, [tasks, search, assigneeFilter, priorityFilter, colorFilter, outletFilter, assignedToMe])
 
   const selected = useMemo(() => tasks.find(t => t.id === selectedId) || null, [tasks, selectedId])
 
@@ -672,6 +675,10 @@ export default function TasksPage() {
         .cal-pill:hover .cal-tick, .cal-tick.done { opacity: 1; }
         .cal-cell { cursor: pointer; }
         .task-card.sel { border-color: var(--coral); box-shadow: 0 0 0 2px var(--peach); }
+        /* Timeline per-day "add task" — subtle until you hover the column. */
+        .tl-add { opacity: 0.45; transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease, border-color 0.12s ease; }
+        .tl-col:hover .tl-add { opacity: 1; }
+        .tl-add:hover { background: var(--peach); color: var(--coral); border-color: var(--coral); }
         .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 16px; height: 100%; box-sizing: border-box; }
         .board-col { background: var(--canvas); border-radius: 12px; padding: 10px; overflow-y: auto; }
         .filters-mobile { display: none; }
@@ -751,7 +758,7 @@ export default function TasksPage() {
           )}
           {/* Filters live in a top dropdown now (moved off the left rail). */}
           {(() => {
-            const activeN = [assigneeFilter, priorityFilter, dateFilter].filter(Boolean).length + (outletFilter.length ? 1 : 0)
+            const activeN = [assigneeFilter, priorityFilter, colorFilter, dateFilter].filter(Boolean).length + (outletFilter.length ? 1 : 0)
             return (
               <div style={{ position: 'relative' }}>
                 <button className="ctl" onClick={() => setShowFilters(v => !v)}
@@ -804,13 +811,25 @@ export default function TasksPage() {
                           <option value="">Any priority</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
                         </select>
                       </FilterField>
+                      <FilterField label={colorFilter ? 'Colour (1)' : 'Colour'}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          <button onClick={() => setColorFilter('')} title="Any colour"
+                            style={{ width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', border: '1px solid ' + (colorFilter === '' ? 'var(--coral)' : 'var(--border)'), background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                            {colorFilter === '' && <span style={{ width: 11, height: 2, background: 'var(--slate)', transform: 'rotate(-45deg)', position: 'absolute' }} />}
+                          </button>
+                          {TASK_COLORS.map(c => (
+                            <button key={c} onClick={() => setColorFilter(colorFilter === c ? '' : c)} title={c}
+                              style={{ width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', background: c, border: colorFilter === c ? '2px solid var(--ink)' : '2px solid transparent', boxShadow: colorFilter === c ? `0 0 0 2px ${tint(c, 0.4)}` : 'none' }} />
+                          ))}
+                        </div>
+                      </FilterField>
                       <FilterField label="Sort by">
                         <select className="ctl" style={selectStyle} value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
                           <option value="due">Due date</option><option value="priority">Priority</option><option value="created">Newest</option>
                         </select>
                       </FilterField>
                       {activeN > 0 && (
-                        <button onClick={() => { setAssigneeFilter(''); setPriorityFilter(''); setOutletFilter([]); setDateFilter('') }}
+                        <button onClick={() => { setAssigneeFilter(''); setPriorityFilter(''); setColorFilter(''); setOutletFilter([]); setDateFilter('') }}
                           style={{ width: '100%', marginTop: 6, padding: '8px 0', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Clear all filters</button>
                       )}
                     </div>
@@ -841,7 +860,10 @@ export default function TasksPage() {
               ))}
             </div>
           ) : view === 'timeline' ? (
-            <Timeline tasks={calendarTasks} convs={convs} statusOf={statusOf} onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} selectedId={selectedId} />
+            <Timeline tasks={calendarTasks} convs={convs} statusOf={statusOf} outlets={outlets}
+              onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} selectedId={selectedId}
+              onToggle={(t: any) => setStatus(t, isDone(t) ? 'todo' : 'done')}
+              onAdd={(d: Date) => { setNewTaskSeed({ due: localYmd(d) }); setShowNew(true); setSelectedId(null) }} />
           ) : view === 'calendar' ? (
             <TaskCalendar tasks={calendarTasks} statusOf={statusOf} onSelect={(id: string) => { setSelectedId(id); setShowNew(false) }} onToggle={(t: any) => setStatus(t, isDone(t) ? 'todo' : 'done')} selectedId={selectedId} />
           ) : (
@@ -944,7 +966,7 @@ function FilterRail({ team, assigneeFilter, setAssigneeFilter, priorityFilter, s
   )
 }
 
-function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusButtons, statusOf, selectMode, checked, onSelect }: any) {
+function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusButtons, statusOf, selectMode, checked, onSelect, outlets }: any) {
   const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
   const due = parseTs(t.due_date)
   const overdue = due && startOfDay(due).getTime() < startOfDay(new Date()).getTime() && statusOf(t) !== 'done'
@@ -988,6 +1010,16 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
                   {et.label}
                 </span>
               )
+            })()}
+            {Array.isArray(outlets) && outlets.length > 0 && (() => {
+              const ids = (Array.isArray(t.location_ids) && t.location_ids.length) ? t.location_ids : (t.location_id ? [t.location_id] : [])
+              const names = ids.map((id: string) => outlets.find((o: any) => o.id === id)).filter(Boolean).map((o: any) => o.label || o.suburb || 'Outlet')
+              return names.map((n: string, i: number) => (
+                <span key={i} title={n} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#f0fdf4', color: '#15803d' }}>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                  {n}
+                </span>
+              ))
             })()}
           </div>
         </div>
@@ -1203,7 +1235,7 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
   )
 }
 
-function Timeline({ tasks, convs, statusOf, onSelect, selectedId }: any) {
+function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onToggle, onAdd }: any) {
   // A continuous day axis (Planyway-style): every day is a column, ordered
   // left→right into the future, empty days included. Scroll right (swipe left)
   // to reach upcoming dates; each column scrolls down through its own tasks.
@@ -1260,15 +1292,24 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId }: any) {
   const todayKey = dayKey(startOfDay(new Date()))
   const navBtn: React.CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
 
-  const renderColumn = (key: string, header: string, sub: string, isToday: boolean, weekend: boolean, list: any[]) => (
-    <div key={key} style={{ width: COL_W, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff') }}>
+  const renderColumn = (key: string, header: string, sub: string, isToday: boolean, weekend: boolean, list: any[], dateObj: Date | null) => (
+    <div key={key} className="tl-col" style={{ width: COL_W, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff') }}>
       <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '8px 10px', borderBottom: `2px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, background: 'inherit', display: 'flex', alignItems: 'baseline', gap: 6 }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)' }}>{header}</span>
         {sub && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>{sub}</span>}
         {list.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: 'var(--slate)', background: 'rgba(0,0,0,0.06)', borderRadius: 10, padding: '0 6px' }}>{list.length}</span>}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 8px' }}>
-        {list.map((t: any) => <TaskCard key={t.id} t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id} onClick={() => onSelect(t.id)} statusOf={statusOf} />)}
+        {list.map((t: any) => <TaskCard key={t.id} t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id} onClick={() => onSelect(t.id)} statusOf={statusOf} outlets={outlets} onToggle={onToggle ? () => onToggle(t) : undefined} />)}
+        {dateObj && (
+          // Add a task straight onto this day. Always present at the foot of the
+          // column, and a hover "+" (see .tl-col:hover .tl-add) makes it obvious.
+          <button className="tl-add" onClick={(e) => { e.stopPropagation(); onAdd?.(dateObj) }}
+            style={{ width: '100%', marginTop: list.length ? 8 : 0, padding: '8px 0', borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add task
+          </button>
+        )}
       </div>
     </div>
   )
@@ -1293,10 +1334,10 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId }: any) {
               k,
               `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${d.getDate()}`,
               showMonth ? d.toLocaleDateString(undefined, { month: 'short' }) : '',
-              isToday, weekend, list,
+              isToday, weekend, list, d,
             )
           })}
-          {byDay.noDate.length > 0 && renderColumn('nodate', 'No due date', '', false, false, byDay.noDate)}
+          {byDay.noDate.length > 0 && renderColumn('nodate', 'No due date', '', false, false, byDay.noDate, null)}
         </div>
       </div>
     </div>
