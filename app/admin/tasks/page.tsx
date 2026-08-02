@@ -313,6 +313,7 @@ export default function TasksPage() {
         attachments: Array.isArray(e.attachments) ? e.attachments : [],
         checklist: Array.isArray(e.checklist) ? e.checklist : [],
         description: e.description ?? '',
+        cover_image: e.cover_image ?? null,
         sort_order: e.sort_order ?? null,
         // Calendar statuses don't map 1:1 onto a task board, so translate them.
         status: e.status === 'completed' ? 'done'
@@ -563,6 +564,7 @@ export default function TasksPage() {
           attachments: fields.attachments !== undefined ? fields.attachments : (raw.attachments ?? []),
           checklist: fields.checklist !== undefined ? fields.checklist : (raw.checklist ?? []),
           description: fields.description !== undefined ? fields.description : (raw.description ?? null),
+          cover_image: fields.cover_image !== undefined ? fields.cover_image : (raw.cover_image ?? null),
           sort_order: fields.sort_order !== undefined ? fields.sort_order : (raw.sort_order ?? null),
         }
         await fetch('/api/calendar', {
@@ -1045,9 +1047,18 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
   const assignees = (Array.isArray(t.assignees) && t.assignees.length) ? t.assignees : (t.assigned_to ? [{ name: t.assigned_to }] : [])
   // Colour-coded tasks get a soft tinted background rather than a left bar.
   const bg = selectMode && checked ? 'var(--peach)' : (t.color ? tint(t.color, 0.10) : undefined)
+  // Cover photo: the chosen image, full-bleed across the top of the card. Only
+  // when it's still a real image attachment.
+  const atts = Array.isArray(t.attachments) ? t.attachments : []
+  const coverUrl = t.cover_image && atts.some((a: any) => a.url === t.cover_image && (a.kind === 'image' || (a.type || '').startsWith('image/'))) ? t.cover_image : ''
   return (
     <div className={'task-card lift' + ((selected || (selectMode && checked)) ? ' sel' : '')} onClick={onClick}
-      style={(bg || t.color) ? { background: bg, borderColor: selectMode && checked ? 'var(--coral)' : (t.color ? tint(t.color, 0.45) : undefined) } : undefined}>
+      style={{ ...(coverUrl ? { overflow: 'hidden' } : {}), ...((bg || t.color) ? { background: bg, borderColor: selectMode && checked ? 'var(--coral)' : (t.color ? tint(t.color, 0.45) : undefined) } : {}) }}>
+      {coverUrl && (
+        <div style={{ margin: '-13px -13px 11px', height: 132, overflow: 'hidden', background: '#f4f4f5' }}>
+          <img src={coverUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
         {selectMode
           ? <input type="checkbox" checked={!!checked} onClick={e => e.stopPropagation()} onChange={onSelect} style={{ marginTop: 2, width: 16, height: 16, flexShrink: 0, cursor: 'pointer', accentColor: 'var(--coral)' }} />
@@ -1549,6 +1560,35 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
 
       <p style={L}>Photos &amp; videos</p>
       <AttachmentUploader companyId={companyId} value={task.attachments || []} onChange={(a) => patch({ attachments: a })} folder="task" compact />
+
+      {/* Cover photo — pick one image to sit across the top of the card. */}
+      {(() => {
+        const imgs = (Array.isArray(task.attachments) ? task.attachments : []).filter((a: any) => a.kind === 'image' || (a.type || '').startsWith('image/'))
+        if (!imgs.length) return null
+        return (
+          <>
+            <p style={L}>Cover photo <span style={{ textTransform: 'none', fontWeight: 400, color: 'var(--slate)' }}>— shown across the top of the card</span></p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <button onClick={() => patch({ cover_image: null })}
+                style={{ width: 56, height: 56, borderRadius: 9, cursor: 'pointer', fontSize: 11, fontWeight: 700, border: '1px solid ' + (!task.cover_image ? 'var(--coral)' : 'var(--border)'), background: !task.cover_image ? 'var(--peach)' : '#fff', color: !task.cover_image ? 'var(--coral)' : 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>None</button>
+              {imgs.map((a: any, i: number) => {
+                const on = task.cover_image === a.url
+                return (
+                  <button key={i} onClick={() => patch({ cover_image: a.url })} title="Use as cover"
+                    style={{ position: 'relative', width: 56, height: 56, borderRadius: 9, overflow: 'hidden', cursor: 'pointer', padding: 0, border: on ? '2px solid var(--coral)' : '1px solid var(--border)', background: '#f4f4f5' }}>
+                    <img src={a.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    {on && (
+                      <span style={{ position: 'absolute', top: 2, right: 2, width: 16, height: 16, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        )
+      })()}
 
       {/* Checklist — a list of sub-steps with their own progress. */}
       {(() => {
