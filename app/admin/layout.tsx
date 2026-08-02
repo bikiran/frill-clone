@@ -10,6 +10,12 @@ import IncomingCallListener from '@/components/IncomingCallListener'
 import AdminBanner from '@/components/AdminBanner'
 import ImpersonationBanner from '@/components/ImpersonationBanner'
 import DemoBanner from '@/components/DemoBanner'
+import DemoTour from '@/components/DemoTour'
+
+// Pages locked inside a demo workspace (connect real accounts / billing /
+// import-export). Sending is blocked server-side regardless; this hides the UI.
+const DEMO_LOCKED_HREFS = ['/admin/integrations', '/admin/billing', '/admin/import']
+const DEMO_LOCK_MESSAGE = 'This action is unavailable in the shared Colvy showcase. Start a free trial to connect your channels and use live messaging.'
 import { getCompanyByOwner } from '@/lib/board'
 import { useRouter } from 'next/navigation'
 import MobileNav from '@/components/MobileNav'
@@ -129,6 +135,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [adminCollapsed, setAdminCollapsed] = useState(false)
   const [company, setCompany] = useState<any>(null)
+  const [demoMsg, setDemoMsg] = useState('')
+  useEffect(() => { if (!demoMsg) return; const t = setTimeout(() => setDemoMsg(''), 4000); return () => clearTimeout(t) }, [demoMsg])
 
   // Per-section collapse. Not everyone needs every group expanded, so each
   // titled nav group can be minimised. The choice is remembered for the tab
@@ -442,8 +450,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div style={{ display: 'flex', minHeight: 'calc(100vh - 56px)' }}>
       {/* Super-admin impersonation banner (shows only when a session is active) */}
       <ImpersonationBanner />
-      {/* Demo showcase banner (shows only inside a demo workspace) */}
+      {/* Demo showcase banner + guided tour (shown only inside a demo workspace) */}
       <DemoBanner company={company} />
+      {company?.is_demo && <DemoTour />}
+      {demoMsg && (
+        <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 100001, maxWidth: 420, padding: '12px 16px', borderRadius: 12, background: '#111827', color: '#fff', fontSize: 13, fontWeight: 500, boxShadow: '0 10px 30px rgba(0,0,0,0.35)', lineHeight: 1.5 }}>
+          {demoMsg}
+        </div>
+      )}
       {/* Inbound calls: the WebRTC client used to register ONLY on the inbox
           page. Anywhere else in the admin, no endpoint was registered with
           Telnyx — so a customer ringing the business number got a BUSY tone
@@ -594,9 +608,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               )}
               {!groupCollapsed && group.items.map(item => {
                 const active = isActive(item.href)
+                // In a demo workspace, pages that connect real accounts, handle
+                // billing or import/export real data are locked. Sending is
+                // already blocked server-side; this hides the surfaces too.
+                const locked = !!company?.is_demo && DEMO_LOCKED_HREFS.some(h => item.href === h || item.href.startsWith(h + '/'))
                 return (
-                  <Link key={item.href + item.label} href={item.href}
-                    onClick={() => setMobileSidebarOpen(false)}
+                  <Link key={item.href + item.label} href={locked ? '#' : item.href}
+                    onClick={(e) => { if (locked) { e.preventDefault(); setDemoMsg(DEMO_LOCK_MESSAGE) } else setMobileSidebarOpen(false) }}
                     title={adminCollapsed ? item.label : undefined}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px',
@@ -623,6 +641,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             )}
                           </span>
                           {!adminCollapsed && item.label}
+                          {locked && !adminCollapsed && <span title="Not available in the demo" style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.55 }}>🔒</span>}
                           {count > 0 && !adminCollapsed && (
                             <span
                               // key on the number so React remounts it and the
