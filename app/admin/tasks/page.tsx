@@ -133,7 +133,7 @@ export default function TasksPage() {
   const [search, setSearch] = useState('')
   const [assigneeFilter, setAssigneeFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
-  const [outletFilter, setOutletFilter] = useState('')     // '' = all outlets
+  const [outletFilter, setOutletFilter] = useState<string[]>([])  // [] = all outlets; else match any
   const [dateFilter, setDateFilter] = useState('')         // '' = any; else a reference YYYY-MM-DD
   const [datePeriod, setDatePeriod] = useState<'day' | 'week' | 'month'>('day')
   const [sortBy, setSortBy] = useState<'due' | 'priority' | 'created'>('due')
@@ -208,7 +208,7 @@ export default function TasksPage() {
         const myMembership = (tm || []).find((m: any) => (m.user_id || m.id) === uid && (!m.company_id || m.company_id === cid))
         if (uid && co?.owner_id !== uid && myMembership) {
           setAssigneeFilter('me')
-          if (myMembership.default_location_id) setOutletFilter(myMembership.default_location_id)
+          if (myMembership.default_location_id) setOutletFilter([myMembership.default_location_id])
         }
 
         // Outlets load in the background too — not needed for the first paint.
@@ -414,7 +414,10 @@ export default function TasksPage() {
         if (!ok) return false
       }
       if (priorityFilter && (t.priority || 'normal') !== priorityFilter) return false
-      if (outletFilter && t.location_id !== outletFilter) return false
+      if (outletFilter.length) {
+        const outs = (Array.isArray(t.location_ids) && t.location_ids.length) ? t.location_ids : (t.location_id ? [t.location_id] : [])
+        if (!outs.some((o: string) => outletFilter.includes(o))) return false
+      }
       if (dateFilter && dateRange) {
         const d = parseTs(t.due_date)
         if (!d) return false
@@ -449,7 +452,10 @@ export default function TasksPage() {
         if (!ok) return false
       }
       if (priorityFilter && (t.priority || 'normal') !== priorityFilter) return false
-      if (outletFilter && t.location_id !== outletFilter) return false
+      if (outletFilter.length) {
+        const outs = (Array.isArray(t.location_ids) && t.location_ids.length) ? t.location_ids : (t.location_id ? [t.location_id] : [])
+        if (!outs.some((o: string) => outletFilter.includes(o))) return false
+      }
       if (q) {
         const hay = [t.title, t.text, t.assigned_to, t.order_number, t.order_customer].filter(Boolean).join(' ').toLowerCase()
         if (!hay.includes(q)) return false
@@ -719,7 +725,7 @@ export default function TasksPage() {
           )}
           {/* Filters live in a top dropdown now (moved off the left rail). */}
           {(() => {
-            const activeN = [assigneeFilter, priorityFilter, outletFilter, dateFilter].filter(Boolean).length
+            const activeN = [assigneeFilter, priorityFilter, dateFilter].filter(Boolean).length + (outletFilter.length ? 1 : 0)
             return (
               <div style={{ position: 'relative' }}>
                 <button className="ctl" onClick={() => setShowFilters(v => !v)}
@@ -731,11 +737,23 @@ export default function TasksPage() {
                   <>
                     <div onClick={() => setShowFilters(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
                     <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 264, maxWidth: '86vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 44px rgba(0,0,0,0.14)', zIndex: 50, padding: 14 }}>
-                      <FilterField label="Outlet" hidden={outlets.length === 0}>
-                        <select className="ctl" style={selectStyle} value={outletFilter} onChange={e => setOutletFilter(e.target.value)}>
-                          <option value="">All outlets</option>
-                          {outlets.map(o => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
-                        </select>
+                      <FilterField label={outletFilter.length ? `Outlets (${outletFilter.length})` : 'Outlets'} hidden={outlets.length === 0}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          <button onClick={() => setOutletFilter([])}
+                            style={{ padding: '5px 10px', borderRadius: 999, border: '1px solid ' + (outletFilter.length === 0 ? 'var(--coral)' : 'var(--border)'), background: outletFilter.length === 0 ? 'var(--peach)' : '#fff', color: outletFilter.length === 0 ? 'var(--coral)' : 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                            {outletFilter.length === 0 ? '✓ ' : ''}All
+                          </button>
+                          {outlets.map(o => {
+                            const on = outletFilter.includes(o.id)
+                            return (
+                              <button key={o.id}
+                                onClick={() => setOutletFilter(prev => on ? prev.filter(x => x !== o.id) : [...prev, o.id])}
+                                style={{ padding: '5px 10px', borderRadius: 999, border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                {on ? '✓ ' : ''}{o.label || o.suburb || 'Outlet'}
+                              </button>
+                            )
+                          })}
+                        </div>
                       </FilterField>
                       <FilterField label="Assignee">
                         <select className="ctl" style={selectStyle} value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}>
@@ -766,7 +784,7 @@ export default function TasksPage() {
                         </select>
                       </FilterField>
                       {activeN > 0 && (
-                        <button onClick={() => { setAssigneeFilter(''); setPriorityFilter(''); setOutletFilter(''); setDateFilter('') }}
+                        <button onClick={() => { setAssigneeFilter(''); setPriorityFilter(''); setOutletFilter([]); setDateFilter('') }}
                           style={{ width: '100%', marginTop: 6, padding: '8px 0', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Clear all filters</button>
                       )}
                     </div>
