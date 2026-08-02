@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
@@ -524,8 +524,10 @@ export default function TasksPage() {
 
   const selected = useMemo(() => tasks.find(t => t.id === selectedId) || null, [tasks, selectedId])
 
-  const patchTask = async (id: string, fields: any) => {
-    setTasks(cur => cur.map(t => t.id === id ? { ...t, ...fields } : t))
+  // Persist a field change (calendar-routing + resilient), WITHOUT touching
+  // local state — callers that already updated state optimistically (e.g. the
+  // batched drag reorder) use this to avoid a re-render per task.
+  const writeTaskFields = async (id: string, fields: any) => {
     const target = tasks.find(t => t.id === id)
     try {
       if (target?._source === 'calendar') {
@@ -600,6 +602,10 @@ export default function TasksPage() {
       if (companyId) loadTasks(companyId)
     }
   }
+  const patchTask = async (id: string, fields: any) => {
+    setTasks(cur => cur.map(t => t.id === id ? { ...t, ...fields } : t))
+    await writeTaskFields(id, fields)
+  }
   const setStatus = (t: any, status: string) =>
     patchTask(t.id, { status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null })
 
@@ -608,10 +614,21 @@ export default function TasksPage() {
   // (so cross-day drags reschedule). Persists per task via patchTask, which
   // routes native tasks and calendar-sourced rows to the right place.
   const reorderDay = (movedId: string, targetYmd: string, orderedIds: string[]) => {
+    const newDue = targetYmd ? dueFromInput(targetYmd) : null
+    // One optimistic state update for the whole day, so the list reflows once
+    // and stays smooth instead of jumping per task.
+    setTasks(cur => cur.map(t => {
+      const idx = orderedIds.indexOf(t.id)
+      if (idx < 0) return t
+      const upd: any = { sort_order: idx * 1000 }
+      if (t.id === movedId) upd.due_date = newDue
+      return { ...t, ...upd }
+    }))
+    // Persist in the background (no extra re-renders).
     orderedIds.forEach((id, i) => {
       const fields: any = { sort_order: i * 1000 }
-      if (id === movedId) fields.due_date = targetYmd ? dueFromInput(targetYmd) : null
-      patchTask(id, fields)
+      if (id === movedId) fields.due_date = newDue
+      writeTaskFields(id, fields)
     })
   }
 
@@ -656,9 +673,24 @@ export default function TasksPage() {
       return { ...t, ...fields }
     }))
     try {
-      let q = (supabase as any).from('conversation_tasks').update(fields).eq('series_id', task.series_id)
-      if (scope === 'following' && task.due_date) q = q.gte('due_date', task.due_date)
-      const { error } = await q
+      let payload = { ...fields }
+      const runScoped = () => {
+        let q = (supabase as any).from('conversation_tasks').update(payload).eq('series_id', task.series_id)
+        if (scope === 'following' && task.due_date) q = q.gte('due_date', task.due_date)
+        return q
+      }
+      let { error } = await runScoped()
+      // Strip a column the DB hasn't migrated yet (e.g. description before
+      // COLVY_V230) and retry, so one missing field can't revert the whole
+      // series edit.
+      for (let attempt = 0; error && attempt < 3; attempt++) {
+        const m = /Could not find the '([^']+)'|column "?([a-z_]+)"? .* does not exist/i.exec(error.message || '')
+        const bad = m?.[1] || m?.[2]
+        if (!bad || !(bad in payload)) break
+        delete (payload as any)[bad]
+        if (!Object.keys(payload).length) { error = null as any; break }
+        ;({ error } = await runScoped())
+      }
       if (error) { console.error('[task scoped update] failed', error); if (companyId) loadTasks(companyId) }
     } catch (e) { console.error('[task scoped update] threw', e); if (companyId) loadTasks(companyId) }
   }
@@ -1047,10 +1079,14 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
   const assignees = (Array.isArray(t.assignees) && t.assignees.length) ? t.assignees : (t.assigned_to ? [{ name: t.assigned_to }] : [])
   // Colour-coded tasks get a soft tinted background rather than a left bar.
   const bg = selectMode && checked ? 'var(--peach)' : (t.color ? tint(t.color, 0.10) : undefined)
-  // Cover photo: the chosen image, full-bleed across the top of the card. Only
-  // when it's still a real image attachment.
+  // Cover photo, full-bleed across the top of the card. Defaults to the first
+  // image; an explicit choice (or "None" = '') overrides. Only ever a real
+  // image attachment.
   const atts = Array.isArray(t.attachments) ? t.attachments : []
-  const coverUrl = t.cover_image && atts.some((a: any) => a.url === t.cover_image && (a.kind === 'image' || (a.type || '').startsWith('image/'))) ? t.cover_image : ''
+  const imgs = atts.filter((a: any) => a.kind === 'image' || (a.type || '').startsWith('image/'))
+  const coverUrl = t.cover_image === '' ? ''
+    : (t.cover_image && imgs.some((a: any) => a.url === t.cover_image)) ? t.cover_image
+    : (t.cover_image == null ? (imgs[0]?.url || '') : '')
   return (
     <div className={'task-card lift' + ((selected || (selectMode && checked)) ? ' sel' : '')} onClick={onClick}
       style={{ ...(coverUrl ? { overflow: 'hidden' } : {}), ...((bg || t.color) ? { background: bg, borderColor: selectMode && checked ? 'var(--coral)' : (t.color ? tint(t.color, 0.45) : undefined) } : {}) }}>
@@ -1337,9 +1373,15 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   const scrollRef = useRef<HTMLDivElement>(null)
   const COL_W = 256
   // Drag & drop: reorder within a day or move a task to another day (which
-  // changes its due date). The dragged task's id lives here mid-drag.
+  // changes its due date). dropTarget is the live insertion point (which column,
+  // and the index within it) so we can show a precise drop line.
   const [dragId, setDragId] = useState<string | null>(null)
-  const [dragOverKey, setDragOverKey] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ key: string; index: number } | null>(null)
+  // Only change dropTarget when it actually moves — returning the same object
+  // ref lets React skip re-rendering all the columns on every dragover tick,
+  // which is what keeps the drag smooth.
+  const setDrop = (key: string, index: number) =>
+    setDropTarget(prev => (prev && prev.key === key && prev.index === index) ? prev : { key, index })
 
   const byDay = useMemo(() => {
     const m = new Map<string, any[]>()
@@ -1394,37 +1436,52 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   const navBtn: React.CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
 
   const targetYmd = (dateObj: Date | null) => dateObj ? localYmd(dateObj) : ''
-  const dropBefore = (dateObj: Date | null, list: any[], beforeId: string | null) => {
-    if (!dragId || !onReorder) return
-    const ids = list.map((x: any) => x.id).filter((id: string) => id !== dragId)
-    const at = beforeId ? ids.indexOf(beforeId) : -1
-    if (at < 0) ids.push(dragId); else ids.splice(at, 0, dragId)
+  const doDrop = (dateObj: Date | null, list: any[], index: number) => {
+    if (!dragId || !onReorder) { setDragId(null); setDropTarget(null); return }
+    let ids = list.map((x: any) => x.id)
+    const from = ids.indexOf(dragId)
+    ids = ids.filter((id: string) => id !== dragId)
+    let at = index
+    if (from >= 0 && from < index) at -= 1        // account for the removed row
+    at = Math.max(0, Math.min(at, ids.length))
+    ids.splice(at, 0, dragId)
     onReorder(dragId, targetYmd(dateObj), ids)
-    setDragId(null); setDragOverKey(null)
+    setDragId(null); setDropTarget(null)
   }
+  const dropLine = <div style={{ height: 3, background: 'var(--coral)', borderRadius: 3, margin: '3px 2px' }} />
 
-  const renderColumn = (key: string, header: string, sub: string, isToday: boolean, weekend: boolean, list: any[], dateObj: Date | null) => (
+  const renderColumn = (key: string, header: string, sub: string, isToday: boolean, weekend: boolean, list: any[], dateObj: Date | null) => {
+    const overCol = dropTarget?.key === key
+    return (
     <div key={key} className="tl-col"
-      onDragOver={(e) => { if (dragId) { e.preventDefault(); setDragOverKey(key) } }}
-      onDragLeave={() => setDragOverKey(k => k === key ? null : k)}
-      onDrop={(e) => { e.preventDefault(); dropBefore(dateObj, list, null) }}
-      style={{ width: COL_W, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: dragOverKey === key ? 'var(--peach)' : (isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff')), outline: dragOverKey === key ? '2px dashed var(--coral)' : 'none', outlineOffset: -2 }}>
+      onDragOver={(e) => { if (dragId) { e.preventDefault(); setDrop(key, list.length) } }}
+      onDrop={(e) => { e.preventDefault(); doDrop(dateObj, list, overCol ? dropTarget!.index : list.length) }}
+      style={{ width: COL_W, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff'), outline: overCol ? '2px dashed var(--coral)' : 'none', outlineOffset: -2 }}>
       <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '8px 10px', borderBottom: `2px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, background: 'inherit', display: 'flex', alignItems: 'baseline', gap: 6 }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)' }}>{header}</span>
         {sub && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>{sub}</span>}
         {list.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: 'var(--slate)', background: 'rgba(0,0,0,0.06)', borderRadius: 10, padding: '0 6px' }}>{list.length}</span>}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 8px' }}>
-        {list.map((t: any) => (
-          <div key={t.id} draggable
-            onDragStart={(e) => { setDragId(t.id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', t.id) } catch {} }}
-            onDragEnd={() => { setDragId(null); setDragOverKey(null) }}
-            onDragOver={(e) => { if (dragId) { e.preventDefault(); e.stopPropagation(); setDragOverKey(key) } }}
-            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); dropBefore(dateObj, list, t.id) }}
-            style={{ opacity: dragId === t.id ? 0.4 : 1, cursor: 'grab' }}>
-            <TaskCard t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id} onClick={() => onSelect(t.id)} statusOf={statusOf} outlets={outlets} onToggle={onToggle ? () => onToggle(t) : undefined} />
-          </div>
+        {list.map((t: any, i: number) => (
+          <Fragment key={t.id}>
+            {overCol && dropTarget!.index === i && dropLine}
+            <div draggable
+              onDragStart={(e) => { setDragId(t.id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', t.id) } catch {} }}
+              onDragEnd={() => { setDragId(null); setDropTarget(null) }}
+              onDragOver={(e) => {
+                if (!dragId) return
+                e.preventDefault(); e.stopPropagation()
+                const r = e.currentTarget.getBoundingClientRect()
+                setDrop(key, i + (e.clientY > r.top + r.height / 2 ? 1 : 0))
+              }}
+              onDrop={(e) => { e.preventDefault(); e.stopPropagation(); doDrop(dateObj, list, overCol ? dropTarget!.index : i) }}
+              style={{ opacity: dragId === t.id ? 0.4 : 1, cursor: 'grab' }}>
+              <TaskCard t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id} onClick={() => onSelect(t.id)} statusOf={statusOf} outlets={outlets} onToggle={onToggle ? () => onToggle(t) : undefined} />
+            </div>
+          </Fragment>
         ))}
+        {overCol && dropTarget!.index >= list.length && dropLine}
         {dateObj && (
           // Add a task straight onto this day. Always present at the foot of the
           // column, and a hover "+" (see .tl-col:hover .tl-add) makes it obvious.
@@ -1436,7 +1493,8 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
         )}
       </div>
     </div>
-  )
+    )
+  }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -1555,6 +1613,22 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
         style={{ width: '100%', border: 'none', fontSize: 16.5, fontWeight: 700, color: 'var(--ink)', resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.35 }} />
       {task.text && task.title && <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>{task.text}</p>}
 
+      {/* Edit scope for a repeating task — sits up top so it's clear which cards
+          every change below (description, checklist, status…) will apply to. */}
+      {isSeries && (
+        <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: '#ecfeff', border: '1px solid #a5f3fc' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: '#0e7490', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 7 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            Repeating task — apply changes to
+          </div>
+          <div style={{ display: 'flex', gap: 5 }}>
+            {([['this', 'This card'], ['following', 'This & following'], ['all', 'All cards']] as const).map(([k, l]) => (
+              <button key={k} onClick={() => setScope(k)} style={{ flex: 1, padding: '7px 4px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (scope === k ? '#0e7490' : 'var(--border)'), background: scope === k ? '#0e7490' : '#fff', color: scope === k ? '#fff' : 'var(--slate)' }}>{l}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <p style={L}>Description</p>
       <RichTextEditor key={task.id} value={task.description || ''} onChange={(html) => patch({ description: html })} />
 
@@ -1565,14 +1639,19 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       {(() => {
         const imgs = (Array.isArray(task.attachments) ? task.attachments : []).filter((a: any) => a.kind === 'image' || (a.type || '').startsWith('image/'))
         if (!imgs.length) return null
+        // Effective cover mirrors the card: first image by default unless a
+        // choice or "None" ('') is set.
+        const effective = task.cover_image === '' ? ''
+          : (task.cover_image && imgs.some((a: any) => a.url === task.cover_image)) ? task.cover_image
+          : (imgs[0]?.url || '')
         return (
           <>
-            <p style={L}>Cover photo <span style={{ textTransform: 'none', fontWeight: 400, color: 'var(--slate)' }}>— shown across the top of the card</span></p>
+            <p style={L}>Cover photo <span style={{ textTransform: 'none', fontWeight: 400, color: 'var(--slate)' }}>— first photo by default; pick another or none</span></p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <button onClick={() => patch({ cover_image: null })}
-                style={{ width: 56, height: 56, borderRadius: 9, cursor: 'pointer', fontSize: 11, fontWeight: 700, border: '1px solid ' + (!task.cover_image ? 'var(--coral)' : 'var(--border)'), background: !task.cover_image ? 'var(--peach)' : '#fff', color: !task.cover_image ? 'var(--coral)' : 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>None</button>
+              <button onClick={() => patch({ cover_image: '' })}
+                style={{ width: 56, height: 56, borderRadius: 9, cursor: 'pointer', fontSize: 11, fontWeight: 700, border: '1px solid ' + (task.cover_image === '' ? 'var(--coral)' : 'var(--border)'), background: task.cover_image === '' ? 'var(--peach)' : '#fff', color: task.cover_image === '' ? 'var(--coral)' : 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>None</button>
               {imgs.map((a: any, i: number) => {
-                const on = task.cover_image === a.url
+                const on = a.url === effective
                 return (
                   <button key={i} onClick={() => patch({ cover_image: a.url })} title="Use as cover"
                     style={{ position: 'relative', width: 56, height: 56, borderRadius: 9, overflow: 'hidden', cursor: 'pointer', padding: 0, border: on ? '2px solid var(--coral)' : '1px solid var(--border)', background: '#f4f4f5' }}>
@@ -1632,22 +1711,6 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
           </>
         )
       })()}
-
-      {/* Edit scope for a repeating task — every change (and the delete) below
-          applies to the chosen slice of the series. */}
-      {isSeries && (
-        <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: '#ecfeff', border: '1px solid #a5f3fc' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: '#0e7490', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 7 }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-            Repeating task — apply changes to
-          </div>
-          <div style={{ display: 'flex', gap: 5 }}>
-            {([['this', 'This card'], ['following', 'This & following'], ['all', 'All cards']] as const).map(([k, l]) => (
-              <button key={k} onClick={() => setScope(k)} style={{ flex: 1, padding: '7px 4px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (scope === k ? '#0e7490' : 'var(--border)'), background: scope === k ? '#0e7490' : '#fff', color: scope === k ? '#fff' : 'var(--slate)' }}>{l}</button>
-            ))}
-          </div>
-        </div>
-      )}
 
       <p style={L}>Status</p>
       <div style={{ display: 'flex', gap: 5 }}>
