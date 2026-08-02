@@ -53,6 +53,9 @@ export default function AnalyticsPage() {
   const [helpStats, setHelpStats] = useState(seededAnalytics?.helpStats ?? { totalArticles: 0, totalViews: 0, totalLikes: 0, totalTickets: 0, openTickets: 0, topArticles: [] as any[], ticketsByStatus: {} as any })
   // Widget stats
   const [widgetStats, setWidgetStats] = useState(seededAnalytics?.widgetStats ?? { totalViews: 0, byTab: {} as Record<string, number>, avgViewsPerDay: 0 })
+  // Task stats, broken down per outlet. A task tied to several outlets counts
+  // toward each; tasks with no outlet fall under "No outlet".
+  const [taskStats, setTaskStats] = useState(seededAnalytics?.taskStats ?? { total: 0, open: 0, overdue: 0, completed: 0, byOutlet: [] as any[] })
 
   // Calculate date range
   const getDateRange = () => {
@@ -93,6 +96,59 @@ export default function AnalyticsPage() {
     })
   }, [router, timeRange, customStart, customEnd])
 
+  // Build the per-outlet task breakdown for the selected window. Filtered by
+  // created_at (same basis as the other sections). A multi-outlet task is
+  // counted once per outlet it touches; outlet-less tasks land in "No outlet".
+  const loadTaskStats = async (cid: string, start: string, end: string) => {
+    const empty = { total: 0, open: 0, overdue: 0, completed: 0, byOutlet: [] as any[] }
+    try {
+      const { data: locs } = await (supabase as any)
+        .from('company_locations').select('id, label, suburb').eq('company_id', cid)
+      const locName: Record<string, string> = {}
+      for (const l of locs || []) locName[l.id] = l.label || l.suburb || 'Outlet'
+
+      // Prefer selecting location_ids (V227); fall back if the column isn't there.
+      const run = (cols: string) => (supabase as any)
+        .from('conversation_tasks').select(cols)
+        .eq('company_id', cid).gte('created_at', start).lte('created_at', end)
+      let res = await run('id, done, due_date, created_at, location_id, location_ids')
+      if (res.error) res = await run('id, done, due_date, created_at, location_id')
+      const tasks: any[] = res.data || []
+
+      const now = new Date()
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+      // key '' = no outlet; otherwise the outlet id
+      const acc: Record<string, { open: number; overdue: number; completed: number; total: number }> = {}
+      const bump = (key: string, done: boolean, overdue: boolean) => {
+        const a = acc[key] || (acc[key] = { open: 0, overdue: 0, completed: 0, total: 0 })
+        a.total++
+        if (done) a.completed++
+        else { a.open++; if (overdue) a.overdue++ }
+      }
+
+      let total = 0, open = 0, overdue = 0, completed = 0
+      for (const t of tasks) {
+        const done = !!t.done
+        const dueTs = t.due_date ? new Date(String(t.due_date).replace(' ', 'T')).getTime() : null
+        const isOverdue = !done && dueTs != null && !isNaN(dueTs) && dueTs < today
+        total++
+        if (done) completed++; else { open++; if (isOverdue) overdue++ }
+        const outs: string[] = (Array.isArray(t.location_ids) && t.location_ids.length)
+          ? t.location_ids : (t.location_id ? [t.location_id] : [])
+        if (outs.length === 0) bump('', done, isOverdue)
+        else for (const o of outs) bump(o, done, isOverdue)
+      }
+
+      const byOutlet = Object.entries(acc)
+        .map(([id, v]) => ({ id, name: id ? (locName[id] || 'Outlet') : 'No outlet', ...v }))
+        .sort((a, b) => b.total - a.total)
+
+      return { total, open, overdue, completed, byOutlet }
+    } catch {
+      return empty
+    }
+  }
+
   const loadAll = async () => {
     try {
       const cid = await getMyCompanyId()
@@ -108,6 +164,7 @@ export default function AnalyticsPage() {
         setStats(cachedA.stats)
         setHelpStats(cachedA.helpStats)
         setWidgetStats(cachedA.widgetStats)
+        if (cachedA.taskStats) setTaskStats(cachedA.taskStats)
         setLoading(false)
       }
 
@@ -242,7 +299,11 @@ export default function AnalyticsPage() {
       }
       setWidgetStats(widgetObj)
 
-      writeCache(cacheKey, { stats: statsObj, helpStats: helpObj, widgetStats: widgetObj })
+      // Tasks by outlet — a task with several outlets counts toward each.
+      const taskObj = await loadTaskStats(cid, start, end)
+      setTaskStats(taskObj)
+
+      writeCache(cacheKey, { stats: statsObj, helpStats: helpObj, widgetStats: widgetObj, taskStats: taskObj })
     } catch (err) {
       console.error('Analytics error:', err)
     }
@@ -384,6 +445,39 @@ export default function AnalyticsPage() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Tasks by Outlet Section */}
+      <div style={{ marginBottom: '48px' }}>
+        <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '16px', color: 'var(--ink)' }}>Tasks by Outlet</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+          <StatCard label="Total Tasks" value={taskStats.total} />
+          <StatCard label="Open" value={taskStats.open} />
+          <StatCard label="Overdue" value={taskStats.overdue} color={taskStats.overdue > 0 ? '#dc2626' : undefined} />
+          <StatCard label="Completed" value={taskStats.completed} color="#16a34a" />
+        </div>
+
+        {taskStats.byOutlet.length > 0 ? (
+          <div style={{ marginTop: '24px', borderRadius: '12px', border: '1px solid var(--border)', background: '#fff', overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr 1fr', gap: 0, padding: '12px 16px', background: 'var(--peach)', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--slate)' }}>
+              <span>Outlet</span>
+              <span style={{ textAlign: 'right' }}>Open</span>
+              <span style={{ textAlign: 'right' }}>Overdue</span>
+              <span style={{ textAlign: 'right' }}>Completed</span>
+            </div>
+            {taskStats.byOutlet.map((o: any) => (
+              <div key={o.id || 'none'} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr 1fr', gap: 0, padding: '12px 16px', borderTop: '1px solid var(--border)', fontSize: '14px', alignItems: 'center' }}>
+                <span style={{ fontWeight: 700, color: o.id ? 'var(--ink)' : 'var(--slate)' }}>{o.name}</span>
+                <span style={{ textAlign: 'right', color: 'var(--ink)' }}>{o.open}</span>
+                <span style={{ textAlign: 'right', fontWeight: o.overdue > 0 ? 700 : 400, color: o.overdue > 0 ? '#dc2626' : 'var(--slate)' }}>{o.overdue}</span>
+                <span style={{ textAlign: 'right', color: '#16a34a' }}>{o.completed}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p style={{ marginTop: '16px', fontSize: '13px', color: 'var(--slate)' }}>No tasks in this period.</p>
+        )}
+        <p style={{ marginTop: '10px', fontSize: '12px', color: 'var(--slate)' }}>Tasks tied to more than one outlet are counted under each of them.</p>
       </div>
     </div>
   )
