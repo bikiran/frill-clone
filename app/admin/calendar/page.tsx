@@ -3,6 +3,7 @@
 import { enrichNames } from '@/lib/team-names'
 import AssigneePicker from '@/components/AssigneePicker'
 import CustomerPicker from '@/components/CustomerPicker'
+import AttachmentUploader from '@/components/AttachmentUploader'
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -237,6 +238,7 @@ export default function CalendarPage() {
           : null,
         notify_customer: !!editing.notify_customer,
         customer_contact_id: editing.customer_contact_id || null,
+        attachments: editing.attachments || [],
       }),
     })
     const d = await res.json()
@@ -807,6 +809,16 @@ export default function CalendarPage() {
                 )}
               </div>
             )}
+
+            <label style={L}>Photos &amp; videos</label>
+            <div style={{ marginBottom: 12 }}>
+              <AttachmentUploader
+                companyId={companyId}
+                value={editing.attachments || []}
+                onChange={(a) => setEditing({ ...editing, attachments: a })}
+                folder="calendar"
+              />
+            </div>
 
             <label style={L}>Notes</label>
             <textarea style={{ ...I, minHeight: 70, resize: 'vertical', fontFamily: 'inherit' }} value={editing.notes || ''}

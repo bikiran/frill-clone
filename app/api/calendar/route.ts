@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
         location_id, location_ids, contact_id, conversation_id, order_id, assigned_to,
         address, status, created_by,
         assigned_to_id, assigned_to_name, reminder_channels,
-        notify_customer, customer_contact_id, assignees,
+        notify_customer, customer_contact_id, assignees, attachments,
       } = body
 
       if (!title || !starts_at) {
@@ -110,21 +110,27 @@ export async function POST(req: NextRequest) {
           ? assignees.map((a: any) => ({ id: uuidOrNull(a?.id), name: a?.name })) : [],
         notify_customer: !!notify_customer,
         customer_contact_id: uuidOrNull(customer_contact_id) || uuidOrNull(contact_id),
+        attachments: Array.isArray(attachments) ? attachments : [],
         updated_at: new Date().toISOString(),
       }
 
-      // Tolerate a DB that hasn't had COLVY_V225 applied yet: if location_ids
-      // isn't a column, drop it and retry (the single location_id still saves).
+      // Tolerate a DB that hasn't had the newer migrations applied yet (e.g.
+      // COLVY_V225 location_ids, COLVY_V226 attachments): if a column doesn't
+      // exist, drop it and retry so the rest of the event still saves.
       const writeRow = async (r: any) => {
         const run = (payload: any) => id
           ? db.from('calendar_events').update(payload).eq('id', id).select().maybeSingle()
           : db.from('calendar_events').insert(payload).select().maybeSingle()
-        let res = await run(r)
-        if (res.error && /location_ids/.test(res.error.message || '') && /column|schema cache|find/i.test(res.error.message || '')) {
-          const { location_ids, ...rest } = r
-          res = await run(rest)
+        let cur = { ...r }
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const res = await run(cur)
+          if (!res.error) return res
+          const m = /(?:Could not find the '([^']+)'|column "?([a-z_]+)"? .* does not exist)/i.exec(res.error.message || '')
+          const bad = m?.[1] || m?.[2]
+          if (bad && bad in cur) { delete cur[bad]; continue }
+          return res
         }
-        return res
+        return run(cur)
       }
 
       let event: any

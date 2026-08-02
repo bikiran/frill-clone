@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
 import AssigneePicker from '@/components/AssigneePicker'
+import AttachmentUploader from '@/components/AttachmentUploader'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { enrichNames } from '@/lib/team-names'
 import { useDraft } from '@/lib/drafts'
@@ -481,6 +482,7 @@ export default function TasksPage() {
         payload.title = payload.title ?? target.title
         payload.starts_at = payload.starts_at ?? target.due_date
         payload.notes = fields.text ?? target.text
+        if (fields.attachments !== undefined) payload.attachments = fields.attachments
         await fetch('/api/calendar', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -1199,6 +1201,10 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       <textarea value={task.title || task.text || ''} onChange={e => patch({ title: e.target.value })} rows={2}
         style={{ width: '100%', border: 'none', fontSize: 16.5, fontWeight: 700, color: 'var(--ink)', resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.35 }} />
       {task.text && task.title && <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>{task.text}</p>}
+
+      <p style={L}>Photos &amp; videos</p>
+      <AttachmentUploader companyId={companyId} value={task.attachments || []} onChange={(a) => patch({ attachments: a })} folder="task" compact />
+
 
       {/* Edit scope for a repeating task — every change (and the delete) below
           applies to the chosen slice of the series. */}
