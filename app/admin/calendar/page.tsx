@@ -4,6 +4,7 @@ import { enrichNames } from '@/lib/team-names'
 import AssigneePicker from '@/components/AssigneePicker'
 import CustomerPicker from '@/components/CustomerPicker'
 import AttachmentUploader from '@/components/AttachmentUploader'
+import TaskEditor from '@/components/TaskEditor'
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -31,6 +32,8 @@ export default function CalendarPage() {
   // synchronously and the month's events load without a blank gate.
   const seed = peekCompanyUser()
   const [companyId, setCompanyId] = useState<string | null>(seed?.companyId ?? null)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [me, setMe] = useState('')
   const [loading, setLoading] = useState(!seed?.companyId)
   const [events, setEvents] = useState<any[]>([])
   const [locations, setLocations] = useState<any[]>([])
@@ -63,6 +66,8 @@ export default function CalendarPage() {
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setLoading(false); return }
+      setUserId(user.id)
+      setMe(user.user_metadata?.display_name || user.email?.split('@')[0] || 'Me')
       let cid: string | null = null
       const { data: owned } = await (supabase as any).from('companies').select('id, calendar_settings').eq('owner_id', user.id).order('created_at', { ascending: true }).limit(1)
       cid = owned?.[0]?.id || null
@@ -758,33 +763,39 @@ export default function CalendarPage() {
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>
           <div onClick={e => e.stopPropagation()}
             style={{ width: 480, maxWidth: '95vw', maxHeight: '88vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24 }}>
-            <h2 style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>
-              {editing.id ? 'Edit event' : 'New event'}
-            </h2>
+            {!(editing.event_type === 'task' && !editing.id) && (
+              <h2 style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>
+                {editing.id ? 'Edit event' : 'New event'}
+              </h2>
+            )}
 
             <label style={L}>Type</label>
             <div style={{ display: 'flex', gap: 5, marginBottom: 14, flexWrap: 'wrap' }}>
               {Object.entries(TYPE_META).map(([k, v]) => (
-                <button key={k} onClick={() => {
-                  // A new "Task" is a real task, not a calendar-only event — send
-                  // the user to the full Tasks editor (priority, repeats, colour,
-                  // order link) rather than the trimmed-down event form. Existing
-                  // task-type events keep editing here.
-                  if (k === 'task' && !editing.id) {
-                    const params = new URLSearchParams({ new: '1' })
-                    if (editing.date) params.set('date', editing.date)
-                    if (editing.title) params.set('title', editing.title)
-                    window.location.href = `/admin/tasks?${params.toString()}`
-                    return
-                  }
-                  setEditing({ ...editing, event_type: k })
-                }}
+                <button key={k} onClick={() => setEditing({ ...editing, event_type: k })}
                   style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${editing.event_type === k ? v.dot : 'var(--border)'}`, background: editing.event_type === k ? v.bg : '#fff', color: editing.event_type === k ? v.fg : 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
                   {v.label}
                 </button>
               ))}
             </div>
 
+            {editing.event_type === 'task' && !editing.id ? (
+              // A new "Task" gets the full Tasks editor (priority, repeats,
+              // colour, order link, assignees) right here — the same form as the
+              // Tasks page. It writes a real task, which then shows on both pages.
+              <TaskEditor
+                companyId={companyId} team={team} outlets={locations} me={me} userId={userId}
+                initial={{
+                  title: editing.title || '',
+                  due: editing.date || '',
+                  locationIds: (editing.location_ids && editing.location_ids.length)
+                    ? editing.location_ids
+                    : (editing.location_id ? [editing.location_id] : []),
+                }}
+                onClose={() => setEditing(null)}
+                onSaved={() => { setEditing(null); load() }}
+              />
+            ) : (<>
             <label style={L}>Title</label>
             <input style={I} value={editing.title || ''} placeholder="Deliver 4ft tank to Bikiran"
               onChange={e => setEditing({ ...editing, title: e.target.value })} />
@@ -946,6 +957,7 @@ export default function CalendarPage() {
                   style={{ marginLeft: 'auto', padding: '10px 16px', borderRadius: 9, background: '#fff', color: '#dc2626', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Delete</button>
               )}
             </div>
+            </>)}
           </div>
         </div>
       )}
