@@ -12,10 +12,17 @@ export const maxDuration = 60
 export async function POST(_req: NextRequest) {
   try {
     const admin = demoAdmin()
-    // Ensure the demo company + user exist; seed on first run.
+    // Ensure the demo company + user exist and are fully seeded. Seeds on first
+    // run, and self-heals a partial/empty seed (e.g. a previous timed-out
+    // attempt) — safe now that seeding is batched and fast.
     const { data: co } = await admin.from('companies').select('id, is_demo').eq('slug', DEMO_SLUG).maybeSingle()
     if (!co) {
       await seedHarbourBean(admin)
+    } else {
+      try {
+        const { count } = await admin.from('conversations').select('id', { count: 'exact', head: true }).eq('company_id', co.id)
+        if ((count || 0) < 20) await seedHarbourBean(admin)
+      } catch {}
     }
     // Sign in as the demo user with the anon client to get real session tokens.
     const anon = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } })

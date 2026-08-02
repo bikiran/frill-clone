@@ -150,46 +150,46 @@ export async function seedSampleData(db: any, companyId: string, template: Templ
     counts.contacts = contactIds.length
   } catch { counts.contacts = 0 }
 
-  // Conversations + messages.
-  let convCount = 0, msgCount = 0
-  const seedConv = async (spec: any, contactId: string | null, createdMinsAgo: number) => {
-    try {
-      const { data: conv } = await db.from('conversations').insert({
-        company_id: companyId, contact_id: contactId, channel: spec.channel, status: spec.status,
-        subject: spec.subject, assigned_name: spec.assigned || null, last_message: spec.last,
-        last_message_at: minsAgo(spec.mins ?? createdMinsAgo), is_unread: !!spec.unread,
-        unread_count: spec.unread ? 1 : 0, created_at: minsAgo(createdMinsAgo),
-      }).select('id').maybeSingle()
-      if (!conv) return
-      convCount++
-      const turns = 2 + Math.floor(r() * 4)
-      const msgs: any[] = []
-      for (let t = 0; t < turns; t++) {
-        const isVisitor = t % 2 === 0
-        msgs.push({
-          conversation_id: conv.id, company_id: companyId,
-          sender_type: isVisitor ? 'visitor' : 'agent',
-          sender_name: isVisitor ? null : (spec.assigned || pick(TEAM, r()).name),
-          content: t === 0 ? spec.last : (isVisitor ? pick(tpl.lines[spec.channel] || tpl.lines.chat, r()) : pick(AGENT_LINES, r())),
-          created_at: minsAgo((spec.mins ?? createdMinsAgo) + (turns - t) * 3),
-        })
-      }
-      const { data: ins } = await db.from('messages').insert(msgs).select('id')
-      msgCount += (ins || []).length
-    } catch { /* skip */ }
-  }
-  for (const f of tpl.featured) await seedConv(f, contactIds[Math.floor(r() * contactIds.length)] || null, f.mins)
+  // Conversations + messages — batched so the whole seed stays well under the
+  // serverless timeout (per-conversation inserts were ~160 sequential round trips).
+  let msgCount = 0
+  const specs: any[] = []
+  for (const f of tpl.featured) specs.push({ ...f, contactId: contactIds[Math.floor(r() * contactIds.length)] || null, created: f.mins })
   for (let i = 0; i < 75; i++) {
     const channel = pick(CHANNELS, r())
     const line = pick(tpl.lines[channel] || tpl.lines.chat, r())
     const status = r() > 0.55 ? 'closed' : (r() > 0.4 ? 'open' : 'pending')
-    await seedConv({
-      channel, subject: line.slice(0, 40), last: line, status,
-      unread: status === 'open' && r() > 0.6, assigned: r() > 0.4 ? pick(TEAM, r()).name : '',
-      mins: Math.floor(r() * 90 * 1440),
-    }, contactIds[Math.floor(r() * contactIds.length)] || null, Math.floor(r() * 90 * 1440))
+    const mins = Math.floor(r() * 90 * 1440)
+    specs.push({ channel, subject: line.slice(0, 40), last: line, status, unread: status === 'open' && r() > 0.6, assigned: r() > 0.4 ? pick(TEAM, r()).name : '', mins, created: mins, contactId: contactIds[Math.floor(r() * contactIds.length)] || null })
   }
-  counts.conversations = convCount
+  // Insert all conversations in one statement — returning preserves input order.
+  const convRows = specs.map(s => ({
+    company_id: companyId, contact_id: s.contactId, channel: s.channel, status: s.status,
+    subject: s.subject, assigned_name: s.assigned || null, last_message: s.last,
+    last_message_at: minsAgo(s.mins ?? s.created), is_unread: !!s.unread,
+    unread_count: s.unread ? 1 : 0, created_at: minsAgo(s.created),
+  }))
+  let convIds: string[] = []
+  try { const { data } = await db.from('conversations').insert(convRows).select('id'); convIds = (data || []).map((c: any) => c.id) } catch { convIds = [] }
+  counts.conversations = convIds.length
+  // Build every message, then insert in chunks.
+  const allMsgs: any[] = []
+  convIds.forEach((cid, idx) => {
+    const s = specs[idx]
+    const turns = 2 + Math.floor(r() * 4)
+    for (let t = 0; t < turns; t++) {
+      const isVisitor = t % 2 === 0
+      allMsgs.push({
+        conversation_id: cid, company_id: companyId, sender_type: isVisitor ? 'visitor' : 'agent',
+        sender_name: isVisitor ? null : (s.assigned || pick(TEAM, r()).name),
+        content: t === 0 ? s.last : (isVisitor ? pick(tpl.lines[s.channel] || tpl.lines.chat, r()) : pick(AGENT_LINES, r())),
+        created_at: minsAgo((s.mins ?? s.created) + (turns - t) * 3),
+      })
+    }
+  })
+  for (let i = 0; i < allMsgs.length; i += 200) {
+    try { const { data } = await db.from('messages').insert(allMsgs.slice(i, i + 200)).select('id'); msgCount += (data || []).length } catch {}
+  }
   counts.messages = msgCount
 
   // Calls (incl. missed + voicemail).
@@ -276,6 +276,12 @@ export async function ensureDemoUser(db: any): Promise<string | null> {
     if (data?.user?.id) return data.user.id
     if (error && !/already|registered|exists/i.test(error.message)) return null
   } catch { /* fall through */ }
+  // Fast path on reseeds: the demo company already records the owner id.
+  try {
+    const { data: co } = await db.from('companies').select('owner_id').eq('slug', DEMO_SLUG).maybeSingle()
+    if (co?.owner_id) { try { await db.auth.admin.updateUserById(co.owner_id, { password: demoPassword() }) } catch {}; return co.owner_id }
+  } catch {}
+  // Fallback: paginate the user list to find the demo user.
   try {
     for (let page = 1; page <= 6; page++) {
       const { data } = await db.auth.admin.listUsers({ page, perPage: 200 })
