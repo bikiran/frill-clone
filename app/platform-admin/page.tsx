@@ -1734,6 +1734,7 @@ const DEMO_TEMPLATES = [['cafe', 'Café & hospitality'], ['retail', 'Retail & ec
 
 function DemoWorkspacesPage() {
   const [rows, setRows] = useState<any[] | null>(null)
+  const [analytics, setAnalytics] = useState<any>(null)
   const [missing, setMissing] = useState(false)
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState('')
@@ -1751,6 +1752,7 @@ function DemoWorkspacesPage() {
       const d = await res.json()
       if (d.missing) { setMissing(true); setRows([]); return }
       setRows(d.demos || [])
+      setAnalytics(d.analytics || null)
     } catch { setRows([]) }
   }
   useEffect(() => { load() }, [])
@@ -1805,6 +1807,23 @@ function DemoWorkspacesPage() {
               </div>
             ))}
           </div>
+          {analytics && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, padding: '12px 16px', marginBottom: 16, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', alignSelf: 'center' }}>Demo activity</span>
+              {[
+                { label: 'Sessions', v: analytics.byEvent?.session_start || 0, c: '#10b981' },
+                { label: 'Created', v: analytics.byEvent?.demo_created || 0, c: '#6366f1' },
+                { label: 'Resets', v: (analytics.byEvent?.demo_reset || 0) + (analytics.byEvent?.seed_reset || 0), c: '#0891b2' },
+                { label: 'Conversions', v: analytics.byEvent?.demo_converted || 0, c: '#8b5cf6' },
+                { label: 'Blocked sends', v: analytics.byEvent?.blocked_send || 0, c: '#ef4444' },
+              ].map(s => (
+                <span key={s.label} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
+                  <span style={{ fontSize: 18, fontWeight: 800, color: s.c }}>{s.v}</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>{s.label}</span>
+                </span>
+              ))}
+            </div>
+          )}
           <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
               <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Business', 'Type', 'Template', 'Slug', 'Status', 'Expiry', 'Contact', 'Actions'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>

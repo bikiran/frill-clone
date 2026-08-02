@@ -33,7 +33,17 @@ export async function GET(req: NextRequest) {
     const ids = Array.from(new Set((rows || []).map((r: any) => r.company_id).filter(Boolean)))
     const cos: Record<string, any> = {}
     if (ids.length) { const { data: c } = await db.from('companies').select('id,name,slug,plan,is_demo,demo_expires_at').in('id', ids); (c || []).forEach((x: any) => { cos[x.id] = x }) }
-    return NextResponse.json({ demos: (rows || []).map((r: any) => ({ ...r, company: cos[r.company_id] || null })) })
+
+    // Analytics aggregates over the recent event stream.
+    const analytics: any = { total: 0, byEvent: {} as Record<string, number>, recent: [] as any[] }
+    try {
+      const { data: ev } = await db.from('demo_analytics').select('event, meta, created_at, company_id').order('created_at', { ascending: false }).limit(500)
+      analytics.total = (ev || []).length
+      ;(ev || []).forEach((e: any) => { analytics.byEvent[e.event] = (analytics.byEvent[e.event] || 0) + 1 })
+      analytics.recent = (ev || []).slice(0, 20)
+    } catch { /* analytics optional */ }
+
+    return NextResponse.json({ demos: (rows || []).map((r: any) => ({ ...r, company: cos[r.company_id] || null })), analytics })
   } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 500 }) }
 }
 
