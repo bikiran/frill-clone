@@ -48,7 +48,7 @@ const fmtRel = (d: string | null | undefined) => {
   return fmtDay(p)
 }
 
-type Bucket = 'today' | 'overdue' | 'upcoming' | 'completed' | 'all' | 'day' | 'week' | 'month' | 'date'
+type Bucket = 'today' | 'threedays' | 'overdue' | 'upcoming' | 'completed' | 'all' | 'day' | 'week' | 'month' | 'date'
 
 // Start/end (ms) of the day / week (Sun–Sat) / month containing `ref`.
 function periodRange(ref: Date, period: 'day' | 'week' | 'month'): { start: number; end: number } {
@@ -57,6 +57,36 @@ function periodRange(ref: Date, period: 'day' | 'week' | 'month'): { start: numb
   if (period === 'week') { const s = new Date(d); s.setDate(s.getDate() - s.getDay()); const e = new Date(s); e.setDate(e.getDate() + 7); return { start: s.getTime(), end: e.getTime() } }
   const s = new Date(d.getFullYear(), d.getMonth(), 1); const e = new Date(d.getFullYear(), d.getMonth() + 1, 1)
   return { start: s.getTime(), end: e.getTime() }
+}
+
+// Does a task belong in the given bucket? Shared by every view (List, Board,
+// Timeline, Calendar) so the date filters mean the same thing everywhere.
+function inBucket(t: any, bucket: Bucket, bucketDate: string): boolean {
+  const done = t.status ? t.status === 'done' : !!t.done
+  if (bucket === 'all') return true
+  if (bucket === 'completed') return done
+  if (done) return false
+  const today = startOfDay(new Date()).getTime()
+  const due = parseTs(t.due_date)
+  const d = due ? startOfDay(due).getTime() : null
+  const dTime = due ? due.getTime() : null
+  const nowRef = new Date()
+  switch (bucket) {
+    // Today includes undated tasks so freshly-added ones surface somewhere.
+    case 'today': return d === today || d == null
+    case 'overdue': return d != null && d < today
+    case 'upcoming': return d != null && d > today
+    case 'day': return d === today
+    case 'threedays': return dTime != null && dTime >= today && dTime < today + 3 * 86400000
+    case 'week': { const r = periodRange(nowRef, 'week'); return dTime != null && dTime >= r.start && dTime < r.end }
+    case 'month': { const r = periodRange(nowRef, 'month'); return dTime != null && dTime >= r.start && dTime < r.end }
+    case 'date': {
+      if (!bucketDate || dTime == null) return false
+      const r = periodRange(new Date(bucketDate + 'T00:00:00'), 'day')
+      return dTime >= r.start && dTime < r.end
+    }
+    default: return true
+  }
 }
 type ViewMode = 'list' | 'board' | 'timeline' | 'calendar'
 
@@ -352,7 +382,8 @@ export default function TasksPage() {
     const now = new Date()
     const today = startOfDay(now).getTime()
     const wk = periodRange(now, 'week'); const mo = periodRange(now, 'month')
-    const c = { today: 0, overdue: 0, upcoming: 0, completed: 0, all: tasks.length, day: 0, week: 0, month: 0 }
+    const threeEnd = today + 3 * 86400000
+    const c = { today: 0, threedays: 0, overdue: 0, upcoming: 0, completed: 0, all: tasks.length, day: 0, week: 0, month: 0 }
     for (const t of tasks) {
       if (isDone(t)) { c.completed++; continue }
       const due = parseTs(t.due_date)
@@ -364,6 +395,7 @@ export default function TasksPage() {
       else if (d === today) c.today++
       else c.upcoming++
       if (d === today) c.day++
+      if (dTime >= today && dTime < threeEnd) c.threedays++
       if (dTime >= wk.start && dTime < wk.end) c.week++
       if (dTime >= mo.start && dTime < mo.end) c.month++
     }
@@ -371,7 +403,6 @@ export default function TasksPage() {
   }, [tasks])
 
   const visible = useMemo(() => {
-    const today = startOfDay(new Date()).getTime()
     const q = search.trim().toLowerCase()
     // Day / week / month window around the chosen reference date.
     let dateRange: { start: number; end: number } | null = null
@@ -392,29 +423,8 @@ export default function TasksPage() {
         }
       }
     }
-    const nowRef = new Date()
     let list = tasks.filter(t => {
-      if (bucket !== 'all') {
-        if (bucket === 'completed') { if (!isDone(t)) return false }
-        else {
-          if (isDone(t)) return false
-          const due = parseTs(t.due_date)
-          const d = due ? startOfDay(due).getTime() : null
-          const dTime = due ? due.getTime() : null
-          // Today now includes undated tasks (freshly-added ones surface here).
-          if (bucket === 'today' && !(d === today || d == null)) return false
-          if (bucket === 'overdue' && !(d != null && d < today)) return false
-          if (bucket === 'upcoming' && !(d != null && d > today)) return false
-          if (bucket === 'day' && d !== today) return false
-          if (bucket === 'week') { const r = periodRange(nowRef, 'week'); if (dTime == null || dTime < r.start || dTime >= r.end) return false }
-          if (bucket === 'month') { const r = periodRange(nowRef, 'month'); if (dTime == null || dTime < r.start || dTime >= r.end) return false }
-          if (bucket === 'date') {
-            if (!bucketDate || dTime == null) return false
-            const r = periodRange(new Date(bucketDate + 'T00:00:00'), 'day')
-            if (dTime < r.start || dTime >= r.end) return false
-          }
-        }
-      }
+      if (!inBucket(t, bucket, bucketDate)) return false
       if (assigneeFilter === 'me' && !assignedToMe(t)) return false
       else if (assigneeFilter && assigneeFilter !== 'me') {
         const ok = t.assigned_to_id === assigneeFilter || (Array.isArray(t.assignees) && t.assignees.some((a: any) => a.id === assigneeFilter))
@@ -447,12 +457,13 @@ export default function TasksPage() {
     return list
   }, [tasks, bucket, bucketDate, search, assigneeFilter, priorityFilter, outletFilter, dateFilter, datePeriod, sortBy, assignedToMe])
 
-  // For the calendar view we want the whole month regardless of the Today/
-  // Overdue/… bucket — only the assignee/priority/search filters apply, so a
-  // task shows up on its due date no matter which bucket is active.
+  // The calendar view honours the same bucket as the other views, so a "3 days"
+  // or "Week" filter narrows the pills too — plus the assignee/priority/outlet/
+  // search filters.
   const calendarTasks = useMemo(() => {
     const q = search.trim().toLowerCase()
     return tasks.filter(t => {
+      if (!inBucket(t, bucket, bucketDate)) return false
       if (assigneeFilter === 'me' && !assignedToMe(t)) return false
       else if (assigneeFilter && assigneeFilter !== 'me') {
         const ok = t.assigned_to_id === assigneeFilter || (Array.isArray(t.assignees) && t.assignees.some((a: any) => a.id === assigneeFilter))
@@ -469,7 +480,7 @@ export default function TasksPage() {
       }
       return true
     })
-  }, [tasks, search, assigneeFilter, priorityFilter, outletFilter, assignedToMe])
+  }, [tasks, bucket, bucketDate, search, assigneeFilter, priorityFilter, outletFilter, assignedToMe])
 
   const selected = useMemo(() => tasks.find(t => t.id === selectedId) || null, [tasks, selectedId])
 
@@ -623,6 +634,7 @@ export default function TasksPage() {
 
   const BUCKETS: { key: Bucket; label: string; n: number }[] = [
     { key: 'today', label: 'Today', n: counts.today },
+    { key: 'threedays', label: '3 days', n: counts.threedays },
     { key: 'overdue', label: 'Overdue', n: counts.overdue },
     { key: 'upcoming', label: 'Upcoming', n: counts.upcoming },
     { key: 'completed', label: 'Completed', n: counts.completed },
