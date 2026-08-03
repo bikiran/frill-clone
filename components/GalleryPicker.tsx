@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
 
 export type PickedMedia = { url: string; name?: string; type?: string; kind?: string }
 
@@ -21,10 +20,11 @@ export default function GalleryPicker({ companyId, onClose, onPick }: {
     if (!companyId) { setLoading(false); return }
     ;(async () => {
       try {
-        const { data } = await (supabase as any).from('media_items')
-          .select('id, url, title, kind, type, thumbnail_url')
-          .eq('company_id', companyId).order('created_at', { ascending: false }).limit(300)
-        setItems(data || [])
+        // Go through the service-role API (same as the Gallery page) — a direct
+        // browser query to media_items is blocked by RLS and comes back empty.
+        const res = await fetch(`/api/media?companyId=${companyId}`)
+        const d = await res.json()
+        setItems(Array.isArray(d.items) ? d.items : [])
       } catch { /* empty gallery */ } finally { setLoading(false) }
     })()
   }, [companyId])

@@ -147,6 +147,69 @@ export default function TasksPage() {
   const [bucket, setBucket] = useState<Bucket>('today')
   const [bucketDate, setBucketDate] = useState('')   // for the "Date" bucket
   const [view, setView] = useState<ViewMode>('list')
+  // Per-user view preferences: a saved default view (applied wherever they sign
+  // in, incl. mobile) and custom names — set via right-clicking a view tab.
+  const VIEW_LABELS: Record<ViewMode, string> = { list: 'List', board: 'Board', timeline: 'Timeline', calendar: 'Calendar' }
+  const [viewNames, setViewNames] = useState<Record<string, string>>({})
+  const [defaultView, setDefaultView] = useState<ViewMode | null>(null)
+  const [viewMenu, setViewMenu] = useState<{ view: ViewMode; x: number; y: number } | null>(null)
+  const viewPrefsApplied = useRef(false)
+  const labelOf = (v: ViewMode) => viewNames[v] || VIEW_LABELS[v]
+  const dfltDot: React.CSSProperties = { display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: 'var(--coral)', marginLeft: 5, verticalAlign: 'middle' }
+  const viewMenuItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
+
+  // Load saved view prefs once we know the user/company: localStorage for an
+  // instant paint, then the server (so the choice follows them across devices).
+  useEffect(() => {
+    if (!companyId || !userId) return
+    const lsKey = `tasks:viewPrefs:${companyId}:${userId}`
+    const apply = (p: any, allowSwitch: boolean) => {
+      if (!p) return
+      if (p.names && typeof p.names === 'object') setViewNames(p.names)
+      if ('defaultView' in p) setDefaultView(p.defaultView || null)
+      if (allowSwitch && p.defaultView && !viewPrefsApplied.current) { setView(p.defaultView); viewPrefsApplied.current = true }
+    }
+    try { const raw = localStorage.getItem(lsKey); if (raw) apply(JSON.parse(raw), true) } catch {}
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/user-prefs?userId=${userId}&companyId=${companyId}&key=tasks_view`)
+        const d = await res.json()
+        apply(d?.prefs?.tasks_view, true)
+      } catch {}
+      viewPrefsApplied.current = true
+    })()
+  }, [companyId, userId])
+
+  const persistViewPrefs = (names: Record<string, string>, dflt: ViewMode | null) => {
+    const payload = { names, defaultView: dflt }
+    try { if (companyId && userId) localStorage.setItem(`tasks:viewPrefs:${companyId}:${userId}`, JSON.stringify(payload)) } catch {}
+    if (companyId && userId) {
+      fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'tasks_view', value: payload }) }).catch(() => {})
+    }
+  }
+  const openViewMenu = (e: React.MouseEvent, v: ViewMode) => {
+    e.preventDefault()
+    const x = Math.min(e.clientX, (typeof window !== 'undefined' ? window.innerWidth : 9999) - 210)
+    setViewMenu({ view: v, x, y: e.clientY })
+  }
+  const renameView = (v: ViewMode) => {
+    const name = prompt('Rename view', labelOf(v))
+    setViewMenu(null)
+    if (name == null) return
+    const trimmed = name.trim()
+    const next = { ...viewNames }
+    if (!trimmed || trimmed === VIEW_LABELS[v]) delete next[v]; else next[v] = trimmed
+    setViewNames(next); persistViewPrefs(next, defaultView)
+  }
+  const makeDefaultView = (v: ViewMode) => { setDefaultView(v); persistViewPrefs(viewNames, v); setViewMenu(null) }
+  const clearDefaultView = () => { setDefaultView(null); persistViewPrefs(viewNames, null); setViewMenu(null) }
+  useEffect(() => {
+    if (!viewMenu) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setViewMenu(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [viewMenu])
+
   const [search, setSearch] = useState('')
   const [assigneeFilter, setAssigneeFilter] = useState<string[]>([])  // [] = anyone; else match any
   const [priorityFilter, setPriorityFilter] = useState<string[]>([])  // [] = any priority
@@ -840,18 +903,37 @@ export default function TasksPage() {
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tasks…"
               style={{ width: '100%', padding: '8px 11px 8px 31px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
           </div>
-          <div className="seg">
-            <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>List</button>
-            <button className={view === 'board' ? 'on' : ''} onClick={() => setView('board')}>Board</button>
-            <button className={view === 'timeline' ? 'on' : ''} onClick={() => setView('timeline')}>Timeline</button>
+          {/* Right-click any view tab for: Open, Rename, Make/Remove default.
+              A dot marks the view saved as your default. */}
+          <div className="seg" title="Right-click a view for options">
+            <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')} onContextMenu={e => openViewMenu(e, 'list')}>{labelOf('list')}{defaultView === 'list' && <span style={dfltDot} />}</button>
+            <button className={view === 'board' ? 'on' : ''} onClick={() => setView('board')} onContextMenu={e => openViewMenu(e, 'board')}>{labelOf('board')}{defaultView === 'board' && <span style={dfltDot} />}</button>
+            <button className={view === 'timeline' ? 'on' : ''} onClick={() => setView('timeline')} onContextMenu={e => openViewMenu(e, 'timeline')}>{labelOf('timeline')}{defaultView === 'timeline' && <span style={dfltDot} />}</button>
           </div>
           {/* Calendar is now an in-page view of the tasks (by due date) rather
               than a jump to the separate Calendar page. */}
-          <button className="ctl" onClick={() => setView(view === 'calendar' ? 'list' : 'calendar')}
+          <button className="ctl" onClick={() => setView(view === 'calendar' ? 'list' : 'calendar')} onContextMenu={e => openViewMenu(e, 'calendar')}
             style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, border: '1px solid ' + (view === 'calendar' ? 'var(--coral)' : 'var(--border)'), background: view === 'calendar' ? 'var(--peach)' : '#fff', color: view === 'calendar' ? 'var(--coral)' : 'var(--ink)' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            Calendar
+            {labelOf('calendar')}{defaultView === 'calendar' && <span style={dfltDot} />}
           </button>
+
+          {/* Right-click menu for a view tab */}
+          {viewMenu && (
+            <>
+              <div onClick={() => setViewMenu(null)} onContextMenu={e => { e.preventDefault(); setViewMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 400 }} />
+              <div style={{ position: 'fixed', top: viewMenu.y, left: viewMenu.x, zIndex: 401, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 196 }}>
+                <p style={{ margin: '2px 8px 6px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>{labelOf(viewMenu.view)} view</p>
+                <button style={viewMenuItem} onClick={() => { setView(viewMenu.view); setViewMenu(null) }}>Open view</button>
+                <button style={viewMenuItem} onClick={() => renameView(viewMenu.view)}>Rename view</button>
+                {defaultView === viewMenu.view ? (
+                  <button style={viewMenuItem} onClick={clearDefaultView}>Remove as default</button>
+                ) : (
+                  <button style={viewMenuItem} onClick={() => makeDefaultView(viewMenu.view)}>Make this view default</button>
+                )}
+              </div>
+            </>
+          )}
           {/* Bulk select — multi-select the list for delete / status / priority. */}
           {view === 'list' && (
             <button className="ctl" onClick={() => selectMode ? exitSelect() : setSelectMode(true)}
