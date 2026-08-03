@@ -29,8 +29,12 @@ export default function Carousel({ items, accent }: { items: Item[]; accent: str
     setIdx(Math.round(el.scrollLeft / per))
   }
 
+  // A fixed media height keeps every slide the same size, so a mix of portrait
+  // and landscape items doesn't stretch shorter slides (which left a big gap
+  // under a landscape video) and the arrows stay centred on the media for all.
+  const MEDIA_H = 'min(70vh, 560px)'
   const arrow: React.CSSProperties = {
-    position: 'absolute', top: '38%', transform: 'translateY(-50%)', width: 40, height: 40, borderRadius: '50%',
+    position: 'absolute', top: `calc(${MEDIA_H} / 2)`, transform: 'translateY(-50%)', width: 40, height: 40, borderRadius: '50%',
     border: 'none', background: 'rgba(0,0,0,0.5)', color: '#fff', fontSize: 22, cursor: 'pointer', zIndex: 2,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   }
@@ -38,18 +42,18 @@ export default function Carousel({ items, accent }: { items: Item[]; accent: str
   return (
     <div style={{ position: 'relative' }}>
       <div ref={ref} onScroll={onScroll}
-        style={{ display: 'flex', gap: 12, overflowX: 'auto', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
+        style={{ display: 'flex', gap: 12, overflowX: 'auto', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', alignItems: 'flex-start' }}>
         {items.map((m, i) => {
           const image = isImg(m.url, m.type), video = isVid(m.url, m.type)
           return (
             <div key={i} style={{ flex: '0 0 100%', scrollSnapAlign: 'center', background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 4px 18px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ background: '#000', lineHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ height: MEDIA_H, background: '#000', lineHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                 {image ? (
-                  <a href={m.url} target="_blank" rel="noopener" style={{ display: 'block', width: '100%' }}>
-                    <img src={m.url} alt={`Attachment ${i + 1}`} style={{ width: '100%', maxHeight: '68vh', objectFit: 'contain' }} />
+                  <a href={m.url} target="_blank" rel="noopener" style={{ display: 'flex', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+                    <img src={m.url} alt={`Attachment ${i + 1}`} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                   </a>
                 ) : video ? (
-                  <VideoPlayer src={m.url} autoPlay={false} style={{ width: '100%', maxHeight: '68vh', borderRadius: 0 }} />
+                  <VideoPlayer src={m.url} autoPlay={false} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 0 }} />
                 ) : (
                   <div style={{ padding: 30, color: '#fff', fontSize: 14, fontWeight: 700, wordBreak: 'break-word' }}>{m.name || 'File'}</div>
                 )}

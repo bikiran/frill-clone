@@ -47,6 +47,15 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster }: { s
   const [scrubbing, setScrubbing] = useState(false)
   const [hover, setHover] = useState<{ x: number; t: number } | null>(null)
   const [visible, setVisible] = useState(true)
+  const [isFs, setIsFs] = useState(false)
+
+  // Track fullscreen so we can fill + centre the video; an inline-flex wrapper
+  // otherwise pins a portrait clip to the top-left corner of a black screen.
+  useEffect(() => {
+    const onFs = () => setIsFs(document.fullscreenElement === wrapRef.current)
+    document.addEventListener('fullscreenchange', onFs)
+    return () => document.removeEventListener('fullscreenchange', onFs)
+  }, [])
 
   useEffect(() => {
     const v = vRef.current; if (!v) return
@@ -113,9 +122,9 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster }: { s
 
   return (
     <div ref={wrapRef} onMouseMove={wake} onMouseLeave={() => { if (playing && !scrubbing) setVisible(false) }}
-      style={{ position: 'relative', display: 'inline-flex', background: '#000', borderRadius: 8, overflow: 'hidden', cursor: chromeOn ? 'default' : 'none', ...style }}>
+      style={{ position: 'relative', display: isFs ? 'flex' : 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#000', borderRadius: isFs ? 0 : 8, overflow: 'hidden', cursor: chromeOn ? 'default' : 'none', ...style, ...(isFs ? { width: '100vw', height: '100vh' } : null) }}>
       <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} onClick={toggle}
-        style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', ...style }} />
+        style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', ...style, ...(isFs ? { width: '100%', height: '100%', objectFit: 'contain' } : null) }} />
 
       {/* Centre transport: rewind 10 · play/pause · forward 10 */}
       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 30, pointerEvents: 'none', opacity: chromeOn ? 1 : 0, transition: 'opacity .25s ease' }}>
