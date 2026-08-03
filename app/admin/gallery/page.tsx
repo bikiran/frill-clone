@@ -200,6 +200,82 @@ export default function GalleryPage() {
       }, idx * 350)
     })
   }
+  // Lightweight toast for share/send feedback.
+  const [toast, setToast] = useState('')
+  const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2600) }
+
+  // Share = copy public link(s), or the native share sheet on mobile.
+  const toAttachment = (it: any) => ({ url: it.url, kind: it.kind || ((it.type || '').startsWith('video/') ? 'video' : 'image'), name: it.title || it.name || '', type: it.type })
+  const shareItems = async (list: any[]) => {
+    const urls = list.map((i: any) => i.url).filter(Boolean)
+    if (!urls.length) return
+    try {
+      if ((navigator as any).share && urls.length === 1) { await (navigator as any).share({ url: urls[0], title: list[0].title || 'Media' }); return }
+    } catch { /* cancelled / unsupported → fall through to copy */ }
+    try { await navigator.clipboard.writeText(urls.join('\n')); showToast(urls.length === 1 ? 'Link copied' : `${urls.length} links copied`) }
+    catch { showToast('Could not copy the link') }
+  }
+
+  // Send/forward media into a contact's chat — mirrors the Inbox forward: find
+  // or open a conversation, text it if we have a number, and drop it on the
+  // thread. `forwardItems` holds the media the picker is choosing a target for.
+  const [forwardItems, setForwardItems] = useState<any[] | null>(null)
+  const [forwardSearch, setForwardSearch] = useState('')
+  const [forwardResults, setForwardResults] = useState<any[]>([])
+  const [forwardBusy, setForwardBusy] = useState(false)
+  const searchForwardTargets = async (q: string) => {
+    setForwardSearch(q)
+    if (!companyId || q.trim().length < 2) { setForwardResults([]); return }
+    const { data } = await (supabase as any).from('contacts')
+      .select('id, name, email, phone').eq('company_id', companyId)
+      .or(`name.ilike.%${q.trim()}%,email.ilike.%${q.trim()}%,phone.ilike.%${q.trim()}%`).limit(10)
+    setForwardResults(data || [])
+  }
+  const doForward = async (contactTarget: any) => {
+    if (!companyId || !forwardItems?.length || !user) return
+    setForwardBusy(true)
+    try {
+      let convId: string | null = null
+      const { data: existing } = await (supabase as any).from('conversations')
+        .select('id').eq('company_id', companyId).eq('contact_id', contactTarget.id)
+        .order('last_message_at', { ascending: false }).limit(1)
+      convId = existing?.[0]?.id || null
+      if (!convId) {
+        const { data: created } = await (supabase as any).from('conversations').insert({
+          company_id: companyId, channel: 'chat', contact_id: contactTarget.id,
+          subject: contactTarget.name || contactTarget.email, status: 'open', is_unread: false,
+          last_message: '', last_message_at: new Date().toISOString(),
+        }).select('id').maybeSingle()
+        convId = created?.id || null
+      }
+      if (!convId) throw new Error('Could not open a conversation with that contact')
+      const attachments = forwardItems.map(toAttachment)
+      const phone = contactTarget.phone
+      if (phone) {
+        for (const att of attachments) {
+          try {
+            await fetch('/api/telnyx/sms/send', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ companyId, conversationId: convId, to: phone, text: '', attachments: [att], senderName: me, skipChatMessage: true }),
+            })
+          } catch {}
+        }
+      }
+      await (supabase as any).from('messages').insert(attachments.map((att: any) => ({
+        conversation_id: convId, company_id: companyId,
+        sender_type: 'agent', sender_id: user.id, sender_name: me, sender_email: user.email,
+        content: '', attachments: [att], delivery_channel: phone ? 'sms' : 'chat',
+        metadata: { forwarded: true, from_gallery: true },
+      })))
+      await (supabase as any).from('conversations').update({ last_message: '📎 Attachment', last_message_at: new Date().toISOString() }).eq('id', convId)
+      const label = forwardItems.length === 1 ? 'Media' : `${forwardItems.length} items`
+      setForwardItems(null); setForwardSearch(''); setForwardResults([])
+      showToast(`${label} sent to ${contactTarget.name || contactTarget.email}`)
+    } catch (e: any) {
+      showToast('Could not send: ' + e.message)
+    } finally { setForwardBusy(false) }
+  }
+
   const [dragOver, setDragOver] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)   // details slideout for the lightbox item
@@ -732,6 +808,14 @@ export default function GalleryPage() {
                           </div>
                         </div>
                       )}
+                      <button onClick={() => shareItems([item])} title="Share / copy link"
+                        style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                      </button>
+                      <button onClick={() => setForwardItems([item])} title="Send to a chat"
+                        style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                      </button>
                       <button onClick={() => setTaggingItem(item)} title="Categories"
                         style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
@@ -784,6 +868,56 @@ export default function GalleryPage() {
           onCancel={() => setConfirmState(null)}
           onConfirm={() => { const fn = confirmState.onConfirm; setConfirmState(null); fn() }}
         />
+      )}
+
+      {/* Send to a chat — pick a contact, forward the media into their thread. */}
+      {forwardItems && (
+        <div onClick={() => { setForwardItems(null); setForwardSearch(''); setForwardResults([]) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 360, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 460, maxWidth: '95vw', maxHeight: '82vh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 18, overflow: 'hidden' }}>
+            <div style={{ padding: 18, borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Send to a chat</h3>
+              <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--slate)' }}>
+                {forwardItems.length === 1 ? 'This photo/video' : `${forwardItems.length} items`} will be sent to the contact’s conversation — and texted to them if we have a mobile number.
+              </p>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                {forwardItems.slice(0, 6).map((it: any, i: number) => (
+                  <div key={i} style={{ width: 40, height: 40, borderRadius: 7, overflow: 'hidden', border: '1px solid var(--border)', background: '#111', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {it.kind === 'video' ? <span style={{ color: '#fff' }}>▶</span> : <img src={it.thumbnail_url || it.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                  </div>
+                ))}
+                {forwardItems.length > 6 && <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--slate)' }}>+{forwardItems.length - 6}</span>}
+              </div>
+              <input autoFocus value={forwardSearch} onChange={e => searchForwardTargets(e.target.value)}
+                placeholder="Search contacts by name, email or phone…"
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {forwardSearch.trim().length < 2 ? (
+                <p style={{ padding: 18, fontSize: 13, color: 'var(--slate)' }}>Type at least 2 characters to find a contact.</p>
+              ) : forwardResults.length === 0 ? (
+                <p style={{ padding: 18, fontSize: 13, color: 'var(--slate)' }}>No contacts match “{forwardSearch}”.</p>
+              ) : (
+                forwardResults.map(c => (
+                  <button key={c.id} type="button" onClick={() => doForward(c)} disabled={forwardBusy}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '12px 16px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: forwardBusy ? 'default' : 'pointer' }}>
+                    <span style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{(c.name || c.email || '?').charAt(0).toUpperCase()}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{c.name || c.email || 'Contact'}</div>
+                      <div style={{ fontSize: 12, color: 'var(--slate)' }}>{c.phone || c.email || ''}</div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transient toast */}
+      {toast && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 500, background: 'var(--ink)', color: '#fff', padding: '11px 18px', borderRadius: 12, fontSize: 13.5, fontWeight: 600, boxShadow: '0 8px 30px rgba(0,0,0,0.28)' }}>{toast}</div>
       )}
 
       {/* Categorise a photo — it can be in as many as you like */}
@@ -880,6 +1014,18 @@ export default function GalleryPage() {
               {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           )}
+
+          <button onClick={() => shareItems(items.filter((i: any) => selected.has(i.id)))} disabled={bulkBusy}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            Share
+          </button>
+
+          <button onClick={() => setForwardItems(items.filter((i: any) => selected.has(i.id)))} disabled={bulkBusy}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Send to chat
+          </button>
 
           <button onClick={bulkDownload} disabled={bulkBusy}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
