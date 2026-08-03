@@ -65,6 +65,9 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
         .note-body td, .note-body th { border: 1px solid #e5e7eb; padding: 6px 9px; }
         .note-body blockquote { border-left: 3px solid ${accent}; margin: 10px 0; padding: 2px 14px; color: #4b5563; }
         .note-body .rte-mention { color: ${accent}; font-weight: 700; }
+        .note-body .rte-voice { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin: 12px 0; border: 1px solid #e5e7eb; border-radius: 12px; background: #fbfbfd; }
+        .note-body .rte-voice-lbl { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: ${accent}; white-space: nowrap; }
+        .note-body .rte-voice audio { height: 36px; flex: 1; min-width: 160px; }
       `}</style>
 
       <div style={{ maxWidth: 720, margin: '0 auto' }}>

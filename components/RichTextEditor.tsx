@@ -13,6 +13,7 @@ type Mention = { id: string; name: string }
 
 export default function RichTextEditor({
   value, onChange, placeholder = 'Add a description…', mentions, minHeight = 120, maxHeight = 360, bordered = true,
+  enableVoice = false, companyId, big = false,
 }: {
   value: string
   onChange: (html: string) => void
@@ -21,10 +22,57 @@ export default function RichTextEditor({
   minHeight?: number
   maxHeight?: number | string
   bordered?: boolean
+  enableVoice?: boolean
+  companyId?: string | null
+  big?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const timer = useRef<any>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: Mention[]; active: number } | null>(null)
+  const [rec, setRec] = useState<'idle' | 'recording' | 'uploading'>('idle')
+  const [recSecs, setRecSecs] = useState(0)
+  const recRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const streamRef = useRef<MediaStream | null>(null)
+  const tickRef = useRef<any>(null)
+
+  const insertVoiceBlock = (url: string, secs: number) => {
+    const label = new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    const html = `<div class="rte-voice" contenteditable="false"><span class="rte-voice-lbl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>Voice note · ${label}</span><audio controls src="${url}"></audio></div><p><br></p>`
+    ref.current?.focus()
+    document.execCommand('insertHTML', false, html)
+    emit()
+  }
+
+  const startVoice = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+      const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '')
+      const r = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+      chunksRef.current = []
+      r.ondataavailable = e => { if (e.data.size) chunksRef.current.push(e.data) }
+      const started = Date.now()
+      r.onstop = async () => {
+        const dur = Math.round((Date.now() - started) / 1000)
+        if (!chunksRef.current.length || !companyId) { setRec('idle'); return }
+        setRec('uploading')
+        try {
+          const ext = (r.mimeType || '').includes('mp4') ? 'm4a' : 'webm'
+          const file = new File([new Blob(chunksRef.current, { type: r.mimeType || 'audio/webm' })], `Voice ${Date.now()}.${ext}`, { type: r.mimeType || 'audio/webm' })
+          const fd = new FormData(); fd.append('file', file); fd.append('companyId', companyId); fd.append('conversationId', 'notes')
+          const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+          const d = await res.json()
+          if (d.url) insertVoiceBlock(d.url, dur)
+        } catch {} finally { setRec('idle'); setRecSecs(0) }
+      }
+      recRef.current = r
+      r.start(); setRec('recording'); setRecSecs(0)
+      tickRef.current = setInterval(() => setRecSecs(s => s + 1), 1000)
+    } catch { setRec('idle') }
+  }
+  const stopVoice = () => { clearInterval(tickRef.current); try { recRef.current?.stop() } catch {}; streamRef.current?.getTracks().forEach(t => t.stop()) }
 
   useEffect(() => {
     if (ref.current) ref.current.innerHTML = value || ''
@@ -129,14 +177,16 @@ export default function RichTextEditor({
     else if (e.key === 'Escape') { setMenu(null) }
   }
 
-  const Btn = ({ on, title, children }: any) => (
-    <button type="button" title={title}
+  const S = big ? 38 : 30
+  const Btn = ({ on, title, children, active }: any) => (
+    <button type="button" title={title} className="rte-btn"
       onMouseDown={(e) => e.preventDefault()}
       onClick={on}
-      style={{ minWidth: 28, height: 28, padding: '0 7px', borderRadius: 6, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+      style={{ minWidth: S, height: S, padding: `0 ${big ? 9 : 7}px`, borderRadius: 9, border: '1px solid var(--border)', background: active ? 'var(--peach)' : '#fff', color: active ? 'var(--coral)' : 'var(--ink)', fontSize: big ? 15 : 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
       {children}
     </button>
   )
+  const Sep = () => <span style={{ width: 1, background: 'var(--border)', margin: '0 3px', alignSelf: 'stretch' }} />
 
   return (
     <div style={{ border: bordered ? '1px solid var(--border)' : 'none', borderRadius: bordered ? 10 : 0, overflow: bordered ? 'hidden' : 'visible', background: '#fff' }}>
@@ -152,27 +202,50 @@ export default function RichTextEditor({
         .rte-content a { color: var(--coral); text-decoration: underline; }
         .rte-content p { margin: 4px 0; }
         .rte-content .rte-mention { color: var(--coral); font-weight: 700; background: var(--peach); padding: 0 5px; border-radius: 5px; }
+        .rte-btn { transition: background .12s, color .12s, transform .1s, box-shadow .12s; }
+        .rte-btn:hover { background: var(--peach); color: var(--coral); border-color: var(--coral); transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
+        /* Bordered inline voice note, Evernote-style. */
+        .rte-content .rte-voice, .note-body .rte-voice { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin: 10px 0; border: 1px solid var(--border); border-radius: 12px; background: #fbfbfd; }
+        .rte-content .rte-voice-lbl, .note-body .rte-voice-lbl { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--coral); white-space: nowrap; }
+        .rte-content .rte-voice audio, .note-body .rte-voice audio { height: 36px; flex: 1; min-width: 160px; }
       `}</style>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: 6, borderBottom: '1px solid var(--border)', background: 'var(--canvas)', position: 'sticky', top: 0, zIndex: 2 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: big ? 5 : 4, padding: big ? '9px 10px' : 6, borderBottom: '1px solid var(--border)', background: 'var(--canvas)', position: 'sticky', top: 0, zIndex: 2, borderRadius: bordered ? 0 : 12, boxShadow: big ? '0 1px 0 rgba(0,0,0,0.03)' : 'none' }}>
         <Btn title="Bold" on={() => exec('bold')}><b>B</b></Btn>
         <Btn title="Italic" on={() => exec('italic')}><i>I</i></Btn>
         <Btn title="Underline" on={() => exec('underline')}><u>U</u></Btn>
         <Btn title="Strikethrough" on={() => exec('strikeThrough')}><s>S</s></Btn>
-        <span style={{ width: 1, background: 'var(--border)', margin: '0 2px' }} />
+        <Sep />
         <Btn title="Heading" on={() => formatBlock('H2')}>H₂</Btn>
         <Btn title="Subheading" on={() => formatBlock('H3')}>H₃</Btn>
         <Btn title="Normal text" on={() => formatBlock('P')}>¶</Btn>
-        <span style={{ width: 1, background: 'var(--border)', margin: '0 2px' }} />
+        <Sep />
         <Btn title="Bulleted list" on={() => exec('insertUnorderedList')}>•≡</Btn>
         <Btn title="Numbered list" on={() => exec('insertOrderedList')}>1.≡</Btn>
         <Btn title="Quote" on={() => formatBlock('BLOCKQUOTE')}>❝</Btn>
         <Btn title="Link" on={addLink}>🔗</Btn>
         <Btn title="Clear formatting" on={() => exec('removeFormat')}>⌫</Btn>
-        <span style={{ width: 1, background: 'var(--border)', margin: '0 2px' }} />
+        <Sep />
         <Btn title="Insert table" on={insertTable}>▦</Btn>
         <Btn title="Add row to table" on={addRow}>＋Row</Btn>
         <Btn title="Add column to table" on={addCol}>＋Col</Btn>
+        {enableVoice && <>
+          <Sep />
+          {rec === 'idle' && (
+            <Btn title="Record a voice note into the text" on={startVoice} active={false}>
+              <svg width={big ? 17 : 15} height={big ? 17 : 15} viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </Btn>
+          )}
+          {rec === 'recording' && (
+            <button type="button" onMouseDown={e => e.preventDefault()} onClick={stopVoice} title="Stop recording"
+              style={{ height: S, padding: '0 12px', borderRadius: 9, border: 'none', background: '#dc2626', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff', animation: 'rte-pulse 1s infinite' }} />
+              {`${Math.floor(recSecs / 60)}:${String(recSecs % 60).padStart(2, '0')}`} · Stop
+            </button>
+          )}
+          {rec === 'uploading' && <span style={{ alignSelf: 'center', fontSize: 12.5, color: 'var(--slate)', fontWeight: 600, padding: '0 8px' }}>Saving…</span>}
+        </>}
       </div>
+      <style>{`@keyframes rte-pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }`}</style>
       <div
         ref={ref}
         className="rte-content"

@@ -55,6 +55,8 @@ export default function NotesPage() {
   const [remOpen, setRemOpen] = useState(false)
   const [tagAdding, setTagAdding] = useState(false)
   const [tagInput, setTagInput] = useState('')
+  const [dragI, setDragI] = useState<number | null>(null)
+  const autoOpened = useRef(false)
   const coverInput = useRef<HTMLInputElement>(null)
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2400) }
 
@@ -87,6 +89,20 @@ export default function NotesPage() {
     } catch {} finally { setLoadingList(false) }
   }, [companyId, uid])
   useEffect(() => { loadList() }, [loadList])
+
+  // Open the most-recent note by default (desktop) so it's not a blank screen.
+  useEffect(() => {
+    if (!autoOpened.current && tab === 'notes' && !activeId && list.length > 0 && (typeof window === 'undefined' || window.innerWidth > 860)) {
+      setActiveId(list[0].id); autoOpened.current = true
+    }
+  }, [tab, list, activeId])
+
+  const moveCheck = (from: number, to: number) => {
+    if (!note || from === to || from == null) return
+    const arr = [...(note.checklist || [])]
+    const [it] = arr.splice(from, 1); arr.splice(to, 0, it)
+    queueSave({ ...note, checklist: arr })
+  }
 
   useEffect(() => {
     if (!companyId || !activeId) { setNote(null); return }
@@ -417,15 +433,22 @@ export default function NotesPage() {
               )}
 
               <RichTextEditor key={note.id} value={note.body} onChange={html => queueSave({ ...note, body: html })}
-                placeholder="Start writing… use @ to mention a teammate" mentions={team} bordered={false} minHeight={200} maxHeight={'none' as any} />
+                placeholder="Start writing… use @ to mention a teammate" mentions={team} bordered={false} big enableVoice companyId={companyId} minHeight={200} maxHeight={'none' as any} />
 
               <div style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Checklist</h3>
                   {(note.checklist || []).length > 0 && <span style={{ fontSize: 12, color: 'var(--slate)' }}>{checklistDone}/{note.checklist.length}</span>}
                 </div>
-                {(note.checklist || []).map(c => (
-                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '3px 0' }}>
+                {(note.checklist || []).map((c, ci) => (
+                  <div key={c.id}
+                    onDragOver={e => { e.preventDefault() }}
+                    onDrop={e => { e.preventDefault(); if (dragI !== null) moveCheck(dragI, ci); setDragI(null) }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 0', borderRadius: 6, background: dragI === ci ? 'var(--peach)' : 'transparent' }}>
+                    <span draggable onDragStart={() => setDragI(ci)} onDragEnd={() => setDragI(null)} title="Drag to reorder"
+                      style={{ cursor: 'grab', color: 'var(--slate)', display: 'flex', padding: '0 3px', opacity: 0.55 }}>
+                      <svg width="11" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.6"/><circle cx="15" cy="5" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="19" r="1.6"/><circle cx="15" cy="19" r="1.6"/></svg>
+                    </span>
                     <input type="checkbox" checked={c.done} onChange={() => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, done: !x.done } : x) })} style={{ width: 17, height: 17, accentColor: 'var(--coral)', flexShrink: 0 }} />
                     <input value={c.text} onChange={e => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, text: e.target.value } : x) })}
                       placeholder="List item" style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, color: c.done ? 'var(--slate)' : 'var(--ink)', textDecoration: c.done ? 'line-through' : 'none', background: 'transparent' }} />
