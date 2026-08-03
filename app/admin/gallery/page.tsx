@@ -217,7 +217,8 @@ export default function GalleryPage() {
       const mediaUrls = list.map((it: any) => ({ url: it.url, name: it.title || 'File', type: it.type || (it.kind === 'video' ? 'video/mp4' : 'image/jpeg') }))
       const res = await fetch('/api/short-links/create', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, kind: 'media', mediaUrls, sentBy: me, label: list.length === 1 ? (list[0].title || 'Shared media') : `${list.length} items` }),
+        // `url` is the required target; the full set rides along in mediaUrls.
+        body: JSON.stringify({ companyId, kind: 'media', url: list[0].url, mediaUrls, sentBy: me, label: list.length === 1 ? (list[0].title || 'Shared media') : `${list.length} items` }),
       })
       const d = await res.json()
       if (!res.ok || !d.url) throw new Error(d.error || 'link failed')
