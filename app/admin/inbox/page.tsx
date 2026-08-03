@@ -6269,8 +6269,18 @@ export default function InboxPage() {
                                             style={{ width: '100%', height: n === 1 ? 'auto' : '100%', maxHeight: n === 1 ? 320 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block' }} />
                                         ) : (
                                           <>
-                                            <video src={toPublicUrl(a.url)} preload="metadata" poster={toPublicUrl(a.thumbUrl)}
-                                              style={{ width: n === 1 ? 'auto' : '100%', height: n === 1 ? 'auto' : '100%', maxWidth: '100%', maxHeight: n === 1 ? 280 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block', pointerEvents: 'none' }} />
+                                            {/* No generated thumbnail? Seek a hair into the
+                                               clip (#t=0.1) so the frame the browser paints
+                                               isn't the usual black leader frame. Only set a
+                                               poster when we actually have one — an empty
+                                               poster forces that black first frame. */}
+                                            <video
+                                              src={a.thumbUrl ? toPublicUrl(a.url) : toPublicUrl(a.url) + '#t=0.1'}
+                                              preload="metadata"
+                                              muted
+                                              playsInline
+                                              {...(a.thumbUrl ? { poster: toPublicUrl(a.thumbUrl) } : {})}
+                                              style={{ width: n === 1 ? 'auto' : '100%', height: n === 1 ? 'auto' : '100%', maxWidth: '100%', maxHeight: n === 1 ? 280 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block', pointerEvents: 'none', background: '#111' }} />
                                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                               <div style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>▶</div>
                                             </div>

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import MediaLightbox from '@/components/MediaLightbox'
+import GalleryPicker from '@/components/GalleryPicker'
 
 // Reusable image/video attachment uploader. Uploads through the existing
 // /api/inbox/upload endpoint (R2 or Supabase storage) and keeps a list of
@@ -22,6 +23,7 @@ export default function AttachmentUploader({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [viewer, setViewer] = useState<number | null>(null)   // open lightbox index
+  const [showGallery, setShowGallery] = useState(false)
   const list = Array.isArray(value) ? value : []
 
   const pick = () => inputRef.current?.click()
@@ -68,14 +70,23 @@ export default function AttachmentUploader({
               style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, lineHeight: '18px', cursor: 'pointer', padding: 0, textAlign: 'center' }}>×</button>
           </div>
         ))}
-        <button type="button" onClick={pick} disabled={busy || !companyId}
-          style={{ width: thumb, height: thumb, boxSizing: 'border-box', padding: 4, borderRadius: 9, border: '1.5px dashed var(--border)', background: '#fff', cursor: busy ? 'default' : 'pointer', color: 'var(--slate)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, fontSize: 9.5, fontWeight: 600, lineHeight: 1.05, textAlign: 'center', overflow: 'hidden', flexShrink: 0 }}>
-          {busy ? '…' : <><span style={{ fontSize: 18, lineHeight: 1 }}>＋</span><span style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>Photo/Video</span></>}
-        </button>
+        {(() => {
+          const tile: React.CSSProperties = { width: thumb, height: thumb, boxSizing: 'border-box', padding: 4, borderRadius: 9, border: '1.5px dashed var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, fontSize: 10, fontWeight: 600, lineHeight: 1.05, textAlign: 'center', overflow: 'hidden', flexShrink: 0 }
+          return (<>
+            <button type="button" onClick={pick} disabled={busy || !companyId} title="Upload a new photo or video" style={{ ...tile, cursor: busy ? 'default' : 'pointer' }}>
+              {busy ? '…' : <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg><span>Upload</span></>}
+            </button>
+            <button type="button" onClick={() => setShowGallery(true)} disabled={!companyId} title="Choose from your Colvy Gallery" style={tile}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+              <span>Gallery</span>
+            </button>
+          </>)
+        })()}
       </div>
       {err && <p style={{ fontSize: 11.5, color: '#dc2626', margin: '6px 0 0' }}>{err}</p>}
       <input ref={inputRef} type="file" accept="image/*,video/*" multiple style={{ display: 'none' }} onChange={e => onFiles(e.target.files)} />
       {viewer !== null && <MediaLightbox items={list} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} onRename={rename} />}
+      {showGallery && <GalleryPicker companyId={companyId} onClose={() => setShowGallery(false)} onPick={(picked) => onChange([...list, ...picked])} />}
     </div>
   )
 }
