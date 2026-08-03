@@ -56,6 +56,7 @@ export default function NotesPage() {
   const [tagAdding, setTagAdding] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [dragI, setDragI] = useState<number | null>(null)
+  const [toolbarEl, setToolbarEl] = useState<HTMLDivElement | null>(null)
   const autoOpened = useRef(false)
   const coverInput = useRef<HTMLInputElement>(null)
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2400) }
@@ -248,7 +249,19 @@ export default function NotesPage() {
         .note-row { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
         .note-row:hover { background: var(--canvas); }
         .note-row.on { background: var(--peach); }
-        .notes-editor { flex: 1; min-width: 0; overflow-y: auto; }
+        .notes-editor { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+        .ne-top { border-bottom: 1px solid var(--border); background: #fff; flex-shrink: 0; }
+        .ne-meta { display: flex; align-items: center; gap: 10px; padding: 10px 24px 4px; color: var(--slate); font-size: 12.5px; flex-wrap: wrap; }
+        .ne-toolbar { padding: 2px 18px 9px; }
+        .ne-scroll { flex: 1; overflow-y: auto; }
+        .ne-inner { margin: 0 auto; padding: 22px 48px 40px; }
+        .ne-footer { border-top: 1px solid var(--border); background: #fff; padding: 11px 48px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+        @media (max-width: 860px) {
+          .ne-inner { padding: 16px 16px 32px; }
+          .ne-meta { padding: 10px 14px 4px; }
+          .ne-toolbar { padding: 2px 10px 9px; }
+          .ne-footer { padding: 10px 14px; }
+        }
         .icon-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--slate); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .12s, color .12s; }
         .icon-btn:hover { background: var(--peach); color: var(--coral); }
         .seg-tab { flex: 1; padding: 8px 0; border-radius: 9px; border: none; background: transparent; color: var(--slate); font-size: 13px; font-weight: 700; cursor: pointer; transition: background .12s, color .12s; }
@@ -263,7 +276,7 @@ export default function NotesPage() {
         @media (max-width: 860px) {
           .notes-list { width: 100%; display: ${activeId ? 'none' : 'flex'}; border-right: none; }
           .notes-list.closed { display: none; }
-          .notes-editor { display: ${activeId ? 'block' : 'none'}; }
+          .notes-editor { display: ${activeId ? 'flex' : 'none'}; }
           .notes-back { display: inline-flex !important; }
         }
       `}</style>
@@ -378,53 +391,59 @@ export default function NotesPage() {
 
         <div className="notes-editor">
           {!note ? (
-            <div style={{ padding: 60, textAlign: 'center', color: 'var(--slate)', fontSize: 14 }}>{tab === 'trash' ? 'Restore a note to edit it.' : 'Select a note, or create one.'}</div>
+            <div style={{ padding: 60, textAlign: 'center', color: 'var(--slate)', fontSize: 14, margin: 'auto' }}>{tab === 'trash' ? 'Restore a note to edit it.' : 'Select a note, or create one.'}</div>
           ) : (
-            <div style={{ maxWidth: 780, margin: '0 auto', padding: '20px 28px 40px' }}>
-              <button onClick={() => setActiveId(null)} className="notes-back" style={{ display: 'none', alignItems: 'center', background: 'none', border: 'none', color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', marginBottom: 10, fontSize: 13 }}>‹ Notes</button>
-
-              <input value={note.title} onChange={e => queueSave({ ...note, title: e.target.value })} placeholder="Untitled"
-                style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', fontSize: 34, fontWeight: 800, color: 'var(--ink)', padding: 0, marginBottom: 6, lineHeight: 1.15 }} />
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '4px 0 14px', color: 'var(--slate)', fontSize: 12.5 }}>
-                <span>{saving ? 'Saving…' : 'Saved'} · {fmtAgo(note.updated_at)}</span>
-                <span style={{ flex: 1 }} />
-                {!note.cover_image && <>
-                  <button onClick={() => coverInput.current?.click()} style={metaBtn}>＋ Cover</button>
-                  <button onClick={() => setCoverGallery(true)} style={metaBtn}>Gallery</button>
-                </>}
-                <button onClick={shareNote} style={{ ...metaBtn, color: 'var(--coral)', borderColor: 'var(--coral)', fontWeight: 700 }}>{note.is_public ? 'Sharing' : 'Share'}</button>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={!!note.allow_public_edit} onChange={e => queueSave({ ...note, allow_public_edit: e.target.checked })} style={{ width: 14, height: 14, accentColor: 'var(--coral)' }} />
-                  Viewers can edit
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <button className="icon-btn" onClick={() => setMoreOpen(v => !v)} title="More" style={{ width: 30, height: 30 }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
-                  </button>
-                  {moreOpen && (<>
-                    <div onClick={() => setMoreOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                    <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 190 }}>
-                      <button style={menuItem} onClick={() => { queueSave({ ...note, shared_with_team: !note.shared_with_team }); setMoreOpen(false); showToast(note.shared_with_team ? 'Note is now private' : 'Shared with your team') }}>
-                        {note.shared_with_team ? 'Make private' : 'Share with team'}
-                      </button>
-                      <button style={menuItem} onClick={duplicateNote}>Duplicate</button>
-                      <button style={menuItem} onClick={() => { queueSave({ ...note, pinned: !note.pinned }); setMoreOpen(false) }}>{note.pinned ? 'Unpin' : 'Pin to top'}</button>
-                      <button style={menuItem} onClick={copyLink}>Copy link</button>
-                      <button style={menuItem} onClick={printNote}>Print</button>
-                      <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                      <button style={{ ...menuItem, color: '#dc2626' }} onClick={() => trashNote(note.id)}>Move to Trash</button>
-                    </div>
-                  </>)}
+            <>
+              {/* Fixed top: meta actions + the editor toolbar (portaled here) */}
+              <div className="ne-top">
+                <div className="ne-meta">
+                  <button onClick={() => setActiveId(null)} className="notes-back" style={{ display: 'none', alignItems: 'center', background: 'none', border: 'none', color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>‹ Notes</button>
+                  <span>{saving ? 'Saving…' : 'Saved'} · {fmtAgo(note.updated_at)}</span>
+                  <span style={{ flex: 1 }} />
+                  {!note.cover_image && <>
+                    <button onClick={() => coverInput.current?.click()} style={metaBtn}>＋ Cover</button>
+                    <button onClick={() => setCoverGallery(true)} style={metaBtn}>Gallery</button>
+                  </>}
+                  <button onClick={shareNote} style={{ ...metaBtn, color: 'var(--coral)', borderColor: 'var(--coral)', fontWeight: 700 }}>{note.is_public ? 'Sharing' : 'Share'}</button>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!note.allow_public_edit} onChange={e => queueSave({ ...note, allow_public_edit: e.target.checked })} style={{ width: 14, height: 14, accentColor: 'var(--coral)' }} />
+                    Viewers can edit
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <button className="icon-btn" onClick={() => setMoreOpen(v => !v)} title="More" style={{ width: 30, height: 30 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+                    </button>
+                    {moreOpen && (<>
+                      <div onClick={() => setMoreOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                      <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 190 }}>
+                        <button style={menuItem} onClick={() => { queueSave({ ...note, shared_with_team: !note.shared_with_team }); setMoreOpen(false); showToast(note.shared_with_team ? 'Note is now private' : 'Shared with your team') }}>
+                          {note.shared_with_team ? 'Make private' : 'Share with team'}
+                        </button>
+                        <button style={menuItem} onClick={duplicateNote}>Duplicate</button>
+                        <button style={menuItem} onClick={() => { queueSave({ ...note, pinned: !note.pinned }); setMoreOpen(false) }}>{note.pinned ? 'Unpin' : 'Pin to top'}</button>
+                        <button style={menuItem} onClick={copyLink}>Copy link</button>
+                        <button style={menuItem} onClick={printNote}>Print</button>
+                        <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+                        <button style={{ ...menuItem, color: '#dc2626' }} onClick={() => trashNote(note.id)}>Move to Trash</button>
+                      </div>
+                    </>)}
+                  </div>
                 </div>
+                <div className="ne-toolbar" ref={setToolbarEl} />
               </div>
               <input ref={coverInput} type="file" accept="image/*,video/*" style={{ display: 'none' }} onChange={e => onCoverFile(e.target.files)} />
 
+              {/* Scroll: title, cover, paragraph (and the rest) */}
+              <div className="ne-scroll">
+                <div className="ne-inner">
+              <input value={note.title} onChange={e => queueSave({ ...note, title: e.target.value })} placeholder="Untitled"
+                style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', fontSize: 34, fontWeight: 800, color: 'var(--ink)', padding: 0, marginBottom: 14, lineHeight: 1.15 }} />
+
               {note.cover_image && (
-                <div style={{ position: 'relative', borderRadius: 14, overflow: 'hidden', marginBottom: 18, background: '#000', maxHeight: 280 }}>
+                <div style={{ position: 'relative', borderRadius: 14, overflow: 'hidden', marginBottom: 18, background: '#000', maxHeight: 320 }}>
                   {isVideo(note.cover_image)
-                    ? <video src={note.cover_image} controls playsInline style={{ width: '100%', maxHeight: 280, objectFit: 'cover', display: 'block' }} />
-                    : <img src={note.cover_image} alt="" style={{ width: '100%', maxHeight: 280, objectFit: 'cover', display: 'block' }} />}
+                    ? <video src={note.cover_image} controls playsInline style={{ width: '100%', maxHeight: 320, objectFit: 'cover', display: 'block' }} />
+                    : <img src={note.cover_image} alt="" style={{ width: '100%', maxHeight: 320, objectFit: 'cover', display: 'block' }} />}
                   <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6 }}>
                     <button onClick={() => coverInput.current?.click()} style={coverBtn}>Change</button>
                     <button onClick={() => queueSave({ ...note, cover_image: null })} style={coverBtn}>Remove</button>
@@ -433,7 +452,7 @@ export default function NotesPage() {
               )}
 
               <RichTextEditor key={note.id} value={note.body} onChange={html => queueSave({ ...note, body: html })}
-                placeholder="Start writing… use @ to mention a teammate" mentions={team} bordered={false} big enableVoice companyId={companyId} minHeight={200} maxHeight={'none' as any} />
+                placeholder="Start writing… use @ to mention a teammate" mentions={team} bordered={false} big enableVoice companyId={companyId} toolbarPortal={toolbarEl} minHeight={200} maxHeight={'none' as any} />
 
               <div style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -483,9 +502,11 @@ export default function NotesPage() {
                 <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Photos &amp; videos</h3>
                 <AttachmentUploader companyId={companyId} value={media} onChange={next => setAllAttachments([...next, ...audios])} folder="notes" />
               </div>
+                </div>
+              </div>
 
-              {/* Evernote-style footer: reminder + tags */}
-              <div style={{ marginTop: 26, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {/* Fixed footer: reminder + tags */}
+              <div className="ne-footer">
                 {/* Reminder */}
                 <div style={{ position: 'relative' }}>
                   <button className={'footer-btn' + (note.reminder_at ? ' on' : '')} onClick={() => setRemOpen(v => !v)}>
@@ -526,7 +547,7 @@ export default function NotesPage() {
                   </button>
                 )}
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>

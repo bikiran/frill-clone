@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 // A lightweight rich-text editor built on contentEditable + execCommand — no
 // external dependency. Supports bold/italic/underline/strikethrough, headings,
@@ -13,7 +14,7 @@ type Mention = { id: string; name: string }
 
 export default function RichTextEditor({
   value, onChange, placeholder = 'Add a description…', mentions, minHeight = 120, maxHeight = 360, bordered = true,
-  enableVoice = false, companyId, big = false,
+  enableVoice = false, companyId, big = false, toolbarPortal,
 }: {
   value: string
   onChange: (html: string) => void
@@ -25,6 +26,7 @@ export default function RichTextEditor({
   enableVoice?: boolean
   companyId?: string | null
   big?: boolean
+  toolbarPortal?: HTMLElement | null
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const timer = useRef<any>(null)
@@ -209,7 +211,9 @@ export default function RichTextEditor({
         .rte-content .rte-voice-lbl, .note-body .rte-voice-lbl { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--coral); white-space: nowrap; }
         .rte-content .rte-voice audio, .note-body .rte-voice audio { height: 36px; flex: 1; min-width: 160px; }
       `}</style>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: big ? 5 : 4, padding: big ? '9px 10px' : 6, borderBottom: '1px solid var(--border)', background: 'var(--canvas)', position: 'sticky', top: 0, zIndex: 2, borderRadius: bordered ? 0 : 12, boxShadow: big ? '0 1px 0 rgba(0,0,0,0.03)' : 'none' }}>
+      {(() => {
+      const toolbarNode = (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: big ? 5 : 4, padding: big ? '9px 10px' : 6, borderBottom: toolbarPortal ? 'none' : '1px solid var(--border)', background: toolbarPortal ? 'transparent' : 'var(--canvas)', position: toolbarPortal ? 'static' : 'sticky', top: 0, zIndex: 2, borderRadius: bordered ? 0 : 12, boxShadow: (big && !toolbarPortal) ? '0 1px 0 rgba(0,0,0,0.03)' : 'none' }}>
         <Btn title="Bold" on={() => exec('bold')}><b>B</b></Btn>
         <Btn title="Italic" on={() => exec('italic')}><i>I</i></Btn>
         <Btn title="Underline" on={() => exec('underline')}><u>U</u></Btn>
@@ -245,6 +249,11 @@ export default function RichTextEditor({
           {rec === 'uploading' && <span style={{ alignSelf: 'center', fontSize: 12.5, color: 'var(--slate)', fontWeight: 600, padding: '0 8px' }}>Saving…</span>}
         </>}
       </div>
+      )
+      // When a portal target is provided, render the toolbar there (e.g. a fixed
+      // top bar) instead of inline. Undefined = inline (default, tasks).
+      return toolbarPortal === undefined ? toolbarNode : (toolbarPortal ? createPortal(toolbarNode, toolbarPortal) : null)
+      })()}
       <style>{`@keyframes rte-pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }`}</style>
       <div
         ref={ref}
