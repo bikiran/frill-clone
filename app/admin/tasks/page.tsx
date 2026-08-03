@@ -117,6 +117,7 @@ const EVENT_TYPE_META: Record<string, { label: string; color: string; bg: string
 
 // Preset colours for colour-coding a task. Stored as the hex string on the task.
 const TASK_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899', '#64748b']
+const COLOUR_NAMES = ['Red', 'Orange', 'Amber', 'Green', 'Teal', 'Blue', 'Purple', 'Pink', 'Slate']
 const tint = (hex: string, a: number) => {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
   return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})` : hex
@@ -147,9 +148,9 @@ export default function TasksPage() {
   const [bucketDate, setBucketDate] = useState('')   // for the "Date" bucket
   const [view, setView] = useState<ViewMode>('list')
   const [search, setSearch] = useState('')
-  const [assigneeFilter, setAssigneeFilter] = useState('')
-  const [priorityFilter, setPriorityFilter] = useState('')
-  const [colorFilter, setColorFilter] = useState('')              // '' = any colour
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([])  // [] = anyone; else match any
+  const [priorityFilter, setPriorityFilter] = useState<string[]>([])  // [] = any priority
+  const [colorFilter, setColorFilter] = useState<string[]>([])        // [] = any colour ('' = no colour)
   const [outletFilter, setOutletFilter] = useState<string[]>([])  // [] = all outlets; else match any
   const [dateFilter, setDateFilter] = useState('')         // '' = any; else a reference YYYY-MM-DD
   const [datePeriod, setDatePeriod] = useState<'day' | 'week' | 'month'>('day')
@@ -224,7 +225,7 @@ export default function TasksPage() {
         const uid = session?.user?.id
         const myMembership = (tm || []).find((m: any) => (m.user_id || m.id) === uid && (!m.company_id || m.company_id === cid))
         if (uid && co?.owner_id !== uid && myMembership) {
-          setAssigneeFilter('me')
+          setAssigneeFilter(['me'])
           if (myMembership.default_location_id) setOutletFilter([myMembership.default_location_id])
         }
 
@@ -458,13 +459,12 @@ export default function TasksPage() {
           }
         }
       }
-      if (assigneeFilter === 'me' && !assignedToMe(t)) return false
-      else if (assigneeFilter && assigneeFilter !== 'me') {
-        const ok = t.assigned_to_id === assigneeFilter || (Array.isArray(t.assignees) && t.assignees.some((a: any) => a.id === assigneeFilter))
+      if (assigneeFilter.length) {
+        const ok = assigneeFilter.some(a => a === 'me' ? assignedToMe(t) : (t.assigned_to_id === a || (Array.isArray(t.assignees) && t.assignees.some((x: any) => x.id === a))))
         if (!ok) return false
       }
-      if (priorityFilter && (t.priority || 'normal') !== priorityFilter) return false
-      if (colorFilter && (t.color || '') !== colorFilter) return false
+      if (priorityFilter.length && !priorityFilter.includes(t.priority || 'normal')) return false
+      if (colorFilter.length && !colorFilter.includes(t.color || '')) return false
       if (outletFilter.length) {
         const outs = (Array.isArray(t.location_ids) && t.location_ids.length) ? t.location_ids : (t.location_id ? [t.location_id] : [])
         if (!outs.some((o: string) => outletFilter.includes(o))) return false
@@ -503,13 +503,12 @@ export default function TasksPage() {
   const calendarTasks = useMemo(() => {
     const q = search.trim().toLowerCase()
     return tasks.filter(t => {
-      if (assigneeFilter === 'me' && !assignedToMe(t)) return false
-      else if (assigneeFilter && assigneeFilter !== 'me') {
-        const ok = t.assigned_to_id === assigneeFilter || (Array.isArray(t.assignees) && t.assignees.some((a: any) => a.id === assigneeFilter))
+      if (assigneeFilter.length) {
+        const ok = assigneeFilter.some(a => a === 'me' ? assignedToMe(t) : (t.assigned_to_id === a || (Array.isArray(t.assignees) && t.assignees.some((x: any) => x.id === a))))
         if (!ok) return false
       }
-      if (priorityFilter && (t.priority || 'normal') !== priorityFilter) return false
-      if (colorFilter && (t.color || '') !== colorFilter) return false
+      if (priorityFilter.length && !priorityFilter.includes(t.priority || 'normal')) return false
+      if (colorFilter.length && !colorFilter.includes(t.color || '')) return false
       if (outletFilter.length) {
         const outs = (Array.isArray(t.location_ids) && t.location_ids.length) ? t.location_ids : (t.location_id ? [t.location_id] : [])
         if (!outs.some((o: string) => outletFilter.includes(o))) return false
@@ -863,7 +862,7 @@ export default function TasksPage() {
           )}
           {/* Filters live in a top dropdown now (moved off the left rail). */}
           {(() => {
-            const activeN = [assigneeFilter, priorityFilter, colorFilter, dateFilter].filter(Boolean).length + (outletFilter.length ? 1 : 0)
+            const activeN = (dateFilter ? 1 : 0) + [assigneeFilter, priorityFilter, colorFilter, outletFilter].filter(a => a.length).length
             return (
               <div style={{ position: 'relative' }}>
                 <button className="ctl" onClick={() => setShowFilters(v => !v)}
@@ -875,29 +874,13 @@ export default function TasksPage() {
                   <>
                     <div onClick={() => setShowFilters(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
                     <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 264, maxWidth: '86vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 44px rgba(0,0,0,0.14)', zIndex: 50, padding: 14 }}>
-                      <FilterField label={outletFilter.length ? `Outlets (${outletFilter.length})` : 'Outlets'} hidden={outlets.length === 0}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          <button onClick={() => setOutletFilter([])}
-                            style={{ padding: '5px 10px', borderRadius: 999, border: '1px solid ' + (outletFilter.length === 0 ? 'var(--coral)' : 'var(--border)'), background: outletFilter.length === 0 ? 'var(--peach)' : '#fff', color: outletFilter.length === 0 ? 'var(--coral)' : 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                            {outletFilter.length === 0 ? '✓ ' : ''}All
-                          </button>
-                          {outlets.map(o => {
-                            const on = outletFilter.includes(o.id)
-                            return (
-                              <button key={o.id}
-                                onClick={() => setOutletFilter(prev => on ? prev.filter(x => x !== o.id) : [...prev, o.id])}
-                                style={{ padding: '5px 10px', borderRadius: 999, border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                                {on ? '✓ ' : ''}{o.label || o.suburb || 'Outlet'}
-                              </button>
-                            )
-                          })}
-                        </div>
+                      <FilterField label="Outlets" hidden={outlets.length === 0}>
+                        <MultiSelect allLabel="All outlets" value={outletFilter} onChange={setOutletFilter}
+                          options={outlets.map(o => ({ value: o.id, label: o.label || o.suburb || 'Outlet' }))} />
                       </FilterField>
                       <FilterField label="Assignee">
-                        <select className="ctl" style={selectStyle} value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}>
-                          <option value="">Anyone</option><option value="me">Assigned to me</option>
-                          {team.map(m => <option key={m.id} value={m.user_id}>{m.name}</option>)}
-                        </select>
+                        <MultiSelect allLabel="Anyone" value={assigneeFilter} onChange={setAssigneeFilter}
+                          options={[{ value: 'me', label: 'Assigned to me' }, ...team.map((m: any) => ({ value: m.user_id, label: m.name }))]} />
                       </FilterField>
                       <FilterField label="Due in">
                         <div className="seg" style={{ display: 'flex', width: '100%', marginBottom: 6 }}>
@@ -912,21 +895,12 @@ export default function TasksPage() {
                         </div>
                       </FilterField>
                       <FilterField label="Priority">
-                        <select className="ctl" style={selectStyle} value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}>
-                          <option value="">Any priority</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
-                        </select>
+                        <MultiSelect allLabel="Any priority" value={priorityFilter} onChange={setPriorityFilter}
+                          options={(['high', 'normal', 'low'] as const).map(p => ({ value: p, label: PRIORITY[p].label, color: PRIORITY[p].color }))} />
                       </FilterField>
-                      <FilterField label={colorFilter ? 'Colour (1)' : 'Colour'}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          <button onClick={() => setColorFilter('')} title="Any colour"
-                            style={{ width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', border: '1px solid ' + (colorFilter === '' ? 'var(--coral)' : 'var(--border)'), background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                            {colorFilter === '' && <span style={{ width: 11, height: 2, background: 'var(--slate)', transform: 'rotate(-45deg)', position: 'absolute' }} />}
-                          </button>
-                          {TASK_COLORS.map(c => (
-                            <button key={c} onClick={() => setColorFilter(colorFilter === c ? '' : c)} title={c}
-                              style={{ width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', background: c, border: colorFilter === c ? '2px solid var(--ink)' : '2px solid transparent', boxShadow: colorFilter === c ? `0 0 0 2px ${tint(c, 0.4)}` : 'none' }} />
-                          ))}
-                        </div>
+                      <FilterField label="Colour">
+                        <MultiSelect allLabel="Any colour" value={colorFilter} onChange={setColorFilter}
+                          options={[{ value: '', label: 'No colour', color: '' }, ...TASK_COLORS.map((c, i) => ({ value: c, label: COLOUR_NAMES[i] || 'Colour', color: c }))]} />
                       </FilterField>
                       <FilterField label="Sort by">
                         <select className="ctl" style={selectStyle} value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
@@ -934,7 +908,7 @@ export default function TasksPage() {
                         </select>
                       </FilterField>
                       {activeN > 0 && (
-                        <button onClick={() => { setAssigneeFilter(''); setPriorityFilter(''); setColorFilter(''); setOutletFilter([]); setDateFilter('') }}
+                        <button onClick={() => { setAssigneeFilter([]); setPriorityFilter([]); setColorFilter([]); setOutletFilter([]); setDateFilter('') }}
                           style={{ width: '100%', marginTop: 6, padding: '8px 0', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Clear all filters</button>
                       )}
                     </div>
@@ -1051,6 +1025,50 @@ function FilterField({ label, hidden, children }: { label: string; hidden?: bool
     <div style={{ marginBottom: 10 }}>
       <p style={{ margin: '0 0 5px', fontSize: 10.5, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
       {children}
+    </div>
+  )
+}
+
+// A consistent multi-select dropdown for the filters (outlets, assignee,
+// priority, colour) — looks like a normal select but toggles several values.
+function MultiSelect({ options, value, onChange, allLabel = 'All' }: {
+  options: { value: string; label: string; color?: string }[]
+  value: string[]
+  onChange: (v: string[]) => void
+  allLabel?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const label = value.length === 0 ? allLabel
+    : value.length === 1 ? (options.find(o => o.value === value[0])?.label || '1 selected')
+      : `${value.length} selected`
+  const toggle = (v: string) => onChange(value.includes(v) ? value.filter(x => x !== v) : [...value, v])
+  const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: '#fff', color: 'var(--ink)', fontSize: 12.5, cursor: 'pointer' }
+  return (
+    <div style={{ position: 'relative' }}>
+      <button type="button" className="ctl" onClick={() => setOpen(o => !o)}
+        style={{ ...selectStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, textAlign: 'left' }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: value.length ? 'var(--ink)' : 'var(--slate)', fontWeight: value.length ? 700 : 400 }}>{label}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--slate)', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {open && (
+        <div style={{ marginTop: 6, border: '1px solid var(--border)', borderRadius: 9, overflow: 'hidden', maxHeight: 210, overflowY: 'auto' }}>
+          <button type="button" onClick={() => onChange([])}
+            style={{ ...row, borderBottom: '1px solid var(--border)', background: value.length === 0 ? 'var(--peach)' : '#fff', color: value.length === 0 ? 'var(--coral)' : 'var(--ink)', fontWeight: 700 }}>{allLabel}</button>
+          {options.map(o => {
+            const on = value.includes(o.value)
+            return (
+              <button key={o.value} type="button" onClick={() => toggle(o.value)}
+                style={{ ...row, background: on ? 'var(--peach)' : '#fff', fontWeight: on ? 700 : 500 }}>
+                <span style={{ width: 15, height: 15, borderRadius: 4, border: '1.5px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--coral)' : '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {on && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+                </span>
+                {o.color !== undefined && <span style={{ width: 12, height: 12, borderRadius: '50%', background: o.color || '#fff', border: o.color ? 'none' : '1px solid var(--border)', flexShrink: 0 }} />}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

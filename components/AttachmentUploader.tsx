@@ -69,8 +69,8 @@ export default function AttachmentUploader({
           </div>
         ))}
         <button type="button" onClick={pick} disabled={busy || !companyId}
-          style={{ width: thumb, height: thumb, borderRadius: 9, border: '1.5px dashed var(--border)', background: '#fff', cursor: busy ? 'default' : 'pointer', color: 'var(--slate)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
-          {busy ? '…' : <><span style={{ fontSize: 18 }}>＋</span>Photo/Video</>}
+          style={{ width: thumb, height: thumb, boxSizing: 'border-box', padding: 4, borderRadius: 9, border: '1.5px dashed var(--border)', background: '#fff', cursor: busy ? 'default' : 'pointer', color: 'var(--slate)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, fontSize: 9.5, fontWeight: 600, lineHeight: 1.05, textAlign: 'center', overflow: 'hidden', flexShrink: 0 }}>
+          {busy ? '…' : <><span style={{ fontSize: 18, lineHeight: 1 }}>＋</span><span style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>Photo/Video</span></>}
         </button>
       </div>
       {err && <p style={{ fontSize: 11.5, color: '#dc2626', margin: '6px 0 0' }}>{err}</p>}
