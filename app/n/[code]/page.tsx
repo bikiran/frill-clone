@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { toPublicUrl } from '@/lib/storage-url'
 import NoteView from './NoteView'
 import NoteAttachments from './NoteAttachments'
+import AudioDock from '@/components/AudioDock'
 
 export const dynamic = 'force-dynamic'
 export const viewport = { width: 'device-width', initialScale: 1 }
@@ -99,7 +100,7 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
                 {audios.map((a: any, i: number) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', minWidth: 100 }}>{a.name || 'Voice note'}</span>
-                    <audio controls src={toPublicUrl(a.url)} style={{ height: 34, flex: 1, minWidth: 180 }} />
+                    <audio controls src={toPublicUrl(a.url)} data-name={a.name || 'Voice note'} style={{ height: 34, flex: 1, minWidth: 180 }} />
                     <a href={toPublicUrl(a.url)} target="_blank" rel="noopener" download={a.name || 'voice-note'} style={{ color: accent, display: 'flex', padding: 3 }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     </a>
@@ -119,6 +120,7 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
 
         <p style={{ textAlign: 'center', fontSize: 11.5, color: '#9ca3af', marginTop: 18 }}>Shared securely via Colvy</p>
       </div>
+      <AudioDock />
     </div>
   )
 }
