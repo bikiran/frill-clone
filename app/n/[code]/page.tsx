@@ -3,6 +3,7 @@ import { toPublicUrl } from '@/lib/storage-url'
 import NoteView from './NoteView'
 import NoteAttachments from './NoteAttachments'
 import AudioDock from '@/components/AudioDock'
+import VoiceBlocks from '@/components/VoiceBlocks'
 
 export const dynamic = 'force-dynamic'
 export const viewport = { width: 'device-width', initialScale: 1 }
@@ -66,9 +67,18 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
         .note-body td, .note-body th { border: 1px solid #e5e7eb; padding: 6px 9px; }
         .note-body blockquote { border-left: 3px solid ${accent}; margin: 10px 0; padding: 2px 14px; color: #4b5563; }
         .note-body .rte-mention { color: ${accent}; font-weight: 700; }
-        .note-body .rte-voice { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin: 12px 0; border: 1px solid #e5e7eb; border-radius: 12px; background: #fbfbfd; }
-        .note-body .rte-voice-lbl { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: ${accent}; white-space: nowrap; }
-        .note-body .rte-voice audio { height: 36px; flex: 1; min-width: 160px; }
+        .rte-voice { display: flex; align-items: center; gap: 12px; padding: 9px 12px; margin: 12px 0; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+        .rte-voice-play { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; border: none; background: ${accent}; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+        .rte-voice-play svg { margin-left: 1px; }
+        .rte-voice-lbl { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+        .rte-voice-lbl > svg { color: ${accent}; flex-shrink: 0; }
+        .rte-voice-name { font-size: 13px; font-weight: 700; color: #1a1a1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rte-voice-dur { font-size: 11.5px; font-weight: 600; color: #6b7280; flex-shrink: 0; }
+        .rte-voice-act { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+        .rte-voice-btn { width: 30px; height: 30px; border-radius: 8px; border: none; background: transparent; color: #6b7280; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+        .rte-voice-btn:hover { background: #f1f3f5; color: #1a1a1a; }
+        /* Old inline voice notes (native audio) still render fine */
+        .note-body .rte-voice audio[controls] { height: 36px; flex: 1; min-width: 160px; display: block; }
       `}</style>
 
       <div style={{ maxWidth: 720, margin: '0 auto' }}>
@@ -121,6 +131,7 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
         <p style={{ textAlign: 'center', fontSize: 11.5, color: '#9ca3af', marginTop: 18 }}>Shared securely via Colvy</p>
       </div>
       <AudioDock />
+      <VoiceBlocks />
     </div>
   )
 }

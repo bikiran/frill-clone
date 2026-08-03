@@ -40,7 +40,22 @@ export default function RichTextEditor({
 
   const insertVoiceBlock = (url: string, secs: number) => {
     const label = new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-    const html = `<div class="rte-voice" contenteditable="false"><span class="rte-voice-lbl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>Voice note · ${label}</span><audio controls src="${url}" data-name="Voice note · ${label}"></audio></div><p><br></p>`
+    const name = `Voice note · ${label}`
+    const dur = secs ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` : ''
+    // A player-less card (playback happens in the bottom AudioDock). Buttons are
+    // wired via document-level delegation in <VoiceBlocks/> so they work inside
+    // contentEditable and on the shared page alike. Hidden <audio> feeds the dock.
+    const html =
+      `<div class="rte-voice" contenteditable="false" data-voice>` +
+        `<button class="rte-voice-play" type="button" title="Play" aria-label="Play"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M7 5.5v13a1 1 0 0 0 1.5.87l11-6.5a1 1 0 0 0 0-1.74l-11-6.5A1 1 0 0 0 7 5.5z"/></svg></button>` +
+        `<span class="rte-voice-lbl"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg><span class="rte-voice-name">${name}</span>${dur ? `<span class="rte-voice-dur">${dur}</span>` : ''}</span>` +
+        `<span class="rte-voice-act">` +
+          `<button class="rte-voice-btn" type="button" data-va="rename" title="Rename"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>` +
+          `<button class="rte-voice-btn" type="button" data-va="download" title="Download"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>` +
+          `<button class="rte-voice-btn" type="button" data-va="more" title="More options"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>` +
+        `</span>` +
+        `<audio src="${url}" data-name="${name}" preload="metadata" style="display:none"></audio>` +
+      `</div><p><br></p>`
     ref.current?.focus()
     document.execCommand('insertHTML', false, html)
     emit()
@@ -206,10 +221,17 @@ export default function RichTextEditor({
         .rte-content .rte-mention { color: var(--coral); font-weight: 700; background: var(--peach); padding: 0 5px; border-radius: 5px; }
         .rte-btn { transition: background .12s, color .12s, transform .1s, box-shadow .12s; }
         .rte-btn:hover { background: var(--peach); color: var(--coral); border-color: var(--coral); transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
-        /* Bordered inline voice note, Evernote-style. */
-        .rte-content .rte-voice, .note-body .rte-voice { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin: 10px 0; border: 1px solid var(--border); border-radius: 12px; background: #fbfbfd; }
-        .rte-content .rte-voice-lbl, .note-body .rte-voice-lbl { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--coral); white-space: nowrap; }
-        .rte-content .rte-voice audio, .note-body .rte-voice audio { height: 36px; flex: 1; min-width: 160px; }
+        /* Evernote-style inline voice card (player lives in the bottom dock). */
+        .rte-voice { display: flex; align-items: center; gap: 12px; padding: 9px 12px; margin: 12px 0; border: 1px solid var(--border,#e5e7eb); border-radius: 12px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+        .rte-voice-play { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--coral,#ff7a6b); color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+        .rte-voice-play svg { margin-left: 1px; }
+        .rte-voice-lbl { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+        .rte-voice-lbl > svg { color: var(--coral,#ff7a6b); flex-shrink: 0; }
+        .rte-voice-name { font-size: 13px; font-weight: 700; color: var(--ink,#1a1a1a); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rte-voice-dur { font-size: 11.5px; font-weight: 600; color: var(--slate,#6b7280); flex-shrink: 0; }
+        .rte-voice-act { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+        .rte-voice-btn { width: 30px; height: 30px; border-radius: 8px; border: none; background: transparent; color: var(--slate,#6b7280); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+        .rte-voice-btn:hover { background: #f1f3f5; color: var(--ink,#1a1a1a); }
       `}</style>
       {(() => {
       const toolbarNode = (

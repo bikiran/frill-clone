@@ -8,6 +8,7 @@ import AttachmentUploader from '@/components/AttachmentUploader'
 import GalleryPicker from '@/components/GalleryPicker'
 import VoiceRecorder from '@/components/VoiceRecorder'
 import AudioDock from '@/components/AudioDock'
+import VoiceBlocks from '@/components/VoiceBlocks'
 
 type Note = {
   id: string; title: string; body: string; checklist: ChecklistItem[]; attachments: any[]
@@ -574,6 +575,7 @@ export default function NotesPage() {
       {toast && <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 700, background: 'var(--ink)', color: '#fff', padding: '11px 18px', borderRadius: 12, fontSize: 13.5, fontWeight: 600 }}>{toast}</div>}
 
       <AudioDock />
+      <VoiceBlocks />
     </div>
   )
 }
