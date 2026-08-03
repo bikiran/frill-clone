@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { toPublicUrl } from '@/lib/storage-url'
 import NoteView from './NoteView'
+import NoteAttachments from './NoteAttachments'
 
 export const dynamic = 'force-dynamic'
 export const viewport = { width: 'device-width', initialScale: 1 }
@@ -60,6 +61,7 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
         .note-body table { border-collapse: collapse; width: 100%; margin: 10px 0; }
         .note-body td, .note-body th { border: 1px solid #e5e7eb; padding: 6px 9px; }
         .note-body blockquote { border-left: 3px solid ${accent}; margin: 10px 0; padding: 2px 14px; color: #4b5563; }
+        .note-body .rte-mention { color: ${accent}; font-weight: 700; }
       `}</style>
 
       <div style={{ maxWidth: 720, margin: '0 auto' }}>
@@ -88,22 +90,7 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
             {attachments.length > 0 && (
               <div style={{ marginTop: 26 }}>
                 <p style={{ margin: '0 0 10px', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#6b7280' }}>Attachments</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
-                  {attachments.map((a: any, i: number) => {
-                    const url = toPublicUrl(a.url)
-                    const vid = a.kind === 'video' || (a.type || '').startsWith('video/') || isVid(a.url)
-                    return (
-                      <a key={i} href={url} target="_blank" rel="noopener" style={{ display: 'block', aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', background: '#000', position: 'relative' }}>
-                        {vid
-                          ? <video src={url + '#t=0.1'} preload="metadata" muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : <img src={url} alt={a.name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                        {vid && <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}>
-                          <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
-                        </span>}
-                      </a>
-                    )
-                  })}
-                </div>
+                <NoteAttachments accent={accent} items={attachments.map((a: any) => ({ url: toPublicUrl(a.url), name: a.name, type: a.type, kind: a.kind }))} />
               </div>
             )}
           </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { supabase } from '@/lib/supabase'
 import { useCompanyUser } from '../crm-settings/_shared'
 import RichTextEditor from '@/components/RichTextEditor'
 import AttachmentUploader from '@/components/AttachmentUploader'
@@ -35,8 +36,29 @@ export default function NotesPage() {
   const [toast, setToast] = useState('')
   const [shareOpen, setShareOpen] = useState<{ url: string } | null>(null)
   const [coverGallery, setCoverGallery] = useState(false)
+  const [team, setTeam] = useState<{ id: string; name: string }[]>([])
+  const [listOpen, setListOpen] = useState(true)
+  const [fullscreen, setFullscreen] = useState(false)
   const coverInput = useRef<HTMLInputElement>(null)
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2400) }
+
+  // Team roster for @mentions.
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      try {
+        const members: { id: string; name: string }[] = []
+        const { data: co } = await (supabase as any).from('companies').select('owner_id, name').eq('id', companyId).maybeSingle()
+        if (co?.owner_id) members.push({ id: co.owner_id, name: co.name || 'Owner' })
+        const { data: tm } = await (supabase as any).from('team_members').select('*').eq('company_id', companyId)
+        for (const m of (tm || [])) {
+          const nm = m.name || m.display_name || (m.email ? m.email.split('@')[0] : 'Team member')
+          if (!members.some(x => x.name === nm)) members.push({ id: m.id, name: nm })
+        }
+        setTeam(members)
+      } catch {}
+    })()
+  }, [companyId])
 
   const loadList = useCallback(async () => {
     if (!companyId) return
@@ -50,7 +72,6 @@ export default function NotesPage() {
   }, [companyId])
   useEffect(() => { loadList() }, [loadList])
 
-  // Load the full note when one is selected.
   useEffect(() => {
     if (!companyId || !activeId) { setNote(null); return }
     ;(async () => {
@@ -62,11 +83,10 @@ export default function NotesPage() {
     })()
   }, [companyId, activeId])
 
-  // Debounced autosave.
   const saveTimer = useRef<any>(null)
   const queueSave = (next: Note) => {
     setNote(next)
-    setList(prev => prev.map(n => n.id === next.id ? { ...n, title: next.title, updated_at: new Date().toISOString() } : n))
+    setList(prev => prev.map(n => n.id === next.id ? { ...n, title: next.title, body: next.body, updated_at: new Date().toISOString() } : n))
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
       if (!companyId) return
@@ -110,7 +130,6 @@ export default function NotesPage() {
     } catch { showToast('Could not create the link') }
   }
 
-  // Cover: upload a file or choose from the gallery.
   const onCoverFile = async (files: FileList | null) => {
     if (!files?.[0] || !companyId || !note) return
     showToast('Uploading cover…')
@@ -124,49 +143,64 @@ export default function NotesPage() {
   }
 
   const isVideo = (u?: string | null) => !!u && /\.(mp4|mov|webm|m4v)(\?|$)/i.test(u)
-
   const checklistDone = note ? (note.checklist || []).filter(c => c.done).length : 0
 
   if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading…</div>
 
+  const rootStyle: React.CSSProperties = fullscreen
+    ? { position: 'fixed', inset: 0, zIndex: 200, background: '#fff', display: 'flex', flexDirection: 'column' }
+    : { height: 'calc(100dvh - 4px)', display: 'flex', flexDirection: 'column' }
+
   return (
-    <div style={{ height: 'calc(100dvh - 0px)', display: 'flex', flexDirection: 'column' }}>
+    <div style={rootStyle}>
       <style>{`
         .notes-layout { display: flex; flex: 1; min-height: 0; }
-        .notes-list { width: 300px; flex-shrink: 0; border-right: 1px solid var(--border); overflow-y: auto; background: #fff; }
+        .notes-list { width: 300px; flex-shrink: 0; border-right: 1px solid var(--border); overflow-y: auto; background: #fff; transition: width .18s ease; }
+        .notes-list.closed { width: 0; border-right: none; overflow: hidden; }
         .note-row { padding: 13px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
         .note-row:hover { background: var(--canvas); }
         .note-row.on { background: var(--peach); }
         .notes-editor { flex: 1; min-width: 0; overflow-y: auto; }
+        .icon-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--slate); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .12s, color .12s; }
+        .icon-btn:hover { background: var(--peach); color: var(--coral); }
         @media (max-width: 860px) {
+          .notes-list { position: ${activeId ? 'absolute' : 'static'}; }
           .notes-list { width: 100%; display: ${activeId ? 'none' : 'block'}; border-right: none; }
+          .notes-list.closed { display: none; }
           .notes-editor { display: ${activeId ? 'block' : 'none'}; }
-          .notes-back { display: block !important; }
+          .notes-back { display: inline-flex !important; }
         }
       `}</style>
 
-      <div style={{ padding: '20px 28px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Notes</h1>
-          <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '2px 0 0' }}>Write it down — checklists, media, and share a link anyone can read or help edit.</p>
+      <div style={{ padding: '16px 24px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button className="icon-btn" title={listOpen ? 'Collapse list' : 'Show list'} onClick={() => setListOpen(v => !v)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{listOpen ? <><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></> : <><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></>}</svg>
+          </button>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Notes {list.length > 0 && <span style={{ color: 'var(--slate)', fontWeight: 700, fontSize: 15 }}>{list.length}</span>}</h1>
+          </div>
         </div>
-        <button onClick={createNote} style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>+ New note</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button className="icon-btn" title={fullscreen ? 'Exit full screen' : 'Full screen'} onClick={() => setFullscreen(v => !v)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{fullscreen ? <><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></> : <><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></>}</svg>
+          </button>
+          <button onClick={createNote} style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>+ New note</button>
+        </div>
       </div>
 
       {needsMigration && (
-        <div style={{ margin: '0 28px 10px', background: 'var(--peach)', border: '1px solid var(--coral)', borderRadius: 9, padding: '9px 12px', fontSize: 12.5, color: 'var(--ink)' }}>
+        <div style={{ margin: '10px 24px 0', background: 'var(--peach)', border: '1px solid var(--coral)', borderRadius: 9, padding: '9px 12px', fontSize: 12.5, color: 'var(--ink)' }}>
           Notes needs a quick database update — run <b>COLVY_V233_NOTES.sql</b> in Supabase, then reload.
         </div>
       )}
 
       <div className="notes-layout">
-        <div className="notes-list">
+        <div className={'notes-list' + (listOpen ? '' : ' closed')}>
           {loadingList && list.length === 0 ? (
             <p style={{ padding: 20, color: 'var(--slate)', fontSize: 13 }}>Loading…</p>
           ) : list.length === 0 ? (
-            <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>
-              No notes yet.<br />Hit <b>+ New note</b> to start.
-            </div>
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>No notes yet.<br />Hit <b>+ New note</b> to start.</div>
           ) : list.map(n => {
             const on = n.id === activeId
             const plain = (n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
@@ -187,82 +221,73 @@ export default function NotesPage() {
           {!note ? (
             <div style={{ padding: 60, textAlign: 'center', color: 'var(--slate)', fontSize: 14 }}>Select a note, or create one.</div>
           ) : (
-            <div style={{ maxWidth: 760, margin: '0 auto', padding: '18px 28px 60px' }}>
-              {/* Back (mobile) */}
-              <button onClick={() => setActiveId(null)} style={{ display: 'none', background: 'none', border: 'none', color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', marginBottom: 8, fontSize: 13 }} className="notes-back">‹ Notes</button>
+            <div style={{ maxWidth: 780, margin: '0 auto', padding: '20px 28px 80px' }}>
+              <button onClick={() => setActiveId(null)} className="notes-back" style={{ display: 'none', alignItems: 'center', background: 'none', border: 'none', color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', marginBottom: 10, fontSize: 13 }}>‹ Notes</button>
 
-              {/* Cover */}
-              {note.cover_image ? (
-                <div style={{ position: 'relative', borderRadius: 14, overflow: 'hidden', marginBottom: 16, background: '#000', maxHeight: 260 }}>
+              {/* Title — at the very top, big and clean. */}
+              <input value={note.title} onChange={e => queueSave({ ...note, title: e.target.value })} placeholder="Untitled"
+                style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', fontSize: 34, fontWeight: 800, color: 'var(--ink)', padding: 0, marginBottom: 6, lineHeight: 1.15 }} />
+
+              {/* Slim meta bar */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '4px 0 14px', color: 'var(--slate)', fontSize: 12.5 }}>
+                <span>{saving ? 'Saving…' : 'Saved'} · {fmtAgo(note.updated_at)}</span>
+                <span style={{ flex: 1 }} />
+                {!note.cover_image && <>
+                  <button onClick={() => coverInput.current?.click()} style={metaBtn}>＋ Cover</button>
+                  <button onClick={() => setCoverGallery(true)} style={metaBtn}>Gallery</button>
+                </>}
+                <button onClick={shareNote} style={{ ...metaBtn, color: 'var(--coral)', borderColor: 'var(--coral)', fontWeight: 700 }}>
+                  {note.is_public ? 'Sharing' : 'Share'}
+                </button>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!note.allow_public_edit} onChange={e => queueSave({ ...note, allow_public_edit: e.target.checked })} style={{ width: 14, height: 14, accentColor: 'var(--coral)' }} />
+                  Viewers can edit
+                </label>
+                <button onClick={() => deleteNote(note.id)} title="Delete" style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', display: 'flex', padding: 2 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                </button>
+              </div>
+              <input ref={coverInput} type="file" accept="image/*,video/*" style={{ display: 'none' }} onChange={e => onCoverFile(e.target.files)} />
+
+              {/* Cover (below the title, Evernote-style) */}
+              {note.cover_image && (
+                <div style={{ position: 'relative', borderRadius: 14, overflow: 'hidden', marginBottom: 18, background: '#000', maxHeight: 280 }}>
                   {isVideo(note.cover_image)
-                    ? <video src={note.cover_image} controls playsInline style={{ width: '100%', maxHeight: 260, objectFit: 'cover', display: 'block' }} />
-                    : <img src={note.cover_image} alt="" style={{ width: '100%', maxHeight: 260, objectFit: 'cover', display: 'block' }} />}
+                    ? <video src={note.cover_image} controls playsInline style={{ width: '100%', maxHeight: 280, objectFit: 'cover', display: 'block' }} />
+                    : <img src={note.cover_image} alt="" style={{ width: '100%', maxHeight: 280, objectFit: 'cover', display: 'block' }} />}
                   <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6 }}>
                     <button onClick={() => coverInput.current?.click()} style={coverBtn}>Change</button>
                     <button onClick={() => queueSave({ ...note, cover_image: null })} style={coverBtn}>Remove</button>
                   </div>
                 </div>
-              ) : (
-                <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                  <button onClick={() => coverInput.current?.click()} style={addCoverBtn}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-                    Add cover
-                  </button>
-                  <button onClick={() => setCoverGallery(true)} style={addCoverBtn}>From gallery</button>
-                </div>
               )}
-              <input ref={coverInput} type="file" accept="image/*,video/*" style={{ display: 'none' }} onChange={e => onCoverFile(e.target.files)} />
 
-              {/* Title */}
-              <input value={note.title} onChange={e => queueSave({ ...note, title: e.target.value })} placeholder="Title"
-                style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', fontSize: 28, fontWeight: 800, color: 'var(--ink)', padding: '4px 0', marginBottom: 8 }} />
-
-              {/* Toolbar: share + status */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
-                <button onClick={shareNote} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                  {note.is_public ? 'Sharing link' : 'Share'}
-                </button>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--ink)', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={!!note.allow_public_edit} onChange={e => queueSave({ ...note, allow_public_edit: e.target.checked })} style={{ width: 15, height: 15, accentColor: 'var(--coral)' }} />
-                  Let viewers edit / contribute
-                </label>
-                <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--slate)' }}>{saving ? 'Saving…' : 'Saved'}</span>
-                <button onClick={() => deleteNote(note.id)} title="Delete note" style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', display: 'flex', padding: 4 }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                </button>
-              </div>
-
-              {/* Rich body */}
-              <RichTextEditor key={note.id} value={note.body} onChange={html => queueSave({ ...note, body: html })} placeholder="Start writing…" />
+              {/* Rich body with @mentions */}
+              <RichTextEditor key={note.id} value={note.body} onChange={html => queueSave({ ...note, body: html })}
+                placeholder="Start writing… use @ to mention a teammate" mentions={team} bordered={false} minHeight={240} maxHeight={'none' as any} />
 
               {/* Checklist */}
-              <div style={{ marginTop: 22 }}>
+              <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>Checklist</h3>
-                  {(note.checklist || []).length > 0 && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>{checklistDone}/{note.checklist.length}</span>}
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Checklist</h3>
+                  {(note.checklist || []).length > 0 && <span style={{ fontSize: 12, color: 'var(--slate)' }}>{checklistDone}/{note.checklist.length}</span>}
                 </div>
-                {(note.checklist || []).map((c, i) => (
-                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
-                    <input type="checkbox" checked={c.done} onChange={() => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, done: !x.done } : x) })} style={{ width: 16, height: 16, accentColor: 'var(--coral)', flexShrink: 0 }} />
+                {(note.checklist || []).map(c => (
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '3px 0' }}>
+                    <input type="checkbox" checked={c.done} onChange={() => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, done: !x.done } : x) })} style={{ width: 17, height: 17, accentColor: 'var(--coral)', flexShrink: 0 }} />
                     <input value={c.text} onChange={e => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, text: e.target.value } : x) })}
-                      placeholder="List item" style={{ flex: 1, border: 'none', outline: 'none', fontSize: 13.5, color: c.done ? 'var(--slate)' : 'var(--ink)', textDecoration: c.done ? 'line-through' : 'none', background: 'transparent' }} />
-                    <button onClick={() => queueSave({ ...note, checklist: note.checklist.filter(x => x.id !== c.id) })} style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
+                      placeholder="List item" style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, color: c.done ? 'var(--slate)' : 'var(--ink)', textDecoration: c.done ? 'line-through' : 'none', background: 'transparent' }} />
+                    <button onClick={() => queueSave({ ...note, checklist: note.checklist.filter(x => x.id !== c.id) })} style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 17, lineHeight: 1 }}>×</button>
                   </div>
                 ))}
                 <button onClick={() => queueSave({ ...note, checklist: [...(note.checklist || []), { id: rid(), text: '', done: false }] })}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
-                  + Add item
-                </button>
+                  style={{ marginTop: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>+ Add item</button>
               </div>
 
-              {/* Attachments (upload + Colvy Gallery) */}
+              {/* Attachments */}
               <div style={{ marginTop: 22 }}>
-                <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>Photos &amp; videos</h3>
+                <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Photos &amp; videos</h3>
                 <AttachmentUploader companyId={companyId} value={note.attachments || []} onChange={next => queueSave({ ...note, attachments: next })} folder="notes" />
-                {(note.attachments || []).length > 0 && !note.cover_image && (
-                  <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>Tip: use “Add cover” above to feature one at the top.</p>
-                )}
               </div>
             </div>
           )}
@@ -277,7 +302,7 @@ export default function NotesPage() {
         <div onClick={() => setShareOpen(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(13,15,20,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 600, padding: 20 }}>
           <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '92vw', background: '#fff', borderRadius: 16, padding: 22 }}>
             <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Share note</h3>
-            <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>Anyone with this link can open the note{note?.allow_public_edit ? ' and help edit it' : ''}. {note?.allow_public_edit ? '' : 'Turn on “Let viewers edit” to allow contributions.'}</p>
+            <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>Anyone with this link can open the note{note?.allow_public_edit ? ' and help edit it' : ''}. {note?.allow_public_edit ? '' : 'Turn on “Viewers can edit” to allow contributions.'}</p>
             <input readOnly value={shareOpen.url} onFocus={e => e.currentTarget.select()} style={{ width: '100%', boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, marginBottom: 14 }} />
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <a href={shareOpen.url} target="_blank" rel="noreferrer" style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>Open</a>
@@ -293,4 +318,4 @@ export default function NotesPage() {
 }
 
 const coverBtn: React.CSSProperties = { padding: '5px 11px', borderRadius: 8, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)' }
-const addCoverBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 13px', borderRadius: 9, border: '1px dashed var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }
+const metaBtn: React.CSSProperties = { padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }

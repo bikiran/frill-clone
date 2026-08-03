@@ -62,14 +62,17 @@ export default function GalleryPicker({ companyId, onClose, onPick }: {
               {filtered.map(it => {
                 const on = sel.has(it.id)
                 const isVid = it.kind === 'video' || (it.type || '').startsWith('video/')
+                // A real image poster only — for videos the thumbnail_url is
+                // often the video URL itself, which can't render in an <img>.
+                const imgThumb = it.thumbnail_url && it.thumbnail_url !== it.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(it.thumbnail_url) ? it.thumbnail_url : null
                 return (
                   <button key={it.id} type="button" onClick={() => toggle(it.id)} title={it.title || ''}
                     style={{ position: 'relative', aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', cursor: 'pointer', padding: 0, border: on ? '2px solid var(--coral)' : '1px solid var(--border)', background: '#000' }}>
                     {isVid
-                      ? (it.thumbnail_url
-                          ? <img src={it.thumbnail_url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ? (imgThumb
+                          ? <img src={imgThumb} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           : <video src={it.url + '#t=0.1'} preload="metadata" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)
-                      : <img src={it.thumbnail_url || it.url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                      : <img src={imgThumb || it.url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                     {isVid && <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', textShadow: '0 1px 6px rgba(0,0,0,0.6)', pointerEvents: 'none' }}>▶</span>}
                     {on && <span style={{ position: 'absolute', top: 4, right: 4, width: 18, height: 18, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
