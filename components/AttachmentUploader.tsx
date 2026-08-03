@@ -48,6 +48,7 @@ export default function AttachmentUploader({
   }
 
   const remove = (i: number) => onChange(list.filter((_, j) => j !== i))
+  const rename = (i: number, name: string) => onChange(list.map((a, j) => j === i ? { ...a, name } : a))
   const thumb = compact ? 56 : 72
 
   return (
@@ -74,7 +75,7 @@ export default function AttachmentUploader({
       </div>
       {err && <p style={{ fontSize: 11.5, color: '#dc2626', margin: '6px 0 0' }}>{err}</p>}
       <input ref={inputRef} type="file" accept="image/*,video/*" multiple style={{ display: 'none' }} onChange={e => onFiles(e.target.files)} />
-      {viewer !== null && <MediaLightbox items={list} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} />}
+      {viewer !== null && <MediaLightbox items={list} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} onRename={rename} />}
     </div>
   )
 }
