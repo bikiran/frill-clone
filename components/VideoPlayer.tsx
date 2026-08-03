@@ -32,10 +32,11 @@ function Skip({ dir }: { dir: -1 | 1 }) {
   )
 }
 
-export default function VideoPlayer({ src, style, autoPlay = true, poster }: { src: string; style?: React.CSSProperties; autoPlay?: boolean; poster?: string }) {
+export default function VideoPlayer({ src, style, autoPlay = true, poster, ambient = false }: { src: string; style?: React.CSSProperties; autoPlay?: boolean; poster?: string; ambient?: boolean }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const vRef = useRef<HTMLVideoElement>(null)
   const previewRef = useRef<HTMLVideoElement>(null)
+  const bgRef = useRef<HTMLVideoElement>(null)
   const barRef = useRef<HTMLDivElement>(null)
   const hideTimer = useRef<any>(null)
 
@@ -44,6 +45,7 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster }: { s
   const [dur, setDur] = useState(0)
   const [buffered, setBuffered] = useState(0)
   const [muted, setMuted] = useState(false)
+  const [volume, setVolume] = useState(1)
   const [scrubbing, setScrubbing] = useState(false)
   const [hover, setHover] = useState<{ x: number; t: number } | null>(null)
   const [visible, setVisible] = useState(true)
@@ -59,10 +61,11 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster }: { s
 
   useEffect(() => {
     const v = vRef.current; if (!v) return
-    const onTime = () => { if (!scrubbing) setCur(v.currentTime) }
+    const syncBg = () => { const b = bgRef.current; if (b && Math.abs(b.currentTime - v.currentTime) > 0.3) { try { b.currentTime = v.currentTime } catch {} } }
+    const onTime = () => { if (!scrubbing) setCur(v.currentTime); syncBg() }
     const onMeta = () => setDur(v.duration || 0)
-    const onPlay = () => setPlaying(true)
-    const onPause = () => setPlaying(false)
+    const onPlay = () => { setPlaying(true); const b = bgRef.current; if (b) b.play().catch(() => {}) }
+    const onPause = () => { setPlaying(false); const b = bgRef.current; if (b) b.pause() }
     const onProg = () => { try { if (v.buffered.length) setBuffered(v.buffered.end(v.buffered.length - 1)) } catch {} }
     v.addEventListener('timeupdate', onTime); v.addEventListener('loadedmetadata', onMeta)
     v.addEventListener('durationchange', onMeta); v.addEventListener('play', onPlay)
@@ -85,7 +88,16 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster }: { s
 
   const toggle = () => { const v = vRef.current; if (!v) return; if (v.paused) v.play().catch(() => {}); else v.pause() }
   const skip = (d: number) => { const v = vRef.current; if (!v) return; seekTo((v.currentTime || 0) + d) }
-  const toggleMute = () => { const v = vRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted) }
+  const toggleMute = () => {
+    const v = vRef.current; if (!v) return
+    if (v.muted || v.volume === 0) { v.muted = false; if (v.volume === 0) { v.volume = volume > 0 ? volume : 1; setVolume(v.volume) }; setMuted(false) }
+    else { v.muted = true; setMuted(true) }
+  }
+  const changeVolume = (val: number) => {
+    const v = vRef.current; if (!v) return
+    v.volume = val; v.muted = val === 0
+    setVolume(val); setMuted(val === 0)
+  }
   const fullscreen = () => { const el = wrapRef.current as any; if (!el) return; if (document.fullscreenElement) document.exitFullscreen?.(); else el.requestFullscreen?.() }
 
   const updatePreview = (t: number) => { const pv = previewRef.current; if (!pv) return; try { if ((pv as any).fastSeek) (pv as any).fastSeek(t); else pv.currentTime = t } catch {} }
@@ -123,11 +135,17 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster }: { s
   return (
     <div ref={wrapRef} onMouseMove={wake} onMouseLeave={() => { if (playing && !scrubbing) setVisible(false) }}
       style={{ position: 'relative', display: isFs ? 'flex' : 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#000', borderRadius: isFs ? 0 : 8, overflow: 'hidden', cursor: chromeOn ? 'default' : 'none', ...style, ...(isFs ? { width: '100vw', height: '100vh' } : null) }}>
+      {/* Ambient backing: a blurred, scaled copy of the video fills the frame so
+          letterbox areas glow with the clip's own colours instead of black. */}
+      {ambient && (
+        <video ref={bgRef} src={src} muted playsInline preload="auto" tabIndex={-1} aria-hidden
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(34px) saturate(1.5)', transform: 'scale(1.25)', zIndex: 0, pointerEvents: 'none' }} />
+      )}
       <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} onClick={toggle}
-        style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', ...style, ...(isFs ? { width: '100%', height: '100%', objectFit: 'contain' } : null) }} />
+        style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', position: 'relative', zIndex: 1, ...style, ...(isFs ? { width: '100%', height: '100%', objectFit: 'contain' } : null) }} />
 
       {/* Centre transport: rewind 10 · play/pause · forward 10 */}
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 30, pointerEvents: 'none', opacity: chromeOn ? 1 : 0, transition: 'opacity .25s ease' }}>
+      <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 30, pointerEvents: 'none', opacity: chromeOn ? 1 : 0, transition: 'opacity .25s ease' }}>
         <button title="Back 10 seconds" onClick={() => skip(-10)} style={circle(52)}><Skip dir={-1} /></button>
         <button title={playing ? 'Pause' : 'Play'} onClick={toggle} style={circle(72)}>
           {playing
@@ -138,7 +156,7 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster }: { s
       </div>
 
       {/* Bottom chrome: scrubber + controls */}
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '26px 14px 12px', background: 'linear-gradient(to top, rgba(0,0,0,0.55), transparent)', opacity: chromeOn ? 1 : 0, transition: 'opacity .25s ease', pointerEvents: chromeOn ? 'auto' : 'none' }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 2, padding: '26px 14px 12px', background: 'linear-gradient(to top, rgba(0,0,0,0.55), transparent)', opacity: chromeOn ? 1 : 0, transition: 'opacity .25s ease', pointerEvents: chromeOn ? 'auto' : 'none' }}>
         {/* Scrubber */}
         <div style={{ position: 'relative' }}>
           {hover && (
@@ -169,11 +187,20 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster }: { s
           <button title="Forward 10 seconds" onClick={() => skip(10)} style={barBtn}><Skip dir={1} /></button>
           <span style={{ fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums', opacity: 0.95 }}>{fmt(cur)} / {fmt(dur)}</span>
           <span style={{ flex: 1 }} />
-          <button title={muted ? 'Unmute' : 'Mute'} onClick={toggleMute} style={barBtn}>
-            {muted
-              ? <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>
-              : <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></svg>}
-          </button>
+          {/* Volume: mute toggle + a slider (revealed on hover) */}
+          <div className="vp-vol" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button title={muted ? 'Unmute' : 'Mute'} onClick={toggleMute} style={barBtn}>
+              {muted || volume === 0
+                ? <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>
+                : volume < 0.5
+                  ? <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /></svg>
+                  : <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></svg>}
+            </button>
+            <input type="range" min={0} max={1} step={0.02} value={muted ? 0 : volume}
+              onChange={e => changeVolume(Number(e.target.value))}
+              aria-label="Volume" title="Volume"
+              style={{ width: 68, accentColor: '#fff', cursor: 'pointer' }} />
+          </div>
           <button title="Fullscreen" onClick={fullscreen} style={barBtn}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
           </button>
