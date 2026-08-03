@@ -527,6 +527,18 @@ export default function GalleryPage() {
     load()
   }
 
+  // Inline rename of a media item's display title (click the title on a card).
+  const [editTitle, setEditTitle] = useState<{ id: string; value: string } | null>(null)
+  const renameItem = async (item: any, title: string) => {
+    const t = title.trim()
+    setEditTitle(null)
+    if (!companyId || t === (item.title || '')) return
+    setItems(prev => prev.map((x: any) => x.id === item.id ? { ...x, title: t } : x))   // optimistic
+    try {
+      await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'update_item', itemId: item.id, title: t }) })
+    } catch { load() }
+  }
+
   const syncPrexty = async () => {
     if (!companyId) return
     setPrextyStatus('Syncing…')
@@ -833,7 +845,17 @@ export default function GalleryPage() {
                     )}
                   </div>
                   <div style={{ padding: '8px 10px' }}>
-                    <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title || 'Untitled'}</p>
+                    {editTitle?.id === item.id ? (
+                      <input autoFocus value={editTitle.value}
+                        onChange={e => setEditTitle({ id: item.id, value: e.target.value })}
+                        onKeyDown={e => { if (e.key === 'Enter') renameItem(item, editTitle.value); if (e.key === 'Escape') setEditTitle(null) }}
+                        onBlur={() => renameItem(item, editTitle.value)}
+                        onClick={e => e.stopPropagation()}
+                        style={{ width: '100%', boxSizing: 'border-box', margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--ink)', padding: '2px 6px', borderRadius: 6, border: '1px solid var(--coral)', outline: 'none' }} />
+                    ) : (
+                      <p onClick={() => setEditTitle({ id: item.id, value: item.title || '' })} title="Click to rename"
+                        style={{ margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'text' }}>{item.title || 'Untitled'}</p>
+                    )}
                     {item.sku && <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)' }}>SKU: {item.sku}</p>}
                     {/* Categories — a photo can be in several at once */}
                     {(itemCats[item.id] || []).length > 0 && (

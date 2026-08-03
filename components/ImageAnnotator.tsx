@@ -51,7 +51,9 @@ export default function ImageAnnotator({
   const [thickness, setThickness] = useState(4)
   const [drawing, setDrawing] = useState(false)
   const [start, setStart] = useState({ x: 0, y: 0 })
-  const [textInput, setTextInput] = useState<{ x: number; y: number; value: string } | null>(null)
+  // x/y are image-space (where the text is drawn); sx/sy are viewport coords
+  // (where the input box floats) so the box sits exactly under the cursor.
+  const [textInput, setTextInput] = useState<{ x: number; y: number; sx: number; sy: number; value: string } | null>(null)
   const [canUndo, setCanUndo] = useState(false)
 
   // Load image and set up the committed layer
@@ -160,7 +162,7 @@ export default function ImageAnnotator({
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const { x, y } = toImageCoords(e.clientX, e.clientY)
     if (tool === 'text') {
-      setTextInput({ x, y, value: '' })
+      setTextInput({ x, y, sx: e.clientX, sy: e.clientY, value: '' })
       return
     }
     pushUndo()
@@ -197,6 +199,7 @@ export default function ImageAnnotator({
       pushUndo()
       ctx.font = `600 ${Math.max(20, thickness * 7)}px -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif`
       ctx.fillStyle = color
+      ctx.textBaseline = 'top'   // draw from the click point, matching the input box
       ctx.shadowColor = 'rgba(0,0,0,0.35)'
       ctx.shadowBlur = 3
       ctx.fillText(textInput.value, textInput.x, textInput.y)
@@ -309,9 +312,9 @@ export default function ImageAnnotator({
             onBlur={commitText}
             placeholder="Type, then press Enter"
             style={{
-              position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-              ...glass, color: '#fff', outline: 'none',
-              padding: '10px 16px', borderRadius: 12, fontSize: 15, minWidth: 240,
+              position: 'fixed', left: Math.min(textInput.sx, (typeof window !== 'undefined' ? window.innerWidth : 9999) - 260), top: textInput.sy,
+              ...glass, color: color === '#FFFFFF' ? '#fff' : color, caretColor: '#fff', outline: 'none',
+              padding: '8px 12px', borderRadius: 10, fontSize: 16, fontWeight: 600, minWidth: 200,
             }}
           />
         )}
