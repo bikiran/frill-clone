@@ -32,7 +32,7 @@ function Skip({ dir }: { dir: -1 | 1 }) {
   )
 }
 
-export default function VideoPlayer({ src, style }: { src: string; style?: React.CSSProperties }) {
+export default function VideoPlayer({ src, style, autoPlay = true, poster }: { src: string; style?: React.CSSProperties; autoPlay?: boolean; poster?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const vRef = useRef<HTMLVideoElement>(null)
   const previewRef = useRef<HTMLVideoElement>(null)
@@ -114,7 +114,7 @@ export default function VideoPlayer({ src, style }: { src: string; style?: React
   return (
     <div ref={wrapRef} onMouseMove={wake} onMouseLeave={() => { if (playing && !scrubbing) setVisible(false) }}
       style={{ position: 'relative', display: 'inline-flex', background: '#000', borderRadius: 8, overflow: 'hidden', cursor: chromeOn ? 'default' : 'none', ...style }}>
-      <video ref={vRef} src={src} playsInline autoPlay onClick={toggle}
+      <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} onClick={toggle}
         style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', ...style }} />
 
       {/* Centre transport: rewind 10 · play/pause · forward 10 */}

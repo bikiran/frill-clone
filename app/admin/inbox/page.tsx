@@ -6230,10 +6230,15 @@ export default function InboxPage() {
                               {n > 0 && (
                                 <div style={{
                                   display: 'grid',
-                                  gridTemplateColumns: layout.cols,
+                                  // A lone video: let the single column hug the clip
+                                  // ('auto'), not stretch to 1fr of the collage width —
+                                  // otherwise a portrait clip leaves the bubble colour
+                                  // (blue on outbound) showing beside it.
+                                  gridTemplateColumns: n === 1 && shown[0]?.kind === 'video' ? 'auto' : layout.cols,
                                   gridAutoRows: layout.rows.split(' ')[0],
                                   gridTemplateRows: layout.rows,
                                   gap: GAP,
+                                  justifyContent: 'start',
                                   // A lone video wraps tightly (fit-content) so a
                                   // portrait clip isn't letterboxed into a tall
                                   // grey box; a lone image still fills the width.
@@ -6251,10 +6256,13 @@ export default function InboxPage() {
                                         style={{
                                           ...spanOf(ai),
                                           position: 'relative', cursor: 'pointer',
-                                          background: '#e5e7eb', overflow: 'hidden',
-                                          // A lone photo keeps its own shape; in a
-                                          // mosaic every tile fills its cell.
-                                          ...(n === 1 ? { maxHeight: 320 } : {}),
+                                          // Black (not grey) so a lone video that doesn't
+                                          // perfectly fill reads as a clean video frame,
+                                          // never a stray coloured bar.
+                                          background: a.kind === 'video' ? '#000' : '#e5e7eb', overflow: 'hidden',
+                                          // A lone video tile hugs the clip; a lone photo
+                                          // keeps its shape; in a mosaic tiles fill cells.
+                                          ...(n === 1 && a.kind === 'video' ? { width: 'fit-content', maxHeight: 320 } : n === 1 ? { maxHeight: 320 } : {}),
                                         }}>
                                         {a.kind === 'image' ? (
                                           <img

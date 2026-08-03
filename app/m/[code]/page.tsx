@@ -156,42 +156,10 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
           </div>
         )}
 
-        {/* Multiple attachments → a swipeable left/right gallery. A single one →
-            the plain card. Each has a download button. */}
-        {multiple ? (
-          <Carousel accent={accent} items={media.map(m => ({ url: toPublicUrl(m.url), name: m.name, type: (m as any).type }))} />
-        ) : (
-        <div className="mv-grid single">
-          {media.map((m, i) => {
-            const image = isImg(m.url, m.type)
-            const video = isVid(m.url, m.type)
-            const full = toPublicUrl(m.url)
-            const shortName = m.name ? (m.name.length > 26 ? m.name.slice(0, 23) + '…' : m.name) : 'File'
-            return (
-              <div key={i} className="mv-card">
-                {image ? (
-                  <a href={full} target="_blank" rel="noopener" className="mv-thumb">
-                    <img src={full} alt={`Attachment ${i + 1}`} loading="lazy" />
-                  </a>
-                ) : video ? (
-                  <div className="mv-thumb"><video src={full} controls playsInline /></div>
-                ) : (
-                  <div style={{ padding: 22, textAlign: 'center', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', margin: 0, wordBreak: 'break-word' }}>{shortName}</p>
-                  </div>
-                )}
-                <a href={full} target="_blank" rel="noopener" download={m.name || true} className="mv-dl"
-                  style={{ background: accent, color: '#fff' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                  </svg>
-                  {image || video ? 'Download' : 'Open file'}
-                </a>
-              </div>
-            )
-          })}
-        </div>
-        )}
+        {/* One or many, the same swipeable viewer renders it — with an
+            Apple-style video player, per-item download, and (when there's more
+            than one) a thumbnail strip. */}
+        <Carousel accent={accent} items={media.map(m => ({ url: toPublicUrl(m.url), name: m.name, type: (m as any).type }))} />
 
         <p style={{ textAlign: 'center', fontSize: 11.5, color: '#9ca3af', marginTop: 18 }}>Shared securely via Colvy</p>
       </div>
