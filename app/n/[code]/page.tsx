@@ -44,7 +44,10 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
   }
   const accent = company?.accent_color || '#ff7a6b'
   const cover: string | null = note.cover_image || null
-  const attachments: any[] = Array.isArray(note.attachments) ? note.attachments.filter((a: any) => a?.url) : []
+  const allAtt: any[] = Array.isArray(note.attachments) ? note.attachments.filter((a: any) => a?.url) : []
+  const isAudioA = (a: any) => a?.kind === 'audio' || (a?.type || '').startsWith('audio/')
+  const attachments = allAtt.filter(a => !isAudioA(a))
+  const audios = allAtt.filter(isAudioA)
   const checklist = Array.isArray(note.checklist) ? note.checklist : []
 
   return (
@@ -86,6 +89,21 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
 
             <NoteView code={code} accent={accent} allowEdit={!!note.allow_public_edit}
               initialBody={note.body || ''} initialChecklist={checklist} />
+
+            {audios.length > 0 && (
+              <div style={{ marginTop: 26 }}>
+                <p style={{ margin: '0 0 10px', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#6b7280' }}>Voice notes</p>
+                {audios.map((a: any, i: number) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', minWidth: 100 }}>{a.name || 'Voice note'}</span>
+                    <audio controls src={toPublicUrl(a.url)} style={{ height: 34, flex: 1, minWidth: 180 }} />
+                    <a href={toPublicUrl(a.url)} target="_blank" rel="noopener" download={a.name || 'voice-note'} style={{ color: accent, display: 'flex', padding: 3 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </a>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {attachments.length > 0 && (
               <div style={{ marginTop: 26 }}>

@@ -25,11 +25,15 @@ export async function GET(req: NextRequest) {
       if (error) { if (missing(error.message)) return NextResponse.json({ note: null, needsMigration: true }); throw error }
       return NextResponse.json({ note: data })
     }
-    const { data, error } = await db.from('notes')
-      .select('id, title, body, checklist, cover_image, is_public, public_code, allow_public_edit, updated_at, created_at')
-      .eq('company_id', companyId).order('updated_at', { ascending: false }).limit(500)
+    // Select * so a not-yet-migrated column (tags/reminder_at/trashed_at/pinned)
+    // never breaks the list; trash filtering + ordering are done in JS for the
+    // same reason.
+    const { data, error } = await db.from('notes').select('*').eq('company_id', companyId).limit(500)
     if (error) { if (missing(error.message)) return NextResponse.json({ notes: [], needsMigration: true }); throw error }
-    return NextResponse.json({ notes: data || [] })
+    const wantTrashed = req.nextUrl.searchParams.get('trashed') === '1'
+    const rows = (data || []).filter((n: any) => wantTrashed ? !!n.trashed_at : !n.trashed_at)
+    rows.sort((a: any, b: any) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()))
+    return NextResponse.json({ notes: rows })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
@@ -53,10 +57,38 @@ export async function POST(req: NextRequest) {
 
     if (action === 'update') {
       const patch: any = { updated_at: new Date().toISOString() }
-      for (const f of ['title', 'body', 'checklist', 'attachments', 'cover_image', 'allow_public_edit']) if (body[f] !== undefined) patch[f] = body[f]
-      const { error } = await db.from('notes').update(patch).eq('id', body.id).eq('company_id', companyId)
+      for (const f of ['title', 'body', 'checklist', 'attachments', 'cover_image', 'allow_public_edit', 'tags', 'reminder_at', 'pinned']) if (body[f] !== undefined) patch[f] = body[f]
+      let { error } = await db.from('notes').update(patch).eq('id', body.id).eq('company_id', companyId)
+      // If a newer column (V234) isn't migrated yet, drop those keys and retry so
+      // the core fields still save.
+      if (error && missing(error.message)) {
+        for (const f of ['tags', 'reminder_at', 'pinned']) delete patch[f]
+        const retry = await db.from('notes').update(patch).eq('id', body.id).eq('company_id', companyId)
+        error = retry.error
+      }
       if (error && !missing(error.message)) throw error
       return NextResponse.json({ ok: true })
+    }
+
+    if (action === 'trash' || action === 'restore') {
+      const { error } = await db.from('notes').update({ trashed_at: action === 'trash' ? new Date().toISOString() : null }).eq('id', body.id).eq('company_id', companyId)
+      if (error && !missing(error.message)) throw error
+      return NextResponse.json({ ok: true, degraded: !!error })
+    }
+
+    if (action === 'duplicate') {
+      const { data: src } = await db.from('notes').select('*').eq('id', body.id).eq('company_id', companyId).maybeSingle()
+      if (!src) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      const copy: any = {
+        company_id: companyId, title: `${src.title || 'Untitled'} (copy)`, body: src.body,
+        checklist: src.checklist, attachments: src.attachments, cover_image: src.cover_image,
+        created_by: body.userId || src.created_by, created_by_name: body.userName || src.created_by_name,
+      }
+      if (src.tags !== undefined) copy.tags = src.tags
+      let { data, error } = await db.from('notes').insert(copy).select().maybeSingle()
+      if (error && missing(error.message)) { delete copy.tags; const retry = await db.from('notes').insert(copy).select().maybeSingle(); data = retry.data; error = retry.error }
+      if (error) throw error
+      return NextResponse.json({ note: data })
     }
 
     if (action === 'share') {
