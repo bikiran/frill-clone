@@ -224,7 +224,7 @@ export default function GalleryPage() {
       const res = await fetch('/api/short-links/create', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         // `url` is the required target; the full set rides along in mediaUrls.
-        body: JSON.stringify({ companyId, kind: 'media', url: list[0].url, mediaUrls, sentBy: me, label: list.length === 1 ? (list[0].title || 'Shared media') : `${list.length} items` }),
+        body: JSON.stringify({ companyId, kind: 'media', channel: 'gallery', url: list[0].url, mediaUrls, sentBy: me, label: list.length === 1 ? (list[0].title || 'Shared media') : `${list.length} items` }),
       })
       const d = await res.json()
       if (!res.ok || !d.url) throw new Error(d.error || 'link failed')
@@ -590,6 +590,23 @@ export default function GalleryPage() {
         .gal-icon-btn.del:hover svg { animation: gal-shake 0.42s ease; }
         @keyframes gal-shake { 0%,100% { transform: rotate(0) scale(1.08); } 25% { transform: rotate(-10deg) scale(1.08); } 75% { transform: rotate(10deg) scale(1.08); } }
 
+        /* Card action row — playful hover, echoing the sidebar icons. */
+        .gal-act { flex-shrink: 0; width: 28px; height: 28px; border-radius: 7px; background: transparent; border: none; color: var(--slate); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease; }
+        .gal-act svg { transition: transform 0.2s ease; }
+        .gal-act:hover { transform: translateY(-2px); }
+        .gal-act.share:hover { background: var(--peach); color: var(--coral); }
+        .gal-act.share:hover svg { animation: gal-share-kf 0.5s ease; }
+        .gal-act.send:hover { background: #eff6ff; color: #2563eb; }
+        .gal-act.send:hover svg { animation: gal-send-kf 0.55s ease; }
+        .gal-act.tag:hover { background: var(--peach); color: var(--coral); }
+        .gal-act.tag:hover svg { animation: gal-wiggle-kf 0.5s ease; }
+        .gal-act.del { color: #dc2626; }
+        .gal-act.del:hover { background: #fee2e2; color: #dc2626; }
+        .gal-act.del:hover svg { animation: gal-shake 0.42s ease; }
+        @keyframes gal-share-kf { 0%,100% { transform: scale(1); } 40% { transform: scale(1.22) rotate(-6deg); } }
+        @keyframes gal-send-kf { 0% { transform: translate(0,0) rotate(0); } 45% { transform: translate(4px,-4px) rotate(12deg); } 60% { transform: translate(-2px,2px) rotate(0); } 100% { transform: translate(0,0); } }
+        @keyframes gal-wiggle-kf { 0%,100% { transform: rotate(0); } 30% { transform: rotate(-14deg); } 65% { transform: rotate(12deg); } }
+
         /* In-app dialog + details slideout animations. */
         @keyframes gal-fade { from { opacity: 0; } to { opacity: 1; } }
         @keyframes gal-pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -925,19 +942,16 @@ export default function GalleryPage() {
                     {/* Actions on their own right-aligned row so they never spill
                         past the card edge, regardless of card width. */}
                     <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4, marginTop: 8 }}>
-                      <button onClick={() => shareItems([item])} title="Share / copy link"
-                        style={galAction()}>
+                      <button onClick={() => shareItems([item])} title="Share / copy link" className="gal-act share">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
                       </button>
-                      <button onClick={() => setForwardItems([item])} title="Send to a chat"
-                        style={galAction()}>
+                      <button onClick={() => setForwardItems([item])} title="Send to a chat" className="gal-act send">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                       </button>
-                      <button onClick={() => setTaggingItem(item)} title="Categories"
-                        style={galAction()}>
+                      <button onClick={() => setTaggingItem(item)} title="Categories" className="gal-act tag">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
                       </button>
-                      <button onClick={() => deleteItem(item)} title="Delete" style={galAction('#dc2626')}>
+                      <button onClick={() => deleteItem(item)} title="Delete" className="gal-act del">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                       </button>
                     </div>

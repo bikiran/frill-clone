@@ -52,7 +52,7 @@ const dur = (ms: number) => {
 const CHANNEL_LABEL: Record<string, string> = {
   sms: 'SMS', chat: 'Website chat', widget: 'Website chat', email: 'Email',
   messenger: 'Facebook Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp',
-  internal: 'Internal agent message',
+  internal: 'Internal agent message', gallery: 'Gallery',
 }
 const TYPE_LABEL: Record<string, string> = {
   product: 'Product', image: 'Image', help: 'Help article', form: 'Form',
