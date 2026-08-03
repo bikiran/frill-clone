@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { readCache, writeCache } from '@/lib/client-cache'
 import { useCompanyUser } from '../crm-settings/_shared'
 import MediaGallery from '@/components/MediaGallery'
+import ImageAnnotator from '@/components/ImageAnnotator'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
@@ -293,6 +294,39 @@ export default function GalleryPage() {
     } finally { setForwardBusy(false) }
   }
 
+  // Grid density / view options (top-right switcher). Persisted so the choice
+  // sticks between visits.
+  const [viewMode, setViewMode] = useState<'compact' | 'comfortable' | 'large'>('comfortable')
+  useEffect(() => {
+    try { const v = localStorage.getItem('gallery-view'); if (v === 'compact' || v === 'comfortable' || v === 'large') setViewMode(v) } catch {}
+  }, [])
+  const changeView = (v: 'compact' | 'comfortable' | 'large') => { setViewMode(v); try { localStorage.setItem('gallery-view', v) } catch {} }
+
+  // Image editing (Markup). Opens the shared annotator on a same-origin proxied
+  // copy of the image so the canvas can be exported on Save.
+  const [editingItem, setEditingItem] = useState<any>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const saveEditedImage = async (item: any, dataUrl: string) => {
+    if (!companyId || savingEdit) return
+    setSavingEdit(true); showToast('Saving edited image…')
+    try {
+      const blob = await (await fetch(dataUrl)).blob()
+      const base = (item.title || 'image').replace(/\.[a-z0-9]+$/i, '')
+      const file = new File([blob], `${base}-edited.png`, { type: 'image/png' })
+      const fd = new FormData()
+      fd.append('file', file); fd.append('companyId', companyId)
+      if (item.folder_id) fd.append('folderId', item.folder_id)
+      fd.append('title', `${base} (edited)`)
+      const res = await fetch('/api/media/upload', { method: 'POST', body: fd })
+      if (!res.ok) throw new Error('upload failed')
+      setEditingItem(null)
+      await load()
+      showToast('Saved as a new image')
+    } catch {
+      showToast('Could not save the edit')
+    } finally { setSavingEdit(false) }
+  }
+
   const [dragOver, setDragOver] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)   // details slideout for the lightbox item
@@ -513,6 +547,12 @@ export default function GalleryPage() {
         .gal-layout { display: flex; gap: 24px; align-items: flex-start; }
         .gal-sidebar { width: 210px; flex-shrink: 0; position: sticky; top: 16px; }
         .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 16px; }
+        .gal-grid.compact { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+        .gal-grid.large { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
+        /* Segmented view switcher */
+        .gal-viewseg { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 10px; border: 1px solid var(--border); background: #fff; }
+        .gal-viewseg button { display: flex; align-items: center; justify-content: center; width: 30px; height: 28px; border: none; background: transparent; border-radius: 7px; cursor: pointer; color: var(--slate); transition: background 0.14s ease, color 0.14s ease; }
+        .gal-viewseg button.on { background: var(--peach); color: var(--coral); }
         .gal-spin { animation: gal-spin-kf 0.7s linear infinite; }
         @keyframes gal-spin-kf { to { transform: rotate(360deg); } }
         /* Smoother cards: lift on hover, gentle image zoom, softer shadows. */
@@ -559,8 +599,10 @@ export default function GalleryPage() {
             border: 1px solid var(--border); background: #fff; color: var(--slate);
           }
           .gal-cat-chip.on { border-color: var(--coral); background: var(--peach); color: var(--coral); }
-          /* Denser grid so thumbnails fill a phone screen. */
-          .gal-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+          /* Denser grid so thumbnails fill a phone screen (density switcher is
+             desktop-only — the phone always uses this compact layout). */
+          .gal-grid, .gal-grid.compact, .gal-grid.comfortable, .gal-grid.large { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+          .gal-viewseg { display: none; }
           /* Primary actions full width, secondary ones wrap. */
           .gal-toolbar-btns { width: 100%; }
           /* Details slideout takes the full width on a phone. */
@@ -579,6 +621,18 @@ export default function GalleryPage() {
               {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           )}
+
+          <div className="gal-viewseg" role="group" aria-label="View options">
+            <button className={viewMode === 'compact' ? 'on' : ''} onClick={() => changeView('compact')} title="Compact grid" aria-label="Compact grid">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            </button>
+            <button className={viewMode === 'comfortable' ? 'on' : ''} onClick={() => changeView('comfortable')} title="Comfortable grid" aria-label="Comfortable grid">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
+            </button>
+            <button className={viewMode === 'large' ? 'on' : ''} onClick={() => changeView('large')} title="Large grid" aria-label="Large grid">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
+            </button>
+          </div>
 
           <button onClick={() => setShowQR(true)} title="Upload from your phone by scanning a QR code"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
@@ -699,7 +753,7 @@ export default function GalleryPage() {
               </div>
             </div>
           ) : (
-            <div className="gal-grid">
+            <div className={`gal-grid ${viewMode}`}>
               {/* Optimistic upload tiles — local previews shown while the file
                   is still being uploaded, before the real item exists. */}
               {pending.map((p: any) => {
@@ -758,6 +812,22 @@ export default function GalleryPage() {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                       )}
                     </button>
+
+                    {/* Edit (Markup) — images only. Opens the annotator to crop-free
+                        draw/arrow/text, saved back as a new image. */}
+                    {item.kind !== 'video' && !selectMode && (
+                      <button type="button"
+                        onClick={e => { e.stopPropagation(); setEditingItem(item) }}
+                        title="Edit image (markup)"
+                        style={{
+                          position: 'absolute', top: 8, right: 8, width: 26, height: 26, borderRadius: 8,
+                          border: 'none', background: 'rgba(0,0,0,0.42)', color: '#fff',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          cursor: 'pointer', padding: 0, backdropFilter: 'blur(3px)',
+                        }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                      </button>
+                    )}
                   </div>
                   <div style={{ padding: '8px 10px' }}>
                     <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title || 'Untitled'}</p>
@@ -784,10 +854,10 @@ export default function GalleryPage() {
                         single-select folder dropdown, which forced each photo
                         into exactly one place — a 4ft tank with a sump belongs
                         in both. Toggling here writes to the many-to-many join. */}
-                    <div style={{ display: 'flex', gap: 6, marginTop: 6, position: 'relative' }} data-cat-picker>
+                    <div style={{ marginTop: 6, position: 'relative' }} data-cat-picker>
                       <button type="button"
                         onClick={e => { e.stopPropagation(); setCatMenuFor(catMenuFor === item.id ? null : item.id) }}
-                        style={{ flex: 1, fontSize: 11, padding: '4px 7px', borderRadius: 6, border: '1px solid var(--border)', background: '#fff', color: (itemCats[item.id] || []).length ? 'var(--ink)' : 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, textAlign: 'left' }}>
+                        style={{ width: '100%', boxSizing: 'border-box', fontSize: 11, padding: '4px 7px', borderRadius: 6, border: '1px solid var(--border)', background: '#fff', color: (itemCats[item.id] || []).length ? 'var(--ink)' : 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, textAlign: 'left' }}>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {(itemCats[item.id] || []).length
                             ? `${(itemCats[item.id] || []).length} categor${(itemCats[item.id] || []).length === 1 ? 'y' : 'ies'}`
@@ -825,20 +895,25 @@ export default function GalleryPage() {
                           </div>
                         </div>
                       )}
+                    </div>
+
+                    {/* Actions on their own right-aligned row so they never spill
+                        past the card edge, regardless of card width. */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4, marginTop: 8 }}>
                       <button onClick={() => shareItems([item])} title="Share / copy link"
-                        style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                        style={galAction()}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
                       </button>
                       <button onClick={() => setForwardItems([item])} title="Send to a chat"
-                        style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        style={galAction()}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                       </button>
                       <button onClick={() => setTaggingItem(item)} title="Categories"
-                        style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                        style={galAction()}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
                       </button>
-                      <button onClick={() => deleteItem(item)} title="Delete" style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                      <button onClick={() => deleteItem(item)} title="Delete" style={galAction('#dc2626')}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                       </button>
                     </div>
                   </div>
@@ -872,6 +947,7 @@ export default function GalleryPage() {
           me={me}
           team={team}
           onClose={() => setDetailsOpen(false)}
+          onEdit={(it) => { setDetailsOpen(false); setLightboxIndex(null); setEditingItem(it) }}
         />
       )}
 
@@ -1002,7 +1078,10 @@ export default function GalleryPage() {
           position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 300,
           display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 14,
           background: '#0d0f14', color: '#fff', boxShadow: '0 12px 40px rgba(0,0,0,0.28)',
-          border: '1px solid rgba(255,255,255,0.10)', flexWrap: 'wrap', maxWidth: 'calc(100vw - 32px)',
+          border: '1px solid rgba(255,255,255,0.10)',
+          // Keep everything (incl. Delete + ✕) on one row; scroll horizontally
+          // on narrow screens rather than wrapping Delete onto a lonely line.
+          flexWrap: 'nowrap', overflowX: 'auto', maxWidth: 'calc(100vw - 32px)',
         }}>
           <span style={{ fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
             {selected.size} selected
@@ -1013,11 +1092,11 @@ export default function GalleryPage() {
             Select all
           </button>
 
-          <span style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.14)' }} />
+          <span style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.14)', flexShrink: 0 }} />
 
           <select disabled={bulkBusy} defaultValue=""
             onChange={e => { if (e.target.value !== '') bulkMove(e.target.value === '__none' ? null : e.target.value); e.target.value = '' }}
-            style={{ padding: '6px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+            style={{ flexShrink: 0, padding: '6px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
             <option value="" disabled>Move to…</option>
             <option value="__none">Unfiled</option>
             {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
@@ -1026,7 +1105,7 @@ export default function GalleryPage() {
           {categories.length > 0 && (
             <select disabled={bulkBusy} defaultValue=""
               onChange={e => { if (e.target.value) bulkAddCategory(e.target.value); e.target.value = '' }}
-              style={{ padding: '6px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+              style={{ flexShrink: 0, padding: '6px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
               <option value="" disabled>Add to category…</option>
               {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -1070,6 +1149,17 @@ export default function GalleryPage() {
           folderId={activeFolder}
           onClose={() => setShowQR(false)}
           onUploaded={load}
+        />
+      )}
+
+      {/* Image editor (Markup) — draw / arrow / text over the photo, then save
+          as a new image. Loaded through the same-origin proxy so the canvas can
+          export on Save. */}
+      {editingItem && (
+        <ImageAnnotator
+          imageSrc={`/api/media/proxy?url=${encodeURIComponent(editingItem.url)}`}
+          onClose={() => setEditingItem(null)}
+          onSave={(dataUrl) => saveEditedImage(editingItem, dataUrl)}
         />
       )}
     </div>
@@ -1121,10 +1211,11 @@ function ConfirmDialog({ title, message, confirmLabel = 'Confirm', danger, onCon
 // A right-hand panel showing everything we know (and can measure) about one
 // media item. Dimensions, duration and file size are read live in the browser,
 // since they aren't stored on the row.
-function MediaDetailsPanel({ item, folders, categories, itemCats, companyId, userId, me, team, onClose }: {
+function MediaDetailsPanel({ item, folders, categories, itemCats, companyId, userId, me, team, onClose, onEdit }: {
   item: any; folders: any[]; categories: any[]; itemCats: Record<string, string[]>
   companyId: string | null; userId: string | null; me: string; team: { id: string; user_id: string; name: string; email?: string }[]
   onClose: () => void
+  onEdit?: (item: any) => void
 }) {
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
   const [duration, setDuration] = useState<number | null>(null)
@@ -1322,11 +1413,20 @@ function MediaDetailsPanel({ item, folders, categories, itemCats, companyId, use
           <Row label="Uploaded by" value={item.uploaded_by || '—'} />
           <Row label="Last updated" value={item.updated_at ? fmtDate(item.updated_at) : '—'} />
 
-          <a href={item.url} target="_blank" rel="noreferrer"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 18, padding: '9px 14px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 12.5, fontWeight: 700, textDecoration: 'none' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            Open original
-          </a>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 18 }}>
+            <a href={item.url} target="_blank" rel="noreferrer"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 12.5, fontWeight: 700, textDecoration: 'none' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              Open original
+            </a>
+            {item.kind !== 'video' && onEdit && (
+              <button onClick={() => onEdit(item)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                Edit image
+              </button>
+            )}
+          </div>
 
           {/* ── Notes ─────────────────────────────────────────────────── */}
           <div style={{ marginTop: 22, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
@@ -1402,6 +1502,12 @@ function folderBtn(active: boolean): React.CSSProperties {
 }
 
 const connectBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
+
+// Compact, fixed-size icon button for the card action row — flexShrink:0 keeps
+// them from being squeezed and spilling outside the card.
+function galAction(color = 'var(--slate)'): React.CSSProperties {
+  return { flexShrink: 0, width: 28, height: 28, borderRadius: 7, background: 'transparent', border: 'none', color, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }
+}
 
 function GoogleDriveIcon() {
   return (
