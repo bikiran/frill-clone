@@ -211,6 +211,11 @@ export default function GalleryPage() {
   // (the same /m/ viewer customers get) with a download button per item —
   // rather than a wall of raw storage URLs.
   const [sharing, setSharing] = useState(false)
+  // The generated link is shown in a dialog rather than only auto-copied:
+  // clipboard/native-share fire after an await, which silently no-ops inside a
+  // preview iframe (lost user-gesture) — so the user would "get no link". The
+  // dialog always shows the link with a Copy button that runs on a real click.
+  const [shareLink, setShareLink] = useState<{ url: string; count: number; raw?: boolean } | null>(null)
   const shareItems = async (list: any[]) => {
     if (!list.length || !companyId || sharing) return
     setSharing(true); showToast('Creating link…')
@@ -223,14 +228,12 @@ export default function GalleryPage() {
       })
       const d = await res.json()
       if (!res.ok || !d.url) throw new Error(d.error || 'link failed')
-      try { if ((navigator as any).share) { await (navigator as any).share({ url: d.url, title: 'Shared media' }); return } } catch { /* fall through to copy */ }
-      try { await navigator.clipboard.writeText(d.url); showToast('Gallery link copied') }
-      catch { showToast(d.url) }
+      try { await navigator.clipboard.writeText(d.url) } catch { /* copy from the dialog instead */ }
+      setShareLink({ url: d.url, count: list.length })
     } catch {
-      // Never leave the user empty-handed: fall back to the raw links.
+      // Never leave the user empty-handed: show the raw links in the dialog.
       const urls = list.map((i: any) => i.url).filter(Boolean)
-      try { await navigator.clipboard.writeText(urls.join('\n')); showToast('Links copied') }
-      catch { showToast('Could not create the link') }
+      setShareLink({ url: urls.join('\n'), count: list.length, raw: true })
     } finally { setSharing(false) }
   }
 
@@ -1013,6 +1016,18 @@ export default function GalleryPage() {
         <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 500, background: 'var(--ink)', color: '#fff', padding: '11px 18px', borderRadius: 12, fontSize: 13.5, fontWeight: 600, boxShadow: '0 8px 30px rgba(0,0,0,0.28)' }}>{toast}</div>
       )}
 
+      {/* Share link dialog — always shows the generated link so it's never lost
+          to a silently-failing clipboard/native-share call. */}
+      {shareLink && (
+        <ShareLinkDialog
+          url={shareLink.url}
+          count={shareLink.count}
+          raw={shareLink.raw}
+          onClose={() => setShareLink(null)}
+          onCopied={() => showToast('Copied')}
+        />
+      )}
+
       {/* Categorise a photo — it can be in as many as you like */}
       {taggingItem && (
         <div onClick={() => setTaggingItem(null)}
@@ -1201,6 +1216,82 @@ function ConfirmDialog({ title, message, confirmLabel = 'Confirm', danger, onCon
             style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
           <button onClick={onConfirm} autoFocus
             style={{ padding: '10px 18px', borderRadius: 10, border: 'none', background: danger ? '#dc2626' : 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Share link dialog ─────────────────────────────────────────────────────
+// Shows the branded share link with a Copy button that runs on a real click
+// (so it works even where an async clipboard write is blocked), plus Open and
+// native Share where available.
+function ShareLinkDialog({ url, count, raw, onClose, onCopied }: {
+  url: string; count: number; raw?: boolean; onClose: () => void; onCopied: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(url) } catch {
+      // Fallback for locked-down clipboard: select + execCommand.
+      try {
+        const ta = document.createElement('textarea'); ta.value = url
+        ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta)
+        ta.select(); document.execCommand('copy'); ta.remove()
+      } catch {}
+    }
+    setCopied(true); onCopied(); setTimeout(() => setCopied(false), 1800)
+  }
+  const canNativeShare = typeof navigator !== 'undefined' && !!(navigator as any).share
+  const nativeShare = async () => { try { await (navigator as any).share({ url, title: 'Shared media' }) } catch {} }
+
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(13,15,20,0.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100050, padding: 20, animation: 'gal-fade 0.14s ease' }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ width: 440, maxWidth: '92vw', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.30)', animation: 'gal-pop 0.16s ease' }}>
+        <div style={{ width: 46, height: 46, borderRadius: 13, background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        </div>
+        <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>{raw ? 'Direct links' : 'Share link'}</h3>
+        <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+          {raw
+            ? `Couldn't create a short link, so here ${count === 1 ? 'is the direct file link' : 'are the direct file links'}.`
+            : `One link opens ${count === 1 ? 'this item' : `all ${count} items`} in a scrollable gallery with a download button — the same page customers see.`}
+        </p>
+
+        {raw ? (
+          <textarea readOnly value={url} onFocus={e => e.currentTarget.select()} rows={Math.min(6, count)}
+            style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 12.5, color: 'var(--ink)', fontFamily: 'inherit', resize: 'none', marginBottom: 14 }} />
+        ) : (
+          <input readOnly value={url} onFocus={e => e.currentTarget.select()}
+            style={{ width: '100%', boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, color: 'var(--ink)', marginBottom: 14 }} />
+        )}
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          {!raw && (
+            <a href={url} target="_blank" rel="noreferrer"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              Open
+            </a>
+          )}
+          {canNativeShare && (
+            <button onClick={nativeShare}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+              Share…
+            </button>
+          )}
+          <button onClick={copy}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 18px', borderRadius: 10, border: 'none', background: copied ? '#16a34a' : 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+            {copied
+              ? <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Copied</>
+              : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy link</>}
+          </button>
         </div>
       </div>
     </div>
