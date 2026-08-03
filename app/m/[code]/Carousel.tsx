@@ -47,13 +47,16 @@ export default function Carousel({ items, accent }: { items: Item[]; accent: str
           const image = isImg(m.url, m.type), video = isVid(m.url, m.type)
           return (
             <div key={i} style={{ flex: '0 0 100%', scrollSnapAlign: 'center', background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 4px 18px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ height: MEDIA_H, background: '#000', lineHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              {/* Many items → a fixed media height so every slide matches and the
+                  arrows stay centred. A single item → natural height, so it
+                  isn't letterboxed into a tall black box with blank space. */}
+              <div style={{ height: many ? MEDIA_H : 'auto', maxHeight: many ? undefined : 'min(80vh, 620px)', background: '#000', lineHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                 {image ? (
-                  <a href={m.url} target="_blank" rel="noopener" style={{ display: 'flex', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-                    <img src={m.url} alt={`Attachment ${i + 1}`} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                  <a href={m.url} target="_blank" rel="noopener" style={{ display: 'flex', width: '100%', height: many ? '100%' : 'auto', alignItems: 'center', justifyContent: 'center' }}>
+                    <img src={m.url} alt={`Attachment ${i + 1}`} style={{ width: many ? undefined : '100%', maxWidth: '100%', maxHeight: many ? '100%' : 'min(80vh, 620px)', objectFit: 'contain', display: 'block' }} />
                   </a>
                 ) : video ? (
-                  <VideoPlayer src={m.url} autoPlay={false} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 0 }} />
+                  <VideoPlayer src={m.url} autoPlay={false} style={many ? { width: '100%', height: '100%', objectFit: 'contain', borderRadius: 0 } : { width: '100%', maxHeight: 'min(80vh, 620px)', borderRadius: 0 }} />
                 ) : (
                   <div style={{ padding: 30, color: '#fff', fontSize: 14, fontWeight: 700, wordBreak: 'break-word' }}>{m.name || 'File'}</div>
                 )}

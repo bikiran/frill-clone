@@ -111,10 +111,12 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
   const multiple = media.length > 1
 
   return (
-    <div className="mv-root" style={{ minHeight: '100dvh', background: '#fafafa', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', padding: 20, boxSizing: 'border-box' }}>
+    <div className="mv-root" style={{ minHeight: '100dvh', background: '#fafafa', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', padding: 20, boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
       <style>{`
         * { box-sizing: border-box; }
-        .mv-inner { max-width: 640px; margin: 0 auto; }
+        /* margin:auto (not justify-content) centres the block vertically when it
+           fits, but still lets a tall gallery scroll instead of clipping. */
+        .mv-inner { max-width: 640px; width: 100%; margin: auto; }
         .mv-grid { display: grid; gap: 12px; }
         .mv-grid.multi { grid-template-columns: repeat(2, 1fr); }
         .mv-card { background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 18px rgba(0,0,0,0.06); display: flex; flex-direction: column; }
