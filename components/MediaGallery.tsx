@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useCallback } from 'react'
+import VideoPlayer from '@/components/VideoPlayer'
 
 export type MediaItem = { url: string; name?: string; kind?: string }
 
@@ -86,7 +87,7 @@ export default function MediaGallery({ items, index, onClose, onIndex, onViewDet
       {/* Main media */}
       <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '74vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {current.kind === 'video' ? (
-          <video src={current.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8 }} />
+          <VideoPlayer key={current.url} src={current.url} style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8 }} />
         ) : (
           <img loading="lazy" decoding="async" src={current.url} alt={current.name || ''} style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8, objectFit: 'contain' }} />
         )}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import VideoPlayer from '@/components/VideoPlayer'
 
 export type LightItem = { url: string; name?: string; type?: string; kind?: string }
 
@@ -82,7 +83,7 @@ export default function MediaLightbox({
         {isImg(cur) ? (
           <img src={cur.url} alt={cur.name || ''} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 6 }} />
         ) : isVid(cur) ? (
-          <video src={cur.url} controls autoPlay style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 6 }} />
+          <VideoPlayer key={cur.url} src={cur.url} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 6 }} />
         ) : (
           <a href={cur.url} target="_blank" rel="noopener" style={{ color: '#fff', fontSize: 15, textDecoration: 'underline' }}>Open file: {cur.name || cur.url}</a>
         )}
