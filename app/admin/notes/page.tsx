@@ -12,6 +12,7 @@ type Note = {
   id: string; title: string; body: string; checklist: ChecklistItem[]; attachments: any[]
   cover_image?: string | null; is_public?: boolean; public_code?: string | null; allow_public_edit?: boolean
   tags?: string[]; reminder_at?: string | null; pinned?: boolean; trashed_at?: string | null; updated_at?: string
+  shared_with_team?: boolean; created_by?: string; created_by_name?: string
 }
 type ChecklistItem = { id: string; text: string; done: boolean }
 
@@ -71,26 +72,27 @@ export default function NotesPage() {
     })()
   }, [companyId])
 
+  const uid = user?.id || ''
   const loadList = useCallback(async () => {
     if (!companyId) return
     setLoadingList(true)
     try {
       const [a, b] = await Promise.all([
-        fetch(`/api/notes?companyId=${companyId}`).then(r => r.json()),
-        fetch(`/api/notes?companyId=${companyId}&trashed=1`).then(r => r.json()),
+        fetch(`/api/notes?companyId=${companyId}&userId=${uid}`).then(r => r.json()),
+        fetch(`/api/notes?companyId=${companyId}&userId=${uid}&trashed=1`).then(r => r.json()),
       ])
       setNeedsMigration(!!a.needsMigration)
       setList(a.notes || [])
       setTrashList(b.notes || [])
     } catch {} finally { setLoadingList(false) }
-  }, [companyId])
+  }, [companyId, uid])
   useEffect(() => { loadList() }, [loadList])
 
   useEffect(() => {
     if (!companyId || !activeId) { setNote(null); return }
     ;(async () => {
       try {
-        const res = await fetch(`/api/notes?companyId=${companyId}&id=${activeId}`)
+        const res = await fetch(`/api/notes?companyId=${companyId}&userId=${uid}&id=${activeId}`)
         const d = await res.json()
         if (d.note) setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [] })
       } catch {}
@@ -109,7 +111,7 @@ export default function NotesPage() {
         await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
           companyId, action: 'update', id: next.id, title: next.title, body: next.body,
           checklist: next.checklist, attachments: next.attachments, cover_image: next.cover_image ?? null,
-          allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned,
+          allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned, shared_with_team: !!next.shared_with_team,
         }) })
       } catch {} finally { setSaving(false) }
     }, 650)
@@ -270,7 +272,7 @@ export default function NotesPage() {
 
       {needsMigration && (
         <div style={{ margin: '10px 24px 0', background: 'var(--peach)', border: '1px solid var(--coral)', borderRadius: 9, padding: '9px 12px', fontSize: 12.5, color: 'var(--ink)' }}>
-          Notes needs a quick database update — run <b>COLVY_V233_NOTES.sql</b> and <b>COLVY_V234_NOTES_EXTRAS.sql</b> in Supabase, then reload.
+          Notes needs a quick database update — run <b>COLVY_V233</b>, <b>V234</b> and <b>V235</b> in Supabase, then reload.
         </div>
       )}
 
@@ -291,9 +293,25 @@ export default function NotesPage() {
             {loadingList && shown.length === 0 ? (
               <p style={{ padding: 20, color: 'var(--slate)', fontSize: 13 }}>Loading…</p>
             ) : shown.length === 0 ? (
-              <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>
-                {tab === 'trash' ? 'Trash is empty.' : tab === 'reminders' ? 'No reminders yet.' : <>No notes yet.<br />Hit <b>New note</b> to start.</>}
-              </div>
+              tab === 'notes' ? (
+                <div style={{ padding: '48px 28px', textAlign: 'center' }}>
+                  <svg width="120" height="120" viewBox="0 0 120 120" style={{ margin: '0 auto 18px', display: 'block' }}>
+                    <rect x="24" y="34" width="46" height="46" rx="10" transform="rotate(-13 47 57)" fill="#7c5cff" />
+                    <rect x="62" y="58" width="40" height="40" rx="10" transform="rotate(10 82 78)" fill="#7cb342" />
+                    <rect x="38" y="34" width="48" height="52" rx="11" fill="#1c1c22" stroke="#fff" strokeWidth="3.5" />
+                    <line x1="48" y1="48" x2="74" y2="48" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" />
+                    <line x1="48" y1="58" x2="76" y2="58" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" />
+                    <line x1="48" y1="68" x2="66" y2="68" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" />
+                    <path d="M92 30 q7 5 6 15" fill="none" stroke="#d1d5db" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                  <p style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Create your first note</p>
+                  <p style={{ margin: 0, fontSize: 13.5, color: 'var(--slate)', lineHeight: 1.55 }}>
+                    Click the <button onClick={createNote} style={{ background: 'none', border: 'none', color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 13.5 }}>New note</button> button above to get started.
+                  </p>
+                </div>
+              ) : (
+                <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>{tab === 'trash' ? 'Trash is empty.' : 'No reminders yet.'}</div>
+              )
             ) : shown.map(n => {
               const on = n.id === activeId && tab !== 'trash'
               const plain = (n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
@@ -317,6 +335,10 @@ export default function NotesPage() {
                       {done}/{total}
                     </span>}
                     {(n.tags || []).slice(0, 2).map(t => <span key={t} className="chip" style={{ background: '#f1f5f9', color: '#475569' }}>#{t}</span>)}
+                    {n.shared_with_team && <span className="chip" style={{ background: '#ecfdf5', color: '#059669' }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      {n.created_by && n.created_by !== uid ? (n.created_by_name || 'Team') : 'Team'}
+                    </span>}
                     <span style={{ fontSize: 11, color: 'var(--slate)', marginLeft: 'auto' }}>{fmtAgo(tab === 'trash' ? n.trashed_at || n.updated_at : n.updated_at)}</span>
                   </div>
                   {tab === 'trash' && (
@@ -367,6 +389,9 @@ export default function NotesPage() {
                   {moreOpen && (<>
                     <div onClick={() => setMoreOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
                     <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 190 }}>
+                      <button style={menuItem} onClick={() => { queueSave({ ...note, shared_with_team: !note.shared_with_team }); setMoreOpen(false); showToast(note.shared_with_team ? 'Note is now private' : 'Shared with your team') }}>
+                        {note.shared_with_team ? 'Make private' : 'Share with team'}
+                      </button>
                       <button style={menuItem} onClick={duplicateNote}>Duplicate</button>
                       <button style={menuItem} onClick={() => { queueSave({ ...note, pinned: !note.pinned }); setMoreOpen(false) }}>{note.pinned ? 'Unpin' : 'Pin to top'}</button>
                       <button style={menuItem} onClick={copyLink}>Copy link</button>

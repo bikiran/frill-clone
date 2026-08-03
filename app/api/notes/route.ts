@@ -17,21 +17,25 @@ const genCode = () => Math.random().toString(36).slice(2, 9)
 export async function GET(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('companyId')
   const id = req.nextUrl.searchParams.get('id')
+  const userId = req.nextUrl.searchParams.get('userId')
+  // A note is visible to a user if they created it, or its owner shared it with
+  // the team. (No userId → return all, for backward compatibility.)
+  const visible = (n: any) => !userId || n.created_by === userId || n.shared_with_team
   if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
   try {
     const db = admin()
     if (id) {
       const { data, error } = await db.from('notes').select('*').eq('id', id).eq('company_id', companyId).maybeSingle()
       if (error) { if (missing(error.message)) return NextResponse.json({ note: null, needsMigration: true }); throw error }
+      if (data && !visible(data)) return NextResponse.json({ note: null }, { status: 403 })
       return NextResponse.json({ note: data })
     }
-    // Select * so a not-yet-migrated column (tags/reminder_at/trashed_at/pinned)
-    // never breaks the list; trash filtering + ordering are done in JS for the
-    // same reason.
+    // Select * so a not-yet-migrated column never breaks the list; trash
+    // filtering, user scoping, and ordering are done in JS for the same reason.
     const { data, error } = await db.from('notes').select('*').eq('company_id', companyId).limit(500)
     if (error) { if (missing(error.message)) return NextResponse.json({ notes: [], needsMigration: true }); throw error }
     const wantTrashed = req.nextUrl.searchParams.get('trashed') === '1'
-    const rows = (data || []).filter((n: any) => wantTrashed ? !!n.trashed_at : !n.trashed_at)
+    const rows = (data || []).filter((n: any) => (wantTrashed ? !!n.trashed_at : !n.trashed_at) && visible(n))
     rows.sort((a: any, b: any) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()))
     return NextResponse.json({ notes: rows })
   } catch (e: any) {
@@ -57,12 +61,12 @@ export async function POST(req: NextRequest) {
 
     if (action === 'update') {
       const patch: any = { updated_at: new Date().toISOString() }
-      for (const f of ['title', 'body', 'checklist', 'attachments', 'cover_image', 'allow_public_edit', 'tags', 'reminder_at', 'pinned']) if (body[f] !== undefined) patch[f] = body[f]
+      for (const f of ['title', 'body', 'checklist', 'attachments', 'cover_image', 'allow_public_edit', 'tags', 'reminder_at', 'pinned', 'shared_with_team']) if (body[f] !== undefined) patch[f] = body[f]
       let { error } = await db.from('notes').update(patch).eq('id', body.id).eq('company_id', companyId)
-      // If a newer column (V234) isn't migrated yet, drop those keys and retry so
-      // the core fields still save.
+      // If a newer column (V234/V235) isn't migrated yet, drop those keys and
+      // retry so the core fields still save.
       if (error && missing(error.message)) {
-        for (const f of ['tags', 'reminder_at', 'pinned']) delete patch[f]
+        for (const f of ['tags', 'reminder_at', 'pinned', 'shared_with_team']) delete patch[f]
         const retry = await db.from('notes').update(patch).eq('id', body.id).eq('company_id', companyId)
         error = retry.error
       }
