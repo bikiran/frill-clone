@@ -14,7 +14,7 @@ type Mention = { id: string; name: string }
 
 export default function RichTextEditor({
   value, onChange, placeholder = 'Add a description…', mentions, minHeight = 120, maxHeight = 360, bordered = true,
-  enableVoice = false, companyId, big = false, toolbarPortal,
+  enableVoice = false, companyId, big = false, toolbarPortal, blockDrag = false,
 }: {
   value: string
   onChange: (html: string) => void
@@ -27,10 +27,18 @@ export default function RichTextEditor({
   companyId?: string | null
   big?: boolean
   toolbarPortal?: HTMLElement | null
+  blockDrag?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const timer = useRef<any>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: Mention[]; active: number } | null>(null)
+  // Block drag-to-reorder (Notion/Evernote style): a floating handle follows the
+  // block under the cursor; dragging shows a drop line and moves that block.
+  const handleRef = useRef<HTMLButtonElement>(null)
+  const indicatorRef = useRef<HTMLDivElement>(null)
+  const hoverBlockRef = useRef<HTMLElement | null>(null)
+  const dragBlockRef = useRef<HTMLElement | null>(null)
+  const dropRef = useRef<{ target: HTMLElement; before: boolean } | null>(null)
   const [rec, setRec] = useState<'idle' | 'recording' | 'uploading'>('idle')
   const [recSecs, setRecSecs] = useState(0)
   const recRef = useRef<MediaRecorder | null>(null)
@@ -194,6 +202,62 @@ export default function RichTextEditor({
     else if (e.key === 'Escape') { setMenu(null) }
   }
 
+  // ── Block drag-to-reorder ─────────────────────────────────────────────────
+  const topBlockAt = (x: number, y: number): HTMLElement | null => {
+    const content = ref.current; if (!content) return null
+    let el = document.elementFromPoint(x, y) as HTMLElement | null
+    while (el && el.parentElement && el.parentElement !== content && el !== content) el = el.parentElement
+    if (el && el.parentElement === content) return el
+    // Fallback: the child whose vertical centre is nearest the pointer.
+    let best: HTMLElement | null = null, bestD = Infinity
+    Array.from(content.children).forEach(c => { const r = (c as HTMLElement).getBoundingClientRect(); const d = Math.abs((r.top + r.bottom) / 2 - y); if (d < bestD) { bestD = d; best = c as HTMLElement } })
+    return best
+  }
+  const positionHandle = (blk: HTMLElement | null) => {
+    const h = handleRef.current; if (!h) return
+    if (!blk || blk === ref.current) { h.style.opacity = '0'; h.style.pointerEvents = 'none'; hoverBlockRef.current = null; return }
+    hoverBlockRef.current = blk
+    const r = blk.getBoundingClientRect()
+    h.style.top = `${r.top + Math.min(15, r.height / 2)}px`
+    h.style.left = `${Math.max(4, r.left - 30)}px`
+    h.style.opacity = '1'; h.style.pointerEvents = 'auto'
+  }
+  const onContentMove = (e: React.MouseEvent) => { if (!blockDrag || dragBlockRef.current) return; positionHandle(topBlockAt(e.clientX, e.clientY)) }
+  const onDragMove = (e: PointerEvent) => {
+    e.preventDefault()
+    const content = ref.current, ind = indicatorRef.current; if (!content || !ind) return
+    const target = topBlockAt(e.clientX, e.clientY)
+    if (!target || target === dragBlockRef.current) { ind.style.opacity = '0'; dropRef.current = null; return }
+    const r = target.getBoundingClientRect(), before = e.clientY < r.top + r.height / 2
+    dropRef.current = { target, before }
+    const cr = content.getBoundingClientRect()
+    ind.style.opacity = '1'; ind.style.left = `${cr.left + 4}px`; ind.style.width = `${cr.width - 8}px`; ind.style.top = `${before ? r.top - 1 : r.bottom + 1}px`
+  }
+  const onDragUp = () => {
+    window.removeEventListener('pointermove', onDragMove)
+    const src = dragBlockRef.current, drop = dropRef.current, content = ref.current
+    if (src) src.style.opacity = ''
+    if (indicatorRef.current) indicatorRef.current.style.opacity = '0'
+    if (handleRef.current) handleRef.current.style.pointerEvents = 'auto'
+    document.body.style.cursor = ''
+    dragBlockRef.current = null; dropRef.current = null
+    if (src && drop && content && src !== drop.target) {
+      content.insertBefore(src, drop.before ? drop.target : drop.target.nextSibling)
+      emit()
+    }
+    positionHandle(null)
+  }
+  const onHandleDown = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const blk = hoverBlockRef.current; if (!blk) return
+    dragBlockRef.current = blk
+    blk.style.opacity = '0.4'
+    document.body.style.cursor = 'grabbing'
+    if (handleRef.current) handleRef.current.style.pointerEvents = 'none'
+    window.addEventListener('pointermove', onDragMove)
+    window.addEventListener('pointerup', onDragUp, { once: true })
+  }
+
   const S = big ? 38 : 30
   const Btn = ({ on, title, children, active }: any) => (
     <button type="button" title={title} className="rte-btn"
@@ -287,9 +351,21 @@ export default function RichTextEditor({
         onKeyDown={onKeyDown}
         onKeyUp={detectMention}
         onClick={() => setMenu(null)}
+        onMouseMove={onContentMove}
+        onMouseLeave={(e) => { if (!dragBlockRef.current && !handleRef.current?.contains(e.relatedTarget as Node)) positionHandle(null) }}
         onBlur={() => { emit(); setTimeout(() => setMenu(null), 150) }}
         style={{ minHeight, maxHeight, overflowY: 'auto', padding: bordered ? '10px 12px' : '4px 0', fontSize: 16, lineHeight: 1.6, color: 'var(--ink)' }}
       />
+
+      {blockDrag && (
+        <>
+          <button ref={handleRef} type="button" onPointerDown={onHandleDown} title="Drag to move this line"
+            style={{ position: 'fixed', top: 0, left: 0, opacity: 0, transform: 'translateY(-50%)', zIndex: 100055, width: 26, height: 26, borderRadius: 8, border: '1px solid var(--border,#e5e7eb)', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.14)', color: '#4b5563', cursor: 'grab', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity .1s ease', touchAction: 'none' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="5" r="1.9"/><circle cx="16" cy="5" r="1.9"/><circle cx="8" cy="12" r="1.9"/><circle cx="16" cy="12" r="1.9"/><circle cx="8" cy="19" r="1.9"/><circle cx="16" cy="19" r="1.9"/></svg>
+          </button>
+          <div ref={indicatorRef} style={{ position: 'fixed', top: 0, left: 0, height: 3, borderRadius: 2, background: 'var(--coral,#ff7a6b)', opacity: 0, zIndex: 100054, pointerEvents: 'none', transform: 'translateY(-50%)', boxShadow: '0 0 0 3px rgba(255,122,107,0.18)', transition: 'top .05s linear, left .05s linear, width .05s linear, opacity .12s' }} />
+        </>
+      )}
 
       {menu && (
         <div style={{ position: 'fixed', left: menu.x, top: menu.y, zIndex: 100060, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,0,0.18)', padding: 5, minWidth: 180, maxWidth: 240 }}>

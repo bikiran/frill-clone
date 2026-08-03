@@ -453,8 +453,23 @@ export default function NotesPage() {
                 </div>
               )}
 
+              {/* Empty-note quick-start templates (hidden once there's content) */}
+              {!(note.body || '').replace(/<[^>]+>/g, '').trim() && (note.checklist || []).length === 0 && (
+                <div style={{ margin: '4px 0 18px' }}>
+                  <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Start from a template</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {NOTE_TEMPLATES.map(t => (
+                      <button key={t.label} onClick={() => queueSave({ ...note, title: note.title || t.title || '', body: t.body || note.body, checklist: t.checklist ? t.checklist.map(text => ({ id: rid(), text, done: false })) : note.checklist })}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 20, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                        <span style={{ fontSize: 15 }}>{t.icon}</span>{t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <RichTextEditor key={note.id} value={note.body} onChange={html => queueSave({ ...note, body: html })}
-                placeholder="Start writing… use @ to mention a teammate" mentions={team} bordered={false} big enableVoice companyId={companyId} toolbarPortal={toolbarEl} minHeight={200} maxHeight={'none' as any} />
+                placeholder="Start writing… use @ to mention a teammate, / for a voice note" mentions={team} bordered={false} big enableVoice companyId={companyId} toolbarPortal={toolbarEl} blockDrag minHeight={200} maxHeight={'none' as any} />
 
               <div style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -584,3 +599,10 @@ const coverBtn: React.CSSProperties = { padding: '5px 11px', borderRadius: 8, bo
 const metaBtn: React.CSSProperties = { padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }
 const menuItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
 const remItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
+
+// Quick-start templates shown on an empty note.
+const NOTE_TEMPLATES: { label: string; icon: string; title?: string; body?: string; checklist?: string[] }[] = [
+  { label: 'To-do list', icon: '✅', body: '<h3>To-do</h3><p><br></p>', checklist: ['', '', ''] },
+  { label: 'Meeting notes', icon: '🗒️', title: 'Meeting notes', body: '<h3>Attendees</h3><p><br></p><h3>Agenda</h3><ul><li><br></li></ul><h3>Notes</h3><p><br></p><h3>Action items</h3><p><br></p>' },
+  { label: 'Customer request', icon: '🐟', title: 'Customer request', body: '<p><strong>Customer:</strong> </p><p><strong>Requested items:</strong></p><ul><li><br></li></ul><p><strong>Notes:</strong></p><p><br></p>' },
+]
