@@ -18,7 +18,6 @@ type ChecklistItem = { id: string; text: string; done: boolean }
 const rid = () => Math.random().toString(36).slice(2, 9)
 const isAudio = (a: any) => a?.kind === 'audio' || (a?.type || '').startsWith('audio/')
 
-// Inbox-style relative time: seconds/minutes/hours ago, then days ago, then date.
 const fmtAgo = (iso?: string) => {
   if (!iso) return ''
   const d = new Date(iso), s = Math.floor((Date.now() - d.getTime()) / 1000)
@@ -32,11 +31,12 @@ const fmtAgo = (iso?: string) => {
 const toLocalInput = (iso?: string | null) => { if (!iso) return ''; const d = new Date(iso), p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}` }
 const fromLocalInput = (v: string) => v ? new Date(v).toISOString() : null
 const fmtReminder = (iso?: string | null) => iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''
+const presetIso = (days: number, h = 9) => { const d = new Date(); d.setDate(d.getDate() + days); d.setHours(h, 0, 0, 0); return d.toISOString() }
 
 export default function NotesPage() {
   const { companyId, user, loading } = useCompanyUser()
   const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Me'
-  const [tab, setTab] = useState<'notes' | 'trash'>('notes')
+  const [tab, setTab] = useState<'notes' | 'reminders' | 'trash'>('notes')
   const [list, setList] = useState<Note[]>([])
   const [trashList, setTrashList] = useState<Note[]>([])
   const [loadingList, setLoadingList] = useState(false)
@@ -51,6 +51,8 @@ export default function NotesPage() {
   const [listOpen, setListOpen] = useState(true)
   const [fullscreen, setFullscreen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [remOpen, setRemOpen] = useState(false)
+  const [tagAdding, setTagAdding] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const coverInput = useRef<HTMLInputElement>(null)
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2400) }
@@ -201,17 +203,19 @@ export default function NotesPage() {
 
   const addTag = () => {
     const t = tagInput.trim().replace(/^#/, '')
-    if (!t || !note) { setTagInput(''); return }
+    setTagInput(''); setTagAdding(false)
+    if (!t || !note) return
     if (!(note.tags || []).includes(t)) queueSave({ ...note, tags: [...(note.tags || []), t] })
-    setTagInput('')
   }
+  const setReminder = (iso: string | null) => { if (note) queueSave({ ...note, reminder_at: iso }); setRemOpen(false) }
 
   if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading…</div>
 
   const rootStyle: React.CSSProperties = fullscreen
     ? { position: 'fixed', inset: 0, zIndex: 200, background: '#fff', display: 'flex', flexDirection: 'column' }
     : { height: 'calc(100dvh - 4px)', display: 'flex', flexDirection: 'column' }
-  const shown = tab === 'trash' ? trashList : list
+  const reminders = list.filter(n => n.reminder_at).sort((a, b) => new Date(a.reminder_at!).getTime() - new Date(b.reminder_at!).getTime())
+  const shown = tab === 'trash' ? trashList : tab === 'reminders' ? reminders : list
   const media = note ? (note.attachments || []).filter(a => !isAudio(a)) : []
   const audios = note ? (note.attachments || []).filter(isAudio) : []
   const setAllAttachments = (next: any[]) => note && queueSave({ ...note, attachments: next })
@@ -220,18 +224,26 @@ export default function NotesPage() {
     <div style={rootStyle}>
       <style>{`
         .notes-layout { display: flex; flex: 1; min-height: 0; }
-        .notes-list { width: 300px; flex-shrink: 0; border-right: 1px solid var(--border); overflow-y: auto; background: #fff; transition: width .18s ease; }
+        .notes-list { width: 310px; flex-shrink: 0; border-right: 1px solid var(--border); background: #fff; display: flex; flex-direction: column; transition: width .18s ease; }
         .notes-list.closed { width: 0; border-right: none; overflow: hidden; }
-        .note-row { padding: 13px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
+        .notes-rows { flex: 1; overflow-y: auto; }
+        .note-row { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
         .note-row:hover { background: var(--canvas); }
         .note-row.on { background: var(--peach); }
         .notes-editor { flex: 1; min-width: 0; overflow-y: auto; }
         .icon-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--slate); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .12s, color .12s; }
         .icon-btn:hover { background: var(--peach); color: var(--coral); }
-        .notes-tab { padding: 6px 12px; border-radius: 8px; border: none; background: transparent; color: var(--slate); font-size: 13px; font-weight: 700; cursor: pointer; }
-        .notes-tab.on { background: var(--peach); color: var(--coral); }
+        .seg-tab { flex: 1; padding: 8px 0; border-radius: 9px; border: none; background: transparent; color: var(--slate); font-size: 13px; font-weight: 700; cursor: pointer; transition: background .12s, color .12s; }
+        .seg-tab.on { background: #fff; color: var(--coral); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+        .footer-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 20px; border: 1px solid var(--border); background: #fff; color: var(--slate); font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
+        .footer-btn:hover { border-color: var(--coral); color: var(--coral); }
+        .footer-btn.on { background: var(--peach); border-color: var(--coral); color: var(--coral); }
+        .trash-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); background: #fff; color: var(--slate); font-size: 13px; font-weight: 700; cursor: pointer; }
+        .trash-bar:hover { background: var(--canvas); }
+        .trash-bar.on { color: var(--coral); background: var(--peach); }
         @media (max-width: 860px) {
-          .notes-list { width: 100%; display: ${activeId ? 'none' : 'block'}; border-right: none; }
+          .notes-list { width: 100%; display: ${activeId ? 'none' : 'flex'}; border-right: none; }
           .notes-list.closed { display: none; }
           .notes-editor { display: ${activeId ? 'block' : 'none'}; }
           .notes-back { display: inline-flex !important; }
@@ -243,13 +255,16 @@ export default function NotesPage() {
           <button className="icon-btn" title={listOpen ? 'Collapse list' : 'Show list'} onClick={() => setListOpen(v => !v)}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{listOpen ? <><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></> : <><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></>}</svg>
           </button>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Notes {list.length > 0 && <span style={{ color: 'var(--slate)', fontWeight: 700, fontSize: 15 }}>{list.length}</span>}</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Notes</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button className="icon-btn" title={fullscreen ? 'Exit full screen' : 'Full screen'} onClick={() => setFullscreen(v => !v)}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{fullscreen ? <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/> : <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>}</svg>
           </button>
-          <button onClick={createNote} style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>+ New note</button>
+          <button onClick={createNote} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New note
+          </button>
         </div>
       </div>
 
@@ -261,44 +276,73 @@ export default function NotesPage() {
 
       <div className="notes-layout">
         <div className={'notes-list' + (listOpen ? '' : ' closed')}>
-          <div style={{ display: 'flex', gap: 4, padding: '10px 12px', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
-            <button className={'notes-tab' + (tab === 'notes' ? ' on' : '')} onClick={() => setTab('notes')}>Notes</button>
-            <button className={'notes-tab' + (tab === 'trash' ? ' on' : '')} onClick={() => setTab('trash')}>Trash {trashList.length > 0 && `(${trashList.length})`}</button>
+          {/* Notes | Reminders segmented tabs */}
+          <div style={{ display: 'flex', gap: 4, padding: '10px 12px', background: 'var(--canvas)', borderBottom: '1px solid var(--border)' }}>
+            <button className={'seg-tab' + (tab === 'notes' ? ' on' : '')} onClick={() => setTab('notes')}>Notes {list.length > 0 && <span style={{ opacity: 0.7 }}>{list.length}</span>}</button>
+            <button className={'seg-tab' + (tab === 'reminders' ? ' on' : '')} onClick={() => setTab('reminders')}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                Reminders {reminders.length > 0 && <span style={{ opacity: 0.7 }}>{reminders.length}</span>}
+              </span>
+            </button>
           </div>
-          {loadingList && shown.length === 0 ? (
-            <p style={{ padding: 20, color: 'var(--slate)', fontSize: 13 }}>Loading…</p>
-          ) : shown.length === 0 ? (
-            <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>{tab === 'trash' ? 'Trash is empty.' : <>No notes yet.<br />Hit <b>+ New note</b> to start.</>}</div>
-          ) : shown.map(n => {
-            const on = n.id === activeId
-            const plain = (n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-            return (
-              <div key={n.id} className={'note-row' + (on && tab === 'notes' ? ' on' : '')} onClick={() => tab === 'notes' && setActiveId(n.id)} style={tab === 'trash' ? { cursor: 'default' } : {}}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {n.pinned && tab === 'notes' && <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--coral)" stroke="none"><path d="M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.8 5.7 21l2.3-7.2-6-4.4h7.6z"/></svg>}
-                  <p style={{ margin: 0, flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.title?.trim() || 'Untitled'}</p>
-                  {n.is_public && tab === 'notes' && <span title="Shared" style={{ color: 'var(--coral)', display: 'flex' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></span>}
-                </div>
-                <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{plain || 'No text'}</p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                  <span style={{ fontSize: 11, color: 'var(--slate)', flex: 1 }}>{fmtAgo(tab === 'trash' ? n.trashed_at || n.updated_at : n.updated_at)}</span>
+
+          <div className="notes-rows">
+            {loadingList && shown.length === 0 ? (
+              <p style={{ padding: 20, color: 'var(--slate)', fontSize: 13 }}>Loading…</p>
+            ) : shown.length === 0 ? (
+              <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>
+                {tab === 'trash' ? 'Trash is empty.' : tab === 'reminders' ? 'No reminders yet.' : <>No notes yet.<br />Hit <b>New note</b> to start.</>}
+              </div>
+            ) : shown.map(n => {
+              const on = n.id === activeId && tab !== 'trash'
+              const plain = (n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+              const total = (n.checklist || []).length
+              const done = (n.checklist || []).filter(c => c.done).length
+              return (
+                <div key={n.id} className={'note-row' + (on ? ' on' : '')} onClick={() => tab !== 'trash' && setActiveId(n.id)} style={tab === 'trash' ? { cursor: 'default' } : {}}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {n.pinned && tab === 'notes' && <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--coral)" stroke="none"><path d="M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.8 5.7 21l2.3-7.2-6-4.4h7.6z"/></svg>}
+                    <p style={{ margin: 0, flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.title?.trim() || 'Untitled'}</p>
+                    {n.is_public && tab !== 'trash' && <span title="Shared" style={{ color: 'var(--coral)', display: 'flex' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></span>}
+                  </div>
+                  <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{plain || 'No text'}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
+                    {n.reminder_at && <span className="chip" style={{ background: '#eef2ff', color: '#4f46e5' }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                      {fmtReminder(n.reminder_at)}
+                    </span>}
+                    {total > 0 && <span className="chip" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      {done}/{total}
+                    </span>}
+                    {(n.tags || []).slice(0, 2).map(t => <span key={t} className="chip" style={{ background: '#f1f5f9', color: '#475569' }}>#{t}</span>)}
+                    <span style={{ fontSize: 11, color: 'var(--slate)', marginLeft: 'auto' }}>{fmtAgo(tab === 'trash' ? n.trashed_at || n.updated_at : n.updated_at)}</span>
+                  </div>
                   {tab === 'trash' && (
-                    <>
-                      <button onClick={e => { e.stopPropagation(); restoreNote(n.id) }} style={{ fontSize: 11, fontWeight: 700, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer' }}>Restore</button>
-                      <button onClick={e => { e.stopPropagation(); deleteForever(n.id) }} style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}>Delete</button>
-                    </>
+                    <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                      <button onClick={e => { e.stopPropagation(); restoreNote(n.id) }} style={{ fontSize: 12, fontWeight: 700, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Restore</button>
+                      <button onClick={e => { e.stopPropagation(); deleteForever(n.id) }} style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Delete forever</button>
+                    </div>
                   )}
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
+
+          {/* Trash pinned at the bottom */}
+          <div className={'trash-bar' + (tab === 'trash' ? ' on' : '')} onClick={() => setTab(tab === 'trash' ? 'notes' : 'trash')}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            {tab === 'trash' ? '‹ Back to Notes' : 'Trash'}
+            {trashList.length > 0 && tab !== 'trash' && <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--slate)' }}>{trashList.length}</span>}
+          </div>
         </div>
 
         <div className="notes-editor">
           {!note ? (
             <div style={{ padding: 60, textAlign: 'center', color: 'var(--slate)', fontSize: 14 }}>{tab === 'trash' ? 'Restore a note to edit it.' : 'Select a note, or create one.'}</div>
           ) : (
-            <div style={{ maxWidth: 780, margin: '0 auto', padding: '20px 28px 80px' }}>
+            <div style={{ maxWidth: 780, margin: '0 auto', padding: '20px 28px 40px' }}>
               <button onClick={() => setActiveId(null)} className="notes-back" style={{ display: 'none', alignItems: 'center', background: 'none', border: 'none', color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', marginBottom: 10, fontSize: 13 }}>‹ Notes</button>
 
               <input value={note.title} onChange={e => queueSave({ ...note, title: e.target.value })} placeholder="Untitled"
@@ -316,24 +360,21 @@ export default function NotesPage() {
                   <input type="checkbox" checked={!!note.allow_public_edit} onChange={e => queueSave({ ...note, allow_public_edit: e.target.checked })} style={{ width: 14, height: 14, accentColor: 'var(--coral)' }} />
                   Viewers can edit
                 </label>
-                {/* ⋯ more menu */}
                 <div style={{ position: 'relative' }}>
                   <button className="icon-btn" onClick={() => setMoreOpen(v => !v)} title="More" style={{ width: 30, height: 30 }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
                   </button>
-                  {moreOpen && (
-                    <>
-                      <div onClick={() => setMoreOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                      <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 190 }}>
-                        <button style={menuItem} onClick={duplicateNote}>Duplicate</button>
-                        <button style={menuItem} onClick={() => { queueSave({ ...note, pinned: !note.pinned }); setMoreOpen(false) }}>{note.pinned ? 'Unpin' : 'Pin to top'}</button>
-                        <button style={menuItem} onClick={copyLink}>Copy link</button>
-                        <button style={menuItem} onClick={printNote}>Print</button>
-                        <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                        <button style={{ ...menuItem, color: '#dc2626' }} onClick={() => trashNote(note.id)}>Move to Trash</button>
-                      </div>
-                    </>
-                  )}
+                  {moreOpen && (<>
+                    <div onClick={() => setMoreOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                    <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 190 }}>
+                      <button style={menuItem} onClick={duplicateNote}>Duplicate</button>
+                      <button style={menuItem} onClick={() => { queueSave({ ...note, pinned: !note.pinned }); setMoreOpen(false) }}>{note.pinned ? 'Unpin' : 'Pin to top'}</button>
+                      <button style={menuItem} onClick={copyLink}>Copy link</button>
+                      <button style={menuItem} onClick={printNote}>Print</button>
+                      <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+                      <button style={{ ...menuItem, color: '#dc2626' }} onClick={() => trashNote(note.id)}>Move to Trash</button>
+                    </div>
+                  </>)}
                 </div>
               </div>
               <input ref={coverInput} type="file" accept="image/*,video/*" style={{ display: 'none' }} onChange={e => onCoverFile(e.target.files)} />
@@ -351,10 +392,9 @@ export default function NotesPage() {
               )}
 
               <RichTextEditor key={note.id} value={note.body} onChange={html => queueSave({ ...note, body: html })}
-                placeholder="Start writing… use @ to mention a teammate" mentions={team} bordered={false} minHeight={220} maxHeight={'none' as any} />
+                placeholder="Start writing… use @ to mention a teammate" mentions={team} bordered={false} minHeight={200} maxHeight={'none' as any} />
 
-              {/* Checklist */}
-              <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
+              <div style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Checklist</h3>
                   {(note.checklist || []).length > 0 && <span style={{ fontSize: 12, color: 'var(--slate)' }}>{checklistDone}/{note.checklist.length}</span>}
@@ -371,10 +411,9 @@ export default function NotesPage() {
                   style={{ marginTop: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>+ Add item</button>
               </div>
 
-              {/* Voice notes */}
               <div style={{ marginTop: 22 }}>
                 <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Voice notes</h3>
-                {audios.map((a, idx) => {
+                {audios.map((a) => {
                   const gi = (note.attachments || []).indexOf(a)
                   return (
                     <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -392,37 +431,52 @@ export default function NotesPage() {
                 <VoiceRecorder companyId={companyId} onRecorded={a => setAllAttachments([...(note.attachments || []), a])} />
               </div>
 
-              {/* Photos & videos */}
               <div style={{ marginTop: 22 }}>
                 <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Photos &amp; videos</h3>
                 <AttachmentUploader companyId={companyId} value={media} onChange={next => setAllAttachments([...next, ...audios])} folder="notes" />
               </div>
 
-              {/* Tags + reminder */}
-              <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: 240 }}>
-                  <p style={{ margin: '0 0 7px', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Tags</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                    {(note.tags || []).map(t => (
-                      <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '4px 9px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)' }}>
-                        #{t}
-                        <button onClick={() => queueSave({ ...note, tags: (note.tags || []).filter(x => x !== t) })} style={{ background: 'none', border: 'none', color: 'var(--coral)', cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
-                      </span>
-                    ))}
-                    <input value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag() } }} onBlur={addTag}
-                      placeholder="Add tag…" style={{ border: 'none', outline: 'none', fontSize: 13, minWidth: 90, background: 'transparent' }} />
-                  </div>
+              {/* Evernote-style footer: reminder + tags */}
+              <div style={{ marginTop: 26, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {/* Reminder */}
+                <div style={{ position: 'relative' }}>
+                  <button className={'footer-btn' + (note.reminder_at ? ' on' : '')} onClick={() => setRemOpen(v => !v)}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    {note.reminder_at ? fmtReminder(note.reminder_at) : 'Add reminder'}
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  {remOpen && (<>
+                    <div onClick={() => setRemOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                    <div style={{ position: 'absolute', bottom: '120%', left: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 8, minWidth: 220 }}>
+                      <button style={remItem} onClick={() => setReminder(presetIso(1))}>Tomorrow, 9:00 AM</button>
+                      <button style={remItem} onClick={() => setReminder(presetIso(2))}>In 2 days, 9:00 AM</button>
+                      <button style={remItem} onClick={() => setReminder(presetIso(7))}>In 1 week, 9:00 AM</button>
+                      <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0', paddingTop: 8 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', display: 'block', margin: '0 6px 5px' }}>Pick date &amp; time</label>
+                        <input type="datetime-local" value={toLocalInput(note.reminder_at)} onChange={e => setReminder(fromLocalInput(e.target.value))}
+                          style={{ width: '100%', boxSizing: 'border-box', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 9px', fontSize: 12.5 }} />
+                      </div>
+                      {note.reminder_at && <button style={{ ...remItem, color: '#dc2626' }} onClick={() => setReminder(null)}>Remove reminder</button>}
+                    </div>
+                  </>)}
                 </div>
-                <div style={{ minWidth: 220 }}>
-                  <p style={{ margin: '0 0 7px', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Reminder</p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={note.reminder_at ? 'var(--coral)' : 'var(--slate)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                    <input type="datetime-local" value={toLocalInput(note.reminder_at)} onChange={e => queueSave({ ...note, reminder_at: fromLocalInput(e.target.value) })}
-                      style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '6px 9px', fontSize: 12.5, color: 'var(--ink)' }} />
-                    {note.reminder_at && <button onClick={() => queueSave({ ...note, reminder_at: null })} style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 15 }}>×</button>}
-                  </div>
-                  {note.reminder_at && <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--coral)', fontWeight: 600 }}>Reminder set for {fmtReminder(note.reminder_at)}</p>}
-                </div>
+
+                {/* Tags */}
+                {(note.tags || []).map(t => (
+                  <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 700, padding: '6px 11px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)' }}>
+                    #{t}
+                    <button onClick={() => queueSave({ ...note, tags: (note.tags || []).filter(x => x !== t) })} style={{ background: 'none', border: 'none', color: 'var(--coral)', cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
+                  </span>
+                ))}
+                {tagAdding ? (
+                  <input autoFocus value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag() } else if (e.key === 'Escape') { setTagAdding(false); setTagInput('') } }} onBlur={addTag}
+                    placeholder="tag…" style={{ border: '1px solid var(--coral)', borderRadius: 20, outline: 'none', fontSize: 12.5, padding: '6px 11px', width: 100 }} />
+                ) : (
+                  <button className="footer-btn" onClick={() => setTagAdding(true)}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                    Add tag
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -455,3 +509,4 @@ export default function NotesPage() {
 const coverBtn: React.CSSProperties = { padding: '5px 11px', borderRadius: 8, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)' }
 const metaBtn: React.CSSProperties = { padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }
 const menuItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
+const remItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
