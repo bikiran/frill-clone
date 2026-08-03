@@ -204,16 +204,32 @@ export default function GalleryPage() {
   const [toast, setToast] = useState('')
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2600) }
 
-  // Share = copy public link(s), or the native share sheet on mobile.
   const toAttachment = (it: any) => ({ url: it.url, kind: it.kind || ((it.type || '').startsWith('video/') ? 'video' : 'image'), name: it.title || it.name || '', type: it.type })
+
+  // Share = one short, branded colvy link that opens a scrollable gallery page
+  // (the same /m/ viewer customers get) with a download button per item —
+  // rather than a wall of raw storage URLs.
+  const [sharing, setSharing] = useState(false)
   const shareItems = async (list: any[]) => {
-    const urls = list.map((i: any) => i.url).filter(Boolean)
-    if (!urls.length) return
+    if (!list.length || !companyId || sharing) return
+    setSharing(true); showToast('Creating link…')
     try {
-      if ((navigator as any).share && urls.length === 1) { await (navigator as any).share({ url: urls[0], title: list[0].title || 'Media' }); return }
-    } catch { /* cancelled / unsupported → fall through to copy */ }
-    try { await navigator.clipboard.writeText(urls.join('\n')); showToast(urls.length === 1 ? 'Link copied' : `${urls.length} links copied`) }
-    catch { showToast('Could not copy the link') }
+      const mediaUrls = list.map((it: any) => ({ url: it.url, name: it.title || 'File', type: it.type || (it.kind === 'video' ? 'video/mp4' : 'image/jpeg') }))
+      const res = await fetch('/api/short-links/create', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, kind: 'media', mediaUrls, sentBy: me, label: list.length === 1 ? (list[0].title || 'Shared media') : `${list.length} items` }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d.url) throw new Error(d.error || 'link failed')
+      try { if ((navigator as any).share) { await (navigator as any).share({ url: d.url, title: 'Shared media' }); return } } catch { /* fall through to copy */ }
+      try { await navigator.clipboard.writeText(d.url); showToast('Gallery link copied') }
+      catch { showToast(d.url) }
+    } catch {
+      // Never leave the user empty-handed: fall back to the raw links.
+      const urls = list.map((i: any) => i.url).filter(Boolean)
+      try { await navigator.clipboard.writeText(urls.join('\n')); showToast('Links copied') }
+      catch { showToast('Could not create the link') }
+    } finally { setSharing(false) }
   }
 
   // Send/forward media into a contact's chat — mirrors the Inbox forward: find

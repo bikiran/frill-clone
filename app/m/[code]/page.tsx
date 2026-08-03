@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { toPublicUrl } from '@/lib/storage-url'
+import DownloadAll from './DownloadAll'
 
 export const dynamic = 'force-dynamic'
 
@@ -146,9 +147,12 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
         )}
 
         {multiple && (
-          <p style={{ fontSize: 12.5, color: '#6b7280', margin: '0 0 10px', fontWeight: 600 }}>
-            {media.length} attachments
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '0 0 12px', flexWrap: 'wrap' }}>
+            <p style={{ fontSize: 12.5, color: '#6b7280', margin: 0, fontWeight: 600 }}>
+              {media.length} attachments
+            </p>
+            <DownloadAll items={media.map(m => ({ url: toPublicUrl(m.url), name: m.name }))} accent={accent} />
+          </div>
         )}
 
         {/* Gallery — a tidy grid; tap an image to open it full-size, or use the
