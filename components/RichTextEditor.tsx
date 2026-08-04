@@ -39,6 +39,7 @@ export default function RichTextEditor({
   const hoverBlockRef = useRef<HTMLElement | null>(null)
   const dragBlockRef = useRef<HTMLElement | null>(null)
   const dropRef = useRef<{ target: HTMLElement; before: boolean } | null>(null)
+  const hideT = useRef<any>(null)
   const [rec, setRec] = useState<'idle' | 'recording' | 'uploading'>('idle')
   const [recSecs, setRecSecs] = useState(0)
   const recRef = useRef<MediaRecorder | null>(null)
@@ -218,11 +219,15 @@ export default function RichTextEditor({
     if (!blk || blk === ref.current) { h.style.opacity = '0'; h.style.pointerEvents = 'none'; hoverBlockRef.current = null; return }
     hoverBlockRef.current = blk
     const r = blk.getBoundingClientRect()
-    h.style.top = `${r.top + Math.min(15, r.height / 2)}px`
-    h.style.left = `${Math.max(4, r.left - 30)}px`
+    // Sit the handle in the left gutter, its right edge flush with the block so
+    // there's no dead gap the pointer has to cross to grab it.
+    h.style.top = `${r.top + Math.min(16, r.height / 2)}px`
+    h.style.left = `${Math.max(2, r.left - 32)}px`
     h.style.opacity = '1'; h.style.pointerEvents = 'auto'
   }
-  const onContentMove = (e: React.MouseEvent) => { if (!blockDrag || dragBlockRef.current) return; positionHandle(topBlockAt(e.clientX, e.clientY)) }
+  const cancelHide = () => clearTimeout(hideT.current)
+  const scheduleHide = () => { clearTimeout(hideT.current); hideT.current = setTimeout(() => { if (!dragBlockRef.current) positionHandle(null) }, 280) }
+  const onContentMove = (e: React.MouseEvent) => { if (!blockDrag || dragBlockRef.current) return; cancelHide(); positionHandle(topBlockAt(e.clientX, e.clientY)) }
   const onDragMove = (e: PointerEvent) => {
     e.preventDefault()
     const content = ref.current, ind = indicatorRef.current; if (!content || !ind) return
@@ -352,7 +357,7 @@ export default function RichTextEditor({
         onKeyUp={detectMention}
         onClick={() => setMenu(null)}
         onMouseMove={onContentMove}
-        onMouseLeave={(e) => { if (!dragBlockRef.current && !handleRef.current?.contains(e.relatedTarget as Node)) positionHandle(null) }}
+        onMouseLeave={() => { if (!dragBlockRef.current) scheduleHide() }}
         onBlur={() => { emit(); setTimeout(() => setMenu(null), 150) }}
         style={{ minHeight, maxHeight, overflowY: 'auto', padding: bordered ? '10px 12px' : '4px 0', fontSize: 16, lineHeight: 1.6, color: 'var(--ink)' }}
       />
@@ -360,8 +365,9 @@ export default function RichTextEditor({
       {blockDrag && (
         <>
           <button ref={handleRef} type="button" onPointerDown={onHandleDown} title="Drag to move this line"
-            style={{ position: 'fixed', top: 0, left: 0, opacity: 0, transform: 'translateY(-50%)', zIndex: 100055, width: 26, height: 26, borderRadius: 8, border: '1px solid var(--border,#e5e7eb)', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.14)', color: '#4b5563', cursor: 'grab', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity .1s ease', touchAction: 'none' }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="5" r="1.9"/><circle cx="16" cy="5" r="1.9"/><circle cx="8" cy="12" r="1.9"/><circle cx="16" cy="12" r="1.9"/><circle cx="8" cy="19" r="1.9"/><circle cx="16" cy="19" r="1.9"/></svg>
+            onMouseEnter={cancelHide} onMouseLeave={() => { if (!dragBlockRef.current) scheduleHide() }}
+            style={{ position: 'fixed', top: 0, left: 0, opacity: 0, transform: 'translateY(-50%)', zIndex: 100055, width: 30, height: 30, borderRadius: 9, border: '1px solid var(--border,#e5e7eb)', background: '#fff', boxShadow: '0 3px 10px rgba(0,0,0,0.18)', color: '#374151', cursor: 'grab', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity .12s ease, box-shadow .12s ease', touchAction: 'none' }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="5" r="2.15"/><circle cx="16" cy="5" r="2.15"/><circle cx="8" cy="12" r="2.15"/><circle cx="16" cy="12" r="2.15"/><circle cx="8" cy="19" r="2.15"/><circle cx="16" cy="19" r="2.15"/></svg>
           </button>
           <div ref={indicatorRef} style={{ position: 'fixed', top: 0, left: 0, height: 3, borderRadius: 2, background: 'var(--coral,#ff7a6b)', opacity: 0, zIndex: 100054, pointerEvents: 'none', transform: 'translateY(-50%)', boxShadow: '0 0 0 3px rgba(255,122,107,0.18)', transition: 'top .05s linear, left .05s linear, width .05s linear, opacity .12s' }} />
         </>

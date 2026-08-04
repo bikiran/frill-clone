@@ -108,12 +108,20 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
               <div style={{ marginTop: 26 }}>
                 <p style={{ margin: '0 0 10px', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#6b7280' }}>Voice notes</p>
                 {audios.map((a: any, i: number) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', minWidth: 100 }}>{a.name || 'Voice note'}</span>
-                    <audio controls src={toPublicUrl(a.url)} data-name={a.name || 'Voice note'} style={{ height: 34, flex: 1, minWidth: 180 }} />
-                    <a href={toPublicUrl(a.url)} target="_blank" rel="noopener" download={a.name || 'voice-note'} style={{ color: accent, display: 'flex', padding: 3 }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    </a>
+                  <div key={i} className="rte-voice" style={{ margin: '0 0 8px' }}>
+                    <button className="rte-voice-play" type="button" title="Play" aria-label="Play">
+                      <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M7 5.5v13a1 1 0 0 0 1.5.87l11-6.5a1 1 0 0 0 0-1.74l-11-6.5A1 1 0 0 0 7 5.5z"/></svg>
+                    </button>
+                    <span className="rte-voice-lbl">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                      <span className="rte-voice-name">{a.name || 'Voice note'}</span>
+                    </span>
+                    <span className="rte-voice-act">
+                      <button className="rte-voice-btn" type="button" data-va="download" title="Download">
+                        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      </button>
+                    </span>
+                    <audio src={toPublicUrl(a.url)} data-name={a.name || 'Voice note'} preload="metadata" style={{ display: 'none' }} />
                   </div>
                 ))}
               </div>

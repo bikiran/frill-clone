@@ -57,7 +57,8 @@ export default function NotesPage() {
   const [remOpen, setRemOpen] = useState(false)
   const [tagAdding, setTagAdding] = useState(false)
   const [tagInput, setTagInput] = useState('')
-  const [dragI, setDragI] = useState<number | null>(null)
+  const [dragCheck, setDragCheck] = useState<{ from: number; to: number } | null>(null)
+  const checkListRef = useRef<HTMLDivElement>(null)
   const [toolbarEl, setToolbarEl] = useState<HTMLDivElement | null>(null)
   const autoOpened = useRef(false)
   const coverInput = useRef<HTMLInputElement>(null)
@@ -105,6 +106,23 @@ export default function NotesPage() {
     const arr = [...(note.checklist || [])]
     const [it] = arr.splice(from, 1); arr.splice(to, 0, it)
     queueSave({ ...note, checklist: arr })
+  }
+  // Pointer-based checklist reorder: a floating drop line shows where the row
+  // will land and the picked-up row lifts — far clearer than native HTML5 drag.
+  const startCheckDrag = (ci: number) => (e: React.PointerEvent) => {
+    e.preventDefault()
+    const rows = () => Array.from(checkListRef.current?.querySelectorAll('[data-check-row]') || []) as HTMLElement[]
+    const move = (ev: PointerEvent) => {
+      const rs = rows(); let to = rs.length
+      for (let i = 0; i < rs.length; i++) { const r = rs[i].getBoundingClientRect(); if (ev.clientY < r.top + r.height / 2) { to = i; break } }
+      setDragCheck({ from: ci, to })
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up)
+      setDragCheck(cur => { if (cur) { const dest = cur.to > cur.from ? cur.to - 1 : cur.to; moveCheck(cur.from, dest) } return null })
+    }
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+    setDragCheck({ from: ci, to: ci })
   }
 
   useEffect(() => {
@@ -476,21 +494,29 @@ export default function NotesPage() {
                   <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Checklist</h3>
                   {(note.checklist || []).length > 0 && <span style={{ fontSize: 12, color: 'var(--slate)' }}>{checklistDone}/{note.checklist.length}</span>}
                 </div>
+                <div ref={checkListRef}>
                 {(note.checklist || []).map((c, ci) => (
-                  <div key={c.id}
-                    onDragOver={e => { e.preventDefault() }}
-                    onDrop={e => { e.preventDefault(); if (dragI !== null) moveCheck(dragI, ci); setDragI(null) }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 0', borderRadius: 6, background: dragI === ci ? 'var(--peach)' : 'transparent' }}>
-                    <span draggable onDragStart={() => setDragI(ci)} onDragEnd={() => setDragI(null)} title="Drag to reorder"
-                      style={{ cursor: 'grab', color: 'var(--slate)', display: 'flex', padding: '0 3px', opacity: 0.55 }}>
-                      <svg width="11" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.6"/><circle cx="15" cy="5" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="19" r="1.6"/><circle cx="15" cy="19" r="1.6"/></svg>
-                    </span>
-                    <input type="checkbox" checked={c.done} onChange={() => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, done: !x.done } : x) })} style={{ width: 17, height: 17, accentColor: 'var(--coral)', flexShrink: 0 }} />
-                    <input value={c.text} onChange={e => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, text: e.target.value } : x) })}
-                      placeholder="List item" style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, color: c.done ? 'var(--slate)' : 'var(--ink)', textDecoration: c.done ? 'line-through' : 'none', background: 'transparent' }} />
-                    <button onClick={() => queueSave({ ...note, checklist: note.checklist.filter(x => x.id !== c.id) })} style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 17, lineHeight: 1 }}>×</button>
+                  <div key={c.id} data-check-row style={{ position: 'relative' }}>
+                    {dragCheck && dragCheck.to === ci && dragCheck.from !== ci && dragCheck.from !== ci - 1 && (
+                      <div style={{ position: 'absolute', top: -1, left: 22, right: 6, height: 2.5, borderRadius: 2, background: 'var(--coral)', boxShadow: '0 0 0 3px rgba(255,122,107,0.16)' }} />
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 0', borderRadius: 8, transition: 'background .12s, box-shadow .12s',
+                      ...(dragCheck?.from === ci ? { background: 'var(--peach)', boxShadow: '0 4px 14px rgba(0,0,0,0.10)', opacity: 0.9 } : {}) }}>
+                      <span onPointerDown={startCheckDrag(ci)} title="Drag to reorder"
+                        style={{ cursor: 'grab', color: dragCheck?.from === ci ? 'var(--coral)' : 'var(--slate)', display: 'flex', padding: '4px 4px', opacity: dragCheck?.from === ci ? 1 : 0.6, touchAction: 'none' }}>
+                        <svg width="13" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="2"/><circle cx="15" cy="5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="19" r="2"/><circle cx="15" cy="19" r="2"/></svg>
+                      </span>
+                      <input type="checkbox" checked={c.done} onChange={() => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, done: !x.done } : x) })} style={{ width: 17, height: 17, accentColor: 'var(--coral)', flexShrink: 0 }} />
+                      <input value={c.text} onChange={e => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, text: e.target.value } : x) })}
+                        placeholder="List item" style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, color: c.done ? 'var(--slate)' : 'var(--ink)', textDecoration: c.done ? 'line-through' : 'none', background: 'transparent' }} />
+                      <button onClick={() => queueSave({ ...note, checklist: note.checklist.filter(x => x.id !== c.id) })} style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 17, lineHeight: 1 }}>×</button>
+                    </div>
                   </div>
                 ))}
+                {dragCheck && dragCheck.to === (note.checklist || []).length && dragCheck.from !== (note.checklist || []).length - 1 && (
+                  <div style={{ position: 'relative', height: 0 }}><div style={{ position: 'absolute', top: -1, left: 22, right: 6, height: 2.5, borderRadius: 2, background: 'var(--coral)', boxShadow: '0 0 0 3px rgba(255,122,107,0.16)' }} /></div>
+                )}
+                </div>
                 <button onClick={() => queueSave({ ...note, checklist: [...(note.checklist || []), { id: rid(), text: '', done: false }] })}
                   style={{ marginTop: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>+ Add item</button>
               </div>
@@ -499,16 +525,24 @@ export default function NotesPage() {
                 <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Voice notes</h3>
                 {audios.map((a) => {
                   const gi = (note.attachments || []).indexOf(a)
+                  const nm = a.name || 'Voice note'
                   return (
-                    <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 8, flexWrap: 'wrap' }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                      <input value={a.name || 'Voice note'} onChange={e => setAllAttachments((note.attachments || []).map((x, j) => j === gi ? { ...x, name: e.target.value } : x))}
-                        style={{ border: 'none', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--ink)', minWidth: 120, background: 'transparent' }} />
-                      <audio controls src={a.url} data-name={a.name || 'Voice note'} style={{ height: 34, flex: 1, minWidth: 180 }} />
-                      <a href={a.url} target="_blank" rel="noopener" download={a.name || 'voice-note'} title="Download" style={{ color: 'var(--slate)', display: 'flex', padding: 3 }}>
+                    <div key={gi} data-vrow style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 12, marginBottom: 8, background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+                      {/* Play feeds the bottom AudioDock (no inline player). */}
+                      <button title="Play" onClick={e => { const r = e.currentTarget.closest('[data-vrow]'); (r?.querySelector('audio') as HTMLAudioElement)?.play().catch(() => {}) }}
+                        style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'var(--coral)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" style={{ marginLeft: 1 }}><path d="M7 5.5v13a1 1 0 0 0 1.5.87l11-6.5a1 1 0 0 0 0-1.74l-11-6.5A1 1 0 0 0 7 5.5z"/></svg>
+                      </button>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                        <input value={nm} onChange={e => setAllAttachments((note.attachments || []).map((x, j) => j === gi ? { ...x, name: e.target.value } : x))}
+                          title="Rename voice note" style={{ border: 'none', outline: 'none', fontSize: 13, fontWeight: 700, color: 'var(--ink)', flex: 1, minWidth: 0, background: 'transparent' }} />
+                      </span>
+                      <a href={a.url} target="_blank" rel="noopener" download={nm} title="Download" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                       </a>
-                      <button onClick={() => setAllAttachments((note.attachments || []).filter((_, j) => j !== gi))} style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 16 }}>×</button>
+                      <button onClick={() => setAllAttachments((note.attachments || []).filter((_, j) => j !== gi))} title="Remove" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 17, lineHeight: 1 }}>×</button>
+                      <audio src={a.url} data-name={nm} preload="metadata" style={{ display: 'none' }} />
                     </div>
                   )
                 })}
