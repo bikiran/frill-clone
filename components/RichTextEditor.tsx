@@ -127,6 +127,22 @@ export default function RichTextEditor({
   const normalizeBlocks = () => {
     const root = ref.current; if (!root) return
     let changed = false
+    // Pass 0 — flatten nested block wrappers, e.g. <div><div>L1</div><div>L2</div></div>,
+    // so each inner line becomes a top-level block and drags on its own. (contentEditable
+    // sometimes wraps several lines in one container, which then dragged as a single unit.)
+    for (let guard = 0; guard < 40; guard++) {
+      let didUnwrap = false
+      Array.from(root.children).forEach(el => {
+        const b = el as HTMLElement
+        if (b.classList.contains('rte-voice') || ['UL', 'OL', 'TABLE', 'BLOCKQUOTE', 'PRE', 'FIGURE'].includes(b.nodeName)) return
+        if (b.nodeName !== 'DIV' && b.nodeName !== 'P') return
+        if (!Array.from(b.childNodes).some(n => isBlockEl(n))) return   // no block children — leave it
+        while (b.firstChild) root.insertBefore(b.firstChild, b)          // hoist children up
+        root.removeChild(b)
+        didUnwrap = true; changed = true
+      })
+      if (!didUnwrap) break
+    }
     // Pass 1 — wrap runs of top-level inline/text nodes into a <p> block.
     let child = root.firstChild, bucket: HTMLElement | null = null
     while (child) {
@@ -505,7 +521,7 @@ export default function RichTextEditor({
         onClick={() => setMenu(null)}
         onMouseMove={onContentMove}
         onMouseLeave={() => { if (!dragBlockRef.current) scheduleHide() }}
-        onBlur={() => { emit(); setTimeout(() => setMenu(null), 150) }}
+        onBlur={() => { if (blockDrag) normalizeBlocks(); emit(); setTimeout(() => setMenu(null), 150) }}
         style={{ minHeight, maxHeight, overflowY: 'auto', padding: bordered ? '10px 12px' : '4px 0', fontSize: 16, lineHeight: 1.6, color: 'var(--ink)' }}
       />
 

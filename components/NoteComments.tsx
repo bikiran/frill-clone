@@ -105,21 +105,22 @@ export default function NoteComments({ code, noteId, companyId, accent = '#ff7a6
         </div>
       )}
 
-      <div style={{ position: 'relative', border: '1px solid var(--border,#e5e7eb)', borderRadius: 14, padding: 10, background: '#fff' }}>
+      <div style={{ position: 'relative' }}>
         {isPublic && askIdentity && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
             <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Your name"
-              style={{ flex: 1, minWidth: 130, padding: '8px 11px', borderRadius: 9, border: '1px solid var(--border,#e5e7eb)', fontSize: 13.5, outline: 'none' }} />
+              style={{ flex: 1, minWidth: 130, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border,#e5e7eb)', fontSize: 13.5, outline: 'none' }} />
             <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email (optional)"
-              style={{ flex: 1, minWidth: 130, padding: '8px 11px', borderRadius: 9, border: '1px solid var(--border,#e5e7eb)', fontSize: 13.5, outline: 'none' }} />
+              style={{ flex: 1, minWidth: 130, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border,#e5e7eb)', fontSize: 13.5, outline: 'none' }} />
           </div>
         )}
-        <textarea ref={taRef} value={text} onChange={e => onText(e.target.value)} rows={2}
+        {/* The bordered box IS the textarea, so the whole visible area is clickable. */}
+        <textarea ref={taRef} value={text} onChange={e => onText(e.target.value)} rows={3}
           onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); post() } }}
           placeholder={members.length ? 'Leave a note… use @ to mention someone' : 'Leave a note…'}
-          style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', resize: 'vertical', fontSize: 14.5, lineHeight: 1.5, background: 'transparent', color: 'var(--ink,#1a1a1a)', fontFamily: 'inherit' }} />
+          style={{ display: 'block', width: '100%', boxSizing: 'border-box', minHeight: 84, border: '1px solid var(--border,#e5e7eb)', borderRadius: 14, padding: '12px 14px', outline: 'none', resize: 'vertical', fontSize: 14.5, lineHeight: 1.5, background: '#fff', color: 'var(--ink,#1a1a1a)', fontFamily: 'inherit' }} />
         {mention && (
-          <div style={{ position: 'absolute', left: 12, bottom: 46, zIndex: 30, background: '#fff', border: '1px solid var(--border,#e5e7eb)', borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,0,0.16)', padding: 5, minWidth: 170 }}>
+          <div style={{ position: 'absolute', left: 12, bottom: 52, zIndex: 30, background: '#fff', border: '1px solid var(--border,#e5e7eb)', borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,0,0.16)', padding: 5, minWidth: 170 }}>
             {mention.items.map(it => (
               <button key={it.id} type="button" onMouseDown={e => { e.preventDefault(); pickMention(it.name) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 9px', border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--ink,#1a1a1a)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
@@ -130,7 +131,7 @@ export default function NoteComments({ code, noteId, companyId, accent = '#ff7a6
             ))}
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
           <button onClick={post} disabled={busy || !text.trim()}
             style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: (busy || !text.trim()) ? 'var(--border,#e5e7eb)' : accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: (busy || !text.trim()) ? 'default' : 'pointer' }}>
             {busy ? 'Posting…' : 'Post note'}
