@@ -97,8 +97,11 @@ export default function CalendarPage() {
       setEvents(cached.events)
       setLocations(cached.locations)
     }
+    // Outlet filtering is done client-side (below) so it matches the Tasks page:
+    // the server only checks location_id, which misses events assigned to an
+    // outlet via the multi-outlet location_ids array (and never filtered the
+    // merged conversation_tasks at all).
     const params = new URLSearchParams({ companyId, from, to })
-    if (locationFilter) params.set('locationId', locationFilter)
     if (typeFilter) params.set('type', typeFilter)
     const res = await fetch(`/api/calendar?${params}`)
     const d = await res.json()
@@ -112,7 +115,7 @@ export default function CalendarPage() {
       try {
         const { data: rows } = await (supabase as any).from('conversation_tasks')
           .select('*').eq('company_id', companyId)
-          .gte('due_date', from).lte('due_date', to).limit(500)
+          .gte('due_date', from).lte('due_date', to).limit(2000)
         const taskEvents = (rows || [])
           .filter((t: any) => t.due_date)
           .map((t: any) => ({
@@ -126,6 +129,8 @@ export default function CalendarPage() {
             notes: t.text,
             starts_at: t.due_date,
             is_all_day: true,
+            location_id: t.location_id || null,
+            location_ids: Array.isArray(t.location_ids) ? t.location_ids : (t.location_id ? [t.location_id] : []),
             status: (t.status === 'done' || t.done) ? 'completed'
               : t.status === 'in_progress' ? 'in_progress' : 'scheduled',
             assignees: Array.isArray(t.assignees) ? t.assignees : [],
@@ -134,6 +139,14 @@ export default function CalendarPage() {
           }))
         evts = [...evts, ...taskEvents]
       } catch { /* tasks unavailable — just show calendar events */ }
+    }
+
+    // Filter by the selected outlet the same way the Tasks page does: match on
+    // location_id OR any entry in the location_ids array. Events/tasks with no
+    // outlet are hidden while a specific outlet is selected.
+    if (locationFilter) {
+      const outletsOf = (e: any) => (Array.isArray(e.location_ids) && e.location_ids.length) ? e.location_ids : (e.location_id ? [e.location_id] : [])
+      evts = evts.filter(e => outletsOf(e).includes(locationFilter))
     }
 
     const locs = d.locations || []
