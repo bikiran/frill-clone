@@ -120,11 +120,22 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Keep our copy of the order in step.
+    // Keep our copy of the order in step — using WooCommerce's authoritative
+    // status (a PARTIAL refund stays "completed" in Woo; only a FULL refund flips
+    // to "refunded") and the running refunded total, so the panel shows the right
+    // "Partially refunded / Refunded" state instead of a hardcoded guess.
     try {
-      await db.from('woocommerce_orders')
-        .update({ status: 'refunded' })
-        .eq('company_id', companyId).eq('woo_order_id', orderId)
+      const freshRes = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}`, {
+        headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
+      })
+      const fresh = await freshRes.json().catch(() => null)
+      if (fresh) {
+        const refundedTotal = (fresh.refunds || []).reduce((s: number, r: any) => s + Math.abs(parseFloat(r.total || 0)), 0)
+        const up = await db.from('woocommerce_orders')
+          .update({ status: fresh.status, total_refunded: refundedTotal })
+          .eq('company_id', companyId).eq('woo_order_id', orderId)
+        if (up.error) await db.from('woocommerce_orders').update({ status: fresh.status }).eq('company_id', companyId).eq('woo_order_id', orderId)
+      }
     } catch {}
 
     // Leave a trace in the conversation.

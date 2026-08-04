@@ -1635,7 +1635,7 @@ export default function InboxPage() {
                 order_id: o.id, order_number: o.number, status: o.status, total: o.total,
                 currency: o.currency, order_date: o.date, customer_email: email,
                 line_items: o.items, integration_id: o.integration_id, store_url: o.store_url,
-                order_key: o.order_key, payment_url: o.payment_url, _live: true,
+                order_key: o.order_key, payment_url: o.payment_url, total_refunded: o.total_refunded || 0, _live: true,
               })
             }
           })
@@ -2759,8 +2759,30 @@ export default function InboxPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Refund failed')
-      showToast(`Refunded $${Number(data.amount || totalRefund).toFixed(2)}`)
+      const amt = Number(data.amount || totalRefund)
+      showToast(`Refunded $${amt.toFixed(2)}`)
       setRefundModal(null)
+      // Reflect the refund in the order panel immediately (the live refetch below
+      // confirms it), so the order shows Partially refunded / Refunded right away.
+      setWooOrders(prev => prev.map((o: any) => {
+        const oid = o.order_id ?? o.woo_order_id ?? o.id
+        if (String(oid) !== String(m.orderId)) return o
+        const refunded = (Number(o.total_refunded) || 0) + amt
+        const full = refunded + 0.005 >= (parseFloat(o.total) || 0)
+        return { ...o, total_refunded: refunded, status: full ? 'refunded' : o.status }
+      }))
+      // Leave a visible trace in the conversation (WooCommerce keeps its own note;
+      // this one shows up in the Colvy thread so the team sees what happened).
+      if (selected) {
+        try {
+          const nm = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Colvy'
+          await (supabase as any).from('messages').insert({
+            conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+            sender_name: nm, is_internal: true,
+            content: `💸 Refunded $${amt.toFixed(2)} on order #${m.orderNumber}${m.reason ? ` — ${m.reason}` : ''}.`,
+          })
+        } catch {}
+      }
       if (selected) { loadWooData(contact?.id || null); loadConversationExtras(selected.id) }
     } catch (e) {
       alert('Could not issue the refund: ' + e.message)
@@ -7693,9 +7715,17 @@ export default function InboxPage() {
                           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>${(parseFloat(o.total) || 0).toFixed(2)}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: o.status === 'completed' ? '#dcfce7' : o.status === 'processing' ? '#dbeafe' : o.status === 'cancelled' || o.status === 'failed' ? '#fee2e2' : '#fef3c7', color: o.status === 'completed' ? '#059669' : o.status === 'processing' ? '#2563eb' : o.status === 'cancelled' || o.status === 'failed' ? '#dc2626' : '#d97706', fontWeight: 600, textTransform: 'capitalize' }}>{o.status}</span>
+                          <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: o.status === 'completed' ? '#dcfce7' : o.status === 'processing' ? '#dbeafe' : o.status === 'cancelled' || o.status === 'failed' ? '#fee2e2' : o.status === 'refunded' ? '#f3e8ff' : '#fef3c7', color: o.status === 'completed' ? '#059669' : o.status === 'processing' ? '#2563eb' : o.status === 'cancelled' || o.status === 'failed' ? '#dc2626' : o.status === 'refunded' ? '#7c3aed' : '#d97706', fontWeight: 600, textTransform: 'capitalize' }}>{o.status}</span>
                           <span style={{ fontSize: 11, color: '#9ca3af' }}>{o.order_date ? new Date(o.order_date).toLocaleDateString('en-AU') : ''}</span>
                         </div>
+                        {Number(o.total_refunded) > 0 && o.status !== 'refunded' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5 }}>
+                            <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: '#f3e8ff', color: '#7c3aed', fontWeight: 700 }}>
+                              {Number(o.total_refunded) + 0.005 >= (parseFloat(o.total) || 0) ? 'Refunded' : 'Partially refunded'}
+                            </span>
+                            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#dc2626' }}>−${Number(o.total_refunded).toFixed(2)}</span>
+                          </div>
+                        )}
                         {Array.isArray(o.line_items) && o.line_items.length > 0 && (() => {
                           const withImg = o.line_items.filter((li: any) => li.image?.src)
                           const images = withImg.map((li: any) => ({ src: li.image.src, name: dec(li.name) }))
