@@ -9,6 +9,10 @@ import { createPortal } from 'react-dom'
 // HTML on input (debounced) and on blur. Remount it per record with a `key` so
 // the initial value loads cleanly without fighting the caret.
 const CELL = 'border:1px solid #d4d4d8;padding:6px 8px;min-width:40px;vertical-align:top;'
+const FONTS: [string, string][] = [['Sans serif', 'sans-serif'], ['Serif', 'serif'], ['Monospace', 'monospace'], ['Georgia', 'Georgia, serif'], ['Courier', '"Courier New", monospace']]
+const SIZES: [string, string][] = [['Small', '2'], ['Normal', '3'], ['Large', '5'], ['Huge', '7']]
+const FORE = ['#1a1a1a', '#6b7280', '#dc2626', '#ea580c', '#d97706', '#16a34a', '#2563eb', '#7c3aed', '#db2777', '#ff7a6b']
+const HILITE: [string, string][] = [['Yellow', '#fff3bf'], ['Green', '#d3f9d8'], ['Blue', '#d0ebff'], ['Pink', '#ffe3e3'], ['Orange', '#ffe8cc'], ['Purple', '#f3d9fa'], ['None', 'transparent']]
 
 type Mention = { id: string; name: string }
 
@@ -32,6 +36,7 @@ export default function RichTextEditor({
   const ref = useRef<HTMLDivElement>(null)
   const timer = useRef<any>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: Mention[]; active: number } | null>(null)
+  const [pop, setPop] = useState<{ kind: 'font' | 'size' | 'fore' | 'hilite'; x: number; y: number } | null>(null)
   // Block drag-to-reorder (Notion/Evernote style): a floating handle follows the
   // block under the cursor; dragging shows a drop line and moves that block.
   const handleRef = useRef<HTMLButtonElement>(null)
@@ -72,6 +77,7 @@ export default function RichTextEditor({
     const html = `<div class="rte-voice" contenteditable="false" data-voice>${voiceCardInner(url, name, dur)}</div><p><br></p>`
     ref.current?.focus()
     document.execCommand('insertHTML', false, html)
+    normalizeVoice()   // hoist the card to a top-level block so drag moves only it
     emit()
   }
 
@@ -95,6 +101,18 @@ export default function RichTextEditor({
       card.className = 'rte-voice'; card.setAttribute('contenteditable', 'false'); card.setAttribute('data-voice', '')
       card.innerHTML = voiceCardInner(url, name, durText)
       changed = true
+    })
+    // A voice card must be a direct child of the editor, else dragging its
+    // wrapper block would carry the adjacent text with it. Hoist any nested card
+    // out to the top level (splitting its wrapper).
+    Array.from(root.querySelectorAll('.rte-voice')).forEach(el => {
+      const card = el as HTMLElement
+      while (card.parentElement && card.parentElement !== root) {
+        const wrap = card.parentElement
+        wrap.after(card)                       // move card just after its wrapper
+        if (!wrap.textContent?.trim() && !wrap.querySelector('img,video,audio,table')) wrap.remove()
+        changed = true
+      }
     })
     if (changed) emit()
   }
@@ -323,6 +341,12 @@ export default function RichTextEditor({
     </button>
   )
   const Sep = () => <span style={{ width: 1, background: 'var(--border)', margin: '0 3px', alignSelf: 'stretch' }} />
+  const openPop = (kind: 'font' | 'size' | 'fore' | 'hilite') => (e: React.MouseEvent) => {
+    e.preventDefault()
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setPop(p => (p && p.kind === kind) ? null : { kind, x: Math.min(r.left, window.innerWidth - 230), y: r.bottom + 6 })
+  }
+  const applyPop = (cmd: string, val: string) => { exec(cmd, val); setPop(null) }
 
   return (
     <div style={{ border: bordered ? '1px solid var(--border)' : 'none', borderRadius: bordered ? 10 : 0, overflow: bordered ? 'hidden' : 'visible', background: '#fff' }}>
@@ -355,6 +379,28 @@ export default function RichTextEditor({
       {(() => {
       const toolbarNode = (
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: big ? 5 : 4, padding: big ? '9px 10px' : 6, borderBottom: toolbarPortal ? 'none' : '1px solid var(--border)', background: toolbarPortal ? 'transparent' : 'var(--canvas)', position: toolbarPortal ? 'static' : 'sticky', top: 0, zIndex: 2, borderRadius: bordered ? 0 : 12, boxShadow: (big && !toolbarPortal) ? '0 1px 0 rgba(0,0,0,0.03)' : 'none' }}>
+        <Btn title="Undo" on={() => exec('undo')}>
+          <svg width={big ? 17 : 15} height={big ? 17 : 15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>
+        </Btn>
+        <Btn title="Redo" on={() => exec('redo')}>
+          <svg width={big ? 17 : 15} height={big ? 17 : 15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h1"/></svg>
+        </Btn>
+        <Sep />
+        <button type="button" title="Font" className="rte-btn" onMouseDown={e => e.preventDefault()} onClick={openPop('font')}
+          style={{ height: S, padding: `0 ${big ? 11 : 9}px`, borderRadius: 9, border: '1px solid var(--border)', background: pop?.kind === 'font' ? 'var(--peach)' : '#fff', color: 'var(--ink)', fontSize: big ? 14 : 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          Aa<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <button type="button" title="Font size" className="rte-btn" onMouseDown={e => e.preventDefault()} onClick={openPop('size')}
+          style={{ height: S, padding: `0 ${big ? 11 : 9}px`, borderRadius: 9, border: '1px solid var(--border)', background: pop?.kind === 'size' ? 'var(--peach)' : '#fff', color: 'var(--ink)', fontSize: big ? 14 : 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          Size<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <Btn title="Text color" on={openPop('fore')} active={pop?.kind === 'fore'}>
+          <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}><span style={{ fontWeight: 800 }}>A</span><span style={{ width: 15, height: 3, borderRadius: 2, background: 'var(--coral)', marginTop: 1 }} /></span>
+        </Btn>
+        <Btn title="Highlight" on={openPop('hilite')} active={pop?.kind === 'hilite'}>
+          <svg width={big ? 17 : 15} height={big ? 17 : 15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 11-6 6v3h3l6-6"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>
+        </Btn>
+        <Sep />
         <Btn title="Bold" on={() => exec('bold')}><b>B</b></Btn>
         <Btn title="Italic" on={() => exec('italic')}><i>I</i></Btn>
         <Btn title="Underline" on={() => exec('underline')}><u>U</u></Btn>
@@ -420,6 +466,42 @@ export default function RichTextEditor({
             <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="5" r="2.15"/><circle cx="16" cy="5" r="2.15"/><circle cx="8" cy="12" r="2.15"/><circle cx="16" cy="12" r="2.15"/><circle cx="8" cy="19" r="2.15"/><circle cx="16" cy="19" r="2.15"/></svg>
           </button>
           <div ref={indicatorRef} style={{ position: 'fixed', top: 0, left: 0, height: 3, borderRadius: 2, background: 'var(--coral,#ff7a6b)', opacity: 0, zIndex: 100054, pointerEvents: 'none', transform: 'translateY(-50%)', boxShadow: '0 0 0 3px rgba(255,122,107,0.18)', transition: 'opacity .1s' }} />
+        </>
+      )}
+
+      {pop && (
+        <>
+          <div onMouseDown={e => { e.preventDefault(); setPop(null) }} style={{ position: 'fixed', inset: 0, zIndex: 100059 }} />
+          <div style={{ position: 'fixed', left: pop.x, top: pop.y, zIndex: 100061, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 34px rgba(0,0,0,0.18)', padding: 7, minWidth: (pop.kind === 'fore' || pop.kind === 'hilite') ? 0 : 176 }}>
+            {pop.kind === 'font' && FONTS.map(([label, val]) => (
+              <button key={val} type="button" onMouseDown={e => { e.preventDefault(); applyPop('fontName', val) }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 11px', border: 'none', borderRadius: 8, background: 'transparent', color: 'var(--ink)', fontFamily: val, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--peach)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>{label}</button>
+            ))}
+            {pop.kind === 'size' && SIZES.map(([label, val]) => (
+              <button key={val} type="button" onMouseDown={e => { e.preventDefault(); applyPop('fontSize', val) }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 11px', border: 'none', borderRadius: 8, background: 'transparent', color: 'var(--ink)', fontSize: val === '2' ? 12 : val === '3' ? 14 : val === '5' ? 17 : 20, fontWeight: 700, cursor: 'pointer' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--peach)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>{label}</button>
+            ))}
+            {pop.kind === 'fore' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, padding: 3 }}>
+                {FORE.map(c => (
+                  <button key={c} type="button" title={c} onMouseDown={e => { e.preventDefault(); applyPop('foreColor', c) }}
+                    style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid rgba(0,0,0,0.12)', background: c, cursor: 'pointer' }} />
+                ))}
+              </div>
+            )}
+            {pop.kind === 'hilite' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, padding: 3 }}>
+                {HILITE.map(([label, c]) => (
+                  <button key={c} type="button" title={label} onMouseDown={e => { e.preventDefault(); applyPop('hiliteColor', c) }}
+                    style={{ width: 30, height: 26, borderRadius: 7, border: '1px solid rgba(0,0,0,0.12)', background: c === 'transparent' ? '#fff' : c, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {c === 'transparent' && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="5" x2="19" y2="19"/></svg>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </>
       )}
 
