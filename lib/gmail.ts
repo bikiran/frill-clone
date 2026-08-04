@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { uploadToR2, r2Configured } from '@/lib/r2'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -135,6 +136,84 @@ function collectAttachments(payload: any, out: any[] = []): any[] {
   }
   for (const part of payload.parts || []) collectAttachments(part, out)
   return out
+}
+
+// Collect inline images embedded in the body (e.g. Apple Mail photos referenced
+// as <img src="cid:...">). These carry a Content-ID and an attachmentId but
+// usually NO filename, so the filename-gated collectAttachments() above skips
+// them and they render broken. We resolve them to stored URLs during ingestion.
+const MAX_INLINE_BYTES = 15 * 1024 * 1024
+
+function collectInlineImages(payload: any, out: any[] = []): any[] {
+  if (!payload) return out
+  const hdrs = payload.headers || []
+  const cid = header(hdrs, 'Content-ID').replace(/^<|>$/g, '').trim()
+  const disp = header(hdrs, 'Content-Disposition').toLowerCase()
+  const mime = payload.mimeType || ''
+  const attId = payload.body?.attachmentId
+  if (attId && mime.startsWith('image/') && (cid || disp.startsWith('inline'))) {
+    out.push({ cid, mime, attachmentId: attId, size: payload.body?.size || 0, filename: payload.filename || '' })
+  }
+  for (const part of payload.parts || []) collectInlineImages(part, out)
+  return out
+}
+
+// Fetch one Gmail attachment's raw bytes (the same call the attachment proxy
+// route uses).
+async function fetchGmailAttachment(messageId: string, attachmentId: string, auth: any): Promise<Buffer | null> {
+  const res = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachmentId}`,
+    { headers: auth }
+  )
+  if (!res.ok) return null
+  const data = await res.json()
+  const b64 = String(data.data || '').replace(/-/g, '+').replace(/_/g, '/')
+  return Buffer.from(b64, 'base64')
+}
+
+// Store bytes to R2 (preferred) or Supabase storage, returning a public URL.
+// Mirrors app/api/storage/put/route.ts.
+async function storeInlineImage(db: any, key: string, bytes: Buffer, contentType: string): Promise<string | null> {
+  if (r2Configured()) {
+    try { return await uploadToR2(key, bytes, contentType) } catch { /* fall through */ }
+  }
+  const bucket = 'chat-attachments'
+  try {
+    const { data: bks } = await db.storage.listBuckets()
+    if (!bks?.some((b: any) => b.id === bucket)) await db.storage.createBucket(bucket, { public: true })
+  } catch {}
+  const { error } = await db.storage.from(bucket).upload(key, bytes, { contentType, upsert: true })
+  if (error) return null
+  return db.storage.from(bucket).getPublicUrl(key).data.publicUrl
+}
+
+// Resolve every inline (cid:) image referenced in an email's HTML: download the
+// bytes from Gmail, store them, rewrite the cid: reference to the stored URL, and
+// surface them as viewable attachments. Returns the rewritten HTML and the
+// attachment list to persist. Never throws — a failed image just stays as-is.
+async function resolveInlineImages(
+  db: any, messageId: string, payload: any, html: string, attachments: any[], companyId: string, auth: any
+): Promise<{ html: string; attachments: any[] }> {
+  const inlines = collectInlineImages(payload)
+  if (!inlines.length || !html) return { html, attachments }
+  let out = html
+  const extra: any[] = []
+  for (const img of inlines) {
+    if (!img.cid || img.size > MAX_INLINE_BYTES) continue
+    const cidRe = new RegExp('cid:' + img.cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    if (!cidRe.test(out)) continue                 // not referenced in the body
+    try {
+      const bytes = await fetchGmailAttachment(messageId, img.attachmentId, auth)
+      if (!bytes) continue
+      const ext = (img.mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '')
+      const key = `email-inline/${companyId}/${messageId}-${String(img.attachmentId).slice(-10)}.${ext}`
+      const url = await storeInlineImage(db, key, bytes, img.mime)
+      if (!url) continue
+      out = out.replace(cidRe, url)
+      extra.push({ name: img.filename || `photo.${ext}`, mime: img.mime, size: img.size, url, inline: true })
+    } catch { /* leave this image unresolved */ }
+  }
+  return { html: out, attachments: [...attachments, ...extra] }
 }
 
 // Pull the readable body out of a Gmail payload.
@@ -315,6 +394,11 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
     const attachments = collectAttachments(full.payload)
     const companyId = channel.company_id
 
+    // Pull inline (cid:) images out of the body into stored URLs so they render
+    // on web and mobile instead of showing broken.
+    const { html: emailHtmlResolved, attachments: attachmentsResolved } =
+      await resolveInlineImages(db, m.id, full.payload, emailHtml, attachments, companyId, auth)
+
     // Find-or-create the contact.
     let contact: any = null
     const { data: existingContacts } = await db.from('contacts').select('*')
@@ -376,9 +460,9 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
       email_to: toHeader || null,
       email_cc: ccHeader || null,
       email_subject: subject,
-      email_html: emailHtml || null,
+      email_html: emailHtmlResolved || null,
       email_quoted: quoted || null,
-      email_attachments: attachments,
+      email_attachments: attachmentsResolved,
     })
 
     imported++
