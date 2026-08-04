@@ -329,13 +329,27 @@ export default function TasksPage() {
   }, [])
 
   const loadTasks = useCallback(async (cid: string) => {
+    // Fetch ALL tasks in pages — a single .limit(1000) truncated busy boards
+    // (recurring series pre-generate up to 60 dated rows each), so the oldest
+    // occurrences silently dropped off the board. Page until a short page or a
+    // safety cap.
+    const fetchAllTasks = async (cols: string) => {
+      const PAGE = 1000, MAX = 8000
+      let all: any[] = [], offset = 0, error: any = null
+      while (offset < MAX) {
+        const res = await (supabase as any).from('conversation_tasks')
+          .select(cols).eq('company_id', cid).order('created_at', { ascending: false }).range(offset, offset + PAGE - 1)
+        if (res.error) { error = res.error; break }
+        all = all.concat(res.data || [])
+        if (!res.data || res.data.length < PAGE) break
+        offset += PAGE
+      }
+      return { data: all, error }
+    }
     let data: any[] | null = null
-    const full = await (supabase as any).from('conversation_tasks')
-      .select('*').eq('company_id', cid).order('created_at', { ascending: false }).limit(1000)
+    const full = await fetchAllTasks('*')
     if (full.error) {
-      const base = await (supabase as any).from('conversation_tasks')
-        .select('id, conversation_id, company_id, text, done, assigned_to, assigned_to_id, due_date, created_at')
-        .eq('company_id', cid).order('created_at', { ascending: false }).limit(1000)
+      const base = await fetchAllTasks('id, conversation_id, company_id, text, done, assigned_to, assigned_to_id, due_date, created_at')
       data = base.data
     } else data = full.data
     let rows: any[] = data || []
