@@ -216,6 +216,71 @@ async function resolveInlineImages(
   return { html: out, attachments: [...attachments, ...extra] }
 }
 
+// One-off backfill: re-process already-ingested emails whose body still holds
+// unresolved cid: images, resolving them the same way new mail is. Idempotent —
+// a fully-resolved message no longer matches the cid: filter, and the
+// deterministic storage key means a re-run never duplicates. Call repeatedly
+// (it processes `limit` at a time) until `updated` is 0.
+export async function backfillInlineImages(
+  companyId?: string, limit = 100
+): Promise<{ scanned: number; updated: number; errors: number }> {
+  const db = admin()
+  let q = db.from('messages')
+    .select('id, conversation_id, company_id, gmail_message_id, email_html, email_attachments')
+    .not('gmail_message_id', 'is', null)
+    .ilike('email_html', '%cid:%')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (companyId) q = q.eq('company_id', companyId)
+  const { data: rows } = await q
+
+  let scanned = 0, updated = 0, errors = 0
+  const tokenByChannel = new Map<string, string | null>()   // avoid re-refreshing per message
+
+  for (const msg of rows || []) {
+    scanned++
+    try {
+      const { data: conv } = await db.from('conversations')
+        .select('email_channel_id, company_id').eq('id', msg.conversation_id).maybeSingle()
+      if (!conv) continue
+
+      let channel: any = null
+      if (conv.email_channel_id) {
+        const { data } = await db.from('email_channels').select('*').eq('id', conv.email_channel_id).maybeSingle()
+        channel = data
+      }
+      if (!channel) {
+        const { data: chs } = await db.from('email_channels').select('*')
+          .eq('company_id', conv.company_id).eq('provider', 'gmail').limit(1)
+        channel = chs?.[0]
+      }
+      if (!channel) continue
+
+      let token = tokenByChannel.get(channel.id)
+      if (token === undefined) { token = await getGmailToken(channel); tokenByChannel.set(channel.id, token) }
+      if (!token) continue
+      const auth = { Authorization: `Bearer ${token}` }
+
+      const res = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.gmail_message_id}?format=full`,
+        { headers: auth }
+      )
+      if (!res.ok) continue
+      const full = await res.json()
+
+      const existing = Array.isArray(msg.email_attachments) ? msg.email_attachments : []
+      const resolved = await resolveInlineImages(db, msg.gmail_message_id, full.payload, msg.email_html || '', existing, msg.company_id, auth)
+      if (resolved.html !== msg.email_html || resolved.attachments.length !== existing.length) {
+        await db.from('messages')
+          .update({ email_html: resolved.html || null, email_attachments: resolved.attachments })
+          .eq('id', msg.id)
+        updated++
+      }
+    } catch { errors++ }
+  }
+  return { scanned, updated, errors }
+}
+
 // Pull the readable body out of a Gmail payload.
 // Prefers text/plain ANYWHERE in the tree before falling back to HTML — the old
 // code walked parts in order and could grab an HTML part even when a clean
