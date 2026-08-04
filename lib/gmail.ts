@@ -185,6 +185,37 @@ async function storeBytes(db: any, key: string, bytes: Buffer, contentType: stri
   return pub?.publicUrl || null
 }
 
+// Materialise a message's inline (cid:) images: store the bytes publicly, rewrite
+// the cid: refs in the HTML, and add/upgrade attachment entries with a url. Used
+// at ingestion and by the one-off backfill. Mutates `attachments` in place and
+// returns the rewritten html + how many images were materialised.
+export async function applyInlineImages(
+  db: any, messageId: string, payload: any, auth: Record<string, string>,
+  companyId: string, emailHtml: string, attachments: any[]
+): Promise<{ html: string; changed: number }> {
+  let html = emailHtml || ''
+  let changed = 0
+  try {
+    for (const img of collectInlineImages(payload)) {
+      const bytes = await fetchGmailAttachment(messageId, img.attachmentId, auth)
+      if (!bytes) continue
+      const ext = ((img.mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '')) || 'jpg'
+      const key = `email-inline/${companyId}/${messageId}-${String(img.attachmentId).slice(-8)}.${ext}`
+      const url = await storeBytes(db, key, bytes, img.mime)
+      if (!url) continue
+      if (img.cid) {
+        const cidRe = new RegExp('cid:' + img.cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+        html = html.replace(cidRe, url)
+      }
+      const existing = attachments.find((a: any) => a.attachmentId === img.attachmentId)
+      if (existing) { existing.url = url; existing.inline = true }
+      else attachments.push({ name: img.filename || `photo.${ext}`, mime: img.mime, size: img.size, url, inline: true, attachmentId: img.attachmentId })
+      changed++
+    }
+  } catch { /* best-effort */ }
+  return { html, changed }
+}
+
 // Pull the readable body out of a Gmail payload.
 // Prefers text/plain ANYWHERE in the tree before falling back to HTML — the old
 // code walked parts in order and could grab an HTML part even when a clean
@@ -366,24 +397,7 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
     // Inline images (cid:) — pull the bytes once at ingestion, store them
     // publicly, rewrite the cid: refs so the HTML renders on web + mobile, and
     // surface each as a viewable attachment (with a real url).
-    try {
-      for (const img of collectInlineImages(full.payload)) {
-        const bytes = await fetchGmailAttachment(m.id, img.attachmentId, auth)
-        if (!bytes) continue
-        const ext = ((img.mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '')) || 'jpg'
-        const key = `email-inline/${companyId}/${m.id}-${String(img.attachmentId).slice(-8)}.${ext}`
-        const url = await storeBytes(db, key, bytes, img.mime)
-        if (!url) continue
-        if (img.cid) {
-          const cidRe = new RegExp('cid:' + img.cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
-          emailHtml = emailHtml.replace(cidRe, url)
-        }
-        // Upgrade an existing metadata entry with its url, or add a new one.
-        const existing = attachments.find((a: any) => a.attachmentId === img.attachmentId)
-        if (existing) { existing.url = url; existing.inline = true }
-        else attachments.push({ name: img.filename || `photo.${ext}`, mime: img.mime, size: img.size, url, inline: true, attachmentId: img.attachmentId })
-      }
-    } catch { /* inline handling is best-effort — never block the email import */ }
+    ;({ html: emailHtml } = await applyInlineImages(db, m.id, full.payload, auth, companyId, emailHtml, attachments))
 
     // Find-or-create the contact.
     let contact: any = null
