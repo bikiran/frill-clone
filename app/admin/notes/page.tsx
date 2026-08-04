@@ -212,6 +212,24 @@ export default function NotesPage() {
     w.document.close(); w.focus(); setTimeout(() => w.print(), 250)
   }
 
+  // Open the public shared view (/n/[code]) in a new tab. If the note hasn't been
+  // shared yet, create the link first (opening the tab synchronously so the popup
+  // isn't blocked), then point it at the note.
+  const previewNote = async () => {
+    if (!note) return
+    if (note.public_code) { window.open(`/n/${note.public_code}`, '_blank', 'noopener'); return }
+    if (!companyId) return
+    const w = window.open('', '_blank')
+    showToast('Preparing preview…')
+    try {
+      const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'share', id: note.id }) })
+      const d = await res.json()
+      if (!d.code) throw new Error()
+      setNote({ ...note, is_public: true, public_code: d.code })
+      if (w) w.location.href = `/n/${d.code}`
+    } catch { if (w) w.close(); showToast('Could not open preview') }
+  }
+
   const shareNote = async () => {
     if (!companyId || !note) return
     showToast('Creating link…')
@@ -436,6 +454,10 @@ export default function NotesPage() {
                     <button onClick={() => coverInput.current?.click()} style={metaBtn}>＋ Cover</button>
                     <button onClick={() => setCoverGallery(true)} style={metaBtn}>Gallery</button>
                   </>}
+                  <button onClick={previewNote} style={{ ...metaBtn, display: 'inline-flex', alignItems: 'center', gap: 5 }} title="Open the shared view in a new tab">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Preview
+                  </button>
                   <button onClick={shareNote} style={{ ...metaBtn, color: 'var(--coral)', borderColor: 'var(--coral)', fontWeight: 700 }}>{note.is_public ? 'Sharing' : 'Share'}</button>
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                     <input type="checkbox" checked={!!note.allow_public_edit} onChange={e => queueSave({ ...note, allow_public_edit: e.target.checked })} style={{ width: 14, height: 14, accentColor: 'var(--coral)' }} />
