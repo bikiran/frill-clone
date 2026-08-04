@@ -572,6 +572,7 @@ export default function GalleryPage() {
         @keyframes gal-spin-kf { to { transform: rotate(360deg); } }
         /* Smoother cards: lift on hover, gentle image zoom, softer shadows. */
         .gal-card { transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease; }
+        .gal-thumb:hover .gal-playbadge { opacity: 0; }
         .gal-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.10); }
         .gal-card .gal-thumb img, .gal-card .gal-thumb video { transition: transform 0.28s ease; }
         .gal-card:hover .gal-thumb img, .gal-card:hover .gal-thumb video { transform: scale(1.04); }
@@ -821,18 +822,21 @@ export default function GalleryPage() {
                 return (
                 <div key={item.id} className="gal-card" style={{ border: `1px solid ${isSelected ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 12, background: '#fff', boxShadow: isSelected ? '0 0 0 2px var(--peach)' : 'none', position: 'relative' }}>
                   <div className="gal-thumb" style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: 'var(--canvas)', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}
-                    onClick={() => selectMode ? toggleSelect(item.id) : setLightboxIndex(i)}>
+                    onClick={() => selectMode ? toggleSelect(item.id) : setLightboxIndex(i)}
+                    onMouseEnter={item.kind === 'video' ? (e => { const v = e.currentTarget.querySelector('video'); if (v) { v.muted = true; v.play().catch(() => {}) } }) : undefined}
+                    onMouseLeave={item.kind === 'video' ? (e => { const v = e.currentTarget.querySelector('video'); if (v) { v.pause(); try { v.currentTime = 0.1 } catch {} } }) : undefined}>
                     {item.kind === 'video' ? (
-                      // A real image thumbnail when we have one; otherwise just the
-                      // first frame (preload metadata + #t) — never a full <video>
-                      // download per tile, which was starving the player.
-                      item.thumbnail_url && item.thumbnail_url !== item.url
-                        ? <img loading="lazy" decoding="async" src={item.thumbnail_url} alt={item.title || ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                        : <video src={item.url + '#t=0.1'} preload="metadata" muted playsInline tabIndex={-1} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                      // Resting shows the poster/first frame; on hover it plays MUTED
+                      // (no download until then when a real thumbnail poster exists).
+                      <video src={item.url + '#t=0.1'}
+                        poster={item.thumbnail_url && item.thumbnail_url !== item.url ? item.thumbnail_url : undefined}
+                        preload={item.thumbnail_url && item.thumbnail_url !== item.url ? 'none' : 'metadata'}
+                        muted playsInline loop tabIndex={-1}
+                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                       <img loading="lazy" decoding="async" src={item.thumbnail_url || item.url} alt={item.title || ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                     )}
-                    {item.kind === 'video' && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}><svg width="34" height="34" viewBox="0 0 24 24" fill="#fff" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg></div>}
+                    {item.kind === 'video' && <div className="gal-playbadge" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,0.5)', transition: 'opacity .15s', pointerEvents: 'none' }}><svg width="34" height="34" viewBox="0 0 24 24" fill="#fff" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg></div>}
 
                     {/* Select checkbox — always available on hover, sticky in select mode */}
                     <button type="button"

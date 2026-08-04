@@ -6,7 +6,7 @@ import CustomerPicker from '@/components/CustomerPicker'
 import AttachmentUploader from '@/components/AttachmentUploader'
 import TaskEditor from '@/components/TaskEditor'
 import { decodeEntities as dec } from '@/lib/decode-entities'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 
@@ -41,6 +41,8 @@ export default function CalendarPage() {
   const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); return d })
   const [locationFilter, setLocationFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [defaultOutlet, setDefaultOutlet] = useState<string | null>(null)
+  const outletPrefApplied = useRef(false)
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<any>(null)
   const [dayOpen, setDayOpen] = useState<string | null>(null)
@@ -141,6 +143,28 @@ export default function CalendarPage() {
   }
 
   useEffect(() => { load() }, [companyId, cursor, locationFilter, typeFilter])
+
+  // Per-user default outlet (shared with the Tasks page). Applied once on load.
+  useEffect(() => {
+    if (!companyId || !userId) return
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/user-prefs?userId=${userId}&companyId=${companyId}&key=default_outlet`)
+        const d = await res.json()
+        const dv = d?.prefs?.default_outlet
+        if (dv && typeof dv === 'object') {
+          setDefaultOutlet(dv.id || null)
+          if (dv.id && !outletPrefApplied.current) { setLocationFilter(dv.id); outletPrefApplied.current = true }
+        }
+      } catch {}
+    })()
+  }, [companyId, userId])
+
+  const setDefaultOutletPref = (id: string | null) => {
+    setDefaultOutlet(id)
+    setLocationFilter(id || '')
+    if (companyId && userId) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
+  }
 
   useEffect(() => {
     if (!companyId) return
@@ -520,11 +544,8 @@ export default function CalendarPage() {
         </div>
 
         {locations.length > 0 && (
-          <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
-            style={{ padding: '7px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, background: '#fff' }}>
-            <option value="">All outlets</option>
-            {locations.map(l => <option key={l.id} value={l.id}>{l.label || l.suburb}</option>)}
-          </select>
+          <OutletPicker locations={locations} value={locationFilter} onChange={setLocationFilter}
+            defaultOutlet={defaultOutlet} onSetDefault={setDefaultOutletPref} />
         )}
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
           style={{ padding: '7px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, background: '#fff' }}>
@@ -969,4 +990,60 @@ const navBtn: any = {
   width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)',
   background: '#fff', cursor: 'pointer', fontSize: 17, fontWeight: 700,
   color: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+}
+
+// Outlet filter with a per-user "default" — left-click selects, right-click an
+// outlet sets it as this user's default (persisted, shared with the Tasks page).
+function OutletPicker({ locations, value, onChange, defaultOutlet, onSetDefault }: {
+  locations: any[]; value: string; onChange: (v: string) => void
+  defaultOutlet: string | null; onSetDefault: (id: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open && !menu) return
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setMenu(null) } }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open, menu])
+  const labelOf = (id: string) => { const l = locations.find(x => x.id === id); return l ? (l.label || l.suburb || 'Outlet') : 'Outlet' }
+  const current = value ? labelOf(value) : 'All outlets'
+  const row = (on: boolean): any => ({ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 11px', border: 'none', background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--ink)', fontSize: 13, fontWeight: on ? 700 : 500, cursor: 'pointer' })
+  const menuItem: any = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, background: '#fff', color: 'var(--ink)', cursor: 'pointer', fontWeight: value ? 700 : 400 }}>
+        {current}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 60, minWidth: 210, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 14px 34px rgba(0,0,0,0.16)', overflow: 'hidden', maxHeight: 300, overflowY: 'auto' }}>
+          <button type="button" onClick={() => { onChange(''); setOpen(false) }} style={{ ...row(value === '') }}>All outlets</button>
+          {locations.map(l => (
+            <button key={l.id} type="button" title="Right-click to set as your default"
+              onClick={() => { onChange(l.id); setOpen(false) }}
+              onContextMenu={e => { e.preventDefault(); setMenu({ x: Math.min(e.clientX, window.innerWidth - 220), y: e.clientY, id: l.id }) }}
+              style={row(value === l.id)}>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.label || l.suburb}</span>
+              {defaultOutlet === l.id && <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--coral)', background: 'var(--peach)', padding: '1px 6px', borderRadius: 20 }}>DEFAULT</span>}
+            </button>
+          ))}
+          <p style={{ margin: 0, padding: '7px 11px', fontSize: 10.5, color: 'var(--slate)', borderTop: '1px solid var(--border)' }}>Right-click an outlet to set your default.</p>
+        </div>
+      )}
+      {menu && (
+        <>
+          <div onClick={() => setMenu(null)} onContextMenu={e => { e.preventDefault(); setMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 400 }} />
+          <div style={{ position: 'fixed', top: menu.y, left: menu.x, zIndex: 401, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 200 }}>
+            <p style={{ margin: '2px 8px 6px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>{labelOf(menu.id)}</p>
+            {defaultOutlet === menu.id
+              ? <button type="button" style={menuItem} onClick={() => { onSetDefault(null); setMenu(null); setOpen(false) }}>Remove as default</button>
+              : <button type="button" style={menuItem} onClick={() => { onSetDefault(menu.id); setMenu(null); setOpen(false) }}>Make this my default outlet</button>}
+          </div>
+        </>
+      )}
+    </div>
+  )
 }

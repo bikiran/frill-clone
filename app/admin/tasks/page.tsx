@@ -154,6 +154,9 @@ export default function TasksPage() {
   const [defaultView, setDefaultView] = useState<ViewMode | null>(null)
   const [viewMenu, setViewMenu] = useState<{ view: ViewMode; x: number; y: number } | null>(null)
   const viewPrefsApplied = useRef(false)
+  const [defaultOutlet, setDefaultOutlet] = useState<string | null>(null)
+  const outletPrefApplied = useRef(false)
+  const [outletMenu, setOutletMenu] = useState<{ x: number; y: number; value: string } | null>(null)
   const labelOf = (v: ViewMode) => viewNames[v] || VIEW_LABELS[v]
   const dfltDot: React.CSSProperties = { display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: 'var(--coral)', marginLeft: 5, verticalAlign: 'middle' }
   const viewMenuItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
@@ -172,13 +175,27 @@ export default function TasksPage() {
     try { const raw = localStorage.getItem(lsKey); if (raw) apply(JSON.parse(raw), true) } catch {}
     ;(async () => {
       try {
-        const res = await fetch(`/api/user-prefs?userId=${userId}&companyId=${companyId}&key=tasks_view`)
+        const res = await fetch(`/api/user-prefs?userId=${userId}&companyId=${companyId}`)
         const d = await res.json()
         apply(d?.prefs?.tasks_view, true)
+        // Default outlet (shared with the Calendar page). It wins over the team
+        // membership default; only marks itself applied when it actually sets one.
+        const dv = d?.prefs?.default_outlet
+        if (dv && typeof dv === 'object') {
+          setDefaultOutlet(dv.id || null)
+          if (dv.id && !outletPrefApplied.current) { setOutletFilter([dv.id]); outletPrefApplied.current = true }
+        }
       } catch {}
       viewPrefsApplied.current = true
     })()
   }, [companyId, userId])
+
+  const setDefaultOutletPref = (id: string | null) => {
+    setDefaultOutlet(id)
+    if (id) setOutletFilter([id]); else setOutletFilter([])
+    if (companyId && userId) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
+    setOutletMenu(null)
+  }
 
   const persistViewPrefs = (names: Record<string, string>, dflt: ViewMode | null) => {
     const payload = { names, defaultView: dflt }
@@ -289,7 +306,7 @@ export default function TasksPage() {
         const myMembership = (tm || []).find((m: any) => (m.user_id || m.id) === uid && (!m.company_id || m.company_id === cid))
         if (uid && co?.owner_id !== uid && myMembership) {
           setAssigneeFilter(['me'])
-          if (myMembership.default_location_id) setOutletFilter([myMembership.default_location_id])
+          if (myMembership.default_location_id && !outletPrefApplied.current) setOutletFilter([myMembership.default_location_id])
         }
 
         // Outlets load in the background too — not needed for the first paint.
@@ -1015,6 +1032,18 @@ export default function TasksPage() {
               </div>
             </>
           )}
+          {/* Right-click menu for an outlet — set/clear the user's default outlet. */}
+          {outletMenu && (
+            <>
+              <div onClick={() => setOutletMenu(null)} onContextMenu={e => { e.preventDefault(); setOutletMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 400 }} />
+              <div style={{ position: 'fixed', top: outletMenu.y, left: outletMenu.x, zIndex: 401, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 200 }}>
+                <p style={{ margin: '2px 8px 6px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>{outlets.find((o: any) => o.id === outletMenu.value)?.label || outlets.find((o: any) => o.id === outletMenu.value)?.suburb || 'Outlet'}</p>
+                {defaultOutlet === outletMenu.value
+                  ? <button style={viewMenuItem} onClick={() => setDefaultOutletPref(null)}>Remove as default</button>
+                  : <button style={viewMenuItem} onClick={() => setDefaultOutletPref(outletMenu.value)}>Make this my default outlet</button>}
+              </div>
+            </>
+          )}
           {/* Bulk select — multi-select the list for delete / status / priority. */}
           {view === 'list' && (
             <button className="ctl" onClick={() => selectMode ? exitSelect() : setSelectMode(true)}
@@ -1039,7 +1068,10 @@ export default function TasksPage() {
                     <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 264, maxWidth: '86vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 44px rgba(0,0,0,0.14)', zIndex: 50, padding: 14 }}>
                       <FilterField label="Outlets" hidden={outlets.length === 0}>
                         <MultiSelect allLabel="All outlets" value={outletFilter} onChange={setOutletFilter}
-                          options={outlets.map(o => ({ value: o.id, label: o.label || o.suburb || 'Outlet' }))} />
+                          options={outlets.map(o => ({ value: o.id, label: o.label || o.suburb || 'Outlet' }))}
+                          defaultValue={defaultOutlet}
+                          onItemContext={(v, e) => { e.preventDefault(); setOutletMenu({ x: Math.min(e.clientX, window.innerWidth - 220), y: e.clientY, value: v }) }} />
+                        {outlets.length > 0 && <p style={{ margin: '5px 2px 0', fontSize: 10.5, color: 'var(--slate)' }}>Right-click an outlet to set it as your default.</p>}
                       </FilterField>
                       <FilterField label="Assignee">
                         <MultiSelect allLabel="Anyone" value={assigneeFilter} onChange={setAssigneeFilter}
@@ -1194,11 +1226,13 @@ function FilterField({ label, hidden, children }: { label: string; hidden?: bool
 
 // A consistent multi-select dropdown for the filters (outlets, assignee,
 // priority, colour) — looks like a normal select but toggles several values.
-function MultiSelect({ options, value, onChange, allLabel = 'All' }: {
+function MultiSelect({ options, value, onChange, allLabel = 'All', onItemContext, defaultValue }: {
   options: { value: string; label: string; color?: string }[]
   value: string[]
   onChange: (v: string[]) => void
   allLabel?: string
+  onItemContext?: (value: string, e: React.MouseEvent) => void
+  defaultValue?: string | null
 }) {
   const [open, setOpen] = useState(false)
   const label = value.length === 0 ? allLabel
@@ -1221,12 +1255,15 @@ function MultiSelect({ options, value, onChange, allLabel = 'All' }: {
             const on = value.includes(o.value)
             return (
               <button key={o.value} type="button" onClick={() => toggle(o.value)}
+                onContextMenu={onItemContext ? (e => onItemContext(o.value, e)) : undefined}
+                title={onItemContext ? 'Right-click to set as your default' : undefined}
                 style={{ ...row, background: on ? 'var(--peach)' : '#fff', fontWeight: on ? 700 : 500 }}>
                 <span style={{ width: 15, height: 15, borderRadius: 4, border: '1.5px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--coral)' : '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {on && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
                 </span>
                 {o.color !== undefined && <span style={{ width: 12, height: 12, borderRadius: '50%', background: o.color || '#fff', border: o.color ? 'none' : '1px solid var(--border)', flexShrink: 0 }} />}
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{o.label}</span>
+                {defaultValue === o.value && <span title="Your default" style={{ fontSize: 10, fontWeight: 800, color: 'var(--coral)', background: 'var(--peach)', padding: '1px 6px', borderRadius: 20, flexShrink: 0 }}>DEFAULT</span>}
               </button>
             )
           })}
