@@ -265,17 +265,19 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
   const runRepair = async () => {
     if (repair?.busy) return
     setRepair({ busy: true, log: 'Starting…' })
-    let totalFixed = 0, totalImages = 0
+    let totalFixed = 0
     try {
       for (let round = 0; round < 40; round++) {
         const res = await fetch('/api/email/backfill-inline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: co.id, limit: 50 }) })
         const d = await res.json()
         if (!res.ok) { setRepair({ busy: false, log: `Error: ${d.error || 'failed'}` }); return }
-        totalFixed += d.fixed || 0; totalImages += d.images || 0
-        setRepair({ busy: true, log: `Repaired ${totalFixed} email(s), ${totalImages} image(s)… ${d.remaining ?? 0} remaining` })
-        if (!d.remaining || d.remaining <= 0 || !d.fixed) break   // done, or a round made no progress (rest unresolvable)
+        totalFixed += d.updated || 0
+        setRepair({ busy: true, log: `Repaired ${totalFixed} email(s)…` })
+        // Stop once a batch found nothing left to scan, or made no progress
+        // (the remaining cid: messages can't be re-fetched from Gmail).
+        if (!d.scanned || !d.updated) break
       }
-      setRepair({ busy: false, log: `Done — repaired ${totalFixed} email${totalFixed === 1 ? '' : 's'} (${totalImages} image${totalImages === 1 ? '' : 's'}).` })
+      setRepair({ busy: false, log: `Done — repaired ${totalFixed} email${totalFixed === 1 ? '' : 's'}.` })
     } catch (e: any) { setRepair({ busy: false, log: `Error: ${e.message}` }) }
   }
 
