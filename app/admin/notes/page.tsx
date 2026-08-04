@@ -9,12 +9,14 @@ import GalleryPicker from '@/components/GalleryPicker'
 import VoiceRecorder from '@/components/VoiceRecorder'
 import AudioDock from '@/components/AudioDock'
 import VoiceBlocks from '@/components/VoiceBlocks'
+import NoteComments from '@/components/NoteComments'
 
 type Note = {
   id: string; title: string; body: string; checklist: ChecklistItem[]; attachments: any[]
   cover_image?: string | null; is_public?: boolean; public_code?: string | null; allow_public_edit?: boolean
   tags?: string[]; reminder_at?: string | null; pinned?: boolean; trashed_at?: string | null; updated_at?: string
   shared_with_team?: boolean; created_by?: string; created_by_name?: string
+  shared_members?: { id: string; name: string }[]; comments?: any[]; edit_log?: { name: string; email?: string; at: string }[]
 }
 type ChecklistItem = { id: string; text: string; done: boolean }
 
@@ -54,6 +56,7 @@ export default function NotesPage() {
   const [listOpen, setListOpen] = useState(true)
   const [fullscreen, setFullscreen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [teamShareOpen, setTeamShareOpen] = useState(false)
   const [remOpen, setRemOpen] = useState(false)
   const [tagAdding, setTagAdding] = useState(false)
   const [tagInput, setTagInput] = useState('')
@@ -131,7 +134,7 @@ export default function NotesPage() {
       try {
         const res = await fetch(`/api/notes?companyId=${companyId}&userId=${uid}&id=${activeId}`)
         const d = await res.json()
-        if (d.note) setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [] })
+        if (d.note) setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [], shared_members: d.note.shared_members || [], comments: d.note.comments || [], edit_log: d.note.edit_log || [] })
       } catch {}
     })()
   }, [companyId, activeId])
@@ -148,7 +151,7 @@ export default function NotesPage() {
         await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
           companyId, action: 'update', id: next.id, title: next.title, body: next.body,
           checklist: next.checklist, attachments: next.attachments, cover_image: next.cover_image ?? null,
-          allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned, shared_with_team: !!next.shared_with_team,
+          allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned, shared_with_team: !!next.shared_with_team, shared_members: next.shared_members || [],
         }) })
       } catch {} finally { setSaving(false) }
     }, 650)
@@ -470,8 +473,8 @@ export default function NotesPage() {
                     {moreOpen && (<>
                       <div onClick={() => setMoreOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
                       <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 190 }}>
-                        <button style={menuItem} onClick={() => { queueSave({ ...note, shared_with_team: !note.shared_with_team }); setMoreOpen(false); showToast(note.shared_with_team ? 'Note is now private' : 'Shared with your team') }}>
-                          {note.shared_with_team ? 'Make private' : 'Share with team'}
+                        <button style={menuItem} onClick={() => { setMoreOpen(false); setTeamShareOpen(true) }}>
+                          Share with team…
                         </button>
                         <button style={menuItem} onClick={duplicateNote}>Duplicate</button>
                         <button style={menuItem} onClick={() => { queueSave({ ...note, pinned: !note.pinned }); setMoreOpen(false) }}>{note.pinned ? 'Unpin' : 'Pin to top'}</button>
@@ -479,6 +482,32 @@ export default function NotesPage() {
                         <button style={menuItem} onClick={printNote}>Print</button>
                         <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
                         <button style={{ ...menuItem, color: '#dc2626' }} onClick={() => trashNote(note.id)}>Move to Trash</button>
+                      </div>
+                    </>)}
+                    {teamShareOpen && (<>
+                      <div onClick={() => setTeamShareOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                      <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 34px rgba(0,0,0,0.18)', padding: 8, minWidth: 240, maxHeight: 340, overflowY: 'auto' }}>
+                        <p style={{ margin: '2px 8px 8px', fontSize: 12.5, fontWeight: 800, color: 'var(--ink)' }}>Share this note</p>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--canvas)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                          <input type="checkbox" checked={!!note.shared_with_team} onChange={e => queueSave({ ...note, shared_with_team: e.target.checked })} style={{ width: 16, height: 16, accentColor: 'var(--coral)' }} />
+                          Everyone on the team
+                        </label>
+                        {team.filter(m => m.id && m.id !== uid).length > 0 && <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />}
+                        {team.filter(m => m.id && m.id !== uid).map(m => {
+                          const on = (note.shared_members || []).some(x => x.id === m.id)
+                          return (
+                            <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--ink)', opacity: note.shared_with_team ? 0.5 : 1 }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--canvas)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                              <input type="checkbox" checked={on || !!note.shared_with_team} disabled={!!note.shared_with_team}
+                                onChange={e => { const cur = note.shared_members || []; const next = e.target.checked ? [...cur, { id: m.id, name: m.name }] : cur.filter(x => x.id !== m.id); queueSave({ ...note, shared_members: next }) }}
+                                style={{ width: 16, height: 16, accentColor: 'var(--coral)' }} />
+                              <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{m.name.charAt(0).toUpperCase()}</span>
+                              {m.name}
+                            </label>
+                          )
+                        })}
+                        <p style={{ margin: '8px 9px 2px', fontSize: 11.5, color: 'var(--slate)' }}>Selected teammates see this note in their own Notes list.</p>
                       </div>
                     </>)}
                   </div>
@@ -592,6 +621,22 @@ export default function NotesPage() {
                 <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Photos &amp; videos</h3>
                 <AttachmentUploader companyId={companyId} value={media} onChange={next => setAllAttachments([...next, ...audios])} folder="notes" />
               </div>
+
+              {(note.edit_log || []).length > 0 && (
+                <div style={{ marginTop: 22, padding: '12px 14px', borderRadius: 12, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
+                  <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Contributions from viewers</p>
+                  {(note.edit_log || []).slice().reverse().slice(0, 8).map((e, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)', padding: '3px 0' }}>
+                      <span style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 800, flexShrink: 0 }}>{(e.name || '?').charAt(0).toUpperCase()}</span>
+                      <span style={{ fontWeight: 700 }}>{e.name}</span>
+                      {e.email && <span style={{ color: 'var(--slate)', fontSize: 12 }}>{e.email}</span>}
+                      <span style={{ marginLeft: 'auto', color: 'var(--slate)', fontSize: 12 }}>{fmtAgo(e.at)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <NoteComments noteId={note.id} companyId={companyId || undefined} accent="var(--coral,#ff7a6b)" authorName={me} members={team} initial={note.comments || []} />
                 </div>
               </div>
 

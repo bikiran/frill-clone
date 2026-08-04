@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get('userId')
   // A note is visible to a user if they created it, or its owner shared it with
   // the team. (No userId → return all, for backward compatibility.)
-  const visible = (n: any) => !userId || n.created_by === userId || n.shared_with_team
+  const visible = (n: any) => !userId || n.created_by === userId || n.shared_with_team || (Array.isArray(n.shared_members) && n.shared_members.some((m: any) => m?.id === userId))
   if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
   try {
     const db = admin()
@@ -61,12 +61,12 @@ export async function POST(req: NextRequest) {
 
     if (action === 'update') {
       const patch: any = { updated_at: new Date().toISOString() }
-      for (const f of ['title', 'body', 'checklist', 'attachments', 'cover_image', 'allow_public_edit', 'tags', 'reminder_at', 'pinned', 'shared_with_team']) if (body[f] !== undefined) patch[f] = body[f]
+      for (const f of ['title', 'body', 'checklist', 'attachments', 'cover_image', 'allow_public_edit', 'tags', 'reminder_at', 'pinned', 'shared_with_team', 'shared_members', 'comments']) if (body[f] !== undefined) patch[f] = body[f]
       let { error } = await db.from('notes').update(patch).eq('id', body.id).eq('company_id', companyId)
-      // If a newer column (V234/V235) isn't migrated yet, drop those keys and
+      // If a newer column (V234/V235/V236) isn't migrated yet, drop those keys and
       // retry so the core fields still save.
       if (error && missing(error.message)) {
-        for (const f of ['tags', 'reminder_at', 'pinned', 'shared_with_team']) delete patch[f]
+        for (const f of ['tags', 'reminder_at', 'pinned', 'shared_with_team', 'shared_members', 'comments']) delete patch[f]
         const retry = await db.from('notes').update(patch).eq('id', body.id).eq('company_id', companyId)
         error = retry.error
       }
@@ -109,6 +109,16 @@ export async function POST(req: NextRequest) {
     if (action === 'unshare') {
       await db.from('notes').update({ is_public: false }).eq('id', body.id).eq('company_id', companyId)
       return NextResponse.json({ ok: true })
+    }
+
+    if (action === 'comment') {
+      // Append a comment (owner/teammate side). Atomic-ish read-modify-write.
+      const { data: note } = await db.from('notes').select('comments').eq('id', body.id).eq('company_id', companyId).maybeSingle()
+      const list = Array.isArray(note?.comments) ? note!.comments : []
+      const entry = { id: genCode(), name: body.name || 'Someone', email: body.email || '', body: String(body.body || '').slice(0, 4000), at: new Date().toISOString() }
+      const { error } = await db.from('notes').update({ comments: [...list, entry] }).eq('id', body.id).eq('company_id', companyId)
+      if (error && !missing(error.message)) throw error
+      return NextResponse.json({ ok: !error, degraded: !!error, comment: entry })
     }
 
     if (action === 'delete') {

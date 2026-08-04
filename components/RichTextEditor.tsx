@@ -13,6 +13,7 @@ const FONTS: [string, string][] = [['Sans serif', 'sans-serif'], ['Serif', 'seri
 const SIZES: [string, string][] = [['Small', '2'], ['Normal', '3'], ['Large', '5'], ['Huge', '7']]
 const FORE = ['#1a1a1a', '#6b7280', '#dc2626', '#ea580c', '#d97706', '#16a34a', '#2563eb', '#7c3aed', '#db2777', '#ff7a6b']
 const HILITE: [string, string][] = [['Yellow', '#fff3bf'], ['Green', '#d3f9d8'], ['Blue', '#d0ebff'], ['Pink', '#ffe3e3'], ['Orange', '#ffe8cc'], ['Purple', '#f3d9fa'], ['None', 'transparent']]
+const BLOCK_TAGS = new Set(['DIV', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'UL', 'OL', 'PRE', 'TABLE', 'FIGURE', 'HR'])
 
 type Mention = { id: string; name: string }
 
@@ -117,6 +118,46 @@ export default function RichTextEditor({
     if (changed) emit()
   }
 
+  // Make every visual line its own block element so drag-to-reorder treats lines
+  // separately. contentEditable leaves the first line as a bare text node and
+  // packs Enter-separated lines into one block with <br>s — both make several
+  // lines look like a single draggable unit. This wraps stray inline/text nodes
+  // and splits <br>-joined blocks into one block per line.
+  const isBlockEl = (n: Node) => n.nodeType === 1 && (BLOCK_TAGS.has((n as HTMLElement).nodeName) || (n as HTMLElement).classList?.contains('rte-voice'))
+  const normalizeBlocks = () => {
+    const root = ref.current; if (!root) return
+    let changed = false
+    // Pass 1 — wrap runs of top-level inline/text nodes into a <p> block.
+    let child = root.firstChild, bucket: HTMLElement | null = null
+    while (child) {
+      const next = child.nextSibling
+      if (isBlockEl(child)) { bucket = null }
+      else if (child.nodeType === 3 && !(child.textContent || '').trim() && !bucket) { root.removeChild(child); changed = true }
+      else { if (!bucket) { bucket = document.createElement('p'); root.insertBefore(bucket, child); changed = true }; bucket.appendChild(child); changed = true }
+      child = next
+    }
+    // Pass 2 — split a block that contains top-level <br>s into one block per line.
+    Array.from(root.children).forEach(el => {
+      const b = el as HTMLElement
+      if (b.classList.contains('rte-voice') || ['UL', 'OL', 'TABLE', 'BLOCKQUOTE', 'PRE'].includes(b.nodeName)) return
+      if (b.childNodes.length === 1 && b.firstChild?.nodeName === 'BR') return   // a legit empty line
+      if (!Array.from(b.childNodes).some(n => n.nodeName === 'BR')) return
+      const lines: Node[][] = [[]]
+      Array.from(b.childNodes).forEach(n => { if (n.nodeName === 'BR') lines.push([]); else lines[lines.length - 1].push(n) })
+      while (lines.length > 1 && lines[lines.length - 1].every(n => !(n.textContent || '').trim() && n.nodeType === 3)) lines.pop()
+      if (lines.length < 2) return
+      const frag = document.createDocumentFragment()
+      lines.forEach(nodes => {
+        const p = document.createElement(b.nodeName === 'P' ? 'p' : 'div')
+        if (!nodes.length) p.appendChild(document.createElement('br'))
+        else nodes.forEach(n => p.appendChild(n))
+        frag.appendChild(p)
+      })
+      b.replaceWith(frag); changed = true
+    })
+    if (changed) emit()
+  }
+
   const startVoice = async () => {
     if (!navigator.mediaDevices?.getUserMedia) return
     try {
@@ -148,7 +189,11 @@ export default function RichTextEditor({
   const stopVoice = () => { clearInterval(tickRef.current); try { recRef.current?.stop() } catch {}; streamRef.current?.getTracks().forEach(t => t.stop()) }
 
   useEffect(() => {
-    if (ref.current) { ref.current.innerHTML = value || ''; if (blockDrag || enableVoice) normalizeVoice() }
+    if (ref.current) {
+      ref.current.innerHTML = value || ''
+      if (blockDrag || enableVoice) normalizeVoice()
+      if (blockDrag) { try { document.execCommand('defaultParagraphSeparator', false, 'p') } catch {}; normalizeBlocks() }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -312,7 +357,13 @@ export default function RichTextEditor({
   }
   const onHandleDown = (e: React.PointerEvent) => {
     e.preventDefault()
-    const blk = hoverBlockRef.current, content = ref.current; if (!blk || !content) return
+    const content = ref.current; if (!content) return
+    // Split any <br>-joined / bare lines into real blocks first, then pick the
+    // one at the handle's height — so we always grab exactly one line.
+    normalizeBlocks()
+    const cr0 = content.getBoundingClientRect()
+    const blk = topBlockAt(cr0.left + Math.min(40, cr0.width / 2), e.clientY) || hoverBlockRef.current
+    if (!blk) return
     dragBlockRef.current = blk
     const r = blk.getBoundingClientRect()
     grabOffRef.current = e.clientY - r.top

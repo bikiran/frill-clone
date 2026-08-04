@@ -4,6 +4,7 @@ import NoteView from './NoteView'
 import NoteAttachments from './NoteAttachments'
 import AudioDock from '@/components/AudioDock'
 import VoiceBlocks from '@/components/VoiceBlocks'
+import NoteComments from '@/components/NoteComments'
 
 export const dynamic = 'force-dynamic'
 export const viewport = { width: 'device-width', initialScale: 1 }
@@ -25,9 +26,8 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
 
   let note: any = null
   try {
-    const { data } = await db.from('notes')
-      .select('id, company_id, title, body, checklist, attachments, cover_image, allow_public_edit, is_public, updated_at')
-      .eq('public_code', code).maybeSingle()
+    // select * so comments/edit_log work even if the client is older than the DB.
+    const { data } = await db.from('notes').select('*').eq('public_code', code).maybeSingle()
     note = data
   } catch { /* table may not be migrated yet */ }
 
@@ -51,6 +51,8 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
   const attachments = allAtt.filter(a => !isAudioA(a))
   const audios = allAtt.filter(isAudioA)
   const checklist = Array.isArray(note.checklist) ? note.checklist : []
+  const comments = Array.isArray(note.comments) ? note.comments : []
+  const editLog = Array.isArray(note.edit_log) ? note.edit_log : []
 
   return (
     <div style={{ minHeight: '100dvh', background: '#fafafa', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', padding: 20, boxSizing: 'border-box' }}>
@@ -102,7 +104,7 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
             <h1 style={{ margin: '0 0 18px', fontSize: 30, fontWeight: 800, color: '#111', lineHeight: 1.2 }}>{note.title?.trim() || 'Untitled'}</h1>
 
             <NoteView code={code} accent={accent} allowEdit={!!note.allow_public_edit}
-              initialBody={note.body || ''} initialChecklist={checklist} />
+              initialBody={note.body || ''} initialChecklist={checklist} editLog={editLog} />
 
             {audios.length > 0 && (
               <div style={{ marginTop: 26 }}>
@@ -133,6 +135,8 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
                 <NoteAttachments accent={accent} items={attachments.map((a: any) => ({ url: toPublicUrl(a.url), name: a.name, type: a.type, kind: a.kind }))} />
               </div>
             )}
+
+            <NoteComments code={code} accent={accent} initial={comments} />
           </div>
         </div>
 
