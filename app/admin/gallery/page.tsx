@@ -19,7 +19,10 @@ export default function GalleryPage() {
   const [team, setTeam] = useState<{ id: string; user_id: string; name: string; email?: string }[]>([])
   const [folders, setFolders] = useState<any[]>([])
   const [items, setItems] = useState<any[]>([])
-  const [activeFolder, setActiveFolder] = useState<string | null>(null) // null = all
+  const [activeFolder, setActiveFolder] = useState<string | null>(null) // null = all, '__fav' = favourites
+  // Per-user favourites: the media ids this teammate has ❤'d. Kept in a Set for
+  // O(1) lookups when painting the heart on each card.
+  const [favIds, setFavIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [loadingData, setLoadingData] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -359,7 +362,8 @@ export default function GalleryPage() {
     }
     try {
       const params = new URLSearchParams({ companyId })
-      if (activeFolder) params.set('folderId', activeFolder)
+      // '__fav' is a client-side view over all media, not a real folder.
+      if (activeFolder && activeFolder !== '__fav') params.set('folderId', activeFolder)
       if (search.trim()) params.set('q', search.trim())
       const res = await fetch(`/api/media?${params}`)
       const data = await res.json()
@@ -372,6 +376,41 @@ export default function GalleryPage() {
   }, [companyId, activeFolder, search])
 
   useEffect(() => { load() }, [load])
+
+  // Favourites are per-user, so they load once we know who's viewing.
+  const loadFavorites = useCallback(async () => {
+    if (!companyId || !userId) return
+    try {
+      const res = await fetch(`/api/media/favorites?userId=${userId}&companyId=${companyId}`)
+      const d = await res.json()
+      setFavIds(new Set<string>(d.ids || []))
+    } catch {}
+  }, [companyId, userId])
+
+  useEffect(() => { loadFavorites() }, [loadFavorites])
+
+  const toggleFavorite = async (item: any) => {
+    if (!userId) return
+    const on = !favIds.has(item.id)
+    // Optimistic: flip the heart immediately, reconcile if the write fails.
+    setFavIds(prev => {
+      const next = new Set(prev)
+      if (on) next.add(item.id); else next.delete(item.id)
+      return next
+    })
+    try {
+      await fetch('/api/media/favorites', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, mediaId: item.id, companyId, on }),
+      })
+    } catch {
+      setFavIds(prev => {
+        const next = new Set(prev)
+        if (on) next.delete(item.id); else next.add(item.id)
+        return next
+      })
+    }
+  }
 
   const createFolder = async () => {
     const name = prompt('Folder name (e.g. Fish, Tanks, Plants)')
@@ -553,7 +592,9 @@ export default function GalleryPage() {
 
   // The grid and the lightbox must see the same list, otherwise a category
   // filter would open the wrong item (the click index is into this list).
-  const visibleItems = items.filter((it: any) => !catFilter || (itemCats[it.id] || []).includes(catFilter))
+  const visibleItems = items
+    .filter((it: any) => activeFolder !== '__fav' || favIds.has(it.id))
+    .filter((it: any) => !catFilter || (itemCats[it.id] || []).includes(catFilter))
 
   return (
     <div className="gal-root" style={{ padding: '28px 36px' }}>
@@ -573,6 +614,11 @@ export default function GalleryPage() {
         /* Smoother cards: lift on hover, gentle image zoom, softer shadows. */
         .gal-card { transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease; }
         .gal-thumb:hover .gal-playbadge { opacity: 0; }
+        /* Heart: hidden until hover, but a set favourite stays lit always. */
+        .gal-heart { opacity: 0; transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease; }
+        .gal-card:hover .gal-heart, .gal-heart.on { opacity: 1; }
+        .gal-heart:hover { transform: scale(1.12); background: rgba(0,0,0,0.6) !important; }
+        .gal-heart.on:hover { color: #ff7a94 !important; }
         .gal-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.10); }
         .gal-card .gal-thumb img, .gal-card .gal-thumb video { transition: transform 0.28s ease; }
         .gal-card:hover .gal-thumb img, .gal-card:hover .gal-thumb video { transform: scale(1.04); }
@@ -687,6 +733,10 @@ export default function GalleryPage() {
             <button onClick={createFolder} style={{ background: 'none', border: 'none', color: 'var(--coral)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>+</button>
           </div>
           <button onClick={() => setActiveFolder(null)} style={folderBtn(activeFolder === null)}>All media</button>
+          <button onClick={() => setActiveFolder('__fav')} style={{ ...folderBtn(activeFolder === '__fav'), display: 'flex', alignItems: 'center', gap: 7 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill={activeFolder === '__fav' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            Favourites{favIds.size ? ` (${favIds.size})` : ''}
+          </button>
           {folders.map(f => (
             <div key={f.id} className="gal-folder-row">
               <button onClick={() => setActiveFolder(f.id)} style={{ ...folderBtn(activeFolder === f.id), flex: 1, marginBottom: 0 }}>{f.name}{f.external_source === 'prexty' ? ' 🔄' : ''}</button>
@@ -723,6 +773,7 @@ export default function GalleryPage() {
           {/* Mobile category strip (mirrors the desktop sidebar) */}
           <div className="gal-cat-strip">
             <button className={'gal-cat-chip' + (activeFolder === null ? ' on' : '')} onClick={() => setActiveFolder(null)}>All media</button>
+            <button className={'gal-cat-chip' + (activeFolder === '__fav' ? ' on' : '')} onClick={() => setActiveFolder('__fav')}>♥ Favourites{favIds.size ? ` (${favIds.size})` : ''}</button>
             {folders.map(f => (
               <button key={f.id} className={'gal-cat-chip' + (activeFolder === f.id ? ' on' : '')} onClick={() => setActiveFolder(f.id)}>
                 {f.name}{f.external_source === 'prexty' ? ' 🔄' : ''}
@@ -784,6 +835,15 @@ export default function GalleryPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          ) : activeFolder === '__fav' && visibleItems.length === 0 && pending.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '54px 24px', borderRadius: 20, border: '2px dashed var(--border)', background: 'linear-gradient(160deg, #fffdfc 0%, #fff4f1 100%)' }}>
+              <div style={{ width: 64, height: 64, margin: '0 auto 18px', borderRadius: 18, background: '#fff', boxShadow: '0 8px 24px rgba(255,122,107,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              </div>
+              <p style={{ fontSize: 17, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' }}>No favourites yet</p>
+              <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '0 0 20px' }}>Hover any photo or video and tap the ♥ to keep your own collection here.</p>
+              <button onClick={() => setActiveFolder(null)} style={{ padding: '10px 20px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Browse all media</button>
             </div>
           ) : (
             <div className={`gal-grid ${viewMode}`}>
@@ -867,6 +927,25 @@ export default function GalleryPage() {
                           cursor: 'pointer', padding: 0, backdropFilter: 'blur(3px)',
                         }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                      </button>
+                    )}
+
+                    {/* Favourite (❤) — per-user. Stays visible when set so the
+                        card reads as favourited at a glance; appears on hover
+                        otherwise (unless we're picking/selecting). */}
+                    {!selectMode && (
+                      <button type="button"
+                        onClick={e => { e.stopPropagation(); toggleFavorite(item) }}
+                        title={favIds.has(item.id) ? 'Remove from favourites' : 'Add to favourites'}
+                        className={'gal-heart' + (favIds.has(item.id) ? ' on' : '')}
+                        style={{
+                          position: 'absolute', bottom: 8, right: 8, width: 28, height: 28, borderRadius: '50%',
+                          border: 'none', background: 'rgba(0,0,0,0.42)',
+                          color: favIds.has(item.id) ? '#ff5a7a' : '#fff',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          cursor: 'pointer', padding: 0, backdropFilter: 'blur(3px)',
+                        }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill={favIds.has(item.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
                       </button>
                     )}
                   </div>
