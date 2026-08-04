@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser } from '../crm-settings/_shared'
 import RichTextEditor from '@/components/RichTextEditor'
@@ -17,6 +18,7 @@ type Note = {
   tags?: string[]; reminder_at?: string | null; pinned?: boolean; trashed_at?: string | null; updated_at?: string
   shared_with_team?: boolean; created_by?: string; created_by_name?: string
   shared_members?: { id: string; name: string }[]; comments?: any[]; edit_log?: { name: string; email?: string; at: string }[]
+  linked_tasks?: { id: string; title: string; done?: boolean }[]
 }
 type ChecklistItem = { id: string; text: string; done: boolean }
 
@@ -63,6 +65,10 @@ export default function NotesPage() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<{ kind: 'all' | 'pinned' | 'shared' | 'reminder' | 'tag'; tag?: string }>({ kind: 'all' })
   const [filterOpen, setFilterOpen] = useState(false)
+  const [taskPicker, setTaskPicker] = useState(false)
+  const [taskList, setTaskList] = useState<{ id: string; title: string; done?: boolean }[]>([])
+  const [taskQuery, setTaskQuery] = useState('')
+  const router = useRouter()
   const [dragCheck, setDragCheck] = useState<{ from: number; to: number } | null>(null)
   const checkListRef = useRef<HTMLDivElement>(null)
   const [toolbarEl, setToolbarEl] = useState<HTMLDivElement | null>(null)
@@ -115,6 +121,25 @@ export default function NotesPage() {
     }
   }, [tab, list, activeId])
 
+  // Load the company's tasks (both sources) when the "link a task" picker opens.
+  useEffect(() => {
+    if (!taskPicker || !companyId) return
+    ;(async () => {
+      const acc: { id: string; title: string; done?: boolean }[] = []
+      try {
+        const { data } = await (supabase as any).from('conversation_tasks').select('id, text, title, done').eq('company_id', companyId).order('created_at', { ascending: false }).limit(500)
+        ;(data || []).forEach((t: any) => acc.push({ id: t.id, title: t.title || t.text || 'Untitled task', done: !!t.done }))
+      } catch {}
+      try {
+        const from = new Date(); from.setMonth(from.getMonth() - 3); const to = new Date(); to.setMonth(to.getMonth() + 6)
+        const r = await fetch(`/api/calendar?companyId=${companyId}&from=${from.toISOString()}&to=${to.toISOString()}`)
+        const d = await r.json()
+        ;(d.events || []).forEach((e: any) => acc.push({ id: `cal:${e.id}`, title: e.title || 'Untitled', done: e.status === 'completed' }))
+      } catch {}
+      setTaskList(acc)
+    })()
+  }, [taskPicker, companyId])
+
   const moveCheck = (from: number, to: number) => {
     if (!note || from === to || from == null) return
     const arr = [...(note.checklist || [])]
@@ -145,7 +170,7 @@ export default function NotesPage() {
       try {
         const res = await fetch(`/api/notes?companyId=${companyId}&userId=${uid}&id=${activeId}`)
         const d = await res.json()
-        if (d.note) setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [], shared_members: d.note.shared_members || [], comments: d.note.comments || [], edit_log: d.note.edit_log || [] })
+        if (d.note) setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [], shared_members: d.note.shared_members || [], comments: d.note.comments || [], edit_log: d.note.edit_log || [], linked_tasks: d.note.linked_tasks || [] })
       } catch {}
     })()
   }, [companyId, activeId])
@@ -162,7 +187,7 @@ export default function NotesPage() {
         await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
           companyId, action: 'update', id: next.id, title: next.title, body: next.body,
           checklist: next.checklist, attachments: next.attachments, cover_image: next.cover_image ?? null,
-          allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned, shared_with_team: !!next.shared_with_team, shared_members: next.shared_members || [],
+          allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned, shared_with_team: !!next.shared_with_team, shared_members: next.shared_members || [], linked_tasks: next.linked_tasks || [],
         }) })
       } catch {} finally { setSaving(false) }
     }, 650)
@@ -681,6 +706,52 @@ export default function NotesPage() {
               <div style={{ marginTop: 22 }}>
                 <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Photos &amp; videos</h3>
                 <AttachmentUploader companyId={companyId} value={media} onChange={next => setAllAttachments([...next, ...audios])} folder="notes" />
+              </div>
+
+              {/* Linked tasks — attach tasks to this note (reverse of a task's linked notes). */}
+              <div style={{ marginTop: 22 }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Linked tasks</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {(note.linked_tasks || []).length === 0 && <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>No tasks linked.</p>}
+                  {(note.linked_tasks || []).map(t => (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff' }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.done ? '#16a34a' : 'var(--coral)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>{t.done ? <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></> : <><circle cx="12" cy="12" r="9"/></>}</svg>
+                      <button onClick={() => router.push(`/admin/tasks?task=${t.id}`)} title="Open task"
+                        style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 'none', background: 'none', color: 'var(--ink)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: 0, textDecoration: t.done ? 'line-through' : 'none' }}>{t.title || 'Untitled task'}</button>
+                      <button onClick={() => queueSave({ ...note, linked_tasks: (note.linked_tasks || []).filter(x => x.id !== t.id) })} title="Unlink" style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 16, lineHeight: 1, flexShrink: 0 }}>×</button>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ position: 'relative', marginTop: 8 }}>
+                  <button onClick={() => setTaskPicker(v => !v)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px dashed var(--border)', background: 'var(--canvas)', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: '8px 12px', borderRadius: 9 }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Link a task
+                  </button>
+                  {taskPicker && (<>
+                    <div onClick={() => setTaskPicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                    <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 41, width: 320, maxWidth: '90vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 34px rgba(0,0,0,0.18)', padding: 8 }}>
+                      <input autoFocus value={taskQuery} onChange={e => setTaskQuery(e.target.value)} placeholder="Search tasks…"
+                        style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', marginBottom: 6 }} />
+                      <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+                        {(() => {
+                          const q = taskQuery.trim().toLowerCase()
+                          const linked = new Set((note.linked_tasks || []).map(x => x.id))
+                          const items = taskList.filter(t => !linked.has(t.id) && (!q || (t.title || '').toLowerCase().includes(q)))
+                          if (!items.length) return <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '8px 6px' }}>{taskList.length ? 'No matching tasks.' : 'No tasks found.'}</p>
+                          return items.slice(0, 50).map(t => (
+                            <button key={t.id} onClick={() => { queueSave({ ...note, linked_tasks: [...(note.linked_tasks || []), { id: t.id, title: t.title }] }); setTaskPicker(false); setTaskQuery('') }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 9px', border: 'none', borderRadius: 8, background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--canvas)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.done ? '#16a34a' : 'var(--coral)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="9"/>{t.done && <polyline points="8 12 11 15 16 9"/>}</svg>
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: t.done ? 'line-through' : 'none' }}>{t.title || 'Untitled task'}</span>
+                            </button>
+                          ))
+                        })()}
+                      </div>
+                    </div>
+                  </>)}
+                </div>
               </div>
 
               {(note.edit_log || []).length > 0 && (
