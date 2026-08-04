@@ -341,8 +341,10 @@ export default function TasksPage() {
     let rows: any[] = data || []
 
     // Paint the real tasks immediately, before the (slower) calendar merge and
-    // conversation enrichment — so the list shows up straight away.
-    setTasks(rows)
+    // conversation enrichment — so the list shows up straight away. On a refetch,
+    // KEEP the already-merged calendar tasks visible so they don't blink out
+    // (which looked like recurring tasks "disappearing" until a full reload).
+    setTasks(prev => { const cal = (prev || []).filter((t: any) => t._source === 'calendar'); return cal.length ? [...rows, ...cal] : rows })
     setLoading(false)
 
     // Everything scheduled on the Calendar — deliveries, appointments,
@@ -444,6 +446,31 @@ export default function TasksPage() {
       setConvs(m)
     }
   }, [])
+
+  // Live updates — refetch when tasks change in Supabase (this device or another,
+  // a teammate, or the recurring generator), and when the tab regains focus, so
+  // the board stays current without a manual reload. Debounced to coalesce bursts.
+  useEffect(() => {
+    if (!companyId) return
+    let t: any
+    const bump = () => { clearTimeout(t); t = setTimeout(() => loadTasks(companyId), 400) }
+    let ch: any
+    try {
+      ch = (supabase as any).channel(`tasks-live-${companyId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_tasks', filter: `company_id=eq.${companyId}` }, bump)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_events', filter: `company_id=eq.${companyId}` }, bump)
+        .subscribe()
+    } catch { /* realtime not enabled — the focus refetch below still keeps it fresh */ }
+    const onVis = () => { if (document.visibilityState === 'visible') bump() }
+    window.addEventListener('visibilitychange', onVis)
+    window.addEventListener('focus', onVis)
+    return () => {
+      clearTimeout(t)
+      try { (supabase as any).removeChannel(ch) } catch {}
+      window.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('focus', onVis)
+    }
+  }, [companyId, loadTasks])
 
   const statusOf = (t: any): string => t.status || (t.done ? 'done' : 'todo')
   const isDone = (t: any) => statusOf(t) === 'done'
