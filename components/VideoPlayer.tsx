@@ -36,7 +36,8 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
   const wrapRef = useRef<HTMLDivElement>(null)
   const vRef = useRef<HTMLVideoElement>(null)
   const previewRef = useRef<HTMLVideoElement>(null)
-  const bgRef = useRef<HTMLVideoElement>(null)
+  const bgRef = useRef<HTMLCanvasElement>(null)
+  const bgTimer = useRef<any>(null)
   const barRef = useRef<HTMLDivElement>(null)
   const hideTimer = useRef<any>(null)
 
@@ -59,23 +60,38 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
     return () => document.removeEventListener('fullscreenchange', onFs)
   }, [])
 
+  // Ambient backing is painted from the SINGLE main video onto a tiny canvas
+  // (blurred by CSS) — no second video download/decode, so playback stays smooth.
+  const paintBg = useCallback(() => {
+    const c = bgRef.current, v = vRef.current
+    if (!c || !v || v.readyState < 2) return
+    const ctx = c.getContext('2d'); if (!ctx) return
+    try { ctx.drawImage(v, 0, 0, c.width, c.height) } catch { /* cross-origin frame — ignore */ }
+  }, [])
+
   useEffect(() => {
     const v = vRef.current; if (!v) return
-    const syncBg = () => { const b = bgRef.current; if (b && Math.abs(b.currentTime - v.currentTime) > 0.3) { try { b.currentTime = v.currentTime } catch {} } }
-    const onTime = () => { if (!scrubbing) setCur(v.currentTime); syncBg() }
+    const onTime = () => { if (!scrubbing) setCur(v.currentTime) }
     const onMeta = () => setDur(v.duration || 0)
-    const onPlay = () => { setPlaying(true); const b = bgRef.current; if (b) b.play().catch(() => {}) }
-    const onPause = () => { setPlaying(false); const b = bgRef.current; if (b) b.pause() }
+    const onData = () => { if (ambient) paintBg() }
+    const startBg = () => { if (!ambient) return; clearInterval(bgTimer.current); paintBg(); bgTimer.current = setInterval(paintBg, 120) }
+    const stopBg = () => clearInterval(bgTimer.current)
+    const onPlay = () => { setPlaying(true); startBg() }
+    const onPause = () => { setPlaying(false); stopBg() }
+    const onEnded = () => stopBg()
     const onProg = () => { try { if (v.buffered.length) setBuffered(v.buffered.end(v.buffered.length - 1)) } catch {} }
     v.addEventListener('timeupdate', onTime); v.addEventListener('loadedmetadata', onMeta)
     v.addEventListener('durationchange', onMeta); v.addEventListener('play', onPlay)
     v.addEventListener('pause', onPause); v.addEventListener('progress', onProg)
+    v.addEventListener('loadeddata', onData); v.addEventListener('ended', onEnded)
     return () => {
+      clearInterval(bgTimer.current)
       v.removeEventListener('timeupdate', onTime); v.removeEventListener('loadedmetadata', onMeta)
       v.removeEventListener('durationchange', onMeta); v.removeEventListener('play', onPlay)
       v.removeEventListener('pause', onPause); v.removeEventListener('progress', onProg)
+      v.removeEventListener('loadeddata', onData); v.removeEventListener('ended', onEnded)
     }
-  }, [scrubbing])
+  }, [scrubbing, ambient, paintBg])
 
   const seekTo = useCallback((t: number) => {
     const v = vRef.current; if (!v) return
@@ -138,10 +154,10 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
       {/* Ambient backing: a blurred, scaled copy of the video fills the frame so
           letterbox areas glow with the clip's own colours instead of black. */}
       {ambient && (
-        <video ref={bgRef} src={src} muted playsInline preload="auto" tabIndex={-1} aria-hidden
+        <canvas ref={bgRef} width={64} height={36} aria-hidden
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(34px) saturate(1.5)', transform: 'scale(1.25)', zIndex: 0, pointerEvents: 'none' }} />
       )}
-      <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} onClick={toggle}
+      <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} preload="auto" onClick={toggle}
         style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', position: 'relative', zIndex: 1, ...style, ...(isFs ? { width: '100%', height: '100%', objectFit: 'contain' } : null) }} />
 
       {/* Centre transport: rewind 10 · play/pause · forward 10 */}
@@ -162,7 +178,7 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
           {hover && (
             <div style={{ position: 'absolute', bottom: 22, left: hover.x, transform: 'translateX(-50%)', pointerEvents: 'none', textAlign: 'center' }}>
               <div style={{ width: 152, height: 86, borderRadius: 8, overflow: 'hidden', border: '2px solid rgba(255,255,255,0.85)', background: '#000', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <video ref={previewRef} src={src} muted preload="auto" playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <video ref={previewRef} src={src} muted preload="metadata" playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
               <div style={{ marginTop: 4, fontSize: 11.5, fontWeight: 700, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.8)', fontVariantNumeric: 'tabular-nums' }}>{fmt(hover.t)}</div>
             </div>

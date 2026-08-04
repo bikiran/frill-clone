@@ -83,7 +83,7 @@ export default function MediaLightbox({
         {isImg(cur) ? (
           <img src={cur.url} alt={cur.name || ''} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 6 }} />
         ) : isVid(cur) ? (
-          <VideoPlayer key={cur.url} src={cur.url} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 6 }} />
+          <VideoPlayer key={cur.url} src={cur.url} poster={(cur as any).thumbnail_url || (cur as any).poster} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 6 }} />
         ) : (
           <a href={cur.url} target="_blank" rel="noopener" style={{ color: '#fff', fontSize: 15, textDecoration: 'underline' }}>Open file: {cur.name || cur.url}</a>
         )}

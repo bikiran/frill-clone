@@ -823,7 +823,12 @@ export default function GalleryPage() {
                   <div className="gal-thumb" style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: 'var(--canvas)', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}
                     onClick={() => selectMode ? toggleSelect(item.id) : setLightboxIndex(i)}>
                     {item.kind === 'video' ? (
-                      <video src={item.url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                      // A real image thumbnail when we have one; otherwise just the
+                      // first frame (preload metadata + #t) — never a full <video>
+                      // download per tile, which was starving the player.
+                      item.thumbnail_url && item.thumbnail_url !== item.url
+                        ? <img loading="lazy" decoding="async" src={item.thumbnail_url} alt={item.title || ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : <video src={item.url + '#t=0.1'} preload="metadata" muted playsInline tabIndex={-1} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                       <img loading="lazy" decoding="async" src={item.thumbnail_url || item.url} alt={item.title || ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                     )}

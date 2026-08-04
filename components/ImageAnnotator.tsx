@@ -55,13 +55,17 @@ export default function ImageAnnotator({
   // (where the input box floats) so the box sits exactly under the cursor.
   const [textInput, setTextInput] = useState<{ x: number; y: number; sx: number; sy: number; value: string } | null>(null)
   const [canUndo, setCanUndo] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   // Load image and set up the committed layer
   useEffect(() => {
+    setLoading(true)
     const img = new Image()
     img.crossOrigin = 'anonymous'
+    img.decoding = 'async'
     img.onload = () => {
       setImage(img)
+      setLoading(false)
       const canvas = canvasRef.current
       if (!canvas) return
       canvas.width = img.width
@@ -73,6 +77,7 @@ export default function ImageAnnotator({
       committedRef.current = committed
       canvas.getContext('2d')?.drawImage(committed, 0, 0)
     }
+    img.onerror = () => setLoading(false)
     img.src = imageSrc
   }, [imageSrc])
 
@@ -257,6 +262,13 @@ export default function ImageAnnotator({
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif",
     }}>
+      {loading && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 5, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: 'rgba(255,255,255,0.85)', pointerEvents: 'none' }}>
+          <span style={{ width: 34, height: 34, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.25)', borderTopColor: '#fff', animation: 'ia-spin 0.8s linear infinite' }} />
+          <span style={{ fontSize: 13, fontWeight: 500 }}>Loading image…</span>
+          <style>{`@keyframes ia-spin { to { transform: rotate(360deg) } }`}</style>
+        </div>
+      )}
 
       {/* Top bar: title + Cancel / Done */}
       <div style={{

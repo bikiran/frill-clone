@@ -24,7 +24,10 @@ export async function GET(req: NextRequest) {
   if (!allowedHost(target.hostname)) return NextResponse.json({ error: 'Host not allowed' }, { status: 403 })
 
   try {
-    const upstream = await fetch(target.toString(), { cache: 'no-store' })
+    // A stored media URL is immutable, so let the browser and the Vercel edge
+    // cache it — the editor opens instantly on repeat, instead of re-streaming
+    // the full original through the server every time.
+    const upstream = await fetch(target.toString(), { cache: 'force-cache' })
     if (!upstream.ok || !upstream.body) return NextResponse.json({ error: 'Fetch failed' }, { status: 502 })
     const ct = upstream.headers.get('content-type') || 'application/octet-stream'
     // Only proxy images — never let this stream arbitrary content types.
@@ -33,7 +36,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': ct,
-        'Cache-Control': 'private, max-age=300',
+        'Cache-Control': 'public, max-age=86400, s-maxage=604800, immutable',
         'Access-Control-Allow-Origin': '*',
       },
     })
