@@ -274,8 +274,20 @@ export default function NotesPage() {
         .ne-meta { display: flex; align-items: center; gap: 10px; padding: 10px 24px 4px; color: var(--slate); font-size: 12.5px; flex-wrap: wrap; }
         .ne-toolbar { padding: 2px 18px 9px; }
         .ne-scroll { flex: 1; overflow-y: auto; }
-        .ne-inner { margin: 0 auto; padding: 22px 48px 40px; }
-        .ne-footer { border-top: 1px solid var(--border); background: #fff; padding: 11px 48px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+        .ne-inner { margin: 0 auto; max-width: 940px; padding: 26px 68px 52px; }
+        .ne-footer { border-top: 1px solid var(--border); background: #fff; padding: 12px 68px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+        .nchk-row { display: flex; align-items: center; gap: 11px; padding: 7px 8px; border-radius: 11px; transition: background .12s, box-shadow .12s, opacity .12s; }
+        .nchk-row:hover { background: var(--canvas); }
+        .nchk-grip { cursor: grab; color: var(--slate); display: flex; padding: 3px 2px; opacity: 0.3; touch-action: none; transition: opacity .12s, color .12s; }
+        .nchk-row:hover .nchk-grip { opacity: 0.65; }
+        .nchk-box { width: 24px; height: 24px; flex-shrink: 0; border-radius: 8px; border: 2px solid var(--border); background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; color: #fff; transition: background .15s, border-color .15s, transform .08s; }
+        .nchk-box:hover { border-color: var(--coral); }
+        .nchk-box[data-done="true"] { background: var(--coral); border-color: var(--coral); }
+        .nchk-box:active { transform: scale(.88); }
+        .nchk-input { flex: 1; min-width: 0; border: none; outline: none; font-size: 16.5px; background: transparent; }
+        .nchk-del { opacity: 0; background: none; border: none; color: var(--slate); cursor: pointer; font-size: 20px; line-height: 1; padding: 2px 6px; border-radius: 7px; transition: opacity .12s, background .12s, color .12s; }
+        .nchk-row:hover .nchk-del { opacity: 1; }
+        .nchk-del:hover { background: var(--peach); color: var(--coral); }
         @media (max-width: 860px) {
           .ne-inner { padding: 16px 16px 32px; }
           .ne-meta { padding: 10px 14px 4px; }
@@ -498,27 +510,32 @@ export default function NotesPage() {
                 {(note.checklist || []).map((c, ci) => (
                   <div key={c.id} data-check-row style={{ position: 'relative' }}>
                     {dragCheck && dragCheck.to === ci && dragCheck.from !== ci && dragCheck.from !== ci - 1 && (
-                      <div style={{ position: 'absolute', top: -1, left: 22, right: 6, height: 2.5, borderRadius: 2, background: 'var(--coral)', boxShadow: '0 0 0 3px rgba(255,122,107,0.16)' }} />
+                      <div style={{ position: 'absolute', top: -2, left: 40, right: 8, height: 2.5, borderRadius: 2, background: 'var(--coral)', boxShadow: '0 0 0 3px rgba(255,122,107,0.16)' }} />
                     )}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 0', borderRadius: 8, transition: 'background .12s, box-shadow .12s',
-                      ...(dragCheck?.from === ci ? { background: 'var(--peach)', boxShadow: '0 4px 14px rgba(0,0,0,0.10)', opacity: 0.9 } : {}) }}>
-                      <span onPointerDown={startCheckDrag(ci)} title="Drag to reorder"
-                        style={{ cursor: 'grab', color: dragCheck?.from === ci ? 'var(--coral)' : 'var(--slate)', display: 'flex', padding: '4px 4px', opacity: dragCheck?.from === ci ? 1 : 0.6, touchAction: 'none' }}>
-                        <svg width="13" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="2"/><circle cx="15" cy="5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="19" r="2"/><circle cx="15" cy="19" r="2"/></svg>
+                    <div className="nchk-row"
+                      style={dragCheck?.from === ci ? { background: 'var(--peach)', boxShadow: '0 6px 18px rgba(0,0,0,0.12)', opacity: 0.92 } : undefined}>
+                      <span className="nchk-grip" onPointerDown={startCheckDrag(ci)} title="Drag to reorder"
+                        style={dragCheck?.from === ci ? { opacity: 1, color: 'var(--coral)' } : undefined}>
+                        <svg width="15" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="2.1"/><circle cx="15" cy="5" r="2.1"/><circle cx="9" cy="12" r="2.1"/><circle cx="15" cy="12" r="2.1"/><circle cx="9" cy="19" r="2.1"/><circle cx="15" cy="19" r="2.1"/></svg>
                       </span>
-                      <input type="checkbox" checked={c.done} onChange={() => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, done: !x.done } : x) })} style={{ width: 17, height: 17, accentColor: 'var(--coral)', flexShrink: 0 }} />
-                      <input value={c.text} onChange={e => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, text: e.target.value } : x) })}
-                        placeholder="List item" style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, color: c.done ? 'var(--slate)' : 'var(--ink)', textDecoration: c.done ? 'line-through' : 'none', background: 'transparent' }} />
-                      <button onClick={() => queueSave({ ...note, checklist: note.checklist.filter(x => x.id !== c.id) })} style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 17, lineHeight: 1 }}>×</button>
+                      <button className="nchk-box" data-done={c.done} title={c.done ? 'Mark undone' : 'Mark done'}
+                        onClick={() => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, done: !x.done } : x) })}>
+                        {c.done && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                      </button>
+                      <input className="nchk-input" value={c.text} onChange={e => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, text: e.target.value } : x) })}
+                        placeholder="List item" style={{ color: c.done ? 'var(--slate)' : 'var(--ink)', textDecoration: c.done ? 'line-through' : 'none' }} />
+                      <button className="nchk-del" onClick={() => queueSave({ ...note, checklist: note.checklist.filter(x => x.id !== c.id) })} title="Remove">×</button>
                     </div>
                   </div>
                 ))}
                 {dragCheck && dragCheck.to === (note.checklist || []).length && dragCheck.from !== (note.checklist || []).length - 1 && (
-                  <div style={{ position: 'relative', height: 0 }}><div style={{ position: 'absolute', top: -1, left: 22, right: 6, height: 2.5, borderRadius: 2, background: 'var(--coral)', boxShadow: '0 0 0 3px rgba(255,122,107,0.16)' }} /></div>
+                  <div style={{ position: 'relative', height: 0 }}><div style={{ position: 'absolute', top: -2, left: 40, right: 8, height: 2.5, borderRadius: 2, background: 'var(--coral)', boxShadow: '0 0 0 3px rgba(255,122,107,0.16)' }} /></div>
                 )}
                 </div>
                 <button onClick={() => queueSave({ ...note, checklist: [...(note.checklist || []), { id: rid(), text: '', done: false }] })}
-                  style={{ marginTop: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>+ Add item</button>
+                  style={{ marginTop: 8, marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 14.5, fontWeight: 700, cursor: 'pointer', padding: '4px 0' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Add item</button>
               </div>
 
               <div style={{ marginTop: 22 }}>

@@ -38,7 +38,9 @@ export default function RichTextEditor({
   const indicatorRef = useRef<HTMLDivElement>(null)
   const hoverBlockRef = useRef<HTMLElement | null>(null)
   const dragBlockRef = useRef<HTMLElement | null>(null)
-  const dropRef = useRef<{ target: HTMLElement; before: boolean } | null>(null)
+  const dropRef = useRef<{ before: HTMLElement | null } | null>(null)
+  const ghostRef = useRef<HTMLElement | null>(null)
+  const grabOffRef = useRef(0)
   const hideT = useRef<any>(null)
   const [rec, setRec] = useState<'idle' | 'recording' | 'uploading'>('idle')
   const [recSecs, setRecSecs] = useState(0)
@@ -47,27 +49,54 @@ export default function RichTextEditor({
   const streamRef = useRef<MediaStream | null>(null)
   const tickRef = useRef<any>(null)
 
+  // Inner HTML of an Evernote-style voice card (no inline player — playback is in
+  // the bottom AudioDock; buttons wired by document-level delegation in
+  // <VoiceBlocks/>). Hidden <audio> feeds the dock.
+  const voiceCardInner = (url: string, name: string, dur: string) => {
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    const n = esc(name)
+    return `<button class="rte-voice-play" type="button" title="Play" aria-label="Play"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M7 5.5v13a1 1 0 0 0 1.5.87l11-6.5a1 1 0 0 0 0-1.74l-11-6.5A1 1 0 0 0 7 5.5z"/></svg></button>` +
+      `<span class="rte-voice-lbl"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg><span class="rte-voice-name">${n}</span>${dur ? `<span class="rte-voice-dur">${esc(dur)}</span>` : ''}</span>` +
+      `<span class="rte-voice-act">` +
+        `<button class="rte-voice-btn" type="button" data-va="rename" title="Rename"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>` +
+        `<button class="rte-voice-btn" type="button" data-va="download" title="Download"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>` +
+        `<button class="rte-voice-btn" type="button" data-va="more" title="More options"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>` +
+      `</span>` +
+      `<audio src="${url}" data-name="${n}" preload="metadata" style="display:none"></audio>`
+  }
+
   const insertVoiceBlock = (url: string, secs: number) => {
     const label = new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     const name = `Voice note · ${label}`
     const dur = secs ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` : ''
-    // A player-less card (playback happens in the bottom AudioDock). Buttons are
-    // wired via document-level delegation in <VoiceBlocks/> so they work inside
-    // contentEditable and on the shared page alike. Hidden <audio> feeds the dock.
-    const html =
-      `<div class="rte-voice" contenteditable="false" data-voice>` +
-        `<button class="rte-voice-play" type="button" title="Play" aria-label="Play"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M7 5.5v13a1 1 0 0 0 1.5.87l11-6.5a1 1 0 0 0 0-1.74l-11-6.5A1 1 0 0 0 7 5.5z"/></svg></button>` +
-        `<span class="rte-voice-lbl"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg><span class="rte-voice-name">${name}</span>${dur ? `<span class="rte-voice-dur">${dur}</span>` : ''}</span>` +
-        `<span class="rte-voice-act">` +
-          `<button class="rte-voice-btn" type="button" data-va="rename" title="Rename"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>` +
-          `<button class="rte-voice-btn" type="button" data-va="download" title="Download"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>` +
-          `<button class="rte-voice-btn" type="button" data-va="more" title="More options"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>` +
-        `</span>` +
-        `<audio src="${url}" data-name="${name}" preload="metadata" style="display:none"></audio>` +
-      `</div><p><br></p>`
+    const html = `<div class="rte-voice" contenteditable="false" data-voice>${voiceCardInner(url, name, dur)}</div><p><br></p>`
     ref.current?.focus()
     document.execCommand('insertHTML', false, html)
     emit()
+  }
+
+  // Upgrade any legacy voice markup in loaded content (old native <audio controls>
+  // players, pre-card formats) to the current Evernote-style card.
+  const normalizeVoice = () => {
+    const root = ref.current; if (!root) return
+    let changed = false
+    Array.from(root.querySelectorAll('audio')).forEach(au => {
+      const a = au as HTMLAudioElement
+      const url = a.getAttribute('src') || ''
+      if (!url) return
+      let card = a.closest('.rte-voice') as HTMLElement | null
+      // Already a modern card? (hidden audio + play button, no native controls.)
+      if (card && card.querySelector('.rte-voice-play') && !a.hasAttribute('controls')) return
+      const durText = card?.querySelector('.rte-voice-dur')?.textContent?.trim() || ''
+      let name = a.getAttribute('data-name') || card?.querySelector('.rte-voice-name')?.textContent?.trim() || ''
+      if (!name) { try { name = decodeURIComponent(new URL(url, location.href).pathname.split('/').pop() || '').replace(/^\d{10,}-/, '').replace(/\.\w+$/, '') } catch {} }
+      if (!name) name = 'Voice note'
+      if (!card) { card = document.createElement('div'); a.replaceWith(card) }
+      card.className = 'rte-voice'; card.setAttribute('contenteditable', 'false'); card.setAttribute('data-voice', '')
+      card.innerHTML = voiceCardInner(url, name, durText)
+      changed = true
+    })
+    if (changed) emit()
   }
 
   const startVoice = async () => {
@@ -101,7 +130,7 @@ export default function RichTextEditor({
   const stopVoice = () => { clearInterval(tickRef.current); try { recRef.current?.stop() } catch {}; streamRef.current?.getTracks().forEach(t => t.stop()) }
 
   useEffect(() => {
-    if (ref.current) ref.current.innerHTML = value || ''
+    if (ref.current) { ref.current.innerHTML = value || ''; if (blockDrag || enableVoice) normalizeVoice() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -230,35 +259,54 @@ export default function RichTextEditor({
   const onContentMove = (e: React.MouseEvent) => { if (!blockDrag || dragBlockRef.current) return; cancelHide(); positionHandle(topBlockAt(e.clientX, e.clientY)) }
   const onDragMove = (e: PointerEvent) => {
     e.preventDefault()
-    const content = ref.current, ind = indicatorRef.current; if (!content || !ind) return
-    const target = topBlockAt(e.clientX, e.clientY)
-    if (!target || target === dragBlockRef.current) { ind.style.opacity = '0'; dropRef.current = null; return }
-    const r = target.getBoundingClientRect(), before = e.clientY < r.top + r.height / 2
-    dropRef.current = { target, before }
+    const content = ref.current, ind = indicatorRef.current, ghost = ghostRef.current, drag = dragBlockRef.current
+    if (!content || !ind || !ghost || !drag) return
+    // The picked-up card follows the cursor.
+    ghost.style.top = `${e.clientY - grabOffRef.current}px`
+    // Find where it would land by geometry (never elementFromPoint — no jitter,
+    // and it can't be fooled by the ghost or the dimmed original).
+    const kids = Array.from(content.children).filter(c => c !== drag) as HTMLElement[]
+    let before: HTMLElement | null = null
+    for (const c of kids) { const r = c.getBoundingClientRect(); if (e.clientY < r.top + r.height / 2) { before = c; break } }
+    dropRef.current = { before }
     const cr = content.getBoundingClientRect()
-    ind.style.opacity = '1'; ind.style.left = `${cr.left + 4}px`; ind.style.width = `${cr.width - 8}px`; ind.style.top = `${before ? r.top - 1 : r.bottom + 1}px`
+    let lineY: number
+    if (before) lineY = before.getBoundingClientRect().top - 1
+    else { const last = kids[kids.length - 1]; lineY = last ? last.getBoundingClientRect().bottom + 1 : cr.top + 2 }
+    ind.style.opacity = '1'; ind.style.left = `${cr.left}px`; ind.style.width = `${cr.width}px`; ind.style.top = `${lineY}px`
   }
   const onDragUp = () => {
     window.removeEventListener('pointermove', onDragMove)
     const src = dragBlockRef.current, drop = dropRef.current, content = ref.current
+    ghostRef.current?.remove(); ghostRef.current = null
     if (src) src.style.opacity = ''
     if (indicatorRef.current) indicatorRef.current.style.opacity = '0'
-    if (handleRef.current) handleRef.current.style.pointerEvents = 'auto'
-    document.body.style.cursor = ''
+    document.body.style.cursor = ''; document.body.style.userSelect = ''
     dragBlockRef.current = null; dropRef.current = null
-    if (src && drop && content && src !== drop.target) {
-      content.insertBefore(src, drop.before ? drop.target : drop.target.nextSibling)
+    if (src && content && drop) {
+      const before = drop.before
+      if (before !== src && src.nextSibling !== before) content.insertBefore(src, before)   // before=null appends
       emit()
     }
     positionHandle(null)
   }
   const onHandleDown = (e: React.PointerEvent) => {
     e.preventDefault()
-    const blk = hoverBlockRef.current; if (!blk) return
+    const blk = hoverBlockRef.current, content = ref.current; if (!blk || !content) return
     dragBlockRef.current = blk
-    blk.style.opacity = '0.4'
-    document.body.style.cursor = 'grabbing'
-    if (handleRef.current) handleRef.current.style.pointerEvents = 'none'
+    const r = blk.getBoundingClientRect()
+    grabOffRef.current = e.clientY - r.top
+    // A floating clone that visibly "pops" off the page while you drag.
+    const ghost = blk.cloneNode(true) as HTMLElement
+    Object.assign(ghost.style, {
+      position: 'fixed', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, margin: '0',
+      pointerEvents: 'none', zIndex: '100060', background: '#fff', borderRadius: '10px', padding: '3px 10px',
+      boxShadow: '0 14px 34px rgba(0,0,0,0.22)', transform: 'scale(1.02)', opacity: '0.98', cursor: 'grabbing',
+    } as CSSStyleDeclaration)
+    document.body.appendChild(ghost); ghostRef.current = ghost
+    blk.style.opacity = '0.3'
+    document.body.style.cursor = 'grabbing'; document.body.style.userSelect = 'none'
+    if (handleRef.current) { handleRef.current.style.opacity = '0'; handleRef.current.style.pointerEvents = 'none' }
     window.addEventListener('pointermove', onDragMove)
     window.addEventListener('pointerup', onDragUp, { once: true })
   }
@@ -369,7 +417,7 @@ export default function RichTextEditor({
             style={{ position: 'fixed', top: 0, left: 0, opacity: 0, transform: 'translateY(-50%)', zIndex: 100055, width: 30, height: 30, borderRadius: 9, border: '1px solid var(--border,#e5e7eb)', background: '#fff', boxShadow: '0 3px 10px rgba(0,0,0,0.18)', color: '#374151', cursor: 'grab', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity .12s ease, box-shadow .12s ease', touchAction: 'none' }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="5" r="2.15"/><circle cx="16" cy="5" r="2.15"/><circle cx="8" cy="12" r="2.15"/><circle cx="16" cy="12" r="2.15"/><circle cx="8" cy="19" r="2.15"/><circle cx="16" cy="19" r="2.15"/></svg>
           </button>
-          <div ref={indicatorRef} style={{ position: 'fixed', top: 0, left: 0, height: 3, borderRadius: 2, background: 'var(--coral,#ff7a6b)', opacity: 0, zIndex: 100054, pointerEvents: 'none', transform: 'translateY(-50%)', boxShadow: '0 0 0 3px rgba(255,122,107,0.18)', transition: 'top .05s linear, left .05s linear, width .05s linear, opacity .12s' }} />
+          <div ref={indicatorRef} style={{ position: 'fixed', top: 0, left: 0, height: 3, borderRadius: 2, background: 'var(--coral,#ff7a6b)', opacity: 0, zIndex: 100054, pointerEvents: 'none', transform: 'translateY(-50%)', boxShadow: '0 0 0 3px rgba(255,122,107,0.18)', transition: 'opacity .1s' }} />
         </>
       )}
 
