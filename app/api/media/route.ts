@@ -18,12 +18,16 @@ export async function GET(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
 
-    const { data: folders } = await db.from('media_folders').select('*').eq('company_id', companyId).order('sort_order', { ascending: true }).order('name', { ascending: true })
+    // Folders and items are independent — fire both at once so the request is
+    // bound by the slower of the two, not their sum.
+    const foldersQuery = db.from('media_folders').select('*').eq('company_id', companyId).order('sort_order', { ascending: true }).order('name', { ascending: true })
 
     let itemsQuery = db.from('media_items').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
     if (folderId) itemsQuery = itemsQuery.eq('folder_id', folderId)
     if (q) itemsQuery = itemsQuery.or(`title.ilike.%${q}%,sku.ilike.%${q}%,description.ilike.%${q}%`)
-    const { data: items } = await itemsQuery.limit(500)
+    itemsQuery = itemsQuery.limit(500)
+
+    const [{ data: folders }, { data: items }] = await Promise.all([foldersQuery, itemsQuery])
 
     return NextResponse.json({ folders: folders || [], items: items || [] })
   } catch (err: any) {
