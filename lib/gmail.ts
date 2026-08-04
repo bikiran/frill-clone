@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { uploadToR2, r2Configured } from '@/lib/r2'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -135,6 +136,53 @@ function collectAttachments(payload: any, out: any[] = []): any[] {
   }
   for (const part of payload.parts || []) collectAttachments(part, out)
   return out
+}
+
+// Inline images (image/* parts with a Content-ID but usually no filename — Apple
+// Mail embeds customer photos as <img src="cid:...">). collectAttachments drops
+// them (no filename), and a cid: URL resolves only behind Gmail's authenticated
+// API, so they render broken. We collect them here to materialise at ingestion.
+function collectInlineImages(payload: any, out: any[] = []): any[] {
+  if (!payload) return out
+  const hdrs = payload.headers || []
+  const cid = header(hdrs, 'Content-ID').replace(/^<|>$/g, '')
+  const disp = header(hdrs, 'Content-Disposition').toLowerCase()
+  const mime = payload.mimeType || ''
+  const attId = payload.body?.attachmentId
+  if (attId && mime.startsWith('image/') && (cid || disp.startsWith('inline'))) {
+    out.push({ cid, mime, attachmentId: attId, size: payload.body?.size || 0, filename: payload.filename || '' })
+  }
+  for (const part of payload.parts || []) collectInlineImages(part, out)
+  return out
+}
+
+// Fetch a single Gmail attachment's bytes (base64url) using the same bearer auth.
+async function fetchGmailAttachment(messageId: string, attachmentId: string, auth: Record<string, string>): Promise<Buffer | null> {
+  try {
+    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachmentId}`, { headers: auth })
+    if (!res.ok) return null
+    const data = await res.json()
+    const b64 = String(data.data || '').replace(/-/g, '+').replace(/_/g, '/')
+    if (!b64) return null
+    return Buffer.from(b64, 'base64')
+  } catch { return null }
+}
+
+// Store raw bytes publicly (R2 when configured, else the public Supabase bucket)
+// and return a public URL. Mirrors app/api/storage/put.
+async function storeBytes(db: any, key: string, bytes: Buffer, contentType: string): Promise<string | null> {
+  if (r2Configured()) {
+    try { return await uploadToR2(key, new Uint8Array(bytes), contentType) } catch { /* fall back to Supabase */ }
+  }
+  const bucket = 'chat-attachments'
+  try {
+    const { data: bks } = await db.storage.listBuckets()
+    if (!bks?.some((b: any) => b.id === bucket)) await db.storage.createBucket(bucket, { public: true })
+  } catch {}
+  const { error } = await db.storage.from(bucket).upload(key, bytes, { contentType, upsert: true })
+  if (error) return null
+  const { data: pub } = db.storage.from(bucket).getPublicUrl(key)
+  return pub?.publicUrl || null
 }
 
 // Pull the readable body out of a Gmail payload.
@@ -309,11 +357,33 @@ export async function syncGmailChannel(channelId: string): Promise<{ imported: n
     const content = stripQuoted(rawBody) || full.snippet || ''
     const quoted = rawBody.length > content.length ? rawBody.slice(content.length).trim() : ''
     const htmlPart = findPart(full.payload, 'text/html')
-    const emailHtml = htmlPart ? sanitizeEmailHtml(htmlPart) : ''
+    let emailHtml = htmlPart ? sanitizeEmailHtml(htmlPart) : ''
     const toHeader = header(headers, 'To')
     const ccHeader = header(headers, 'Cc')
     const attachments = collectAttachments(full.payload)
     const companyId = channel.company_id
+
+    // Inline images (cid:) — pull the bytes once at ingestion, store them
+    // publicly, rewrite the cid: refs so the HTML renders on web + mobile, and
+    // surface each as a viewable attachment (with a real url).
+    try {
+      for (const img of collectInlineImages(full.payload)) {
+        const bytes = await fetchGmailAttachment(m.id, img.attachmentId, auth)
+        if (!bytes) continue
+        const ext = ((img.mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '')) || 'jpg'
+        const key = `email-inline/${companyId}/${m.id}-${String(img.attachmentId).slice(-8)}.${ext}`
+        const url = await storeBytes(db, key, bytes, img.mime)
+        if (!url) continue
+        if (img.cid) {
+          const cidRe = new RegExp('cid:' + img.cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+          emailHtml = emailHtml.replace(cidRe, url)
+        }
+        // Upgrade an existing metadata entry with its url, or add a new one.
+        const existing = attachments.find((a: any) => a.attachmentId === img.attachmentId)
+        if (existing) { existing.url = url; existing.inline = true }
+        else attachments.push({ name: img.filename || `photo.${ext}`, mime: img.mime, size: img.size, url, inline: true, attachmentId: img.attachmentId })
+      }
+    } catch { /* inline handling is best-effort — never block the email import */ }
 
     // Find-or-create the contact.
     let contact: any = null
