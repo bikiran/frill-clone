@@ -60,6 +60,9 @@ export default function NotesPage() {
   const [remOpen, setRemOpen] = useState(false)
   const [tagAdding, setTagAdding] = useState(false)
   const [tagInput, setTagInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<{ kind: 'all' | 'pinned' | 'shared' | 'reminder' | 'tag'; tag?: string }>({ kind: 'all' })
+  const [filterOpen, setFilterOpen] = useState(false)
   const [dragCheck, setDragCheck] = useState<{ from: number; to: number } | null>(null)
   const checkListRef = useRef<HTMLDivElement>(null)
   const [toolbarEl, setToolbarEl] = useState<HTMLDivElement | null>(null)
@@ -284,6 +287,19 @@ export default function NotesPage() {
     : { height: 'calc(100dvh - 4px)', display: 'flex', flexDirection: 'column' }
   const reminders = list.filter(n => n.reminder_at).sort((a, b) => new Date(a.reminder_at!).getTime() - new Date(b.reminder_at!).getTime())
   const shown = tab === 'trash' ? trashList : tab === 'reminders' ? reminders : list
+  // Search + filter over the current tab's rows.
+  const allTags = Array.from(new Set(list.flatMap(n => n.tags || []))).sort()
+  const q = search.trim().toLowerCase()
+  const filterActive = !!q || filter.kind !== 'all'
+  const visibleRows = shown.filter(n => {
+    if (q) { const hay = `${n.title || ''} ${(n.body || '').replace(/<[^>]+>/g, ' ')} ${(n.tags || []).join(' ')}`.toLowerCase(); if (!hay.includes(q)) return false }
+    if (filter.kind === 'pinned' && !n.pinned) return false
+    if (filter.kind === 'shared' && !(n.shared_with_team || (n.shared_members || []).length)) return false
+    if (filter.kind === 'reminder' && !n.reminder_at) return false
+    if (filter.kind === 'tag' && !(n.tags || []).includes(filter.tag as string)) return false
+    return true
+  })
+  const filterLabel = filter.kind === 'all' ? 'All' : filter.kind === 'pinned' ? 'Pinned' : filter.kind === 'shared' ? 'Shared' : filter.kind === 'reminder' ? 'Reminder' : `#${filter.tag}`
   const media = note ? (note.attachments || []).filter(a => !isAudio(a)) : []
   const audios = note ? (note.attachments || []).filter(isAudio) : []
   const setAllAttachments = (next: any[]) => note && queueSave({ ...note, attachments: next })
@@ -379,11 +395,48 @@ export default function NotesPage() {
             </button>
           </div>
 
+          {/* Search + filter */}
+          <div style={{ display: 'flex', gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search notes…"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '8px 28px 8px 32px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, outline: 'none', background: '#fff' }} />
+              {search && <button onClick={() => setSearch('')} title="Clear" style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 2 }}>×</button>}
+            </div>
+            {tab !== 'trash' && (
+              <div style={{ position: 'relative' }}>
+                <button className="icon-btn" onClick={() => setFilterOpen(v => !v)} title="Filter"
+                  style={{ width: 'auto', padding: '0 10px', gap: 5, fontSize: 12.5, fontWeight: 700, ...(filter.kind !== 'all' ? { borderColor: 'var(--coral)', color: 'var(--coral)', background: 'var(--peach)' } : {}) }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                  {filter.kind !== 'all' && <span style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filterLabel}</span>}
+                </button>
+                {filterOpen && (<>
+                  <div onClick={() => setFilterOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                  <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 190, maxHeight: 320, overflowY: 'auto' }}>
+                    {([['all', 'All notes'], ['pinned', 'Pinned'], ['shared', 'Shared with team'], ['reminder', 'Has reminder']] as const).map(([k, label]) => (
+                      <button key={k} style={{ ...menuItem, ...(filter.kind === k ? { color: 'var(--coral)', fontWeight: 700 } : {}) }} onClick={() => { setFilter({ kind: k }); setFilterOpen(false) }}>{label}</button>
+                    ))}
+                    {allTags.length > 0 && <div style={{ borderTop: '1px solid var(--border)', margin: '5px 0' }} />}
+                    {allTags.length > 0 && <p style={{ margin: '4px 10px 4px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Tags</p>}
+                    {allTags.map(t => (
+                      <button key={t} style={{ ...menuItem, ...(filter.kind === 'tag' && filter.tag === t ? { color: 'var(--coral)', fontWeight: 700 } : {}) }} onClick={() => { setFilter({ kind: 'tag', tag: t }); setFilterOpen(false) }}>#{t}</button>
+                    ))}
+                  </div>
+                </>)}
+              </div>
+            )}
+          </div>
+
           <div className="notes-rows">
             {loadingList && shown.length === 0 ? (
               <p style={{ padding: 20, color: 'var(--slate)', fontSize: 13 }}>Loading…</p>
-            ) : shown.length === 0 ? (
-              tab === 'notes' ? (
+            ) : visibleRows.length === 0 ? (
+              filterActive ? (
+                <div style={{ padding: '44px 28px', textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>
+                  No notes match your {q ? 'search' : 'filter'}.
+                  <div><button onClick={() => { setSearch(''); setFilter({ kind: 'all' }) }} style={{ marginTop: 10, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Clear</button></div>
+                </div>
+              ) : tab === 'notes' ? (
                 <div style={{ padding: '48px 28px', textAlign: 'center' }}>
                   <svg width="120" height="120" viewBox="0 0 120 120" style={{ margin: '0 auto 18px', display: 'block' }}>
                     <rect x="24" y="34" width="46" height="46" rx="10" transform="rotate(-13 47 57)" fill="#7c5cff" />
@@ -402,7 +455,7 @@ export default function NotesPage() {
               ) : (
                 <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>{tab === 'trash' ? 'Trash is empty.' : 'No reminders yet.'}</div>
               )
-            ) : shown.map(n => {
+            ) : visibleRows.map(n => {
               const on = n.id === activeId && tab !== 'trash'
               const plain = (n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
               const total = (n.checklist || []).length
