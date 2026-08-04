@@ -257,6 +257,27 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
   const [noteCat, setNoteCat] = useState('general')
   const [savingNote, setSavingNote] = useState(false)
   const [notesMissing, setNotesMissing] = useState(false)
+  const [repair, setRepair] = useState<{ busy: boolean; log: string } | null>(null)
+
+  // Repair customer photos embedded as inline cid: images in already-ingested
+  // email (they only render once fetched from Gmail and stored). Batched +
+  // idempotent — loops until nothing remains.
+  const runRepair = async () => {
+    if (repair?.busy) return
+    setRepair({ busy: true, log: 'Starting…' })
+    let totalFixed = 0, totalImages = 0
+    try {
+      for (let round = 0; round < 40; round++) {
+        const res = await fetch('/api/email/backfill-inline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: co.id, limit: 50 }) })
+        const d = await res.json()
+        if (!res.ok) { setRepair({ busy: false, log: `Error: ${d.error || 'failed'}` }); return }
+        totalFixed += d.fixed || 0; totalImages += d.images || 0
+        setRepair({ busy: true, log: `Repaired ${totalFixed} email(s), ${totalImages} image(s)… ${d.remaining ?? 0} remaining` })
+        if (!d.remaining || d.remaining <= 0 || !d.fixed) break   // done, or a round made no progress (rest unresolvable)
+      }
+      setRepair({ busy: false, log: `Done — repaired ${totalFixed} email${totalFixed === 1 ? '' : 's'} (${totalImages} image${totalImages === 1 ? '' : 's'}).` })
+    } catch (e: any) { setRepair({ busy: false, log: `Error: ${e.message}` }) }
+  }
 
   useEffect(() => {
     let active = true
@@ -640,6 +661,12 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 4px' }}>Seed sample data</p>
                 <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Clears and re-seeds example ideas for this workspace.</p>
                 <button onClick={() => { onAction('seed', co); onClose() }} style={paBtn()}>Seed sample data</button>
+              </div>
+              <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 4px' }}>Repair inline email images</p>
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Re-fetches customer photos embedded as <code>cid:</code> in already-ingested emails and stores them so they render on web &amp; mobile. Idempotent — safe to run any time.</p>
+                <button onClick={runRepair} disabled={!!repair?.busy} style={{ ...paBtn(), opacity: repair?.busy ? 0.6 : 1, cursor: repair?.busy ? 'default' : 'pointer' }}>{repair?.busy ? 'Repairing…' : 'Repair inline images'}</button>
+                {repair && <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--sa-muted)' }}>{repair.log}</p>}
               </div>
             </div>
           )}

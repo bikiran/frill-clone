@@ -1756,6 +1756,15 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
   const [activity, setActivity] = useState<any[]>([])
   const [showAllActivity, setShowAllActivity] = useState(false)
   const [notePicker, setNotePicker] = useState(false)
+  const notePickerRef = useRef<HTMLDivElement>(null)
+  // Close the picker on any click outside it. A fixed backdrop is unreliable here
+  // because the detail pane's slide transform scopes fixed positioning to the pane.
+  useEffect(() => {
+    if (!notePicker) return
+    const onDown = (e: MouseEvent) => { if (notePickerRef.current && !notePickerRef.current.contains(e.target as Node)) setNotePicker(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [notePicker])
   const [noteList, setNoteList] = useState<any[]>([])
   const [noteQuery, setNoteQuery] = useState('')
   const linkedNotes: { id: string; title: string }[] = Array.isArray(task.linked_notes) ? task.linked_notes : []
@@ -2095,14 +2104,13 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
           </div>
         ))}
       </div>
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative' }} ref={notePickerRef}>
         <button onClick={() => setNotePicker(v => !v)}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px dashed var(--border)', background: 'var(--canvas)', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: '8px 12px', borderRadius: 9 }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Link a note
         </button>
-        {notePicker && (<>
-          <div onClick={() => setNotePicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+        {notePicker && (
           <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 41, width: 300, maxWidth: '90vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 34px rgba(0,0,0,0.18)', padding: 8 }}>
             <input autoFocus value={noteQuery} onChange={e => setNoteQuery(e.target.value)} placeholder="Search notes…"
               style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', marginBottom: 6 }} />
@@ -2122,7 +2130,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
               })()}
             </div>
           </div>
-        </>)}
+        )}
       </div>
 
       {/* Card history — status moves, assignments, edits, and when it was created. */}
