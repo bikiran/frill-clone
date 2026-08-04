@@ -97,6 +97,14 @@ export default function NotesPage() {
   }, [companyId, uid])
   useEffect(() => { loadList() }, [loadList])
 
+  // Deep-link: /admin/notes?open=<id> (e.g. from a task's linked notes) opens
+  // that note directly. Runs once; tidies the URL so a refresh doesn't re-jump.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const id = new URLSearchParams(window.location.search).get('open')
+    if (id) { setTab('notes'); setActiveId(id); autoOpened.current = true; try { window.history.replaceState({}, '', '/admin/notes') } catch {} }
+  }, [])
+
   // Open the most-recent note by default (desktop) so it's not a blank screen.
   useEffect(() => {
     if (!autoOpened.current && tab === 'notes' && !activeId && list.length > 0 && (typeof window === 'undefined' || window.innerWidth > 860)) {

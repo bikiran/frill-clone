@@ -395,6 +395,7 @@ export default function TasksPage() {
         description: e.description ?? '',
         cover_image: e.cover_image ?? null,
         sort_order: e.sort_order ?? null,
+        linked_notes: Array.isArray(e.linked_notes) ? e.linked_notes : [],
         // Calendar statuses don't map 1:1 onto a task board, so translate them.
         status: e.status === 'completed' ? 'done'
           : e.status === 'in_progress' ? 'in_progress'
@@ -671,6 +672,7 @@ export default function TasksPage() {
           description: fields.description !== undefined ? fields.description : (raw.description ?? null),
           cover_image: fields.cover_image !== undefined ? fields.cover_image : (raw.cover_image ?? null),
           sort_order: fields.sort_order !== undefined ? fields.sort_order : (raw.sort_order ?? null),
+          linked_notes: fields.linked_notes !== undefined ? fields.linked_notes : (raw.linked_notes ?? []),
         }
         await fetch('/api/calendar', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -733,6 +735,7 @@ export default function TasksPage() {
     if (fields.title !== undefined && (fields.title || '') !== (prev.title || '')) out.push({ kind: 'edit', detail: `Renamed to “${(fields.title || '').slice(0, 60)}”` })
     if ((fields.text !== undefined && (fields.text || '') !== (prev.text || '')) || (fields.description !== undefined && (fields.description || '') !== (prev.description || ''))) out.push({ kind: 'edit', detail: 'Updated the details' })
     if (fields.checklist !== undefined && JSON.stringify(fields.checklist || []) !== JSON.stringify(prev.checklist || [])) out.push({ kind: 'checklist', detail: 'Updated the checklist' })
+    if (fields.linked_notes !== undefined) { const b = (Array.isArray(prev.linked_notes) ? prev.linked_notes : []).length, a = (fields.linked_notes || []).length; if (a !== b) out.push({ kind: 'edit', detail: a > b ? 'Linked a note' : 'Unlinked a note' }) }
     if (fields.cover_image !== undefined && fields.cover_image !== prev.cover_image) out.push({ kind: 'edit', detail: fields.cover_image ? 'Changed the cover image' : 'Removed the cover image' })
     if (fields.color !== undefined && fields.color !== prev.color) out.push({ kind: 'edit', detail: 'Changed the color' })
     return out
@@ -1752,6 +1755,10 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
   const [showAllComments, setShowAllComments] = useState(false)
   const [activity, setActivity] = useState<any[]>([])
   const [showAllActivity, setShowAllActivity] = useState(false)
+  const [notePicker, setNotePicker] = useState(false)
+  const [noteList, setNoteList] = useState<any[]>([])
+  const [noteQuery, setNoteQuery] = useState('')
+  const linkedNotes: { id: string; title: string }[] = Array.isArray(task.linked_notes) ? task.linked_notes : []
   const [checkText, setCheckText] = useState('')
   const [showOrderSearch, setShowOrderSearch] = useState(false)
   // Edit scope for a recurring series. Only shown when the task is part of one.
@@ -1778,6 +1785,15 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       } catch { setActivity([]) }
     })()
   }, [task.id, task.status, task.priority, task.due_date, task.updated_at])
+  // Load the company's notes when the "link a note" picker opens.
+  useEffect(() => {
+    if (!notePicker || !companyId) return
+    ;(async () => {
+      try { const r = await fetch(`/api/notes?companyId=${companyId}&userId=${userId || ''}`); const d = await r.json(); setNoteList(d.notes || []) } catch { setNoteList([]) }
+    })()
+  }, [notePicker, companyId, userId])
+  const linkNote = (n: any) => { if (linkedNotes.some(x => x.id === n.id)) return; patch({ linked_notes: [...linkedNotes, { id: n.id, title: n.title || 'Untitled' }] }); setNotePicker(false); setNoteQuery('') }
+  const unlinkNote = (id: string) => patch({ linked_notes: linkedNotes.filter(x => x.id !== id) })
   const assignees = (Array.isArray(task.assignees) && task.assignees.length) ? task.assignees : (task.assigned_to_id ? [{ id: task.assigned_to_id, name: task.assigned_to }] : [])
   const addComment = async () => {
     if (!comment.trim()) return
@@ -2065,6 +2081,49 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       </div>
       </>
       )}
+
+      {/* Linked notes — attach one or more Notes to this task. */}
+      <p style={{ ...L, marginTop: 18 }}>Linked notes</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 8 }}>
+        {linkedNotes.length === 0 && <p style={{ fontSize: 12.5, color: '#9ca3af', margin: 0 }}>No notes linked.</p>}
+        {linkedNotes.map(n => (
+          <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+            <button onClick={() => router.push(`/admin/notes?open=${n.id}`)} title="Open note"
+              style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 'none', background: 'none', color: 'var(--ink)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: 0 }}>{n.title || 'Untitled note'}</button>
+            <button onClick={() => unlinkNote(n.id)} title="Unlink" style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 16, lineHeight: 1, flexShrink: 0 }}>×</button>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: 'relative' }}>
+        <button onClick={() => setNotePicker(v => !v)}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px dashed var(--border)', background: 'var(--canvas)', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: '8px 12px', borderRadius: 9 }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Link a note
+        </button>
+        {notePicker && (<>
+          <div onClick={() => setNotePicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+          <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 41, width: 300, maxWidth: '90vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 34px rgba(0,0,0,0.18)', padding: 8 }}>
+            <input autoFocus value={noteQuery} onChange={e => setNoteQuery(e.target.value)} placeholder="Search notes…"
+              style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', marginBottom: 6 }} />
+            <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+              {(() => {
+                const q = noteQuery.trim().toLowerCase()
+                const items = noteList.filter(n => !linkedNotes.some(x => x.id === n.id) && (!q || (n.title || 'Untitled').toLowerCase().includes(q)))
+                if (!items.length) return <p style={{ fontSize: 12.5, color: '#9ca3af', margin: '8px 6px' }}>{noteList.length ? 'No matching notes.' : 'No notes yet.'}</p>
+                return items.slice(0, 40).map(n => (
+                  <button key={n.id} onClick={() => linkNote(n)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 9px', border: 'none', borderRadius: 8, background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--canvas)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.title || 'Untitled note'}</span>
+                  </button>
+                ))
+              })()}
+            </div>
+          </div>
+        </>)}
+      </div>
 
       {/* Card history — status moves, assignments, edits, and when it was created. */}
       <p style={{ ...L, marginTop: 18 }}>Activity</p>
