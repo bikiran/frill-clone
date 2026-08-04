@@ -664,9 +664,44 @@ export default function TasksPage() {
       if (companyId) loadTasks(companyId)
     }
   }
+  // Card history — record meaningful changes so each task card shows its own
+  // activity trail. Best-effort: if the table isn't migrated yet it stays quiet.
+  const logActivity = async (taskId: string, entries: { kind: string; detail: string }[]) => {
+    if (!entries.length || !companyId) return
+    try {
+      await (supabase as any).from('task_activity').insert(entries.map(e => ({
+        task_id: taskId, company_id: companyId, actor_id: userId || null, actor_name: me || 'Someone', kind: e.kind, detail: e.detail,
+      })))
+    } catch { /* table may not be migrated */ }
+  }
+  const ACT_LABEL: Record<string, string> = { todo: 'To do', in_progress: 'In progress', done: 'Done' }
+  const cap = (s: string) => (s || '').charAt(0).toUpperCase() + (s || '').slice(1)
+  const fmtDueShort = (v: any) => { const d = parseTs(v); return d ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '' }
+  const diffActivity = (prev: any, fields: any): { kind: string; detail: string }[] => {
+    if (!prev) return []
+    const out: { kind: string; detail: string }[] = []
+    if (fields.status && fields.status !== statusOf(prev))
+      out.push({ kind: 'status', detail: fields.status === 'done' ? 'Marked as done' : (statusOf(prev) === 'done' ? `Reopened → ${ACT_LABEL[fields.status] || fields.status}` : `Moved to ${ACT_LABEL[fields.status] || fields.status}`) })
+    if (fields.assignees !== undefined) {
+      const before = (Array.isArray(prev.assignees) ? prev.assignees : []).map((a: any) => a.name).filter(Boolean).sort().join(',')
+      const names = (fields.assignees || []).map((a: any) => a.name).filter(Boolean)
+      if (names.slice().sort().join(',') !== before) out.push({ kind: 'assignee', detail: names.length ? `Assigned to ${names.join(', ')}` : 'Cleared assignees' })
+    }
+    if (fields.priority !== undefined && fields.priority !== prev.priority) out.push({ kind: 'priority', detail: fields.priority ? `Priority set to ${cap(fields.priority)}` : 'Priority cleared' })
+    if (fields.due_date !== undefined && fields.due_date !== prev.due_date) out.push({ kind: 'due', detail: fields.due_date ? `Due date set to ${fmtDueShort(fields.due_date)}` : 'Due date cleared' })
+    if (fields.title !== undefined && (fields.title || '') !== (prev.title || '')) out.push({ kind: 'edit', detail: `Renamed to “${(fields.title || '').slice(0, 60)}”` })
+    if ((fields.text !== undefined && (fields.text || '') !== (prev.text || '')) || (fields.description !== undefined && (fields.description || '') !== (prev.description || ''))) out.push({ kind: 'edit', detail: 'Updated the details' })
+    if (fields.checklist !== undefined && JSON.stringify(fields.checklist || []) !== JSON.stringify(prev.checklist || [])) out.push({ kind: 'checklist', detail: 'Updated the checklist' })
+    if (fields.cover_image !== undefined && fields.cover_image !== prev.cover_image) out.push({ kind: 'edit', detail: fields.cover_image ? 'Changed the cover image' : 'Removed the cover image' })
+    if (fields.color !== undefined && fields.color !== prev.color) out.push({ kind: 'edit', detail: 'Changed the color' })
+    return out
+  }
+
   const patchTask = async (id: string, fields: any) => {
+    const prev = tasks.find(t => t.id === id)
     setTasks(cur => cur.map(t => t.id === id ? { ...t, ...fields } : t))
     await writeTaskFields(id, fields)
+    logActivity(id, diffActivity(prev, fields))
   }
   const setStatus = (t: any, status: string) =>
     patchTask(t.id, { status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null })
@@ -711,6 +746,7 @@ export default function TasksPage() {
     const ids = realSelectedIds()
     if (!ids.length) return
     try { await (supabase as any).from('conversation_tasks').update({ status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null }).in('id', ids) } catch (e: any) { alert('Could not update: ' + e.message); return }
+    ids.forEach(id => logActivity(id, [{ kind: 'status', detail: status === 'done' ? 'Marked as done' : `Moved to ${ACT_LABEL[status] || status}` }]))
     exitSelect()
     if (companyId) loadTasks(companyId)
   }
@@ -718,6 +754,7 @@ export default function TasksPage() {
     const ids = realSelectedIds()
     if (!ids.length) return
     try { await (supabase as any).from('conversation_tasks').update({ priority }).in('id', ids) } catch (e: any) { alert('Could not update: ' + e.message); return }
+    ids.forEach(id => logActivity(id, [{ kind: 'priority', detail: priority ? `Priority set to ${cap(priority)}` : 'Priority cleared' }]))
     exitSelect()
     if (companyId) loadTasks(companyId)
   }
@@ -1672,6 +1709,8 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
   const [comments, setComments] = useState<any[]>([])
   const [comment, setComment] = useState('')
   const [showAllComments, setShowAllComments] = useState(false)
+  const [activity, setActivity] = useState<any[]>([])
+  const [showAllActivity, setShowAllActivity] = useState(false)
   const [checkText, setCheckText] = useState('')
   const [showOrderSearch, setShowOrderSearch] = useState(false)
   // Edit scope for a recurring series. Only shown when the task is part of one.
@@ -1689,6 +1728,15 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       setComments(data || [])
     })()
   }, [task.id])
+  // Card history — most recent first. Silent if the table isn't migrated.
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any).from('task_activity').select('*').eq('task_id', task.id).order('created_at', { ascending: false }).limit(200)
+        setActivity(data || [])
+      } catch { setActivity([]) }
+    })()
+  }, [task.id, task.status, task.priority, task.due_date, task.updated_at])
   const assignees = (Array.isArray(task.assignees) && task.assignees.length) ? task.assignees : (task.assigned_to_id ? [{ id: task.assigned_to_id, name: task.assigned_to }] : [])
   const addComment = async () => {
     if (!comment.trim()) return
@@ -1976,6 +2024,46 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       </div>
       </>
       )}
+
+      {/* Card history — status moves, assignments, edits, and when it was created. */}
+      <p style={{ ...L, marginTop: 18 }}>Activity</p>
+      {(() => {
+        const dot: Record<string, string> = { status: '#2563eb', assignee: '#7c3aed', priority: '#ea580c', due: '#0891b2', checklist: '#16a34a', edit: '#6b7280' }
+        const created = task.created_at
+        const PREVIEW = 5
+        const shown = showAllActivity ? activity : activity.slice(0, PREVIEW)
+        const showCreated = created && (showAllActivity || activity.length <= PREVIEW)
+        if (!activity.length && !created) return <p style={{ fontSize: 12.5, color: '#9ca3af', margin: '0 0 4px' }}>No activity yet.</p>
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 6 }}>
+            {shown.map((a, i) => (
+              <div key={a.id || i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '5px 0' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot[a.kind] || '#9ca3af', marginTop: 6, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.4 }}>{a.detail}</div>
+                  <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{a.actor_name || 'Someone'} <span title={fmtExact(a.created_at)}>· {fmtAgo(a.created_at)}</span></div>
+                </div>
+              </div>
+            ))}
+            {showCreated && (
+              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '5px 0' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16a34a', marginTop: 6, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.4 }}>Task created</div>
+                  <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{task.created_by_name || task.assigned_to || ''} <span title={fmtExact(created)}>· {fmtAgo(created)}</span></div>
+                </div>
+              </div>
+            )}
+            {activity.length > PREVIEW && (
+              <button onClick={() => setShowAllActivity(v => !v)}
+                style={{ alignSelf: 'flex-start', border: 'none', background: 'none', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: '4px 0' }}>
+                {showAllActivity ? 'Show less' : `See ${activity.length - PREVIEW} more`}
+              </button>
+            )}
+          </div>
+        )
+      })()}
+
       <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
         {isSeries && onEndRepeatNew && (
           <button onClick={async () => {
