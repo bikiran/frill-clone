@@ -274,8 +274,8 @@ export default function NotesPage() {
         .ne-meta { display: flex; align-items: center; gap: 10px; padding: 10px 24px 4px; color: var(--slate); font-size: 12.5px; flex-wrap: wrap; }
         .ne-toolbar { padding: 2px 18px 9px; }
         .ne-scroll { flex: 1; overflow-y: auto; }
-        .ne-inner { margin: 0 auto; max-width: 1100px; padding: 28px clamp(32px, 7%, 120px) 56px; }
-        .ne-footer { border-top: 1px solid var(--border); background: #fff; padding: 12px clamp(32px, 7%, 120px); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+        .ne-inner { padding: 28px 56px 56px; }
+        .ne-footer { border-top: 1px solid var(--border); background: #fff; padding: 12px 56px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
         .nchk-row { display: flex; align-items: center; gap: 11px; padding: 7px 8px; border-radius: 11px; transition: background .12s, box-shadow .12s, opacity .12s; }
         .nchk-row:hover { background: var(--canvas); }
         .nchk-grip { cursor: grab; color: var(--slate); display: flex; padding: 3px 2px; opacity: 0.3; touch-action: none; transition: opacity .12s, color .12s; }

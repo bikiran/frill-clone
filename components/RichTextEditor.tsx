@@ -233,14 +233,16 @@ export default function RichTextEditor({
   }
 
   // ── Block drag-to-reorder ─────────────────────────────────────────────────
-  const topBlockAt = (x: number, y: number): HTMLElement | null => {
+  // Deterministic per-Y block lookup (no elementFromPoint) so the hovered line,
+  // the handle position, and the line that actually drags are always the same —
+  // including in the blank gaps between paragraphs.
+  const topBlockAt = (_x: number, y: number): HTMLElement | null => {
     const content = ref.current; if (!content) return null
-    let el = document.elementFromPoint(x, y) as HTMLElement | null
-    while (el && el.parentElement && el.parentElement !== content && el !== content) el = el.parentElement
-    if (el && el.parentElement === content) return el
-    // Fallback: the child whose vertical centre is nearest the pointer.
+    const kids = Array.from(content.children) as HTMLElement[]
+    if (!kids.length) return null
+    for (const c of kids) { const r = c.getBoundingClientRect(); if (y >= r.top && y <= r.bottom) return c }
     let best: HTMLElement | null = null, bestD = Infinity
-    Array.from(content.children).forEach(c => { const r = (c as HTMLElement).getBoundingClientRect(); const d = Math.abs((r.top + r.bottom) / 2 - y); if (d < bestD) { bestD = d; best = c as HTMLElement } })
+    for (const c of kids) { const r = c.getBoundingClientRect(); const d = Math.abs((r.top + r.bottom) / 2 - y); if (d < bestD) { bestD = d; best = c } }
     return best
   }
   const positionHandle = (blk: HTMLElement | null) => {
