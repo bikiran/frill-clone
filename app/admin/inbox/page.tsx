@@ -326,6 +326,24 @@ export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[]>(seededConvs ?? [])
   const [selected, setSelected] = useState<Conversation | null>(null)
   const selectedRef = useRef<Conversation | null>(null)
+  // ── Call Logs mode ──────────────────────────────────────────────────────
+  // The inbox doubles as the Call Logs screen: a Chats | Calls toggle swaps the
+  // left list to phone calls (grouped by the other party) while the thread and
+  // the entire right panel stay the real inbox. The nav "/admin/inbox?view=calls"
+  // opens straight into it.
+  const [leftMode, setLeftMode] = useState<'chats' | 'calls'>('chats')
+  const [calls, setCalls] = useState<any[]>([])
+  const [callTab, setCallTab] = useState<'all' | 'inbound' | 'outbound' | 'missed' | 'voicemail'>('all')
+  useEffect(() => {
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'calls') setLeftMode('calls')
+  }, [])
+  useEffect(() => {
+    if (!companyId) return
+    let active = true
+    ;(supabase as any).from('calls').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(500)
+      .then(({ data }: any) => { if (active) setCalls(data || []) })
+    return () => { active = false }
+  }, [companyId])
   const loadWooDataRef = useRef<((id: string | null) => void) | null>(null)
   const [showMergePicker, setShowMergePicker] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
@@ -3919,6 +3937,41 @@ export default function InboxPage() {
       return filters.oldestFirst ? ta - tb : tb - ta
     })
 
+  // ── Call Logs: group calls by the other party, mapped to a conversation ─────
+  const callIsMissed = (c: any) => c.direction === 'inbound' && ['no-answer', 'missed', 'failed'].includes(c.status) && !c.is_voicemail
+  const callIsVoicemail = (c: any) => !!c.is_voicemail || c.status === 'voicemail'
+  const callFmtDur = (s: number | null) => { if (!s) return '0:00'; const m = Math.floor(s / 60), sec = s % 60; return `${m}:${sec.toString().padStart(2, '0')}` }
+  const callLabel = (c: any) => callIsVoicemail(c) ? `Voicemail ${callFmtDur(c.duration_seconds)}` : callIsMissed(c) ? 'Missed' : c.recording_url ? `Answered ${callFmtDur(c.duration_seconds)}` : c.duration_seconds ? callFmtDur(c.duration_seconds) : 'No recording'
+  const callGroups = (() => {
+    const passesTab = (c: any) => callTab === 'all' ? true : callTab === 'inbound' ? c.direction === 'inbound' : callTab === 'outbound' ? c.direction === 'outbound' : callTab === 'missed' ? callIsMissed(c) : callIsVoicemail(c)
+    const q = searchTerm.trim().toLowerCase()
+    const map = new Map<string, any[]>()
+    for (const c of calls) {
+      if (!passesTab(c)) continue
+      const key = (c.direction === 'inbound' ? c.from_number : c.to_number) || 'Unknown'
+      if (q && !key.toLowerCase().includes(q) && !(c.caller_name || '').toLowerCase().includes(q)) continue
+      const arr = map.get(key) || []; arr.push(c); map.set(key, arr)
+    }
+    return Array.from(map.entries()).map(([key, cs]) => {
+      const sorted = [...cs].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
+      return { key, name: sorted.find(c => c.caller_name)?.caller_name || key, calls: sorted, latest: sorted[0], contactId: sorted.find(c => c.contact_id)?.contact_id || null }
+    }).sort((a, b) => +new Date(b.latest.created_at) - +new Date(a.latest.created_at))
+  })()
+
+  // Open a call group by selecting the matching conversation, so the thread +
+  // the full right panel (orders / contact / tasks / assign) are the real inbox.
+  const openCallGroup = async (g: { key: string; contactId: string | null }) => {
+    let conv: any = g.contactId ? conversations.find((c: any) => c.contact_id === g.contactId) : null
+    if (!conv && companyId) {
+      let query = (supabase as any).from('conversations').select('*, contacts(*)').eq('company_id', companyId).order('last_message_at', { ascending: false }).limit(1)
+      query = g.contactId ? query.eq('contact_id', g.contactId) : query
+      const { data } = await query
+      conv = data?.[0] || null
+      if (conv) setConversations(prev => prev.find((c: any) => c.id === conv.id) ? prev : [conv, ...prev])
+    }
+    if (conv) selectConversation(conv)
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--slate)' }}>Loading inbox…</div>
 
@@ -5423,7 +5476,7 @@ export default function InboxPage() {
         {/* Header */}
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 }}>
-            <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--ink)' }}>Inbox</h2>
+            <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--ink)' }}>{leftMode === 'calls' ? 'Call Logs' : 'Inbox'}</h2>
             <button type="button" onClick={() => setShowAddContact(true)} title="Add a contact manually"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -5443,8 +5496,17 @@ export default function InboxPage() {
               </button>
             </div>
           </div>
+          {/* Chats | Calls — the inbox doubles as the Call Logs screen. */}
+          <div style={{ display: 'flex', background: 'var(--canvas)', borderRadius: 10, padding: 3, marginBottom: 10 }}>
+            {(['chats', 'calls'] as const).map(m => (
+              <button key={m} type="button" onClick={() => setLeftMode(m)}
+                style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, background: leftMode === m ? '#fff' : 'transparent', color: leftMode === m ? 'var(--ink)' : 'var(--slate)', boxShadow: leftMode === m ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.12s' }}>
+                {m === 'chats' ? 'Chats' : 'Calls'}
+              </button>
+            ))}
+          </div>
           <div style={{ position: 'relative' }}>
-            <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search conversations…"
+            <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder={leftMode === 'calls' ? 'Search calls…' : 'Search conversations…'}
               style={{ ...inp, background: 'var(--canvas)', paddingRight: searchTerm ? 34 : undefined }} />
             {searchTerm && (
               <button type="button" onClick={() => { setSearchTerm(''); setSearchScope('all') }}
@@ -5457,7 +5519,7 @@ export default function InboxPage() {
           {/* Scope pills — refine what the search looks at. Shown while typing.
               Themed to match the assignment tabs (coral/peach) rather than a
               one-off blue, and evenly spaced so the row reads cleanly. */}
-          {searchTerm.trim() && (
+          {leftMode === 'chats' && searchTerm.trim() && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 10 }}>
               {([
                 ['all', 'All'], ['contact', 'Contact'], ['messages', 'Messages'],
@@ -5481,7 +5543,7 @@ export default function InboxPage() {
           )}
           {/* Location filter — scopes the whole inbox to one outlet. Only shown
               when the business actually has more than one location. */}
-          {outlets.length > 1 && (
+          {leftMode === 'chats' && outlets.length > 1 && (
             <div style={{ position: 'relative', marginTop: 10 }}>
               {/* Map-pin icon sits inside the control so the select shows a real
                   SVG rather than an emoji glyph that renders differently per OS. */}
@@ -5501,7 +5563,7 @@ export default function InboxPage() {
           {/* Assignment tabs — a horizontally scrollable strip (Coax style).
               Instead of a raw scrollbar, chevron buttons flank the row and appear
               only when it overflows, dimming at each end. */}
-          {(() => {
+          {leftMode === 'chats' && (() => {
             const showArrows = assignArrows.l || assignArrows.r
             const arrowBtn = (dir: 'l' | 'r', enabled: boolean) => (
               <button type="button" aria-label={dir === 'l' ? 'Scroll left' : 'Scroll right'}
@@ -5542,7 +5604,17 @@ export default function InboxPage() {
               </div>
             )
           })()}
+          {/* Call filter tabs (calls mode) */}
+          {leftMode === 'calls' && (
+            <div className="inbox-assign-tabs" style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto' }}>
+              {([['all', 'All'], ['inbound', 'Incoming'], ['outbound', 'Outgoing'], ['missed', 'Missed'], ['voicemail', 'Voicemail']] as const).map(([k, l]) => (
+                <button key={k} type="button" onClick={() => setCallTab(k)}
+                  style={{ flexShrink: 0, padding: '6px 12px', borderRadius: 20, cursor: 'pointer', border: '1px solid ' + (callTab === k ? 'var(--coral)' : 'var(--border)'), background: callTab === k ? 'var(--peach)' : '#fff', color: callTab === k ? 'var(--coral)' : 'var(--slate)', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>{l}</button>
+              ))}
+            </div>
+          )}
           {/* Open / Closed tabs (Coax style) + filter */}
+          {leftMode === 'chats' && (
           <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
             <div style={{ flex: 1, display: 'flex', background: 'var(--canvas)', borderRadius: 10, padding: 3 }}>
               {(['open', 'closed'] as const).map(s => (
@@ -5560,14 +5632,36 @@ export default function InboxPage() {
               )}
             </button>
           </div>
+          )}
         </div>
 
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {filteredConvs.length === 0 && (
+          {leftMode === 'calls' && (
+            callGroups.length === 0
+              ? <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No calls to show</div>
+              : callGroups.map(g => (
+                <button key={g.key} type="button" onClick={() => openCallGroup(g)}
+                  style={{ width: '100%', textAlign: 'left', display: 'flex', gap: 11, alignItems: 'center', padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: selected && (selected as any).contact_id && (selected as any).contact_id === g.contactId ? 'var(--peach)' : 'transparent', cursor: 'pointer' }}>
+                  <span style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, flexShrink: 0 }}>{(/[a-z]/i.test(g.name) ? g.name.replace(/[^a-z]/gi, '')[0] : '#')?.toUpperCase() || '#'}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</span>
+                      <span style={{ fontSize: 11, color: 'var(--slate)', flexShrink: 0 }}>{new Date(g.latest.created_at).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' })}</span>
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                      <span style={{ color: callIsMissed(g.latest) ? '#dc2626' : g.latest.direction === 'inbound' ? '#16a34a' : '#2563eb', fontSize: 13 }}>{g.latest.direction === 'inbound' ? '↙' : '↗'}</span>
+                      <span style={{ fontSize: 12, color: callIsMissed(g.latest) ? '#dc2626' : callIsVoicemail(g.latest) ? '#b45309' : 'var(--slate)' }}>{callLabel(g.latest)}</span>
+                      {g.calls.length > 1 && <span style={{ fontSize: 11, color: 'var(--slate)' }}>· {g.calls.length} calls</span>}
+                    </span>
+                  </span>
+                </button>
+              ))
+          )}
+          {leftMode === 'chats' && filteredConvs.length === 0 && (
             <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No conversations yet</div>
           )}
-          {filteredConvs.map(conv => {
+          {leftMode === 'chats' && filteredConvs.map(conv => {
             // Customer name first — the source is a tag, not the headline.
             const c: any = conv
             const contact = c.contacts || {}
