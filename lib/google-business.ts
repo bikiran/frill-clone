@@ -84,16 +84,32 @@ export async function syncReviews(companyId: string) {
     throw new Error('No Google location selected yet.')
   }
 
-  // The reviews API still lives on the legacy v4 host.
-  const url = `https://mybusiness.googleapis.com/v4/${account.account_name}/${account.location_name}/reviews`
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data?.error?.message || 'Could not fetch reviews')
+  // The reviews API still lives on the legacy v4 host, and it pages 50 at a
+  // time — walk every page (via nextPageToken) so a business with hundreds of
+  // reviews gets them ALL, not just the most recent 50. averageRating /
+  // totalReviewCount are location-wide and repeat on each page, so we just keep
+  // the latest. Bounded at 200 pages (10k reviews) as an infinite-loop guard.
+  const base = `https://mybusiness.googleapis.com/v4/${account.account_name}/${account.location_name}/reviews`
+  const allReviews: any[] = []
+  let averageRating: number | null = null
+  let totalReviewCount: number | null = null
+  let pageToken: string | undefined
+  let pages = 0
+  do {
+    const url = `${base}?pageSize=50${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data?.error?.message || 'Could not fetch reviews')
+    if (Array.isArray(data.reviews)) allReviews.push(...data.reviews)
+    if (data.averageRating != null) averageRating = data.averageRating
+    if (data.totalReviewCount != null) totalReviewCount = data.totalReviewCount
+    pageToken = data.nextPageToken
+  } while (pageToken && ++pages < 200)
 
   const STAR: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 }
   let saved = 0
 
-  for (const r of data.reviews || []) {
+  for (const r of allReviews) {
     const row = {
       company_id: companyId,
       review_id: r.reviewId || r.name,
@@ -146,7 +162,9 @@ export async function syncReviews(companyId: string) {
     }
   }
 
-  return { total: (data.reviews || []).length, new: saved, averageRating: data.averageRating ?? null, totalReviewCount: data.totalReviewCount ?? null }
+  // Round the average here so every consumer shows 4.6★, not 4.599999…★.
+  const avgRounded = averageRating != null ? Math.round(Number(averageRating) * 10) / 10 : null
+  return { total: allReviews.length, new: saved, averageRating: avgRounded, totalReviewCount: totalReviewCount ?? allReviews.length }
 }
 
 // Posts (or updates) the business's reply to a review.

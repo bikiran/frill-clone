@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
 
     const { data: reviews } = await db.from('google_reviews')
       .select('*').eq('company_id', companyId)
-      .order('review_created_at', { ascending: false }).limit(50)
+      .order('review_created_at', { ascending: false }).limit(5000)
 
     return NextResponse.json({
       connected: !!account?.access_token,

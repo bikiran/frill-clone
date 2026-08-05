@@ -149,7 +149,7 @@ export default function GoogleReviewsPage() {
       })
       const d = await res.json()
       if (d.error) throw new Error(d.error)
-      setMsg(`Synced ${d.total} review(s)${d.averageRating ? ` · average ${d.averageRating}★` : ''}.`)
+      setMsg(`Synced ${d.total} review(s)${d.averageRating ? ` · average ${Number(d.averageRating).toFixed(1)}★` : ''}.`)
       await load(companyId)
     } catch (e: any) { setMsg('Sync failed: ' + e.message) }
     finally { setBusy('') }

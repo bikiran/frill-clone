@@ -36,6 +36,8 @@ export default function ReviewsPage() {
     return () => window.removeEventListener('resize', check)
   }, [])
   const [search, setSearch] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
@@ -74,7 +76,7 @@ export default function ReviewsPage() {
 
   const load = async (cid: string) => {
     const { data } = await (supabase as any).from('google_reviews')
-      .select('*').eq('company_id', cid).order('review_created_at', { ascending: false }).limit(500)
+      .select('*').eq('company_id', cid).order('review_created_at', { ascending: false }).limit(5000)
     setReviews(data || [])
     writeCache(`reviews:${cid}`, data || [])
   }
@@ -133,6 +135,12 @@ export default function ReviewsPage() {
     if (ratingFilter && r.star_rating !== ratingFilter) return false
     if (repliesFilter === 'replied' && !r.reply_comment) return false
     if (repliesFilter === 'unreplied' && r.reply_comment) return false
+    if (dateFrom || dateTo) {
+      const t = r.review_created_at ? new Date(r.review_created_at).getTime() : NaN
+      if (dateFrom && (isNaN(t) || t < new Date(dateFrom).getTime())) return false
+      // Include the whole end day (add ~24h) so an end date isn't exclusive.
+      if (dateTo && (isNaN(t) || t > new Date(dateTo).getTime() + 86_400_000)) return false
+    }
     if (search.trim()) {
       const q = search.toLowerCase()
       if (!(r.comment || '').toLowerCase().includes(q) && !(r.reviewer_name || '').toLowerCase().includes(q)) return false
@@ -141,6 +149,8 @@ export default function ReviewsPage() {
   })
 
   const avg = reviews.length ? (reviews.reduce((a, r) => a + (r.star_rating || 0), 0) / reviews.length) : 0
+  const repliedCount = reviews.filter(r => r.reply_comment).length
+  const pendingCount = reviews.length - repliedCount
 
   const Stars = ({ n, size = 16 }: { n: number; size?: number }) => (
     <span style={{ display: 'inline-flex', gap: 2 }}>
@@ -180,6 +190,14 @@ export default function ReviewsPage() {
                 <option value="replied">Replied</option>
                 <option value="unreplied">Not replied</option>
               </select>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="From date" aria-label="From date"
+                style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13 }} />
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} title="To date" aria-label="To date"
+                style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13 }} />
+              {(dateFrom || dateTo) && (
+                <button onClick={() => { setDateFrom(''); setDateTo('') }}
+                  style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>Clear dates</button>
+              )}
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search reviews…"
                 style={{ flex: 1, minWidth: 180, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13 }} />
             </div>
@@ -253,11 +271,31 @@ export default function ReviewsPage() {
             <span style={{ fontWeight: 800, fontSize: 16 }}>Google Reviews</span>
           </div>
           <Stars n={Math.round(avg)} size={22} />
-          <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
-            {reviews.length > 0
-              ? <>Average <strong>{avg.toFixed(1)}</strong> from <strong>{reviews.length}</strong> reviews.</>
-              : 'Connect Google and sync to see your ratings here.'}
-          </p>
+          {reviews.length > 0 ? (
+            <>
+              {companyName && <p style={{ margin: '12px 0 4px', fontWeight: 800, fontSize: 15 }}>{companyName}</p>}
+              <p style={{ margin: '0 0 8px', fontSize: 13.5, fontWeight: 700, color: '#16a34a' }}>
+                {avg.toFixed(1)} Star &nbsp;|&nbsp; {reviews.length} Reviews
+              </p>
+              <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+                Your business has received <strong>{reviews.length}</strong> reviews and on average a <strong>{avg.toFixed(1)} star</strong> rating for the services.
+              </p>
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0' }}>
+                  <span style={{ fontSize: 13, color: 'var(--slate)' }}>Replied</span>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: '#16a34a' }}>{repliedCount}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0' }}>
+                  <span style={{ fontSize: 13, color: 'var(--slate)' }}>Yet to reply</span>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: pendingCount ? '#dc2626' : 'var(--ink)' }}>{pendingCount}</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+              Connect Google and sync to see your ratings here.
+            </p>
+          )}
           <a href="/admin/integrations/google-reviews"
             style={{ display: 'block', textAlign: 'center', marginTop: 16, padding: '10px', borderRadius: 10, border: '1px solid var(--border)', textDecoration: 'none', color: 'var(--ink)', fontWeight: 700, fontSize: 13 }}>
             Manage Connected Accounts
