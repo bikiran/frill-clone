@@ -85,6 +85,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
+    // Link (or unlink) a review to a customer contact. contactId null = unlink.
+    if (action === 'link_contact') {
+      const { reviewId, contactId, contactName } = body
+      if (!reviewId) return NextResponse.json({ error: 'reviewId required' }, { status: 400 })
+      const { error } = await db.from('google_reviews').update({
+        contact_id: contactId || null,
+        contact_name: contactId ? (contactName || null) : null,
+        match_checked_at: new Date().toISOString(),
+      }).eq('company_id', companyId).eq('review_id', reviewId)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: true })
+    }
+
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

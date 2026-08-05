@@ -109,11 +109,28 @@ export async function syncReviews(companyId: string) {
   const STAR: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 }
   let saved = 0
 
+  // Customer matching: a review only carries a display name, so we build a
+  // name→contact map ONCE (not per review) and match on an exact,
+  // case-insensitive name. Soft signal only — Google never tells us which
+  // customer left which review.
+  const { data: allContacts } = await db.from('contacts').select('id, name').eq('company_id', companyId).limit(5000)
+  const contactByName = new Map<string, { id: string; name: string }>()
+  for (const c of (allContacts || [])) {
+    const key = (c.name || '').trim().toLowerCase()
+    if (key && !contactByName.has(key)) contactByName.set(key, { id: c.id, name: c.name })
+  }
+  const nowIso = new Date().toISOString()
+  const missingCol = (e: any) => e && /column|schema cache|does not exist/i.test(e.message || '')
+
   for (const r of allReviews) {
-    const row = {
+    const reviewerName = r.reviewer?.displayName || 'Anonymous'
+    const nameKey = reviewerName.trim().toLowerCase()
+    const match = nameKey && nameKey !== 'anonymous' ? contactByName.get(nameKey) : undefined
+
+    const row: any = {
       company_id: companyId,
       review_id: r.reviewId || r.name,
-      reviewer_name: r.reviewer?.displayName || 'Anonymous',
+      reviewer_name: reviewerName,
       reviewer_photo: r.reviewer?.profilePhotoUrl || null,
       star_rating: STAR[r.starRating] ?? null,
       comment: r.comment || null,
@@ -121,40 +138,52 @@ export async function syncReviews(companyId: string) {
       replied_at: r.reviewReply?.updateTime || null,
       review_created_at: r.createTime || null,
       raw: r,
+      match_checked_at: nowIso,
+      contact_id: match?.id || null,
+      contact_name: match?.name || null,
     }
-    // Explicit find-then-update-or-insert (never ON CONFLICT on a partial index).
-    const { data: existing } = await db.from('google_reviews')
-      .select('id').eq('company_id', companyId).eq('review_id', row.review_id).maybeSingle()
-    if (existing?.id) {
-      await db.from('google_reviews').update(row).eq('id', existing.id)
-    } else {
-      await db.from('google_reviews').insert(row)
+
+    // Existence check (also read the current link so we never clobber a manual
+    // one). Falls back to id-only if the match columns aren't migrated yet.
+    let existing: any = null
+    {
+      const r1 = await db.from('google_reviews').select('id, contact_id')
+        .eq('company_id', companyId).eq('review_id', row.review_id).maybeSingle()
+      if (missingCol(r1.error)) {
+        const r2 = await db.from('google_reviews').select('id')
+          .eq('company_id', companyId).eq('review_id', row.review_id).maybeSingle()
+        existing = r2.data
+      } else existing = r1.data
+    }
+    // Keep a link an agent set by hand — only auto-fill when unlinked.
+    if (existing?.contact_id) { row.contact_id = existing.contact_id }
+
+    // Resilient write: strip the match columns and retry if they're not migrated.
+    const write = async (payload: any) => existing?.id
+      ? db.from('google_reviews').update(payload).eq('id', existing.id)
+      : db.from('google_reviews').insert(payload)
+    let res = await write(row)
+    if (missingCol(res.error)) {
+      const { contact_id, contact_name, match_checked_at, ...base } = row
+      res = await write(base)
+    }
+    if (!existing?.id) {
       saved++
-      // Best-effort: tie this new review back to a review request we sent, so
-      // the agent's review card can show it was completed. Matches the
-      // reviewer's name to a contact with a recent pending request. This is
-      // name-based and therefore approximate — Google doesn't tell us which
-      // customer left which review — so we only use it as a soft signal.
+      // Tie a new review back to a review request we sent, so the agent's
+      // review card can show it was completed.
       try {
-        const rname = (row.reviewer_name || '').trim().toLowerCase()
-        if (rname && rname !== 'anonymous' && row.star_rating) {
-          const { data: contacts } = await db.from('contacts')
-            .select('id, name').eq('company_id', companyId).limit(1000)
-          const match = (contacts || []).find((c: any) => (c.name || '').trim().toLowerCase() === rname)
-          if (match) {
-            const { data: convs } = await db.from('conversations')
-              .select('id').eq('contact_id', match.id).limit(20)
-            const convIds = (convs || []).map((c: any) => c.id)
-            if (convIds.length) {
-              const { data: reqMsg } = await db.from('messages')
-                .select('id, metadata').in('conversation_id', convIds)
-                .contains('metadata', { review_request: true })
-                .order('created_at', { ascending: false }).limit(1).maybeSingle()
-              if (reqMsg && !reqMsg.metadata?.review_completed) {
-                await db.from('messages').update({
-                  metadata: { ...(reqMsg.metadata || {}), review_completed: true, review_rating: row.star_rating },
-                }).eq('id', reqMsg.id)
-              }
+        if (match && row.star_rating) {
+          const { data: convs } = await db.from('conversations').select('id').eq('contact_id', match.id).limit(20)
+          const convIds = (convs || []).map((c: any) => c.id)
+          if (convIds.length) {
+            const { data: reqMsg } = await db.from('messages')
+              .select('id, metadata').in('conversation_id', convIds)
+              .contains('metadata', { review_request: true })
+              .order('created_at', { ascending: false }).limit(1).maybeSingle()
+            if (reqMsg && !reqMsg.metadata?.review_completed) {
+              await db.from('messages').update({
+                metadata: { ...(reqMsg.metadata || {}), review_completed: true, review_rating: row.star_rating },
+              }).eq('id', reqMsg.id)
             }
           }
         }
