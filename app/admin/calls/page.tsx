@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 
@@ -21,6 +21,41 @@ type Call = {
   created_at: string
 }
 
+// ── Clean, compact call recording player (replaces the native audio slider) ──
+function CallPlayer({ url }: { url: string }) {
+  const ref = useRef<HTMLAudioElement>(null)
+  const trackRef = useRef<HTMLDivElement>(null)
+  const [playing, setPlaying] = useState(false)
+  const [cur, setCur] = useState(0)
+  const [dur, setDur] = useState(0)
+  const fmt = (s: number) => { if (!isFinite(s)) return '0:00'; const m = Math.floor(s / 60), ss = Math.floor(s % 60); return `${m}:${ss.toString().padStart(2, '0')}` }
+  const toggle = () => { const a = ref.current; if (!a) return; if (playing) { a.pause(); setPlaying(false) } else { a.play().then(() => setPlaying(true)).catch(() => {}) } }
+  const seek = (e: React.MouseEvent) => {
+    const a = ref.current, t = trackRef.current; if (!a || !t || !dur) return
+    const r = t.getBoundingClientRect()
+    a.currentTime = Math.min(dur, Math.max(0, ((e.clientX - r.left) / r.width) * dur))
+  }
+  const pct = dur ? (cur / dur) * 100 : 0
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--canvas)', borderRadius: 12, padding: '10px 14px' }}>
+      <audio ref={ref} src={url} preload="metadata"
+        onLoadedMetadata={e => setDur(e.currentTarget.duration || 0)}
+        onTimeUpdate={e => setCur(e.currentTarget.currentTime)}
+        onEnded={() => { setPlaying(false); setCur(0) }} />
+      <button onClick={toggle} style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', background: 'var(--coral)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {playing
+          ? <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+          : <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: 2 }}><polygon points="6 4 20 12 6 20 6 4"/></svg>}
+      </button>
+      <div ref={trackRef} onClick={seek} style={{ flex: 1, height: 6, borderRadius: 3, background: 'var(--border)', cursor: 'pointer', position: 'relative', minWidth: 60 }}>
+        <div style={{ position: 'absolute', inset: 0, width: `${pct}%`, background: 'var(--coral)', borderRadius: 3 }} />
+        <div style={{ position: 'absolute', top: '50%', left: `${pct}%`, transform: 'translate(-50%,-50%)', width: 12, height: 12, borderRadius: '50%', background: '#fff', border: '2px solid var(--coral)', boxShadow: '0 1px 3px rgba(0,0,0,0.25)' }} />
+      </div>
+      <span style={{ fontSize: 11.5, color: 'var(--slate)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmt(cur)} / {fmt(dur)}</span>
+    </div>
+  )
+}
+
 export default function CallsPage() {
   const seededCid = peekCompanyUser()?.companyId ?? null
   const seededCalls = seededCid ? readCache<Call[]>(`calls:${seededCid}`) : undefined
@@ -30,14 +65,17 @@ export default function CallsPage() {
   const [filter, setFilter] = useState<'all' | 'inbound' | 'outbound' | 'missed' | 'voicemail'>('all')
   const [search, setSearch] = useState('')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [contact, setContact] = useState<any>(null)
   const [openTranscript, setOpenTranscript] = useState<Set<string>>(new Set())
   const [summarizing, setSummarizing] = useState<Set<string>>(new Set())
-  const [isMobile, setIsMobile] = useState(false)
+  const [width, setWidth] = useState(1400)
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
+    const check = () => setWidth(window.innerWidth)
     check(); window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
+  const isMobile = width < 768
+  const isNarrow = width < 1140   // hide the contact rail on tablets
 
   useEffect(() => {
     const init = async () => {
@@ -70,7 +108,6 @@ export default function CallsPage() {
     writeCache(`calls:${cid}`, data || [])
   }
 
-  // Live updates — new calls and status changes appear without a reload.
   useEffect(() => {
     if (!companyId) return
     const channel = (supabase as any)
@@ -88,30 +125,21 @@ export default function CallsPage() {
     return () => { (supabase as any).removeChannel(channel) }
   }, [companyId])
 
-  const fmtDuration = (s: number | null) => {
-    if (!s) return '0:00'
-    const m = Math.floor(s / 60), sec = s % 60
-    return `${m}:${sec.toString().padStart(2, '0')}`
-  }
+  const fmtDuration = (s: number | null) => { if (!s) return '0:00'; const m = Math.floor(s / 60), sec = s % 60; return `${m}:${sec.toString().padStart(2, '0')}` }
   const relTime = (iso: string) => {
     const diff = Date.now() - new Date(iso).getTime()
     const d = Math.floor(diff / 86_400_000), h = Math.floor(diff / 3_600_000), m = Math.floor(diff / 60_000)
-    if (d > 0) return `${d}d ago`
-    if (h > 0) return `${h}h ago`
-    if (m > 0) return `${m}m ago`
-    return 'just now'
+    if (d > 0) return `${d}d ago`; if (h > 0) return `${h}h ago`; if (m > 0) return `${m}m ago`; return 'just now'
   }
   const isMissed = (c: Call) => c.direction === 'inbound' && ['no-answer', 'missed', 'failed'].includes(c.status) && !c.is_voicemail
   const isVoicemail = (c: Call) => !!c.is_voicemail || c.status === 'voicemail'
   const otherParty = (c: Call) => (c.direction === 'inbound' ? c.from_number : c.to_number) || 'Unknown'
   const isDiagnostic = (t: string | null) => !!t && /^\[/.test(t)
-
-  // A one-line description of a call for the list sub-row.
   const callLabel = (c: Call) => {
     if (isVoicemail(c)) return `Voicemail ${fmtDuration(c.duration_seconds)}`
     if (isMissed(c)) return 'Missed'
     if (c.recording_url) return `Answered ${fmtDuration(c.duration_seconds)}`
-    if (c.duration_seconds) return `${fmtDuration(c.duration_seconds)}`
+    if (c.duration_seconds) return fmtDuration(c.duration_seconds)
     return 'No recording'
   }
 
@@ -123,14 +151,12 @@ export default function CallsPage() {
     voicemail: calls.filter(isVoicemail).length,
   }
 
-  // Filter by tab, then group by the other party into "conversations".
   const groups = useMemo(() => {
     const passesTab = (c: Call) =>
       filter === 'all' ? true :
       filter === 'inbound' ? c.direction === 'inbound' :
       filter === 'outbound' ? c.direction === 'outbound' :
-      filter === 'missed' ? isMissed(c) :
-      isVoicemail(c)
+      filter === 'missed' ? isMissed(c) : isVoicemail(c)
     const q = search.trim().toLowerCase()
     const map = new Map<string, Call[]>()
     for (const c of calls) {
@@ -141,20 +167,27 @@ export default function CallsPage() {
     }
     const out = Array.from(map.entries()).map(([key, cs]) => {
       const sorted = [...cs].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
-      const name = sorted.find(c => c.caller_name)?.caller_name || key
-      return { key, name, calls: sorted, latest: sorted[0] }
+      return { key, name: sorted.find(c => c.caller_name)?.caller_name || key, calls: sorted, latest: sorted[0], contactId: sorted.find(c => c.contact_id)?.contact_id || null }
     })
     out.sort((a, b) => +new Date(b.latest.created_at) - +new Date(a.latest.created_at))
     return out
   }, [calls, filter, search])
 
-  // Keep a valid selection.
   useEffect(() => {
     if (isMobile) return
     if (groups.length && (!selectedKey || !groups.find(g => g.key === selectedKey))) setSelectedKey(groups[0].key)
   }, [groups, selectedKey, isMobile])
 
   const selected = groups.find(g => g.key === selectedKey) || null
+
+  // Load the linked contact for the right rail.
+  useEffect(() => {
+    const cid = selected?.contactId
+    if (!cid || !companyId) { setContact(null); return }
+    let active = true
+    ;(supabase as any).from('contacts').select('*').eq('id', cid).maybeSingle().then(({ data }: any) => { if (active) setContact(data) })
+    return () => { active = false }
+  }, [selectedKey, companyId]) // eslint-disable-line
 
   const summarize = async (c: Call) => {
     setSummarizing(s => new Set(s).add(c.id))
@@ -164,11 +197,10 @@ export default function CallsPage() {
       if (d.summary) setCalls(cs => cs.map(x => x.id === c.id ? { ...x, ai_summary: d.summary } : x))
     } catch {} finally { setSummarizing(s => { const n = new Set(s); n.delete(c.id); return n }) }
   }
-
   const toggleTranscript = (id: string) => setOpenTranscript(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
-  const Avatar = ({ name }: { name: string }) => (
-    <span style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, flexShrink: 0 }}>
+  const Avatar = ({ name, size = 38 }: { name: string; size?: number }) => (
+    <span style={{ width: size, height: size, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: size * 0.4, flexShrink: 0 }}>
       {(/[a-z]/i.test(name) ? name.replace(/[^a-z]/gi, '')[0] : '#')?.toUpperCase() || '#'}
     </span>
   )
@@ -185,18 +217,20 @@ export default function CallsPage() {
 
   const showList = !isMobile || !selected
   const showDetail = !isMobile || !!selected
+  const showContact = !isMobile && !isNarrow && !!selected
 
   return (
     <div style={{ padding: '20px 24px', height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column' }}>
+      <style>{`.calls-tabs::-webkit-scrollbar{display:none}`}</style>
       <h1 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 14px' }}>Call Logs</h1>
       <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
         {/* ── List ── */}
         {showList && (
-        <div style={{ width: isMobile ? '100%' : 340, flexShrink: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 16, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ width: isMobile ? '100%' : 330, flexShrink: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 16, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search calls…"
               style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
-            <div style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto' }}>
+            <div className="calls-tabs" style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto', scrollbarWidth: 'none' }}>
               {([['all', 'All'], ['inbound', 'Incoming'], ['outbound', 'Outgoing'], ['missed', 'Missed'], ['voicemail', 'Voicemail']] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setFilter(k)} style={{ padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid ' + (filter === k ? 'var(--coral)' : 'var(--border)'), background: filter === k ? 'var(--peach)' : '#fff', color: filter === k ? 'var(--coral)' : 'var(--slate)' }}>
                   {l} <span style={{ opacity: 0.7 }}>{counts[k]}</span>
@@ -228,7 +262,7 @@ export default function CallsPage() {
         </div>
         )}
 
-        {/* ── Detail ── */}
+        {/* ── Timeline ── */}
         {showDetail && (
         <div style={{ flex: 1, minWidth: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 16, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {!selected ? (
@@ -254,7 +288,6 @@ export default function CallsPage() {
                       <DirIcon c={c} /> {c.direction === 'inbound' ? 'Inbound' : 'Outbound'} call {c.direction === 'inbound' ? 'from' : 'to'} {selected.key} · {new Date(c.created_at).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' })}
                     </p>
                     <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '14px 16px' }}>
-                      {/* AI summary */}
                       {c.ai_summary ? (
                         <div style={{ background: '#f5f8ff', borderRadius: 10, padding: '12px 14px', marginBottom: c.recording_url || realTranscript ? 12 : 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -269,22 +302,21 @@ export default function CallsPage() {
                         </button>
                       ) : null}
 
-                      {/* Diagnostic reason (voicemail/failure) */}
                       {isDiagnostic(c.transcription) && (
                         <p style={{ margin: '0 0 12px', fontSize: 11.5, color: '#b45309', fontFamily: 'ui-monospace, monospace', background: '#fffbeb', padding: '4px 8px', borderRadius: 6, display: 'inline-block' }}>{c.transcription}</p>
                       )}
 
-                      {/* Recording */}
                       {c.recording_url ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                          <audio controls src={c.recording_url} style={{ height: 36, maxWidth: 280 }} />
-                          <a href={c.recording_url} download style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>Download</a>
-                        </div>
+                        <>
+                          <CallPlayer url={c.recording_url} />
+                          <div style={{ marginTop: 8 }}>
+                            <a href={c.recording_url} download style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>⬇ Download recording</a>
+                          </div>
+                        </>
                       ) : !isDiagnostic(c.transcription) && !c.ai_summary ? (
                         <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>No call recording · {callLabel(c)}</p>
                       ) : null}
 
-                      {/* Transcript toggle */}
                       {realTranscript && (
                         <div style={{ marginTop: 10 }}>
                           <button onClick={() => toggleTranscript(c.id)} style={{ background: 'none', border: 'none', color: 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
@@ -296,7 +328,6 @@ export default function CallsPage() {
                         </div>
                       )}
 
-                      {/* Details footer */}
                       <div style={{ display: 'flex', gap: 14, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--slate)', flexWrap: 'wrap' }}>
                         <span>Duration: {fmtDuration(c.duration_seconds)}</span>
                         <span>Status: {isVoicemail(c) ? 'Voicemail' : isMissed(c) ? 'Missed' : c.status}</span>
@@ -308,6 +339,43 @@ export default function CallsPage() {
               </div>
             </>
           )}
+        </div>
+        )}
+
+        {/* ── Contact rail ── */}
+        {showContact && selected && (
+        <div style={{ width: 280, flexShrink: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'auto', padding: '22px 20px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 18 }}>
+            <Avatar name={contact?.name || selected.name} size={64} />
+            <p style={{ margin: '12px 0 2px', fontWeight: 800, fontSize: 17 }}>{contact?.name || selected.name}</p>
+            {contact?.id && <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)' }}>Customer</p>}
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <a href={`tel:${contact?.phone || selected.key}`} style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z"/></svg>
+              </a>
+              {contact?.email && <a href={`mailto:${contact.email}`} style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+              </a>}
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Contact</p>
+            {[
+              ['Mobile', contact?.phone || selected.key],
+              ['Email', contact?.email],
+              ['Company', contact?.company],
+              ['Address', contact?.address],
+            ].map(([label, val]) => (
+              <div key={label} style={{ marginBottom: 12 }}>
+                <p style={{ margin: '0 0 2px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--slate)' }}>{label}</p>
+                <p style={{ margin: 0, fontSize: 13, color: val ? 'var(--ink)' : 'var(--slate)', wordBreak: 'break-word' }}>{val || '—'}</p>
+              </div>
+            ))}
+            {!contact?.id && (
+              <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--slate)', fontStyle: 'italic' }}>Not linked to a saved contact.</p>
+            )}
+          </div>
         </div>
         )}
       </div>
