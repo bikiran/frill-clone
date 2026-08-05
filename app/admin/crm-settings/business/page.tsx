@@ -53,7 +53,7 @@ export default function BusinessSettings() {
       {/* Business details */}
       <div style={S.card}>
         <h2 style={S.h2}>Business details</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
           <div><label style={S.label}>Mobile number</label><input value={company?.business_mobile || ''} onChange={e => set('business_mobile', e.target.value)} placeholder="+61…" style={S.input} /></div>
           <div><label style={S.label}>Email</label><input value={company?.business_email || ''} onChange={e => set('business_email', e.target.value)} style={S.input} /></div>
           <div style={{ gridColumn: '1 / -1' }}><label style={S.label}>Address</label><input value={company?.business_address || ''} onChange={e => set('business_address', e.target.value)} placeholder="1 Fleet Street, Somerton VIC, Australia" style={S.input} /></div>
@@ -77,7 +77,7 @@ export default function BusinessSettings() {
       {/* Branding */}
       <div style={S.card}>
         <h2 style={S.h2}>Branding</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
           <div>
             <label style={S.label}>Primary colour</label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

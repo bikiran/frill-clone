@@ -12,6 +12,13 @@ export default function ChatWidgetSettings() {
   const [cfg, setCfg] = useState<any>({ color: '#1C61E7', shape: 'rounded', text: '', popup_text: '', avatar_url: '' })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  // Stack the config form + live preview into one column on phones.
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check(); window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   useEffect(() => {
     if (!companyId) return
@@ -48,7 +55,7 @@ export default function ChatWidgetSettings() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 300px', gap: 24 }}>
         {/* Config */}
         <div style={S.card}>
           {step === 0 && (

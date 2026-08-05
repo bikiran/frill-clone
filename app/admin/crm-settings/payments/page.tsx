@@ -36,7 +36,7 @@ export default function PaymentsSettings() {
 
       <div style={S.card}>
         <h2 style={S.h2}>Customise Invoice</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
           <div><label style={S.label}>Invoice Prefix</label><input value={cfg.invoice_prefix} onChange={e => set('invoice_prefix', e.target.value)} style={S.input} /></div>
           <div>
             <label style={S.label}>Primary Color</label>

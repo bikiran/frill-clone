@@ -100,7 +100,7 @@ export default function ScheduledPage() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 24 }}>
         <div style={{ borderRadius: 12, border: '1px solid var(--border)', padding: '16px 20px', background: '#fff' }}>
           <p style={{ margin: '0 0 8px', fontSize: 12, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase' }}>Total Scheduled Messages</p>
           <p style={{ margin: 0, fontSize: 32, fontWeight: 800, color: 'var(--ink)' }}>{pending}</p>

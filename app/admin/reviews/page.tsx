@@ -28,6 +28,13 @@ export default function ReviewsPage() {
   const [drafting, setDrafting] = useState<string | null>(null)
   const [ratingFilter, setRatingFilter] = useState(0)
   const [repliesFilter, setRepliesFilter] = useState<'all' | 'replied' | 'unreplied'>('all')
+  // Stack the list + stats panel into one column on phones.
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check(); window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
   const [search, setSearch] = useState('')
   const [syncing, setSyncing] = useState(false)
 
@@ -153,7 +160,7 @@ export default function ReviewsPage() {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 320px', gap: 20, alignItems: 'start' }}>
         <div>
           {/* Filters */}
           <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 18px', marginBottom: 16 }}>
