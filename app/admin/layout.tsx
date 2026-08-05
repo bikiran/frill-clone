@@ -97,6 +97,7 @@ const NAV_GROUPS = [
       { label: 'Links Generator', href: '/admin/links', icon: 'link' },
       { label: 'Link Reports', href: '/admin/link-reports', icon: 'analytics' },
       { label: 'Reviews', href: '/admin/reviews', icon: 'analytics' },
+      { label: 'Social Engagement', href: '/admin/social', icon: 'announcements' },
     ],
   },
   {
