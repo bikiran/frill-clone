@@ -2296,12 +2296,55 @@ export default function InboxPage() {
         ? `We'd love your feedback! Could you take a moment to leave us a review? ⭐\n${reviewShortLink}`
         : "We'd love your feedback! Could you take a moment to leave us a review? ⭐"
 
-      await (supabase as any).from('messages').insert({
-        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
-        sender_id: user.id, sender_name: me,
-        content: body,
-        metadata: { review_request: true },
-      })
+      // Actually DELIVER it over the channel that reaches the customer — the
+      // same routing the composer uses. The old version only inserted a chat
+      // row (no delivery, no delivery_channel), so on an SMS/email customer it
+      // sent nothing and showed as "Live Chat".
+      const smsNumber = smsDestination()
+      const metaCh = activeChannel
+      let delivered = 'chat'
+
+      if (metaCh === 'email') {
+        // The email route inserts the thread message itself — pass the metadata
+        // so it still renders as the review card. Don't also insert below.
+        const r = await fetch('/api/email/reply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: selected.id, content: body, agentName: me, subject: "We'd love your feedback ⭐", metadata: { review_request: true } }),
+        })
+        if (!r.ok) { const d = await r.json().catch(() => ({})); showToast(`Review request NOT emailed — ${d.error || 'failed'}`) }
+        delivered = 'email'
+      } else if (metaCh === 'instagram' || metaCh === 'facebook') {
+        try {
+          const r = await fetch('/api/meta/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversationId: selected.id, content: body, agentName: me, skipChatMessage: true }),
+          })
+          if (!r.ok) { const d = await r.json().catch(() => ({})); showToast(`Review request NOT sent — ${d.error || 'failed'}`) }
+        } catch { showToast('Review request failed to send.') }
+        delivered = metaCh
+      } else if (smsNumber) {
+        try {
+          const r = await fetch('/api/telnyx/sms/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName: me, skipChatMessage: true }),
+          })
+          if (!r.ok) { const d = await r.json().catch(() => ({})); showToast(`Review request saved, but the SMS failed: ${d.error || 'unknown error'}`) }
+        } catch { showToast('Review request saved, but the SMS failed to send.') }
+        delivered = 'sms'
+      }
+      // else: live-chat widget only — the thread message below IS the delivery.
+
+      // For every channel except email (which already inserted its own row),
+      // record the thread message with the review-card metadata + real channel.
+      if (metaCh !== 'email') {
+        await (supabase as any).from('messages').insert({
+          conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+          sender_id: user.id, sender_name: me,
+          content: body,
+          metadata: { review_request: true },
+          delivery_channel: delivered,
+        })
+      }
       await (supabase as any).from('conversations').update({ review_requested: true, last_message_at: new Date().toISOString() }).eq('id', selected.id)
       logEvent('review_request', 'Review request sent')
       const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })

@@ -15,7 +15,7 @@ const admin = () => createClient(
 // message so it lands in the same email conversation on their side.
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, content, html: htmlOverride, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride, attachments } = await req.json()
+    const { conversationId, content, html: htmlOverride, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride, attachments, metadata } = await req.json()
     // Normalise attachments to {url,name,type} + a display kind for the thread.
     const atts = (Array.isArray(attachments) ? attachments : [])
       .filter((a: any) => a && a.url)
@@ -192,6 +192,7 @@ export async function POST(req: NextRequest) {
       email_subject: subject,
       email_html: bodyHtml,
       ...(displayAtts.length ? { attachments: displayAtts } : {}),
+      ...(metadata && typeof metadata === 'object' ? { metadata } : {}),
     })
 
     await db.from('conversations').update({
