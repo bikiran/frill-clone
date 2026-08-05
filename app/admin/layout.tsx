@@ -92,7 +92,7 @@ const NAV_GROUPS = [
       { label: 'Gallery', href: '/admin/gallery', icon: 'gallery' },
       { label: 'Calendar', href: '/admin/calendar', icon: 'calendar' },
       { label: 'Scheduled', href: '/admin/scheduled', icon: 'scheduled' },
-      { label: 'Call Logs', href: '/admin/inbox?view=calls', icon: 'support' },
+      { label: 'Call Logs', href: '/admin/calls', icon: 'support' },
       { label: 'Campaigns', href: '/admin/campaigns', icon: 'announcements' },
       { label: 'Links Generator', href: '/admin/links', icon: 'link' },
       { label: 'Link Reports', href: '/admin/link-reports', icon: 'analytics' },

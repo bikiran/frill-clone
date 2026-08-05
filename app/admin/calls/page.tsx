@@ -66,6 +66,7 @@ export default function CallsPage() {
   const [search, setSearch] = useState('')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [contact, setContact] = useState<any>(null)
+  const [convId, setConvId] = useState<string | null>(null)
   const [openTranscript, setOpenTranscript] = useState<Set<string>>(new Set())
   const [summarizing, setSummarizing] = useState<Set<string>>(new Set())
   const [width, setWidth] = useState(1400)
@@ -180,12 +181,16 @@ export default function CallsPage() {
 
   const selected = groups.find(g => g.key === selectedKey) || null
 
-  // Load the linked contact for the right rail.
+  // Load the linked contact + its latest conversation (for the inbox link).
   useEffect(() => {
     const cid = selected?.contactId
-    if (!cid || !companyId) { setContact(null); return }
+    setContact(null); setConvId(null)
+    if (!cid || !companyId) return
     let active = true
     ;(supabase as any).from('contacts').select('*').eq('id', cid).maybeSingle().then(({ data }: any) => { if (active) setContact(data) })
+    ;(supabase as any).from('conversations').select('id').eq('company_id', companyId).eq('contact_id', cid)
+      .order('last_message_at', { ascending: false }).limit(1)
+      .then(({ data }: any) => { if (active) setConvId(data?.[0]?.id || null) })
     return () => { active = false }
   }, [selectedKey, companyId]) // eslint-disable-line
 
@@ -359,17 +364,27 @@ export default function CallsPage() {
             </div>
           </div>
 
+          {/* Open the full conversation (with all its context) in the inbox. */}
+          {convId && (
+            <a href={`/admin/inbox?conversation=${convId}`}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px', borderRadius: 12, background: 'var(--coral)', color: '#fff', fontWeight: 700, fontSize: 13, textDecoration: 'none', marginBottom: 16 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Open in inbox
+            </a>
+          )}
+
+          {/* Just the essentials — only fields that actually have a value. */}
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
             <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Contact</p>
-            {[
+            {([
               ['Mobile', contact?.phone || selected.key],
               ['Email', contact?.email],
               ['Company', contact?.company],
               ['Address', contact?.address],
-            ].map(([label, val]) => (
+            ] as const).filter(([, val]) => !!val).map(([label, val]) => (
               <div key={label} style={{ marginBottom: 12 }}>
                 <p style={{ margin: '0 0 2px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--slate)' }}>{label}</p>
-                <p style={{ margin: 0, fontSize: 13, color: val ? 'var(--ink)' : 'var(--slate)', wordBreak: 'break-word' }}>{val || '—'}</p>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', wordBreak: 'break-word' }}>{val}</p>
               </div>
             ))}
             {!contact?.id && (
