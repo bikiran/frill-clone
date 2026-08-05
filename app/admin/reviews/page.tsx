@@ -54,8 +54,9 @@ export default function ReviewsPage() {
 
   // Customer matching
   const [linkFor, setLinkFor] = useState<Review | null>(null)
-  const [contacts, setContacts] = useState<Contact[] | null>(null)
   const [contactSearch, setContactSearch] = useState('')
+  const [contactResults, setContactResults] = useState<Contact[]>([])
+  const [contactLoading, setContactLoading] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -162,15 +163,40 @@ export default function ReviewsPage() {
   }
 
   // ── Customer matching ──────────────────────────────────────────────────────
-  const openLink = async (review: Review) => {
+  const openLink = (review: Review) => {
+    // Prime the search with the reviewer's name so the likely match is one tap away.
     setLinkFor(review)
-    setContactSearch('')
-    if (contacts === null && companyId) {
-      const { data } = await (supabase as any).from('contacts')
-        .select('id, name, email').eq('company_id', companyId).order('name', { ascending: true }).limit(2000)
-      setContacts(data || [])
-    }
+    setContactSearch(review.reviewer_name && review.reviewer_name !== 'Anonymous' ? review.reviewer_name : '')
   }
+
+  // Server-side contact search (debounced) — queries the whole contact list,
+  // not a capped in-memory slice, so any customer is findable. Ranks real
+  // prefix matches (name starts with the query) above mere substring hits.
+  useEffect(() => {
+    if (!linkFor || !companyId) return
+    let cancelled = false
+    setContactLoading(true)
+    const q = contactSearch.trim()
+    const t = setTimeout(async () => {
+      let query = (supabase as any).from('contacts').select('id, name, email').eq('company_id', companyId)
+      // Commas/parens are PostgREST or() delimiters — strip them from the term.
+      const safeQ = q.replace(/[,()]/g, ' ').trim()
+      if (safeQ) query = query.or(`name.ilike.%${safeQ}%,email.ilike.%${safeQ}%,phone.ilike.%${safeQ}%`)
+      const { data } = await query.order('name', { ascending: true }).limit(40)
+      if (cancelled) return
+      const ql = q.toLowerCase()
+      const rank = (c: Contact) => {
+        const n = (c.name || '').toLowerCase()
+        if (ql && n.startsWith(ql)) return 0
+        if (ql && n.includes(ql)) return 1
+        if (ql && (c.email || '').toLowerCase().includes(ql)) return 2
+        return 3
+      }
+      setContactResults([...(data || [])].sort((a, b) => rank(a) - rank(b)).slice(0, 25))
+      setContactLoading(false)
+    }, 220)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [contactSearch, linkFor, companyId])
 
   const setLink = async (review: Review, contact: Contact | null) => {
     if (!companyId) return
@@ -472,14 +498,11 @@ export default function ReviewsPage() {
                   ✕ Remove current link
                 </button>
               )}
-              {contacts === null ? (
-                <p style={{ padding: 16, color: 'var(--slate)', fontSize: 13 }}>Loading customers…</p>
+              {contactLoading && contactResults.length === 0 ? (
+                <p style={{ padding: 16, color: 'var(--slate)', fontSize: 13 }}>Searching customers…</p>
               ) : (() => {
-                const q = contactSearch.trim().toLowerCase()
-                const list = contacts
-                  .filter(c => !q || (c.name || '').toLowerCase().includes(q) || (c.email || '').toLowerCase().includes(q))
-                  .slice(0, 100)
-                if (list.length === 0) return <p style={{ padding: 16, color: 'var(--slate)', fontSize: 13 }}>No customers found.</p>
+                const list = contactResults
+                if (list.length === 0) return <p style={{ padding: 16, color: 'var(--slate)', fontSize: 13 }}>No customers found{contactSearch.trim() ? ` for “${contactSearch.trim()}”` : ''}.</p>
                 return list.map(c => (
                   <button key={c.id} onClick={() => setLink(linkFor, c)}
                     style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, border: 'none', background: linkFor.contact_id === c.id ? 'var(--peach)' : 'transparent', cursor: 'pointer' }}
