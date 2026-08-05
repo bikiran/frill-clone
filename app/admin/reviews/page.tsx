@@ -27,6 +27,8 @@ export default function ReviewsPage() {
   const [companyId, setCompanyId] = useState<string | null>(seededCid)
   const [companyName, setCompanyName] = useState('')
   const [reviewLink, setReviewLink] = useState<string>('')
+  const [savingLink, setSavingLink] = useState(false)
+  const [linkSaved, setLinkSaved] = useState(false)
   const [loading, setLoading] = useState(!seededReviews)
   const [replyingTo, setReplyingTo] = useState<string | null>(null)
   const [replyText, setReplyText] = useState('')
@@ -144,6 +146,19 @@ export default function ReviewsPage() {
     } catch (e: any) {
       alert(e.message)
     } finally { setPosting(false) }
+  }
+
+  const saveReviewLink = async () => {
+    if (!companyId) return
+    setSavingLink(true); setLinkSaved(false)
+    try {
+      await fetch('/api/google/reviews', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, action: 'save_review_link', reviewLink: reviewLink.trim() }),
+      })
+      setLinkSaved(true)
+      setTimeout(() => setLinkSaved(false), 2500)
+    } catch { /* keep the typed value */ } finally { setSavingLink(false) }
   }
 
   // ── Customer matching ──────────────────────────────────────────────────────
@@ -412,6 +427,20 @@ export default function ReviewsPage() {
             style={{ display: 'block', textAlign: 'center', marginTop: 16, padding: '11px', borderRadius: 12, border: '1px solid var(--border)', textDecoration: 'none', color: 'var(--ink)', fontWeight: 700, fontSize: 13 }}>
             Manage Connected Accounts
           </a>
+
+          {/* Google review link — powers the Google mark on each review card and
+              is the link customers tap in a review request. */}
+          <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+            <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Google review link</p>
+            <input value={reviewLink} onChange={e => { setReviewLink(e.target.value); setLinkSaved(false) }}
+              placeholder="https://g.page/r/…" className="rv-input" style={{ width: '100%', boxSizing: 'border-box' }} />
+            <button onClick={saveReviewLink} disabled={savingLink} className="rv-btn rv-btn-ghost" style={{ width: '100%', marginTop: 8 }}>
+              {savingLink ? 'Saving…' : linkSaved ? 'Saved ✓' : 'Save link'}
+            </button>
+            <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.45 }}>
+              Opens your listing from each review's Google mark. Find it in your Business Profile → “Ask for reviews”.
+            </p>
+          </div>
         </div>
       </div>
 

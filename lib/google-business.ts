@@ -109,23 +109,40 @@ export async function syncReviews(companyId: string) {
   const STAR: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 }
   let saved = 0
 
-  // Customer matching: a review only carries a display name, so we build a
-  // name→contact map ONCE (not per review) and match on an exact,
-  // case-insensitive name. Soft signal only — Google never tells us which
-  // customer left which review.
+  // Customer matching: a review only carries a display name, so we build the
+  // indexes ONCE (not per review). Two tiers, checked in order:
+  //   1. exact case-insensitive full name
+  //   2. first name + last initial (e.g. "Allie Willow" → "allie w"), but ONLY
+  //      when that shortened key maps to a single contact — an ambiguous key
+  //      (two "allie w" contacts) is dropped so we never guess wrong.
+  // Soft signal only, and always manually overridable in the UI.
   const { data: allContacts } = await db.from('contacts').select('id, name').eq('company_id', companyId).limit(5000)
   const contactByName = new Map<string, { id: string; name: string }>()
+  const fuzzyIndex = new Map<string, { id: string; name: string } | null>()  // null = ambiguous
+  const fuzzyKey = (name: string) => {
+    const parts = (name || '').trim().toLowerCase().split(/\s+/).filter(Boolean)
+    return parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}` : ''
+  }
   for (const c of (allContacts || [])) {
     const key = (c.name || '').trim().toLowerCase()
     if (key && !contactByName.has(key)) contactByName.set(key, { id: c.id, name: c.name })
+    const fk = fuzzyKey(c.name || '')
+    if (fk) fuzzyIndex.set(fk, fuzzyIndex.has(fk) ? null : { id: c.id, name: c.name })
+  }
+  const findMatch = (name: string): { id: string; name: string } | undefined => {
+    const full = (name || '').trim().toLowerCase()
+    if (!full || full === 'anonymous') return undefined
+    const exact = contactByName.get(full)
+    if (exact) return exact
+    const fk = fuzzyKey(name)
+    return (fk ? fuzzyIndex.get(fk) : undefined) || undefined   // ambiguous (null) → no match
   }
   const nowIso = new Date().toISOString()
   const missingCol = (e: any) => e && /column|schema cache|does not exist/i.test(e.message || '')
 
   for (const r of allReviews) {
     const reviewerName = r.reviewer?.displayName || 'Anonymous'
-    const nameKey = reviewerName.trim().toLowerCase()
-    const match = nameKey && nameKey !== 'anonymous' ? contactByName.get(nameKey) : undefined
+    const match = findMatch(reviewerName)
 
     const row: any = {
       company_id: companyId,
