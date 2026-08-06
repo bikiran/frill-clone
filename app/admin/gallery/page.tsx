@@ -343,6 +343,10 @@ export default function GalleryPage() {
   const [confirmState, setConfirmState] = useState<null | {
     title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void
   }>(null)
+  // In-app name prompt (folder create / rename) — replaces the native prompt().
+  const [promptState, setPromptState] = useState<null | {
+    title: string; value: string; placeholder?: string; confirmLabel?: string; onSubmit: (v: string) => void
+  }>(null)
   const askConfirm = (opts: {
     title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void
   }) => setConfirmState(opts)
@@ -413,18 +417,29 @@ export default function GalleryPage() {
     }
   }
 
-  const createFolder = async () => {
-    const name = prompt('Folder name (e.g. Fish, Tanks, Plants)')
-    if (!name || !companyId) return
-    await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'create_folder', name }) })
-    load()
+  const createFolder = (parentId: string | null = null) => {
+    if (!companyId) return
+    setPromptState({
+      title: parentId ? 'New subfolder' : 'New category',
+      value: '', placeholder: 'e.g. Fish, Tanks, Plants', confirmLabel: 'Create',
+      onSubmit: async (name) => {
+        if (!name.trim() || !companyId) return
+        await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'create_folder', name: name.trim(), parentId }) })
+        load()
+      },
+    })
   }
 
-  const renameFolder = async (f: any) => {
-    const name = prompt('Rename folder', f.name)
-    if (!name || !companyId) return
-    await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'rename_folder', folderId: f.id, name }) })
-    load()
+  const renameFolder = (f: any) => {
+    if (!companyId) return
+    setPromptState({
+      title: 'Rename category', value: f.name || '', confirmLabel: 'Save',
+      onSubmit: async (name) => {
+        if (!name.trim() || !companyId) return
+        await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'rename_folder', folderId: f.id, name: name.trim() }) })
+        load()
+      },
+    })
   }
 
   const deleteFolder = (f: any) => {
@@ -440,6 +455,32 @@ export default function GalleryPage() {
       },
     })
   }
+
+  // Render the folder list as a tree (folders can nest via parent_id).
+  const childrenOf = (parentId: string | null) => folders.filter((f: any) => (f.parent_id || null) === parentId)
+  const renderFolders = (parentId: string | null, depth: number): any =>
+    childrenOf(parentId).map((f: any) => (
+      <div key={f.id}>
+        <div className="gal-folder-row" style={{ paddingLeft: depth * 14 }}>
+          <button onClick={() => setActiveFolder(f.id)} style={{ ...folderBtn(activeFolder === f.id), flex: 1, marginBottom: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {depth > 0 && <span style={{ color: 'var(--slate)', flexShrink: 0 }}>↳</span>}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}{f.external_source === 'prexty' ? ' 🔄' : ''}</span>
+          </button>
+          <span className="gal-folder-actions">
+            <button className="gal-icon-btn edit" onClick={() => createFolder(f.id)} title="New subfolder">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <button className="gal-icon-btn edit" onClick={() => renameFolder(f)} title="Rename">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </button>
+            <button className="gal-icon-btn del" onClick={() => deleteFolder(f)} title="Delete">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
+          </span>
+        </div>
+        {renderFolders(f.id, depth + 1)}
+      </div>
+    ))
 
   const uploadFiles = async (files: File[]) => {
     if (!files.length || !companyId) return
@@ -748,26 +789,14 @@ export default function GalleryPage() {
         <div className="gal-sidebar">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>Categories</span>
-            <button onClick={createFolder} style={{ background: 'none', border: 'none', color: 'var(--coral)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>+</button>
+            <button onClick={() => createFolder()} title="New category" style={{ background: 'none', border: 'none', color: 'var(--coral)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>+</button>
           </div>
           <button onClick={() => setActiveFolder(null)} style={folderBtn(activeFolder === null)}>All media</button>
           <button onClick={() => setActiveFolder('__fav')} style={{ ...folderBtn(activeFolder === '__fav'), display: 'flex', alignItems: 'center', gap: 7 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill={activeFolder === '__fav' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
             Favourites{favIds.size ? ` (${favIds.size})` : ''}
           </button>
-          {folders.map(f => (
-            <div key={f.id} className="gal-folder-row">
-              <button onClick={() => setActiveFolder(f.id)} style={{ ...folderBtn(activeFolder === f.id), flex: 1, marginBottom: 0 }}>{f.name}{f.external_source === 'prexty' ? ' 🔄' : ''}</button>
-              <span className="gal-folder-actions">
-                <button className="gal-icon-btn edit" onClick={() => renameFolder(f)} title="Rename">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                </button>
-                <button className="gal-icon-btn del" onClick={() => deleteFolder(f)} title="Delete">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                </button>
-              </span>
-            </div>
-          ))}
+          {renderFolders(null, 0)}
           {/* Trash pinned at the bottom (like Notes). */}
           <button onClick={() => setActiveFolder(activeFolder === '__trash' ? null : '__trash')}
             style={{ ...folderBtn(activeFolder === '__trash'), display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, borderTop: '1px solid var(--border)', borderRadius: 0, paddingTop: 12 }}>
@@ -1140,6 +1169,18 @@ export default function GalleryPage() {
         />
       )}
 
+      {/* In-app name prompt (folder create / rename) */}
+      {promptState && (
+        <PromptDialog
+          title={promptState.title}
+          value={promptState.value}
+          placeholder={promptState.placeholder}
+          confirmLabel={promptState.confirmLabel}
+          onCancel={() => setPromptState(null)}
+          onSubmit={(v) => { const fn = promptState.onSubmit; setPromptState(null); fn(v) }}
+        />
+      )}
+
       {/* Send to a chat — pick a contact, forward the media into their thread. */}
       {forwardItems && (
         <div onClick={() => { setForwardItems(null); setForwardSearch(''); setForwardResults([]) }}
@@ -1390,6 +1431,32 @@ function ConfirmDialog({ title, message, confirmLabel = 'Confirm', danger, onCon
             style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
           <button onClick={onConfirm} autoFocus
             style={{ padding: '10px 18px', borderRadius: 10, border: 'none', background: danger ? '#dc2626' : 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// In-app name prompt — folder create / rename (replaces the native prompt()).
+function PromptDialog({ title, value, placeholder, confirmLabel = 'Save', onSubmit, onCancel }: {
+  title: string; value: string; placeholder?: string; confirmLabel?: string; onSubmit: (v: string) => void; onCancel: () => void
+}) {
+  const [v, setV] = useState(value)
+  return (
+    <div onClick={onCancel}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(13,15,20,0.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100050, padding: 20, animation: 'gal-fade 0.14s ease' }}>
+      <div onClick={e => e.stopPropagation()} role="dialog" aria-label={title}
+        style={{ width: 400, maxWidth: '92vw', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.30)', animation: 'gal-pop 0.16s ease' }}>
+        <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>{title}</h3>
+        <input autoFocus value={v} onChange={e => setV(e.target.value)} placeholder={placeholder}
+          onFocus={e => e.target.select()}
+          onKeyDown={e => { if (e.key === 'Enter') onSubmit(v); if (e.key === 'Escape') onCancel() }}
+          style={{ width: '100%', boxSizing: 'border-box', padding: '11px 13px', borderRadius: 11, border: '1px solid var(--border)', fontSize: 14, outline: 'none', margin: '0 0 18px', color: 'var(--ink)' }} />
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={onCancel}
+            style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+          <button onClick={() => onSubmit(v)} disabled={!v.trim()}
+            style={{ padding: '10px 18px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: v.trim() ? 'pointer' : 'default', opacity: v.trim() ? 1 : 0.6 }}>{confirmLabel}</button>
         </div>
       </div>
     </div>
