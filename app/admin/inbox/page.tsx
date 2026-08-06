@@ -353,6 +353,9 @@ export default function InboxPage() {
   const [galleryFolder, setGalleryFolder] = useState<string | null>(null)
   const [gallerySearch, setGallerySearch] = useState('')
   const [gallerySelected, setGallerySelected] = useState<Set<string>>(new Set())
+  // Media the agent has attached but NOT yet sent — shown as preview cards above
+  // the composer and delivered only when Send is pressed (alongside any text).
+  const [stagedMedia, setStagedMedia] = useState<any[]>([])
   const [couponAmount, setCouponAmount] = useState('')
   const [couponType, setCouponType] = useState<'fixed' | 'percent'>('fixed')
   const [couponCode, setCouponCode] = useState('')
@@ -1407,6 +1410,8 @@ export default function InboxPage() {
     } catch { setAiSavedFields(new Set()) }
     setShowContactEdit(false)
     setReplyTo(null)
+    // Drop any staged-but-unsent media so it can't leak into another thread.
+    setStagedMedia([])
     setAiSummary((conv as any).ai_summary || '')
     setAiTodos((conv as any).ai_todos || [])
     // Load messages
@@ -1807,13 +1812,26 @@ export default function InboxPage() {
   }
 
   const sendingMediaRef = useRef(false)
-  const sendGalleryMedia = async () => {
-    if (!companyId || !selected || gallerySelected.size === 0) return
+  // Stage the picked gallery media as preview cards above the composer instead of
+  // sending straight away. Nothing is delivered until Send is pressed.
+  const stageSelectedMedia = () => {
+    const chosen = galleryItems.filter(it => gallerySelected.has(it.id))
+    if (chosen.length) {
+      setStagedMedia(prev => {
+        const have = new Set(prev.map((p: any) => p.id))
+        return [...prev, ...chosen.filter((c: any) => !have.has(c.id))]
+      })
+    }
+    setGallerySelected(new Set())
+    setShowMediaPicker(false)
+  }
+
+  const deliverMedia = async (chosen: any[]) => {
+    if (!companyId || !selected || chosen.length === 0) return
     // Guard against a double-fire (fast double-click / re-entry) — that sent the
     // same media into the thread twice.
     if (sendingMediaRef.current) return
     sendingMediaRef.current = true
-    const chosen = galleryItems.filter(it => gallerySelected.has(it.id))
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
     const smsNumber = smsDestination()
     try {
@@ -1849,7 +1867,7 @@ export default function InboxPage() {
       await (supabase as any).from('conversations').update({ last_message: '🖼️ Media', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
       const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
       setMessages(msgs || [])
-      setShowMediaPicker(false); scrollBottom()
+      scrollBottom()
     } catch (e: any) { showToast('Could not send media') }
     finally { sendingMediaRef.current = false }
   }
@@ -3303,7 +3321,7 @@ export default function InboxPage() {
   }
 
   const sendReply = async () => {
-    if (!reply.trim() || !selected || !user) return
+    if ((!reply.trim() && stagedMedia.length === 0) || !selected || !user) return
     setSending(true)
     const content = reply.trim()
     const senderName = user.user_metadata?.display_name || user.email?.split('@')[0]
@@ -3311,6 +3329,15 @@ export default function InboxPage() {
     // An internal note isn't taking the customer on, so it doesn't claim the
     // conversation — only a customer-facing reply does.
     if (!internalMode) claimIfUnassigned()
+
+    // Deliver any attached-but-unsent gallery media first (internal notes never
+    // carry customer-facing media). If there's no accompanying text, we're done.
+    if (!internalMode && stagedMedia.length > 0) {
+      const toSend = stagedMedia
+      setStagedMedia([])
+      await deliverMedia(toSend)
+      if (!content) { setSending(false); return }
+    }
 
     // ── Internal staff-only note ────────────────────────────────────────────
     // Written straight to the messages table with is_internal = true and never
@@ -5133,9 +5160,9 @@ export default function InboxPage() {
                 </div>
                 <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>{gallerySelected.size} selected</span>
-                  <button onClick={sendGalleryMedia} disabled={gallerySelected.size === 0}
+                  <button onClick={stageSelectedMedia} disabled={gallerySelected.size === 0}
                     style={{ padding: '9px 20px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: gallerySelected.size ? 'pointer' : 'not-allowed', opacity: gallerySelected.size ? 1 : 0.5 }}>
-                    Send {gallerySelected.size > 0 ? gallerySelected.size : ''} to chat
+                    Attach {gallerySelected.size > 0 ? gallerySelected.size : ''}
                   </button>
                 </div>
               </div>
@@ -6698,6 +6725,38 @@ export default function InboxPage() {
                 </div>
               )}
 
+              {/* Attached-but-unsent media — preview cards. Delivered on Send. */}
+              {stagedMedia.length > 0 && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', padding: '8px 10px', marginBottom: 8, borderRadius: 10, border: '1px dashed var(--border)', background: 'var(--canvas)' }}>
+                  {stagedMedia.map((m: any) => {
+                    const imgThumb = m.thumbnail_url && m.thumbnail_url !== m.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m.thumbnail_url) ? m.thumbnail_url : null
+                    return (
+                      <div key={m.id} style={{ position: 'relative', width: 60, height: 60, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: '#fff', flexShrink: 0 }}>
+                        {m.kind === 'video'
+                          ? (imgThumb
+                              ? <img src={imgThumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              : <video src={m.url + '#t=0.1'} preload="metadata" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)
+                          : <img src={imgThumb || m.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                        {m.kind === 'video' && (
+                          <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                            <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="#fff"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                            </span>
+                          </span>
+                        )}
+                        <button type="button" title="Remove"
+                          onClick={() => setStagedMedia(prev => prev.filter((x: any) => x.id !== m.id))}
+                          style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, lineHeight: 1, padding: 0 }}>×</button>
+                      </div>
+                    )
+                  })}
+                  <button type="button" onClick={() => setStagedMedia([])}
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
+                    Clear all
+                  </button>
+                </div>
+              )}
+
               <textarea ref={textareaRef} value={reply} onChange={e => {
                   const v = e.target.value
                   setReply(v)
@@ -6891,14 +6950,14 @@ export default function InboxPage() {
                   </button>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button type="button" onClick={sendAndClose} disabled={sending || !reply.trim()}
-                    style={{ padding: '8px 14px', borderRadius: 10, background: '#fff', color: reply.trim() ? 'var(--ink)' : '#9ca3af', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: reply.trim() ? 'pointer' : 'default' }}>
+                  <button type="button" onClick={sendAndClose} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
+                    style={{ padding: '8px 14px', borderRadius: 10, background: '#fff', color: (reply.trim() || stagedMedia.length) ? 'var(--ink)' : '#9ca3af', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default' }}>
                     Send & Close
                   </button>
                   {/* Send + channel selector */}
                   <div ref={channelMenuRef} style={{ position: 'relative', display: 'flex' }}>
-                    <button type="button" onClick={sendReply} disabled={sending || !reply.trim()}
-                      style={{ padding: '8px 16px', borderRadius: internalMode ? 10 : '10px 0 0 10px', background: !reply.trim() ? '#e5e7eb' : internalMode ? '#f59e0b' : 'var(--coral)', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: reply.trim() ? 'pointer' : 'default', transition: 'all 0.15s' }}>
+                    <button type="button" onClick={sendReply} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
+                      style={{ padding: '8px 16px', borderRadius: internalMode ? 10 : '10px 0 0 10px', background: (!reply.trim() && stagedMedia.length === 0) ? '#e5e7eb' : internalMode ? '#f59e0b' : 'var(--coral)', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default', transition: 'all 0.15s' }}>
                       {sending
                         ? (internalMode ? 'Saving…' : 'Sending…')
                         : internalMode
@@ -6909,7 +6968,7 @@ export default function InboxPage() {
                     <>
                     <button type="button" onClick={() => setShowChannelMenu(v => !v)} disabled={sending}
                       title="Choose a channel"
-                      style={{ padding: '8px 8px', borderRadius: '0 10px 10px 0', background: reply.trim() ? 'var(--coral)' : '#e5e7eb', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      style={{ padding: '8px 8px', borderRadius: '0 10px 10px 0', background: (reply.trim() || stagedMedia.length) ? 'var(--coral)' : '#e5e7eb', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="18 15 12 9 6 15"/></svg>
                     </button>
 
