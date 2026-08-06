@@ -74,6 +74,47 @@ export async function listLocations(token: string) {
   return out
 }
 
+// Email the business when a new Google review lands (one per review). Sent to
+// the company's business_email via Resend; silently no-ops if either is unset.
+async function notifyNewReviews(db: any, companyId: string, reviews: any[]) {
+  const key = process.env.RESEND_API_KEY
+  if (!key) return
+  const { data: company } = await db.from('companies').select('name, business_email, slug').eq('id', companyId).maybeSingle()
+  const to = company?.business_email
+  if (!to) return
+  const business = company?.name || 'your business'
+  const reviewsUrl = company?.slug ? `https://${company.slug}.colvy.com/admin/reviews` : 'https://colvy.com/admin/reviews'
+  const from = 'Colvy <notifications@updates.colvy.com>'
+  const esc = (s: string) => String(s || '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string))
+
+  for (const rv of reviews) {
+    const n = rv.star_rating || 0
+    const stars = '★'.repeat(n) + '☆'.repeat(Math.max(0, 5 - n))
+    const html = `
+      <div style="background:#eef2ff;padding:28px 12px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+        <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:28px;text-align:center">
+          <div style="font-size:26px;color:#f5b301;letter-spacing:3px">${stars}</div>
+          <h2 style="margin:14px 0 4px;font-size:20px;color:#1a1a1a">You got a new ${n ? n + '-star ' : ''}review${n >= 4 ? '! 🎉' : '.'}</h2>
+          <p style="margin:0 0 18px;color:#6b6b70;font-size:14px">for ${esc(business)}</p>
+          <div style="text-align:left;background:#f6f7fb;border-radius:12px;padding:16px 18px;margin:0 0 20px">
+            <p style="margin:0 0 4px;font-weight:700;color:#1a1a1a">${esc(rv.reviewer_name || 'A customer')}</p>
+            <div style="color:#f5b301;font-size:15px;margin-bottom:8px">${stars}</div>
+            <p style="margin:0;color:#374151;font-size:13.5px;line-height:1.55">${esc(rv.comment || '(no written comment)')}</p>
+          </div>
+          <a href="${reviewsUrl}" style="display:inline-block;background:#ff7a6b;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:10px">Read &amp; reply</a>
+          <p style="margin:20px 0 0;color:#9ca3af;font-size:12px">Replying to reviews builds trust — open Colvy to respond.</p>
+        </div>
+      </div>`
+    try {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to, subject: `${rv.reviewer_name || 'Someone'} left a ${n ? n + '-star ' : ''}review for ${business}`, html }),
+      })
+    } catch { /* non-fatal */ }
+  }
+}
+
 // Fetches reviews for the connected location and upserts them into Colvy.
 export async function syncReviews(companyId: string) {
   const db = admin()
@@ -140,13 +181,27 @@ export async function syncReviews(companyId: string) {
   const nowIso = new Date().toISOString()
   const missingCol = (e: any) => e && /column|schema cache|does not exist/i.test(e.message || '')
 
+  // Pre-fetch existing reviews ONCE (id + current link), so the loop below does
+  // a single write per review instead of a SELECT + write. A full sync of
+  // hundreds of reviews was doing ~2 queries each, which timed the request out.
+  const existingMap = new Map<string, { id: string; contact_id: string | null }>()
+  {
+    let r = await db.from('google_reviews').select('id, review_id, contact_id').eq('company_id', companyId).limit(10000)
+    if (missingCol(r.error)) r = await db.from('google_reviews').select('id, review_id').eq('company_id', companyId).limit(10000)
+    for (const row of (r.data || [])) existingMap.set(row.review_id, { id: row.id, contact_id: (row as any).contact_id ?? null })
+  }
+
+  const newReviews: any[] = []   // freshly inserted this run — for the email notification
+
   for (const r of allReviews) {
     const reviewerName = r.reviewer?.displayName || 'Anonymous'
     const match = findMatch(reviewerName)
+    const reviewId = r.reviewId || r.name
+    const existing = existingMap.get(reviewId)
 
     const row: any = {
       company_id: companyId,
-      review_id: r.reviewId || r.name,
+      review_id: reviewId,
       reviewer_name: reviewerName,
       reviewer_photo: r.reviewer?.profilePhotoUrl || null,
       star_rating: STAR[r.starRating] ?? null,
@@ -156,24 +211,10 @@ export async function syncReviews(companyId: string) {
       review_created_at: r.createTime || null,
       raw: r,
       match_checked_at: nowIso,
-      contact_id: match?.id || null,
+      // Never clobber a link an agent set by hand — only auto-fill when unlinked.
+      contact_id: existing?.contact_id || match?.id || null,
       contact_name: match?.name || null,
     }
-
-    // Existence check (also read the current link so we never clobber a manual
-    // one). Falls back to id-only if the match columns aren't migrated yet.
-    let existing: any = null
-    {
-      const r1 = await db.from('google_reviews').select('id, contact_id')
-        .eq('company_id', companyId).eq('review_id', row.review_id).maybeSingle()
-      if (missingCol(r1.error)) {
-        const r2 = await db.from('google_reviews').select('id')
-          .eq('company_id', companyId).eq('review_id', row.review_id).maybeSingle()
-        existing = r2.data
-      } else existing = r1.data
-    }
-    // Keep a link an agent set by hand — only auto-fill when unlinked.
-    if (existing?.contact_id) { row.contact_id = existing.contact_id }
 
     // Resilient write: strip the match columns and retry if they're not migrated.
     const write = async (payload: any) => existing?.id
@@ -186,6 +227,7 @@ export async function syncReviews(companyId: string) {
     }
     if (!existing?.id) {
       saved++
+      newReviews.push(row)
       // Tie a new review back to a review request we sent, so the agent's
       // review card can show it was completed.
       try {
@@ -207,6 +249,15 @@ export async function syncReviews(companyId: string) {
       } catch { /* non-fatal */ }
     }
   }
+
+  // Email the business about brand-new, RECENT reviews only — so the first sync
+  // (which backfills years of old reviews) never floods the inbox. Capped too.
+  try {
+    const recent = newReviews
+      .filter(r => r.review_created_at && (Date.now() - new Date(r.review_created_at).getTime()) < 3 * 86_400_000)
+      .slice(0, 20)
+    if (recent.length) await notifyNewReviews(db, companyId, recent)
+  } catch { /* non-fatal */ }
 
   // Round the average here so every consumer shows 4.6★, not 4.599999…★.
   const avgRounded = averageRating != null ? Math.round(Number(averageRating) * 10) / 10 : null

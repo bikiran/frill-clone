@@ -147,8 +147,10 @@ export default function GoogleReviewsPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, action: 'sync' }),
       })
-      const d = await res.json()
-      if (d.error) throw new Error(d.error)
+      const text = await res.text()
+      let d: any = {}
+      try { d = text ? JSON.parse(text) : {} } catch { d = { error: res.ok ? 'The sync took too long — it may still be running. Refresh in a minute.' : (text.slice(0, 160) || 'Sync failed') } }
+      if (!res.ok || d.error) throw new Error(d.error)
       setMsg(`Synced ${d.total} review(s)${d.averageRating ? ` · average ${Number(d.averageRating).toFixed(1)}★` : ''}.`)
       await load(companyId)
     } catch (e: any) { setMsg('Sync failed: ' + e.message) }

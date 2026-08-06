@@ -107,8 +107,12 @@ export default function ReviewsPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, action: 'sync' }),
       })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Sync failed')
+      // The sync can be slow; if it times out the body may not be JSON, so read
+      // text and parse defensively rather than crashing with "not valid JSON".
+      const text = await res.text()
+      let d: any = {}
+      try { d = text ? JSON.parse(text) : {} } catch { d = { error: res.ok ? 'The sync took too long — it may still be running. Give it a minute and refresh.' : (text.slice(0, 160) || 'Sync failed') } }
+      if (!res.ok || d.error) throw new Error(d.error || 'Sync failed')
       await load(companyId)
     } catch (e: any) {
       alert(e.message || 'Could not sync reviews')

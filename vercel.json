@@ -11,6 +11,10 @@
     {
       "path": "/api/demo/seed",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-reviews",
+      "schedule": "0 */6 * * *"
     }
   ]
 }

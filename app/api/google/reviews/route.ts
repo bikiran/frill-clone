@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getGoogleToken, listLocations, syncReviews, replyToReview } from '@/lib/google-business'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60   // a full review sync pages through hundreds of rows
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
