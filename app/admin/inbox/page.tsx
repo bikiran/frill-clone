@@ -356,6 +356,14 @@ export default function InboxPage() {
   // Media the agent has attached but NOT yet sent — shown as preview cards above
   // the composer and delivered only when Send is pressed (alongside any text).
   const [stagedMedia, setStagedMedia] = useState<any[]>([])
+  // Per-item media-expiry choice, keyed by item id: 'forever' (default) | '1d' |
+  // '7d' | '30d' | a yyyy-mm-dd date. Absent = keep forever.
+  const [stagedExpiry, setStagedExpiry] = useState<Record<string, string>>({})
+  const [expiryMenuFor, setExpiryMenuFor] = useState<string | null>(null)
+  const [customDateFor, setCustomDateFor] = useState<string | null>(null)
+  // Advanced: also permanently delete the media from Colvy after it expires
+  // (access-only revocation is the default). Off unless explicitly turned on.
+  const [expiryDeleteMode, setExpiryDeleteMode] = useState(false)
   const [couponAmount, setCouponAmount] = useState('')
   const [couponType, setCouponType] = useState<'fixed' | 'percent'>('fixed')
   const [couponCode, setCouponCode] = useState('')
@@ -1189,6 +1197,16 @@ export default function InboxPage() {
     return () => document.removeEventListener('mousedown', handler)
   }, [showAssignMenu, showActions, showCardAssign, showCardMore])
 
+  // Close the media-expiry selector when clicking elsewhere.
+  useEffect(() => {
+    if (!expiryMenuFor) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-expiry-picker]')) { setExpiryMenuFor(null); setCustomDateFor(null) }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [expiryMenuFor])
+
   // Realtime subscription to new messages / conversation updates
   useEffect(() => {
     if (!companyId) return
@@ -1411,7 +1429,7 @@ export default function InboxPage() {
     setShowContactEdit(false)
     setReplyTo(null)
     // Drop any staged-but-unsent media so it can't leak into another thread.
-    setStagedMedia([])
+    setStagedMedia([]); setStagedExpiry({}); setExpiryDeleteMode(false); setExpiryMenuFor(null); setCustomDateFor(null)
     setAiSummary((conv as any).ai_summary || '')
     setAiTodos((conv as any).ai_todos || [])
     // Load messages
@@ -1812,6 +1830,30 @@ export default function InboxPage() {
   }
 
   const sendingMediaRef = useRef(false)
+  // ── Media expiry helpers ────────────────────────────────────────────────────
+  // Resolve a per-item expiry code to an absolute timestamp at SEND time (so
+  // "7 days" counts from when it's actually sent, not when it was picked).
+  const resolveExpiry = (code?: string): string | null => {
+    if (!code || code === 'forever') return null
+    const day = 86400000
+    if (code === '1d') return new Date(Date.now() + day).toISOString()
+    if (code === '7d') return new Date(Date.now() + 7 * day).toISOString()
+    if (code === '30d') return new Date(Date.now() + 30 * day).toISOString()
+    // Custom date (yyyy-mm-dd) → end of that day.
+    const d = new Date(`${code}T23:59:59`)
+    return isNaN(d.getTime()) ? null : d.toISOString()
+  }
+  // Short label for the selector chip on a staged card.
+  const expiryChip = (code?: string): string => {
+    if (!code || code === 'forever') return 'Keep forever'
+    if (code === '1d') return '1 day'
+    if (code === '7d') return '7 days'
+    if (code === '30d') return '30 days'
+    const d = new Date(`${code}T00:00:00`)
+    return isNaN(d.getTime()) ? 'Keep forever' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  }
+  const anyExpiring = stagedMedia.some((m: any) => stagedExpiry[m.id] && stagedExpiry[m.id] !== 'forever')
+
   // Stage the picked gallery media as preview cards above the composer instead of
   // sending straight away. Nothing is delivered until Send is pressed.
   const stageSelectedMedia = () => {
@@ -1836,20 +1878,46 @@ export default function InboxPage() {
     const smsNumber = smsDestination()
     try {
       for (const item of chosen) {
-        const attachment = { url: item.url, name: item.title || 'media', type: item.kind === 'video' ? 'video/mp4' : 'image/jpeg', kind: item.kind, from_gallery: true }
+        const attachment: any = { url: item.url, name: item.title || 'media', type: item.kind === 'video' ? 'video/mp4' : 'image/jpeg', kind: item.kind, from_gallery: true }
+
+        // Media expiry: when the agent set one, deliver through a branded /m/
+        // viewer link whose access we can revoke, rather than the raw file. The
+        // link's expires_at is enforced by the viewer (and, for delete-mode, the
+        // expire-media cron). Access-mode keeps the original in the gallery.
+        const expiresAt: string | null = item._expiresAt || null
+        let viewerUrl = ''
+        if (expiresAt) {
+          try {
+            const lr = await fetch('/api/short-links/create', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                companyId, kind: 'media', conversationId: selected.id,
+                url: item.url, mediaUrls: [attachment], label: attachment.name,
+                sentBy: me, channel: 'gallery',
+                expiresAt, expiryMode: item._expiryMode || 'access',
+              }),
+            })
+            const ld = await lr.json()
+            if (lr.ok && ld.url) viewerUrl = ld.url
+          } catch { /* fall back to a non-revocable send below */ }
+          attachment.expires_at = expiresAt
+          attachment.expiry_mode = item._expiryMode || 'access'
+          if (viewerUrl) attachment.viewer_url = viewerUrl
+        }
 
         // On an SMS conversation, actually TEXT the customer a link to the media
         // (as a short colvy.com/m/… viewer). Without this the media only appeared
         // in the chat thread and the customer received nothing.
         if (smsNumber) {
           try {
+            // Expiring media goes out as the revocable viewer link (text), not an
+            // MMS attachment the recipient could keep forever.
+            const body = (expiresAt && viewerUrl)
+              ? { companyId, conversationId: selected.id, to: smsNumber, text: viewerUrl, attachments: [], senderName: me, skipChatMessage: true }
+              : { companyId, conversationId: selected.id, to: smsNumber, text: '', attachments: [attachment], senderName: me, skipChatMessage: true }
             const r = await fetch('/api/telnyx/sms/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                companyId, conversationId: selected.id, to: smsNumber,
-                text: '', attachments: [attachment], senderName: me,
-                skipChatMessage: true,
-              }),
+              body: JSON.stringify(body),
             })
             const rd = await r.json()
             // Don't hide a failed text — the agent thinks the customer got it.
@@ -3333,8 +3401,12 @@ export default function InboxPage() {
     // Deliver any attached-but-unsent gallery media first (internal notes never
     // carry customer-facing media). If there's no accompanying text, we're done.
     if (!internalMode && stagedMedia.length > 0) {
-      const toSend = stagedMedia
-      setStagedMedia([])
+      const toSend = stagedMedia.map((it: any) => ({
+        ...it,
+        _expiresAt: resolveExpiry(stagedExpiry[it.id]),
+        _expiryMode: expiryDeleteMode ? 'delete' : 'access',
+      }))
+      setStagedMedia([]); setStagedExpiry({}); setExpiryDeleteMode(false)
       await deliverMedia(toSend)
       if (!content) { setSending(false); return }
     }
@@ -6438,6 +6510,27 @@ export default function InboxPage() {
                             </>
                           )
                         })()}
+                        {/* Media-expiry badge — "Expires in 7 days" / "Expired". */}
+                        {(() => {
+                          const exp = atts.map((a: any) => a.expires_at).filter(Boolean).sort()[0]
+                          if (!exp) return null
+                          const ms = new Date(exp).getTime() - Date.now()
+                          const del = atts.some((a: any) => a.expiry_mode === 'delete')
+                          let label: string
+                          if (ms <= 0) label = 'Expired'
+                          else {
+                            const days = Math.ceil(ms / 86400000)
+                            const hrs = Math.ceil(ms / 3600000)
+                            label = days >= 1 ? `Expires in ${days} day${days === 1 ? '' : 's'}` : `Expires in ${hrs} hour${hrs === 1 ? '' : 's'}`
+                          }
+                          return (
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, margin: '2px 6px 4px', padding: '2px 8px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, background: isAgent ? 'rgba(255,255,255,0.2)' : 'var(--canvas)', color: isAgent ? '#fff' : 'var(--slate)' }}
+                              title={del ? 'Auto-deletes from Colvy at expiry' : 'Recipient access is revoked at expiry'}>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                              {label}{del ? ' · auto-delete' : ''}
+                            </div>
+                          )
+                        })()}
                         {(msg as any).metadata?.review_request ? (
                           <div style={{ padding: '4px 2px 2px' }}>
                             {/* Review-request card, shown to the agent — mirrors
@@ -6725,35 +6818,95 @@ export default function InboxPage() {
                 </div>
               )}
 
-              {/* Attached-but-unsent media — preview cards. Delivered on Send. */}
+              {/* Attached-but-unsent media — preview cards, delivered on Send.
+                  Each card carries a Media-expiry selector (Keep forever by
+                  default). */}
               {stagedMedia.length > 0 && (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', padding: '8px 10px', marginBottom: 8, borderRadius: 10, border: '1px dashed var(--border)', background: 'var(--canvas)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
                   {stagedMedia.map((m: any) => {
                     const imgThumb = m.thumbnail_url && m.thumbnail_url !== m.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m.thumbnail_url) ? m.thumbnail_url : null
+                    const code = stagedExpiry[m.id]
+                    const kindLabel = m.kind === 'video' ? 'Video' : 'Image'
+                    const keeps = !code || code === 'forever'
                     return (
-                      <div key={m.id} style={{ position: 'relative', width: 60, height: 60, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: '#fff', flexShrink: 0 }}>
-                        {m.kind === 'video'
-                          ? (imgThumb
-                              ? <img src={imgThumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              : <video src={m.url + '#t=0.1'} preload="metadata" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)
-                          : <img src={imgThumb || m.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                        {m.kind === 'video' && (
-                          <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                            <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="#fff"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 12, border: '1px solid var(--border)', background: '#fff' }}>
+                        <div style={{ position: 'relative', width: 40, height: 40, borderRadius: 8, overflow: 'hidden', background: 'var(--canvas)', flexShrink: 0 }}>
+                          {m.kind === 'video'
+                            ? (imgThumb
+                                ? <img src={imgThumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : <video src={m.url + '#t=0.1'} preload="metadata" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)
+                            : <img src={imgThumb || m.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                          {m.kind === 'video' && (
+                            <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                              <span style={{ width: 16, height: 16, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="#fff"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                              </span>
                             </span>
-                          </span>
-                        )}
+                          )}
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title || 'media'}</p>
+                          <p style={{ margin: '1px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>{kindLabel}</p>
+                        </div>
+
+                        {/* Media-expiry selector */}
+                        <div data-expiry-picker style={{ position: 'relative', flexShrink: 0 }}>
+                          <button type="button"
+                            onClick={() => { setExpiryMenuFor(expiryMenuFor === m.id ? null : m.id); setCustomDateFor(null) }}
+                            title="Set when this media expires"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: keeps ? '#fff' : 'var(--peach)', color: keeps ? 'var(--slate)' : 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                            {expiryChip(code)}
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+                          </button>
+                          {expiryMenuFor === m.id && (
+                            <div style={{ position: 'absolute', bottom: '120%', right: 0, width: 180, background: '#fff', borderRadius: 10, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden', padding: '4px 0' }}>
+                              {[['forever', 'Keep forever'], ['1d', '1 day'], ['7d', '7 days'], ['30d', '30 days']].map(([val, label]) => (
+                                <button key={val} type="button"
+                                  onClick={() => { setStagedExpiry(prev => { const n = { ...prev }; if (val === 'forever') delete n[m.id]; else n[m.id] = val; return n }); setExpiryMenuFor(null) }}
+                                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: (code === val || (val === 'forever' && keeps)) ? 'var(--peach)' : 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', fontWeight: (code === val || (val === 'forever' && keeps)) ? 700 : 500 }}>
+                                  {label}
+                                  {(code === val || (val === 'forever' && keeps)) && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                                </button>
+                              ))}
+                              <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+                              {customDateFor === m.id ? (
+                                <div style={{ padding: '6px 10px' }}>
+                                  <input type="date" autoFocus
+                                    min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
+                                    onChange={e => { if (e.target.value) { setStagedExpiry(prev => ({ ...prev, [m.id]: e.target.value })); setExpiryMenuFor(null); setCustomDateFor(null) } }}
+                                    style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
+                                </div>
+                              ) : (
+                                <button type="button" onClick={() => setCustomDateFor(m.id)}
+                                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                                  Choose a date…
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
                         <button type="button" title="Remove"
-                          onClick={() => setStagedMedia(prev => prev.filter((x: any) => x.id !== m.id))}
-                          style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, lineHeight: 1, padding: 0 }}>×</button>
+                          onClick={() => { setStagedMedia(prev => prev.filter((x: any) => x.id !== m.id)); setStagedExpiry(prev => { const n = { ...prev }; delete n[m.id]; return n }) }}
+                          style={{ width: 24, height: 24, borderRadius: 7, background: 'none', color: 'var(--slate)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
                       </div>
                     )
                   })}
-                  <button type="button" onClick={() => setStagedMedia([])}
-                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
-                    Clear all
-                  </button>
+
+                  {/* Advanced: auto-delete. Only relevant once something expires,
+                      and off by default — expiring access alone keeps the
+                      original safe in the gallery. */}
+                  {anyExpiring && (
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '2px 2px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={expiryDeleteMode} onChange={e => setExpiryDeleteMode(e.target.checked)} style={{ marginTop: 2, accentColor: 'var(--coral)' }} />
+                      <span style={{ fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.4 }}>
+                        <span style={{ fontWeight: 700, color: 'var(--ink)' }}>Delete from Colvy after expiry</span>{' '}— permanently removes the media from your gallery too, not just the recipient's access.
+                      </span>
+                    </label>
+                  )}
                 </div>
               )}
 

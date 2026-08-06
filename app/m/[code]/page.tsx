@@ -33,7 +33,7 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
   let lookupError: string | null = null
   {
     const full = await db.from('short_links')
-      .select('target_url, label, company_id, kind, conversation_id, media_urls, note')
+      .select('target_url, label, company_id, kind, conversation_id, media_urls, note, expires_at')
       .eq('code', code).maybeSingle()
     if (full.error) {
       const base = await db.from('short_links')
@@ -44,6 +44,21 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
     } else {
       link = full.data
     }
+  }
+
+  // Media expiry (V247): once past expires_at the recipient loses access. The
+  // original still lives in the sender's workspace gallery — only this shared
+  // view is revoked.
+  if (link && (link as any).expires_at && new Date((link as any).expires_at).getTime() < Date.now()) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', background: '#fafafa', padding: 24, textAlign: 'center' }}>
+        <div style={{ width: 46, height: 46, borderRadius: 23, background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <p style={{ color: '#374151', fontWeight: 700, margin: 0, fontSize: 15 }}>This media has expired</p>
+        <p style={{ color: '#9ca3af', margin: 0, fontSize: 13 }}>The sender set it to expire, so it's no longer available to view.</p>
+      </div>
+    )
   }
 
   // A gallery link keeps its files in media_urls; target_url may be blank.
