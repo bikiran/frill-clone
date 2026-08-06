@@ -458,6 +458,10 @@ export default function GalleryPage() {
 
   // Render the folder list as a tree (folders can nest via parent_id).
   const childrenOf = (parentId: string | null) => folders.filter((f: any) => (f.parent_id || null) === parentId)
+  // Flatten the folder tree into a depth-tagged list (parent → children), so
+  // dropdowns can show the same hierarchy the sidebar does instead of a flat list.
+  const flatFolders = (parentId: string | null = null, depth = 0): { f: any; depth: number }[] =>
+    childrenOf(parentId).flatMap((f: any) => [{ f, depth }, ...flatFolders(f.id, depth + 1)])
   const renderFolders = (parentId: string | null, depth: number): any =>
     childrenOf(parentId).map((f: any) => (
       <div key={f.id}>
@@ -828,9 +832,9 @@ export default function GalleryPage() {
             <button className={'gal-cat-chip' + (activeFolder === null ? ' on' : '')} onClick={() => setActiveFolder(null)}>All media</button>
             <button className={'gal-cat-chip' + (activeFolder === '__fav' ? ' on' : '')} onClick={() => setActiveFolder('__fav')}>♥ Favourites{favIds.size ? ` (${favIds.size})` : ''}</button>
             <button className={'gal-cat-chip' + (activeFolder === '__trash' ? ' on' : '')} onClick={() => setActiveFolder('__trash')}>🗑 Trash</button>
-            {folders.map(f => (
+            {flatFolders().map(({ f, depth }) => (
               <button key={f.id} className={'gal-cat-chip' + (activeFolder === f.id ? ' on' : '')} onClick={() => setActiveFolder(f.id)}>
-                {f.name}{f.external_source === 'prexty' ? ' 🔄' : ''}
+                {depth ? '↳ ' : ''}{f.name}{f.external_source === 'prexty' ? ' 🔄' : ''}
               </button>
             ))}
           </div>
@@ -1329,7 +1333,9 @@ export default function GalleryPage() {
             style={{ flexShrink: 0, padding: '6px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
             <option value="" disabled>Move to…</option>
             <option value="__none">Unfiled</option>
-            {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            {flatFolders().map(({ f, depth }) => (
+              <option key={f.id} value={f.id}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${f.name}`}</option>
+            ))}
           </select>
 
           {categories.length > 0 && (
