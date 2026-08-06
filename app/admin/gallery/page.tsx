@@ -362,8 +362,9 @@ export default function GalleryPage() {
     }
     try {
       const params = new URLSearchParams({ companyId })
-      // '__fav' is a client-side view over all media, not a real folder.
-      if (activeFolder && activeFolder !== '__fav') params.set('folderId', activeFolder)
+      // '__fav' / '__trash' are client-side views, not real folders.
+      if (activeFolder === '__trash') params.set('trashed', '1')
+      else if (activeFolder && activeFolder !== '__fav') params.set('folderId', activeFolder)
       if (search.trim()) params.set('q', search.trim())
       const res = await fetch(`/api/media?${params}`)
       const data = await res.json()
@@ -547,15 +548,32 @@ export default function GalleryPage() {
     alert("Canva import isn't connected yet. Once we set up the Canva app, you'll be able to pick designs here. For now, export from Canva and use Upload media.")
   }
 
-  const deleteItem = (item: any) => {
+  // Delete → Trash (soft). Optimistic: drop it from the grid immediately.
+  const deleteItem = async (item: any) => {
+    if (!companyId) return
+    setItems(prev => prev.filter((it: any) => it.id !== item.id))
+    try {
+      await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'trash_item', itemId: item.id }) })
+    } catch {}
+  }
+
+  const restoreItem = async (item: any) => {
+    if (!companyId) return
+    setItems(prev => prev.filter((it: any) => it.id !== item.id))
+    try {
+      await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'restore_item', itemId: item.id }) })
+    } catch {}
+  }
+
+  const deleteForever = (item: any) => {
     if (!companyId) return
     askConfirm({
-      title: 'Delete media',
-      message: `Delete “${item.title || 'this item'}” from the gallery? This can't be undone.`,
-      confirmLabel: 'Delete', danger: true,
+      title: 'Delete permanently',
+      message: `Permanently delete “${item.title || 'this item'}”? This can't be undone.`,
+      confirmLabel: 'Delete forever', danger: true,
       onConfirm: async () => {
+        setItems(prev => prev.filter((it: any) => it.id !== item.id))
         await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete_item', itemId: item.id }) })
-        load()
       },
     })
   }
@@ -750,6 +768,12 @@ export default function GalleryPage() {
               </span>
             </div>
           ))}
+          {/* Trash pinned at the bottom (like Notes). */}
+          <button onClick={() => setActiveFolder(activeFolder === '__trash' ? null : '__trash')}
+            style={{ ...folderBtn(activeFolder === '__trash'), display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, borderTop: '1px solid var(--border)', borderRadius: 0, paddingTop: 12 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            {activeFolder === '__trash' ? 'Back to media' : 'Trash'}
+          </button>
         </div>
 
         {/* Items grid — the whole column is a drop target, so files can be
@@ -774,6 +798,7 @@ export default function GalleryPage() {
           <div className="gal-cat-strip">
             <button className={'gal-cat-chip' + (activeFolder === null ? ' on' : '')} onClick={() => setActiveFolder(null)}>All media</button>
             <button className={'gal-cat-chip' + (activeFolder === '__fav' ? ' on' : '')} onClick={() => setActiveFolder('__fav')}>♥ Favourites{favIds.size ? ` (${favIds.size})` : ''}</button>
+            <button className={'gal-cat-chip' + (activeFolder === '__trash' ? ' on' : '')} onClick={() => setActiveFolder('__trash')}>🗑 Trash</button>
             {folders.map(f => (
               <button key={f.id} className={'gal-cat-chip' + (activeFolder === f.id ? ' on' : '')} onClick={() => setActiveFolder(f.id)}>
                 {f.name}{f.external_source === 'prexty' ? ' 🔄' : ''}
@@ -843,6 +868,15 @@ export default function GalleryPage() {
               </div>
               <p style={{ fontSize: 17, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' }}>No favourites yet</p>
               <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '0 0 20px' }}>Hover any photo or video and tap the ♥ to keep your own collection here.</p>
+              <button onClick={() => setActiveFolder(null)} style={{ padding: '10px 20px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Browse all media</button>
+            </div>
+          ) : activeFolder === '__trash' && visibleItems.length === 0 && pending.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '54px 24px', borderRadius: 20, border: '2px dashed var(--border)', background: 'linear-gradient(160deg, #fffdfc 0%, #fff4f1 100%)' }}>
+              <div style={{ width: 64, height: 64, margin: '0 auto 18px', borderRadius: 18, background: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+              </div>
+              <p style={{ fontSize: 17, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' }}>Trash is empty</p>
+              <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '0 0 20px' }}>Deleted media lands here and is removed automatically after 30 days — restore anything before then.</p>
               <button onClick={() => setActiveFolder(null)} style={{ padding: '10px 20px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Browse all media</button>
             </div>
           ) : (
@@ -1028,7 +1062,22 @@ export default function GalleryPage() {
                     </div>
 
                     {/* Actions on their own right-aligned row so they never spill
-                        past the card edge, regardless of card width. */}
+                        past the card edge, regardless of card width. In Trash,
+                        the row becomes Restore / Delete forever + a countdown. */}
+                    {activeFolder === '__trash' ? (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 }}>
+                        <span style={{ fontSize: 10.5, color: 'var(--slate)' }}>
+                          {(() => {
+                            const days = item.trashed_at ? Math.max(0, 30 - Math.floor((Date.now() - new Date(item.trashed_at).getTime()) / 86_400_000)) : 30
+                            return `Auto-deletes in ${days} day${days === 1 ? '' : 's'}`
+                          })()}
+                        </span>
+                        <span style={{ display: 'flex', gap: 10 }}>
+                          <button onClick={() => restoreItem(item)} style={{ background: 'none', border: 'none', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Restore</button>
+                          <button onClick={() => deleteForever(item)} style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Delete forever</button>
+                        </span>
+                      </div>
+                    ) : (
                     <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4, marginTop: 8 }}>
                       <button onClick={() => shareItems([item])} title="Share / copy link" className="gal-act share">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
@@ -1043,6 +1092,7 @@ export default function GalleryPage() {
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                       </button>
                     </div>
+                    )}
                   </div>
                 </div>
                 )

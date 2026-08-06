@@ -15,21 +15,34 @@ export async function GET(req: NextRequest) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     const folderId = req.nextUrl.searchParams.get('folderId')
     const q = req.nextUrl.searchParams.get('q')
+    const trashed = req.nextUrl.searchParams.get('trashed') === '1'
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
 
-    // Folders and items are independent — fire both at once so the request is
-    // bound by the slower of the two, not their sum.
+    // Auto-purge trash older than 30 days (best-effort; no-op pre-migration).
+    try {
+      const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString()
+      await db.from('media_items').delete().eq('company_id', companyId).lt('trashed_at', cutoff)
+    } catch {}
+
     const foldersQuery = db.from('media_folders').select('*').eq('company_id', companyId).order('sort_order', { ascending: true }).order('name', { ascending: true })
 
-    let itemsQuery = db.from('media_items').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
-    if (folderId) itemsQuery = itemsQuery.eq('folder_id', folderId)
-    if (q) itemsQuery = itemsQuery.or(`title.ilike.%${q}%,sku.ilike.%${q}%,description.ilike.%${q}%`)
-    itemsQuery = itemsQuery.limit(500)
+    // Build the items query. Trashed items are hidden from every normal view and
+    // only shown when ?trashed=1. Falls back gracefully if the column isn't
+    // migrated yet.
+    const buildItems = (withTrash: boolean) => {
+      let iq = db.from('media_items').select('*').eq('company_id', companyId).order(trashed ? 'trashed_at' : 'created_at', { ascending: false })
+      if (withTrash) iq = trashed ? iq.not('trashed_at', 'is', null) : iq.is('trashed_at', null)
+      if (folderId && !trashed) iq = iq.eq('folder_id', folderId)
+      if (q) iq = iq.or(`title.ilike.%${q}%,sku.ilike.%${q}%,description.ilike.%${q}%`)
+      return iq.limit(500)
+    }
+    let [{ data: folders }, itemsRes] = await Promise.all([foldersQuery, buildItems(true)])
+    if (itemsRes.error && /column|schema cache|does not exist/i.test(itemsRes.error.message || '')) {
+      itemsRes = await buildItems(false)   // pre-migration: no trashed_at column
+    }
 
-    const [{ data: folders }, { data: items }] = await Promise.all([foldersQuery, itemsQuery])
-
-    return NextResponse.json({ folders: folders || [], items: items || [] })
+    return NextResponse.json({ folders: folders || [], items: itemsRes.data || [] })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
@@ -71,7 +84,15 @@ export async function POST(req: NextRequest) {
       await db.from('media_items').update(patch).eq('id', body.itemId).eq('company_id', companyId)
       return NextResponse.json({ ok: true })
     }
-    if (action === 'delete_item') {
+    // Soft delete → Trash, and restore back out of it.
+    if (action === 'trash_item' || action === 'restore_item') {
+      const { error } = await db.from('media_items')
+        .update({ trashed_at: action === 'trash_item' ? new Date().toISOString() : null })
+        .eq('id', body.itemId).eq('company_id', companyId)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: true })
+    }
+    if (action === 'delete_item') {   // permanent — used by "Delete forever"
       await db.from('media_items').delete().eq('id', body.itemId).eq('company_id', companyId)
       return NextResponse.json({ ok: true })
     }
