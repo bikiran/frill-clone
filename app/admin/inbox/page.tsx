@@ -5079,9 +5079,21 @@ export default function InboxPage() {
             <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
               <div style={{ width: 170, borderRight: '1px solid var(--border)', padding: 12, overflowY: 'auto', flexShrink: 0 }}>
                 <button onClick={() => loadGalleryFolder(null)} style={folderBtnInbox(galleryFolder === null)}>All media</button>
-                {galleryFolders.map(f => (
-                  <button key={f.id} onClick={() => loadGalleryFolder(f.id)} style={folderBtnInbox(galleryFolder === f.id)}>{f.name}</button>
-                ))}
+                {(() => {
+                  // Walk the parent_id tree in parent→children order with a depth
+                  // tag, so nested folders show under their parent (indented ↳)
+                  // instead of as a flat list — matching the Gallery sidebar.
+                  const flatten = (parentId: any = null, depth = 0): { f: any; depth: number }[] =>
+                    galleryFolders
+                      .filter((f: any) => (f.parent_id || null) === (parentId || null))
+                      .flatMap((f: any) => [{ f, depth }, ...flatten(f.id, depth + 1)])
+                  return flatten().map(({ f, depth }) => (
+                    <button key={f.id} onClick={() => loadGalleryFolder(f.id)}
+                      style={{ ...folderBtnInbox(galleryFolder === f.id), paddingLeft: 10 + depth * 14 }}>
+                      {depth ? '↳ ' : ''}{f.name}
+                    </button>
+                  ))
+                })()}
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                 <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
