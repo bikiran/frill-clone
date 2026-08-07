@@ -4816,6 +4816,8 @@ export default function InboxPage() {
               {products.map(p => {
                 const onSale = p.on_sale && p.sale_price
                 const price = onSale ? p.sale_price : (p.price || p.regular_price)
+                // WooCommerce returns prices like "17.9500" — show 2 decimals ($17.95).
+                const fmtPrice = (v: any) => { const n = parseFloat(v); return isNaN(n) ? (v ?? '') : n.toFixed(2) }
                 const inStock = p.stock_status === 'instock'
                 return (
                   <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: '#fff' }}>
@@ -4826,8 +4828,8 @@ export default function InboxPage() {
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.35 }}>{p.name}</p>
                         <p style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>${price}</span>
-                          {onSale && <span style={{ fontSize: 11.5, color: '#9ca3af', textDecoration: 'line-through' }}>${p.regular_price}</span>}
+                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>${fmtPrice(price)}</span>
+                          {onSale && <span style={{ fontSize: 11.5, color: '#9ca3af', textDecoration: 'line-through' }}>${fmtPrice(p.regular_price)}</span>}
                           <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 5, background: inStock ? '#dcfce7' : '#fee2e2', color: inStock ? '#15803d' : '#dc2626' }}>
                             {inStock ? (p.manage_stock && p.stock_quantity != null ? `${p.stock_quantity} in stock` : 'In stock') : 'Out of stock'}
                           </span>
@@ -5479,7 +5481,7 @@ export default function InboxPage() {
                         <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)' }}>{dec(it.name)}</span>
                         <input type="number" min={0} value={it.quantity} onChange={e => setEditOrderData((d: any) => ({ ...d, items: d.items.map((x: any) => x.key === it.key ? { ...x, quantity: Math.max(0, parseInt(e.target.value) || 0) } : x) }))}
                           style={{ width: 60, padding: '5px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13 }} />
-                        <span style={{ fontSize: 12.5, fontWeight: 600, width: 60, textAlign: 'right' }}>${it.total}</span>
+                        <span style={{ fontSize: 12.5, fontWeight: 600, width: 60, textAlign: 'right' }}>${(parseFloat(it.total) || 0).toFixed(2)}</span>
                       </div>
                     ))}
                   </div>
