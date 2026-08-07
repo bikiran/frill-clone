@@ -7,9 +7,10 @@ import { supabase } from '@/lib/supabase'
 // activated. Shown BEFORE checkout — the buyer can't pay until this is
 // complete. Landline needs identity + AU address + proof; mobile also needs a
 // date of birth and (later) Onfido ID verification.
-export default function RegulatoryForm({ companyId, numberType, onComplete, onCancel }: {
+export default function RegulatoryForm({ companyId, numberType, provider = 'telnyx', onComplete, onCancel }: {
   companyId: string
   numberType: 'local' | 'mobile'
+  provider?: 'telnyx' | 'twilio'
   onComplete: (bundleId: string) => void
   onCancel: () => void
 }) {
@@ -25,7 +26,7 @@ export default function RegulatoryForm({ companyId, numberType, onComplete, onCa
     // Prefill from any existing bundle
     ;(async () => {
       try {
-        const res = await fetch(`/api/telnyx/regulatory?companyId=${companyId}`)
+        const res = await fetch(`/api/${provider}/regulatory?companyId=${companyId}`)
         const data = await res.json()
         if (data.bundle) setForm((f: any) => ({ ...f, ...data.bundle, number_type: numberType }))
       } catch {}
@@ -55,7 +56,7 @@ export default function RegulatoryForm({ companyId, numberType, onComplete, onCa
     try {
       const proofUrl = await uploadProof()
       const payload = { ...form, companyId, number_type: numberType, proof_of_address_url: proofUrl, action: 'submit' }
-      const res = await fetch('/api/telnyx/regulatory', {
+      const res = await fetch(`/api/${provider}/regulatory`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       })
       const data = await res.json()

@@ -6,6 +6,10 @@ import RegulatoryForm from '@/components/RegulatoryForm'
 
 export default function TelnyxIntegration() {
   const [companyId, setCompanyId] = useState<string | null>(null)
+  // Which carrier backs THIS company's number purchasing. Transparent to the
+  // customer — they always see the same "Get a business number" flow; only the
+  // API endpoints differ. Set per-company by a platform admin (default Telnyx).
+  const [numProvider, setNumProvider] = useState<'telnyx' | 'twilio'>('telnyx')
   const [loading, setLoading] = useState(true)
   const [integration, setIntegration] = useState<any>(null)
   const [numbers, setNumbers] = useState<any[]>([])
@@ -71,6 +75,13 @@ export default function TelnyxIntegration() {
         if (ownCo) cid = ownCo.id
       }
       setCompanyId(cid)
+      // Resolve which carrier this company provisions through (default Telnyx).
+      if (cid) {
+        try {
+          const { data: co } = await (supabase as any).from('companies').select('number_provider').eq('id', cid).maybeSingle()
+          if (co?.number_provider === 'twilio') setNumProvider('twilio')
+        } catch {}
+      }
       if (cid) await loadIntegration(cid)
       // Deep-link from a location: open straight into "add a number" for it.
       const buyForLoc = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('buyForLocation')
@@ -83,18 +94,20 @@ export default function TelnyxIntegration() {
       // provision the number directly, so it works even without a webhook).
       if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('provisioning') === '1') {
         const sessionId = new URLSearchParams(window.location.search).get('session_id') || undefined
+        // The Stripe return URL carries which carrier to finalize against.
+        const provParam = new URLSearchParams(window.location.search).get('provider') === 'twilio' ? 'twilio' : 'telnyx'
         setSuccess('Payment received — setting up your number, this can take up to a minute…')
         let tries = 0
         const attempt = async () => {
           tries++
           try {
-            const res = await fetch('/api/telnyx/number-finalize', {
+            const res = await fetch(`/api/${provParam}/number-finalize`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ companyId: cid, sessionId }),
             })
             const d = await res.json()
             if (res.ok && d.phoneNumber) {
-              const r2 = await fetch(`/api/telnyx/setup?companyId=${cid}`)
+              const r2 = await fetch(`/api/${provParam}/setup?companyId=${cid}`)
               const s2 = await r2.json()
               if (s2.integration) setIntegration(s2.integration)
               setSuccess(`🎉 Your business number ${d.phoneNumber} is live!`)
@@ -158,7 +171,7 @@ export default function TelnyxIntegration() {
   const searchNumbers = async () => {
     setSearching(true); setError(''); setAvailable([])
     try {
-      const res = await fetch(`/api/telnyx/number?type=${numberType}${numberType === 'local' ? `&city=${encodeURIComponent(numberCity)}` : ''}`)
+      const res = await fetch(`/api/${numProvider}/number?type=${numberType}${numberType === 'local' ? `&city=${encodeURIComponent(numberCity)}` : ''}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not search numbers')
       // Belt-and-braces: drop anything that isn't a complete number so a blank
@@ -193,7 +206,7 @@ export default function TelnyxIntegration() {
     try {
       // Get the user's email for the checkout
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/telnyx/number-checkout', {
+      const res = await fetch(`/api/${numProvider}/number-checkout`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, email: session?.user?.email, phoneNumber, numberType, locationId: assignLocationId || undefined }),
       })
@@ -225,6 +238,7 @@ export default function TelnyxIntegration() {
         <RegulatoryForm
           companyId={companyId}
           numberType={numberType}
+          provider={numProvider}
           onCancel={() => setShowRegForm(false)}
           onComplete={(_bundleId) => {
             setShowRegForm(false)
@@ -250,7 +264,9 @@ export default function TelnyxIntegration() {
         <div>
           {/* Browser calling needs a WebRTC connection on Telnyx. Buying a number
               doesn't create one — without it, calls fail with "Connection to
-              server lost", which tells the user nothing. */}
+              server lost", which tells the user nothing. Twilio provisions voice
+              automatically via its access token, so this card is Telnyx-only. */}
+          {numProvider === 'telnyx' && (
           <div style={{ border: `1px solid ${callSetup?.verdict === 'Calling looks ready.' ? '#bbf7d0' : '#fde68a'}`, background: callSetup?.verdict === 'Calling looks ready.' ? '#f0fdf4' : '#fffbeb', borderRadius: 14, padding: 16, marginBottom: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ minWidth: 0 }}>
@@ -277,6 +293,7 @@ export default function TelnyxIntegration() {
               </ul>
             )}
           </div>
+          )}
 
           {/* All numbers this company owns */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
