@@ -7303,6 +7303,13 @@ export default function InboxPage() {
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/><path d="M16 15h3"/></svg>
                           </span>Save Card
                         </button>
+
+                        <div style={{ borderTop: '1px solid var(--border)' }} />
+
+                        <button type="button" onClick={() => { setShowSendMenu(false); setShowMediaRequest(true) }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.media(15)}</span>Request Media
+                        </button>
                       </div>
                     )}
                   </div>
@@ -7500,11 +7507,6 @@ export default function InboxPage() {
                         </button>
                       )
                     })}
-                    <button type="button"
-                      onClick={() => { setShowActionMenu(false); setShowMediaRequest(true) }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', border: 'none', background: '#fff', cursor: 'pointer', fontSize: 13.5, color: 'var(--ink)', textAlign: 'left' }}>
-                      <span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{Icon.media(16)}</span> Request Media
-                    </button>
                   </div>
                 )}
                 {doaMatch && convActions.doa?.enabled && (
