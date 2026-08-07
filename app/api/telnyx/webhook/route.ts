@@ -307,6 +307,44 @@ export async function POST(req: NextRequest) {
           })
         } catch (e) { console.error('[sms keyword reply]', e) }
 
+        // Auto-reply to a failed media attempt: text the customer a secure upload
+        // link so their photo isn't lost. Throttled to once per conversation per
+        // 6h (checks recent media_request messages) so repeated failed MMS don't
+        // spam them.
+        if (mediaAttemptFailed) {
+          try {
+            const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
+            const { data: recentReq } = await db.from('messages')
+              .select('id').eq('conversation_id', conv.id)
+              .eq('message_type', 'media_request').gte('created_at', sixHoursAgo).limit(1)
+            if (!recentReq || recentReq.length === 0) {
+              const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+              const mr = await fetch(`${origin}/api/media-requests`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  companyId, conversationId: conv.id, contactId: conv.contact_id || matchedContactId || null,
+                  prompt: 'It looks like you tried to send us a photo or video. Please upload it here.',
+                  accept: ['image', 'video'], maxFiles: 10, expiryHours: null, createdBy: 'Auto-reply',
+                }),
+              })
+              const mrData = await mr.json().catch(() => ({}))
+              if (mr.ok && mrData.link) {
+                const { data: integ2 } = await db.from('telnyx_integrations')
+                  .select('api_key, phone_number, messaging_profile_id')
+                  .eq('company_id', companyId).maybeSingle()
+                if (integ2?.api_key && integ2.phone_number) {
+                  const svc = new TelnyxService(integ2.api_key)
+                  await svc.sendSMS({
+                    from: integ2.phone_number, to: from,
+                    text: `It looks like you tried to send a photo — our number can't receive picture messages. Please upload it here: ${mrData.link}`,
+                    messaging_profile_id: integ2.messaging_profile_id || undefined,
+                  })
+                }
+              }
+            }
+          } catch (e) { console.error('[media attempt auto-reply]', e) }
+        }
+
         try { await notifyCompany({ db, companyId, type: 'sms', message: `New SMS from ${from}: ${summary.slice(0, 80)}`, actorName: from }) } catch {}
       }
       return NextResponse.json({ ok: true })
