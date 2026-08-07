@@ -29,6 +29,18 @@ export default function OnboardingPage() {
       }
       setCompany(co)
       setLoaded(true)
+
+      // Self-heal the board's subdomain. Signup already registers it, but if that
+      // call failed (transient error, or a signup before the env vars were set)
+      // the board would 404. Re-running provisioning here — idempotent and
+      // server-scoped to this user's own company — makes it automatic with no
+      // manual DNS steps. Fire-and-forget; a failure never blocks onboarding.
+      if (co?.slug) {
+        const token = data?.session?.access_token
+        if (token) {
+          fetch('/api/companies/ensure-domain', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {})
+        }
+      }
     })
   }, [])
 
