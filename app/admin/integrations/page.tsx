@@ -52,6 +52,17 @@ const INTEGRATIONS = [
     isDedicated: true,
   },
   {
+    id: 'twilio',
+    name: 'Twilio (SMS/MMS & Calls)',
+    desc: 'Alternative Calls & SMS provider with real MMS — send and receive photos. Chosen per company, so it never affects your other boards.',
+    icon: '📱',
+    color: '#F22F46',
+    bg: '#fdecee',
+    logo: '',
+    category: 'Communication',
+    isDedicated: true,
+  },
+  {
     id: 'slack',
     name: 'Slack',
     desc: 'Post to a Slack channel when ideas are submitted, voted on, or change status.',
@@ -286,6 +297,16 @@ export default function IntegrationsPage() {
           .eq('company_id', cid)
           .maybeSingle()
         enb['telnyx'] = !!(telnyxData && telnyxData.is_active)
+
+        // Check for Twilio integration (table may not exist pre-migration).
+        try {
+          const { data: twilioData } = await (supabase as any)
+            .from('twilio_integrations')
+            .select('account_sid, phone_number')
+            .eq('company_id', cid)
+            .maybeSingle()
+          enb['twilio'] = !!(twilioData?.account_sid && twilioData?.phone_number)
+        } catch {}
 
         // Check for Stripe connection
         const { data: co } = await (supabase as any).from('companies').select('stripe_connected').eq('id', cid).maybeSingle()
