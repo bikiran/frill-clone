@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { createClient } from '@supabase/supabase-js'
+
+function admin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+}
 
 // Creates the monthly subscription checkout for a Twilio-backed business number.
 // Provisioning happens after payment (finalize route / Stripe webhook). Mirrors
@@ -9,6 +18,14 @@ export async function POST(req: NextRequest) {
   try {
     const { companyId, email, phoneNumber, numberType, locationId, locality, areaCode } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
+
+    // Free number credit granted by a platform admin? Skip payment entirely —
+    // the finalize route consumes the credit and provisions directly. The credit
+    // is authoritatively checked+decremented there, so this is only a fast path.
+    try {
+      const { data: co } = await admin().from('companies').select('free_number_credits').eq('id', companyId).maybeSingle()
+      if ((co?.free_number_credits || 0) > 0) return NextResponse.json({ free: true })
+    } catch {}
 
     const secret = (process.env.STRIPE_SECRET_KEY || '').trim()
     if (!secret.startsWith('sk_')) {

@@ -34,12 +34,18 @@ export async function POST(req: NextRequest) {
     if (!companyId || !patch) return NextResponse.json({ error: 'Missing companyId or patch' }, { status: 400 })
 
     const allowed: any = {}
-    for (const f of ['name', 'slug', 'plan', 'business_phone', 'assigned_admin_email', 'board_domain', 'help_domain', 'accent_color', 'notes', 'number_provider']) {
+    for (const f of ['name', 'slug', 'plan', 'business_phone', 'assigned_admin_email', 'board_domain', 'help_domain', 'accent_color', 'notes', 'number_provider', 'free_number_credits']) {
       if (patch[f] !== undefined) allowed[f] = patch[f]
     }
     // Which carrier backs this company's number provisioning (Telnyx / Twilio).
     if (allowed.number_provider !== undefined && !['telnyx', 'twilio'].includes(allowed.number_provider)) {
       return NextResponse.json({ error: 'number_provider must be telnyx or twilio' }, { status: 400 })
+    }
+    // Free number credits: coerce to a non-negative integer.
+    if (allowed.free_number_credits !== undefined) {
+      const n = Math.floor(Number(allowed.free_number_credits))
+      if (!Number.isFinite(n) || n < 0) return NextResponse.json({ error: 'free_number_credits must be a non-negative whole number' }, { status: 400 })
+      allowed.free_number_credits = n
     }
 
     // Slug: validate format + uniqueness.

@@ -2188,6 +2188,7 @@ function CompaniesPage() {
       board_domain: co.board_domain || '', help_domain: co.help_domain || '',
       accent_color: co.accent_color || '#ff7a6b', owner_email: '', notes: co.notes || '',
       number_provider: co.number_provider || 'telnyx',
+      free_number_credits: co.free_number_credits ?? 0,
     })
     setEditCo(co)
   }
@@ -2395,6 +2396,28 @@ function CompaniesPage() {
               </select>
               <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '-4px 0 4px' }}>
                 Which carrier the “Get a business number” flow uses for this company. The customer never sees it. Existing numbers keep working.
+              </p>
+
+              {/* Grant this business one or more free numbers. While the balance
+                  is > 0, the "Get a business number" flow skips payment and
+                  provisions directly, consuming one credit per number. */}
+              <label style={paLabel}>Free number credits</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="number" min={0} step={1}
+                  value={form.free_number_credits ?? 0}
+                  onChange={e => setForm({ ...form, free_number_credits: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+                  style={{ ...paInput, marginBottom: 0, width: 100 }}
+                />
+                <button type="button" onClick={() => setForm({ ...form, free_number_credits: (Number(form.free_number_credits) || 0) + 1 })}
+                  style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'transparent', color: '#ff7a6b', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>+1 free number</button>
+                {(Number(form.free_number_credits) || 0) > 0 && (
+                  <button type="button" onClick={() => setForm({ ...form, free_number_credits: 0 })}
+                    style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Clear</button>
+                )}
+              </div>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '6px 0 4px' }}>
+                Numbers this business can provision for free — one credit is used per number, no card required. Set to 0 to require payment.
               </p>
 
               <label style={paLabel}>Accent colour</label>

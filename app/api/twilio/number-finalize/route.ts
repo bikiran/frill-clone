@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { platformTwilio, platformTwilioConfigured, TWILIO_MASTER, colvyBaseUrl } from '@/lib/twilio-platform'
+import { consumeFreeCredit, refundFreeCredit } from '@/lib/free-number-credits'
 
 function admin() {
   return createClient(
@@ -16,8 +17,11 @@ function admin() {
 // DIRECTLY against the platform Twilio account (no dependence on the webhook).
 // Idempotent. Mirrors /api/telnyx/number-finalize.
 export async function POST(req: NextRequest) {
+  let freeConsumed = false
+  let freeCompanyId: string | undefined
   try {
-    const { companyId, sessionId } = await req.json()
+    const body = await req.json()
+    const { companyId, sessionId, free } = body
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
@@ -27,6 +31,20 @@ export async function POST(req: NextRequest) {
     let subscriptionId: string | undefined
     let locationId: string | undefined
     let numberType: string | undefined
+
+    // Free path: an admin granted this company a free number. Consume a credit
+    // (authoritative check) instead of verifying a Stripe payment. The number
+    // details come straight from the request since there's no checkout session.
+    if (free && !sessionId) {
+      const ok = await consumeFreeCredit(db, companyId)
+      if (!ok) return NextResponse.json({ error: 'No free number credits available for this business.' }, { status: 403 })
+      freeConsumed = true
+      freeCompanyId = companyId
+      phoneNumberWanted = body.phoneNumber || undefined
+      numberType = body.numberType || 'local'
+      locationId = body.locationId || undefined
+    }
+
     if (sessionId) {
       const secret = (process.env.STRIPE_SECRET_KEY || '').trim()
       if (secret.startsWith('sk_')) {
@@ -44,10 +62,14 @@ export async function POST(req: NextRequest) {
     // Idempotency: already provisioned this number?
     if (phoneNumberWanted) {
       const { data: dupe } = await db.from('phone_numbers').select('id, phone_number').eq('phone_number', phoneNumberWanted).maybeSingle()
-      if (dupe) return NextResponse.json({ ok: true, phoneNumber: dupe.phone_number, alreadyDone: true })
+      if (dupe) {
+        if (freeConsumed) { await refundFreeCredit(db, companyId); freeConsumed = false } // nothing was provisioned
+        return NextResponse.json({ ok: true, phoneNumber: dupe.phone_number, alreadyDone: true })
+      }
     }
 
     if (!platformTwilioConfigured()) {
+      if (freeConsumed) { await refundFreeCredit(db, companyId); freeConsumed = false }
       return NextResponse.json({ error: 'Provisioning not configured: TWILIO_MASTER_ACCOUNT_SID / TWILIO_MASTER_AUTH_TOKEN missing on the server.' }, { status: 503 })
     }
     const svc = platformTwilio()!
@@ -60,7 +82,10 @@ export async function POST(req: NextRequest) {
     if (!numberToBuy) {
       const available = await svc.searchAvailableNumbers({ country: 'AU', type: wantedType, limit: 1 })
       numberToBuy = available?.[0]?.phone_number
-      if (!numberToBuy) return NextResponse.json({ error: 'No Australian numbers available right now — please contact support; your payment is safe.' }, { status: 502 })
+      if (!numberToBuy) {
+        if (freeConsumed) { await refundFreeCredit(db, companyId); freeConsumed = false }
+        return NextResponse.json({ error: 'No Australian numbers available right now — please contact support; your payment is safe.' }, { status: 502 })
+      }
     }
 
     // Regulatory bundle, if the company has one.
@@ -98,11 +123,13 @@ export async function POST(req: NextRequest) {
         numberToBuy = pick
         substituted = true
       } catch (e2: any) {
+        if (freeConsumed) { await refundFreeCredit(db, companyId); freeConsumed = false }
         return NextResponse.json({ error: e2.message }, { status: 502 })
       }
     }
 
-    const monthly = parseFloat(process.env.COLVY_NUMBER_PRICE_AUD || '15')
+    // Free numbers cost the customer nothing and carry no Stripe subscription.
+    const monthly = freeConsumed ? 0 : parseFloat(process.env.COLVY_NUMBER_PRICE_AUD || '15')
 
     // Store platform config on the company's Twilio integration.
     const { data: integ } = await db.from('twilio_integrations').select('id, phone_number').eq('company_id', companyId).maybeSingle()
@@ -128,7 +155,7 @@ export async function POST(req: NextRequest) {
       company_id: companyId, phone_number: numberToBuy, provider: 'twilio', twilio_sid: bought.sid || null,
       number_type: String(numberToBuy).replace(/^\+61/, '').startsWith('4') ? 'mobile' : 'local',
       location_id: locationId || null, is_primary: isFirst, status: 'active',
-      provisioned_by_colvy: true, monthly_cost: monthly,
+      provisioned_by_colvy: true, monthly_cost: monthly, is_free: freeConsumed,
     })
 
     if (locationId) {
@@ -144,6 +171,8 @@ export async function POST(req: NextRequest) {
     })
   } catch (err: any) {
     console.error('Twilio number finalize error:', err)
+    // Don't let an unexpected failure eat a granted credit.
+    if (freeConsumed && freeCompanyId) { try { await refundFreeCredit(admin(), freeCompanyId) } catch {} }
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
