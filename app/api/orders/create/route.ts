@@ -55,7 +55,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ stockWarning: true, problems: stockProblems }, { status: 409 })
     }
 
-    // ── Customer matching precedence: linked WC id → email → create/guest.
+    // ── Customer matching precedence: linked WC id → email match → create.
+    // We DEFAULT to tying the order to a real customer account: a guest order
+    // (customer_id 0) can't be paid via the order-pay link when the store has
+    // "guest checkout" turned off — WooCommerce shows "This order cannot be paid
+    // for". Creating/matching the customer sidesteps that. Pass
+    // createAccount: false explicitly to force a guest order.
     let customerId = 0
     if (customer?.existingId) {
       customerId = Number(customer.existingId)
@@ -63,7 +68,7 @@ export async function POST(req: NextRequest) {
       const existing = await woo.findCustomerByEmail(customer.email)
       if (existing?.id) {
         customerId = existing.id
-      } else if (customer.createAccount) {
+      } else if (customer.createAccount !== false) {
         const created = await woo.createCustomer({
           email: customer.email, first_name: customer.first_name, last_name: customer.last_name,
           phone: customer.phone, billing: customer.billing, shipping: customer.shipping,
@@ -71,6 +76,12 @@ export async function POST(req: NextRequest) {
         if (created.ok) customerId = created.customer.id
         // If account creation fails we fall through to a guest order.
       }
+    }
+
+    // Remember the WC customer on the Colvy contact so the next order reuses the
+    // same account instead of matching/creating again.
+    if (customerId && contactId) {
+      try { await db.from('contacts').update({ woo_customer_id: customerId }).eq('id', contactId) } catch {}
     }
 
     // ── Assemble line items (respect custom price via a per-item override).
