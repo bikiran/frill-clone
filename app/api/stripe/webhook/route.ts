@@ -184,11 +184,16 @@ export async function POST(req: NextRequest) {
         if (meta.kind === 'phone_number' && meta.companyId) {
           try {
             const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
-            await fetch(`${origin}/api/telnyx/number`, {
+            // Provision on whichever carrier this purchase was for. Both endpoints
+            // take the same shape; the customer never learns which one ran.
+            const prov = meta.provider === 'twilio' ? 'twilio' : 'telnyx'
+            await fetch(`${origin}/api/${prov}/number`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 companyId: meta.companyId,
                 phoneNumber: meta.phoneNumber || undefined,
+                numberType: meta.numberType || undefined,
+                locationId: meta.locationId || undefined,
                 stripeSubscriptionId: session.subscription,
               }),
             })

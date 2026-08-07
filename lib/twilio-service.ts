@@ -206,6 +206,59 @@ export class TwilioService {
   async removeParticipant(conferenceSid: string, callSid: string): Promise<any> {
     return this.req(`/Conferences/${conferenceSid}/Participants/${callSid}.json`, 'DELETE')
   }
+
+  // ── Number provisioning (used with the platform account) ────────────────────
+  // Search buyable numbers in a country. `type` maps to Twilio's number classes.
+  async searchAvailableNumbers(params: { country?: string; type?: 'local' | 'mobile' | 'national' | 'tollfree'; areaCode?: string; contains?: string; limit?: number }): Promise<any[]> {
+    const country = params.country || 'AU'
+    const kind = params.type === 'mobile' ? 'Mobile'
+      : params.type === 'national' ? 'National'
+      : params.type === 'tollfree' ? 'TollFree' : 'Local'
+    const q = new URLSearchParams()
+    q.set('PageSize', String(params.limit || 10))
+    q.set('SmsEnabled', 'true')
+    q.set('VoiceEnabled', 'true')
+    if (params.areaCode) q.set('AreaCode', params.areaCode)
+    if (params.contains) q.set('Contains', params.contains)
+    const data = await this.req(`/AvailablePhoneNumbers/${country}/${kind}.json?${q.toString()}`, 'GET')
+    return data?.available_phone_numbers || []
+  }
+
+  // Buy a number and point its webhooks at Colvy. For regulated countries (AU),
+  // pass the BundleSid + AddressSid that satisfy the regulatory requirements.
+  async buyNumber(params: { phoneNumber: string; smsUrl?: string; voiceUrl?: string; statusCallback?: string; bundleSid?: string; addressSid?: string; friendlyName?: string }): Promise<{ sid: string | null; raw: any }> {
+    const form: Record<string, any> = { PhoneNumber: params.phoneNumber }
+    if (params.friendlyName) form.FriendlyName = params.friendlyName
+    if (params.smsUrl) { form.SmsUrl = params.smsUrl; form.SmsMethod = 'POST' }
+    if (params.voiceUrl) { form.VoiceUrl = params.voiceUrl; form.VoiceMethod = 'POST' }
+    if (params.statusCallback) form.StatusCallback = params.statusCallback
+    if (params.bundleSid) form.BundleSid = params.bundleSid
+    if (params.addressSid) form.AddressSid = params.addressSid
+    const data = await this.req('/IncomingPhoneNumbers.json', 'POST', form)
+    return { sid: data?.sid || null, raw: data }
+  }
+
+  // ── Regulatory compliance (AU numbers) ──────────────────────────────────────
+  // Twilio's Regulatory Compliance API lives on numbers.twilio.com (not the
+  // 2010-04-01 base). Creating the bundle shell here; attaching the exact
+  // RegulationSid / EndUser / SupportingDocument is account-specific and verified
+  // live, mirroring how the Telnyx requirement-group mapping is left as a
+  // live-verification follow-up.
+  async createRegulatoryBundle(params: { friendlyName: string; email: string; isoCountry?: string; numberType?: string; endUserType?: string; regulationSid?: string }): Promise<any> {
+    const form: Record<string, any> = {
+      FriendlyName: params.friendlyName,
+      Email: params.email,
+      IsoCountry: params.isoCountry || 'AU',
+      NumberType: params.numberType || 'local',
+      EndUserType: params.endUserType || 'business',
+    }
+    if (params.regulationSid) form.RegulationSid = params.regulationSid
+    return this.req('https://numbers.twilio.com/v2/RegulatoryCompliance/Bundles', 'POST', form)
+  }
+
+  async submitRegulatoryBundle(bundleSid: string): Promise<any> {
+    return this.req(`https://numbers.twilio.com/v2/RegulatoryCompliance/Bundles/${bundleSid}`, 'POST', { Status: 'pending-review' })
+  }
 }
 
 // Mint a short-lived Twilio Voice Access Token (a JWT the browser SDK registers
