@@ -93,6 +93,17 @@ function SignUpForm() {
     return () => clearTimeout(t)
   }, [slug])
 
+  // Resend countdown timer. This MUST live with the other hooks, above every
+  // conditional return below — on a company subdomain the "resolving board" and
+  // "board not found" screens return early, and a hook placed after them would
+  // run on some renders but not others (React error #300: the hook count changed
+  // between renders), crashing /signup on every *.colvy.com board.
+  useEffect(() => {
+    if (resendCountdown <= 0) return
+    const t = setTimeout(() => setResendCountdown(c => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [resendCountdown])
+
   const handleStep1 = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -238,14 +249,6 @@ function SignUpForm() {
       </div>
     )
   }
-
-  // Email confirmation screen
-  // Countdown timer effect
-  useEffect(() => {
-    if (resendCountdown <= 0) return
-    const t = setTimeout(() => setResendCountdown(c => c - 1), 1000)
-    return () => clearTimeout(t)
-  }, [resendCountdown])
 
   const handleResend = async () => {
     setResendLoading(true)
