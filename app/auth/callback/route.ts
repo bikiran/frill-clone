@@ -37,8 +37,17 @@ export async function GET(req: NextRequest) {
     const { data, error } = await (supabase as any).auth.exchangeCodeForSession(code)
     if (error) throw error
 
-    // New signup with company info in URL params — explicit intent to create a company,
-    // always takes priority over host-based subdomain detection below.
+    // Supabase's email-verify redirect can strip the redirect_to query params, so
+    // slug/name/industry may be absent here even for a company signup. Fall back
+    // to the intent we stored on the user's metadata at signup, so the company
+    // still gets created rather than silently skipped.
+    const meta = (data.user?.user_metadata || {}) as any
+    if (!slug && meta.company_slug) slug = meta.company_slug
+    if (!name && (meta.company_name || meta.company)) name = meta.company_name || meta.company
+    if (!industry && (meta.company_industry || meta.industry)) industry = meta.company_industry || meta.industry
+
+    // New signup with company info (from params or metadata) — explicit intent to
+    // create a company, always takes priority over host-based subdomain detection.
     if (slug && name && data.user) {
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {

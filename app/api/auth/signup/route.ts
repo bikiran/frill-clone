@@ -36,6 +36,15 @@ export async function POST(req: NextRequest) {
         display_name: name || email.split('@')[0],
         company: name || null,
         industry: industry || null,
+        // Carry the full board intent on the USER, not just in the callback's
+        // query string. Supabase's email-verify redirect can drop the redirect_to
+        // query params, which left auth/callback without slug/name and so the
+        // company row was never created (user exists, board doesn't). Reading
+        // these back from metadata makes creation reliable.
+        company_slug: slug || null,
+        company_name: name || null,
+        company_industry: industry || null,
+        pending_company_id: companyId || null,
       },
     })
 
