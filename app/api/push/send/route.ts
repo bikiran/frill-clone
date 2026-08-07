@@ -22,6 +22,9 @@ export async function POST(req: NextRequest) {
       // Optional deep link for notifications that aren't about a conversation.
       route,
       categoryId,
+      // Optional Android notification channel (sound/importance). Defaults to
+      // 'messages'; a caller can pass e.g. 'calls' for a distinct channel.
+      channelId,
     } = await req.json()
     if (!companyId || !body) return NextResponse.json({ error: 'Missing companyId or body' }, { status: 400 })
 
@@ -44,7 +47,7 @@ export async function POST(req: NextRequest) {
         // no reason to truncate this hard.
         body: body.slice(0, 500),
         data: { conversationId: conversationId || null, route: route || null },
-        channelId: 'messages',
+        channelId: channelId || 'messages',
         // Enables the inline Reply / Mark read actions on the device.
         categoryId: categoryId || (conversationId ? 'message' : undefined),
       }))

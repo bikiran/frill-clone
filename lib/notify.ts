@@ -25,6 +25,45 @@ async function companyRecipients(db: any, companyId: string, excludeUserId?: str
 }
 
 /**
+ * Fire an Expo push for an INBOUND customer message (chat / SMS / email / Meta).
+ *
+ * Always passes conversationId so /api/push/send tags the push with
+ * categoryId: 'message' — that's what gives the phone its Reply (text box) and
+ * Mark-read quick actions. notifyCompany() only writes the in-app bell rows and
+ * does NOT push, so every inbound-message path must call this too.
+ *
+ * Safe/no-throw and awaited (un-awaited fetches can be dropped when a serverless
+ * function returns). The push route de-dupes tokens and skips excludeUserId.
+ */
+export async function pushInboundMessage(params: {
+  companyId: string
+  conversationId: string
+  title: string
+  body: string
+  route?: string
+  excludeUserId?: string
+  baseUrl?: string
+}) {
+  try {
+    const base = params.baseUrl || process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+    await fetch(`${base}/api/push/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        companyId: params.companyId,
+        conversationId: params.conversationId,
+        title: params.title,
+        body: params.body,
+        route: params.route,
+        excludeUserId: params.excludeUserId,
+      }),
+    })
+  } catch (e) {
+    console.error('[pushInboundMessage] failed', e)
+  }
+}
+
+/**
  * Create a notification for every member of a company.
  * `type` is a short tag (chat, order, ticket, assignment, cart …).
  * Safe/no-throw: notification failures never block the underlying action.

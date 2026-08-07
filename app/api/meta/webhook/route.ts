@@ -4,6 +4,7 @@ import crypto from 'crypto'
 import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile } from '@/lib/meta'
 import { linkContactIdentity } from '@/lib/identity'
 import { logWebhookEvent } from '@/lib/webhook-log'
+import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -193,6 +194,25 @@ export async function POST(req: NextRequest) {
           attachments: attachments.length ? attachments : [],
           metadata: storyReply ? { story_reply: storyReply } : {},
         })
+
+        // Alert the team: in-app bell + a phone push carrying conversationId, so
+        // the notification gets the Reply / Mark-read quick actions.
+        const who = contact?.name || (platform === 'instagram' ? 'an Instagram user' : 'a Facebook user')
+        const channelName = platform === 'instagram' ? 'Instagram' : 'Facebook'
+        try {
+          await notifyCompany({
+            db, companyId, type: platform,
+            message: `New ${channelName} message from ${who}: ${String(preview).slice(0, 80)}`,
+            actorName: who, conversationId: conv.id,
+          })
+        } catch {}
+        try {
+          await pushInboundMessage({
+            companyId, conversationId: conv.id,
+            title: `New ${channelName} message from ${who}`,
+            body: String(preview),
+          })
+        } catch {}
       } catch (e) {
         console.error('[meta webhook] event failed', e)
       }

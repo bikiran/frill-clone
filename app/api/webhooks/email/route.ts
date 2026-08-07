@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { notifyCompany } from '@/lib/notify'
+import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
 import { passesRules } from '@/lib/gmail'
 import { logWebhookEvent } from '@/lib/webhook-log'
@@ -204,6 +204,16 @@ export async function POST(req: NextRequest) {
         message: `New email from ${from.name || from.email}: ${subject}`,
         actorName: from.name || from.email,
         conversationId: conv.id,
+      })
+    } catch {}
+
+    // Push to the team's phones with conversationId so the notification carries
+    // the Reply / Mark-read quick actions.
+    try {
+      await pushInboundMessage({
+        companyId, conversationId: conv.id,
+        title: `New email from ${from.name || from.email}`,
+        body: subject || content.slice(0, 200) || 'New email',
       })
     } catch {}
 

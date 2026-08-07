@@ -44,6 +44,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const clientRef = useRef<any>(null)
   const callRef = useRef<any>(null)
   const timerRef = useRef<any>(null)
+  // The signed-in agent's user id, so a call we accept can notify the REST of
+  // the team (excludeUserId = us) to stop their phones ringing.
+  const userIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!companyId) return
@@ -58,6 +61,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         // every registered device.
         const { data: sess } = await supabase.auth.getSession()
         const userId = sess?.session?.user?.id || null
+        userIdRef.current = userId
 
         const res = await fetch('/api/telnyx/token', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -198,6 +202,26 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       callRef.current?.answer?.()
     } catch (e) { console.error('[telnyx] answer failed', e) }
     setInCall(true)
+    notifyTeamCallAccepted()
+  }
+
+  // Tell everyone ELSE on the team that this call was picked up, so their phones
+  // (and browsers) can stop ringing. Whole team minus the accepter. Fire-and-
+  // forget — the call is already answered; a push hiccup mustn't block it.
+  const notifyTeamCallAccepted = () => {
+    if (!companyId) return
+    const who = agentName || 'a teammate'
+    fetch('/api/push/send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        companyId,
+        excludeUserId: userIdRef.current || undefined,
+        title: 'Call answered',
+        body: `Phone call accepted by ${who}`,
+        // No conversationId → no 'message' category (this isn't a chat), and the
+        // default 'messages' channel so Android always renders it.
+      }),
+    }).catch(() => {})
   }
   const decline = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
   const hangup = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
