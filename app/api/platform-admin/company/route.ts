@@ -34,8 +34,12 @@ export async function POST(req: NextRequest) {
     if (!companyId || !patch) return NextResponse.json({ error: 'Missing companyId or patch' }, { status: 400 })
 
     const allowed: any = {}
-    for (const f of ['name', 'slug', 'plan', 'business_phone', 'assigned_admin_email', 'board_domain', 'help_domain', 'accent_color', 'notes']) {
+    for (const f of ['name', 'slug', 'plan', 'business_phone', 'assigned_admin_email', 'board_domain', 'help_domain', 'accent_color', 'notes', 'number_provider']) {
       if (patch[f] !== undefined) allowed[f] = patch[f]
+    }
+    // Which carrier backs this company's number provisioning (Telnyx / Twilio).
+    if (allowed.number_provider !== undefined && !['telnyx', 'twilio'].includes(allowed.number_provider)) {
+      return NextResponse.json({ error: 'number_provider must be telnyx or twilio' }, { status: 400 })
     }
 
     // Slug: validate format + uniqueness.
