@@ -10,6 +10,7 @@ import { SkeletonList } from '@/components/Skeleton'
 export default function TeamPage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
   const [members, setMembers] = useState<any[]>([])
   const [outlets, setOutlets] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -35,7 +36,36 @@ export default function TeamPage() {
 
   const fetchMembers = async () => {
     try {
-      const { data } = await (supabase as any).from('team_members').select('*').order('created_at', { ascending: false })
+      // Resolve THIS admin's company first, then only ever load that company's
+      // members. The query used to be unscoped (no company_id filter), so it
+      // returned every company's team members — a cross-tenant leak. On a board
+      // subdomain we use the subdomain's company (only if the viewer owns it or
+      // is a member); otherwise the company they own.
+      const { data: sess } = await supabase.auth.getSession()
+      const u = sess?.session?.user
+      if (!u) { setMembers([]); setLoading(false); return }
+
+      let cid: string | null = null
+      const host = typeof window !== 'undefined' ? window.location.hostname : ''
+      if (host.endsWith('.colvy.com') && host !== 'colvy.com' && host !== 'www.colvy.com') {
+        const slug = host.split('.')[0]
+        const { data: coBySlug } = await (supabase as any).from('companies').select('id, owner_id').eq('slug', slug).maybeSingle()
+        if (coBySlug) {
+          if (coBySlug.owner_id === u.id) cid = coBySlug.id
+          else {
+            const { data: mem } = await (supabase as any).from('team_members').select('role').eq('company_id', coBySlug.id).eq('user_id', u.id).limit(1)
+            if (mem && mem.length) cid = coBySlug.id
+          }
+        }
+      }
+      if (!cid) {
+        const { data: owned } = await (supabase as any).from('companies').select('id').eq('owner_id', u.id).order('created_at', { ascending: true }).limit(1).maybeSingle()
+        cid = owned?.id || null
+      }
+      setCompanyId(cid)
+      if (!cid) { setMembers([]); setLoading(false); return }
+
+      const { data } = await (supabase as any).from('team_members').select('*').eq('company_id', cid).order('created_at', { ascending: false })
       let rows: any[] = data || []
       // Fill in real profile names for members who've signed in (their name
       // lives in auth metadata, which the client can't read for other users —
@@ -57,7 +87,6 @@ export default function TeamPage() {
       }
       setMembers(rows)
       // Outlets for the "default outlet" picker (scoped to this company).
-      const cid = rows.find((m: any) => m.company_id)?.company_id || null
       if (cid) {
         try {
           const { data: locs } = await (supabase as any).from('company_locations')
