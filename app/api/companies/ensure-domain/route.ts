@@ -12,16 +12,38 @@ function admin() {
   )
 }
 
+// Find auth-user ids that share an email with the caller (case-insensitive),
+// excluding the caller themselves. Signup could mint a second auth user for the
+// same address, leaving a board owned by that stale id — this lets us recognise
+// it as the caller's own. Pages through the admin user list (fine at this scale).
+async function otherUserIdsWithEmail(db: any, email: string, selfId: string): Promise<string[]> {
+  const target = (email || '').toLowerCase()
+  if (!target) return []
+  const ids: string[] = []
+  for (let page = 1; page <= 10; page++) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage: 200 })
+    if (error) break
+    const users = data?.users || []
+    for (const u of users) {
+      if (u.id !== selfId && (u.email || '').toLowerCase() === target) ids.push(u.id)
+    }
+    if (users.length < 200) break
+  }
+  return ids
+}
+
 // Self-healing board setup. Called automatically (e.g. from onboarding) so a
-// board whose signup-time setup failed or never ran — a transient hiccup, or a
-// signup from before these steps existed — is repaired the next time its owner
-// loads it, with no manual steps. Ensures three things, all idempotent:
+// board whose signup-time setup failed or never ran — a transient hiccup, a
+// signup from before these steps existed, or a board left owned by a duplicate
+// auth user for the same email — is repaired the next time its owner loads it,
+// with no manual steps. Ensures, all idempotent:
+//   0. the board is owned by the caller (re-assigning from a same-email account),
 //   1. the subdomain is provisioned (Vercel + Cloudflare),
 //   2. the owner has an OWNER team-member row (grants board admin),
 //   3. sample content is seeded if the board is empty.
 //
-// Authenticated + scoped: acts ONLY on a company the caller OWNS, so it can't be
-// abused to touch other boards.
+// Authenticated + scoped: acts ONLY on a company the caller owns OR one owned by
+// an account with the caller's exact verified email, so it can't touch others.
 export async function POST(req: NextRequest) {
   try {
     const token = (req.headers.get('authorization') || '').replace('Bearer ', '')
@@ -33,9 +55,27 @@ export async function POST(req: NextRequest) {
     if (!userId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
     // The caller's own board (oldest-owned = their primary).
-    const { data: co } = await db.from('companies')
+    let { data: co } = await db.from('companies')
       .select('id, slug, name').eq('owner_id', userId)
       .order('created_at', { ascending: true }).limit(1).maybeSingle()
+
+    // Fallback: no board under this id, but signup may have left it under a
+    // DUPLICATE account for the same email. Find such a board and re-assign it to
+    // the caller — safe because it only matches the caller's exact verified email.
+    let reassigned = false
+    if (!co?.slug) {
+      const otherIds = await otherUserIdsWithEmail(db, auth.user!.email || '', userId)
+      if (otherIds.length) {
+        const { data: orphan } = await db.from('companies')
+          .select('id, slug, name').in('owner_id', otherIds)
+          .order('created_at', { ascending: true }).limit(1).maybeSingle()
+        if (orphan?.id) {
+          await db.from('companies').update({ owner_id: userId }).eq('id', orphan.id)
+          co = orphan
+          reassigned = true
+        }
+      }
+    }
     if (!co?.slug) return NextResponse.json({ error: 'No board to set up' }, { status: 404 })
 
     // 1. Subdomain

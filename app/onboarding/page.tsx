@@ -39,6 +39,29 @@ export default function OnboardingPage() {
         co = await getCompanyByOwner(u.id)
         if (!co) await new Promise(r => setTimeout(r, 800))
       }
+
+      // Recovery: the board row may have never been created — signup can lose the
+      // slug/name when Supabase's email-verify redirect strips the query string,
+      // leaving a user with no company. Re-create it from the details we stashed
+      // in localStorage at signup, owned by the current account.
+      if (!co) {
+        try {
+          const pending = JSON.parse(localStorage.getItem('pending_company') || 'null')
+          if (pending?.slug && pending?.name) {
+            const r = await fetch('/api/companies', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: u.id, slug: pending.slug, name: pending.name, industry: pending.industry }),
+            })
+            const d = await r.json().catch(() => ({}))
+            if (r.ok && d.company) { co = d.company; localStorage.removeItem('pending_company') }
+            else if (r.status === 409) { co = await getCompanyByOwner(u.id) } // slug already exists
+            // Make sure the freshly-created board is fully set up (membership + seed + domain).
+            const token2 = data?.session?.access_token
+            if (co && token2) fetch('/api/companies/ensure-domain', { method: 'POST', headers: { Authorization: `Bearer ${token2}` } }).catch(() => {})
+          }
+        } catch {}
+      }
+
       setCompany(co)
       setLoaded(true)
     })
