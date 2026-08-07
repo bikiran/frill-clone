@@ -877,6 +877,38 @@ export default function InboxPage() {
 
   const isWebChat = ['widget', 'chat'].includes(activeChannel)
 
+  // Is a payment in this thread still awaiting settlement?
+  const hasPendingPayment = useMemo(
+    () => messages.some((m: any) => m.message_type === 'payment' && m.message_payload?.status && m.message_payload.status !== 'paid'),
+    [messages]
+  )
+
+  // While a payment is pending in the OPEN conversation, reconcile it straight
+  // from Stripe every ~12s (verify-payment doesn't rely on the webhook). The
+  // moment it settles, the card flips to PAID and the "Payment received" line
+  // appears — no manual reload needed. Stops as soon as nothing is pending.
+  useEffect(() => {
+    if (!hasPendingPayment || !selected?.id || !companyId) return
+    const convId = selected.id
+    let stopped = false
+    const tick = async () => {
+      try {
+        const r = await fetch('/api/stripe/verify-payment', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: convId, companyId }),
+        })
+        const d = await r.json().catch(() => ({}))
+        if (!stopped && d?.updated > 0 && selectedRef.current?.id === convId) {
+          const { data } = await (supabase as any).from('messages').select('*')
+            .eq('conversation_id', convId).order('created_at', { ascending: true })
+          if (data) setMessages(data)
+        }
+      } catch { /* keep polling */ }
+    }
+    const iv = setInterval(tick, 12000)
+    return () => { stopped = true; clearInterval(iv) }
+  }, [hasPendingPayment, selected?.id, companyId])
+
   // Load this contact's linked channels (same person across live chat / SMS /
   // Messenger / IG / WooCommerce) for the sidebar's "also reachable on" panel.
   useEffect(() => {
