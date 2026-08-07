@@ -3143,6 +3143,39 @@ export default function InboxPage() {
     } catch (e: any) { showToast(e.message || 'Failed to update order') }
   }
 
+  // One-tap "Request media" — used by the hint card when a customer's MMS
+  // couldn't be received. Creates a media request with sensible defaults (photos
+  // + videos) and texts the secure upload link, no modal.
+  const [quickMrBusy, setQuickMrBusy] = useState(false)
+  const requestMediaQuick = async () => {
+    if (!companyId || !selected || quickMrBusy) return
+    setQuickMrBusy(true)
+    try {
+      const res = await fetch('/api/media-requests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId, conversationId: selected.id, contactId: contact?.id,
+          prompt: 'Please upload your photos or videos here.',
+          accept: ['image', 'video'], maxFiles: 10, expiryHours: null,
+          createdBy: user?.user_metadata?.display_name || user?.email?.split('@')[0],
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not create request')
+      let how = 'sent'
+      if (activeChannel !== 'widget' && activeChannel !== 'chat' && data.link) {
+        how = await deliverToCustomer({
+          subject: `${companyInfo?.name || 'We'} need a few files from you`,
+          body: 'Please upload your photos or videos here:',
+          url: data.link,
+        })
+      }
+      showToast(`Upload link ${how.toLowerCase()}`)
+      selectConversation(selected)
+    } catch (e: any) { showToast(e.message || 'Could not send the upload link') }
+    finally { setQuickMrBusy(false) }
+  }
+
   const sendMediaRequest = async () => {
     if (!companyId || !selected) return
     if (mrAccept.length === 0) { showToast('Select at least one file type'); return }
@@ -6738,6 +6771,26 @@ export default function InboxPage() {
                           </div>
                         ) : (
                           msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
+                        )}
+
+                        {/* Customer tried to send media the carrier couldn't
+                            deliver (MMS on an AU number). Surface it plainly with a
+                            one-tap "Request media" → secure upload link. */}
+                        {!isAgent && (msg as any).metadata?.media_attempt && (
+                          <div style={{ marginTop: msg.content ? 6 : 0, padding: '11px 13px', borderRadius: 12, background: 'var(--peach)', border: '1px solid #ffd9d1' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--coral)' }}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                              <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--ink)' }}>Customer attempted to send media</span>
+                            </div>
+                            <p style={{ margin: '5px 0 9px', fontSize: 12, color: 'var(--slate)', lineHeight: 1.45 }}>
+                              MMS media could not be received on this number. Send them a secure upload link to receive it.
+                            </p>
+                            <button type="button" onClick={requestMediaQuick} disabled={quickMrBusy}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 14px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: quickMrBusy ? 'default' : 'pointer', opacity: quickMrBusy ? 0.6 : 1 }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                              {quickMrBusy ? 'Sending…' : 'Request media'}
+                            </button>
+                          </div>
                         )}
                         {msg.message_type === 'payment' && msg.message_payload && (
                           <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', color: 'var(--ink)' }}>

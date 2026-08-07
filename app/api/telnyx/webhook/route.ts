@@ -102,8 +102,19 @@ export async function POST(req: NextRequest) {
           : inboundMedia[0].kind === 'video' ? '🎥 Video'
           : inboundMedia[0].kind === 'audio' ? '🎤 Voice message' : '📎 Attachment')
         : ''
+
+      // The customer TRIED to send media but the carrier couldn't hand it to us
+      // (common on Australian numbers, which don't carry MMS). Telnyx still marks
+      // the message as MMS, or includes media metadata with no fetchable url — so
+      // when we see that signal but captured nothing usable, flag the attempt so
+      // the agent can one-tap back a secure upload link instead of the photo
+      // silently vanishing.
+      const rawMediaCount = Array.isArray(payload?.media) ? payload.media.length : 0
+      const isMmsType = String(payload?.type || '').toUpperCase() === 'MMS'
+      const mediaAttemptFailed = (isMmsType || rawMediaCount > 0) && inboundMedia.length === 0
+
       // What the conversation list / notifications show when there's no caption.
-      const summary = text || mediaPreview || ''
+      const summary = text || mediaPreview || (mediaAttemptFailed ? '📷 Tried to send media' : '')
 
       // Which company owns the receiving number?
       const { data: integ } = await db.from('telnyx_integrations').select('company_id').eq('phone_number', to).maybeSingle()
@@ -251,6 +262,7 @@ export async function POST(req: NextRequest) {
           sender_name: from,
           content: text,
           ...(inboundMedia.length ? { attachments: inboundMedia } : {}),
+          ...(mediaAttemptFailed ? { metadata: { media_attempt: true } } : {}),
           delivery_channel: 'sms',
           telnyx_message_id: payload?.id || null,
         })
