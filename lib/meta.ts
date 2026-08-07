@@ -16,29 +16,54 @@ export const META_REDIRECT_URI = process.env.META_REDIRECT_URI || ''
 export const META_VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || 'colvy-meta-verify'
 
 // Permissions we request. Each must be approved in App Review before it works
-// for non-test accounts.
-export const META_SCOPES = [
+// for non-test accounts — and requesting a scope the app ISN'T approved for
+// makes Facebook reject the WHOLE login with "Invalid Scopes", so we only ask
+// for what the app actually has.
+//
+// The Page/Social-Engagement scopes (reading a Page's own posts + comments and
+// replying/hiding them). These four are what the comments feature needs. Note
+// that `pages_read_user_content` is deprecated/merged into pages_read_engagement
+// and now returns "Invalid Scopes" if requested — so it is deliberately absent.
+export const META_PAGE_SCOPES = [
   'pages_show_list',
-  'pages_messaging',
-  'pages_manage_metadata',
   'pages_read_engagement',
+  'pages_manage_metadata',
   'pages_manage_engagement',
+]
+
+// The extra scopes the Messenger / Instagram DM inbox needs. These require their
+// own App Review; until the app is approved for them, requesting them breaks the
+// login with "Invalid Scopes". Gated behind META_ENABLE_MESSAGING_SCOPES so the
+// (approved) Page scopes above keep working on their own.
+export const META_MESSAGING_SCOPES = [
+  'pages_messaging',
   'instagram_basic',
   'instagram_manage_messages',
   'business_management',
-].join(',')
+]
+
+const MESSAGING_ENABLED = process.env.META_ENABLE_MESSAGING_SCOPES === 'true'
+
+// What we actually request: the four Page scopes, plus the messaging scopes only
+// when the app is approved for them (env flag). Default → Page scopes only.
+export const META_SCOPES = (MESSAGING_ENABLED
+  ? [...META_PAGE_SCOPES, ...META_MESSAGING_SCOPES]
+  : META_PAGE_SCOPES
+).join(',')
 
 export function isMetaConfigured(): boolean {
   return !!(META_APP_ID && META_APP_SECRET && META_REDIRECT_URI)
 }
 
 // Step 1: the Facebook Login dialog URL. `state` carries our company id.
-export function metaLoginUrl(state: string): string {
+// `scope` defaults to what the app is approved for (META_SCOPES); a caller can
+// pass an explicit list (e.g. force the full messaging set once approved).
+export function metaLoginUrl(state: string, scope: string = META_SCOPES): string {
   const p = new URLSearchParams({
     client_id: META_APP_ID,
     redirect_uri: META_REDIRECT_URI,
     state,
-    scope: META_SCOPES,
+    scope,
     response_type: 'code',
   })
   return `https://www.facebook.com/v21.0/dialog/oauth?${p.toString()}`

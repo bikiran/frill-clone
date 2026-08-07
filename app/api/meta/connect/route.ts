@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { metaLoginUrl, isMetaConfigured } from '@/lib/meta'
+import { metaLoginUrl, isMetaConfigured, META_PAGE_SCOPES, META_MESSAGING_SCOPES } from '@/lib/meta'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,5 +23,14 @@ export async function GET(req: NextRequest) {
     || req.headers.get('origin')
     || (req.headers.get('host') ? `https://${req.headers.get('host')}` : '')
   const state = Buffer.from(JSON.stringify({ companyId, origin, t: Date.now() })).toString('base64url')
-  return NextResponse.redirect(metaLoginUrl(state))
+
+  // Which permissions to ask for. Default is the four approved Page scopes
+  // (what the Social-Engagement comments feature needs); `?scopes=full` also
+  // requests the Messenger/Instagram DM scopes — only use it once the app is
+  // approved for them, or Facebook rejects the whole login with "Invalid Scopes".
+  const scopeParam = (url.searchParams.get('scopes') || '').toLowerCase()
+  const scope = scopeParam === 'full'
+    ? [...META_PAGE_SCOPES, ...META_MESSAGING_SCOPES].join(',')
+    : undefined  // metaLoginUrl falls back to the env-driven default
+  return NextResponse.redirect(metaLoginUrl(state, scope))
 }
