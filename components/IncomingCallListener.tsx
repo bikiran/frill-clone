@@ -279,9 +279,13 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     if (!incoming?.id || !companyId) return
     setTransferBusy(true); setTransferMsg('')
     try {
-      const res = await fetch('/api/telnyx/call-transfer', {
+      // Twilio identifies the call by the browser leg's Call SID (which the
+      // transfer route resolves to the row); Telnyx uses its own call id.
+      const res = await fetch(provider === 'twilio' ? '/api/twilio/call-transfer' : '/api/telnyx/call-transfer', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, callId: incoming.id, action }),
+        body: JSON.stringify(provider === 'twilio'
+          ? { companyId, callSid: incoming.id, action, actorName: agentName }
+          : { companyId, callId: incoming.id, action }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'That did not work')
@@ -434,10 +438,8 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           </>
         ) : (
           <>
-            {/* Hold / transfer controls, only while actually on a call.
-                Warm-transfer runs through Telnyx conferences; the Twilio path
-                ships with core calling first, so hide these when on Twilio. */}
-            {provider !== 'twilio' && (
+            {/* Hold / transfer controls, only while actually on a call. Both
+                providers run this through conferences (Telnyx / Twilio). */}
             <div style={{ display: 'flex', gap: 1, flex: 1 }}>
               {transferState === 'none' ? (
                 <>
@@ -477,7 +479,6 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
                 </>
               )}
             </div>
-            )}
             <button onClick={hangup} style={btn('#dc2626')}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ transform: 'rotate(135deg)', flexShrink: 0 }}>
                 <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>

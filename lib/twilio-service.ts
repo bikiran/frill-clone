@@ -173,6 +173,39 @@ export class TwilioService {
     const data = await this.req(`/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`, 'GET')
     return data?.incoming_phone_numbers?.[0]?.sid || null
   }
+
+  // ── Conferences (warm transfer / hold) ─────────────────────────────────────
+  // A live 2-leg call can't hold one side while consulting a third party. Moving
+  // both legs into a named conference makes each participant independently
+  // holdable and lets a colleague's leg be added without the customer hearing.
+
+  // Find the in-progress conference by its friendly name (we name it per call).
+  async getConferenceSid(friendlyName: string): Promise<string | null> {
+    const data = await this.req(`/Conferences.json?FriendlyName=${encodeURIComponent(friendlyName)}&Status=in-progress`, 'GET')
+    return data?.conferences?.[0]?.sid || null
+  }
+
+  // Hold / unhold one participant (identified by their call SID) in a conference.
+  async holdParticipant(conferenceSid: string, callSid: string, hold: boolean, holdUrl?: string): Promise<any> {
+    const form: Record<string, any> = { Hold: hold ? 'true' : 'false' }
+    if (hold && holdUrl) form.HoldUrl = holdUrl
+    return this.req(`/Conferences/${conferenceSid}/Participants/${callSid}.json`, 'POST', form)
+  }
+
+  // Dial a new participant (e.g. a colleague's browser client) straight into the
+  // conference. `to` is a `client:<identity>` or an E.164 number.
+  async addParticipant(conferenceSid: string, params: { from: string; to: string; timeout?: number; statusCallback?: string }): Promise<{ callSid: string | null; raw: any }> {
+    const form: Record<string, any> = { From: params.from, To: params.to }
+    if (params.timeout) form.Timeout = params.timeout
+    if (params.statusCallback) { form.StatusCallback = params.statusCallback; form.StatusCallbackEvent = ['answered', 'completed'] }
+    const data = await this.req(`/Conferences/${conferenceSid}/Participants.json`, 'POST', form)
+    return { callSid: data?.call_sid || null, raw: data }
+  }
+
+  // Remove a participant from the conference (their call is hung up).
+  async removeParticipant(conferenceSid: string, callSid: string): Promise<any> {
+    return this.req(`/Conferences/${conferenceSid}/Participants/${callSid}.json`, 'DELETE')
+  }
 }
 
 // Mint a short-lived Twilio Voice Access Token (a JWT the browser SDK registers
