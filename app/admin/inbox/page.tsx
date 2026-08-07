@@ -364,6 +364,14 @@ export default function InboxPage() {
   // Advanced: also permanently delete the media from Colvy after it expires
   // (access-only revocation is the default). Off unless explicitly turned on.
   const [expiryDeleteMode, setExpiryDeleteMode] = useState(false)
+  // Voice note recording (works in reply and internal-note modes).
+  const [recording, setRecording] = useState(false)
+  const [recSeconds, setRecSeconds] = useState(0)
+  const [voiceUploading, setVoiceUploading] = useState(false)
+  const mediaRecRef = useRef<any>(null)
+  const recChunksRef = useRef<any[]>([])
+  const recTimerRef = useRef<any>(null)
+  const recCancelRef = useRef(false)
   const [couponAmount, setCouponAmount] = useState('')
   const [couponType, setCouponType] = useState<'fixed' | 'percent'>('fixed')
   const [couponCode, setCouponCode] = useState('')
@@ -1428,8 +1436,10 @@ export default function InboxPage() {
     } catch { setAiSavedFields(new Set()) }
     setShowContactEdit(false)
     setReplyTo(null)
-    // Drop any staged-but-unsent media so it can't leak into another thread.
+    // Drop any staged-but-unsent media so it can't leak into another thread, and
+    // abandon an in-progress voice recording.
     setStagedMedia([]); setStagedExpiry({}); setExpiryDeleteMode(false); setExpiryMenuFor(null); setCustomDateFor(null)
+    if (recording) { recCancelRef.current = true; if (recTimerRef.current) clearInterval(recTimerRef.current); try { mediaRecRef.current?.stop() } catch {}; setRecording(false) }
     setAiSummary((conv as any).ai_summary || '')
     setAiTodos((conv as any).ai_todos || [])
     // Load messages
@@ -1868,6 +1878,70 @@ export default function InboxPage() {
     setShowMediaPicker(false)
   }
 
+  // Normalise a staged item (gallery pick or uploaded file/voice note) into a
+  // message attachment.
+  const stagedToAttachment = (m: any) => m._attachment || {
+    url: m.url, name: m.title || 'media',
+    type: m.kind === 'video' ? 'video/mp4' : m.kind === 'audio' ? 'audio/webm' : 'image/jpeg',
+    kind: m.kind,
+    ...(m.thumbnail_url ? { thumbUrl: m.thumbnail_url } : {}),
+  }
+
+  // ── Voice notes ─────────────────────────────────────────────────────────────
+  const fmtRec = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+  const startVoiceNote = async () => {
+    if (recording || !selected || !companyId) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mr = new MediaRecorder(stream)
+      recChunksRef.current = []
+      recCancelRef.current = false
+      mr.ondataavailable = (e: any) => { if (e.data && e.data.size) recChunksRef.current.push(e.data) }
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop())
+        if (recCancelRef.current) { recChunksRef.current = []; return }
+        const type = mr.mimeType || 'audio/webm'
+        const blob = new Blob(recChunksRef.current, { type })
+        recChunksRef.current = []
+        if (!blob.size) return
+        await stageVoiceNote(blob, type)
+      }
+      mediaRecRef.current = mr
+      mr.start()
+      setRecording(true); setRecSeconds(0)
+      recTimerRef.current = setInterval(() => setRecSeconds(s => s + 1), 1000)
+    } catch {
+      showToast('Could not access the microphone — check the browser permission.')
+    }
+  }
+
+  const stopVoiceNote = (save: boolean) => {
+    if (recTimerRef.current) clearInterval(recTimerRef.current)
+    recCancelRef.current = !save
+    setRecording(false)
+    try { mediaRecRef.current?.stop() } catch {}
+  }
+
+  const stageVoiceNote = async (blob: Blob, type: string) => {
+    if (!companyId || !selected) return
+    const ext = /ogg/.test(type) ? 'ogg' : /mp4|m4a|aac/.test(type) ? 'm4a' : 'webm'
+    const file = new File([blob], `voice-note.${ext}`, { type })
+    setVoiceUploading(true)
+    try {
+      const a = await uploadAttachment(file, { companyId, conversationId: selected.id })
+      const item: any = {
+        id: `up_voice_${a.url || Math.random().toString(36).slice(2)}`,
+        title: 'Voice note', kind: 'audio',
+        url: a.url, thumbnail_url: '',
+        _upload: true, _voice: true, _attachment: { ...a, kind: 'audio', name: 'Voice note' },
+      }
+      setStagedMedia(prev => [...prev, item])
+    } catch {
+      showToast('Could not save the voice note.')
+    } finally { setVoiceUploading(false) }
+  }
+
   const deliverMedia = async (chosen: any[]) => {
     if (!companyId || !selected || chosen.length === 0) return
     // Guard against a double-fire (fast double-click / re-entry) — that sent the
@@ -1940,125 +2014,186 @@ export default function InboxPage() {
     finally { sendingMediaRef.current = false }
   }
 
+  // Deliver a batch of already-uploaded attachments to a conversation across the
+  // right channel (SMS link / Meta / email / chat), inserting one thread message
+  // that carries them. Extracted so it can run either straight after an upload
+  // (documents) or from Send (staged media). Honors an optional media expiry.
+  const deliverUploadedAttachments = async (
+    attachments: any[],
+    opts: { convId: string; smsNumber: string | null; metaCh: string; me: any; content?: string; expiresAt?: string | null; expiryMode?: string },
+  ) => {
+    const { convId, smsNumber, metaCh, me } = opts
+    const expiresAt = opts.expiresAt || null
+    const expiryMode = opts.expiryMode === 'delete' ? 'delete' : 'access'
+    if (!attachments.length) return
+
+    const media = attachments.filter(a => a.kind === 'image' || a.kind === 'video')
+    const plainFiles = attachments.filter(a => a.kind !== 'image' && a.kind !== 'video')
+
+    // One branded gallery link for all the media (carries the expiry, so its
+    // access is revoked at expiry and SMS/email link there instead of the raw file).
+    let galleryUrl = ''
+    if (media.length > 0) {
+      try {
+        const res = await fetch('/api/short-links/create', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId, kind: 'media',
+            url: media[0].url,
+            mediaUrls: media,
+            label: media.length > 1 ? `${media.length} photos` : (media[0].kind === 'video' ? 'Video' : 'Photo'),
+            conversationId: convId,
+            sentBy: me,
+            ...(expiresAt ? { expiresAt, expiryMode } : {}),
+          }),
+        })
+        const d = await readJsonSafe(res)
+        if (res.ok && d.url) galleryUrl = d.url
+        else console.warn('[media send] gallery link failed:', d.error)
+      } catch (e) { console.warn('[media send] gallery link error:', e) }
+    }
+
+    // ── Deliver ────────────────────────────────────────────────────────
+    if (smsNumber && !['instagram', 'facebook', 'email'].includes(metaCh)) {
+      const parts: string[] = []
+      if (galleryUrl) parts.push(galleryUrl)
+      for (const f of plainFiles) parts.push(`📎 ${f.name}: ${f.url}`)
+      try {
+        const r = await fetch('/api/telnyx/sms/send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId, conversationId: convId, to: smsNumber,
+            text: parts.join('\n'),
+            attachments: [],
+            senderName: me, skipChatMessage: true,
+          }),
+        })
+        const rd = await readJsonSafe(r)
+        if (!r.ok) showToast(`Saved to the chat, but the SMS failed: ${rd.error || 'unknown error'}`)
+      } catch { showToast('Saved to the chat, but the SMS failed to send.') }
+    } else if (metaCh === 'instagram' || metaCh === 'facebook') {
+      for (const a of attachments) {
+        try {
+          const r = await fetch('/api/meta/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              conversationId: convId, attachmentUrl: a.url, attachmentKind: a.kind,
+              content: '', agentName: me, skipChatMessage: true,
+            }),
+          })
+          const rd = await readJsonSafe(r)
+          if (!r.ok) showToast(`Photo NOT delivered — ${rd.error || 'unknown error'}`)
+        } catch (e: any) { showToast(`Photo NOT delivered: ${e?.message || 'send failed'}`) }
+      }
+    } else if (metaCh === 'email') {
+      try {
+        const body = galleryUrl
+          ? `${media.length > 1 ? `${media.length} photos` : 'Photo'} attached:\n${galleryUrl}`
+          : attachments.map(a => `${a.name}:\n${a.url}`).join('\n\n')
+        const r = await fetch('/api/email/reply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: convId, agentName: me, content: body }),
+        })
+        const rd = await readJsonSafe(r)
+        if (!r.ok) showToast(`Email NOT sent — ${rd.error || 'unknown error'}`)
+      } catch (e: any) { showToast(`Email NOT sent: ${e?.message || 'failed'}`) }
+    }
+
+    // Stamp the expiry onto each attachment so the thread shows the badge.
+    const stamped = expiresAt
+      ? attachments.map(a => ({ ...a, expires_at: expiresAt, expiry_mode: expiryMode, ...(galleryUrl ? { viewer_url: galleryUrl } : {}) }))
+      : attachments
+
+    // ── One message carrying all of it ─────────────────────────────────
+    const { data: attMsg } = await (supabase as any).from('messages').insert({
+      conversation_id: convId, company_id: companyId, sender_type: 'agent',
+      sender_id: user.id, sender_name: me, sender_email: user.email,
+      content: plainFiles.length && !media.length ? plainFiles.map(f => `📎 ${f.name}`).join('\n') : '',
+      attachments: stamped,
+      metadata: galleryUrl ? { gallery_url: galleryUrl } : {},
+      delivery_channel: ['instagram', 'facebook', 'email'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
+    }).select().maybeSingle()
+    if (attMsg) broadcastMessage(convId, attMsg)
+
+    await (supabase as any).from('conversations').update({
+      last_message: media.length ? (media.length > 1 ? `🖼️ ${media.length} photos` : '🖼️ Photo') : '📎 Attachment',
+      last_message_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }).eq('id', convId)
+
+    // Only refresh the thread if the agent is still looking at it.
+    if (selectedRef.current?.id === convId) {
+      const { data: msgs } = await (supabase as any).from('messages')
+        .select('*').eq('conversation_id', convId).order('created_at', { ascending: true })
+      setMessages(msgs || [])
+      scrollBottom()
+    }
+    loadConversations()
+  }
+
   // ── File upload ────────────────────────────────────────────────────────────
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0 || !selected || !companyId) return
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
 
-    // Hand the files to the background queue and return immediately. The
-    // composer stays usable, you can switch conversations, and each file
-    // retries itself if the connection drops — which used to lose the whole
-    // batch. Everything below runs once the uploads settle.
-    const conv = selected            // capture: the agent may move on
+    // Capture: the agent may switch conversations before uploads settle.
+    const conv = selected
     const convId = conv.id
     const smsNumber = smsDestination()
     const metaCh = activeChannel
 
-    uploadQueue.enqueue(
-      Array.from(files),
-      { companyId, conversationId: convId },
-      async (attachments, failed) => {
-        if (attachments.length === 0) {
-          showToast(failed.length ? 'Nothing uploaded — tap Try again.' : 'Nothing to send')
-          return
-        }
+    const arr = Array.from(files)
+    const isMedia = (f: File) => /^image\//.test(f.type) || /^video\//.test(f.type)
+    const mediaFiles = arr.filter(isMedia)
+    const docFiles = arr.filter(f => !isMedia(f))
 
-        const media = attachments.filter(a => a.kind === 'image' || a.kind === 'video')
-        const plainFiles = attachments.filter(a => a.kind !== 'image' && a.kind !== 'video')
-
-        // One branded gallery link for all the media.
-        let galleryUrl = ''
-        if (media.length > 0) {
-          try {
-            const res = await fetch('/api/short-links/create', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                companyId, kind: 'media',
-                url: media[0].url,
-                mediaUrls: media,
-                label: media.length > 1 ? `${media.length} photos` : (media[0].kind === 'video' ? 'Video' : 'Photo'),
-                conversationId: convId,
-                sentBy: me,
-              }),
-            })
-            const d = await readJsonSafe(res)
-            if (res.ok && d.url) galleryUrl = d.url
-            else console.warn('[media send] gallery link failed:', d.error)
-          } catch (e) { console.warn('[media send] gallery link error:', e) }
-        }
-
-        // ── Deliver ────────────────────────────────────────────────────────
-        if (smsNumber && !['instagram', 'facebook', 'email'].includes(metaCh)) {
-          const parts: string[] = []
-          if (galleryUrl) parts.push(galleryUrl)
-          for (const f of plainFiles) parts.push(`📎 ${f.name}: ${f.url}`)
-          try {
-            const r = await fetch('/api/telnyx/sms/send', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                companyId, conversationId: convId, to: smsNumber,
-                text: parts.join('\n'),
-                attachments: [],
-                senderName: me, skipChatMessage: true,
-              }),
-            })
-            const rd = await readJsonSafe(r)
-            if (!r.ok) showToast(`Saved to the chat, but the SMS failed: ${rd.error || 'unknown error'}`)
-          } catch { showToast('Saved to the chat, but the SMS failed to send.') }
-        } else if (metaCh === 'instagram' || metaCh === 'facebook') {
-          for (const a of attachments) {
-            try {
-              const r = await fetch('/api/meta/send', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  conversationId: convId, attachmentUrl: a.url, attachmentKind: a.kind,
-                  content: '', agentName: me, skipChatMessage: true,
-                }),
-              })
-              const rd = await readJsonSafe(r)
-              if (!r.ok) showToast(`Photo NOT delivered — ${rd.error || 'unknown error'}`)
-            } catch (e: any) { showToast(`Photo NOT delivered: ${e?.message || 'send failed'}`) }
+    // Media → STAGE as preview cards above the composer once uploaded, and send
+    // only when the agent presses Send (with any typed caption / chosen expiry).
+    // Matches how the gallery picker attaches media.
+    if (mediaFiles.length) {
+      uploadQueue.enqueue(
+        mediaFiles,
+        { companyId, conversationId: convId },
+        async (attachments, failed) => {
+          if (failed.length) showToast(`${failed.length} file${failed.length === 1 ? '' : 's'} failed to upload.`)
+          if (!attachments.length) return
+          // If the agent has since moved to another conversation, staging into
+          // the current view would be wrong — deliver to the original thread
+          // instead so nothing is lost.
+          if (selectedRef.current?.id !== convId) {
+            await deliverUploadedAttachments(attachments, { convId, smsNumber, metaCh, me })
+            return
           }
-        } else if (metaCh === 'email') {
-          try {
-            const body = galleryUrl
-              ? `${media.length > 1 ? `${media.length} photos` : 'Photo'} attached:\n${galleryUrl}`
-              : attachments.map(a => `${a.name}:\n${a.url}`).join('\n\n')
-            const r = await fetch('/api/email/reply', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ conversationId: convId, agentName: me, content: body }),
-            })
-            const rd = await readJsonSafe(r)
-            if (!r.ok) showToast(`Email NOT sent — ${rd.error || 'unknown error'}`)
-          } catch (e: any) { showToast(`Email NOT sent: ${e?.message || 'failed'}`) }
-        }
+          const staged = attachments.map((a: any, i: number) => ({
+            id: `up_${i}_${a.url || a.name}`,
+            title: a.name || 'media',
+            kind: a.kind,
+            url: a.url,
+            thumbnail_url: a.thumbUrl || a.url,
+            _upload: true,
+            _attachment: a,
+          }))
+          setStagedMedia(prev => {
+            const have = new Set(prev.map((p: any) => p.id))
+            return [...prev, ...staged.filter((s: any) => !have.has(s.id))]
+          })
+        },
+      )
+    }
 
-        // ── One message carrying all of it ─────────────────────────────────
-        const { data: attMsg } = await (supabase as any).from('messages').insert({
-          conversation_id: convId, company_id: companyId, sender_type: 'agent',
-          sender_id: user.id, sender_name: me, sender_email: user.email,
-          content: plainFiles.length && !media.length ? plainFiles.map(f => `📎 ${f.name}`).join('\n') : '',
-          attachments,
-          metadata: galleryUrl ? { gallery_url: galleryUrl } : {},
-          delivery_channel: ['instagram', 'facebook', 'email'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
-        }).select().maybeSingle()
-        if (attMsg) broadcastMessage(convId, attMsg)
-
-        await (supabase as any).from('conversations').update({
-          last_message: media.length ? (media.length > 1 ? `🖼️ ${media.length} photos` : '🖼️ Photo') : '📎 Attachment',
-          last_message_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-        }).eq('id', convId)
-
-        // Only refresh the thread if the agent is still looking at it.
-        if (selectedRef.current?.id === convId) {
-          const { data: msgs } = await (supabase as any).from('messages')
-            .select('*').eq('conversation_id', convId).order('created_at', { ascending: true })
-          setMessages(msgs || [])
-          scrollBottom()
-        }
-        loadConversations()
-      },
-    )
+    // Documents → keep the original immediate send (they aren't "media" to preview).
+    if (docFiles.length) {
+      uploadQueue.enqueue(
+        docFiles,
+        { companyId, conversationId: convId },
+        async (attachments, failed) => {
+          if (attachments.length === 0) {
+            showToast(failed.length ? 'Nothing uploaded — tap Try again.' : 'Nothing to send')
+            return
+          }
+          await deliverUploadedAttachments(attachments, { convId, smsNumber, metaCh, me })
+        },
+      )
+    }
   }
 
   // ── Notes & Tasks ──────────────────────────────────────────────────────────
@@ -3401,13 +3536,29 @@ export default function InboxPage() {
     // Deliver any attached-but-unsent gallery media first (internal notes never
     // carry customer-facing media). If there's no accompanying text, we're done.
     if (!internalMode && stagedMedia.length > 0) {
-      const toSend = stagedMedia.map((it: any) => ({
+      // Gallery-picked items deliver per-item (SMS + chat, per-item expiry);
+      // uploaded files deliver as a batch through the richer path (SMS/Meta/
+      // email, one gallery link). Split them and handle each.
+      const galleryItems = stagedMedia.filter((m: any) => !m._upload)
+      const uploadItems = stagedMedia.filter((m: any) => m._upload)
+      const galleryToSend = galleryItems.map((it: any) => ({
         ...it,
         _expiresAt: resolveExpiry(stagedExpiry[it.id]),
         _expiryMode: expiryDeleteMode ? 'delete' : 'access',
       }))
+      // The uploaded batch shares one link, so use the earliest chosen expiry.
+      const upExpiry = uploadItems
+        .map((m: any) => resolveExpiry(stagedExpiry[m.id]))
+        .filter(Boolean)
+        .sort()[0] || null
       setStagedMedia([]); setStagedExpiry({}); setExpiryDeleteMode(false)
-      await deliverMedia(toSend)
+      if (galleryToSend.length) await deliverMedia(galleryToSend)
+      if (uploadItems.length) {
+        await deliverUploadedAttachments(uploadItems.map((u: any) => u._attachment), {
+          convId: selected.id, smsNumber: smsDestination(), metaCh: activeChannel, me: senderName,
+          expiresAt: upExpiry, expiryMode: expiryDeleteMode ? 'delete' : 'access',
+        })
+      }
       if (!content) { setSending(false); return }
     }
 
@@ -3430,10 +3581,15 @@ export default function InboxPage() {
           })
           .map((m: any) => m.user_id)
         const mentionedIds = Array.from(new Set([...typed, ...picked].filter(Boolean))) as string[]
+        // A voice note (or any staged media) rides along with the note, staying
+        // internal — never handed to a delivery channel.
+        const noteAttachments = stagedMedia.map(stagedToAttachment)
+        setStagedMedia([]); setStagedExpiry({}); setExpiryDeleteMode(false)
         const { data: inserted } = await (supabase as any).from('messages').insert({
           conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
           sender_name: senderName, content, is_internal: true,
           mentions: mentionedIds,
+          ...(noteAttachments.length ? { attachments: noteAttachments } : {}),
         }).select().maybeSingle()
 
         // Notify anyone @mentioned in the note.
@@ -4433,6 +4589,8 @@ export default function InboxPage() {
       <style>{`
         @keyframes doaSlideIn { from { transform: translate(100%, -50%); } to { transform: translate(0, -50%); } }
         @keyframes typingDot { 0%, 60%, 100% { opacity: 0.25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes recPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
         @keyframes livePulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); } 50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(34,197,94,0); } }
         .ai-spark:hover .ai-tip { opacity: 1 !important; }
         /* Hide the assignment-strip scrollbar on every screen size — the chevron
@@ -6501,12 +6659,27 @@ export default function InboxPage() {
                                 </div>
                               )}
 
-                              {files.map((a: any, ai: number) => (
-                                <a key={`f${ai}`} href={a.url} target="_blank" rel="noopener"
-                                  style={{ display: 'flex', alignItems: 'center', gap: 8, color: isAgent ? '#fff' : 'var(--coral)', textDecoration: 'none', fontSize: 13, fontWeight: 600, marginBottom: msg.content ? 6 : 0 }}>
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{Icon.attach(12)}{a.name}</span>
-                                </a>
-                              ))}
+                              {files.map((a: any, ai: number) => {
+                                // A voice note / audio clip plays inline rather than
+                                // linking out.
+                                const isAudio = a.kind === 'audio' || /^audio\//.test(a.type || '') || /\.(webm|ogg|m4a|mp3|wav|aac)(\?|$)/i.test(a.url || '')
+                                if (isAudio) {
+                                  return (
+                                    <div key={`f${ai}`} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: msg.content ? 6 : 0 }}>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700, color: isAgent ? '#fff' : 'var(--coral)', flexShrink: 0 }}>
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+                                      </span>
+                                      <audio src={toPublicUrl(a.url)} controls preload="metadata" style={{ height: 34, maxWidth: 220 }} />
+                                    </div>
+                                  )
+                                }
+                                return (
+                                  <a key={`f${ai}`} href={a.url} target="_blank" rel="noopener"
+                                    style={{ display: 'flex', alignItems: 'center', gap: 8, color: isAgent ? '#fff' : 'var(--coral)', textDecoration: 'none', fontSize: 13, fontWeight: 600, marginBottom: msg.content ? 6 : 0 }}>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{Icon.attach(12)}{a.name}</span>
+                                  </a>
+                                )
+                              })}
                             </>
                           )
                         })()}
@@ -6818,6 +6991,44 @@ export default function InboxPage() {
                 </div>
               )}
 
+              {/* Internal-note header — a clear amber banner so it's obvious the
+                  next message is staff-only, with a one-tap switch back to the
+                  customer reply. */}
+              {internalMode && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px', marginBottom: 8, borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
+                  <span style={{ width: 26, height: 26, borderRadius: 8, background: '#fef3c7', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: 12.5, fontWeight: 800, color: '#b45309' }}>Internal note</p>
+                    <p style={{ margin: 0, fontSize: 11, color: '#a16207' }}>Only your team can see this — the customer never receives it.</p>
+                  </div>
+                  <button type="button" onClick={() => setInternalMode(false)}
+                    style={{ flexShrink: 0, height: 26, padding: '0 10px', borderRadius: 7, border: '1px solid #fde68a', background: '#fff', color: '#b45309', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                    Switch to reply
+                  </button>
+                </div>
+              )}
+
+              {/* Voice-note recording bar */}
+              {recording && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', marginBottom: 8, borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca' }}>
+                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#dc2626', flexShrink: 0, animation: 'recPulse 1s infinite' }} />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#b91c1c' }}>Recording</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#b91c1c', fontVariantNumeric: 'tabular-nums' }}>{fmtRec(recSeconds)}</span>
+                  <span style={{ flex: 1 }} />
+                  <button type="button" onClick={() => stopVoiceNote(false)}
+                    style={{ height: 30, padding: '0 12px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={() => stopVoiceNote(true)}
+                    style={{ height: 30, padding: '0 14px', borderRadius: 8, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>
+                    Stop &amp; attach
+                  </button>
+                </div>
+              )}
+
               {/* Attached-but-unsent media — preview cards, delivered on Send.
                   Each card carries a Media-expiry selector (Keep forever by
                   default). */}
@@ -6826,12 +7037,14 @@ export default function InboxPage() {
                   {stagedMedia.map((m: any) => {
                     const imgThumb = m.thumbnail_url && m.thumbnail_url !== m.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m.thumbnail_url) ? m.thumbnail_url : null
                     const code = stagedExpiry[m.id]
-                    const kindLabel = m.kind === 'video' ? 'Video' : 'Image'
+                    const kindLabel = m.kind === 'video' ? 'Video' : m.kind === 'audio' ? 'Voice note' : 'Image'
                     const keeps = !code || code === 'forever'
                     return (
                       <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 12, border: '1px solid var(--border)', background: '#fff' }}>
-                        <div style={{ position: 'relative', width: 40, height: 40, borderRadius: 8, overflow: 'hidden', background: 'var(--canvas)', flexShrink: 0 }}>
-                          {m.kind === 'video'
+                        <div style={{ position: 'relative', width: 40, height: 40, borderRadius: 8, overflow: 'hidden', background: m.kind === 'audio' ? 'var(--peach)' : 'var(--canvas)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {m.kind === 'audio'
+                            ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+                            : m.kind === 'video'
                             ? (imgThumb
                                 ? <img src={imgThumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 : <video src={m.url + '#t=0.1'} preload="metadata" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)
@@ -6849,7 +7062,9 @@ export default function InboxPage() {
                           <p style={{ margin: '1px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>{kindLabel}</p>
                         </div>
 
-                        {/* Media-expiry selector */}
+                        {/* Media-expiry selector — only for customer-facing sends
+                            (an internal note is never delivered, so it can't expire). */}
+                        {!internalMode && (
                         <div data-expiry-picker style={{ position: 'relative', flexShrink: 0 }}>
                           <button type="button"
                             onClick={() => { setExpiryMenuFor(expiryMenuFor === m.id ? null : m.id); setCustomDateFor(null) }}
@@ -6886,6 +7101,7 @@ export default function InboxPage() {
                             </div>
                           )}
                         </div>
+                        )}
 
                         <button type="button" title="Remove"
                           onClick={() => { setStagedMedia(prev => prev.filter((x: any) => x.id !== m.id)); setStagedExpiry(prev => { const n = { ...prev }; delete n[m.id]; return n }) }}
@@ -7048,6 +7264,14 @@ export default function InboxPage() {
                   <button type="button" onClick={openMediaPicker} title="Send from gallery"
                     style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                  </button>
+                  {/* Voice note */}
+                  <button type="button" onClick={() => (recording ? stopVoiceNote(true) : startVoiceNote())} disabled={voiceUploading}
+                    title={recording ? 'Stop recording' : 'Record a voice note'}
+                    style={{ width: 32, height: 32, borderRadius: 8, border: recording ? '1px solid #dc2626' : '1px solid var(--border)', background: recording ? '#fee2e2' : '#fff', cursor: voiceUploading ? 'default' : 'pointer', color: recording ? '#dc2626' : 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {voiceUploading
+                      ? <span style={{ width: 13, height: 13, border: '2px solid var(--border)', borderTopColor: 'var(--coral)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                      : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>}
                   </button>
                   {/* Emoji */}
                   <button type="button" onClick={() => setShowEmoji(v => !v)} title="Emoji"
