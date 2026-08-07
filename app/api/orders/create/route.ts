@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { notifyCompany } from '@/lib/notify'
+import { shortenUrl } from '@/lib/short-link'
 
 function admin() {
   return createClient(
@@ -145,8 +146,12 @@ export async function POST(req: NextRequest) {
     }
     await woo.addOrderNote(order.id, `Order created from Colvy chat${createdByName ? ` by ${createdByName}` : ''}.`, false)
 
-    // ── Payment link (WooCommerce order-pay URL)
-    const payLink = order.payment_url || `${integ.store_url}/checkout/order-pay/${order.id}/?pay_for_order=true&key=${order.order_key}`
+    // ── Payment link (WooCommerce order-pay URL), wrapped behind a branded
+    // {slug}.colvy.com/l/<code> short link so the SMS is short, trustworthy, and
+    // click-trackable — instead of the raw, spammy-looking store URL. Falls back
+    // to the raw URL if the shortener fails.
+    const rawPayLink = order.payment_url || `${String(integ.store_url).replace(/\/$/, '')}/checkout/order-pay/${order.id}/?pay_for_order=true&key=${order.order_key}`
+    const payLink = await shortenUrl(rawPayLink, { companyId, kind: 'payment', conversationId })
 
     try { await notifyCompany({ db, companyId, type: 'order', message: `Order #${order.number || order.id} created — ${order.currency || 'AUD'} $${order.total}`, actorName: createdByName }) } catch {}
 
