@@ -7,6 +7,7 @@ import { TwilioService } from './twilio-service'
 //   TWILIO_MASTER_API_KEY_SID, TWILIO_MASTER_API_KEY_SECRET  (voice tokens)
 //   TWILIO_MASTER_TWIML_APP_SID                              (browser calling)
 //   TWILIO_MASTER_MESSAGING_SERVICE_SID                      (optional sender pool)
+//   TWILIO_MASTER_ADDRESS_SID                                (optional AU regulatory address)
 export const TWILIO_MASTER = {
   accountSid: process.env.TWILIO_MASTER_ACCOUNT_SID || '',
   authToken: process.env.TWILIO_MASTER_AUTH_TOKEN || '',
@@ -14,6 +15,11 @@ export const TWILIO_MASTER = {
   apiKeySecret: process.env.TWILIO_MASTER_API_KEY_SECRET || '',
   twimlAppSid: process.env.TWILIO_MASTER_TWIML_APP_SID || '',
   messagingServiceSid: process.env.TWILIO_MASTER_MESSAGING_SERVICE_SID || '',
+  // A pre-created Address (ADxxxx) on the platform account. When set, it is
+  // attached to every number purchase to satisfy Twilio's "requires an address"
+  // rule. If empty, the buy flow auto-creates one from the company's regulatory
+  // bundle instead.
+  addressSid: process.env.TWILIO_MASTER_ADDRESS_SID || '',
 }
 
 export function platformTwilioConfigured(): boolean {

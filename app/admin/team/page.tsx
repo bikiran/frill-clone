@@ -307,21 +307,23 @@ export default function TeamPage() {
           <div className="col-span-2 text-right">Actions</div>
         </div>
 
-        {/* Current admin */}
+        {/* Current admin — column spans mirror the header (4/3/2/1/2) so the
+            Owner and Active pills line up under Role and Status. */}
         <div className="grid grid-cols-12 px-5 py-4 border-b items-center" style={{ borderColor: 'var(--border)' }}>
-          <div className="col-span-5 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ background: 'var(--coral)' }}>
+          <div className="col-span-4 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: 'var(--coral)' }}>
               {user.email?.[0].toUpperCase()}
             </div>
-            <div>
-              <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{user.email}</p>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{user.email}</p>
               <p className="text-xs" style={{ color: 'var(--slate)' }}>You (Owner)</p>
             </div>
           </div>
-          <div className="col-span-3">
+          <div className="col-span-3" />
+          <div className="col-span-2">
             <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>Owner</span>
           </div>
-          <div className="col-span-2">
+          <div className="col-span-1">
             <span className="text-xs px-2 py-1 rounded-full" style={{ background: '#d1fae5', color: '#059669' }}>Active</span>
           </div>
           <div className="col-span-2 text-right text-xs" style={{ color: 'var(--slate)' }}>—</div>

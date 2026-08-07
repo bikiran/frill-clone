@@ -174,6 +174,23 @@ export class TwilioService {
     return data?.incoming_phone_numbers?.[0]?.sid || null
   }
 
+  // Create an Address resource in the account. Twilio requires an emergency /
+  // regulatory address (AddressSid) before it will sell certain numbers (AU
+  // among them — "Phone Number Requires an Address"). Returns the ADxxxx SID.
+  async createAddress(params: { customerName: string; street: string; city: string; region: string; postalCode: string; isoCountry?: string; streetSecondary?: string }): Promise<string | null> {
+    const form: Record<string, any> = {
+      CustomerName: params.customerName,
+      Street: params.street,
+      City: params.city,
+      Region: params.region,
+      PostalCode: params.postalCode,
+      IsoCountry: params.isoCountry || 'AU',
+    }
+    if (params.streetSecondary) form.StreetSecondary = params.streetSecondary
+    const data = await this.req('/Addresses.json', 'POST', form)
+    return data?.sid || null
+  }
+
   // ── Conferences (warm transfer / hold) ─────────────────────────────────────
   // A live 2-leg call can't hold one side while consulting a third party. Moving
   // both legs into a named conference makes each participant independently

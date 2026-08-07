@@ -2179,8 +2179,33 @@ function CompaniesPage() {
   const [form, setForm] = useState<any>({})
   const [saving, setSaving] = useState(false)
   const [editErr, setEditErr] = useState('')
+  // Assigning an existing (already-purchased) Twilio number to this company.
+  const [assignNum, setAssignNum] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  const [assignMsg, setAssignMsg] = useState('')
+
+  const assignExistingNumber = async () => {
+    if (!editCo || !assignNum.trim()) return
+    setAssigning(true); setAssignMsg('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/admin/assign-number', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ companyId: editCo.id, phoneNumber: assignNum.trim(), makePrimary: true }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not assign number')
+      setAssignMsg(`✓ ${data.phoneNumber} assigned and routed to Twilio.`)
+      setAssignNum('')
+      // Reflect the carrier switch the endpoint performed.
+      setForm((f: any) => ({ ...f, number_provider: 'twilio' }))
+      setCompanies(prev => prev.map(c => c.id === editCo.id ? { ...c, number_provider: 'twilio', sms_provider: 'twilio', voice_provider: 'twilio' } : c))
+    } catch (e: any) { setAssignMsg(`✕ ${e.message}`) } finally { setAssigning(false) }
+  }
 
   const openEdit = (co: any) => {
+    setAssignNum(''); setAssignMsg('')
     setEditErr('')
     setForm({
       name: co.name || '', slug: co.slug || '', plan: co.plan || 'free',
@@ -2188,6 +2213,7 @@ function CompaniesPage() {
       board_domain: co.board_domain || '', help_domain: co.help_domain || '',
       accent_color: co.accent_color || '#ff7a6b', owner_email: '', notes: co.notes || '',
       number_provider: co.number_provider || 'telnyx',
+      free_number_credits: co.free_number_credits ?? 0,
     })
     setEditCo(co)
   }
@@ -2395,6 +2421,47 @@ function CompaniesPage() {
               </select>
               <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '-4px 0 4px' }}>
                 Which carrier the “Get a business number” flow uses for this company. The customer never sees it. Existing numbers keep working.
+              </p>
+
+              {/* Attach a number already bought in Colvy's Twilio account to this
+                  company — no purchase flow, no Stripe. Sets webhooks + routing. */}
+              <label style={paLabel}>Assign an existing Twilio number</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  value={assignNum}
+                  onChange={e => setAssignNum(e.target.value)}
+                  placeholder="+61468012345"
+                  style={{ ...paInput, marginBottom: 0, flex: 1 }}
+                />
+                <button type="button" onClick={assignExistingNumber} disabled={assigning || !assignNum.trim()}
+                  style={{ padding: '9px 14px', borderRadius: 8, border: 'none', background: '#ff7a6b', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: assigning || !assignNum.trim() ? 'default' : 'pointer', opacity: assigning || !assignNum.trim() ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                  {assigning ? 'Assigning…' : 'Assign'}
+                </button>
+              </div>
+              <p style={{ fontSize: 11.5, margin: '6px 0 4px', color: assignMsg.startsWith('✕') ? '#dc2626' : assignMsg.startsWith('✓') ? '#059669' : 'var(--sa-muted)' }}>
+                {assignMsg || 'The number must already exist in Colvy’s platform Twilio account. It becomes this company’s primary number and routes calls + SMS to them.'}
+              </p>
+
+              {/* Grant this business one or more free numbers. While the balance
+                  is > 0, the "Get a business number" flow skips payment and
+                  provisions directly, consuming one credit per number. */}
+              <label style={paLabel}>Free number credits</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="number" min={0} step={1}
+                  value={form.free_number_credits ?? 0}
+                  onChange={e => setForm({ ...form, free_number_credits: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+                  style={{ ...paInput, marginBottom: 0, width: 100 }}
+                />
+                <button type="button" onClick={() => setForm({ ...form, free_number_credits: (Number(form.free_number_credits) || 0) + 1 })}
+                  style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'transparent', color: '#ff7a6b', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>+1 free number</button>
+                {(Number(form.free_number_credits) || 0) > 0 && (
+                  <button type="button" onClick={() => setForm({ ...form, free_number_credits: 0 })}
+                    style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Clear</button>
+                )}
+              </div>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '6px 0 4px' }}>
+                Numbers this business can provision for free — one credit is used per number, no card required. Set to 0 to require payment.
               </p>
 
               <label style={paLabel}>Accent colour</label>

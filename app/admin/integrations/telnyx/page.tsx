@@ -13,6 +13,9 @@ export default function TelnyxIntegration() {
   // Whether the signed-in user is the platform super-admin. Only they see the
   // internal carrier indicator; customers never learn which carrier backs them.
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  // Free numbers a platform admin has granted this business. While > 0, the buy
+  // flow skips payment, so the UI shows "Free" instead of a monthly price.
+  const [freeCredits, setFreeCredits] = useState(0)
   const [loading, setLoading] = useState(true)
   const [integration, setIntegration] = useState<any>(null)
   const [numbers, setNumbers] = useState<any[]>([])
@@ -82,8 +85,9 @@ export default function TelnyxIntegration() {
       // Resolve which carrier this company provisions through (default Telnyx).
       if (cid) {
         try {
-          const { data: co } = await (supabase as any).from('companies').select('number_provider').eq('id', cid).maybeSingle()
+          const { data: co } = await (supabase as any).from('companies').select('number_provider, free_number_credits').eq('id', cid).maybeSingle()
           if (co?.number_provider === 'twilio') setNumProvider('twilio')
+          setFreeCredits(Number(co?.free_number_credits || 0))
         } catch {}
       }
       if (cid) await loadIntegration(cid)
@@ -97,17 +101,27 @@ export default function TelnyxIntegration() {
       // Returned from Stripe checkout — actively finalize (verify payment +
       // provision the number directly, so it works even without a webhook).
       if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('provisioning') === '1') {
-        const sessionId = new URLSearchParams(window.location.search).get('session_id') || undefined
-        // The Stripe return URL carries which carrier to finalize against.
-        const provParam = new URLSearchParams(window.location.search).get('provider') === 'twilio' ? 'twilio' : 'telnyx'
-        setSuccess('Payment received — setting up your number, this can take up to a minute…')
+        const qp = new URLSearchParams(window.location.search)
+        const sessionId = qp.get('session_id') || undefined
+        // The return URL carries which carrier to finalize against.
+        const provParam = qp.get('provider') === 'twilio' ? 'twilio' : 'telnyx'
+        // Free path (admin-granted): no Stripe session — the number details ride
+        // on the URL and the server consumes a credit.
+        const isFree = qp.get('free') === '1'
+        const freeBody = isFree ? {
+          free: true,
+          phoneNumber: qp.get('phoneNumber') || undefined,
+          numberType: qp.get('numberType') || 'local',
+          locationId: qp.get('locationId') || undefined,
+        } : {}
+        setSuccess(isFree ? 'Setting up your number, this can take up to a minute…' : 'Payment received — setting up your number, this can take up to a minute…')
         let tries = 0
         const attempt = async () => {
           tries++
           try {
             const res = await fetch(`/api/${provParam}/number-finalize`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ companyId: cid, sessionId }),
+              body: JSON.stringify({ companyId: cid, sessionId, ...freeBody }),
             })
             const d = await res.json()
             if (res.ok && d.phoneNumber) {
@@ -216,6 +230,15 @@ export default function TelnyxIntegration() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not start checkout')
+      // Admin granted this business a free number — no payment step. Route to the
+      // same provisioning flow, flagged free; the server enforces the credit.
+      if (data.free) {
+        const params = new URLSearchParams({ provisioning: '1', provider: numProvider, free: '1', numberType })
+        if (phoneNumber) params.set('phoneNumber', phoneNumber)
+        if (assignLocationId) params.set('locationId', assignLocationId)
+        window.location.href = `/admin/integrations/telnyx?${params.toString()}`
+        return
+      }
       if (data.url) {
         window.location.href = data.url
         return
@@ -243,6 +266,7 @@ export default function TelnyxIntegration() {
           companyId={companyId}
           numberType={numberType}
           provider={numProvider}
+          free={freeCredits > 0}
           onCancel={() => setShowRegForm(false)}
           onComplete={(_bundleId) => {
             setShowRegForm(false)
@@ -413,8 +437,17 @@ export default function TelnyxIntegration() {
           {available.length === 0 ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderRadius: 12, background: '#fff', border: '1px solid var(--border)', flexWrap: 'wrap', gap: 12 }}>
               <div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>${available[0]?.monthly || 15}<span style={{ fontSize: 14, fontWeight: 500, color: 'var(--slate)' }}>/month</span></div>
-                <div style={{ fontSize: 12.5, color: 'var(--slate)' }}>Australian {numberType} number · cancel anytime</div>
+                {freeCredits > 0 ? (
+                  <>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: '#059669' }}>Free<span style={{ fontSize: 14, fontWeight: 500, color: 'var(--slate)' }}> · included on your plan</span></div>
+                    <div style={{ fontSize: 12.5, color: 'var(--slate)' }}>Australian {numberType} number · no card required</div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>${available[0]?.monthly || 15}<span style={{ fontSize: 14, fontWeight: 500, color: 'var(--slate)' }}>/month</span></div>
+                    <div style={{ fontSize: 12.5, color: 'var(--slate)' }}>Australian {numberType} number · cancel anytime</div>
+                  </>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={searchNumbers} disabled={searching}
@@ -423,7 +456,7 @@ export default function TelnyxIntegration() {
                 </button>
                 <button onClick={() => buyNumber()} disabled={buying}
                   style={{ padding: '11px 22px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
-                  {buying ? 'Setting up…' : 'Buy Australian Number'}
+                  {buying ? 'Setting up…' : freeCredits > 0 ? 'Get your free number' : 'Buy Australian Number'}
                 </button>
               </div>
             </div>
@@ -435,11 +468,11 @@ export default function TelnyxIntegration() {
                   <div key={n.phone_number} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff' }}>
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{fmtNumber(n.phone_number)}</div>
-                      <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{n.region} · ${n.monthly}/month</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{n.region} · {freeCredits > 0 ? <span style={{ color: '#059669', fontWeight: 700 }}>Free</span> : `$${n.monthly}/month`}</div>
                     </div>
                     <button onClick={() => buyNumber(n.phone_number)} disabled={buying}
                       style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                      {buying ? '…' : 'Buy'}
+                      {buying ? '…' : freeCredits > 0 ? 'Get free' : 'Buy'}
                     </button>
                   </div>
                 ))}
