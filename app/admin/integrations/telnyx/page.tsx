@@ -10,6 +10,9 @@ export default function TelnyxIntegration() {
   // customer — they always see the same "Get a business number" flow; only the
   // API endpoints differ. Set per-company by a platform admin (default Telnyx).
   const [numProvider, setNumProvider] = useState<'telnyx' | 'twilio'>('telnyx')
+  // Whether the signed-in user is the platform super-admin. Only they see the
+  // internal carrier indicator; customers never learn which carrier backs them.
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
   const [integration, setIntegration] = useState<any>(null)
   const [numbers, setNumbers] = useState<any[]>([])
@@ -64,6 +67,7 @@ export default function TelnyxIntegration() {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user) { setLoading(false); return }
+      if ((session.user.email || '').toLowerCase() === 'bishalstha76@gmail.com') setIsSuperAdmin(true)
       let cid: string | null = null
       const h = window.location.hostname
       if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
@@ -446,12 +450,27 @@ export default function TelnyxIntegration() {
         </div>
       )}
 
-      <button onClick={() => setShowAdvanced(v => !v)} style={{ marginTop: 20, fontSize: 12.5, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>
-        {showAdvanced ? '▾' : '▸'} Advanced: use your own Telnyx account
-      </button>
-      {showAdvanced && (
-        <div style={{ marginTop: 12, padding: 16, borderRadius: 12, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
-          Already have a Telnyx account? You can connect your own API key and number instead of buying through Colvy. Contact support to enable BYO mode for your workspace.
+      {/* BYO Telnyx is only meaningful for Telnyx-backed boards. Twilio boards are
+          fully platform-managed and must never see a competing carrier's name. */}
+      {numProvider === 'telnyx' && (
+        <>
+          <button onClick={() => setShowAdvanced(v => !v)} style={{ marginTop: 20, fontSize: 12.5, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>
+            {showAdvanced ? '▾' : '▸'} Advanced: use your own Telnyx account
+          </button>
+          {showAdvanced && (
+            <div style={{ marginTop: 12, padding: 16, borderRadius: 12, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+              Already have a Telnyx account? You can connect your own API key and number instead of buying through Colvy. Contact support to enable BYO mode for your workspace.
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Internal-only: lets the platform super-admin confirm at a glance which
+          carrier this board is routed through. Hidden from all customers. */}
+      {isSuperAdmin && (
+        <div style={{ marginTop: 20, display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 11px', borderRadius: 20, background: numProvider === 'twilio' ? '#eef2ff' : '#ecfeff', border: `1px solid ${numProvider === 'twilio' ? '#c7d2fe' : '#a5f3fc'}`, fontSize: 11.5, fontWeight: 700, color: numProvider === 'twilio' ? '#4338ca' : '#0e7490' }}>
+          <span style={{ opacity: 0.7 }}>🔒 internal</span>
+          carrier: {numProvider === 'twilio' ? 'Twilio' : 'Telnyx'}
         </div>
       )}
     </div>
