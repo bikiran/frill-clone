@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { logWebhookEvent } from '@/lib/webhook-log'
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || ''
 
@@ -21,8 +22,12 @@ export async function POST(req: NextRequest) {
         ? stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET)
         : JSON.parse(body)
     } catch (err: any) {
+      await logWebhookEvent({ source: 'stripe', status: 'rejected', error: 'signature verification failed' })
       return NextResponse.json({ error: 'Webhook signature failed' }, { status: 400 })
     }
+
+    // Record the event for the Super Admin webhook explorer (best-effort).
+    logWebhookEvent({ source: 'stripe', eventType: event?.type, companyId: event?.data?.object?.metadata?.companyId || null, payload: event })
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -228,6 +233,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ received: true })
   } catch (err: any) {
+    await logWebhookEvent({ source: 'stripe', status: 'error', error: err?.message })
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

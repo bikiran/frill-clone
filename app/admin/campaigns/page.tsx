@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 
 type Campaign = {
@@ -44,8 +45,9 @@ const CHANNEL_LABEL: Record<string, string> = { sms: 'SMS', email: 'Email' }
 
 export default function CampaignsPage() {
   const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [companyId, setCompanyId] = useState<string | null>(null)
+  const seededCid = peekCompanyUser()?.companyId ?? null
+  const [loading, setLoading] = useState(!(seededCid && readCache(`campaigns:${seededCid}`)))
+  const [companyId, setCompanyId] = useState<string | null>(seededCid)
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [links, setLinks] = useState<any[]>([])
   const [conversions, setConversions] = useState<any[]>([])
@@ -60,8 +62,8 @@ export default function CampaignsPage() {
   useEffect(() => {
     ;(async () => {
       try {
-        let cid: string | null = null
-        if (typeof window !== 'undefined') {
+        let cid: string | null = seededCid
+        if (!cid && typeof window !== 'undefined') {
           const host = window.location.hostname
           if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
             const slug = host.replace('.colvy.com', '')
@@ -88,29 +90,47 @@ export default function CampaignsPage() {
   }, [])
 
   const load = async (cid: string) => {
+    // Instant paint on revisit: hydrate from the last snapshot we rendered for
+    // this company while the fresh data loads in the background.
+    const cacheKey = `campaigns:${cid}`
+    const cached = readCache<{ campaigns: Campaign[]; links: any[]; clicks: any[]; conversions: any[] }>(cacheKey)
+    if (cached) {
+      setCampaigns(cached.campaigns)
+      setLinks(cached.links)
+      setClicks(cached.clicks)
+      setConversions(cached.conversions)
+    }
+
     const { data, error } = await (supabase as any).from('campaigns')
       .select('*').eq('company_id', cid).order('created_at', { ascending: false }).limit(500)
     // The page is useful before the migration is applied — say so rather than
     // rendering an empty state that looks like "no campaigns yet".
     if (error) { setTableMissing(true); return }
-    setCampaigns(data || [])
+    const campaignRows = data || []
+    setCampaigns(campaignRows)
 
     // Campaign links drive the click and revenue columns, reusing the tracking
     // built for Link Reports rather than a second measurement system.
+    let lRows: any[] = [], clRows: any[] = [], cvRows: any[] = []
     try {
       const { data: ls } = await (supabase as any).from('short_links')
         .select('id, campaign_id').eq('company_id', cid).not('campaign_id', 'is', null).limit(2000)
-      setLinks(ls || [])
-      const ids = (ls || []).map((l: any) => l.id)
+      lRows = ls || []
+      setLinks(lRows)
+      const ids = lRows.map((l: any) => l.id)
       if (ids.length) {
         const { data: cl } = await (supabase as any).from('link_clicks')
           .select('link_id, contact_id').in('link_id', ids.slice(0, 500))
-        setClicks(cl || [])
+        clRows = cl || []
+        setClicks(clRows)
         const { data: cv } = await (supabase as any).from('link_conversions')
           .select('link_id, revenue, stage, order_id').in('link_id', ids.slice(0, 500))
-        setConversions(cv || [])
+        cvRows = cv || []
+        setConversions(cvRows)
       }
     } catch { /* tracking tables are optional here */ }
+
+    writeCache(cacheKey, { campaigns: campaignRows, links: lRows, clicks: clRows, conversions: cvRows })
   }
 
   // link_id → campaign_id

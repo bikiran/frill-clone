@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { uploadAttachment, readJsonSafe } from '@/lib/upload-attachment'
 import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
 import { decodeEntities as dec } from '@/lib/decode-entities'
@@ -315,10 +316,14 @@ function extractFromText(text: string) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function InboxPage() {
-  const [companyId, setCompanyId] = useState<string | null>(null)
+  // Seed from the shared identity cache + the last conversation list we rendered
+  // so a revisit shows the inbox instantly instead of "Loading inbox…".
+  const seededCid = peekCompanyUser()?.companyId ?? null
+  const seededConvs = seededCid ? readCache<Conversation[]>(`inbox-convs:${seededCid}:open`) : undefined
+  const [companyId, setCompanyId] = useState<string | null>(seededCid)
   const [companyInfo, setCompanyInfo] = useState<any>(null)
   const [user, setUser] = useState<any>(null)
-  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [conversations, setConversations] = useState<Conversation[]>(seededConvs ?? [])
   const [selected, setSelected] = useState<Conversation | null>(null)
   const selectedRef = useRef<Conversation | null>(null)
   const loadWooDataRef = useRef<((id: string | null) => void) | null>(null)
@@ -348,6 +353,25 @@ export default function InboxPage() {
   const [galleryFolder, setGalleryFolder] = useState<string | null>(null)
   const [gallerySearch, setGallerySearch] = useState('')
   const [gallerySelected, setGallerySelected] = useState<Set<string>>(new Set())
+  // Media the agent has attached but NOT yet sent — shown as preview cards above
+  // the composer and delivered only when Send is pressed (alongside any text).
+  const [stagedMedia, setStagedMedia] = useState<any[]>([])
+  // Per-item media-expiry choice, keyed by item id: 'forever' (default) | '1d' |
+  // '7d' | '30d' | a yyyy-mm-dd date. Absent = keep forever.
+  const [stagedExpiry, setStagedExpiry] = useState<Record<string, string>>({})
+  const [expiryMenuFor, setExpiryMenuFor] = useState<string | null>(null)
+  const [customDateFor, setCustomDateFor] = useState<string | null>(null)
+  // Advanced: also permanently delete the media from Colvy after it expires
+  // (access-only revocation is the default). Off unless explicitly turned on.
+  const [expiryDeleteMode, setExpiryDeleteMode] = useState(false)
+  // Voice note recording (works in reply and internal-note modes).
+  const [recording, setRecording] = useState(false)
+  const [recSeconds, setRecSeconds] = useState(0)
+  const [voiceUploading, setVoiceUploading] = useState(false)
+  const mediaRecRef = useRef<any>(null)
+  const recChunksRef = useRef<any[]>([])
+  const recTimerRef = useRef<any>(null)
+  const recCancelRef = useRef(false)
   const [couponAmount, setCouponAmount] = useState('')
   const [couponType, setCouponType] = useState<'fixed' | 'percent'>('fixed')
   const [couponCode, setCouponCode] = useState('')
@@ -380,6 +404,25 @@ export default function InboxPage() {
   const [locationFilter, setLocationFilter] = useState<string>('all')
   // All / Assigned to me / Unassigned tabs above the conversation list.
   const [assignFilter, setAssignFilter] = useState<'all' | 'mine' | 'unassigned' | 'unread'>('all')
+  // Coax-style arrow scrolling for the assignment strip: arrows appear only when
+  // the row overflows, and dim at each end.
+  const assignScrollRef = useRef<HTMLDivElement>(null)
+  const [assignArrows, setAssignArrows] = useState({ l: false, r: false })
+  const updateAssignArrows = useCallback(() => {
+    const el = assignScrollRef.current
+    if (!el) return
+    const l = el.scrollLeft > 2
+    const r = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
+    setAssignArrows(prev => (prev.l === l && prev.r === r) ? prev : { l, r })
+  }, [])
+  useEffect(() => {
+    updateAssignArrows()
+    const el = assignScrollRef.current
+    if (!el) return
+    el.addEventListener('scroll', updateAssignArrows, { passive: true })
+    window.addEventListener('resize', updateAssignArrows)
+    return () => { el.removeEventListener('scroll', updateAssignArrows); window.removeEventListener('resize', updateAssignArrows) }
+  }, [updateAssignArrows])
 
   // Persist the chosen location across navigation within Inbox & CRM.
   useEffect(() => {
@@ -762,7 +805,20 @@ export default function InboxPage() {
   const saveCard = async () => {
     if (!selected || !companyId) return
     try {
-      await cardsApi({ action: 'save_card' })
+      const isWidgetActive = activeChannel === 'widget' || activeChannel === 'chat'
+      const d = await cardsApi({ action: 'save_card', channel: isWidgetActive ? 'chat' : activeChannel })
+      // Off-site (SMS/email/Messenger): the in-chat card can't be tapped, so send
+      // the secure save-card link over the real channel. `silent` = the card is
+      // already the thread record (correct delivery_channel), no duplicate.
+      if (d?.url && !isWidgetActive) {
+        try {
+          await deliverToCustomer({
+            subject: `${companyInfo?.name || 'We'} — save your card securely`,
+            body: 'Please save your card securely with Stripe — we\'ll never see your card details:',
+            url: d.url, silent: true,
+          })
+        } catch (e: any) { showToast(`Saved, but sending failed: ${e.message}`) }
+      }
       const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
       setMessages(msgs || [])
       scrollBottom()
@@ -820,6 +876,38 @@ export default function InboxPage() {
   }, [messages, selected?.id, (selected as any)?.channel])
 
   const isWebChat = ['widget', 'chat'].includes(activeChannel)
+
+  // Is a payment in this thread still awaiting settlement?
+  const hasPendingPayment = useMemo(
+    () => messages.some((m: any) => m.message_type === 'payment' && m.message_payload?.status && m.message_payload.status !== 'paid'),
+    [messages]
+  )
+
+  // While a payment is pending in the OPEN conversation, reconcile it straight
+  // from Stripe every ~12s (verify-payment doesn't rely on the webhook). The
+  // moment it settles, the card flips to PAID and the "Payment received" line
+  // appears — no manual reload needed. Stops as soon as nothing is pending.
+  useEffect(() => {
+    if (!hasPendingPayment || !selected?.id || !companyId) return
+    const convId = selected.id
+    let stopped = false
+    const tick = async () => {
+      try {
+        const r = await fetch('/api/stripe/verify-payment', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: convId, companyId }),
+        })
+        const d = await r.json().catch(() => ({}))
+        if (!stopped && d?.updated > 0 && selectedRef.current?.id === convId) {
+          const { data } = await (supabase as any).from('messages').select('*')
+            .eq('conversation_id', convId).order('created_at', { ascending: true })
+          if (data) setMessages(data)
+        }
+      } catch { /* keep polling */ }
+    }
+    const iv = setInterval(tick, 12000)
+    return () => { stopped = true; clearInterval(iv) }
+  }, [hasPendingPayment, selected?.id, companyId])
 
   // Load this contact's linked channels (same person across live chat / SMS /
   // Messenger / IG / WooCommerce) for the sidebar's "also reachable on" panel.
@@ -936,7 +1024,7 @@ export default function InboxPage() {
   const [orderDateFrom, setOrderDateFrom] = useState('')
   const [orderDateTo, setOrderDateTo] = useState('')
   const [showOrderSearch, setShowOrderSearch] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!seededConvs)
   // New chat features
   const [replyTo, setReplyTo] = useState<Message | null>(null)
   const [showEmoji, setShowEmoji] = useState(false)
@@ -944,6 +1032,9 @@ export default function InboxPage() {
   const [events, setEvents] = useState<any[]>([])
   const [notes, setNotes] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
+  // Collapsible Notes/Tasks panels (Coax-style headers with a chevron).
+  const [notesOpen, setNotesOpen] = useState(true)
+  const [tasksOpen, setTasksOpen] = useState(true)
   const [newNote, setNewNote] = useState('')
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editNoteText, setEditNoteText] = useState('')
@@ -1057,8 +1148,8 @@ export default function InboxPage() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user) return
       setUser(session.user)
-      let cid: string | null = null
-      if (typeof window !== 'undefined') {
+      let cid: string | null = seededCid
+      if (!cid && typeof window !== 'undefined') {
         const h = window.location.hostname
         if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
           const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
@@ -1087,6 +1178,12 @@ export default function InboxPage() {
     // NOTE: conversations.contact_id has no FK to contacts in some deployments,
     // so a PostgREST embed (`contacts(...)`) fails the WHOLE query and returns
     // nothing (blank inbox). Fetch conversations plainly, then attach contacts.
+    // Instant paint on revisit / filter switch: show the last list we rendered
+    // for this filter while the fresh rows load in the background.
+    const cacheKey = `inbox-convs:${id}:${statusFilter}`
+    const cachedConvs = readCache<Conversation[]>(cacheKey)
+    if (cachedConvs && cachedConvs.length) setConversations(cachedConvs)
+
     let q = (supabase as any).from('conversations').select('*').eq('company_id', id)
     // "Closed" covers closed + resolved; "Open" is everything else.
     if (statusFilter === 'closed') q = q.in('status', ['closed', 'resolved'])
@@ -1107,6 +1204,7 @@ export default function InboxPage() {
     }
 
     setConversations(convs)
+    writeCache(cacheKey, convs)
     // On first load (desktop), OPEN the top conversation — including its messages
     // and contact — instead of just highlighting it (which left the pane blank).
     if (data && data.length > 0 && !selectedRef.current && typeof window !== 'undefined' && window.innerWidth >= 768) {
@@ -1152,6 +1250,16 @@ export default function InboxPage() {
     return () => document.removeEventListener('mousedown', handler)
   }, [showAssignMenu, showActions, showCardAssign, showCardMore])
 
+  // Close the media-expiry selector when clicking elsewhere.
+  useEffect(() => {
+    if (!expiryMenuFor) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-expiry-picker]')) { setExpiryMenuFor(null); setCustomDateFor(null) }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [expiryMenuFor])
+
   // Realtime subscription to new messages / conversation updates
   useEffect(() => {
     if (!companyId) return
@@ -1189,12 +1297,22 @@ export default function InboxPage() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `company_id=eq.${companyId}` }, (payload: any) => {
         // selectedRef, not `selected` — the closure captured at subscribe time
         // would otherwise be stale and drop messages.
-        if (selectedRef.current?.id === payload.new.conversation_id) {
+        const isOpen = selectedRef.current?.id === payload.new.conversation_id
+        if (isOpen) {
           setMessages(prev => {
             if (prev.some((m: any) => m.id === payload.new.id)) return prev
             return [...prev, payload.new]
           })
           scrollBottom()
+          // The agent is looking at this thread, so anything landing in it is
+          // already "read". Clear its unread counter — this is what stopped the
+          // badge from climbing on the very conversation you're replying to (an
+          // inbound reply mid-chat, or your own outbound echoing back, used to
+          // bump/keep the count even though you'd obviously seen it).
+          ;(supabase as any).from('conversations')
+            .update({ is_unread: false, unread_count: 0 })
+            .eq('id', payload.new.conversation_id)
+            .then(() => loadConversationsRef.current(), () => {})
           // An order automation message means a new order just landed for this
           // customer. Refresh the order panel so the Orders tab populates
           // without a manual page reload.
@@ -1207,10 +1325,11 @@ export default function InboxPage() {
         // Float the conversation that just got a message to the top of the list
         // immediately, so an active thread that had drifted to the bottom (buried
         // by newer conversations) comes back up without waiting for a reload or a
-        // manual scroll.
+        // manual scroll. If it's the open thread, also zero its badge locally so
+        // it never flashes an unread count while you're in it.
         setConversations(prev => prev.map((c: any) =>
           c.id === payload.new.conversation_id
-            ? { ...c, last_message_at: payload.new.created_at || new Date().toISOString() }
+            ? { ...c, last_message_at: payload.new.created_at || new Date().toISOString(), ...(isOpen ? { is_unread: false, unread_count: 0 } : {}) }
             : c
         ))
         loadConversationsRef.current()
@@ -1362,6 +1481,10 @@ export default function InboxPage() {
     } catch { setAiSavedFields(new Set()) }
     setShowContactEdit(false)
     setReplyTo(null)
+    // Drop any staged-but-unsent media so it can't leak into another thread, and
+    // abandon an in-progress voice recording.
+    setStagedMedia([]); setStagedExpiry({}); setExpiryDeleteMode(false); setExpiryMenuFor(null); setCustomDateFor(null)
+    if (recording) { recCancelRef.current = true; if (recTimerRef.current) clearInterval(recTimerRef.current); try { mediaRecRef.current?.stop() } catch {}; setRecording(false) }
     setAiSummary((conv as any).ai_summary || '')
     setAiTodos((conv as any).ai_todos || [])
     // Load messages
@@ -1590,7 +1713,7 @@ export default function InboxPage() {
                 order_id: o.id, order_number: o.number, status: o.status, total: o.total,
                 currency: o.currency, order_date: o.date, customer_email: email,
                 line_items: o.items, integration_id: o.integration_id, store_url: o.store_url,
-                order_key: o.order_key, payment_url: o.payment_url, _live: true,
+                order_key: o.order_key, payment_url: o.payment_url, total_refunded: o.total_refunded || 0, _live: true,
               })
             }
           })
@@ -1705,7 +1828,11 @@ export default function InboxPage() {
   // routes to the right channel so every action doesn't reimplement it.
   //
   // Returns a human string describing what happened (for a toast), or throws.
-  const deliverToCustomer = async (opts: { body: string; url?: string | null; subject?: string }): Promise<string> => {
+  // Deliver a message/link over the customer's active channel. When `silent` is
+  // set, the caller has ALREADY recorded a thread message (e.g. a payment /
+  // save-card card with the right delivery_channel), so we just push the link out
+  // (skipChatMessage) without inserting a duplicate — and skip the widget insert.
+  const deliverToCustomer = async (opts: { body: string; url?: string | null; subject?: string; silent?: boolean }): Promise<string> => {
     if (!selected || !companyId) throw new Error('No conversation selected')
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
     const ch = activeChannel
@@ -1724,7 +1851,7 @@ export default function InboxPage() {
     if (ch === 'instagram' || ch === 'facebook') {
       const res = await fetch('/api/meta/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: selected.id, content: fullBody, agentName: me }),
+        body: JSON.stringify({ conversationId: selected.id, content: fullBody, agentName: me, skipChatMessage: !!opts.silent }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Message failed')
@@ -1735,21 +1862,23 @@ export default function InboxPage() {
     if (ch === 'sms' && smsNumber) {
       const res = await fetch('/api/telnyx/sms/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me }),
+        body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me, skipChatMessage: !!opts.silent }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'SMS failed')
       return 'Sent by SMS'
     }
 
-    // Live-chat widget (or anything else): drop it into the thread. Also text a
-    // copy if we happen to have a mobile, so they get it off the site too.
-    await (supabase as any).from('messages').insert({
-      conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
-      sender_id: user?.id, sender_name: me, content: fullBody,
-      delivery_channel: 'chat',
-    })
-    await (supabase as any).from('conversations').update({ last_message: opts.body.slice(0, 120), last_message_at: new Date().toISOString() }).eq('id', selected.id)
+    // Live-chat widget (or anything else). In silent mode the card is already in
+    // the thread — just text a copy if we have a mobile; don't insert again.
+    if (!opts.silent) {
+      await (supabase as any).from('messages').insert({
+        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+        sender_id: user?.id, sender_name: me, content: fullBody,
+        delivery_channel: 'chat',
+      })
+      await (supabase as any).from('conversations').update({ last_message: opts.body.slice(0, 120), last_message_at: new Date().toISOString() }).eq('id', selected.id)
+    }
     if (smsNumber) {
       try {
         await fetch('/api/telnyx/sms/send', {
@@ -1761,26 +1890,156 @@ export default function InboxPage() {
     return 'Sent in chat'
   }
 
-  const sendGalleryMedia = async () => {
-    if (!companyId || !selected || gallerySelected.size === 0) return
+  const sendingMediaRef = useRef(false)
+  // ── Media expiry helpers ────────────────────────────────────────────────────
+  // Resolve a per-item expiry code to an absolute timestamp at SEND time (so
+  // "7 days" counts from when it's actually sent, not when it was picked).
+  const resolveExpiry = (code?: string): string | null => {
+    if (!code || code === 'forever') return null
+    const day = 86400000
+    if (code === '1d') return new Date(Date.now() + day).toISOString()
+    if (code === '7d') return new Date(Date.now() + 7 * day).toISOString()
+    if (code === '30d') return new Date(Date.now() + 30 * day).toISOString()
+    // Custom date (yyyy-mm-dd) → end of that day.
+    const d = new Date(`${code}T23:59:59`)
+    return isNaN(d.getTime()) ? null : d.toISOString()
+  }
+  // Short label for the selector chip on a staged card.
+  const expiryChip = (code?: string): string => {
+    if (!code || code === 'forever') return 'Keep forever'
+    if (code === '1d') return '1 day'
+    if (code === '7d') return '7 days'
+    if (code === '30d') return '30 days'
+    const d = new Date(`${code}T00:00:00`)
+    return isNaN(d.getTime()) ? 'Keep forever' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  }
+  const anyExpiring = stagedMedia.some((m: any) => stagedExpiry[m.id] && stagedExpiry[m.id] !== 'forever')
+
+  // Stage the picked gallery media as preview cards above the composer instead of
+  // sending straight away. Nothing is delivered until Send is pressed.
+  const stageSelectedMedia = () => {
     const chosen = galleryItems.filter(it => gallerySelected.has(it.id))
+    if (chosen.length) {
+      setStagedMedia(prev => {
+        const have = new Set(prev.map((p: any) => p.id))
+        return [...prev, ...chosen.filter((c: any) => !have.has(c.id))]
+      })
+    }
+    setGallerySelected(new Set())
+    setShowMediaPicker(false)
+  }
+
+  // Normalise a staged item (gallery pick or uploaded file/voice note) into a
+  // message attachment.
+  const stagedToAttachment = (m: any) => m._attachment || {
+    url: m.url, name: m.title || 'media',
+    type: m.kind === 'video' ? 'video/mp4' : m.kind === 'audio' ? 'audio/webm' : 'image/jpeg',
+    kind: m.kind,
+    ...(m.thumbnail_url ? { thumbUrl: m.thumbnail_url } : {}),
+  }
+
+  // ── Voice notes ─────────────────────────────────────────────────────────────
+  const fmtRec = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+  const startVoiceNote = async () => {
+    if (recording || !selected || !companyId) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mr = new MediaRecorder(stream)
+      recChunksRef.current = []
+      recCancelRef.current = false
+      mr.ondataavailable = (e: any) => { if (e.data && e.data.size) recChunksRef.current.push(e.data) }
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop())
+        if (recCancelRef.current) { recChunksRef.current = []; return }
+        const type = mr.mimeType || 'audio/webm'
+        const blob = new Blob(recChunksRef.current, { type })
+        recChunksRef.current = []
+        if (!blob.size) return
+        await stageVoiceNote(blob, type)
+      }
+      mediaRecRef.current = mr
+      mr.start()
+      setRecording(true); setRecSeconds(0)
+      recTimerRef.current = setInterval(() => setRecSeconds(s => s + 1), 1000)
+    } catch {
+      showToast('Could not access the microphone — check the browser permission.')
+    }
+  }
+
+  const stopVoiceNote = (save: boolean) => {
+    if (recTimerRef.current) clearInterval(recTimerRef.current)
+    recCancelRef.current = !save
+    setRecording(false)
+    try { mediaRecRef.current?.stop() } catch {}
+  }
+
+  const stageVoiceNote = async (blob: Blob, type: string) => {
+    if (!companyId || !selected) return
+    const ext = /ogg/.test(type) ? 'ogg' : /mp4|m4a|aac/.test(type) ? 'm4a' : 'webm'
+    const file = new File([blob], `voice-note.${ext}`, { type })
+    setVoiceUploading(true)
+    try {
+      const a = await uploadAttachment(file, { companyId, conversationId: selected.id })
+      const item: any = {
+        id: `up_voice_${a.url || Math.random().toString(36).slice(2)}`,
+        title: 'Voice note', kind: 'audio',
+        url: a.url, thumbnail_url: '',
+        _upload: true, _voice: true, _attachment: { ...a, kind: 'audio', name: 'Voice note' },
+      }
+      setStagedMedia(prev => [...prev, item])
+    } catch {
+      showToast('Could not save the voice note.')
+    } finally { setVoiceUploading(false) }
+  }
+
+  const deliverMedia = async (chosen: any[]) => {
+    if (!companyId || !selected || chosen.length === 0) return
+    // Guard against a double-fire (fast double-click / re-entry) — that sent the
+    // same media into the thread twice.
+    if (sendingMediaRef.current) return
+    sendingMediaRef.current = true
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
     const smsNumber = smsDestination()
     try {
       for (const item of chosen) {
-        const attachment = { url: item.url, name: item.title || 'media', type: item.kind === 'video' ? 'video/mp4' : 'image/jpeg', kind: item.kind, from_gallery: true }
+        const attachment: any = { url: item.url, name: item.title || 'media', type: item.kind === 'video' ? 'video/mp4' : 'image/jpeg', kind: item.kind, from_gallery: true }
 
-        // On an SMS conversation, actually TEXT the customer a link to the media
-        // (as a short colvy.com/m/… viewer). Without this the media only appeared
-        // in the chat thread and the customer received nothing.
+        // Always deliver media over SMS as a branded /m/ viewer LINK, never a raw
+        // MMS attachment — Australian numbers (and Telnyx) don't carry MMS, so an
+        // attachment would silently vanish. The link renders the photo/video on a
+        // branded page, is trackable, and can carry an expiry.
+        const expiresAt: string | null = item._expiresAt || null
+        let viewerUrl = ''
+        try {
+          const lr = await fetch('/api/short-links/create', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId, kind: 'media', conversationId: selected.id,
+              url: item.url, mediaUrls: [attachment], label: attachment.name,
+              sentBy: me, channel: 'gallery',
+              ...(expiresAt ? { expiresAt, expiryMode: item._expiryMode || 'access' } : {}),
+            }),
+          })
+          const ld = await lr.json()
+          if (lr.ok && ld.url) viewerUrl = ld.url
+        } catch { /* fall back to the raw url below */ }
+        if (expiresAt) {
+          attachment.expires_at = expiresAt
+          attachment.expiry_mode = item._expiryMode || 'access'
+        }
+        if (viewerUrl) attachment.viewer_url = viewerUrl
+
+        // On an SMS conversation, TEXT the customer the viewer link (falling back
+        // to the raw media URL only if the short link couldn't be created).
         if (smsNumber) {
           try {
             const r = await fetch('/api/telnyx/sms/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 companyId, conversationId: selected.id, to: smsNumber,
-                text: '', attachments: [attachment], senderName: me,
-                skipChatMessage: true,
+                text: viewerUrl || item.url, attachments: [],
+                senderName: me, skipChatMessage: true,
               }),
             })
             const rd = await r.json()
@@ -1799,8 +2058,125 @@ export default function InboxPage() {
       await (supabase as any).from('conversations').update({ last_message: '🖼️ Media', last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', selected.id)
       const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
       setMessages(msgs || [])
-      setShowMediaPicker(false); scrollBottom()
+      scrollBottom()
     } catch (e: any) { showToast('Could not send media') }
+    finally { sendingMediaRef.current = false }
+  }
+
+  // Deliver a batch of already-uploaded attachments to a conversation across the
+  // right channel (SMS link / Meta / email / chat), inserting one thread message
+  // that carries them. Extracted so it can run either straight after an upload
+  // (documents) or from Send (staged media). Honors an optional media expiry.
+  const deliverUploadedAttachments = async (
+    attachments: any[],
+    opts: { convId: string; smsNumber: string | null; metaCh: string; me: any; content?: string; expiresAt?: string | null; expiryMode?: string },
+  ) => {
+    const { convId, smsNumber, metaCh, me } = opts
+    const expiresAt = opts.expiresAt || null
+    const expiryMode = opts.expiryMode === 'delete' ? 'delete' : 'access'
+    if (!attachments.length) return
+
+    const media = attachments.filter(a => a.kind === 'image' || a.kind === 'video')
+    const plainFiles = attachments.filter(a => a.kind !== 'image' && a.kind !== 'video')
+
+    // One branded gallery link for all the media (carries the expiry, so its
+    // access is revoked at expiry and SMS/email link there instead of the raw file).
+    let galleryUrl = ''
+    if (media.length > 0) {
+      try {
+        const res = await fetch('/api/short-links/create', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId, kind: 'media',
+            url: media[0].url,
+            mediaUrls: media,
+            label: media.length > 1 ? `${media.length} photos` : (media[0].kind === 'video' ? 'Video' : 'Photo'),
+            conversationId: convId,
+            sentBy: me,
+            ...(expiresAt ? { expiresAt, expiryMode } : {}),
+          }),
+        })
+        const d = await readJsonSafe(res)
+        if (res.ok && d.url) galleryUrl = d.url
+        else console.warn('[media send] gallery link failed:', d.error)
+      } catch (e) { console.warn('[media send] gallery link error:', e) }
+    }
+
+    // ── Deliver ────────────────────────────────────────────────────────
+    if (smsNumber && !['instagram', 'facebook', 'email'].includes(metaCh)) {
+      const parts: string[] = []
+      if (galleryUrl) parts.push(galleryUrl)
+      for (const f of plainFiles) parts.push(`📎 ${f.name}: ${f.url}`)
+      try {
+        const r = await fetch('/api/telnyx/sms/send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId, conversationId: convId, to: smsNumber,
+            text: parts.join('\n'),
+            attachments: [],
+            senderName: me, skipChatMessage: true,
+          }),
+        })
+        const rd = await readJsonSafe(r)
+        if (!r.ok) showToast(`Saved to the chat, but the SMS failed: ${rd.error || 'unknown error'}`)
+      } catch { showToast('Saved to the chat, but the SMS failed to send.') }
+    } else if (metaCh === 'instagram' || metaCh === 'facebook') {
+      for (const a of attachments) {
+        try {
+          const r = await fetch('/api/meta/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              conversationId: convId, attachmentUrl: a.url, attachmentKind: a.kind,
+              content: '', agentName: me, skipChatMessage: true,
+            }),
+          })
+          const rd = await readJsonSafe(r)
+          if (!r.ok) showToast(`Photo NOT delivered — ${rd.error || 'unknown error'}`)
+        } catch (e: any) { showToast(`Photo NOT delivered: ${e?.message || 'send failed'}`) }
+      }
+    } else if (metaCh === 'email') {
+      try {
+        const body = galleryUrl
+          ? `${media.length > 1 ? `${media.length} photos` : 'Photo'} attached:\n${galleryUrl}`
+          : attachments.map(a => `${a.name}:\n${a.url}`).join('\n\n')
+        const r = await fetch('/api/email/reply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: convId, agentName: me, content: body }),
+        })
+        const rd = await readJsonSafe(r)
+        if (!r.ok) showToast(`Email NOT sent — ${rd.error || 'unknown error'}`)
+      } catch (e: any) { showToast(`Email NOT sent: ${e?.message || 'failed'}`) }
+    }
+
+    // Stamp the expiry onto each attachment so the thread shows the badge.
+    const stamped = expiresAt
+      ? attachments.map(a => ({ ...a, expires_at: expiresAt, expiry_mode: expiryMode, ...(galleryUrl ? { viewer_url: galleryUrl } : {}) }))
+      : attachments
+
+    // ── One message carrying all of it ─────────────────────────────────
+    const { data: attMsg } = await (supabase as any).from('messages').insert({
+      conversation_id: convId, company_id: companyId, sender_type: 'agent',
+      sender_id: user.id, sender_name: me, sender_email: user.email,
+      content: plainFiles.length && !media.length ? plainFiles.map(f => `📎 ${f.name}`).join('\n') : '',
+      attachments: stamped,
+      metadata: galleryUrl ? { gallery_url: galleryUrl } : {},
+      delivery_channel: ['instagram', 'facebook', 'email'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
+    }).select().maybeSingle()
+    if (attMsg) broadcastMessage(convId, attMsg)
+
+    await (supabase as any).from('conversations').update({
+      last_message: media.length ? (media.length > 1 ? `🖼️ ${media.length} photos` : '🖼️ Photo') : '📎 Attachment',
+      last_message_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }).eq('id', convId)
+
+    // Only refresh the thread if the agent is still looking at it.
+    if (selectedRef.current?.id === convId) {
+      const { data: msgs } = await (supabase as any).from('messages')
+        .select('*').eq('conversation_id', convId).order('created_at', { ascending: true })
+      setMessages(msgs || [])
+      scrollBottom()
+    }
+    loadConversations()
   }
 
   // ── File upload ────────────────────────────────────────────────────────────
@@ -1808,120 +2184,65 @@ export default function InboxPage() {
     if (!files || files.length === 0 || !selected || !companyId) return
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0]
 
-    // Hand the files to the background queue and return immediately. The
-    // composer stays usable, you can switch conversations, and each file
-    // retries itself if the connection drops — which used to lose the whole
-    // batch. Everything below runs once the uploads settle.
-    const conv = selected            // capture: the agent may move on
+    // Capture: the agent may switch conversations before uploads settle.
+    const conv = selected
     const convId = conv.id
     const smsNumber = smsDestination()
     const metaCh = activeChannel
 
-    uploadQueue.enqueue(
-      Array.from(files),
-      { companyId, conversationId: convId },
-      async (attachments, failed) => {
-        if (attachments.length === 0) {
-          showToast(failed.length ? 'Nothing uploaded — tap Try again.' : 'Nothing to send')
-          return
-        }
+    const arr = Array.from(files)
+    const isMedia = (f: File) => /^image\//.test(f.type) || /^video\//.test(f.type)
+    const mediaFiles = arr.filter(isMedia)
+    const docFiles = arr.filter(f => !isMedia(f))
 
-        const media = attachments.filter(a => a.kind === 'image' || a.kind === 'video')
-        const plainFiles = attachments.filter(a => a.kind !== 'image' && a.kind !== 'video')
-
-        // One branded gallery link for all the media.
-        let galleryUrl = ''
-        if (media.length > 0) {
-          try {
-            const res = await fetch('/api/short-links/create', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                companyId, kind: 'media',
-                url: media[0].url,
-                mediaUrls: media,
-                label: media.length > 1 ? `${media.length} photos` : (media[0].kind === 'video' ? 'Video' : 'Photo'),
-                conversationId: convId,
-                sentBy: me,
-              }),
-            })
-            const d = await readJsonSafe(res)
-            if (res.ok && d.url) galleryUrl = d.url
-            else console.warn('[media send] gallery link failed:', d.error)
-          } catch (e) { console.warn('[media send] gallery link error:', e) }
-        }
-
-        // ── Deliver ────────────────────────────────────────────────────────
-        if (smsNumber && !['instagram', 'facebook', 'email'].includes(metaCh)) {
-          const parts: string[] = []
-          if (galleryUrl) parts.push(galleryUrl)
-          for (const f of plainFiles) parts.push(`📎 ${f.name}: ${f.url}`)
-          try {
-            const r = await fetch('/api/telnyx/sms/send', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                companyId, conversationId: convId, to: smsNumber,
-                text: parts.join('\n'),
-                attachments: [],
-                senderName: me, skipChatMessage: true,
-              }),
-            })
-            const rd = await readJsonSafe(r)
-            if (!r.ok) showToast(`Saved to the chat, but the SMS failed: ${rd.error || 'unknown error'}`)
-          } catch { showToast('Saved to the chat, but the SMS failed to send.') }
-        } else if (metaCh === 'instagram' || metaCh === 'facebook') {
-          for (const a of attachments) {
-            try {
-              const r = await fetch('/api/meta/send', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  conversationId: convId, attachmentUrl: a.url, attachmentKind: a.kind,
-                  content: '', agentName: me, skipChatMessage: true,
-                }),
-              })
-              const rd = await readJsonSafe(r)
-              if (!r.ok) showToast(`Photo NOT delivered — ${rd.error || 'unknown error'}`)
-            } catch (e: any) { showToast(`Photo NOT delivered: ${e?.message || 'send failed'}`) }
+    // Media → STAGE as preview cards above the composer once uploaded, and send
+    // only when the agent presses Send (with any typed caption / chosen expiry).
+    // Matches how the gallery picker attaches media.
+    if (mediaFiles.length) {
+      uploadQueue.enqueue(
+        mediaFiles,
+        { companyId, conversationId: convId },
+        async (attachments, failed) => {
+          if (failed.length) showToast(`${failed.length} file${failed.length === 1 ? '' : 's'} failed to upload.`)
+          if (!attachments.length) return
+          // If the agent has since moved to another conversation, staging into
+          // the current view would be wrong — deliver to the original thread
+          // instead so nothing is lost.
+          if (selectedRef.current?.id !== convId) {
+            await deliverUploadedAttachments(attachments, { convId, smsNumber, metaCh, me })
+            return
           }
-        } else if (metaCh === 'email') {
-          try {
-            const body = galleryUrl
-              ? `${media.length > 1 ? `${media.length} photos` : 'Photo'} attached:\n${galleryUrl}`
-              : attachments.map(a => `${a.name}:\n${a.url}`).join('\n\n')
-            const r = await fetch('/api/email/reply', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ conversationId: convId, agentName: me, content: body }),
-            })
-            const rd = await readJsonSafe(r)
-            if (!r.ok) showToast(`Email NOT sent — ${rd.error || 'unknown error'}`)
-          } catch (e: any) { showToast(`Email NOT sent: ${e?.message || 'failed'}`) }
-        }
+          const staged = attachments.map((a: any, i: number) => ({
+            id: `up_${i}_${a.url || a.name}`,
+            title: a.name || 'media',
+            kind: a.kind,
+            url: a.url,
+            thumbnail_url: a.thumbUrl || a.url,
+            _upload: true,
+            _attachment: a,
+          }))
+          setStagedMedia(prev => {
+            const have = new Set(prev.map((p: any) => p.id))
+            return [...prev, ...staged.filter((s: any) => !have.has(s.id))]
+          })
+        },
+      )
+    }
 
-        // ── One message carrying all of it ─────────────────────────────────
-        const { data: attMsg } = await (supabase as any).from('messages').insert({
-          conversation_id: convId, company_id: companyId, sender_type: 'agent',
-          sender_id: user.id, sender_name: me, sender_email: user.email,
-          content: plainFiles.length && !media.length ? plainFiles.map(f => `📎 ${f.name}`).join('\n') : '',
-          attachments,
-          metadata: galleryUrl ? { gallery_url: galleryUrl } : {},
-          delivery_channel: ['instagram', 'facebook', 'email'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
-        }).select().maybeSingle()
-        if (attMsg) broadcastMessage(convId, attMsg)
-
-        await (supabase as any).from('conversations').update({
-          last_message: media.length ? (media.length > 1 ? `🖼️ ${media.length} photos` : '🖼️ Photo') : '📎 Attachment',
-          last_message_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-        }).eq('id', convId)
-
-        // Only refresh the thread if the agent is still looking at it.
-        if (selectedRef.current?.id === convId) {
-          const { data: msgs } = await (supabase as any).from('messages')
-            .select('*').eq('conversation_id', convId).order('created_at', { ascending: true })
-          setMessages(msgs || [])
-          scrollBottom()
-        }
-        loadConversations()
-      },
-    )
+    // Documents → keep the original immediate send (they aren't "media" to preview).
+    if (docFiles.length) {
+      uploadQueue.enqueue(
+        docFiles,
+        { companyId, conversationId: convId },
+        async (attachments, failed) => {
+          if (attachments.length === 0) {
+            showToast(failed.length ? 'Nothing uploaded — tap Try again.' : 'Nothing to send')
+            return
+          }
+          await deliverUploadedAttachments(attachments, { convId, smsNumber, metaCh, me })
+        },
+      )
+    }
   }
 
   // ── Notes & Tasks ──────────────────────────────────────────────────────────
@@ -2003,23 +2324,50 @@ export default function InboxPage() {
     </div>
   )
 
-  // A composer with a small submit button tucked inside the box (Coax-style),
+  // A composer with a round submit button tucked into the corner (Coax-style),
   // replacing the separate Add button. Enter submits single-line composers.
-  const composerBox = (o: { value: string; onChange: (v: string) => void; onSubmit: () => void; placeholder: string; multiline?: boolean; rows?: number }) => (
+  const composerBox = (o: { value: string; onChange: (v: string) => void; onSubmit: () => void; placeholder: string; multiline?: boolean; rows?: number }) => {
+    const active = !!o.value.trim()
+    return (
     <div style={{ position: 'relative' }}>
       <MentionInput value={o.value} onChange={o.onChange} team={teamMembers as any}
         multiline={o.multiline} rows={o.rows} placeholder={o.placeholder} onSubmit={o.onSubmit}
-        style={{ padding: '10px 44px 10px 12px', fontSize: 13, lineHeight: 1.5 }} />
-      <button type="button" onClick={o.onSubmit} title="Add"
-        style={{ position: 'absolute', right: 7, bottom: 7, width: 30, height: 30, borderRadius: 8, border: 'none', background: o.value.trim() ? 'var(--coral)' : '#e5e7eb', color: '#fff', cursor: o.value.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'background 0.12s' }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        style={{ padding: '11px 46px 11px 13px', fontSize: 13, lineHeight: 1.5, borderRadius: 12 }} />
+      <button type="button" onClick={o.onSubmit} title="Send" disabled={!active}
+        style={{ position: 'absolute', right: 8, bottom: 8, width: 30, height: 30, borderRadius: '50%', border: 'none', background: active ? 'var(--coral)' : '#eef0f2', color: active ? '#fff' : '#9aa1ab', cursor: active ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'all 0.14s', boxShadow: active ? '0 1px 4px rgba(255,122,107,0.4)' : 'none' }}>
+        {/* Return/enter arrow — matches the Coax composer affordance. */}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg>
       </button>
     </div>
-  )
+    )
+  }
+
+  // Render plain message text with any URLs turned into clickable, selectable
+  // links. Admin chat used to show tracking/short links as dead text that you
+  // couldn't open or easily copy. Links inherit the bubble's colour and stay
+  // underlined so they read as links on both agent and visitor bubbles.
+  const renderTextWithLinks = (text: string) => {
+    if (!text) return text
+    const parts = text.split(/(https?:\/\/[^\s]+)/g)
+    return parts.map((part, i) =>
+      /^https?:\/\//.test(part) ? (
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          style={{ color: 'inherit', textDecoration: 'underline', wordBreak: 'break-all' }}>{part}</a>
+      ) : (
+        <span key={i}>{part}</span>
+      )
+    )
+  }
 
   const renderNotesSection = () => (
     <div style={{ marginBottom: 18 }}>
-      <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Notes</h3>
+      <button type="button" onClick={() => setNotesOpen(v => !v)} aria-expanded={notesOpen}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', margin: '0 0 8px', padding: 0, background: 'none', border: 'none', cursor: 'pointer' }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Notes</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, transform: notesOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.18s ease' }}><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {notesOpen && <>
       {notes.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No notes.</p>}
       {notes.map(n => (
         <div key={n.id} style={{ padding: '10px 12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', marginBottom: 8 }}>
@@ -2046,6 +2394,7 @@ export default function InboxPage() {
       <div style={{ marginTop: 6 }}>
         {composerBox({ value: newNote, onChange: (v) => setNewNote(v), onSubmit: addNote, placeholder: 'Add a note… use @ to mention someone', multiline: true, rows: 2 })}
       </div>
+      </>}
     </div>
   )
   const addTask = async () => {
@@ -2114,7 +2463,12 @@ export default function InboxPage() {
   // conversation_tasks store, with assignment, @mention and copy/edit/delete.
   const renderTasksSection = () => (
     <div style={{ marginBottom: 18 }}>
-      <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Tasks</h3>
+      <button type="button" onClick={() => setTasksOpen(v => !v)} aria-expanded={tasksOpen}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', margin: '0 0 8px', padding: 0, background: 'none', border: 'none', cursor: 'pointer' }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Tasks</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, transform: tasksOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.18s ease' }}><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {tasksOpen && <>
       {tasks.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No tasks.</p>}
       {tasks.map(t => (
         <div key={t.id} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)', marginBottom: 8 }}>
@@ -2151,6 +2505,7 @@ export default function InboxPage() {
           {teamMembers.map((m: any) => (<option key={m.id} value={m.id}>{m.name}</option>))}
         </select>
       </div>
+      </>}
     </div>
   )
 
@@ -2211,12 +2566,55 @@ export default function InboxPage() {
         ? `We'd love your feedback! Could you take a moment to leave us a review? ⭐\n${reviewShortLink}`
         : "We'd love your feedback! Could you take a moment to leave us a review? ⭐"
 
-      await (supabase as any).from('messages').insert({
-        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
-        sender_id: user.id, sender_name: me,
-        content: body,
-        metadata: { review_request: true },
-      })
+      // Actually DELIVER it over the channel that reaches the customer — the
+      // same routing the composer uses. The old version only inserted a chat
+      // row (no delivery, no delivery_channel), so on an SMS/email customer it
+      // sent nothing and showed as "Live Chat".
+      const smsNumber = smsDestination()
+      const metaCh = activeChannel
+      let delivered = 'chat'
+
+      if (metaCh === 'email') {
+        // The email route inserts the thread message itself — pass the metadata
+        // so it still renders as the review card. Don't also insert below.
+        const r = await fetch('/api/email/reply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: selected.id, content: body, agentName: me, subject: "We'd love your feedback ⭐", metadata: { review_request: true } }),
+        })
+        if (!r.ok) { const d = await r.json().catch(() => ({})); showToast(`Review request NOT emailed — ${d.error || 'failed'}`) }
+        delivered = 'email'
+      } else if (metaCh === 'instagram' || metaCh === 'facebook') {
+        try {
+          const r = await fetch('/api/meta/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversationId: selected.id, content: body, agentName: me, skipChatMessage: true }),
+          })
+          if (!r.ok) { const d = await r.json().catch(() => ({})); showToast(`Review request NOT sent — ${d.error || 'failed'}`) }
+        } catch { showToast('Review request failed to send.') }
+        delivered = metaCh
+      } else if (smsNumber) {
+        try {
+          const r = await fetch('/api/telnyx/sms/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName: me, skipChatMessage: true }),
+          })
+          if (!r.ok) { const d = await r.json().catch(() => ({})); showToast(`Review request saved, but the SMS failed: ${d.error || 'unknown error'}`) }
+        } catch { showToast('Review request saved, but the SMS failed to send.') }
+        delivered = 'sms'
+      }
+      // else: live-chat widget only — the thread message below IS the delivery.
+
+      // For every channel except email (which already inserted its own row),
+      // record the thread message with the review-card metadata + real channel.
+      if (metaCh !== 'email') {
+        await (supabase as any).from('messages').insert({
+          conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+          sender_id: user.id, sender_name: me,
+          content: body,
+          metadata: { review_request: true },
+          delivery_channel: delivered,
+        })
+      }
       await (supabase as any).from('conversations').update({ review_requested: true, last_message_at: new Date().toISOString() }).eq('id', selected.id)
       logEvent('review_request', 'Review request sent')
       const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
@@ -2674,8 +3072,30 @@ export default function InboxPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Refund failed')
-      showToast(`Refunded $${Number(data.amount || totalRefund).toFixed(2)}`)
+      const amt = Number(data.amount || totalRefund)
+      showToast(`Refunded $${amt.toFixed(2)}`)
       setRefundModal(null)
+      // Reflect the refund in the order panel immediately (the live refetch below
+      // confirms it), so the order shows Partially refunded / Refunded right away.
+      setWooOrders(prev => prev.map((o: any) => {
+        const oid = o.order_id ?? o.woo_order_id ?? o.id
+        if (String(oid) !== String(m.orderId)) return o
+        const refunded = (Number(o.total_refunded) || 0) + amt
+        const full = refunded + 0.005 >= (parseFloat(o.total) || 0)
+        return { ...o, total_refunded: refunded, status: full ? 'refunded' : o.status }
+      }))
+      // Leave a visible trace in the conversation (WooCommerce keeps its own note;
+      // this one shows up in the Colvy thread so the team sees what happened).
+      if (selected) {
+        try {
+          const nm = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Colvy'
+          await (supabase as any).from('messages').insert({
+            conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+            sender_name: nm, is_internal: true,
+            content: `💸 Refunded $${amt.toFixed(2)} on order #${m.orderNumber}${m.reason ? ` — ${m.reason}` : ''}.`,
+          })
+        } catch {}
+      }
       if (selected) { loadWooData(contact?.id || null); loadConversationExtras(selected.id) }
     } catch (e) {
       alert('Could not issue the refund: ' + e.message)
@@ -2772,6 +3192,39 @@ export default function InboxPage() {
       showToast(`Order #${payload.order_number} updated`)
       if (selected) selectConversation(selected)
     } catch (e: any) { showToast(e.message || 'Failed to update order') }
+  }
+
+  // One-tap "Request media" — used by the hint card when a customer's MMS
+  // couldn't be received. Creates a media request with sensible defaults (photos
+  // + videos) and texts the secure upload link, no modal.
+  const [quickMrBusy, setQuickMrBusy] = useState(false)
+  const requestMediaQuick = async () => {
+    if (!companyId || !selected || quickMrBusy) return
+    setQuickMrBusy(true)
+    try {
+      const res = await fetch('/api/media-requests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId, conversationId: selected.id, contactId: contact?.id,
+          prompt: 'Please upload your photos or videos here.',
+          accept: ['image', 'video'], maxFiles: 10, expiryHours: null,
+          createdBy: user?.user_metadata?.display_name || user?.email?.split('@')[0],
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not create request')
+      let how = 'sent'
+      if (activeChannel !== 'widget' && activeChannel !== 'chat' && data.link) {
+        how = await deliverToCustomer({
+          subject: `${companyInfo?.name || 'We'} need a few files from you`,
+          body: 'Please upload your photos or videos here:',
+          url: data.link,
+        })
+      }
+      showToast(`Upload link ${how.toLowerCase()}`)
+      selectConversation(selected)
+    } catch (e: any) { showToast(e.message || 'Could not send the upload link') }
+    finally { setQuickMrBusy(false) }
   }
 
   const sendMediaRequest = async () => {
@@ -2979,32 +3432,36 @@ export default function InboxPage() {
     if (!selected || !companyId) return
     const senderName = user?.user_metadata?.display_name || user?.email?.split('@')[0]
     const title = item.question || item.title || item.name || `${kind}`
-    const smsNumber = (selected as any).sms_number
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
     const link = `${origin.replace(/admin\..*/, '')}/widget?slug=${(selected as any).company_slug || ''}&conversation=${selected.id}`
 
-    await (supabase as any).from('messages').insert({
-      conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
-      sender_id: user.id, sender_name: senderName,
-      content: `📋 ${title}`,
-      message_type: kind,
-      message_payload: { kind, ref_id: item.id, title, options: item.options || null },
-    })
-    await (supabase as any).from('conversations').update({ last_message: `📋 ${title}`, last_message_at: new Date().toISOString() }).eq('id', selected.id)
+    // The interactive card only renders INSIDE the live-chat widget. So only drop
+    // it into the thread when the customer is actually in the widget. Otherwise
+    // (SMS / email / Messenger / Instagram) just send a tap-to-respond LINK over
+    // their real channel — like sending a photo — with no misleading "sent to
+    // Live Chat" card.
+    const isWidgetActive = activeChannel === 'widget' || activeChannel === 'chat'
 
-    // For any non-widget channel, send a link to respond (the interactive card
-    // only renders inside the live-chat widget). Was SMS-only before.
-    if (activeChannel !== 'widget' && activeChannel !== 'chat') {
+    if (isWidgetActive) {
+      await (supabase as any).from('messages').insert({
+        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+        sender_id: user.id, sender_name: senderName,
+        content: `📋 ${title}`,
+        message_type: kind,
+        message_payload: { kind, ref_id: item.id, title, options: item.options || null },
+        delivery_channel: 'chat',
+      })
+      await (supabase as any).from('conversations').update({ last_message: `📋 ${title}`, last_message_at: new Date().toISOString() }).eq('id', selected.id)
+    } else {
+      // deliverToCustomer sends over the active channel and records the message
+      // with the true delivery_channel (SMS/email/Meta) — no Live-Chat card.
       try {
         await deliverToCustomer({
           subject: title,
           body: `${title}\nTap to respond:`,
           url: link,
         })
-      } catch (e: any) { showToast(`Saved, but sending failed: ${e.message}`) }
-    } else if (smsNumber) {
-      const body = `${title}\nTap to respond: ${link}\n\nOr get our app: https://colvy.com/app`
-      try { await fetch('/api/telnyx/sms/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName }) }) } catch {}
+      } catch (e: any) { showToast(`Could not send the ${kind}: ${e.message}`) }
     }
     setSendPicker(null)
     const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
@@ -3016,20 +3473,24 @@ export default function InboxPage() {
     if (!selected || !companyId || !payAmount) return
     const senderName = user?.user_metadata?.display_name || user?.email?.split('@')[0]
     try {
+      const isWidgetActive = activeChannel === 'widget' || activeChannel === 'chat'
       const res = await fetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName }),
+        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : activeChannel }),
       })
       const data = await res.json()
       if (!res.ok) { alert(data.error || 'Could not create payment'); return }
-      // On non-widget channels the payment card can't render — send the pay
-      // link over the customer's channel. (Was SMS-only.)
-      if (data.checkoutUrl && activeChannel !== 'widget' && activeChannel !== 'chat') {
+      // Off-site (SMS/email/Messenger): the payment card can't render, so text the
+      // pay link over their real channel. `silent` = the card (already inserted
+      // server-side with the correct delivery_channel) is the thread record, so we
+      // don't insert a duplicate.
+      if (data.checkoutUrl && !isWidgetActive) {
         try {
           await deliverToCustomer({
             subject: `Payment request from ${companyInfo?.name || 'us'}`,
             body: `Payment request: $${parseFloat(payAmount).toFixed(2)} AUD${payDesc ? ` — ${payDesc}` : ''}\nPay securely:`,
             url: data.checkoutUrl,
+            silent: true,
           })
         } catch (e) { showToast(`Payment created, but sending failed: ${(e as any).message}`) }
       }
@@ -3153,7 +3614,7 @@ export default function InboxPage() {
   }
 
   const sendReply = async () => {
-    if (!reply.trim() || !selected || !user) return
+    if ((!reply.trim() && stagedMedia.length === 0) || !selected || !user) return
     setSending(true)
     const content = reply.trim()
     const senderName = user.user_metadata?.display_name || user.email?.split('@')[0]
@@ -3161,6 +3622,35 @@ export default function InboxPage() {
     // An internal note isn't taking the customer on, so it doesn't claim the
     // conversation — only a customer-facing reply does.
     if (!internalMode) claimIfUnassigned()
+
+    // Deliver any attached-but-unsent gallery media first (internal notes never
+    // carry customer-facing media). If there's no accompanying text, we're done.
+    if (!internalMode && stagedMedia.length > 0) {
+      // Gallery-picked items deliver per-item (SMS + chat, per-item expiry);
+      // uploaded files deliver as a batch through the richer path (SMS/Meta/
+      // email, one gallery link). Split them and handle each.
+      const galleryItems = stagedMedia.filter((m: any) => !m._upload)
+      const uploadItems = stagedMedia.filter((m: any) => m._upload)
+      const galleryToSend = galleryItems.map((it: any) => ({
+        ...it,
+        _expiresAt: resolveExpiry(stagedExpiry[it.id]),
+        _expiryMode: expiryDeleteMode ? 'delete' : 'access',
+      }))
+      // The uploaded batch shares one link, so use the earliest chosen expiry.
+      const upExpiry = uploadItems
+        .map((m: any) => resolveExpiry(stagedExpiry[m.id]))
+        .filter(Boolean)
+        .sort()[0] || null
+      setStagedMedia([]); setStagedExpiry({}); setExpiryDeleteMode(false)
+      if (galleryToSend.length) await deliverMedia(galleryToSend)
+      if (uploadItems.length) {
+        await deliverUploadedAttachments(uploadItems.map((u: any) => u._attachment), {
+          convId: selected.id, smsNumber: smsDestination(), metaCh: activeChannel, me: senderName,
+          expiresAt: upExpiry, expiryMode: expiryDeleteMode ? 'delete' : 'access',
+        })
+      }
+      if (!content) { setSending(false); return }
+    }
 
     // ── Internal staff-only note ────────────────────────────────────────────
     // Written straight to the messages table with is_internal = true and never
@@ -3181,10 +3671,15 @@ export default function InboxPage() {
           })
           .map((m: any) => m.user_id)
         const mentionedIds = Array.from(new Set([...typed, ...picked].filter(Boolean))) as string[]
+        // A voice note (or any staged media) rides along with the note, staying
+        // internal — never handed to a delivery channel.
+        const noteAttachments = stagedMedia.map(stagedToAttachment)
+        setStagedMedia([]); setStagedExpiry({}); setExpiryDeleteMode(false)
         const { data: inserted } = await (supabase as any).from('messages').insert({
           conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
           sender_name: senderName, content, is_internal: true,
           mentions: mentionedIds,
+          ...(noteAttachments.length ? { attachments: noteAttachments } : {}),
         }).select().maybeSingle()
 
         // Notify anyone @mentioned in the note.
@@ -4184,8 +4679,14 @@ export default function InboxPage() {
       <style>{`
         @keyframes doaSlideIn { from { transform: translate(100%, -50%); } to { transform: translate(0, -50%); } }
         @keyframes typingDot { 0%, 60%, 100% { opacity: 0.25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes recPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
         @keyframes livePulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.6); } 50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(34,197,94,0); } }
         .ai-spark:hover .ai-tip { opacity: 1 !important; }
+        /* Hide the assignment-strip scrollbar on every screen size — the chevron
+           buttons drive scrolling now, so the raw grey scrollbar isn't wanted. */
+        .inbox-assign-tabs { scrollbar-width: none; -ms-overflow-style: none; }
+        .inbox-assign-tabs::-webkit-scrollbar { display: none; width: 0; height: 0; }
       `}</style>
 
       {/* Forward media to another contact */}
@@ -4347,6 +4848,8 @@ export default function InboxPage() {
               {products.map(p => {
                 const onSale = p.on_sale && p.sale_price
                 const price = onSale ? p.sale_price : (p.price || p.regular_price)
+                // WooCommerce returns prices like "17.9500" — show 2 decimals ($17.95).
+                const fmtPrice = (v: any) => { const n = parseFloat(v); return isNaN(n) ? (v ?? '') : n.toFixed(2) }
                 const inStock = p.stock_status === 'instock'
                 return (
                   <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: '#fff' }}>
@@ -4357,8 +4860,8 @@ export default function InboxPage() {
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.35 }}>{p.name}</p>
                         <p style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>${price}</span>
-                          {onSale && <span style={{ fontSize: 11.5, color: '#9ca3af', textDecoration: 'line-through' }}>${p.regular_price}</span>}
+                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>${fmtPrice(price)}</span>
+                          {onSale && <span style={{ fontSize: 11.5, color: '#9ca3af', textDecoration: 'line-through' }}>${fmtPrice(p.regular_price)}</span>}
                           <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 5, background: inStock ? '#dcfce7' : '#fee2e2', color: inStock ? '#15803d' : '#dc2626' }}>
                             {inStock ? (p.manage_stock && p.stock_quantity != null ? `${p.stock_quantity} in stock` : 'In stock') : 'Out of stock'}
                           </span>
@@ -4925,9 +5428,21 @@ export default function InboxPage() {
             <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
               <div style={{ width: 170, borderRight: '1px solid var(--border)', padding: 12, overflowY: 'auto', flexShrink: 0 }}>
                 <button onClick={() => loadGalleryFolder(null)} style={folderBtnInbox(galleryFolder === null)}>All media</button>
-                {galleryFolders.map(f => (
-                  <button key={f.id} onClick={() => loadGalleryFolder(f.id)} style={folderBtnInbox(galleryFolder === f.id)}>{f.name}</button>
-                ))}
+                {(() => {
+                  // Walk the parent_id tree in parent→children order with a depth
+                  // tag, so nested folders show under their parent (indented ↳)
+                  // instead of as a flat list — matching the Gallery sidebar.
+                  const flatten = (parentId: any = null, depth = 0): { f: any; depth: number }[] =>
+                    galleryFolders
+                      .filter((f: any) => (f.parent_id || null) === (parentId || null))
+                      .flatMap((f: any) => [{ f, depth }, ...flatten(f.id, depth + 1)])
+                  return flatten().map(({ f, depth }) => (
+                    <button key={f.id} onClick={() => loadGalleryFolder(f.id)}
+                      style={{ ...folderBtnInbox(galleryFolder === f.id), paddingLeft: 10 + depth * 14 }}>
+                      {depth ? '↳ ' : ''}{f.name}
+                    </button>
+                  ))
+                })()}
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                 <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
@@ -4943,10 +5458,22 @@ export default function InboxPage() {
                         return (
                           <div key={item.id} onClick={() => setGallerySelected(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n })}
                             style={{ position: 'relative', paddingTop: '75%', borderRadius: 10, overflow: 'hidden', cursor: 'pointer', border: sel ? '3px solid var(--coral)' : '1px solid var(--border)', background: 'var(--canvas)' }}>
-                            {item.kind === 'video'
-                              ? <video src={item.url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                              : <img src={item.thumbnail_url || item.url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
-                            {sel && <div style={{ position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>✓</div>}
+                            {(() => {
+                              const imgThumb = item.thumbnail_url && item.thumbnail_url !== item.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(item.thumbnail_url) ? item.thumbnail_url : null
+                              return item.kind === 'video'
+                                ? (imgThumb
+                                    ? <img src={imgThumb} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    : <video src={item.url + '#t=0.1'} preload="metadata" muted playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />)
+                                : <img src={imgThumb || item.url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                            })()}
+                            {item.kind === 'video' && (
+                              <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                                <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                                </span>
+                              </span>
+                            )}
+                            {sel && <div style={{ position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, zIndex: 1 }}>✓</div>}
                           </div>
                         )
                       })}
@@ -4955,9 +5482,9 @@ export default function InboxPage() {
                 </div>
                 <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>{gallerySelected.size} selected</span>
-                  <button onClick={sendGalleryMedia} disabled={gallerySelected.size === 0}
+                  <button onClick={stageSelectedMedia} disabled={gallerySelected.size === 0}
                     style={{ padding: '9px 20px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: gallerySelected.size ? 'pointer' : 'not-allowed', opacity: gallerySelected.size ? 1 : 0.5 }}>
-                    Send {gallerySelected.size > 0 ? gallerySelected.size : ''} to chat
+                    Attach {gallerySelected.size > 0 ? gallerySelected.size : ''}
                   </button>
                 </div>
               </div>
@@ -4986,7 +5513,7 @@ export default function InboxPage() {
                         <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)' }}>{dec(it.name)}</span>
                         <input type="number" min={0} value={it.quantity} onChange={e => setEditOrderData((d: any) => ({ ...d, items: d.items.map((x: any) => x.key === it.key ? { ...x, quantity: Math.max(0, parseInt(e.target.value) || 0) } : x) }))}
                           style={{ width: 60, padding: '5px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13 }} />
-                        <span style={{ fontSize: 12.5, fontWeight: 600, width: 60, textAlign: 'right' }}>${it.total}</span>
+                        <span style={{ fontSize: 12.5, fontWeight: 600, width: 60, textAlign: 'right' }}>${(parseFloat(it.total) || 0).toFixed(2)}</span>
                       </div>
                     ))}
                   </div>
@@ -5288,23 +5815,29 @@ export default function InboxPage() {
               </button>
             )}
           </div>
-          {/* Scope pills — refine what the search looks at. Shown while typing. */}
+          {/* Scope pills — refine what the search looks at. Shown while typing.
+              Themed to match the assignment tabs (coral/peach) rather than a
+              one-off blue, and evenly spaced so the row reads cleanly. */}
           {searchTerm.trim() && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 10 }}>
               {([
                 ['all', 'All'], ['contact', 'Contact'], ['messages', 'Messages'],
                 ['activity', 'Activity & Marketing'], ['tasks', 'Tasks'], ['notes', 'Notes'],
-              ] as const).map(([key, label]) => (
+              ] as const).map(([key, label]) => {
+                const on = searchScope === key
+                return (
                 <button key={key} type="button" onClick={() => setSearchScope(key)}
                   style={{
-                    padding: '4px 11px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-                    border: '1px solid ' + (searchScope === key ? '#2563eb' : 'var(--border)'),
-                    background: searchScope === key ? '#2563eb' : '#fff',
-                    color: searchScope === key ? '#fff' : 'var(--slate)',
+                    padding: '6px 13px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'),
+                    background: on ? 'var(--peach)' : '#fff',
+                    color: on ? 'var(--coral)' : 'var(--slate)',
+                    whiteSpace: 'nowrap', transition: 'all 0.12s',
                   }}>
                   {label}
                 </button>
-              ))}
+                )
+              })}
             </div>
           )}
           {/* Location filter — scopes the whole inbox to one outlet. Only shown
@@ -5326,30 +5859,50 @@ export default function InboxPage() {
             </div>
           )}
 
-          {/* Assignment tabs — a horizontally scrollable strip (Coax style) so
-              extra views can be added without wrapping the row. */}
-          <div className="inbox-assign-tabs" style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
-            {([
-              ['all', 'All'],
-              ['unread', 'Unread'],
-              ['mine', 'Assigned to me'],
-              ['unassigned', 'Unassigned'],
-            ] as const).map(([key, label]) => {
-              const unreadN = key === 'unread' ? conversations.filter(c => c.is_unread && !['closed', 'resolved'].includes(c.status)).length : 0
-              return (
-              <button key={key} type="button" onClick={() => setAssignFilter(key)}
-                style={{
-                  flexShrink: 0, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
-                  border: '1px solid ' + (assignFilter === key ? 'var(--coral)' : 'var(--border)'),
-                  background: assignFilter === key ? 'var(--peach)' : '#fff',
-                  color: assignFilter === key ? 'var(--coral)' : 'var(--slate)',
-                  fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', transition: 'all 0.12s',
-                }}>
-                {label}{key === 'unread' && unreadN > 0 ? ` (${unreadN})` : ''}
+          {/* Assignment tabs — a horizontally scrollable strip (Coax style).
+              Instead of a raw scrollbar, chevron buttons flank the row and appear
+              only when it overflows, dimming at each end. */}
+          {(() => {
+            const showArrows = assignArrows.l || assignArrows.r
+            const arrowBtn = (dir: 'l' | 'r', enabled: boolean) => (
+              <button type="button" aria-label={dir === 'l' ? 'Scroll left' : 'Scroll right'}
+                onClick={() => assignScrollRef.current?.scrollBy({ left: dir === 'l' ? -150 : 150, behavior: 'smooth' })}
+                disabled={!enabled}
+                style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'opacity 0.12s' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points={dir === 'l' ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} />
+                </svg>
               </button>
-              )
-            })}
-          </div>
+            )
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
+                {showArrows && arrowBtn('l', assignArrows.l)}
+                <div ref={assignScrollRef} className="inbox-assign-tabs" style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: 1, paddingBottom: 0 }}>
+                  {([
+                    ['all', 'All'],
+                    ['unread', 'Unread'],
+                    ['mine', 'Assigned to me'],
+                    ['unassigned', 'Unassigned'],
+                  ] as const).map(([key, label]) => {
+                    const unreadN = key === 'unread' ? conversations.filter(c => c.is_unread && !['closed', 'resolved'].includes(c.status)).length : 0
+                    return (
+                    <button key={key} type="button" onClick={() => setAssignFilter(key)}
+                      style={{
+                        flexShrink: 0, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
+                        border: '1px solid ' + (assignFilter === key ? 'var(--coral)' : 'var(--border)'),
+                        background: assignFilter === key ? 'var(--peach)' : '#fff',
+                        color: assignFilter === key ? 'var(--coral)' : 'var(--slate)',
+                        fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', transition: 'all 0.12s',
+                      }}>
+                      {label}{key === 'unread' && unreadN > 0 ? ` (${unreadN})` : ''}
+                    </button>
+                    )
+                  })}
+                </div>
+                {showArrows && arrowBtn('r', assignArrows.r)}
+              </div>
+            )
+          })()}
           {/* Open / Closed tabs (Coax style) + filter */}
           <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
             <div style={{ flex: 1, display: 'flex', background: 'var(--canvas)', borderRadius: 10, padding: 3 }}>
@@ -6115,11 +6668,19 @@ export default function InboxPage() {
                               {n > 0 && (
                                 <div style={{
                                   display: 'grid',
-                                  gridTemplateColumns: layout.cols,
+                                  // A lone video: let the single column hug the clip
+                                  // ('auto'), not stretch to 1fr of the collage width —
+                                  // otherwise a portrait clip leaves the bubble colour
+                                  // (blue on outbound) showing beside it.
+                                  gridTemplateColumns: n === 1 && shown[0]?.kind === 'video' ? 'auto' : layout.cols,
                                   gridAutoRows: layout.rows.split(' ')[0],
                                   gridTemplateRows: layout.rows,
                                   gap: GAP,
-                                  width: n === 1 ? 'auto' : W,
+                                  justifyContent: 'start',
+                                  // A lone video wraps tightly (fit-content) so a
+                                  // portrait clip isn't letterboxed into a tall
+                                  // grey box; a lone image still fills the width.
+                                  width: n === 1 ? (shown[0]?.kind === 'video' ? 'fit-content' : 'auto') : W,
                                   maxWidth: W,
                                   borderRadius: 14,
                                   overflow: 'hidden',
@@ -6133,10 +6694,13 @@ export default function InboxPage() {
                                         style={{
                                           ...spanOf(ai),
                                           position: 'relative', cursor: 'pointer',
-                                          background: '#e5e7eb', overflow: 'hidden',
-                                          // A lone photo keeps its own shape; in a
-                                          // mosaic every tile fills its cell.
-                                          ...(n === 1 ? { maxHeight: 320 } : {}),
+                                          // Black (not grey) so a lone video that doesn't
+                                          // perfectly fill reads as a clean video frame,
+                                          // never a stray coloured bar.
+                                          background: a.kind === 'video' ? '#000' : '#e5e7eb', overflow: 'hidden',
+                                          // A lone video tile hugs the clip; a lone photo
+                                          // keeps its shape; in a mosaic tiles fill cells.
+                                          ...(n === 1 && a.kind === 'video' ? { width: 'fit-content', maxHeight: 320 } : n === 1 ? { maxHeight: 320 } : {}),
                                         }}>
                                         {a.kind === 'image' ? (
                                           <img
@@ -6151,8 +6715,18 @@ export default function InboxPage() {
                                             style={{ width: '100%', height: n === 1 ? 'auto' : '100%', maxHeight: n === 1 ? 320 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block' }} />
                                         ) : (
                                           <>
-                                            <video src={toPublicUrl(a.url)} preload="metadata" poster={toPublicUrl(a.thumbUrl)}
-                                              style={{ width: '100%', height: n === 1 ? 'auto' : '100%', maxHeight: n === 1 ? 320 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block', pointerEvents: 'none' }} />
+                                            {/* No generated thumbnail? Seek a hair into the
+                                               clip (#t=0.1) so the frame the browser paints
+                                               isn't the usual black leader frame. Only set a
+                                               poster when we actually have one — an empty
+                                               poster forces that black first frame. */}
+                                            <video
+                                              src={a.thumbUrl ? toPublicUrl(a.url) : toPublicUrl(a.url) + '#t=0.1'}
+                                              preload="metadata"
+                                              muted
+                                              playsInline
+                                              {...(a.thumbUrl ? { poster: toPublicUrl(a.thumbUrl) } : {})}
+                                              style={{ width: n === 1 ? 'auto' : '100%', height: n === 1 ? 'auto' : '100%', maxWidth: '100%', maxHeight: n === 1 ? 280 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block', pointerEvents: 'none', background: '#111' }} />
                                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                               <div style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>▶</div>
                                             </div>
@@ -6177,13 +6751,49 @@ export default function InboxPage() {
                                 </div>
                               )}
 
-                              {files.map((a: any, ai: number) => (
-                                <a key={`f${ai}`} href={a.url} target="_blank" rel="noopener"
-                                  style={{ display: 'flex', alignItems: 'center', gap: 8, color: isAgent ? '#fff' : 'var(--coral)', textDecoration: 'none', fontSize: 13, fontWeight: 600, marginBottom: msg.content ? 6 : 0 }}>
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{Icon.attach(12)}{a.name}</span>
-                                </a>
-                              ))}
+                              {files.map((a: any, ai: number) => {
+                                // A voice note / audio clip plays inline rather than
+                                // linking out.
+                                const isAudio = a.kind === 'audio' || /^audio\//.test(a.type || '') || /\.(webm|ogg|m4a|mp3|wav|aac)(\?|$)/i.test(a.url || '')
+                                if (isAudio) {
+                                  return (
+                                    <div key={`f${ai}`} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: msg.content ? 6 : 0 }}>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700, color: isAgent ? '#fff' : 'var(--coral)', flexShrink: 0 }}>
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+                                      </span>
+                                      <audio src={toPublicUrl(a.url)} controls preload="metadata" style={{ height: 34, maxWidth: 220 }} />
+                                    </div>
+                                  )
+                                }
+                                return (
+                                  <a key={`f${ai}`} href={a.url} target="_blank" rel="noopener"
+                                    style={{ display: 'flex', alignItems: 'center', gap: 8, color: isAgent ? '#fff' : 'var(--coral)', textDecoration: 'none', fontSize: 13, fontWeight: 600, marginBottom: msg.content ? 6 : 0 }}>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{Icon.attach(12)}{a.name}</span>
+                                  </a>
+                                )
+                              })}
                             </>
+                          )
+                        })()}
+                        {/* Media-expiry badge — "Expires in 7 days" / "Expired". */}
+                        {(() => {
+                          const exp = atts.map((a: any) => a.expires_at).filter(Boolean).sort()[0]
+                          if (!exp) return null
+                          const ms = new Date(exp).getTime() - Date.now()
+                          const del = atts.some((a: any) => a.expiry_mode === 'delete')
+                          let label: string
+                          if (ms <= 0) label = 'Expired'
+                          else {
+                            const days = Math.ceil(ms / 86400000)
+                            const hrs = Math.ceil(ms / 3600000)
+                            label = days >= 1 ? `Expires in ${days} day${days === 1 ? '' : 's'}` : `Expires in ${hrs} hour${hrs === 1 ? '' : 's'}`
+                          }
+                          return (
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, margin: '2px 6px 4px', padding: '2px 8px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, background: isAgent ? 'rgba(255,255,255,0.2)' : 'var(--canvas)', color: isAgent ? '#fff' : 'var(--slate)' }}
+                              title={del ? 'Auto-deletes from Colvy at expiry' : 'Recipient access is revoked at expiry'}>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                              {label}{del ? ' · auto-delete' : ''}
+                            </div>
                           )
                         })()}
                         {(msg as any).metadata?.review_request ? (
@@ -6218,10 +6828,30 @@ export default function InboxPage() {
                               )
                             })()}
                             {/* The message text (with the /m/ link) below the card. */}
-                            <div style={{ marginTop: 8, fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</div>
+                            <div style={{ marginTop: 8, fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
                           </div>
                         ) : (
-                          msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0 }}>{msg.content}</div>
+                          msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
+                        )}
+
+                        {/* Customer tried to send media the carrier couldn't
+                            deliver (MMS on an AU number). Surface it plainly with a
+                            one-tap "Request media" → secure upload link. */}
+                        {!isAgent && (msg as any).metadata?.media_attempt && (
+                          <div style={{ marginTop: msg.content ? 6 : 0, padding: '11px 13px', borderRadius: 12, background: 'var(--peach)', border: '1px solid #ffd9d1' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--coral)' }}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                              <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--ink)' }}>Customer attempted to send media</span>
+                            </div>
+                            <p style={{ margin: '5px 0 9px', fontSize: 12, color: 'var(--slate)', lineHeight: 1.45 }}>
+                              MMS media could not be received on this number. Send them a secure upload link to receive it.
+                            </p>
+                            <button type="button" onClick={requestMediaQuick} disabled={quickMrBusy}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 14px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: quickMrBusy ? 'default' : 'pointer', opacity: quickMrBusy ? 0.6 : 1 }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                              {quickMrBusy ? 'Sending…' : 'Request media'}
+                            </button>
+                          </div>
                         )}
                         {msg.message_type === 'payment' && msg.message_payload && (
                           <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', color: 'var(--ink)' }}>
@@ -6473,6 +7103,141 @@ export default function InboxPage() {
                 </div>
               )}
 
+              {/* Internal-note header — a clear amber banner so it's obvious the
+                  next message is staff-only, with a one-tap switch back to the
+                  customer reply. */}
+              {internalMode && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px', marginBottom: 8, borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
+                  <span style={{ width: 26, height: 26, borderRadius: 8, background: '#fef3c7', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: 12.5, fontWeight: 800, color: '#b45309' }}>Internal note</p>
+                    <p style={{ margin: 0, fontSize: 11, color: '#a16207' }}>Only your team can see this — the customer never receives it.</p>
+                  </div>
+                  <button type="button" onClick={() => setInternalMode(false)}
+                    style={{ flexShrink: 0, height: 26, padding: '0 10px', borderRadius: 7, border: '1px solid #fde68a', background: '#fff', color: '#b45309', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                    Switch to reply
+                  </button>
+                </div>
+              )}
+
+              {/* Voice-note recording bar */}
+              {recording && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', marginBottom: 8, borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca' }}>
+                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#dc2626', flexShrink: 0, animation: 'recPulse 1s infinite' }} />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#b91c1c' }}>Recording</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#b91c1c', fontVariantNumeric: 'tabular-nums' }}>{fmtRec(recSeconds)}</span>
+                  <span style={{ flex: 1 }} />
+                  <button type="button" onClick={() => stopVoiceNote(false)}
+                    style={{ height: 30, padding: '0 12px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={() => stopVoiceNote(true)}
+                    style={{ height: 30, padding: '0 14px', borderRadius: 8, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>
+                    Stop &amp; attach
+                  </button>
+                </div>
+              )}
+
+              {/* Attached-but-unsent media — preview cards, delivered on Send.
+                  Each card carries a Media-expiry selector (Keep forever by
+                  default). */}
+              {stagedMedia.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
+                  {stagedMedia.map((m: any) => {
+                    const imgThumb = m.thumbnail_url && m.thumbnail_url !== m.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m.thumbnail_url) ? m.thumbnail_url : null
+                    const code = stagedExpiry[m.id]
+                    const kindLabel = m.kind === 'video' ? 'Video' : m.kind === 'audio' ? 'Voice note' : 'Image'
+                    const keeps = !code || code === 'forever'
+                    return (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 12, border: '1px solid var(--border)', background: '#fff' }}>
+                        <div style={{ position: 'relative', width: 40, height: 40, borderRadius: 8, overflow: 'hidden', background: m.kind === 'audio' ? 'var(--peach)' : 'var(--canvas)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {m.kind === 'audio'
+                            ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+                            : m.kind === 'video'
+                            ? (imgThumb
+                                ? <img src={imgThumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : <video src={m.url + '#t=0.1'} preload="metadata" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)
+                            : <img src={imgThumb || m.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                          {m.kind === 'video' && (
+                            <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                              <span style={{ width: 16, height: 16, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="#fff"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title || 'media'}</p>
+                          <p style={{ margin: '1px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>{kindLabel}</p>
+                        </div>
+
+                        {/* Media-expiry selector — only for customer-facing sends
+                            (an internal note is never delivered, so it can't expire). */}
+                        {!internalMode && (
+                        <div data-expiry-picker style={{ position: 'relative', flexShrink: 0 }}>
+                          <button type="button"
+                            onClick={() => { setExpiryMenuFor(expiryMenuFor === m.id ? null : m.id); setCustomDateFor(null) }}
+                            title="Set when this media expires"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: keeps ? '#fff' : 'var(--peach)', color: keeps ? 'var(--slate)' : 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                            {expiryChip(code)}
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+                          </button>
+                          {expiryMenuFor === m.id && (
+                            <div style={{ position: 'absolute', bottom: '120%', right: 0, width: 180, background: '#fff', borderRadius: 10, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden', padding: '4px 0' }}>
+                              {[['forever', 'Keep forever'], ['1d', '1 day'], ['7d', '7 days'], ['30d', '30 days']].map(([val, label]) => (
+                                <button key={val} type="button"
+                                  onClick={() => { setStagedExpiry(prev => { const n = { ...prev }; if (val === 'forever') delete n[m.id]; else n[m.id] = val; return n }); setExpiryMenuFor(null) }}
+                                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: (code === val || (val === 'forever' && keeps)) ? 'var(--peach)' : 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', fontWeight: (code === val || (val === 'forever' && keeps)) ? 700 : 500 }}>
+                                  {label}
+                                  {(code === val || (val === 'forever' && keeps)) && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                                </button>
+                              ))}
+                              <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+                              {customDateFor === m.id ? (
+                                <div style={{ padding: '6px 10px' }}>
+                                  <input type="date" autoFocus
+                                    min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
+                                    onChange={e => { if (e.target.value) { setStagedExpiry(prev => ({ ...prev, [m.id]: e.target.value })); setExpiryMenuFor(null); setCustomDateFor(null) } }}
+                                    style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
+                                </div>
+                              ) : (
+                                <button type="button" onClick={() => setCustomDateFor(m.id)}
+                                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                                  Choose a date…
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        )}
+
+                        <button type="button" title="Remove"
+                          onClick={() => { setStagedMedia(prev => prev.filter((x: any) => x.id !== m.id)); setStagedExpiry(prev => { const n = { ...prev }; delete n[m.id]; return n }) }}
+                          style={{ width: 24, height: 24, borderRadius: 7, background: 'none', color: 'var(--slate)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                    )
+                  })}
+
+                  {/* Advanced: auto-delete. Only relevant once something expires,
+                      and off by default — expiring access alone keeps the
+                      original safe in the gallery. */}
+                  {anyExpiring && (
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '2px 2px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={expiryDeleteMode} onChange={e => setExpiryDeleteMode(e.target.checked)} style={{ marginTop: 2, accentColor: 'var(--coral)' }} />
+                      <span style={{ fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.4 }}>
+                        <span style={{ fontWeight: 700, color: 'var(--ink)' }}>Delete from Colvy after expiry</span>{' '}— permanently removes the media from your gallery too, not just the recipient's access.
+                      </span>
+                    </label>
+                  )}
+                </div>
+              )}
+
               <textarea ref={textareaRef} value={reply} onChange={e => {
                   const v = e.target.value
                   setReply(v)
@@ -6599,6 +7364,13 @@ export default function InboxPage() {
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/><path d="M16 15h3"/></svg>
                           </span>Save Card
                         </button>
+
+                        <div style={{ borderTop: '1px solid var(--border)' }} />
+
+                        <button type="button" onClick={() => { setShowSendMenu(false); setShowMediaRequest(true) }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.media(15)}</span>Request Media
+                        </button>
                       </div>
                     )}
                   </div>
@@ -6611,6 +7383,14 @@ export default function InboxPage() {
                   <button type="button" onClick={openMediaPicker} title="Send from gallery"
                     style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                  </button>
+                  {/* Voice note */}
+                  <button type="button" onClick={() => (recording ? stopVoiceNote(true) : startVoiceNote())} disabled={voiceUploading}
+                    title={recording ? 'Stop recording' : 'Record a voice note'}
+                    style={{ width: 32, height: 32, borderRadius: 8, border: recording ? '1px solid #dc2626' : '1px solid var(--border)', background: recording ? '#fee2e2' : '#fff', cursor: voiceUploading ? 'default' : 'pointer', color: recording ? '#dc2626' : 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {voiceUploading
+                      ? <span style={{ width: 13, height: 13, border: '2px solid var(--border)', borderTopColor: 'var(--coral)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                      : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>}
                   </button>
                   {/* Emoji */}
                   <button type="button" onClick={() => setShowEmoji(v => !v)} title="Emoji"
@@ -6666,14 +7446,14 @@ export default function InboxPage() {
                   </button>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button type="button" onClick={sendAndClose} disabled={sending || !reply.trim()}
-                    style={{ padding: '8px 14px', borderRadius: 10, background: '#fff', color: reply.trim() ? 'var(--ink)' : '#9ca3af', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: reply.trim() ? 'pointer' : 'default' }}>
+                  <button type="button" onClick={sendAndClose} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
+                    style={{ padding: '8px 14px', borderRadius: 10, background: '#fff', color: (reply.trim() || stagedMedia.length) ? 'var(--ink)' : '#9ca3af', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default' }}>
                     Send & Close
                   </button>
                   {/* Send + channel selector */}
                   <div ref={channelMenuRef} style={{ position: 'relative', display: 'flex' }}>
-                    <button type="button" onClick={sendReply} disabled={sending || !reply.trim()}
-                      style={{ padding: '8px 16px', borderRadius: internalMode ? 10 : '10px 0 0 10px', background: !reply.trim() ? '#e5e7eb' : internalMode ? '#f59e0b' : 'var(--coral)', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: reply.trim() ? 'pointer' : 'default', transition: 'all 0.15s' }}>
+                    <button type="button" onClick={sendReply} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
+                      style={{ padding: '8px 16px', borderRadius: internalMode ? 10 : '10px 0 0 10px', background: (!reply.trim() && stagedMedia.length === 0) ? '#e5e7eb' : internalMode ? '#f59e0b' : 'var(--coral)', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default', transition: 'all 0.15s' }}>
                       {sending
                         ? (internalMode ? 'Saving…' : 'Sending…')
                         : internalMode
@@ -6684,7 +7464,7 @@ export default function InboxPage() {
                     <>
                     <button type="button" onClick={() => setShowChannelMenu(v => !v)} disabled={sending}
                       title="Choose a channel"
-                      style={{ padding: '8px 8px', borderRadius: '0 10px 10px 0', background: reply.trim() ? 'var(--coral)' : '#e5e7eb', color: reply.trim() ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      style={{ padding: '8px 8px', borderRadius: '0 10px 10px 0', background: (reply.trim() || stagedMedia.length) ? 'var(--coral)' : '#e5e7eb', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="18 15 12 9 6 15"/></svg>
                     </button>
 
@@ -6788,11 +7568,6 @@ export default function InboxPage() {
                         </button>
                       )
                     })}
-                    <button type="button"
-                      onClick={() => { setShowActionMenu(false); setShowMediaRequest(true) }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', border: 'none', background: '#fff', cursor: 'pointer', fontSize: 13.5, color: 'var(--ink)', textAlign: 'left' }}>
-                      <span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{Icon.media(16)}</span> Request Media
-                    </button>
                   </div>
                 )}
                 {doaMatch && convActions.doa?.enabled && (
@@ -7293,19 +8068,35 @@ export default function InboxPage() {
                   </div>
                 )}
 
-                {/* Shared Media — everything image/video shared in this conversation */}
+                {/* Shared media & files — chat attachments PLUS anything that
+                    arrived on an email in this thread (images shown as thumbs,
+                    other files as document tiles). */}
                 {(() => {
+                  // Chat image/video keeps the lightbox gallery (indices must
+                  // match the thread's gallery source, so this stays separate).
                   const media: any[] = []
                   messages.forEach(m => (Array.isArray(m.attachments) ? m.attachments : []).forEach((a: any) => {
-                    { const isImg = a.kind === 'image' || String(a.type||'').startsWith('image'); const isVid = a.kind === 'video' || String(a.type||'').startsWith('video'); if ((isImg || isVid) && a.url) media.push({ ...a, kind: isVid ? 'video' : 'image' }) }
+                    const isImg = a.kind === 'image' || String(a.type||'').startsWith('image'); const isVid = a.kind === 'video' || String(a.type||'').startsWith('video'); if ((isImg || isVid) && a.url) media.push({ ...a, kind: isVid ? 'video' : 'image' })
                   }))
-                  if (media.length === 0) return null
+                  // Email attachments (Gmail streams via /api/email/attachment;
+                  // webhook emails carry a direct url).
+                  const emailAtts: any[] = []
+                  messages.forEach(m => (Array.isArray(m.email_attachments) ? m.email_attachments : []).forEach((a: any) => {
+                    const url = a.url || (m.gmail_message_id && a.attachmentId
+                      ? `/api/email/attachment?messageId=${encodeURIComponent(m.gmail_message_id)}&attachmentId=${encodeURIComponent(a.attachmentId)}&name=${encodeURIComponent(a.name || 'file')}&conversationId=${encodeURIComponent(m.conversation_id)}`
+                      : null)
+                    if (!url) return
+                    const mime = String(a.mime || a.type || '')
+                    emailAtts.push({ url, name: a.name || 'file', isImage: mime.startsWith('image'), isVideo: mime.startsWith('video') })
+                  }))
+                  const total = media.length + emailAtts.length
+                  if (total === 0) return null
                   return (
                     <div style={{ marginTop: 18 }}>
-                      <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Shared Media ({media.length})</h3>
+                      <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Shared media &amp; files ({total})</h3>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
                         {media.map((a, i) => (
-                          <div key={i}
+                          <div key={`c${i}`}
                             style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', background: 'var(--canvas)' }}>
                             <div onClick={() => setGalleryIndex(i)} style={{ position: 'absolute', inset: 0 }}>
                               {(a.kind === 'video' || String(a.type).startsWith('video'))
@@ -7320,6 +8111,21 @@ export default function InboxPage() {
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
                             </button>
                           </div>
+                        ))}
+                        {emailAtts.map((a, i) => (
+                          <a key={`e${i}`} href={a.url} target="_blank" rel="noopener noreferrer" title={a.name}
+                            style={{ position: 'relative', paddingTop: '100%', borderRadius: 8, overflow: 'hidden', background: 'var(--canvas)', display: 'block', textDecoration: 'none' }}>
+                            {a.isImage ? (
+                              <img src={a.url} alt={a.name} loading="lazy" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : a.isVideo ? (
+                              <video src={a.url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, padding: 4, color: '#64748b' }}>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                <span style={{ fontSize: 9, fontWeight: 700, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{a.name}</span>
+                              </div>
+                            )}
+                          </a>
                         ))}
                       </div>
                     </div>
@@ -7514,9 +8320,17 @@ export default function InboxPage() {
                           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>${(parseFloat(o.total) || 0).toFixed(2)}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: o.status === 'completed' ? '#dcfce7' : o.status === 'processing' ? '#dbeafe' : o.status === 'cancelled' || o.status === 'failed' ? '#fee2e2' : '#fef3c7', color: o.status === 'completed' ? '#059669' : o.status === 'processing' ? '#2563eb' : o.status === 'cancelled' || o.status === 'failed' ? '#dc2626' : '#d97706', fontWeight: 600, textTransform: 'capitalize' }}>{o.status}</span>
+                          <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: o.status === 'completed' ? '#dcfce7' : o.status === 'processing' ? '#dbeafe' : o.status === 'cancelled' || o.status === 'failed' ? '#fee2e2' : o.status === 'refunded' ? '#f3e8ff' : '#fef3c7', color: o.status === 'completed' ? '#059669' : o.status === 'processing' ? '#2563eb' : o.status === 'cancelled' || o.status === 'failed' ? '#dc2626' : o.status === 'refunded' ? '#7c3aed' : '#d97706', fontWeight: 600, textTransform: 'capitalize' }}>{o.status}</span>
                           <span style={{ fontSize: 11, color: '#9ca3af' }}>{o.order_date ? new Date(o.order_date).toLocaleDateString('en-AU') : ''}</span>
                         </div>
+                        {Number(o.total_refunded) > 0 && o.status !== 'refunded' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5 }}>
+                            <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: '#f3e8ff', color: '#7c3aed', fontWeight: 700 }}>
+                              {Number(o.total_refunded) + 0.005 >= (parseFloat(o.total) || 0) ? 'Refunded' : 'Partially refunded'}
+                            </span>
+                            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#dc2626' }}>−${Number(o.total_refunded).toFixed(2)}</span>
+                          </div>
+                        )}
                         {Array.isArray(o.line_items) && o.line_items.length > 0 && (() => {
                           const withImg = o.line_items.filter((li: any) => li.image?.src)
                           const images = withImg.map((li: any) => ({ src: li.image.src, name: dec(li.name) }))

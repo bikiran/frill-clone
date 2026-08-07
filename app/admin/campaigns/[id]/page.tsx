@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
 import EmojiPicker from '@/components/EmojiPicker'
 import { analyseSms, renderVariables, SMS_VARIABLES } from '@/lib/sms-segments'
-import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate } from '@/lib/sms-pricing'
+import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate, resolveSmsPricing } from '@/lib/sms-pricing'
 
 const AUDIENCE_TYPES: [string, string, string][] = [
   ['all_subscribed', 'All subscribed contacts', 'Everyone with marketing consent'],
@@ -171,22 +171,12 @@ export default function CampaignEditorPage() {
           .select('id, label, suburb').eq('company_id', cid)
         setOutlets(outs || [])
 
-        // Real per-part pricing, so cost estimates aren't guesses.
+        // Real per-part pricing, so cost estimates aren't guesses. Resolves the
+        // platform-wide default (set by the super admin) with a per-company
+        // override taking precedence.
         try {
-          const { data: pr } = await (supabase as any).from('sms_pricing')
-            .select('*').eq('company_id', cid).maybeSingle()
-          if (pr) {
-            setPricing({
-              price_per_part: Number(pr.price_per_part) || DEFAULT_PRICING.price_per_part,
-              gst_rate: Number(pr.gst_rate) ?? DEFAULT_PRICING.gst_rate,
-              gst_inclusive: pr.gst_inclusive !== false,
-              carrier_cost: Number(pr.carrier_cost) || DEFAULT_PRICING.carrier_cost,
-              carrier_currency: pr.carrier_currency || 'USD',
-              fx_rate: Number(pr.fx_rate) || DEFAULT_PRICING.fx_rate,
-              volume_tiers: Array.isArray(pr.volume_tiers) ? pr.volume_tiers : DEFAULT_PRICING.volume_tiers,
-            })
-          }
-        } catch { /* fall back to defaults until V196 is run */ }
+          setPricing(await resolveSmsPricing(supabase, cid))
+        } catch { /* fall back to defaults until the pricing tables exist */ }
 
         const { data: cts } = await (supabase as any).from('contacts')
           .select('tags').eq('company_id', cid).not('tags', 'is', null).limit(2000)

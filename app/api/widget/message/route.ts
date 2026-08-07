@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
+import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,6 +99,28 @@ export async function POST(req: NextRequest) {
       status: 'open',
       updated_at: new Date().toISOString(),
     }).eq('id', conversationId)
+
+    // A real visitor message (not a "started a chat" system event) alerts the
+    // team: the in-app bell plus a phone push carrying conversationId, so the
+    // notification gets the Reply / Mark-read quick actions.
+    if (senderType === 'visitor') {
+      const who = (body.senderName || '').toString().slice(0, 120) || 'a visitor'
+      const preview = content || '📎 Attachment'
+      try {
+        await notifyCompany({
+          db, companyId, type: 'chat',
+          message: `New message from ${who}: ${preview.slice(0, 80)}`,
+          actorName: who, conversationId,
+        })
+      } catch {}
+      try {
+        await pushInboundMessage({
+          companyId, conversationId,
+          title: `New message from ${who}`,
+          body: preview,
+        })
+      } catch {}
+    }
 
     return NextResponse.json({ ok: true, message })
   } catch (e: any) {

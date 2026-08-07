@@ -52,7 +52,7 @@ const dur = (ms: number) => {
 const CHANNEL_LABEL: Record<string, string> = {
   sms: 'SMS', chat: 'Website chat', widget: 'Website chat', email: 'Email',
   messenger: 'Facebook Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp',
-  internal: 'Internal agent message',
+  internal: 'Internal agent message', gallery: 'Gallery',
 }
 const TYPE_LABEL: Record<string, string> = {
   product: 'Product', image: 'Image', help: 'Help article', form: 'Form',
@@ -166,9 +166,9 @@ export default function LinkReportsPage() {
         .select('name, owner_id').eq('id', cid).maybeSingle()
       if (co?.name) names.add(`${co.name} (Owner)`)
       const { data: tm } = await (supabase as any).from('team_members')
-        .select('name, display_name, email').eq('company_id', cid)
+        .select('email').eq('company_id', cid)     // no name/display_name columns — derive from email
       for (const m of (tm || [])) {
-        const n = m.name || m.display_name || (m.email ? String(m.email).split('@')[0] : null)
+        const n = m.email ? String(m.email).split('@')[0] : null
         if (n) names.add(n)
       }
       setTeam(Array.from(names).sort())

@@ -1,32 +1,26 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 
 export function useCompanyUser() {
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [user, setUser] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  // Seed synchronously from the shared identity cache. On any navigation after
+  // the first, the answer is already known, so there's no loading flash and the
+  // page's data fetch can fire on the very first render.
+  const seed = peekCompanyUser()
+  const [companyId, setCompanyId] = useState<string | null>(seed?.companyId ?? null)
+  const [user, setUser] = useState<any>(seed?.user ?? null)
+  const [loading, setLoading] = useState(!seed)
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user) { setLoading(false); return }
-      setUser(session.user)
-      let cid: string | null = null
-      const h = window.location.hostname
-      if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com') {
-        const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
-        if (co) cid = co.id
-      }
-      if (!cid) {
-        const { data: ownCo } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-        if (ownCo) cid = ownCo.id
-      }
-      setCompanyId(cid)
+    let active = true
+    resolveCompanyUser().then(({ companyId, user }) => {
+      if (!active) return
+      setCompanyId(companyId)
+      setUser(user)
       setLoading(false)
-    }
-    init()
+    })
+    return () => { active = false }
   }, [])
 
   return { companyId, user, loading }

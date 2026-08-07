@@ -40,9 +40,24 @@ export async function getUserSubscription(userId: string) {
 }
 
 export async function canAccessFeature(userId: string, feature: 'whiteListing' | 'guestVoting' | 'apiAccess' | 'sso') {
-  const sub = await getUserSubscription(userId)
-  const limits = TIER_FEATURES[sub.tier as keyof typeof TIER_FEATURES]?.limits || {}
-  return limits[feature as keyof typeof limits] === true
+  // Resolve against the company's EFFECTIVE entitlements (plan + super-admin
+  // overrides), so a comped feature is honoured. Falls back to the plan matrix
+  // for features that aren't individually overridable (e.g. guestVoting, sso).
+  try {
+    const { getCompanyByOwner } = await import('./board')
+    const { resolveEntitlements, canAccess } = await import('./plan')
+    const company = await getCompanyByOwner(userId)
+    if (!company) return false
+    const plan = ((company as any).plan || 'free') as any
+    const eff = await resolveEntitlements(supabase, (company as any).id, plan)
+    if (feature in eff.features) return !!eff.features[feature]
+    return canAccess(plan, feature)
+  } catch {
+    // Fall back to the legacy subscription-tier check if anything goes wrong.
+    const sub = await getUserSubscription(userId)
+    const limits = TIER_FEATURES[sub.tier as keyof typeof TIER_FEATURES]?.limits || {}
+    return limits[feature as keyof typeof limits] === true
+  }
 }
 
 export async function createCheckoutSession(userId: string, tier: 'pro' | 'enterprise', returnUrl: string) {

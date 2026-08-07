@@ -109,3 +109,44 @@ export const audRate = (n: number) =>
     style: 'currency', currency: 'AUD', currencyDisplay: 'narrowSymbol',
     minimumFractionDigits: 3, maximumFractionDigits: 4,
   }).format(n || 0)
+
+/**
+ * Coerce a raw sms_pricing / platform_settings row into a complete SmsPricing,
+ * filling any missing field from the default. Used by both the per-company and
+ * the global (platform) readers so parsing lives in one place.
+ */
+export function parsePricingRow(row: any): SmsPricing {
+  if (!row) return DEFAULT_PRICING
+  return {
+    price_per_part: Number(row.price_per_part) || DEFAULT_PRICING.price_per_part,
+    gst_rate: row.gst_rate != null ? Number(row.gst_rate) : DEFAULT_PRICING.gst_rate,
+    gst_inclusive: row.gst_inclusive !== false,
+    carrier_cost: Number(row.carrier_cost) || DEFAULT_PRICING.carrier_cost,
+    carrier_currency: row.carrier_currency || DEFAULT_PRICING.carrier_currency,
+    fx_rate: Number(row.fx_rate) || DEFAULT_PRICING.fx_rate,
+    volume_tiers: Array.isArray(row.volume_tiers) ? row.volume_tiers : DEFAULT_PRICING.volume_tiers,
+  }
+}
+
+/**
+ * The effective SMS pricing for a company. SMS pricing is a PLATFORM decision
+ * (set by the super admin), so the global default in platform_settings is the
+ * source of truth. A per-company sms_pricing row, if one exists, still wins as
+ * an explicit override; otherwise we fall back to the global default and then
+ * the built-in default. Accepts any supabase-like client (browser or service).
+ */
+export async function resolveSmsPricing(db: any, companyId?: string | null): Promise<SmsPricing> {
+  // Explicit per-company override, if present.
+  if (companyId) {
+    try {
+      const { data } = await db.from('sms_pricing').select('*').eq('company_id', companyId).maybeSingle()
+      if (data) return parsePricingRow(data)
+    } catch { /* table may not exist yet */ }
+  }
+  // Global platform default.
+  try {
+    const { data } = await db.from('platform_settings').select('value').eq('key', 'sms_pricing').maybeSingle()
+    if (data?.value) return parsePricingRow(data.value)
+  } catch { /* table may not exist yet */ }
+  return DEFAULT_PRICING
+}

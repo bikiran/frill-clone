@@ -397,6 +397,7 @@ export class WooCommerceService {
           date: o.date_created, payment_method: o.payment_method_title,
           items: (o.line_items || []).map((li: any) => ({ name: li.name, quantity: li.quantity, total: li.total })),
           order_key: o.order_key, payment_url: o.payment_url,
+          total_refunded: (o.refunds || []).reduce((s: number, r: any) => s + Math.abs(parseFloat(r.total || 0)), 0),
         }))
     } catch { return [] }
   }

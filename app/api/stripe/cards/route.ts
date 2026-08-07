@@ -42,7 +42,11 @@ async function ensureCustomer(db: any, s: Stripe, opts: any, companyId: string, 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { action, companyId, conversationId } = body
+    const { action, companyId, conversationId, channel } = body
+    // The customer's real channel, so a save-card message reads "SMS"/"Email"
+    // etc. instead of always "Live Chat". The caller sends the actual link over
+    // that channel.
+    const deliveryChannel = ['sms', 'email', 'instagram', 'facebook', 'chat'].includes(channel) ? channel : 'chat'
     if (!companyId || !action) return NextResponse.json({ error: 'companyId and action required' }, { status: 400 })
 
     const db = admin()
@@ -77,6 +81,7 @@ export async function POST(req: NextRequest) {
         sender_type: 'agent', sender_name: 'System',
         content: 'Please save your card securely with Stripe — we\'ll never see your card details.',
         message_type: 'save_card',
+        delivery_channel: deliveryChannel,
         message_payload: { kind: 'save_card', url: session.url, status: 'pending' },
       }).select().maybeSingle()
 
@@ -147,9 +152,12 @@ export async function POST(req: NextRequest) {
         stripe_payment_intent_id: intent.id,
       }).select().maybeSingle()
 
+      // Charging a saved card is a back-office action — record it as an INTERNAL
+      // staff note (never handed to a channel), so it doesn't masquerade as a
+      // "Live Chat" message to the customer.
       await db.from('messages').insert({
         conversation_id: conversationId, company_id: companyId,
-        sender_type: 'system',
+        sender_type: 'system', is_internal: true,
         content: succeeded
           ? `✅ Charged $${(cents / 100).toFixed(2)} AUD to the saved ${card.brand || 'card'} ending ${card.last4}.`
           : `Charge of $${(cents / 100).toFixed(2)} is ${intent.status}.`,

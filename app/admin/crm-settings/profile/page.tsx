@@ -58,7 +58,7 @@ export default function ProfileSettings() {
       {/* General Information */}
       <div style={S.card}>
         <h2 style={S.h2}>General Information</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
           <div>
             <label style={S.label}>Contact Number</label>
             <input value={s.contact_number || ''} onChange={e => set('contact_number', e.target.value)} placeholder="+61…" style={S.input} />

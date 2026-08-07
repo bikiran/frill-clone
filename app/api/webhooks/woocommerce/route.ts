@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import { attributeOrderToLinks } from '@/lib/link-attribution'
 import { WebhookService } from '@/lib/webhook-service'
 import { notifyCompany } from '@/lib/notify'
+import { logWebhookEvent } from '@/lib/webhook-log'
 
 const DEFAULT_MESSAGES: Record<string, string> = {
   processing: 'Thank you for placing an order with {business}. We have received it. If you have any questions, feel free to reply here.',
@@ -529,6 +530,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing company ID (header x-company-id or ?company=)' }, { status: 400 })
     }
 
+    // Record the event for the Super Admin webhook explorer (best-effort).
+    logWebhookEvent({ source: 'woocommerce', eventType: topic || resource || 'order', companyId, payload: data })
+
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
       // Never 500 the webhook for a config issue — acknowledge and log.
       console.error('[Webhook] SUPABASE_SERVICE_ROLE_KEY missing')
@@ -567,6 +571,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, message: 'Webhook processed', deliveryId })
   } catch (error: any) {
     console.error('[Webhook] Error:', error)
+    await logWebhookEvent({ source: 'woocommerce', status: 'error', error: error?.message })
     // Return 200 so WooCommerce doesn't disable the webhook after repeated 500s.
     // The error is logged for debugging; the event is effectively dropped.
     return NextResponse.json({ ok: false, error: error.message || 'Webhook processing failed' })

@@ -226,21 +226,18 @@ export async function resolveAudience(
     if (filter.type === 'abandoned_checkout') {
       const carts = await fetchAll(() =>
         db.from('abandoned_carts')
-          .select('contact_id, email, phone, status')
+          .select('email, phone, status')     // no contact_id column — match by email/phone
           .eq('company_id', companyId).order('id', { ascending: true })
       )
-      const ids = new Set<string>()
       const emails = new Set<string>()
       const phones = new Set<string>()
       for (const c of carts) {
         if (String(c.status || '').toLowerCase() === 'recovered') continue
-        if (c.contact_id) ids.add(c.contact_id)
         if (c.email) emails.add(String(c.email).toLowerCase())
         if (c.phone) phones.add(digits(c.phone))
       }
       candidates = candidates.filter(c =>
-        ids.has(c.id)
-        || (c.email && emails.has(String(c.email).toLowerCase()))
+        (c.email && emails.has(String(c.email).toLowerCase()))
         || (c.phone && phones.has(digits(c.phone))))
     }
   }

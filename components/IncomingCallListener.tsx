@@ -23,6 +23,10 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // an installed app registering with the OS dialler — see notes.)
   const [companyInitials, setCompanyInitials] = useState('')
   // Hold / warm transfer
+  // The little phone-status pill can be dismissed if it's in the way. We keep
+  // that in component state only (not storage), so it comes back on refresh.
+  const [pillDismissed, setPillDismissed] = useState(false)
+  const [pillHover, setPillHover] = useState(false)
   const [onHold, setOnHold] = useState(false)
   const [transferState, setTransferState] = useState<'none' | 'ringing' | 'consulting'>('none')
   const [transferBusy, setTransferBusy] = useState(false)
@@ -40,6 +44,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const clientRef = useRef<any>(null)
   const callRef = useRef<any>(null)
   const timerRef = useRef<any>(null)
+  // The signed-in agent's user id, so a call we accept can notify the REST of
+  // the team (excludeUserId = us) to stop their phones ringing.
+  const userIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!companyId) return
@@ -54,6 +61,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         // every registered device.
         const { data: sess } = await supabase.auth.getSession()
         const userId = sess?.session?.user?.id || null
+        userIdRef.current = userId
 
         const res = await fetch('/api/telnyx/token', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -194,6 +202,26 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       callRef.current?.answer?.()
     } catch (e) { console.error('[telnyx] answer failed', e) }
     setInCall(true)
+    notifyTeamCallAccepted()
+  }
+
+  // Tell everyone ELSE on the team that this call was picked up, so their phones
+  // (and browsers) can stop ringing. Whole team minus the accepter. Fire-and-
+  // forget — the call is already answered; a push hiccup mustn't block it.
+  const notifyTeamCallAccepted = () => {
+    if (!companyId) return
+    const who = agentName || 'a teammate'
+    fetch('/api/push/send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        companyId,
+        excludeUserId: userIdRef.current || undefined,
+        title: 'Call answered',
+        body: `Phone call accepted by ${who}`,
+        // No conversationId → no 'message' category (this isn't a chat), and the
+        // default 'messages' channel so Android always renders it.
+      }),
+    }).catch(() => {})
   }
   const decline = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
   const hangup = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
@@ -260,12 +288,32 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   if (!incoming) return (<>
     {audioEl}
     {/* Tiny phone-status indicator so it's visible whether the WebRTC client is
-        actually connected to receive inbound calls (green = ready). */}
-    <div title={connErr ? `Phone: ${connErr}` : ready ? 'Phone ready to receive calls' : 'Phone connecting…'}
-      style={{ position: 'fixed', bottom: 12, left: 12, zIndex: 40, display: 'flex', alignItems: 'center', gap: 6, padding: '4px 9px', borderRadius: 20, background: '#fff', border: '1px solid var(--border)', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', fontSize: 11, fontWeight: 700, color: connErr ? '#dc2626' : ready ? '#15803d' : '#b45309' }}>
-      <span style={{ width: 7, height: 7, borderRadius: '50%', background: connErr ? '#dc2626' : ready ? '#22c55e' : '#f59e0b' }} />
-      {connErr ? 'Phone error' : ready ? 'Phone ready' : 'Connecting…'}
-    </div>
+        actually connected to receive inbound calls (green = ready). Dismissable
+        — hovering reveals a cross that hides it until the next page refresh. */}
+    {!pillDismissed && (
+      <div
+        onMouseEnter={() => setPillHover(true)}
+        onMouseLeave={() => setPillHover(false)}
+        title={connErr ? `Phone: ${connErr}` : ready ? 'Phone ready to receive calls' : 'Phone connecting…'}
+        style={{ position: 'fixed', bottom: 12, left: 12, zIndex: 40, display: 'flex', alignItems: 'center', gap: 6, padding: '4px 9px', borderRadius: 20, background: '#fff', border: '1px solid var(--border)', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', fontSize: 11, fontWeight: 700, color: connErr ? '#dc2626' : ready ? '#15803d' : '#b45309' }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: connErr ? '#dc2626' : ready ? '#22c55e' : '#f59e0b' }} />
+        {connErr ? 'Phone error' : ready ? 'Phone ready' : 'Connecting…'}
+        {/* Extends out from the pill on hover; click to dismiss. */}
+        <button type="button"
+          aria-label="Hide phone status"
+          onClick={(e) => { e.stopPropagation(); setPillDismissed(true) }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            width: pillHover ? 15 : 0, height: 15, marginLeft: pillHover ? 1 : -6,
+            padding: 0, border: 'none', borderRadius: '50%', cursor: 'pointer',
+            background: '#f3f4f6', color: '#6b7280',
+            opacity: pillHover ? 1 : 0, overflow: 'hidden',
+            transition: 'width 0.18s ease, opacity 0.18s ease, margin-left 0.18s ease',
+          }}>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    )}
   </>)
 
   return (<>

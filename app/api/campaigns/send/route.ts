@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prepareCampaign, processCampaignBatch, isWithinSendingHours } from '@/lib/campaign-sender'
+import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -23,6 +24,7 @@ export async function POST(req: NextRequest) {
     if (confirm !== 'SEND') {
       return NextResponse.json({ error: 'Confirmation required' }, { status: 400 })
     }
+    if (await isExternalSendBlocked(companyId)) { logBlockedSend(companyId, 'campaign'); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
 
     // Freeze the recipient list, re-checking consent against live data.
     const prepared = await prepareCampaign(companyId, campaignId)

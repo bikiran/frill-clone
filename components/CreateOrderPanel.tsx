@@ -50,7 +50,9 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
     email: contact?.email || '', phone: contact?.phone || '',
     address_1: contact?.address || '', city: '', state: '', postcode: '', company: contact?.company || '',
     ship_same: true, ship_address_1: '', ship_city: '', ship_state: '', ship_postcode: '',
-    createAccount: false,
+    // On by default: tie the order to a real customer account so the pay link
+    // works even when the store has guest checkout turned off.
+    createAccount: true,
   })
 
   // Products
@@ -343,9 +345,9 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
                       <input style={{ ...I, width: 90 }} value={cust.state} onChange={e => setCust({ ...cust, state: e.target.value })} placeholder="State" />
                       <input style={{ ...I, width: 100 }} value={cust.postcode} onChange={e => setCust({ ...cust, postcode: e.target.value })} placeholder="Postcode" />
                     </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13 }}>
-                      <input type="checkbox" checked={cust.createAccount} onChange={e => setCust({ ...cust, createAccount: e.target.checked })} />
-                      Create a customer account (otherwise a guest order)
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12, fontSize: 13 }}>
+                      <input type="checkbox" checked={cust.createAccount} onChange={e => setCust({ ...cust, createAccount: e.target.checked })} style={{ marginTop: 2 }} />
+                      <span>Match or create a customer account <span style={{ color: 'var(--slate)' }}>(recommended — a guest order can't be paid via the link if the store has guest checkout off)</span></span>
                     </label>
                   </div>
                 )}

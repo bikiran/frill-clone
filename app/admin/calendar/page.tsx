@@ -2,9 +2,13 @@
 
 import { enrichNames } from '@/lib/team-names'
 import AssigneePicker from '@/components/AssigneePicker'
+import CustomerPicker from '@/components/CustomerPicker'
+import AttachmentUploader from '@/components/AttachmentUploader'
+import TaskEditor from '@/components/TaskEditor'
 import { decodeEntities as dec } from '@/lib/decode-entities'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 
 const TYPE_META: Record<string, { label: string; bg: string; fg: string; dot: string }> = {
   delivery:    { label: 'Delivery',    bg: '#fff4f1', fg: '#c2410c', dot: '#f97316' },
@@ -24,17 +28,26 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
 }
 
 export default function CalendarPage() {
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Seed from the shared identity cache so a revisit resolves the company
+  // synchronously and the month's events load without a blank gate.
+  const seed = peekCompanyUser()
+  const [companyId, setCompanyId] = useState<string | null>(seed?.companyId ?? null)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [me, setMe] = useState('')
+  const [loading, setLoading] = useState(!seed?.companyId)
   const [events, setEvents] = useState<any[]>([])
   const [locations, setLocations] = useState<any[]>([])
   const [team, setTeam] = useState<any[]>([])
   const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); return d })
   const [locationFilter, setLocationFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [defaultOutlet, setDefaultOutlet] = useState<string | null>(null)
+  const outletPrefApplied = useRef(false)
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<any>(null)
   const [dayOpen, setDayOpen] = useState<string | null>(null)
+  // The single event opened in the right slide-out (from a pill click).
+  const [selectedEvent, setSelectedEvent] = useState<any>(null)
 
   // ── Reminder settings ────────────────────────────────────────────────────
   const [showReminders, setShowReminders] = useState(false)
@@ -55,6 +68,8 @@ export default function CalendarPage() {
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setLoading(false); return }
+      setUserId(user.id)
+      setMe(user.user_metadata?.display_name || user.email?.split('@')[0] || 'Me')
       let cid: string | null = null
       const { data: owned } = await (supabase as any).from('companies').select('id, calendar_settings').eq('owner_id', user.id).order('created_at', { ascending: true }).limit(1)
       cid = owned?.[0]?.id || null
@@ -74,8 +89,19 @@ export default function CalendarPage() {
     if (!companyId) return
     const from = new Date(cursor.getFullYear(), cursor.getMonth(), 1).toISOString()
     const to = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 23, 59, 59).toISOString()
+    // Instant paint on revisit / month re-navigation: show the last events we
+    // rendered for this exact view while the fresh data loads in the background.
+    const cacheKey = `calendar:${companyId}:${from}:${locationFilter}:${typeFilter}`
+    const cached = readCache<{ events: any[]; locations: any[] }>(cacheKey)
+    if (cached) {
+      setEvents(cached.events)
+      setLocations(cached.locations)
+    }
+    // Outlet filtering is done client-side (below) so it matches the Tasks page:
+    // the server only checks location_id, which misses events assigned to an
+    // outlet via the multi-outlet location_ids array (and never filtered the
+    // merged conversation_tasks at all).
     const params = new URLSearchParams({ companyId, from, to })
-    if (locationFilter) params.set('locationId', locationFilter)
     if (typeFilter) params.set('type', typeFilter)
     const res = await fetch(`/api/calendar?${params}`)
     const d = await res.json()
@@ -89,7 +115,7 @@ export default function CalendarPage() {
       try {
         const { data: rows } = await (supabase as any).from('conversation_tasks')
           .select('*').eq('company_id', companyId)
-          .gte('due_date', from).lte('due_date', to).limit(500)
+          .gte('due_date', from).lte('due_date', to).limit(2000)
         const taskEvents = (rows || [])
           .filter((t: any) => t.due_date)
           .map((t: any) => ({
@@ -103,6 +129,8 @@ export default function CalendarPage() {
             notes: t.text,
             starts_at: t.due_date,
             is_all_day: true,
+            location_id: t.location_id || null,
+            location_ids: Array.isArray(t.location_ids) ? t.location_ids : (t.location_id ? [t.location_id] : []),
             status: (t.status === 'done' || t.done) ? 'completed'
               : t.status === 'in_progress' ? 'in_progress' : 'scheduled',
             assignees: Array.isArray(t.assignees) ? t.assignees : [],
@@ -113,11 +141,43 @@ export default function CalendarPage() {
       } catch { /* tasks unavailable — just show calendar events */ }
     }
 
+    // Filter by the selected outlet the same way the Tasks page does: match on
+    // location_id OR any entry in the location_ids array. Events/tasks with no
+    // outlet are hidden while a specific outlet is selected.
+    if (locationFilter) {
+      const outletsOf = (e: any) => (Array.isArray(e.location_ids) && e.location_ids.length) ? e.location_ids : (e.location_id ? [e.location_id] : [])
+      evts = evts.filter(e => outletsOf(e).includes(locationFilter))
+    }
+
+    const locs = d.locations || []
     setEvents(evts)
-    setLocations(d.locations || [])
+    setLocations(locs)
+    writeCache(cacheKey, { events: evts, locations: locs })
   }
 
   useEffect(() => { load() }, [companyId, cursor, locationFilter, typeFilter])
+
+  // Per-user default outlet (shared with the Tasks page). Applied once on load.
+  useEffect(() => {
+    if (!companyId || !userId) return
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/user-prefs?userId=${userId}&companyId=${companyId}&key=default_outlet`)
+        const d = await res.json()
+        const dv = d?.prefs?.default_outlet
+        if (dv && typeof dv === 'object') {
+          setDefaultOutlet(dv.id || null)
+          if (dv.id && !outletPrefApplied.current) { setLocationFilter(dv.id); outletPrefApplied.current = true }
+        }
+      } catch {}
+    })()
+  }, [companyId, userId])
+
+  const setDefaultOutletPref = (id: string | null) => {
+    setDefaultOutlet(id)
+    setLocationFilter(id || '')
+    if (companyId && userId) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
+  }
 
   useEffect(() => {
     if (!companyId) return
@@ -209,6 +269,9 @@ export default function CalendarPage() {
         is_all_day: !!editing.is_all_day,
         time_window: editing.time_window || null,
         location_id: editing.location_id || null,
+        location_ids: (editing.location_ids && editing.location_ids.length)
+          ? editing.location_ids
+          : (editing.location_id ? [editing.location_id] : []),
         address: editing.address || null,
         status: editing.status || 'scheduled',
         assigned_to_id: (typeof editing.assigned_to_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editing.assigned_to_id)) ? editing.assigned_to_id : null,
@@ -219,6 +282,7 @@ export default function CalendarPage() {
           : null,
         notify_customer: !!editing.notify_customer,
         customer_contact_id: editing.customer_contact_id || null,
+        attachments: editing.attachments || [],
       }),
     })
     const d = await res.json()
@@ -246,15 +310,149 @@ export default function CalendarPage() {
     await load()
   }
 
+  // Mark done / not done straight from the calendar — the tick on each pill and
+  // the button in the slide-out both call this. Updates the UI optimistically so
+  // the tick fills in instantly, then persists. Tasks (which live in
+  // conversation_tasks) and calendar events are handled separately.
+  const applyStatusLocal = (id: string, status: string) => {
+    setEvents(cur => cur.map(x => x.id === id ? { ...x, status } : x))
+    setSelectedEvent((prev: any) => prev && prev.id === id ? { ...prev, status } : prev)
+  }
+  const toggleDone = async (e: any) => {
+    if (!companyId) return
+    const wasDone = e.status === 'completed'
+    const next = wasDone ? 'scheduled' : 'completed'
+    applyStatusLocal(e.id, next)
+    try {
+      if (e._fromTasks) {
+        const done = !wasDone
+        await (supabase as any).from('conversation_tasks')
+          .update({ done, status: done ? 'done' : 'todo', completed_at: done ? new Date().toISOString() : null })
+          .eq('id', e._taskId)
+      } else {
+        await fetch('/api/calendar', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId, action: 'set_status', id: e.id, status: next, notifyCustomer: false }),
+        })
+      }
+    } catch { /* optimistic state stays; next load reconciles */ }
+    load()
+  }
+
   const L: any = { display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }
   const I: any = { width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', marginBottom: 12 }
+
+  // One rich event card, shared by the day popup and the right slide-out so
+  // both stay in sync. Actions close whichever container they were opened from.
+  const EventCard = (e: any) => {
+    const m = TYPE_META[e.event_type] || TYPE_META.appointment
+    const st = STATUS_META[e.status] || STATUS_META.scheduled
+    const locIds: string[] = (e.location_ids && e.location_ids.length) ? e.location_ids : (e.location_id ? [e.location_id] : [])
+    const locNames = locIds.map(id => locations.find(l => l.id === id)).filter(Boolean).map((l: any) => l.label || l.suburb)
+    const done = e.status === 'completed'
+    return (
+      <div key={e.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 7px', borderRadius: 5, background: m.bg, color: m.fg }}>{m.label}</span>
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: st.color }}>{st.label}</span>
+          {locNames.length > 0 && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>· {locNames.join(', ')}</span>}
+        </div>
+
+        <p style={{ margin: '0 0 3px', fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{dec(e.title)}</p>
+        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>
+          {e.is_all_day ? 'All day' : new Date(e.starts_at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}
+          {e.time_window ? ` · ${e.time_window}` : ''}
+          {e.contact ? ` · ${e.contact.name || e.contact.email}` : ''}
+        </p>
+        {e.address && <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>{e.address}</p>}
+        {e.notes && <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.45 }}>{dec(e.notes)}</p>}
+        {Array.isArray(e.attachments) && e.attachments.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+            {e.attachments.slice(0, 6).map((a: any, i: number) => {
+              const isImg = a.kind === 'image' || (a.type || '').startsWith('image/')
+              const isVid = a.kind === 'video' || (a.type || '').startsWith('video/')
+              return (
+                <a key={i} href={a.url} target="_blank" rel="noopener" title={a.name || ''}
+                  style={{ width: 48, height: 48, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: isImg ? '#f4f4f5' : '#111', color: '#fff', textDecoration: 'none', flexShrink: 0 }}>
+                  {isImg ? <img src={a.url} alt={a.name || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ fontSize: 18 }}>{isVid ? '▶' : '📄'}</span>}
+                </a>
+              )
+            })}
+            {e.attachments.length > 6 && <span style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--slate)' }}>+{e.attachments.length - 6}</span>}
+          </div>
+        )}
+        {(() => {
+          const as = (Array.isArray(e.assignees) && e.assignees.length)
+            ? e.assignees
+            : (e.assigned_to_name ? [{ name: e.assigned_to_name }] : [])
+          if (!as.length) return null
+          return (
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
+              {as.map((a: any, i: number) => (
+                <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 11, fontWeight: 700 }}>
+                  {a.name}
+                </span>
+              ))}
+            </div>
+          )
+        })()}
+
+        {/* Delivery status actions */}
+        {e.event_type === 'delivery' && (
+          <div style={{ display: 'flex', gap: 5, marginTop: 10, flexWrap: 'wrap' }}>
+            {[
+              ['confirmed', 'Confirm'],
+              ['in_progress', 'On its way'],
+              ['completed', 'Delivered'],
+              ['missed', 'Missed'],
+            ].map(([k, label]) => (
+              <button key={k} onClick={() => setStatus(e.id, k, e.conversation_id ? confirm(`Tell the customer? ("${label}")`) : false)}
+                style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: e.status === k ? 'var(--peach)' : '#fff', color: e.status === k ? 'var(--coral)' : 'var(--ink)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Mark done — for everything that isn't a delivery (deliveries use "Delivered"). */}
+        {e.event_type !== 'delivery' && (
+          <div style={{ marginTop: 10 }}>
+            <button onClick={() => toggleDone(e)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid ' + (done ? '#22c55e' : 'var(--border)'), background: done ? '#ecfdf5' : '#fff', color: done ? '#15803d' : 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              {done ? '✓ Done — mark not done' : 'Mark done'}
+            </button>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+          {/* Tasks shown here live in the Tasks page, not in calendar_events —
+              editing them here would try to save the wrong record. */}
+          {e._fromTasks ? (
+            <a href={`/admin/tasks?task=${e._taskId}&date=${localYmd(new Date(e.starts_at))}`}
+              style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>Open in Tasks</a>
+          ) : (
+            <button onClick={() => { setDayOpen(null); setSelectedEvent(null); setEditing({ ...e, date: localYmd(new Date(e.starts_at)), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_id ? [{ id: e.assigned_to_id, name: e.assigned_to_name }] : []) }) }}
+              style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>
+          )}
+          {e.conversation_id && (
+            <a href={`/admin/inbox?conversation=${e.conversation_id}`}
+              style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>Open chat</a>
+          )}
+          {!e._fromTasks && (
+            <button onClick={() => remove(e.id)}
+              style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#dc2626' }}>Delete</button>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   if (loading) return <div style={{ padding: 28 }}>Loading…</div>
 
   const dayEvents = dayOpen ? (byDay[dayOpen] || []) : []
 
   return (
-    <div style={{ maxWidth: 1080, margin: '0 auto', padding: '26px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div style={{ maxWidth: 'none', margin: 0, padding: '26px 32px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       <style>{`
         /* One column definition for BOTH the weekday header and the date cells,
            so they can never drift out of alignment. box-sizing keeps the 1px
@@ -295,6 +493,15 @@ export default function CalendarPage() {
         }
         .cal-event:hover { z-index: 31; }
         .cal-event:hover .cal-tip { display: block; }
+
+        /* Hover tick to complete an event without opening it — mirrors the
+           Tasks calendar. Always laid out (so the pill doesn't jump), hidden
+           until hover, and kept visible once done. */
+        .cal-event .cal-tick { opacity: 0; transition: opacity 0.12s ease; }
+        .cal-event:hover .cal-tick, .cal-event .cal-tick.done { opacity: 1; }
+
+        /* Right slide-out panel for a clicked event. */
+        @keyframes calSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
 
         /* Phones: keep all 7 days visible without horizontal scroll by using
            single-letter weekday labels and tighter cells — Apple/Google style. */
@@ -350,11 +557,8 @@ export default function CalendarPage() {
         </div>
 
         {locations.length > 0 && (
-          <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
-            style={{ padding: '7px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, background: '#fff' }}>
-            <option value="">All outlets</option>
-            {locations.map(l => <option key={l.id} value={l.id}>{l.label || l.suburb}</option>)}
-          </select>
+          <OutletPicker locations={locations} value={locationFilter} onChange={setLocationFilter}
+            defaultOutlet={defaultOutlet} onSetDefault={setDefaultOutletPref} />
         )}
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
           style={{ padding: '7px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, background: '#fff' }}>
@@ -431,18 +635,28 @@ export default function CalendarPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                         {evs.slice(0, 3).map(e => {
                           const m = TYPE_META[e.event_type] || TYPE_META.appointment
+                          const done = e.status === 'completed'
                           return (
                             <div key={e.id} title={dec(e.title)} className="cal-event"
+                              onClick={(ev) => { ev.stopPropagation(); setSelectedEvent(e) }}
                               style={{
                                 display: 'flex', alignItems: 'center', gap: 4,
                                 padding: '2px 5px', borderRadius: 5, background: m.bg,
                                 fontSize: 10.5, fontWeight: 600, color: m.fg,
-                                overflow: 'hidden', whiteSpace: 'nowrap',
+                                overflow: 'hidden', whiteSpace: 'nowrap', cursor: 'pointer',
                                 opacity: ['cancelled', 'completed'].includes(e.status) ? 0.55 : 1,
                                 textDecoration: e.status === 'cancelled' ? 'line-through' : 'none',
                               }}>
-                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
+                              {/* Hover tick to complete without opening the event. */}
+                              <button type="button" className={'cal-tick' + (done ? ' done' : '')} title={done ? 'Mark not done' : 'Mark done'}
+                                onClick={(ev) => { ev.stopPropagation(); toggleDone(e) }}
+                                style={{ flexShrink: 0, width: 12, height: 12, borderRadius: '50%', border: '1.5px solid ' + (done ? '#22c55e' : m.dot), background: done ? '#22c55e' : 'transparent', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {done && <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                              </button>
                               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{dec(e.title)}</span>
+                              {Array.isArray(e.attachments) && e.attachments.length > 0 && (
+                                <span style={{ flexShrink: 0, marginLeft: 'auto', fontSize: 9.5, fontWeight: 700, opacity: 0.85 }}>📎{e.attachments.length}</span>
+                              )}
                               <span className="cal-tip">{dec(e.title)}</span>
                             </div>
                           )
@@ -552,83 +766,27 @@ export default function CalendarPage() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {dayEvents.map(e => {
-                const m = TYPE_META[e.event_type] || TYPE_META.appointment
-                const st = STATUS_META[e.status] || STATUS_META.scheduled
-                const loc = locations.find(l => l.id === e.location_id)
-                return (
-                  <div key={e.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 7px', borderRadius: 5, background: m.bg, color: m.fg }}>{m.label}</span>
-                      <span style={{ fontSize: 11.5, fontWeight: 700, color: st.color }}>{st.label}</span>
-                      {loc && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>· {loc.label || loc.suburb}</span>}
-                    </div>
-
-                    <p style={{ margin: '0 0 3px', fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{dec(e.title)}</p>
-                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>
-                      {e.is_all_day ? 'All day' : new Date(e.starts_at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}
-                      {e.time_window ? ` · ${e.time_window}` : ''}
-                      {e.contact ? ` · ${e.contact.name || e.contact.email}` : ''}
-                    </p>
-                    {e.address && <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>{e.address}</p>}
-                    {e.notes && <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.45 }}>{dec(e.notes)}</p>}
-                    {(() => {
-                      const as = (Array.isArray(e.assignees) && e.assignees.length)
-                        ? e.assignees
-                        : (e.assigned_to_name ? [{ name: e.assigned_to_name }] : [])
-                      if (!as.length) return null
-                      return (
-                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
-                          {as.map((a: any, i: number) => (
-                            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 11, fontWeight: 700 }}>
-                              {a.name}
-                            </span>
-                          ))}
-                        </div>
-                      )
-                    })()}
-
-                    {/* Delivery status actions */}
-                    {e.event_type === 'delivery' && (
-                      <div style={{ display: 'flex', gap: 5, marginTop: 10, flexWrap: 'wrap' }}>
-                        {[
-                          ['confirmed', 'Confirm'],
-                          ['in_progress', 'On its way'],
-                          ['completed', 'Delivered'],
-                          ['missed', 'Missed'],
-                        ].map(([k, label]) => (
-                          <button key={k} onClick={() => setStatus(e.id, k, e.conversation_id ? confirm(`Tell the customer? ("${label}")`) : false)}
-                            style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: e.status === k ? 'var(--peach)' : '#fff', color: e.status === k ? 'var(--coral)' : 'var(--ink)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                      {/* Tasks shown here live in the Tasks page, not in
-                          calendar_events — editing them here would try to save
-                          the wrong record, so send the user where they belong. */}
-                      {e._fromTasks ? (
-                        <a href="/admin/tasks"
-                          style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>Open in Tasks</a>
-                      ) : (
-                      <button onClick={() => { setDayOpen(null); setEditing({ ...e, date: localYmd(new Date(e.starts_at)), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_id ? [{ id: e.assigned_to_id, name: e.assigned_to_name }] : []) }) }}
-                        style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>
-                      )}
-                      {e.conversation_id && (
-                        <a href={`/admin/inbox?conversation=${e.conversation_id}`}
-                          style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>Open chat</a>
-                      )}
-                      {!e._fromTasks && (
-                      <button onClick={() => remove(e.id)}
-                        style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#dc2626' }}>Delete</button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+              {dayEvents.map(e => EventCard(e))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Right slide-out — a single event's detail, opened by clicking its pill. */}
+      {selectedEvent && (
+        <div onClick={() => setSelectedEvent(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', justifyContent: 'flex-end', zIndex: 310 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 440, maxWidth: '96vw', height: '100%', overflowY: 'auto', background: '#fff', boxShadow: '-10px 0 40px rgba(0,0,0,0.16)', padding: 24, animation: 'calSlideIn 0.18s ease' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>
+                {(TYPE_META[selectedEvent.event_type] || TYPE_META.appointment).label}
+              </h2>
+              <button onClick={() => setSelectedEvent(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', display: 'flex' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            {EventCard(selectedEvent)}
           </div>
         </div>
       )}
@@ -639,9 +797,11 @@ export default function CalendarPage() {
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>
           <div onClick={e => e.stopPropagation()}
             style={{ width: 480, maxWidth: '95vw', maxHeight: '88vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24 }}>
-            <h2 style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>
-              {editing.id ? 'Edit event' : 'New event'}
-            </h2>
+            {!(editing.event_type === 'task' && !editing.id) && (
+              <h2 style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>
+                {editing.id ? 'Edit event' : 'New event'}
+              </h2>
+            )}
 
             <label style={L}>Type</label>
             <div style={{ display: 'flex', gap: 5, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -653,6 +813,23 @@ export default function CalendarPage() {
               ))}
             </div>
 
+            {editing.event_type === 'task' && !editing.id ? (
+              // A new "Task" gets the full Tasks editor (priority, repeats,
+              // colour, order link, assignees) right here — the same form as the
+              // Tasks page. It writes a real task, which then shows on both pages.
+              <TaskEditor
+                companyId={companyId} team={team} outlets={locations} me={me} userId={userId}
+                initial={{
+                  title: editing.title || '',
+                  due: editing.date || '',
+                  locationIds: (editing.location_ids && editing.location_ids.length)
+                    ? editing.location_ids
+                    : (editing.location_id ? [editing.location_id] : []),
+                }}
+                onClose={() => setEditing(null)}
+                onSaved={() => { setEditing(null); load() }}
+              />
+            ) : (<>
             <label style={L}>Title</label>
             <input style={I} value={editing.title || ''} placeholder="Deliver 4ft tank to Bikiran"
               onChange={e => setEditing({ ...editing, title: e.target.value })} />
@@ -691,16 +868,33 @@ export default function CalendarPage() {
               </>
             )}
 
-            {locations.length > 0 && (
-              <>
-                <label style={L}>Outlet</label>
-                <select style={I} value={editing.location_id || ''}
-                  onChange={e => setEditing({ ...editing, location_id: e.target.value })}>
-                  <option value="">Not tied to an outlet</option>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.label || l.suburb}</option>)}
-                </select>
-              </>
-            )}
+            {locations.length > 0 && (() => {
+              // Multiple outlets: an event can involve more than one store.
+              const selIds: string[] = (editing.location_ids && editing.location_ids.length)
+                ? editing.location_ids
+                : (editing.location_id ? [editing.location_id] : [])
+              const toggle = (id: string) => {
+                const next = selIds.includes(id) ? selIds.filter(x => x !== id) : [...selIds, id]
+                setEditing({ ...editing, location_ids: next, location_id: next[0] || null })
+              }
+              return (
+                <>
+                  <label style={L}>Outlets <span style={{ fontWeight: 400, color: 'var(--slate)' }}>— select one or more</span></label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                    {locations.map(l => {
+                      const on = selIds.includes(l.id)
+                      return (
+                        <button key={l.id} type="button" onClick={() => toggle(l.id)}
+                          style={{ padding: '8px 13px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)' }}>
+                          {on ? '✓ ' : ''}{l.label || l.suburb}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {selIds.length === 0 && <p style={{ fontSize: 11.5, color: 'var(--slate)', margin: '-6px 0 12px' }}>Not tied to an outlet.</p>}
+                </>
+              )
+            })()}
 
             {/* Assign to one or more team members and remind them */}
             <label style={L}>Team members</label>
@@ -746,20 +940,42 @@ export default function CalendarPage() {
 
             {/* Customer reminder — only meaningful for customer-facing event types */}
             {['delivery', 'appointment', 'booking', 'pickup'].includes(editing.event_type) && (
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '11px 12px', borderRadius: 10, background: 'var(--canvas)', margin: '8px 0 4px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={!!editing.notify_customer}
-                  onChange={e => setEditing({ ...editing, notify_customer: e.target.checked })}
-                  style={{ marginTop: 2 }} />
-                <span>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', display: 'block' }}>
-                    Also remind the customer
+              <div style={{ margin: '8px 0 4px' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '11px 12px', borderRadius: 10, background: 'var(--canvas)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!editing.notify_customer}
+                    onChange={e => setEditing({ ...editing, notify_customer: e.target.checked })}
+                    style={{ marginTop: 2 }} />
+                  <span>
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', display: 'block' }}>
+                      Also remind the customer
+                    </span>
+                    <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>
+                      Sends the customer a reminder before this {TYPE_META[editing.event_type]?.label.toLowerCase() || 'event'}.
+                    </span>
                   </span>
-                  <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>
-                    Sends the customer a reminder before this {TYPE_META[editing.event_type]?.label.toLowerCase() || 'event'}.
-                  </span>
-                </span>
-              </label>
+                </label>
+                {editing.notify_customer && (
+                  <div style={{ marginTop: 8 }}>
+                    <CustomerPicker
+                      companyId={companyId}
+                      value={editing.customer_contact_id || null}
+                      valueName={editing.customer_name || null}
+                      onChange={(id, nm) => setEditing({ ...editing, customer_contact_id: id, customer_name: nm })}
+                    />
+                  </div>
+                )}
+              </div>
             )}
+
+            <label style={L}>Photos &amp; videos</label>
+            <div style={{ marginBottom: 12 }}>
+              <AttachmentUploader
+                companyId={companyId}
+                value={editing.attachments || []}
+                onChange={(a) => setEditing({ ...editing, attachments: a })}
+                folder="calendar"
+              />
+            </div>
 
             <label style={L}>Notes</label>
             <textarea style={{ ...I, minHeight: 70, resize: 'vertical', fontFamily: 'inherit' }} value={editing.notes || ''}
@@ -775,6 +991,7 @@ export default function CalendarPage() {
                   style={{ marginLeft: 'auto', padding: '10px 16px', borderRadius: 9, background: '#fff', color: '#dc2626', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Delete</button>
               )}
             </div>
+            </>)}
           </div>
         </div>
       )}
@@ -786,4 +1003,60 @@ const navBtn: any = {
   width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)',
   background: '#fff', cursor: 'pointer', fontSize: 17, fontWeight: 700,
   color: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+}
+
+// Outlet filter with a per-user "default" — left-click selects, right-click an
+// outlet sets it as this user's default (persisted, shared with the Tasks page).
+function OutletPicker({ locations, value, onChange, defaultOutlet, onSetDefault }: {
+  locations: any[]; value: string; onChange: (v: string) => void
+  defaultOutlet: string | null; onSetDefault: (id: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open && !menu) return
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setMenu(null) } }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open, menu])
+  const labelOf = (id: string) => { const l = locations.find(x => x.id === id); return l ? (l.label || l.suburb || 'Outlet') : 'Outlet' }
+  const current = value ? labelOf(value) : 'All outlets'
+  const row = (on: boolean): any => ({ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 11px', border: 'none', background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--ink)', fontSize: 13, fontWeight: on ? 700 : 500, cursor: 'pointer' })
+  const menuItem: any = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, background: '#fff', color: 'var(--ink)', cursor: 'pointer', fontWeight: value ? 700 : 400 }}>
+        {current}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 60, minWidth: 210, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 14px 34px rgba(0,0,0,0.16)', overflow: 'hidden', maxHeight: 300, overflowY: 'auto' }}>
+          <button type="button" onClick={() => { onChange(''); setOpen(false) }} style={{ ...row(value === '') }}>All outlets</button>
+          {locations.map(l => (
+            <button key={l.id} type="button" title="Right-click to set as your default"
+              onClick={() => { onChange(l.id); setOpen(false) }}
+              onContextMenu={e => { e.preventDefault(); setMenu({ x: Math.min(e.clientX, window.innerWidth - 220), y: e.clientY, id: l.id }) }}
+              style={row(value === l.id)}>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.label || l.suburb}</span>
+              {defaultOutlet === l.id && <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--coral)', background: 'var(--peach)', padding: '1px 6px', borderRadius: 20 }}>DEFAULT</span>}
+            </button>
+          ))}
+          <p style={{ margin: 0, padding: '7px 11px', fontSize: 10.5, color: 'var(--slate)', borderTop: '1px solid var(--border)' }}>Right-click an outlet to set your default.</p>
+        </div>
+      )}
+      {menu && (
+        <>
+          <div onClick={() => setMenu(null)} onContextMenu={e => { e.preventDefault(); setMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 400 }} />
+          <div style={{ position: 'fixed', top: menu.y, left: menu.x, zIndex: 401, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 200 }}>
+            <p style={{ margin: '2px 8px 6px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>{labelOf(menu.id)}</p>
+            {defaultOutlet === menu.id
+              ? <button type="button" style={menuItem} onClick={() => { onSetDefault(null); setMenu(null); setOpen(false) }}>Remove as default</button>
+              : <button type="button" style={menuItem} onClick={() => { onSetDefault(menu.id); setMenu(null); setOpen(false) }}>Make this my default outlet</button>}
+          </div>
+        </>
+      )}
+    </div>
+  )
 }
