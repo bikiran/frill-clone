@@ -8,14 +8,27 @@ import Link from 'next/link'
 
 export default function OnboardingPage() {
   const [company, setCompany] = useState<any>(null)
+  // The signed-in user — the buttons below dereference it (redirectToUserAdmin),
+  // and it was never stored, so "Go to Dashboard" / "Skip" threw a ReferenceError.
+  const [user, setUser] = useState<any>(null)
+  const [loaded, setLoaded] = useState(false)
   const [step, setStep] = useState(0)
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }: any) => {
       const u = data?.session?.user
       if (!u) { window.location.href = '/signup'; return }
-      const co = await getCompanyByOwner(u.id)
+      setUser(u)
+      // A board created seconds ago can briefly be unreadable (row replication /
+      // RLS catch-up). Retry a few times instead of spinning forever on the first
+      // null — the previous code left the page stuck on a loading spinner.
+      let co: any = null
+      for (let i = 0; i < 5 && !co; i++) {
+        co = await getCompanyByOwner(u.id)
+        if (!co) await new Promise(r => setTimeout(r, 800))
+      }
       setCompany(co)
+      setLoaded(true)
     })
   }, [])
 
@@ -26,9 +39,33 @@ export default function OnboardingPage() {
     { icon: '⚙️', title: 'Customize your board', desc: 'Set your brand colors, logo, and configure your board settings.' },
   ]
 
-  if (!company) return (
+  if (!loaded) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)' }}>
       <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
+    </div>
+  )
+
+  // Loaded, but the board couldn't be read (e.g. RLS/replication lag, or the
+  // company row wasn't created). Show a way forward instead of a dead spinner.
+  if (!company) return (
+    <div className="min-h-screen flex items-center justify-center px-6" style={{ background: 'var(--canvas)' }}>
+      <div className="max-w-md w-full text-center">
+        <div className="text-4xl mb-3">🛠️</div>
+        <h1 className="text-2xl font-black mb-2" style={{ color: 'var(--ink)' }}>Finishing your board setup</h1>
+        <p className="text-base mb-6" style={{ color: 'var(--slate)' }}>
+          Your account is ready, but we couldn&rsquo;t load your board just yet. Give it a moment and try again.
+        </p>
+        <div className="flex items-center justify-center gap-3">
+          <button onClick={() => window.location.reload()}
+            className="px-6 py-2.5 rounded-xl font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)' }}>
+            Retry
+          </button>
+          <button onClick={async () => { if (user) await redirectToUserAdmin(user.id); else window.location.href = '/admin' }}
+            className="px-6 py-2.5 rounded-xl border font-medium cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+            Go to dashboard
+          </button>
+        </div>
+      </div>
     </div>
   )
 
