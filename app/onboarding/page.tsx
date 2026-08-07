@@ -19,6 +19,18 @@ export default function OnboardingPage() {
       const u = data?.session?.user
       if (!u) { window.location.href = '/signup'; return }
       setUser(u)
+
+      // Self-heal the board setup as soon as we know who's signed in — BEFORE and
+      // independent of the client-side board read below. This provisions the
+      // subdomain, ensures the owner's admin membership, and seeds sample content
+      // if the board is empty. Server-scoped to this user's own company, so it's
+      // safe; fire-and-forget so it never blocks onboarding. Running it even when
+      // the read below fails is what repairs a board that came up half-set-up.
+      const token = data?.session?.access_token
+      if (token) {
+        fetch('/api/companies/ensure-domain', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {})
+      }
+
       // A board created seconds ago can briefly be unreadable (row replication /
       // RLS catch-up). Retry a few times instead of spinning forever on the first
       // null — the previous code left the page stuck on a loading spinner.
@@ -29,18 +41,6 @@ export default function OnboardingPage() {
       }
       setCompany(co)
       setLoaded(true)
-
-      // Self-heal the board's subdomain. Signup already registers it, but if that
-      // call failed (transient error, or a signup before the env vars were set)
-      // the board would 404. Re-running provisioning here — idempotent and
-      // server-scoped to this user's own company — makes it automatic with no
-      // manual DNS steps. Fire-and-forget; a failure never blocks onboarding.
-      if (co?.slug) {
-        const token = data?.session?.access_token
-        if (token) {
-          fetch('/api/companies/ensure-domain', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {})
-        }
-      }
     })
   }, [])
 

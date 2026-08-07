@@ -52,6 +52,31 @@ export async function GET(req: NextRequest) {
         accent_color: '#ff7a6b',
       }).select().single()
 
+      // Finish owner setup, matching the /api/companies path (the signup flow
+      // skipped both of these, so boards created by email/OAuth signup came up
+      // empty and — if owner_id ever fails to match — with no way to reach admin):
+      //   1. Record the creator as an OWNER team member. The board grants admin
+      //      on owner_id OR an owner/admin membership, so this is the safety net.
+      //   2. Seed sample statuses, topics, ideas, announcements, help articles
+      //      and a feedback form, so the new board isn't blank.
+      // Both non-blocking — a failure here must never break email confirmation.
+      if (co.data?.id) {
+        try {
+          const { data: existingMember } = await (adminClient as any).from('team_members')
+            .select('id').eq('company_id', co.data.id).eq('user_id', data.user.id).maybeSingle()
+          if (!existingMember) {
+            await (adminClient as any).from('team_members').insert({
+              email: data.user.email, user_id: data.user.id, company_id: co.data.id,
+              role: 'owner', status: 'active',
+            })
+          }
+        } catch (e) { console.warn('[auth/callback] owner team_member insert failed', e) }
+        try {
+          const { seedCompanyData } = await import('@/lib/seedCompany')
+          seedCompanyData(co.data.id, co.data.name).catch((e: any) => console.warn('[auth/callback] seed failed', e?.message || e))
+        } catch (e) { console.warn('[auth/callback] seed import failed', e) }
+      }
+
       // Auto-register the board's subdomain (Vercel project domain + Cloudflare
       // CNAME). Go through our own /api/domains handler rather than calling
       // Vercel inline: the old inline call omitted the teamId (the project lives
