@@ -2187,6 +2187,7 @@ function CompaniesPage() {
       business_phone: co.business_phone || '', assigned_admin_email: co.assigned_admin_email || '',
       board_domain: co.board_domain || '', help_domain: co.help_domain || '',
       accent_color: co.accent_color || '#ff7a6b', owner_email: '', notes: co.notes || '',
+      number_provider: co.number_provider || 'telnyx',
     })
     setEditCo(co)
   }
@@ -2384,6 +2385,17 @@ function CompaniesPage() {
               <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} style={paInput}>
                 {['free', 'trial', 'startup', 'business', 'growth', 'suspended'].map(p => <option key={p} value={p}>{p}</option>)}
               </select>
+
+              {/* Which carrier backs this company's phone-number provisioning +
+                  telephony. Transparent to the customer; Telnyx is the default. */}
+              <label style={paLabel}>Number carrier</label>
+              <select value={form.number_provider || 'telnyx'} onChange={e => setForm({ ...form, number_provider: e.target.value })} style={paInput}>
+                <option value="telnyx">Telnyx (default)</option>
+                <option value="twilio">Twilio (real MMS)</option>
+              </select>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '-4px 0 4px' }}>
+                Which carrier the “Get a business number” flow uses for this company. The customer never sees it. Existing numbers keep working.
+              </p>
 
               <label style={paLabel}>Accent colour</label>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
