@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getVoiceProvider } from '@/lib/voice-provider-client'
 
 interface Props {
   companyId: string | null
@@ -41,6 +42,10 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       if (initials) setCompanyInitials(initials)
     })()
   }, [companyId])
+  // Which calling backend this company uses. Drives whether we register the
+  // Telnyx WebRTC client or the Twilio Voice SDK, and how answer/decline/hangup
+  // are actioned. Warm-transfer/hold is Telnyx-only for now.
+  const [provider, setProvider] = useState<'telnyx' | 'twilio'>('telnyx')
   const clientRef = useRef<any>(null)
   const callRef = useRef<any>(null)
   const timerRef = useRef<any>(null)
@@ -54,6 +59,44 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
 
     const connect = async () => {
       try {
+        const prov = await getVoiceProvider(companyId)
+        if (!cancelled) setProvider(prov)
+
+        // ── Twilio Voice SDK path ────────────────────────────────────────────
+        // Twilio rings this browser directly (Dial <Client>) and bridges the
+        // caller on accept — no server bridge, unlike Telnyx. So all we do here
+        // is register the Device and surface incoming calls in the same popup.
+        if (prov === 'twilio') {
+          const { data: sess } = await supabase.auth.getSession()
+          const userId = sess?.session?.user?.id || null
+          userIdRef.current = userId
+          const tRes = await fetch('/api/twilio/token', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, userId }),
+          })
+          const tData = await tRes.json()
+          if (!tRes.ok || cancelled) { if (!cancelled) setConnErr(tData.error || 'Twilio token error'); return }
+          const { Device } = await import('@twilio/voice-sdk')
+          const device = new Device(tData.token, { codecPreferences: ['opus', 'pcmu'] as any })
+          clientRef.current = device
+          device.on('registered', () => { if (!cancelled) { setReady(true); setConnErr(null); console.log('[twilio voice] registered') } })
+          device.on('error', (e: any) => { if (!cancelled) setConnErr(e?.message || 'connection error'); console.error('[twilio voice] error', e) })
+          device.on('incoming', (call: any) => {
+            console.log('[twilio voice] INCOMING CALL')
+            callRef.current = call
+            const fromNum = call.parameters?.From || call.parameters?.from || ''
+            setIncoming({ id: call.parameters?.CallSid || 'twilio', from: fromNum })
+            startRing()
+            resolveCaller(fromNum)
+            call.on('accept', () => { stopRing(); setInCall(true); startTimer() })
+            call.on('disconnect', () => { stopRing(); reset() })
+            call.on('cancel', () => { stopRing(); reset() })
+            call.on('reject', () => { stopRing(); reset() })
+          })
+          try { await device.register() } catch (e: any) { if (!cancelled) setConnErr(e?.message || 'register failed') }
+          return
+        }
+
         // Send userId so this browser gets its OWN telephony credential.
         // Sharing one credential meant Telnyx routed each call to whichever
         // client registered most recently — so a phone signing in silenced the
@@ -133,6 +176,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       cancelled = true
       if (timerRef.current) clearInterval(timerRef.current)
       try { clientRef.current?.disconnect?.() } catch {}
+      try { clientRef.current?.destroy?.() } catch {}   // Twilio Device teardown
     }
   }, [companyId])
 
@@ -199,8 +243,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       // no server-side bridge is needed (the number rings this client directly,
       // it does not go through a Voice API webhook). The SDK owns media: it
       // creates the RTCPeerConnection and captures the mic on answer().
-      callRef.current?.answer?.()
-    } catch (e) { console.error('[telnyx] answer failed', e) }
+      if (provider === 'twilio') callRef.current?.accept?.()
+      else callRef.current?.answer?.()
+    } catch (e) { console.error('[call] answer failed', e) }
     setInCall(true)
     notifyTeamCallAccepted()
   }
@@ -223,8 +268,8 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       }),
     }).catch(() => {})
   }
-  const decline = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
-  const hangup = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
+  const decline = () => { stopRing(); try { provider === 'twilio' ? callRef.current?.reject?.() : callRef.current?.hangup?.() } catch {}; reset() }
+  const hangup = () => { stopRing(); try { provider === 'twilio' ? callRef.current?.disconnect?.() : callRef.current?.hangup?.() } catch {}; reset() }
 
   // ── Hold and warm transfer ───────────────────────────────────────────────
   // These run server-side through Telnyx rather than in the browser: the
@@ -234,9 +279,13 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     if (!incoming?.id || !companyId) return
     setTransferBusy(true); setTransferMsg('')
     try {
-      const res = await fetch('/api/telnyx/call-transfer', {
+      // Twilio identifies the call by the browser leg's Call SID (which the
+      // transfer route resolves to the row); Telnyx uses its own call id.
+      const res = await fetch(provider === 'twilio' ? '/api/twilio/call-transfer' : '/api/telnyx/call-transfer', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, callId: incoming.id, action }),
+        body: JSON.stringify(provider === 'twilio'
+          ? { companyId, callSid: incoming.id, action, actorName: agentName }
+          : { companyId, callId: incoming.id, action }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'That did not work')
@@ -389,7 +438,8 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           </>
         ) : (
           <>
-            {/* Hold / transfer controls, only while actually on a call */}
+            {/* Hold / transfer controls, only while actually on a call. Both
+                providers run this through conferences (Telnyx / Twilio). */}
             <div style={{ display: 'flex', gap: 1, flex: 1 }}>
               {transferState === 'none' ? (
                 <>
