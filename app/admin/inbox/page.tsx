@@ -805,7 +805,20 @@ export default function InboxPage() {
   const saveCard = async () => {
     if (!selected || !companyId) return
     try {
-      await cardsApi({ action: 'save_card' })
+      const isWidgetActive = activeChannel === 'widget' || activeChannel === 'chat'
+      const d = await cardsApi({ action: 'save_card', channel: isWidgetActive ? 'chat' : activeChannel })
+      // Off-site (SMS/email/Messenger): the in-chat card can't be tapped, so send
+      // the secure save-card link over the real channel. `silent` = the card is
+      // already the thread record (correct delivery_channel), no duplicate.
+      if (d?.url && !isWidgetActive) {
+        try {
+          await deliverToCustomer({
+            subject: `${companyInfo?.name || 'We'} — save your card securely`,
+            body: 'Please save your card securely with Stripe — we\'ll never see your card details:',
+            url: d.url, silent: true,
+          })
+        } catch (e: any) { showToast(`Saved, but sending failed: ${e.message}`) }
+      }
       const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
       setMessages(msgs || [])
       scrollBottom()
@@ -1783,7 +1796,11 @@ export default function InboxPage() {
   // routes to the right channel so every action doesn't reimplement it.
   //
   // Returns a human string describing what happened (for a toast), or throws.
-  const deliverToCustomer = async (opts: { body: string; url?: string | null; subject?: string }): Promise<string> => {
+  // Deliver a message/link over the customer's active channel. When `silent` is
+  // set, the caller has ALREADY recorded a thread message (e.g. a payment /
+  // save-card card with the right delivery_channel), so we just push the link out
+  // (skipChatMessage) without inserting a duplicate — and skip the widget insert.
+  const deliverToCustomer = async (opts: { body: string; url?: string | null; subject?: string; silent?: boolean }): Promise<string> => {
     if (!selected || !companyId) throw new Error('No conversation selected')
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
     const ch = activeChannel
@@ -1802,7 +1819,7 @@ export default function InboxPage() {
     if (ch === 'instagram' || ch === 'facebook') {
       const res = await fetch('/api/meta/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: selected.id, content: fullBody, agentName: me }),
+        body: JSON.stringify({ conversationId: selected.id, content: fullBody, agentName: me, skipChatMessage: !!opts.silent }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Message failed')
@@ -1813,21 +1830,23 @@ export default function InboxPage() {
     if (ch === 'sms' && smsNumber) {
       const res = await fetch('/api/telnyx/sms/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me }),
+        body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: fullBody, senderName: me, skipChatMessage: !!opts.silent }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'SMS failed')
       return 'Sent by SMS'
     }
 
-    // Live-chat widget (or anything else): drop it into the thread. Also text a
-    // copy if we happen to have a mobile, so they get it off the site too.
-    await (supabase as any).from('messages').insert({
-      conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
-      sender_id: user?.id, sender_name: me, content: fullBody,
-      delivery_channel: 'chat',
-    })
-    await (supabase as any).from('conversations').update({ last_message: opts.body.slice(0, 120), last_message_at: new Date().toISOString() }).eq('id', selected.id)
+    // Live-chat widget (or anything else). In silent mode the card is already in
+    // the thread — just text a copy if we have a mobile; don't insert again.
+    if (!opts.silent) {
+      await (supabase as any).from('messages').insert({
+        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+        sender_id: user?.id, sender_name: me, content: fullBody,
+        delivery_channel: 'chat',
+      })
+      await (supabase as any).from('conversations').update({ last_message: opts.body.slice(0, 120), last_message_at: new Date().toISOString() }).eq('id', selected.id)
+    }
     if (smsNumber) {
       try {
         await fetch('/api/telnyx/sms/send', {
@@ -3422,20 +3441,24 @@ export default function InboxPage() {
     if (!selected || !companyId || !payAmount) return
     const senderName = user?.user_metadata?.display_name || user?.email?.split('@')[0]
     try {
+      const isWidgetActive = activeChannel === 'widget' || activeChannel === 'chat'
       const res = await fetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName }),
+        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : activeChannel }),
       })
       const data = await res.json()
       if (!res.ok) { alert(data.error || 'Could not create payment'); return }
-      // On non-widget channels the payment card can't render — send the pay
-      // link over the customer's channel. (Was SMS-only.)
-      if (data.checkoutUrl && activeChannel !== 'widget' && activeChannel !== 'chat') {
+      // Off-site (SMS/email/Messenger): the payment card can't render, so text the
+      // pay link over their real channel. `silent` = the card (already inserted
+      // server-side with the correct delivery_channel) is the thread record, so we
+      // don't insert a duplicate.
+      if (data.checkoutUrl && !isWidgetActive) {
         try {
           await deliverToCustomer({
             subject: `Payment request from ${companyInfo?.name || 'us'}`,
             body: `Payment request: $${parseFloat(payAmount).toFixed(2)} AUD${payDesc ? ` — ${payDesc}` : ''}\nPay securely:`,
             url: data.checkoutUrl,
+            silent: true,
           })
         } catch (e) { showToast(`Payment created, but sending failed: ${(e as any).message}`) }
       }
