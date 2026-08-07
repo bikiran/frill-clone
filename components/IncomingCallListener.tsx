@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getVoiceProvider } from '@/lib/voice-provider-client'
 
 interface Props {
   companyId: string | null
@@ -41,6 +42,10 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       if (initials) setCompanyInitials(initials)
     })()
   }, [companyId])
+  // Which calling backend this company uses. Drives whether we register the
+  // Telnyx WebRTC client or the Twilio Voice SDK, and how answer/decline/hangup
+  // are actioned. Warm-transfer/hold is Telnyx-only for now.
+  const [provider, setProvider] = useState<'telnyx' | 'twilio'>('telnyx')
   const clientRef = useRef<any>(null)
   const callRef = useRef<any>(null)
   const timerRef = useRef<any>(null)
@@ -54,6 +59,44 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
 
     const connect = async () => {
       try {
+        const prov = await getVoiceProvider(companyId)
+        if (!cancelled) setProvider(prov)
+
+        // ── Twilio Voice SDK path ────────────────────────────────────────────
+        // Twilio rings this browser directly (Dial <Client>) and bridges the
+        // caller on accept — no server bridge, unlike Telnyx. So all we do here
+        // is register the Device and surface incoming calls in the same popup.
+        if (prov === 'twilio') {
+          const { data: sess } = await supabase.auth.getSession()
+          const userId = sess?.session?.user?.id || null
+          userIdRef.current = userId
+          const tRes = await fetch('/api/twilio/token', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, userId }),
+          })
+          const tData = await tRes.json()
+          if (!tRes.ok || cancelled) { if (!cancelled) setConnErr(tData.error || 'Twilio token error'); return }
+          const { Device } = await import('@twilio/voice-sdk')
+          const device = new Device(tData.token, { codecPreferences: ['opus', 'pcmu'] as any })
+          clientRef.current = device
+          device.on('registered', () => { if (!cancelled) { setReady(true); setConnErr(null); console.log('[twilio voice] registered') } })
+          device.on('error', (e: any) => { if (!cancelled) setConnErr(e?.message || 'connection error'); console.error('[twilio voice] error', e) })
+          device.on('incoming', (call: any) => {
+            console.log('[twilio voice] INCOMING CALL')
+            callRef.current = call
+            const fromNum = call.parameters?.From || call.parameters?.from || ''
+            setIncoming({ id: call.parameters?.CallSid || 'twilio', from: fromNum })
+            startRing()
+            resolveCaller(fromNum)
+            call.on('accept', () => { stopRing(); setInCall(true); startTimer() })
+            call.on('disconnect', () => { stopRing(); reset() })
+            call.on('cancel', () => { stopRing(); reset() })
+            call.on('reject', () => { stopRing(); reset() })
+          })
+          try { await device.register() } catch (e: any) { if (!cancelled) setConnErr(e?.message || 'register failed') }
+          return
+        }
+
         // Send userId so this browser gets its OWN telephony credential.
         // Sharing one credential meant Telnyx routed each call to whichever
         // client registered most recently — so a phone signing in silenced the
@@ -133,6 +176,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       cancelled = true
       if (timerRef.current) clearInterval(timerRef.current)
       try { clientRef.current?.disconnect?.() } catch {}
+      try { clientRef.current?.destroy?.() } catch {}   // Twilio Device teardown
     }
   }, [companyId])
 
@@ -199,8 +243,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       // no server-side bridge is needed (the number rings this client directly,
       // it does not go through a Voice API webhook). The SDK owns media: it
       // creates the RTCPeerConnection and captures the mic on answer().
-      callRef.current?.answer?.()
-    } catch (e) { console.error('[telnyx] answer failed', e) }
+      if (provider === 'twilio') callRef.current?.accept?.()
+      else callRef.current?.answer?.()
+    } catch (e) { console.error('[call] answer failed', e) }
     setInCall(true)
     notifyTeamCallAccepted()
   }
@@ -223,8 +268,8 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       }),
     }).catch(() => {})
   }
-  const decline = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
-  const hangup = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
+  const decline = () => { stopRing(); try { provider === 'twilio' ? callRef.current?.reject?.() : callRef.current?.hangup?.() } catch {}; reset() }
+  const hangup = () => { stopRing(); try { provider === 'twilio' ? callRef.current?.disconnect?.() : callRef.current?.hangup?.() } catch {}; reset() }
 
   // ── Hold and warm transfer ───────────────────────────────────────────────
   // These run server-side through Telnyx rather than in the browser: the
@@ -389,7 +434,10 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           </>
         ) : (
           <>
-            {/* Hold / transfer controls, only while actually on a call */}
+            {/* Hold / transfer controls, only while actually on a call.
+                Warm-transfer runs through Telnyx conferences; the Twilio path
+                ships with core calling first, so hide these when on Twilio. */}
+            {provider !== 'twilio' && (
             <div style={{ display: 'flex', gap: 1, flex: 1 }}>
               {transferState === 'none' ? (
                 <>
@@ -429,6 +477,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
                 </>
               )}
             </div>
+            )}
             <button onClick={hangup} style={btn('#dc2626')}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ transform: 'rotate(135deg)', flexShrink: 0 }}>
                 <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>

@@ -1,0 +1,63 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { xmlEscape } from '@/lib/twilio-service'
+
+export const dynamic = 'force-dynamic'
+
+function admin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+}
+
+const twiml = (body: string) => new NextResponse(`<?xml version="1.0" encoding="UTF-8"?>${body}`, { headers: { 'Content-Type': 'text/xml' } })
+
+// action= handler for an INBOUND call's ring-all <Dial>. If an agent answered,
+// the dial is over and we end cleanly. If nobody picked up (no-answer/busy/
+// failed), fall through to voicemail.
+export async function POST(req: NextRequest) {
+  try {
+    const form = await req.formData()
+    const get = (k: string) => { const v = form.get(k); return v == null ? '' : String(v) }
+    const sp = req.nextUrl.searchParams
+    const callRowId = sp.get('callRowId') || ''
+    const companyId = sp.get('companyId') || ''
+    const conversationId = sp.get('conversationId') || ''
+
+    const dialStatus = (get('DialCallStatus') || '').toLowerCase()
+    const durSecs = parseInt(get('DialCallDuration') || '0', 10) || 0
+    const db = admin()
+    const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
+
+    // An agent answered → mark it and finish.
+    if (dialStatus === 'completed' || dialStatus === 'answered') {
+      if (callRowId) {
+        try { await db.from('calls').update({ status: 'completed', answered_at: new Date().toISOString(), ended_at: new Date().toISOString(), ...(durSecs ? { duration_seconds: durSecs } : {}) }).eq('id', callRowId) } catch {}
+      }
+      return twiml('<Response><Hangup/></Response>')
+    }
+
+    // Nobody answered → voicemail (if enabled).
+    const { data: integ } = await db.from('twilio_integrations').select('voicemail_enabled, voicemail_greeting').eq('company_id', companyId).maybeSingle()
+    if (integ?.voicemail_enabled === false) {
+      if (callRowId) { try { await db.from('calls').update({ status: 'missed', ended_at: new Date().toISOString() }).eq('id', callRowId) } catch {} }
+      return twiml('<Response><Hangup/></Response>')
+    }
+    if (callRowId) { try { await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true }).eq('id', callRowId) } catch {} }
+
+    const greeting = integ?.voicemail_greeting || 'Please leave a message after the tone.'
+    const cbQuery = `callRowId=${encodeURIComponent(callRowId)}&companyId=${encodeURIComponent(companyId)}&conversationId=${encodeURIComponent(conversationId)}&kind=voicemail`
+    const recCb = `${base}/api/twilio/voice/recording?${cbQuery}`
+    return twiml(
+      `<Response>` +
+        `<Say voice="Polly.Nicole">${xmlEscape(greeting)}</Say>` +
+        `<Record maxLength="180" playBeep="true" trim="trim-silence" recordingStatusCallback="${xmlEscape(recCb)}" recordingStatusCallbackEvent="completed"/>` +
+        `<Hangup/>` +
+      `</Response>`
+    )
+  } catch {
+    return twiml('<Response><Hangup/></Response>')
+  }
+}

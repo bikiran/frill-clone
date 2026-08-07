@@ -208,6 +208,16 @@ export function createVoiceAccessToken(params: {
   return `${signingInput}.${b64url(sig)}`
 }
 
+// The browser Twilio Voice SDK identity for a user. Inbound TwiML dials
+// <Client><Identity>this</Identity></Client>, so the format must match on both
+// the token (registration) and inbound (dialling) sides. Kept ASCII-safe —
+// Twilio identities disallow many characters.
+export function twilioIdentity(userId: string | null | undefined, companyId: string): string {
+  return userId
+    ? `u_${String(userId).replace(/[^a-zA-Z0-9_]/g, '')}`
+    : `co_${String(companyId).replace(/[^a-zA-Z0-9_]/g, '')}`
+}
+
 // Escape text for safe inclusion in TwiML (<Say>, attribute values).
 export function xmlEscape(s: string): string {
   return String(s || '')
