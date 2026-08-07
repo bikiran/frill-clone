@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { metaLoginUrl, isMetaConfigured, META_PAGE_SCOPES, META_MESSAGING_SCOPES } from '@/lib/meta'
+import { metaLoginUrl, isMetaConfigured, META_PAGE_SCOPES, META_MESSAGING_SCOPES, META_SCOPES, META_LOGIN_CONFIG_ID } from '@/lib/meta'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +31,22 @@ export async function GET(req: NextRequest) {
   const scopeParam = (url.searchParams.get('scopes') || '').toLowerCase()
   const scope = scopeParam === 'full'
     ? [...META_PAGE_SCOPES, ...META_MESSAGING_SCOPES].join(',')
-    : undefined  // metaLoginUrl falls back to the env-driven default
-  return NextResponse.redirect(metaLoginUrl(state, scope))
+    : META_SCOPES  // the env-driven default (four Page scopes unless messaging is enabled)
+
+  const loginUrl = metaLoginUrl(state, scope)
+
+  // ?debug=1 — return exactly what we send to Facebook (scope string, config id,
+  // full dialog URL) WITHOUT redirecting, so you can prove our side is clean.
+  // A deprecated scope like pages_read_user_content will NOT appear here; if
+  // Facebook still complains about it, it's configured on the Meta app itself.
+  if (url.searchParams.get('debug') === '1') {
+    return NextResponse.json({
+      requestedScope: META_LOGIN_CONFIG_ID ? '(ignored — using config_id)' : scope,
+      configId: META_LOGIN_CONFIG_ID || null,
+      redirectUri: process.env.META_REDIRECT_URI || null,
+      loginUrl,
+    })
+  }
+
+  return NextResponse.redirect(loginUrl)
 }

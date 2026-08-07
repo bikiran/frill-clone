@@ -55,17 +55,27 @@ export function isMetaConfigured(): boolean {
   return !!(META_APP_ID && META_APP_SECRET && META_REDIRECT_URI)
 }
 
+// Facebook Login for Business apps drive permissions from a saved dashboard
+// "configuration" (a config_id) rather than a scope string. If the app is that
+// type, set META_LOGIN_CONFIG_ID and the dialog will use it — the scope param is
+// ignored by Facebook in that mode, and permissions like a deprecated
+// pages_read_user_content must be removed from the CONFIGURATION in the Meta
+// dashboard (they can't be dropped from our side).
+export const META_LOGIN_CONFIG_ID = process.env.META_LOGIN_CONFIG_ID || ''
+
 // Step 1: the Facebook Login dialog URL. `state` carries our company id.
 // `scope` defaults to what the app is approved for (META_SCOPES); a caller can
 // pass an explicit list (e.g. force the full messaging set once approved).
-export function metaLoginUrl(state: string, scope: string = META_SCOPES): string {
+// When a Login-for-Business config id is set it takes precedence over scope.
+export function metaLoginUrl(state: string, scope: string = META_SCOPES, configId: string = META_LOGIN_CONFIG_ID): string {
   const p = new URLSearchParams({
     client_id: META_APP_ID,
     redirect_uri: META_REDIRECT_URI,
     state,
-    scope,
     response_type: 'code',
   })
+  if (configId) p.set('config_id', configId)     // Facebook Login for Business
+  else p.set('scope', scope)                      // classic scope-based login
   return `https://www.facebook.com/v21.0/dialog/oauth?${p.toString()}`
 }
 
