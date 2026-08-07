@@ -88,13 +88,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Regulatory bundle, if the company has one.
+    // Regulatory bundle + address, if the company has one. Twilio refuses to
+    // sell an AU number without an AddressSid ("Phone Number Requires an
+    // Address"). Prefer a pre-created platform address (env); otherwise build
+    // one from the company's regulatory bundle.
     let bundleSid: string | undefined
+    let addressSid: string | undefined = TWILIO_MASTER.addressSid || undefined
     try {
       const { data: reg } = await db.from('number_regulatory_bundles')
-        .select('twilio_bundle_id').eq('company_id', companyId)
+        .select('twilio_bundle_id, business_name, first_name, last_name, address_line1, address_line2, city, state, postal_code, country')
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false }).limit(1).maybeSingle()
       bundleSid = reg?.twilio_bundle_id || undefined
+      if (!addressSid && reg?.address_line1 && reg?.city && reg?.state && reg?.postal_code) {
+        try {
+          addressSid = (await svc.createAddress({
+            customerName: reg.business_name || `${reg.first_name || ''} ${reg.last_name || ''}`.trim() || 'Colvy Customer',
+            street: reg.address_line1,
+            streetSecondary: reg.address_line2 || undefined,
+            city: reg.city,
+            region: reg.state,
+            postalCode: reg.postal_code,
+            isoCountry: reg.country || 'AU',
+          })) || undefined
+        } catch (e) { console.warn('Twilio address create warning:', e) }
+      }
     } catch {}
 
     let bought: { sid: string | null }
@@ -104,7 +122,7 @@ export async function POST(req: NextRequest) {
         friendlyName: `Colvy ${String(companyId).slice(0, 8)}`,
         smsUrl: `${base}/api/twilio/webhook`,
         voiceUrl: `${base}/api/twilio/voice/inbound`,
-        bundleSid,
+        bundleSid, addressSid,
       })
     } catch (e: any) {
       // The exact number may have been taken while paying — substitute an
@@ -118,7 +136,7 @@ export async function POST(req: NextRequest) {
           friendlyName: `Colvy ${String(companyId).slice(0, 8)}`,
           smsUrl: `${base}/api/twilio/webhook`,
           voiceUrl: `${base}/api/twilio/voice/inbound`,
-          bundleSid,
+          bundleSid, addressSid,
         })
         numberToBuy = pick
         substituted = true
