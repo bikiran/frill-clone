@@ -3381,32 +3381,36 @@ export default function InboxPage() {
     if (!selected || !companyId) return
     const senderName = user?.user_metadata?.display_name || user?.email?.split('@')[0]
     const title = item.question || item.title || item.name || `${kind}`
-    const smsNumber = (selected as any).sms_number
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
     const link = `${origin.replace(/admin\..*/, '')}/widget?slug=${(selected as any).company_slug || ''}&conversation=${selected.id}`
 
-    await (supabase as any).from('messages').insert({
-      conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
-      sender_id: user.id, sender_name: senderName,
-      content: `📋 ${title}`,
-      message_type: kind,
-      message_payload: { kind, ref_id: item.id, title, options: item.options || null },
-    })
-    await (supabase as any).from('conversations').update({ last_message: `📋 ${title}`, last_message_at: new Date().toISOString() }).eq('id', selected.id)
+    // The interactive card only renders INSIDE the live-chat widget. So only drop
+    // it into the thread when the customer is actually in the widget. Otherwise
+    // (SMS / email / Messenger / Instagram) just send a tap-to-respond LINK over
+    // their real channel — like sending a photo — with no misleading "sent to
+    // Live Chat" card.
+    const isWidgetActive = activeChannel === 'widget' || activeChannel === 'chat'
 
-    // For any non-widget channel, send a link to respond (the interactive card
-    // only renders inside the live-chat widget). Was SMS-only before.
-    if (activeChannel !== 'widget' && activeChannel !== 'chat') {
+    if (isWidgetActive) {
+      await (supabase as any).from('messages').insert({
+        conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
+        sender_id: user.id, sender_name: senderName,
+        content: `📋 ${title}`,
+        message_type: kind,
+        message_payload: { kind, ref_id: item.id, title, options: item.options || null },
+        delivery_channel: 'chat',
+      })
+      await (supabase as any).from('conversations').update({ last_message: `📋 ${title}`, last_message_at: new Date().toISOString() }).eq('id', selected.id)
+    } else {
+      // deliverToCustomer sends over the active channel and records the message
+      // with the true delivery_channel (SMS/email/Meta) — no Live-Chat card.
       try {
         await deliverToCustomer({
           subject: title,
           body: `${title}\nTap to respond:`,
           url: link,
         })
-      } catch (e: any) { showToast(`Saved, but sending failed: ${e.message}`) }
-    } else if (smsNumber) {
-      const body = `${title}\nTap to respond: ${link}\n\nOr get our app: https://colvy.com/app`
-      try { await fetch('/api/telnyx/sms/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: body, senderName }) }) } catch {}
+      } catch (e: any) { showToast(`Could not send the ${kind}: ${e.message}`) }
     }
     setSendPicker(null)
     const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', selected.id).order('created_at', { ascending: true })
