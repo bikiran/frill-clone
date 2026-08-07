@@ -1954,44 +1954,42 @@ export default function InboxPage() {
       for (const item of chosen) {
         const attachment: any = { url: item.url, name: item.title || 'media', type: item.kind === 'video' ? 'video/mp4' : 'image/jpeg', kind: item.kind, from_gallery: true }
 
-        // Media expiry: when the agent set one, deliver through a branded /m/
-        // viewer link whose access we can revoke, rather than the raw file. The
-        // link's expires_at is enforced by the viewer (and, for delete-mode, the
-        // expire-media cron). Access-mode keeps the original in the gallery.
+        // Always deliver media over SMS as a branded /m/ viewer LINK, never a raw
+        // MMS attachment — Australian numbers (and Telnyx) don't carry MMS, so an
+        // attachment would silently vanish. The link renders the photo/video on a
+        // branded page, is trackable, and can carry an expiry.
         const expiresAt: string | null = item._expiresAt || null
         let viewerUrl = ''
+        try {
+          const lr = await fetch('/api/short-links/create', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId, kind: 'media', conversationId: selected.id,
+              url: item.url, mediaUrls: [attachment], label: attachment.name,
+              sentBy: me, channel: 'gallery',
+              ...(expiresAt ? { expiresAt, expiryMode: item._expiryMode || 'access' } : {}),
+            }),
+          })
+          const ld = await lr.json()
+          if (lr.ok && ld.url) viewerUrl = ld.url
+        } catch { /* fall back to the raw url below */ }
         if (expiresAt) {
-          try {
-            const lr = await fetch('/api/short-links/create', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                companyId, kind: 'media', conversationId: selected.id,
-                url: item.url, mediaUrls: [attachment], label: attachment.name,
-                sentBy: me, channel: 'gallery',
-                expiresAt, expiryMode: item._expiryMode || 'access',
-              }),
-            })
-            const ld = await lr.json()
-            if (lr.ok && ld.url) viewerUrl = ld.url
-          } catch { /* fall back to a non-revocable send below */ }
           attachment.expires_at = expiresAt
           attachment.expiry_mode = item._expiryMode || 'access'
-          if (viewerUrl) attachment.viewer_url = viewerUrl
         }
+        if (viewerUrl) attachment.viewer_url = viewerUrl
 
-        // On an SMS conversation, actually TEXT the customer a link to the media
-        // (as a short colvy.com/m/… viewer). Without this the media only appeared
-        // in the chat thread and the customer received nothing.
+        // On an SMS conversation, TEXT the customer the viewer link (falling back
+        // to the raw media URL only if the short link couldn't be created).
         if (smsNumber) {
           try {
-            // Expiring media goes out as the revocable viewer link (text), not an
-            // MMS attachment the recipient could keep forever.
-            const body = (expiresAt && viewerUrl)
-              ? { companyId, conversationId: selected.id, to: smsNumber, text: viewerUrl, attachments: [], senderName: me, skipChatMessage: true }
-              : { companyId, conversationId: selected.id, to: smsNumber, text: '', attachments: [attachment], senderName: me, skipChatMessage: true }
             const r = await fetch('/api/telnyx/sms/send', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
+              body: JSON.stringify({
+                companyId, conversationId: selected.id, to: smsNumber,
+                text: viewerUrl || item.url, attachments: [],
+                senderName: me, skipChatMessage: true,
+              }),
             })
             const rd = await r.json()
             // Don't hide a failed text — the agent thinks the customer got it.

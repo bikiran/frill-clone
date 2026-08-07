@@ -82,6 +82,29 @@ export async function POST(req: NextRequest) {
       const to = Array.isArray(payload?.to) ? payload.to[0]?.phone_number : payload?.to?.phone_number
       const text = payload?.text || ''
 
+      // Inbound MMS media. Telnyx puts each attachment in payload.media
+      // [{ url, content_type, size }]. Carriers rarely deliver MMS on Australian
+      // numbers, but when they DO (or on a US/CA number), capture it so the
+      // customer's photo appears in the thread instead of being silently dropped.
+      const inboundMedia = (Array.isArray(payload?.media) ? payload.media : [])
+        .map((m: any) => {
+          const url = m?.url
+          if (!url) return null
+          const ct = String(m?.content_type || '')
+          const kind = ct.startsWith('image/') ? 'image'
+            : ct.startsWith('video/') ? 'video'
+            : ct.startsWith('audio/') ? 'audio' : 'file'
+          return { url, kind, type: ct || undefined, name: (kind === 'file' ? 'attachment' : kind) }
+        })
+        .filter(Boolean)
+      const mediaPreview = inboundMedia.length
+        ? (inboundMedia[0].kind === 'image' ? '📷 Photo'
+          : inboundMedia[0].kind === 'video' ? '🎥 Video'
+          : inboundMedia[0].kind === 'audio' ? '🎤 Voice message' : '📎 Attachment')
+        : ''
+      // What the conversation list / notifications show when there's no caption.
+      const summary = text || mediaPreview || ''
+
       // Which company owns the receiving number?
       const { data: integ } = await db.from('telnyx_integrations').select('company_id').eq('phone_number', to).maybeSingle()
       const companyId = integ?.company_id
@@ -198,7 +221,7 @@ export async function POST(req: NextRequest) {
           status: 'open',
           is_unread: true,
           unread_count: 1,
-          last_message: text,
+          last_message: summary,
           last_message_at: new Date().toISOString(),
         }).select().maybeSingle()
         conv = newConv
@@ -227,11 +250,12 @@ export async function POST(req: NextRequest) {
           sender_type: 'visitor',
           sender_name: from,
           content: text,
+          ...(inboundMedia.length ? { attachments: inboundMedia } : {}),
           delivery_channel: 'sms',
           telnyx_message_id: payload?.id || null,
         })
         await db.from('conversations').update({
-          last_message: text,
+          last_message: summary,
           last_message_at: new Date().toISOString(),
           is_unread: true,
           // Inbound text ⇒ this is an SMS conversation now, whatever it started as.
@@ -245,7 +269,7 @@ export async function POST(req: NextRequest) {
         // Alert agents' phones
         try {
           const origin = req.headers.get('host') ? `${req.headers.get('x-forwarded-proto') || 'https'}://${req.headers.get('host')}` : (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com')
-          fetch(`${origin}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `New SMS from ${from}`, body: text, conversationId: conv.id }) })
+          fetch(`${origin}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `New SMS from ${from}`, body: summary, conversationId: conv.id }) })
           fetch(`${origin}/api/inbox/smart-trigger`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, text }) })
         } catch {}
 
@@ -271,7 +295,7 @@ export async function POST(req: NextRequest) {
           })
         } catch (e) { console.error('[sms keyword reply]', e) }
 
-        try { await notifyCompany({ db, companyId, type: 'sms', message: `New SMS from ${from}: ${(text || '').slice(0, 80)}`, actorName: from }) } catch {}
+        try { await notifyCompany({ db, companyId, type: 'sms', message: `New SMS from ${from}: ${summary.slice(0, 80)}`, actorName: from }) } catch {}
       }
       return NextResponse.json({ ok: true })
     }
