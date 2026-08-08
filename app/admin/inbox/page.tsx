@@ -119,6 +119,7 @@ const CHANNEL_ICON: Record<string, React.ReactNode> = {
 const CHANNEL_NAME: Record<string, string> = {
   widget: 'Live chat', chat: 'Live chat', sms: 'SMS', email: 'Email', phone: 'Phone',
   facebook: 'Messenger', messenger: 'Messenger', instagram: 'Instagram', whatsapp: 'WhatsApp',
+  realestate: 'RealEstate',
 }
 const SENTIMENT_ICON: Record<string, (s?: number) => React.ReactNode> = {
   positive: Icon.smile, neutral: Icon.meh, negative: Icon.frown,

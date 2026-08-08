@@ -24,6 +24,9 @@ const CHANNELS = [
   { id: 'google',    name: 'Google Reviews',   color: '#4285F4', icon: 'G',
     href: '/admin/crm-settings/channels/google-reviews', ready: true,
     note: 'See and reply to your reviews.' },
+  { id: 'realestate', name: 'RealEstate',       color: '#E4002B', icon: 'RE',
+    href: '/admin/crm-settings/channels/realestate', ready: true,
+    note: 'realestate.com.au listing enquiries land in your inbox.' },
   { id: 'whatsapp',  name: 'WhatsApp',         color: '#25D366', icon: 'W',
     href: '', ready: false,
     note: 'Needs a Meta app + WhatsApp Business account.' },
@@ -71,6 +74,13 @@ export default function ChannelsSettings() {
         const { data } = await (supabase as any).from('google_business_accounts')
           .select('access_token').eq('company_id', companyId).maybeSingle()
         status.google = !!data?.access_token
+      } catch {}
+
+      // RealEstate — an active realestate.com.au integration.
+      try {
+        const { data } = await (supabase as any).from('realestate_integrations')
+          .select('is_active').eq('company_id', companyId).maybeSingle()
+        status.realestate = !!data?.is_active
       } catch {}
 
       // The chat widget is always available.
