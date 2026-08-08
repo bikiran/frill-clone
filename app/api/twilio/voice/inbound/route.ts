@@ -111,8 +111,14 @@ export async function POST(req: NextRequest) {
     // Per-client status callback captures the answered agent leg's CallSid (for
     // warm transfer). Only the client that answers fires 'answered'.
     const childCb = `${base}/api/twilio/voice/child-status?callRowId=${encodeURIComponent(callRowId || '')}&companyId=${encodeURIComponent(companyId)}`
+    // Pass the calls-row id straight to the browser as a custom parameter, so
+    // warm transfer can identify the exact call without guessing from CallSids
+    // (the client leg's SID doesn't match the parent row).
     const clients = identities.map(id =>
-      `<Client statusCallback="${xmlEscape(childCb)}" statusCallbackEvent="answered" statusCallbackMethod="POST"><Identity>${xmlEscape(id)}</Identity></Client>`
+      `<Client statusCallback="${xmlEscape(childCb)}" statusCallbackEvent="answered" statusCallbackMethod="POST">` +
+        `<Identity>${xmlEscape(id)}</Identity>` +
+        `<Parameter name="callRowId" value="${xmlEscape(callRowId || '')}"/>` +
+      `</Client>`
     ).join('')
 
     try { await db.from('calls').update({ status: 'ringing_agents' }).eq('id', callRowId || '') } catch {}

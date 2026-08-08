@@ -32,11 +32,26 @@ export async function POST(req: NextRequest) {
     }
 
     const db = admin()
-    let q = db.from('calls').select('*').eq('company_id', companyId)
     const { data: rows } = callId
-      ? await q.eq('id', callId).limit(1)
-      : await q.or(`twilio_call_sid.eq.${callSid},twilio_child_call_sid.eq.${callSid}`).order('created_at', { ascending: false }).limit(1)
-    const call = rows?.[0]
+      ? await db.from('calls').select('*').eq('company_id', companyId).eq('id', callId).limit(1)
+      : await db.from('calls').select('*').eq('company_id', companyId)
+          .or(`twilio_call_sid.eq.${callSid},twilio_child_call_sid.eq.${callSid}`)
+          .order('created_at', { ascending: false }).limit(1)
+    let call = rows?.[0]
+
+    // Fallback: the browser leg's CallSid doesn't always match the stored row
+    // (and older calls predate the callRowId parameter). Use the company's most
+    // recent answered, still-live inbound call — that's the one the agent is on.
+    if (!call) {
+      const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000).toISOString()
+      const { data: recent } = await db.from('calls').select('*')
+        .eq('company_id', companyId).eq('direction', 'inbound').eq('provider', 'twilio')
+        .not('twilio_child_call_sid', 'is', null)
+        .is('ended_at', null)
+        .gte('created_at', twoHoursAgo)
+        .order('created_at', { ascending: false }).limit(1)
+      call = recent?.[0]
+    }
     if (!call) return NextResponse.json({ error: 'Call not found' }, { status: 404 })
 
     const customerLeg = call.twilio_call_sid
