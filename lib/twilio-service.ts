@@ -135,6 +135,20 @@ export class TwilioService {
     return { sid: data?.sid, secret: data?.secret }
   }
 
+  // Does this API Key (SKxxxx) still exist on the account? Catches a key that
+  // was created in a DIFFERENT account/subaccount (the #1 reason browser calling
+  // silently fails to register). We can't verify the SECRET this way, only that
+  // the SID belongs here.
+  async keyExists(sid: string): Promise<boolean> {
+    try { const d = await this.req(`/Keys/${sid}.json`, 'GET'); return !!d?.sid } catch { return false }
+  }
+
+  // Fetch a TwiML App (APxxxx) — returns null if it doesn't belong to this
+  // account. Used to confirm the app the token points at is real + reachable.
+  async getTwimlApp(sid: string): Promise<any | null> {
+    try { return await this.req(`/Applications/${sid}.json`, 'GET') } catch { return null }
+  }
+
   async createTwimlApp(params: { friendlyName: string; voiceUrl: string; voiceMethod?: string; statusCallback?: string }): Promise<any> {
     return this.req('/Applications.json', 'POST', {
       FriendlyName: params.friendlyName,
@@ -172,6 +186,13 @@ export class TwilioService {
   async getPhoneNumberSid(phoneNumber: string): Promise<string | null> {
     const data = await this.req(`/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`, 'GET')
     return data?.incoming_phone_numbers?.[0]?.sid || null
+  }
+
+  // The full IncomingPhoneNumber resource (voice_url, sms_url, etc.) — used by
+  // the voice diagnostic to confirm inbound webhooks point at us.
+  async getIncomingNumber(phoneNumber: string): Promise<any | null> {
+    const data = await this.req(`/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(phoneNumber)}`, 'GET')
+    return data?.incoming_phone_numbers?.[0] || null
   }
 
   // Create an Address resource in the account. Twilio requires an emergency /

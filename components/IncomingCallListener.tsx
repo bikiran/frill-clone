@@ -4,6 +4,15 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getVoiceProvider } from '@/lib/voice-provider-client'
 
+// Pull the useful bit out of a Twilio Voice SDK error for the status pill.
+function twErr(e: any): string {
+  const t = e?.twilioError || e
+  const code = t?.code || e?.code
+  const msg = t?.description || t?.explanation || t?.message || e?.message
+  if (code === 31201 || code === 20101 || code === 31204) return 'calling not authorised (token rejected)'
+  return code ? `${msg || 'error'} (${code})` : (msg || 'connection error')
+}
+
 interface Props {
   companyId: string | null
   agentName?: string
@@ -80,7 +89,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           const device = new Device(tData.token, { codecPreferences: ['opus', 'pcmu'] as any })
           clientRef.current = device
           device.on('registered', () => { if (!cancelled) { setReady(true); setConnErr(null); console.log('[twilio voice] registered') } })
-          device.on('error', (e: any) => { if (!cancelled) setConnErr(e?.message || 'connection error'); console.error('[twilio voice] error', e) })
+          device.on('error', (e: any) => { if (!cancelled) setConnErr(twErr(e)); console.error('[twilio voice] error', e) })
           device.on('incoming', (call: any) => {
             console.log('[twilio voice] INCOMING CALL')
             callRef.current = call
@@ -93,7 +102,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             call.on('cancel', () => { stopRing(); reset() })
             call.on('reject', () => { stopRing(); reset() })
           })
-          try { await device.register() } catch (e: any) { if (!cancelled) setConnErr(e?.message || 'register failed') }
+          try { await device.register() } catch (e: any) { if (!cancelled) setConnErr(twErr(e)); console.error('[twilio voice] register failed', e) }
           return
         }
 

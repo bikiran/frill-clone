@@ -15,6 +15,21 @@ interface CallBarProps {
 
 type CallState = 'idle' | 'connecting' | 'ringing' | 'active' | 'ended' | 'error'
 
+// Twilio Voice errors carry a numeric code + a `twilioError` with a human
+// description. Surface the most useful text instead of a bare "[object Object]"
+// or an unrelated "reading 'message'" TypeError from a blind e.message access.
+function fmtCallError(e: any): string {
+  if (!e) return 'Call failed'
+  if (typeof e === 'string') return e
+  const t = e.twilioError || e
+  const code = t?.code || e?.code
+  const msg = t?.causes?.[0] || t?.description || t?.explanation || t?.message || e?.message
+  if (code === 31201 || code === 20101 || code === 31204) return 'Calling isn’t authorised (token rejected). Open Integrations → Calls & SMS and reconnect, or contact support.'
+  if (code === 31005 || code === 31009) return 'Call connection failed — check your network and try again.'
+  if (msg && code) return `${msg} (Twilio ${code})`
+  return msg || (code ? `Call error (Twilio ${code})` : 'Call failed')
+}
+
 // Normalise to E.164 defaulting to Australia
 function toE164(raw: string): string | null {
   if (!raw) return null
@@ -205,6 +220,8 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       const device = new Device(data.token, { codecPreferences: ['opus', 'pcmu'] as any })
       clientRef.current = device
       endedRef.current = false
+      // A rejected token / bad API key surfaces here, before the call connects.
+      device.on('error', (e: any) => { console.error('[twilio device] error', e); if (state !== 'active') { setErrorMsg(fmtCallError(e)); setState('error') } })
 
       const call = await device.connect({
         params: { To: dest, From: from, callRowId: rowId || '', companyId, conversationId: conversationId || '' },
@@ -215,9 +232,10 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       call.on('accept', () => { setState('active'); toneConnected(); startTimer(); updateCallRow({ status: 'answered' }) })
       call.on('disconnect', () => { toneEnded(); endCall(false) })
       call.on('cancel', () => { endCall(false) })
-      call.on('error', (e: any) => { setErrorMsg(e?.message || 'Call error'); setState('error') })
+      call.on('error', (e: any) => { console.error('[twilio call] error', e); setErrorMsg(fmtCallError(e)); setState('error') })
     } catch (e: any) {
-      setErrorMsg(e.message || 'Call failed'); setState('error')
+      console.error('[twilio call] connect failed', e)
+      setErrorMsg(fmtCallError(e)); setState('error')
     }
   }
 
@@ -344,7 +362,8 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
 
       client.connect()
     } catch (e: any) {
-      setErrorMsg(e.message || 'Call failed')
+      console.error('[call] start failed', e)
+      setErrorMsg(fmtCallError(e))
       setState('error')
     }
   }
