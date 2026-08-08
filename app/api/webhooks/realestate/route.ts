@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
+import { getLead } from '@/lib/rea'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,15 +13,14 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-// Inbound realestate.com.au enquiry → Colvy conversation.
+// Inbound realestate.com.au EnquiryCreated webhook → Colvy conversation.
 //
-// A buyer submits an enquiry on a listing; REA posts the lead here. Configure
-// the webhook in the REA Portal to:
+// The subscription is created for the agency by Colvy (server-side, with our
+// partner credentials) and points here with the company's token:
 //   https://colvy.com/api/webhooks/realestate?t=<company webhook token>
-// The token (from Channels → RealEstate) resolves the company.
-//
-// REA's exact field names live behind the partner portal, so we read the enquiry
-// tolerantly across the common shapes and keep the raw payload for mapping.
+// EnquiryCreated typically carries only a lead reference, so we fetch the FULL
+// lead (buyer + listing) from the Leads API with the master token, then ingest.
+// The exact field names live behind the partner portal, so we read tolerantly.
 
 function pick(obj: any, ...keys: string[]) {
   for (const k of keys) {
@@ -29,6 +30,16 @@ function pick(obj: any, ...keys: string[]) {
   return null
 }
 const digits = (s: any) => String(s || '').replace(/\D/g, '')
+
+// Optional signature check — REA signs the raw body with a shared secret.
+function signatureOk(raw: string, header: string | null): boolean {
+  const secret = process.env.REA_WEBHOOK_SIGNING_SECRET
+  if (!secret) return true            // not configured → don't block
+  if (!header) return false
+  const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex')
+  const got = header.replace(/^sha256=/i, '').trim()
+  try { return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(got)) } catch { return false }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -43,9 +54,22 @@ export async function POST(req: NextRequest) {
     if (integ.is_active === false) return NextResponse.json({ ok: false, reason: 'Channel disabled' })
     const companyId = integ.company_id
 
-    const body = await req.json().catch(() => ({}))
-    // The enquiry may be nested (e.g. { enquiry: {...} } / { data: {...} }).
-    const e = body?.enquiry || body?.data || body?.lead || body
+    const raw = await req.text()
+    if (!signatureOk(raw, req.headers.get('x-rea-signature') || req.headers.get('x-hub-signature-256'))) {
+      return NextResponse.json({ ok: false, reason: 'Invalid signature' }, { status: 401 })
+    }
+    let body: any = {}
+    try { body = raw ? JSON.parse(raw) : {} } catch { body = {} }
+
+    // EnquiryCreated usually carries only a lead reference. Fetch the full lead
+    // (buyer + listing) from the Leads API with the master token; fall back to
+    // whatever the webhook itself included if that call isn't available.
+    const leadId = pick(body, 'leadId', 'lead.id', 'data.leadId', 'enquiryId', 'id', 'data.id', 'payload.leadId')
+    let e: any = body?.enquiry || body?.lead || body?.data || body
+    let enriched = false
+    try {
+      if (leadId) { const full = await getLead(String(leadId)); if (full) { e = full?.lead || full?.data || full; enriched = true } }
+    } catch (err) { console.warn('[realestate] getLead failed — using webhook payload', err) }
 
     const name = pick(e, 'name', 'fullName', 'contact.name', 'from.name', 'firstName')
       || [pick(e, 'firstName', 'first_name'), pick(e, 'lastName', 'last_name')].filter(Boolean).join(' ') || null
@@ -54,9 +78,9 @@ export async function POST(req: NextRequest) {
     const message = pick(e, 'message', 'comments', 'enquiryMessage', 'body', 'text') || ''
     const listing = pick(e, 'listing.address', 'property.address', 'address', 'listingAddress', 'propertyAddress')
       || pick(e, 'listing.title', 'property.title', 'listingId', 'listing.id') || null
-    const enquiryId = pick(e, 'id', 'enquiryId', 'reference', 'leadId')
+    const enquiryId = leadId || pick(e, 'id', 'enquiryId', 'reference')
 
-    logWebhookEvent({ source: 'realestate', eventType: 'enquiry', companyId, payload: { enquiryId, email, phone, listing } })
+    logWebhookEvent({ source: 'realestate', eventType: 'enquiry', companyId, payload: { enquiryId, email, phone, listing, enriched } })
 
     if (!email && !phone && !name) {
       // Nothing to attach to a contact — 200 so REA doesn't disable the hook.
