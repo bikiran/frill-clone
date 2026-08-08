@@ -37,22 +37,35 @@ export async function POST(req: NextRequest) {
     let apiKeySecret = integ.api_key_secret
     let twimlAppSid = integ.twiml_app_sid
     const voiceUrl = `${base}/api/twilio/voice/outbound`
+    const label = `Colvy ${String(companyId).slice(0, 8)}`
 
     try {
-      if (!apiKeySid || !apiKeySecret) {
-        const key = await svc.createApiKey(`Colvy ${String(companyId).slice(0, 8)}`)
+      // The API key must have BOTH a SID and secret AND actually belong to this
+      // account. A key SID copied from another account (or a stale/blank env
+      // value) mints a token Twilio rejects — the browser Device then never
+      // registers ("Phone error"), outbound throws, inbound falls to voicemail.
+      // Regenerate a fresh key (via the account auth token, always valid) when
+      // what we have doesn't check out.
+      let keyOk = !!(apiKeySid && apiKeySecret)
+      if (keyOk) keyOk = await svc.keyExists(apiKeySid)
+      if (!keyOk) {
+        const key = await svc.createApiKey(label)
         if (key?.sid && key?.secret) {
           apiKeySid = key.sid
           apiKeySecret = key.secret
           await db.from('twilio_integrations').update({ api_key_sid: apiKeySid, api_key_secret: apiKeySecret }).eq('company_id', companyId)
         }
       }
-      if (!twimlAppSid) {
-        const app = await svc.createTwimlApp({ friendlyName: `Colvy ${String(companyId).slice(0, 8)}`, voiceUrl })
-        twimlAppSid = app?.sid
+
+      // The TwiML App must exist on this account and point its Voice URL at our
+      // outbound handler, or Device.connect() has nowhere to route the call.
+      const app = twimlAppSid ? await svc.getTwimlApp(twimlAppSid) : null
+      if (!app) {
+        const created = await svc.createTwimlApp({ friendlyName: label, voiceUrl })
+        twimlAppSid = created?.sid
         if (twimlAppSid) await db.from('twilio_integrations').update({ twiml_app_sid: twimlAppSid }).eq('company_id', companyId)
-      } else {
-        // Keep the app's Voice URL current (e.g. if the domain changed).
+      } else if (app.voice_url !== voiceUrl) {
+        // Keep the Voice URL current (e.g. the domain changed).
         try { await svc.updateTwimlApp(twimlAppSid, { voiceUrl }) } catch {}
       }
     } catch (e: any) {
