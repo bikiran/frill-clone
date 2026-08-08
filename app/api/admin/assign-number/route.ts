@@ -14,6 +14,33 @@ function admin() {
   )
 }
 
+async function requireSuperAdmin(req: NextRequest, db: any): Promise<boolean> {
+  try {
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    if (!token) return false
+    const { data } = await db.auth.getUser(token)
+    return (data?.user?.email || '').toLowerCase() === SUPER_ADMIN
+  } catch { return false }
+}
+
+// GET: list the numbers currently on a company, so the edit drawer can show
+// what's assigned (the POST field is an action input and doesn't reflect state).
+export async function GET(req: NextRequest) {
+  try {
+    const db = admin()
+    if (!(await requireSuperAdmin(req, db))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const companyId = new URL(req.url).searchParams.get('companyId')
+    if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
+    const { data: numbers } = await db.from('phone_numbers')
+      .select('phone_number, provider, number_type, is_primary, status, is_free, monthly_cost')
+      .eq('company_id', companyId)
+      .order('is_primary', { ascending: false })
+    return NextResponse.json({ numbers: numbers || [] })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
 // Super-admin only: attach a number that ALREADY exists in Colvy's platform
 // Twilio account to a company — no purchase, no Stripe. Used to hand a company a
 // number that was bought manually in the Twilio console. Points the number's
