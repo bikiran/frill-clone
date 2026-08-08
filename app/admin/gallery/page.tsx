@@ -336,6 +336,9 @@ export default function GalleryPage() {
 
   const [dragOver, setDragOver] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  // Which video tile is hovered — only that one mounts a <video>, so a wall of
+  // clips doesn't each hold a decoder (which starved the lightbox under load).
+  const [hoverVid, setHoverVid] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)   // details slideout for the lightbox item
   const fileRef = useRef<HTMLInputElement>(null)
   const [prextyStatus, setPrextyStatus] = useState('')
@@ -951,16 +954,23 @@ export default function GalleryPage() {
                 <div key={item.id} className="gal-card" style={{ border: `1px solid ${isSelected ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 12, background: '#fff', boxShadow: isSelected ? '0 0 0 2px var(--peach)' : 'none', position: 'relative' }}>
                   <div className="gal-thumb" style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: 'var(--canvas)', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}
                     onClick={() => selectMode ? toggleSelect(item.id) : setLightboxIndex(i)}
-                    onMouseEnter={item.kind === 'video' ? (e => { const v = e.currentTarget.querySelector('video'); if (v) { v.muted = true; v.play().catch(() => {}) } }) : undefined}
-                    onMouseLeave={item.kind === 'video' ? (e => { const v = e.currentTarget.querySelector('video'); if (v) { v.pause(); try { v.currentTime = 0.1 } catch {} } }) : undefined}>
+                    onMouseEnter={item.kind === 'video' ? () => setHoverVid(item.id) : undefined}
+                    onMouseLeave={item.kind === 'video' ? () => setHoverVid(v => (v === item.id ? null : v)) : undefined}>
                     {item.kind === 'video' ? (
-                      // Resting shows the poster/first frame; on hover it plays MUTED.
-                      // Prefer the transcoded playback URL once the worker's done.
-                      <video src={playbackUrl(item) + '#t=0.1'}
-                        poster={item.thumbnail_url && item.thumbnail_url !== item.url ? item.thumbnail_url : undefined}
-                        preload={item.thumbnail_url && item.thumbnail_url !== item.url ? 'none' : 'metadata'}
-                        muted playsInline loop tabIndex={-1}
-                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                      // At rest a video tile is just its poster image (no decoder).
+                      // A <video> mounts ONLY while hovered, so a wall of clips
+                      // doesn't each hold a decoder. Prefers the transcoded URL.
+                      <>
+                        {item.thumbnail_url && item.thumbnail_url !== item.url ? (
+                          <img loading="lazy" decoding="async" src={item.thumbnail_url} alt={item.title || ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ position: 'absolute', inset: 0, background: '#0d0d0d' }} />
+                        )}
+                        {hoverVid === item.id && !isVideoProcessing(item) && (
+                          <video src={playbackUrl(item) + '#t=0.1'} autoPlay muted loop playsInline preload="metadata" tabIndex={-1}
+                            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                        )}
+                      </>
                     ) : (
                       <img loading="lazy" decoding="async" src={item.thumbnail_url || item.url} alt={item.title || ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                     )}
