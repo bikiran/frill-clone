@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 
 function parseTs(d: string | null | undefined): Date | null {
@@ -26,9 +27,11 @@ const TYPE_LABEL: Record<string, string> = {
 
 export default function LinksGeneratorPage() {
   const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [links, setLinks] = useState<any[]>([])
+  const seededCid = peekCompanyUser()?.companyId ?? null
+  const seededLinks = seededCid ? readCache<any[]>(`links:${seededCid}`) : undefined
+  const [loading, setLoading] = useState(!seededLinks)
+  const [companyId, setCompanyId] = useState<string | null>(seededCid)
+  const [links, setLinks] = useState<any[]>(seededLinks ?? [])
   const [url, setUrl] = useState('')
   const [label, setLabel] = useState('')
   const [customCode, setCustomCode] = useState('')
@@ -42,8 +45,8 @@ export default function LinksGeneratorPage() {
   useEffect(() => {
     ;(async () => {
       try {
-        let cid: string | null = null
-        if (typeof window !== 'undefined') {
+        let cid: string | null = seededCid
+        if (!cid && typeof window !== 'undefined') {
           const host = window.location.hostname
           if (host.endsWith('.colvy.com') && host !== 'colvy.com') {
             const slug = host.replace('.colvy.com', '')
@@ -74,6 +77,7 @@ export default function LinksGeneratorPage() {
       .select('*').eq('company_id', cid)
       .order('created_at', { ascending: false }).limit(200)
     setLinks(data || [])
+    writeCache(`links:${cid}`, data || [])
   }
 
   const create = async () => {

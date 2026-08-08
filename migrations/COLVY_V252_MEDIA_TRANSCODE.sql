@@ -1,4 +1,4 @@
--- V92 — Server-side video transcode pipeline (R2 + FFmpeg worker)
+-- V252 — Server-side video transcode pipeline (R2 + FFmpeg worker)
 --
 -- The phone uploads the ORIGINAL video straight to R2, records the item as
 -- `pending`, and enqueues a transcode. A worker (/api/cron/transcode-worker and

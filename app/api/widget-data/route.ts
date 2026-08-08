@@ -61,9 +61,9 @@ export async function GET(req: NextRequest) {
         .eq('company_id', company.id)
         .eq('status', 'published')
         .order('is_pinned', { ascending: false }).order('created_at', { ascending: false }).limit(20),
-      (supabase as any).from('forms').select('id,title,description').eq('company_id', company.id)
-        .eq('is_public', true).order('created_at', { ascending: false }).limit(5),
-      (supabase as any).from('polls').select('id,title,options').eq('company_id', company.id)
+      (supabase as any).from('forms').select('id,title,questions').eq('company_id', company.id)
+        .eq('is_published', true).order('created_at', { ascending: false }).limit(5),
+      (supabase as any).from('polls').select('id,question,description,options').eq('company_id', company.id)
         .order('created_at', { ascending: false }).limit(5),
       (supabase as any).from('surveys').select('id,title,questions').eq('company_id', company.id)
         .order('created_at', { ascending: false }).limit(5),

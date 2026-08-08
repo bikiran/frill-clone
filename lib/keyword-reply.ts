@@ -13,6 +13,46 @@ export interface KeywordReplyResult {
   reason?: string
 }
 
+// Lower-case, drop punctuation, collapse whitespace. So "located?" and
+// "what's your store address?" compare cleanly against a typed-in message.
+function norm(s: string): string {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9\s]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+// Common SMS/texting shorthand → full words, so "where r u located" is treated
+// like "where are you located".
+const SHORTHAND: Record<string, string> = {
+  u: 'you', ur: 'your', r: 'are', pls: 'please', plz: 'please', thx: 'thanks',
+  hrs: 'hours', hr: 'hour', addr: 'address', loc: 'location',
+}
+function expand(s: string): string {
+  return norm(s).split(' ').map(w => SHORTHAND[w] || w).join(' ')
+}
+
+// Stopwords that carry no matching signal on their own.
+const STOP = new Set(['where', 'are', 'is', 'am', 'you', 'your', 'the', 'a', 'an', 'do',
+  'does', 'what', 'to', 'of', 'me', 'i', 'we', 'our', 'can', 'could', 'would', 'will',
+  'please', 'hi', 'hello', 'hey', 'there', 'and', 'for', 'in', 'on', 'at', 'it'])
+
+// A crude stem so "location" ~ "located" ~ "locating" all collapse together.
+function stem(w: string): string { return w.length <= 5 ? w : w.slice(0, 5) }
+function wordMatches(a: string, b: string): boolean {
+  return a === b || a.startsWith(stem(b)) || b.startsWith(stem(a))
+}
+
+// Score how well a configured keyword matches the (expanded) message. 0 = no
+// match; higher = more specific. A whole-phrase hit beats a word-level one.
+function keywordScore(keyword: string, msgExpanded: string, msgWords: string[]): number {
+  const k = norm(keyword)
+  if (!k) return 0
+  if (msgExpanded.includes(k)) return k.length + 100          // strongest: exact phrase present
+  const kw = k.split(' ').filter(w => w.length > 1 && !STOP.has(w))
+  if (!kw.length) return 0
+  // Every significant word of the keyword must appear (exact or same stem).
+  const all = kw.every(w => msgWords.some(mw => wordMatches(mw, w)))
+  return all ? k.length : 0
+}
+
 /**
  * Answer a common question automatically, if the customer's message matches a
  * keyword rule the business configured.
@@ -48,16 +88,18 @@ export async function runKeywordReply(opts: {
     .select('*').eq('company_id', companyId).eq('is_active', true)
   if (!rules?.length) return { matched: false }
 
-  const message = String(text).toLowerCase()
+  // Expand shorthand once; match keywords against the normalised message so
+  // "Hi where r u located" still triggers "where are you located?" / "location".
+  const msgExpanded = expand(text)
+  const msgWords = msgExpanded.split(' ').filter(Boolean)
 
   // Most specific match wins.
   let best: any = null
-  let bestLen = 0
+  let bestScore = 0
   for (const r of rules) {
     for (const kw of (r.keywords || [])) {
-      const k = String(kw).toLowerCase().trim()
-      if (!k) continue
-      if (message.includes(k) && k.length > bestLen) { best = r; bestLen = k.length }
+      const score = keywordScore(String(kw), msgExpanded, msgWords)
+      if (score > bestScore) { best = r; bestScore = score }
     }
   }
   if (!best) return { matched: false }

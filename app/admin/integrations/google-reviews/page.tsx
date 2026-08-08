@@ -19,6 +19,13 @@ export default function GoogleReviewsPage() {
   const [ratingFilter, setRatingFilter] = useState('')
   const [replyFilter, setReplyFilter] = useState('all')  // all | replied | not_replied
   const [aiBusy, setAiBusy] = useState('')
+  // Stack the reviews list + preview panel into one column on phones.
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check(); window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   const generateAiReply = async (reviewId: string) => {
     if (!companyId) return
@@ -140,9 +147,11 @@ export default function GoogleReviewsPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, action: 'sync' }),
       })
-      const d = await res.json()
-      if (d.error) throw new Error(d.error)
-      setMsg(`Synced ${d.total} review(s)${d.averageRating ? ` · average ${d.averageRating}★` : ''}.`)
+      const text = await res.text()
+      let d: any = {}
+      try { d = text ? JSON.parse(text) : {} } catch { d = { error: res.ok ? 'The sync took too long — it may still be running. Refresh in a minute.' : (text.slice(0, 160) || 'Sync failed') } }
+      if (!res.ok || d.error) throw new Error(d.error)
+      setMsg(`Synced ${d.total} review(s)${d.averageRating ? ` · average ${Number(d.averageRating).toFixed(1)}★` : ''}.`)
       await load(companyId)
     } catch (e: any) { setMsg('Sync failed: ' + e.message) }
     finally { setBusy('') }
@@ -319,7 +328,7 @@ export default function GoogleReviewsPage() {
 
       {/* Reviews dashboard */}
       {reviews.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 18, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 280px', gap: 18, alignItems: 'start' }}>
           <div>
             {/* Filters */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>

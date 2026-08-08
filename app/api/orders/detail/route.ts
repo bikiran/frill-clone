@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     // Synced rows are often missing images and shipping, so those go live.
     const { data: stored } = await db.from('woocommerce_orders')
       .select('*').eq('company_id', companyId)
-      .or(`order_id.eq.${orderId},order_number.eq.${orderId}`).maybeSingle()
+      .eq('woo_order_id', orderId).maybeSingle()
     const complete = (o: any) =>
       o && Array.isArray(o.line_items) && o.line_items.length > 0 &&
       o.shipping_total != null &&
@@ -72,11 +72,14 @@ export async function GET(req: NextRequest) {
     const shipLine = (order.shipping_lines || [])[0] || null
     const shippingMethod = shipLine?.method_title || null
 
-    // Persist the enriched items + shipping so the next open is instant.
+    // Persist the enriched items + shipping (and refund state) so the next open
+    // is instant and the panel reflects refunds without waiting on a live call.
+    const refundedTotal = (order.refunds || []).reduce((s: number, r: any) => s + Math.abs(parseFloat(r.total || 0)), 0)
     try {
-      await db.from('woocommerce_orders')
-        .update({ line_items: lineItems, shipping_total: order.shipping_total ?? null })
-        .eq('company_id', companyId).eq('order_id', order.id)
+      const up = await db.from('woocommerce_orders')
+        .update({ line_items: lineItems, shipping_total: order.shipping_total ?? null, status: order.status, total_refunded: refundedTotal })
+        .eq('company_id', companyId).eq('woo_order_id', order.id)
+      if (up.error) await db.from('woocommerce_orders').update({ line_items: lineItems, shipping_total: order.shipping_total ?? null }).eq('company_id', companyId).eq('woo_order_id', order.id)
     } catch { /* cache only */ }
 
     return NextResponse.json({

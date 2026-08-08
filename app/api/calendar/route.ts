@@ -71,10 +71,10 @@ export async function POST(req: NextRequest) {
     if (!action || action === 'save') {
       const {
         id, event_type, title, notes, starts_at, ends_at, is_all_day, time_window,
-        location_id, contact_id, conversation_id, order_id, assigned_to,
+        location_id, location_ids, contact_id, conversation_id, order_id, assigned_to,
         address, status, created_by,
         assigned_to_id, assigned_to_name, reminder_channels,
-        notify_customer, customer_contact_id, assignees,
+        notify_customer, customer_contact_id, assignees, attachments, sort_order, checklist, description, cover_image, linked_notes,
       } = body
 
       if (!title || !starts_at) {
@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
         is_all_day: !!is_all_day,
         time_window: time_window || null,
         location_id: uuidOrNull(location_id),
+        location_ids: Array.isArray(location_ids) ? location_ids.map(uuidOrNull).filter(Boolean) : [],
         contact_id: uuidOrNull(contact_id),
         conversation_id: uuidOrNull(conversation_id),
         order_id: order_id != null ? String(order_id) : null,
@@ -109,20 +110,39 @@ export async function POST(req: NextRequest) {
           ? assignees.map((a: any) => ({ id: uuidOrNull(a?.id), name: a?.name })) : [],
         notify_customer: !!notify_customer,
         customer_contact_id: uuidOrNull(customer_contact_id) || uuidOrNull(contact_id),
+        attachments: Array.isArray(attachments) ? attachments : [],
+        sort_order: (sort_order === null || sort_order === undefined) ? null : Number(sort_order),
+        checklist: Array.isArray(checklist) ? checklist : [],
+        description: description ?? null,
+        cover_image: cover_image ?? null,
+        linked_notes: Array.isArray(linked_notes) ? linked_notes : [],
         updated_at: new Date().toISOString(),
       }
 
-      let event: any
-      if (id) {
-        const { data, error } = await db.from('calendar_events').update(row).eq('id', id).select().maybeSingle()
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-        event = data
-      } else {
-        row.created_by = uuidOrNull(created_by)
-        const { data, error } = await db.from('calendar_events').insert(row).select().maybeSingle()
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-        event = data
+      // Tolerate a DB that hasn't had the newer migrations applied yet (e.g.
+      // COLVY_V225 location_ids, COLVY_V226 attachments): if a column doesn't
+      // exist, drop it and retry so the rest of the event still saves.
+      const writeRow = async (r: any) => {
+        const run = (payload: any) => id
+          ? db.from('calendar_events').update(payload).eq('id', id).select().maybeSingle()
+          : db.from('calendar_events').insert(payload).select().maybeSingle()
+        let cur = { ...r }
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const res = await run(cur)
+          if (!res.error) return res
+          const m = /(?:Could not find the '([^']+)'|column "?([a-z_]+)"? .* does not exist)/i.exec(res.error.message || '')
+          const bad = m?.[1] || m?.[2]
+          if (bad && bad in cur) { delete cur[bad]; continue }
+          return res
+        }
+        return run(cur)
       }
+
+      let event: any
+      if (!id) row.created_by = uuidOrNull(created_by)
+      const { data, error } = await writeRow(row)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      event = data
 
       // If it was scheduled from a chat, note it on the conversation timeline so
       // the whole team can see what was promised.

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { prepareCampaign, processCampaignBatch, isWithinSendingHours } from '@/lib/campaign-sender'
+import { logJobRun } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -35,6 +36,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const startedAt = new Date().toISOString()
+    const t0 = Date.now()
     const db = admin()
     const results: any[] = []
 
@@ -48,6 +51,9 @@ export async function GET(req: NextRequest) {
         .select('id', { count: 'exact', head: true })
         .in('status', ['scheduled', 'sending'])
       if (!count) {
+        // Idle runs are the common case; record them cheaply so the jobs page
+        // can show the worker is alive and ticking, not silently dead.
+        await logJobRun({ job: 'campaigns-process', startedAt, durationMs: Date.now() - t0, status: 'idle', detail: { processed: 0 } })
         return NextResponse.json({ ok: true, processed: 0, idle: true })
       }
     }
@@ -91,8 +97,16 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const errored = results.filter(r => r.error).length
+    await logJobRun({
+      job: 'campaigns-process', startedAt, durationMs: Date.now() - t0,
+      status: errored ? 'error' : 'success',
+      detail: { processed: results.length, errored },
+      error: errored ? results.find(r => r.error)?.error : null,
+    })
     return NextResponse.json({ ok: true, processed: results.length, results })
   } catch (e: any) {
+    await logJobRun({ job: 'campaigns-process', status: 'error', error: e?.message })
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

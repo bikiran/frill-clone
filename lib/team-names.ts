@@ -8,7 +8,7 @@
  * member doesn't already have an explicit team_members.name.
  */
 export async function enrichNames(
-  members: { user_id?: string; id: string; name: string; email?: string; _explicitName?: boolean }[]
+  members: { user_id?: string; id: string; name: string; email?: string; avatar?: string | null; _explicitName?: boolean }[]
 ): Promise<void> {
   const ids = Array.from(new Set(members.map(m => m.user_id).filter(Boolean))) as string[]
   if (ids.length === 0) return
@@ -21,6 +21,10 @@ export async function enrichNames(
     for (const m of members) {
       const resolved = m.user_id ? names?.[m.user_id]?.name : null
       if (resolved) m.name = resolved
+      // Also carry the profile image through, so avatars (e.g. read receipts)
+      // can show a real photo instead of an initial.
+      const avatar = m.user_id ? names?.[m.user_id]?.avatar_url : null
+      if (avatar && !m.avatar) m.avatar = avatar
     }
   } catch { /* keep the fallbacks */ }
 }

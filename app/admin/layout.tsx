@@ -8,6 +8,14 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import IncomingCallListener from '@/components/IncomingCallListener'
 import AdminBanner from '@/components/AdminBanner'
+import ImpersonationBanner from '@/components/ImpersonationBanner'
+import DemoBanner from '@/components/DemoBanner'
+import DemoTour from '@/components/DemoTour'
+
+// Pages locked inside a demo workspace (connect real accounts / billing /
+// import-export). Sending is blocked server-side regardless; this hides the UI.
+const DEMO_LOCKED_HREFS = ['/admin/integrations', '/admin/billing', '/admin/import']
+const DEMO_LOCK_MESSAGE = 'This action is unavailable in the shared Colvy showcase. Start a free trial to connect your channels and use live messaging.'
 import { getCompanyByOwner } from '@/lib/board'
 import { useRouter } from 'next/navigation'
 import MobileNav from '@/components/MobileNav'
@@ -32,6 +40,7 @@ const icons: Record<string, React.JSX.Element> = {
   segments: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   gallery: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>,
   check: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
+  notes: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3v5h5"/><path d="M18 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2z"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>,
   link: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>,
   analytics: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>,
   help: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
@@ -79,6 +88,7 @@ const NAV_GROUPS = [
       { label: 'Inbox', href: '/admin/inbox', icon: 'support' },
       { label: 'Contacts', href: '/admin/contacts', icon: 'users' },
       { label: 'Tasks', href: '/admin/tasks', icon: 'check' },
+      { label: 'Notes', href: '/admin/notes', icon: 'notes' },
       { label: 'Gallery', href: '/admin/gallery', icon: 'gallery' },
       { label: 'Calendar', href: '/admin/calendar', icon: 'calendar' },
       { label: 'Scheduled', href: '/admin/scheduled', icon: 'scheduled' },
@@ -87,6 +97,7 @@ const NAV_GROUPS = [
       { label: 'Links Generator', href: '/admin/links', icon: 'link' },
       { label: 'Link Reports', href: '/admin/link-reports', icon: 'analytics' },
       { label: 'Reviews', href: '/admin/reviews', icon: 'analytics' },
+      { label: 'Social Engagement', href: '/admin/social', icon: 'announcements' },
     ],
   },
   {
@@ -102,7 +113,6 @@ const NAV_GROUPS = [
       { label: 'Tickets', href: '/admin/tickets', icon: 'support' },
       { label: 'Help Centre', href: '/admin/help', icon: 'help' },
       { label: 'Help Categories', href: '/admin/settings/help-categories', icon: 'topics' },
-      { label: 'SMS Pricing', href: '/admin/settings/sms-pricing', icon: 'billing' },
       { label: 'Help Reporting', href: '/admin/help/analytics', icon: 'analytics' },
       { label: 'Help Settings', href: '/admin/help/settings', icon: 'settings' },
 
@@ -128,6 +138,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [adminCollapsed, setAdminCollapsed] = useState(false)
   const [company, setCompany] = useState<any>(null)
+  const [demoMsg, setDemoMsg] = useState('')
+  useEffect(() => { if (!demoMsg) return; const t = setTimeout(() => setDemoMsg(''), 4000); return () => clearTimeout(t) }, [demoMsg])
+
+  // Per-section collapse. Not everyone needs every group expanded, so each
+  // titled nav group can be minimised. The choice is remembered for the tab
+  // session (sessionStorage) — a fresh browser session starts fully expanded.
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {}
+    try { return JSON.parse(sessionStorage.getItem('colvy:nav-collapsed') || '{}') } catch { return {} }
+  })
+  const toggleGroup = (label: string) => {
+    setCollapsedGroups(prev => {
+      const next = { ...prev, [label]: !prev[label] }
+      try { sessionStorage.setItem('colvy:nav-collapsed', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
 
   // ── Email auto-sync ───────────────────────────────────────────────────────
   // Email only arrived when someone pressed "Sync now". A Vercel cron would be
@@ -294,6 +321,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }
 
       supabase.auth.getSession().then(async ({ data }: any) => {
+      // admin.colvy.com is the platform super-admin domain — never a company
+      // admin. Any /admin/* URL there must go to the platform panel instead of
+      // falling through to a company lookup that resolves nothing and 404s.
+      if (typeof window !== 'undefined' && window.location.hostname === 'admin.colvy.com') {
+        // The console lives at the bare host root, not the explicit
+        // /platform-admin path (which 404s).
+        window.location.replace('/'); return
+      }
       const u = data?.session?.user
       if (!u) { router.push('/signin'); return }
       setUser(u)
@@ -311,6 +346,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // Load the company for display (could be any company if on a subdomain)
         if (subdomain) {
           const { data: co } = await (supabase as any).from('companies').select('*').eq('slug', subdomain).maybeSingle()
+          // A subdomain with no company (typo, deleted workspace) has nothing to
+          // administer — send the super admin to the platform panel rather than
+          // rendering a company-less admin that reads as a broken 404.
+          if (!co) { window.location.href = 'https://admin.colvy.com'; return }
           setCompany(co)
         } else {
           const co = await getCompanyByOwner(u.id)
@@ -412,6 +451,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div style={{ display: 'flex', minHeight: 'calc(100vh - 56px)' }}>
+      {/* Super-admin impersonation banner (shows only when a session is active) */}
+      <ImpersonationBanner />
+      {/* Demo showcase banner + guided tour (shown only inside a demo workspace) */}
+      <DemoBanner company={company} />
+      {company?.is_demo && <DemoTour />}
+      {demoMsg && (
+        <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 100001, maxWidth: 420, padding: '12px 16px', borderRadius: 12, background: '#111827', color: '#fff', fontSize: 13, fontWeight: 500, boxShadow: '0 10px 30px rgba(0,0,0,0.35)', lineHeight: 1.5 }}>
+          {demoMsg}
+        </div>
+      )}
       {/* Inbound calls: the WebRTC client used to register ONLY on the inbox
           page. Anywhere else in the admin, no endpoint was registered with
           Telnyx — so a customer ringing the business number got a BUSY tone
@@ -425,6 +474,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           .admin-main { margin-left: 0 !important; }
           .admin-mobile-overlay.open { display: block !important; }
         }
+        /* Collapsible nav-group header — a proper padded, rounded row that
+           highlights on hover, with the chevron fading in a touch. */
+        .nav-group-header {
+          display: flex; align-items: center; justify-content: space-between;
+          width: 100%; padding: 5px 10px; margin-bottom: 4px; border-radius: 8px;
+          background: transparent; border: none; cursor: pointer;
+          transition: background 0.14s ease;
+        }
+        .nav-group-header:hover { background: #f1f2f4; }
+        .nav-group-header .nav-group-chevron { opacity: 0.45; transition: transform 0.18s ease, opacity 0.14s ease; }
+        .nav-group-header:hover .nav-group-chevron { opacity: 0.85; }
+        .nav-group-header.is-collapsed { background: #f5f6f8; }
+        .nav-group-header.is-collapsed:hover { background: #ececf0; }
       `}</style>
 
       {/* NOTE: the old floating mobile hamburger was removed. It used
@@ -468,9 +530,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <line x1={adminCollapsed ? '19' : '5'} y1="5" x2={adminCollapsed ? '19' : '5'} y2="19" />
           </svg>
         </button>
-        {/* Company info — workspace switcher */}
+        {/* Company info — workspace switcher. In the collapsed rail we hide the
+            name/chevron so no clipped text renders behind the avatar. */}
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', position: 'relative' }}>
           <button type="button" onClick={() => { setShowWorkspaces(v => !v); if (!workspaces.length) loadWorkspaces() }}
+            title={adminCollapsed ? (company?.name || 'Workspace') : undefined}
             style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
             {company?.logo_url ? (
               <img src={company.logo_url} alt={company.name}
@@ -480,15 +544,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div style={{ width: 32, height: 32, borderRadius: 8, background: company?.accent_color || 'var(--coral)', display: company?.logo_url ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
               {(company?.name?.[0] || user?.email?.[0] || '?').toUpperCase()}
             </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
+            {!adminCollapsed && <div style={{ minWidth: 0, flex: 1 }}>
               <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {company?.name || user?.email?.split('@')[0] || 'My Board'}
               </p>
               <p style={{ fontSize: 11, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {company ? `${company.slug}.colvy.com` : typeof window !== 'undefined' ? window.location.hostname : 'colvy.com'}
               </p>
-            </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, transform: showWorkspaces ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9" /></svg>
+            </div>}
+            {!adminCollapsed && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, transform: showWorkspaces ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9" /></svg>}
           </button>
 
           {/* Workspace switcher dropdown */}
@@ -524,18 +588,36 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         {/* Nav groups */}
         <nav style={{ flex: 1, padding: '10px 8px' }}>
-          {NAV_GROUPS.map((group, gi) => (
-            <div key={gi} style={{ marginBottom: 20 }}>
+          {NAV_GROUPS.map((group, gi) => {
+            // Groups without a title (the lone Dashboard link) are never
+            // collapsible. In the icon-only sidebar there are no titles to click,
+            // so everything stays visible regardless of the saved state.
+            const groupCollapsed = !!group.label && !adminCollapsed && !!collapsedGroups[group.label]
+            return (
+            <div key={gi} style={{ marginBottom: groupCollapsed ? 8 : 20 }}>
               {group.label && !adminCollapsed && (
-                <p style={{ padding: '0 10px', marginBottom: 4, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--slate)' }}>
-                  {group.label}
-                </p>
+                <button type="button" onClick={() => toggleGroup(group.label!)}
+                  aria-expanded={!groupCollapsed}
+                  title={groupCollapsed ? `Show ${group.label}` : `Hide ${group.label}`}
+                  className={`nav-group-header${groupCollapsed ? ' is-collapsed' : ''}`}>
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--slate)' }}>
+                    {group.label}
+                  </span>
+                  <svg className="nav-group-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+                    style={{ flexShrink: 0, transform: groupCollapsed ? 'rotate(180deg)' : 'none' }}>
+                    <polyline points="18 15 12 9 6 15" />
+                  </svg>
+                </button>
               )}
-              {group.items.map(item => {
+              {!groupCollapsed && group.items.map(item => {
                 const active = isActive(item.href)
+                // In a demo workspace, pages that connect real accounts, handle
+                // billing or import/export real data are locked. Sending is
+                // already blocked server-side; this hides the surfaces too.
+                const locked = !!company?.is_demo && DEMO_LOCKED_HREFS.some(h => item.href === h || item.href.startsWith(h + '/'))
                 return (
-                  <Link key={item.href + item.label} href={item.href}
-                    onClick={() => setMobileSidebarOpen(false)}
+                  <Link key={item.href + item.label} href={locked ? '#' : item.href}
+                    onClick={(e) => { if (locked) { e.preventDefault(); setDemoMsg(DEMO_LOCK_MESSAGE) } else setMobileSidebarOpen(false) }}
                     title={adminCollapsed ? item.label : undefined}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px',
@@ -562,6 +644,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             )}
                           </span>
                           {!adminCollapsed && item.label}
+                          {locked && !adminCollapsed && <span title="Not available in the demo" style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.55 }}>🔒</span>}
                           {count > 0 && !adminCollapsed && (
                             <span
                               // key on the number so React remounts it and the
@@ -580,7 +663,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 )
               })}
             </div>
-          ))}
+          )})}
 
           {/* Super admin */}
           {isSuperAdmin && (
@@ -593,7 +676,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <span style={{ flexShrink: 0, display: 'flex', opacity: 0.65 }}>{icons.company}</span>
                 Create Company
               </Link>
-              <a href="https://admin.colvy.com/platform-admin"
+              <a href="https://admin.colvy.com"
                 style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px', borderRadius: 8, fontSize: 13, textDecoration: 'none', color: 'var(--slate)', background: 'transparent' }}>
                 <span style={{ flexShrink: 0, display: 'flex', opacity: 0.65 }}>{icons.lock || icons.company}</span>
                 Platform panel
@@ -602,15 +685,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           )}
         </nav>
 
-        {/* Upgrade CTA */}
+        {/* Upgrade CTA — collapses to a single centred icon so its text can't
+            overflow the 60px rail and clip ("Upgrade / to Pro / Unloc…"). */}
         <div style={{ padding: 12, borderTop: '1px solid var(--border)' }}>
           <Link href="/admin/billing"
-            style={{ display: 'block', padding: '10px 14px', borderRadius: 12, background: 'var(--peach)', textDecoration: 'none', textAlign: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            title={adminCollapsed ? 'Upgrade to Pro' : undefined}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: adminCollapsed ? '10px 0' : '10px 14px', borderRadius: 12, background: 'var(--peach)', textDecoration: 'none', textAlign: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--coral)' }}>
               {icons.upgrade}
-              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>Upgrade to Pro</p>
+              {!adminCollapsed && <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>Upgrade to Pro</p>}
             </div>
-            <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 2 }}>Unlock all features</p>
+            {!adminCollapsed && <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 2 }}>Unlock all features</p>}
           </Link>
         </div>
       </aside>

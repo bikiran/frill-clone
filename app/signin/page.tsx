@@ -161,7 +161,7 @@ function SignInForm() {
       <div className="sf-form-col" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '48px clamp(24px, 8vw, 96px)' }}>
         <div style={{ maxWidth: 380, width: '100%', margin: '0 auto' }}>
           <a href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 40, textDecoration: 'none' }}>
-            <img src="/logo.png" alt="Colvy" style={{ height: 28, width: 'auto' }} onError={(e: any) => e.target.style.display = 'none'} />
+            {/* Wordmark only — /logo.png 404s and its broken-image alt showed "Colvy" twice. */}
             <span style={{ fontWeight: 800, fontSize: 18, color: '#ff7a6b' }}>Colvy</span>
           </a>
 

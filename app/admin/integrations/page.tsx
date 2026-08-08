@@ -41,7 +41,7 @@ const INTEGRATIONS = [
     isDedicated: true,
   },
   {
-    id: 'telnyx',
+    id: 'calls',
     name: 'Calls & SMS',
     desc: 'Call customers from your browser and continue live chats over SMS to their mobile.',
     icon: '📞',
@@ -279,13 +279,23 @@ export default function IntegrationsPage() {
           .limit(1)
         enb['shopify'] = !!(shopRows && shopRows.length > 0)
 
-        // Check for Telnyx integration
+        // Calls & SMS is active if the company has a number on EITHER carrier
+        // (Telnyx or the platform Twilio) — the carrier is invisible to them.
         const { data: telnyxData } = await (supabase as any)
           .from('telnyx_integrations')
-          .select('is_active')
+          .select('is_active, phone_number')
           .eq('company_id', cid)
           .maybeSingle()
-        enb['telnyx'] = !!(telnyxData && telnyxData.is_active)
+        let callsActive = !!(telnyxData?.is_active || telnyxData?.phone_number)
+        try {
+          const { data: twilioData } = await (supabase as any)
+            .from('twilio_integrations')
+            .select('account_sid, phone_number')
+            .eq('company_id', cid)
+            .maybeSingle()
+          if (twilioData?.account_sid && twilioData?.phone_number) callsActive = true
+        } catch {}
+        enb['calls'] = callsActive
 
         // Check for Stripe connection
         const { data: co } = await (supabase as any).from('companies').select('stripe_connected').eq('id', cid).maybeSingle()

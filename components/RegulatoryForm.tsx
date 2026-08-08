@@ -1,15 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
 // Collects the AU regulatory bundle Telnyx requires before a number can be
 // activated. Shown BEFORE checkout — the buyer can't pay until this is
 // complete. Landline needs identity + AU address + proof; mobile also needs a
 // date of birth and (later) Onfido ID verification.
-export default function RegulatoryForm({ companyId, numberType, onComplete, onCancel }: {
+export default function RegulatoryForm({ companyId, numberType, provider = 'telnyx', free = false, onComplete, onCancel }: {
   companyId: string
   numberType: 'local' | 'mobile'
+  provider?: 'telnyx' | 'twilio'
+  free?: boolean
   onComplete: (bundleId: string) => void
   onCancel: () => void
 }) {
@@ -25,7 +27,7 @@ export default function RegulatoryForm({ companyId, numberType, onComplete, onCa
     // Prefill from any existing bundle
     ;(async () => {
       try {
-        const res = await fetch(`/api/telnyx/regulatory?companyId=${companyId}`)
+        const res = await fetch(`/api/${provider}/regulatory?companyId=${companyId}`)
         const data = await res.json()
         if (data.bundle) setForm((f: any) => ({ ...f, ...data.bundle, number_type: numberType }))
       } catch {}
@@ -55,7 +57,7 @@ export default function RegulatoryForm({ companyId, numberType, onComplete, onCa
     try {
       const proofUrl = await uploadProof()
       const payload = { ...form, companyId, number_type: numberType, proof_of_address_url: proofUrl, action: 'submit' }
-      const res = await fetch('/api/telnyx/regulatory', {
+      const res = await fetch(`/api/${provider}/regulatory`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       })
       const data = await res.json()
@@ -121,8 +123,11 @@ export default function RegulatoryForm({ companyId, numberType, onComplete, onCa
 
         <L>Proof of address</L>
         <p style={{ margin: '0 0 8px', fontSize: 11.5, color: 'var(--slate)' }}>A utility bill or bank statement dated within the last 3 months, showing the address above.</p>
-        <input type="file" accept="image/*,application/pdf" onChange={e => setProofFile(e.target.files?.[0] || null)} style={{ fontSize: 13 }} />
-        {form.proof_of_address_url && !proofFile && <p style={{ fontSize: 11.5, color: 'var(--green, #059669)', marginTop: 6 }}>✓ A document is already on file</p>}
+        <FileDrop
+          file={proofFile}
+          existingUrl={form.proof_of_address_url}
+          onPick={f => setProofFile(f)}
+        />
 
         {numberType === 'mobile' && (
           <div style={{ marginTop: 18, padding: 14, borderRadius: 12, background: 'var(--peach)', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5 }}>
@@ -134,10 +139,79 @@ export default function RegulatoryForm({ companyId, numberType, onComplete, onCa
           <button type="button" onClick={onCancel} style={{ flex: 1, padding: '12px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
           <button type="button" onClick={submit} disabled={saving || uploading}
             style={{ flex: 2, padding: '12px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: (saving || uploading) ? 0.7 : 1 }}>
-            {uploading ? 'Uploading…' : saving ? 'Saving…' : 'Save & continue to payment'}
+            {uploading ? 'Uploading…' : saving ? 'Saving…' : free ? 'Save & get my number' : 'Save & continue to payment'}
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// A friendlier replacement for the raw <input type="file">. Renders a
+// click-or-drag dropzone with an explicit Browse button, the picked file's name
+// and size, a preview thumbnail for images, and a clear/remove control. Falls
+// back to "already on file" state when a document was uploaded previously.
+function FileDrop({ file, existingUrl, onPick }: {
+  file: File | null
+  existingUrl?: string
+  onPick: (f: File | null) => void
+}) {
+  const [dragOver, setDragOver] = useState(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const fmtSize = (b: number) => b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`
+  const isImg = file && file.type.startsWith('image/')
+  const [thumb, setThumb] = useState<string>('')
+  useEffect(() => {
+    if (isImg && file) { const u = URL.createObjectURL(file); setThumb(u); return () => URL.revokeObjectURL(u) }
+    setThumb('')
+  }, [file])
+
+  const open = () => inputRef.current?.click()
+
+  // Picked (or already-on-file) — show a compact card instead of the dropzone.
+  if (file || (existingUrl && !file)) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas, #fafafa)' }}>
+        <input ref={inputRef} type="file" accept="image/*,application/pdf" onChange={e => onPick(e.target.files?.[0] || null)} style={{ display: 'none' }} />
+        <div style={{ width: 44, height: 44, borderRadius: 9, flexShrink: 0, background: thumb ? `center/cover no-repeat url(${thumb})` : '#eef2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
+          {!thumb && (file ? '📄' : '✓')}
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {file ? file.name : 'Document on file'}
+          </p>
+          <p style={{ margin: '2px 0 0', fontSize: 11.5, color: file ? 'var(--slate)' : '#059669' }}>
+            {file ? fmtSize(file.size) : '✓ Already uploaded — pick a new file to replace it'}
+          </p>
+        </div>
+        <button type="button" onClick={open} style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>Change</button>
+        {file && (
+          <button type="button" onClick={() => onPick(null)} aria-label="Remove file" style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: '#dc2626', fontSize: 14, fontWeight: 700, cursor: 'pointer', flexShrink: 0, lineHeight: 1 }}>×</button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div
+      onClick={open}
+      onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) onPick(f) }}
+      style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+        padding: '22px 16px', borderRadius: 12, cursor: 'pointer', textAlign: 'center',
+        border: `1.5px dashed ${dragOver ? 'var(--coral)' : 'var(--border)'}`,
+        background: dragOver ? 'var(--peach, #fff5f2)' : 'var(--canvas, #fafafa)',
+        transition: 'border-color .15s, background .15s',
+      }}
+    >
+      <input ref={inputRef} type="file" accept="image/*,application/pdf" onChange={e => onPick(e.target.files?.[0] || null)} style={{ display: 'none' }} />
+      <div style={{ fontSize: 22, lineHeight: 1 }}>📎</div>
+      <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink)' }}>
+        <span style={{ color: 'var(--coral)', fontWeight: 700 }}>Click to upload</span> or drag &amp; drop
+      </p>
+      <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>PNG, JPG or PDF · max ~10&nbsp;MB</p>
     </div>
   )
 }

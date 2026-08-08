@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { syncGmailChannel } from '@/lib/gmail'
+import { logJobRun } from '@/lib/job-log'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
@@ -38,6 +39,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const startedAt = new Date().toISOString()
+  const t0 = Date.now()
   const db = admin()
   const { data: channels } = await db.from('email_channels')
     .select('id, company_id, provider, is_active, sync_interval_minutes, last_synced_at')
@@ -61,5 +64,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const errored = results.filter(r => r.error).length
+  await logJobRun({
+    job: 'email-sync', startedAt, durationMs: Date.now() - t0,
+    status: results.length === 0 ? 'idle' : (errored ? 'error' : 'success'),
+    detail: { channels: (channels || []).length, ran: results.length, errored },
+    error: errored ? results.find(r => r.error)?.error : null,
+  })
   return NextResponse.json({ ok: true, ran: results.length, results })
 }

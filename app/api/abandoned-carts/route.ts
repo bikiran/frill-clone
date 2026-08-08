@@ -134,8 +134,8 @@ export async function POST(req: NextRequest) {
         let q = db.from('abandoned_carts').select('id, total, created_at')
           .eq('company_id', companyId).eq('status', 'abandoned')
           .gte('created_at', since).order('created_at', { ascending: false }).limit(5)
-        if (contact?.id) q = q.eq('contact_id', contact.id)
-        else if (norm.email) q = q.eq('email', norm.email)
+        // abandoned_carts has no contact_id column — it's matched by email/phone.
+        if (norm.email) q = q.eq('email', norm.email)
         else if (norm.phone) q = q.eq('phone', norm.phone)
         const { data: recent } = await q
         const match = (recent || []).find((c: any) =>

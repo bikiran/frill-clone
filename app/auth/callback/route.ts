@@ -37,8 +37,17 @@ export async function GET(req: NextRequest) {
     const { data, error } = await (supabase as any).auth.exchangeCodeForSession(code)
     if (error) throw error
 
-    // New signup with company info in URL params — explicit intent to create a company,
-    // always takes priority over host-based subdomain detection below.
+    // Supabase's email-verify redirect can strip the redirect_to query params, so
+    // slug/name/industry may be absent here even for a company signup. Fall back
+    // to the intent we stored on the user's metadata at signup, so the company
+    // still gets created rather than silently skipped.
+    const meta = (data.user?.user_metadata || {}) as any
+    if (!slug && meta.company_slug) slug = meta.company_slug
+    if (!name && (meta.company_name || meta.company)) name = meta.company_name || meta.company
+    if (!industry && (meta.company_industry || meta.industry)) industry = meta.company_industry || meta.industry
+
+    // New signup with company info (from params or metadata) — explicit intent to
+    // create a company, always takes priority over host-based subdomain detection.
     if (slug && name && data.user) {
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
@@ -52,20 +61,53 @@ export async function GET(req: NextRequest) {
         accent_color: '#ff7a6b',
       }).select().single()
 
-      // Auto-register subdomain with Vercel
+      // Finish owner setup, matching the /api/companies path (the signup flow
+      // skipped both of these, so boards created by email/OAuth signup came up
+      // empty and — if owner_id ever fails to match — with no way to reach admin):
+      //   1. Record the creator as an OWNER team member. The board grants admin
+      //      on owner_id OR an owner/admin membership, so this is the safety net.
+      //   2. Seed sample statuses, topics, ideas, announcements, help articles
+      //      and a feedback form, so the new board isn't blank.
+      // Both non-blocking — a failure here must never break email confirmation.
+      if (co.data?.id) {
+        try {
+          const { data: existingMember } = await (adminClient as any).from('team_members')
+            .select('id').eq('company_id', co.data.id).eq('user_id', data.user.id).maybeSingle()
+          if (!existingMember) {
+            await (adminClient as any).from('team_members').insert({
+              email: data.user.email, user_id: data.user.id, company_id: co.data.id,
+              role: 'owner', status: 'active',
+            })
+          }
+        } catch (e) { console.warn('[auth/callback] owner team_member insert failed', e) }
+        try {
+          const { seedCompanyData } = await import('@/lib/seedCompany')
+          seedCompanyData(co.data.id, co.data.name).catch((e: any) => console.warn('[auth/callback] seed failed', e?.message || e))
+        } catch (e) { console.warn('[auth/callback] seed import failed', e) }
+      }
+
+      // Auto-register the board's subdomain (Vercel project domain + Cloudflare
+      // CNAME). Go through our own /api/domains handler rather than calling
+      // Vercel inline: the old inline call omitted the teamId (the project lives
+      // under a Vercel *team*, so a team-less request is rejected) and swallowed
+      // every error, which is exactly why a new board could 404 with
+      // DEPLOYMENT_NOT_FOUND — the domain was silently never added. Non-blocking:
+      // a registration hiccup must not fail the signup, but we log the result so
+      // it's diagnosable instead of vanishing.
       if (co.data?.slug) {
         const domain = `${co.data.slug}.colvy.com`
         try {
-          await fetch('https://api.vercel.com/v10/projects/' + (process.env.VERCEL_PROJECT_ID || '') + '/domains', {
+          const r = await fetch(`${origin}/api/domains`, {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${process.env.VERCEL_TOKEN}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ name: domain }),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain }),
           })
+          const dr = await r.json().catch(() => ({}))
+          if (!r.ok || dr?.vercel?.error) {
+            console.warn('[auth/callback] subdomain registration issue for', domain, JSON.stringify(dr))
+          }
         } catch (e) {
-          console.warn('Vercel domain registration failed (non-blocking):', e)
+          console.warn('[auth/callback] subdomain registration failed (non-blocking):', e)
         }
       }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendGmail } from '@/lib/gmail'
+import { sendGmail, sanitizeEmailHtml } from '@/lib/gmail'
+import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,12 @@ const admin = () => createClient(
 // message so it lands in the same email conversation on their side.
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, content, agentName, to, cc, bcc, subject: subjectOverride } = await req.json()
+    const { conversationId, content, html: htmlOverride, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride, attachments, metadata } = await req.json()
+    // Normalise attachments to {url,name,type} + a display kind for the thread.
+    const atts = (Array.isArray(attachments) ? attachments : [])
+      .filter((a: any) => a && a.url)
+      .map((a: any) => ({ url: String(a.url), name: String(a.name || 'file'), type: a.type || undefined }))
+    const displayAtts = atts.map(a => ({ ...a, kind: String(a.type || '').startsWith('image') ? 'image' : String(a.type || '').startsWith('video') ? 'video' : 'file' }))
     if (!conversationId || !content) {
       return NextResponse.json({ error: 'conversationId and content are required' }, { status: 400 })
     }
@@ -26,6 +32,7 @@ export async function POST(req: NextRequest) {
 
     const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    if (await isExternalSendBlocked(conv.company_id, db)) { logBlockedSend(conv.company_id, 'email', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
     if (conv.channel !== 'email') {
       return NextResponse.json({ error: 'This conversation is not an email thread' }, { status: 400 })
     }
@@ -77,13 +84,21 @@ export async function POST(req: NextRequest) {
     // Append the mailbox signature, if any, and build an HTML version so the
     // reply renders with paragraph breaks and clickable links on the customer's
     // side (a plain-text-only reply looked flat next to their formatted email).
-    const signature = channel.signature ? `\n\n${channel.signature}` : ''
+    // The composer may pick a specific signature (from the library) — honour it
+    // exactly, including an explicit "no signature" (empty string). Only fall
+    // back to the mailbox's own signature when the caller didn't specify one.
+    const chosenSig = sigOverride !== undefined ? String(sigOverride || '') : (channel.signature || '')
+    const signature = chosenSig ? `\n\n${chosenSig}` : ''
     const fullText = `${content}${signature}`
     const escapeHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     const linkify = (t: string) => t.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>')
-    const bodyHtml = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a">${
-      linkify(escapeHtml(fullText)).replace(/\n/g, '<br>')
-    }</div>`
+    // When the composer sends formatted HTML (rich-text toolbar), send it as-is
+    // (sanitised) with the signature appended as HTML; otherwise build HTML from
+    // the plain text as before.
+    const sigHtml = chosenSig ? `<br><br>${escapeHtml(chosenSig).replace(/\n/g, '<br>')}` : ''
+    const bodyHtml = (htmlOverride && String(htmlOverride).trim())
+      ? `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a">${sanitizeEmailHtml(String(htmlOverride))}${sigHtml}</div>`
+      : `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a">${linkify(escapeHtml(fullText)).replace(/\n/g, '<br>')}</div>`
 
     const fromLabel = `${fromName} <${channel.inbound_address || channel.from_address}>`
 
@@ -94,6 +109,7 @@ export async function POST(req: NextRequest) {
         to: toEmail, cc: ccEmail, bcc: bccEmail, subject, body: fullText, html: bodyHtml,
         inReplyTo,
         threadId: conv.email_message_id || null,
+        attachments: atts,
       })
       if (out.error) return NextResponse.json({ error: out.error }, { status: 502 })
 
@@ -111,6 +127,7 @@ export async function POST(req: NextRequest) {
         email_cc: ccEmail,
         email_subject: subject,
         email_html: bodyHtml,
+        ...(displayAtts.length ? { attachments: displayAtts } : {}),
       })
       await db.from('conversations').update({
         last_message: content.slice(0, 200),
@@ -150,6 +167,7 @@ export async function POST(req: NextRequest) {
         text: fullText,
         html: bodyHtml,
         reply_to: channel.inbound_address || fromAddress,
+        ...(atts.length ? { attachments: atts.map(a => ({ filename: a.name, path: a.url })) } : {}),
         ...(Object.keys(headers).length ? { headers } : {}),
       }),
     })
@@ -173,6 +191,8 @@ export async function POST(req: NextRequest) {
       email_cc: ccEmail,
       email_subject: subject,
       email_html: bodyHtml,
+      ...(displayAtts.length ? { attachments: displayAtts } : {}),
+      ...(metadata && typeof metadata === 'object' ? { metadata } : {}),
     })
 
     await db.from('conversations').update({

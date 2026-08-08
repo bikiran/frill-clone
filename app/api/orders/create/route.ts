@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { notifyCompany } from '@/lib/notify'
+import { shortenUrl } from '@/lib/short-link'
 
 function admin() {
   return createClient(
@@ -54,7 +55,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ stockWarning: true, problems: stockProblems }, { status: 409 })
     }
 
-    // ── Customer matching precedence: linked WC id → email → create/guest.
+    // ── Customer matching precedence: linked WC id → email match → create.
+    // We DEFAULT to tying the order to a real customer account: a guest order
+    // (customer_id 0) can't be paid via the order-pay link when the store has
+    // "guest checkout" turned off — WooCommerce shows "This order cannot be paid
+    // for". Creating/matching the customer sidesteps that. Pass
+    // createAccount: false explicitly to force a guest order.
     let customerId = 0
     if (customer?.existingId) {
       customerId = Number(customer.existingId)
@@ -62,7 +68,7 @@ export async function POST(req: NextRequest) {
       const existing = await woo.findCustomerByEmail(customer.email)
       if (existing?.id) {
         customerId = existing.id
-      } else if (customer.createAccount) {
+      } else if (customer.createAccount !== false) {
         const created = await woo.createCustomer({
           email: customer.email, first_name: customer.first_name, last_name: customer.last_name,
           phone: customer.phone, billing: customer.billing, shipping: customer.shipping,
@@ -70,6 +76,12 @@ export async function POST(req: NextRequest) {
         if (created.ok) customerId = created.customer.id
         // If account creation fails we fall through to a guest order.
       }
+    }
+
+    // Remember the WC customer on the Colvy contact so the next order reuses the
+    // same account instead of matching/creating again.
+    if (customerId && contactId) {
+      try { await db.from('contacts').update({ woo_customer_id: customerId }).eq('id', contactId) } catch {}
     }
 
     // ── Assemble line items (respect custom price via a per-item override).
@@ -145,8 +157,12 @@ export async function POST(req: NextRequest) {
     }
     await woo.addOrderNote(order.id, `Order created from Colvy chat${createdByName ? ` by ${createdByName}` : ''}.`, false)
 
-    // ── Payment link (WooCommerce order-pay URL)
-    const payLink = order.payment_url || `${integ.store_url}/checkout/order-pay/${order.id}/?pay_for_order=true&key=${order.order_key}`
+    // ── Payment link (WooCommerce order-pay URL), wrapped behind a branded
+    // {slug}.colvy.com/l/<code> short link so the SMS is short, trustworthy, and
+    // click-trackable — instead of the raw, spammy-looking store URL. Falls back
+    // to the raw URL if the shortener fails.
+    const rawPayLink = order.payment_url || `${String(integ.store_url).replace(/\/$/, '')}/checkout/order-pay/${order.id}/?pay_for_order=true&key=${order.order_key}`
+    const payLink = await shortenUrl(rawPayLink, { companyId, kind: 'payment', conversationId })
 
     try { await notifyCompany({ db, companyId, type: 'order', message: `Order #${order.number || order.id} created — ${order.currency || 'AUD'} $${order.total}`, actorName: createdByName }) } catch {}
 

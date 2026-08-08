@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getVoiceProvider } from '@/lib/voice-provider-client'
 
 interface CallBarProps {
   companyId: string | null
@@ -13,6 +14,21 @@ interface CallBarProps {
 }
 
 type CallState = 'idle' | 'connecting' | 'ringing' | 'active' | 'ended' | 'error'
+
+// Twilio Voice errors carry a numeric code + a `twilioError` with a human
+// description. Surface the most useful text instead of a bare "[object Object]"
+// or an unrelated "reading 'message'" TypeError from a blind e.message access.
+function fmtCallError(e: any): string {
+  if (!e) return 'Call failed'
+  if (typeof e === 'string') return e
+  const t = e.twilioError || e
+  const code = t?.code || e?.code
+  const msg = t?.causes?.[0] || t?.description || t?.explanation || t?.message || e?.message
+  if (code === 31201 || code === 20101 || code === 31204) return 'Calling isn’t authorised (token rejected). Open Integrations → Calls & SMS and reconnect, or contact support.'
+  if (code === 31005 || code === 31009) return 'Call connection failed — check your network and try again.'
+  if (msg && code) return `${msg} (Twilio ${code})`
+  return msg || (code ? `Call error (Twilio ${code})` : 'Call failed')
+}
 
 // Normalise to E.164 defaulting to Australia
 function toE164(raw: string): string | null {
@@ -38,6 +54,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   }, [state])
   const [seconds, setSeconds] = useState(0)
   const [muted, setMuted] = useState(false)
+  const providerRef = useRef<'telnyx' | 'twilio'>('telnyx')
   const clientRef = useRef<any>(null)
   const callRef = useRef<any>(null)
   const timerRef = useRef<any>(null)
@@ -154,10 +171,72 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const cleanup = () => {
     if (timerRef.current) clearInterval(timerRef.current)
     stopRingback()
-    try { callRef.current?.hangup?.() } catch {}
+    try { providerRef.current === 'twilio' ? callRef.current?.disconnect?.() : callRef.current?.hangup?.() } catch {}
     try { clientRef.current?.disconnect?.() } catch {}
+    try { clientRef.current?.destroy?.() } catch {}   // Twilio Device teardown
     callRef.current = null
     clientRef.current = null
+  }
+
+  // ── Twilio outbound ────────────────────────────────────────────────────────
+  // Twilio records the call server-side (Dial record="…"), so there's no browser
+  // MediaRecorder here — the recording arrives via the recording callback and is
+  // transcribed just like a Telnyx call.
+  const startCallTwilio = async (dest: string) => {
+    if (!companyId) return
+    try {
+      // Pre-check the mic so a blocked permission fails clearly (the SDK will
+      // also request it, but this gives a friendlier message).
+      try { micStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true }) } catch {
+        setErrorMsg('Microphone blocked — allow mic access for this site and try again'); setState('error'); return
+      }
+      const { data: sess } = await supabase.auth.getSession()
+      const userId = sess?.session?.user?.id || null
+      const res = await fetch('/api/twilio/token', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, userId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not get Twilio token')
+      const from = data.from || ''
+
+      // Log the call row (so recording/status callbacks can find it via callRowId).
+      let rowId: string | null = null
+      try {
+        const { data: row } = await (supabase as any).from('calls').insert({
+          company_id: companyId, conversation_id: conversationId || null, contact_id: contactId || null,
+          direction: 'outbound', provider: 'twilio', from_number: from, to_number: dest,
+          status: 'initiated', agent_name: agentName || 'Agent', contact_name: contactName || null,
+        }).select().maybeSingle()
+        rowId = row?.id || null
+        callRowId.current = rowId
+      } catch {}
+
+      if (conversationId) {
+        try { await (supabase as any).from('conversations').update({ last_message: '📞 Call started', last_message_at: new Date().toISOString() }).eq('id', conversationId) } catch {}
+      }
+
+      const { Device } = await import('@twilio/voice-sdk')
+      const device = new Device(data.token, { codecPreferences: ['opus', 'pcmu'] as any })
+      clientRef.current = device
+      endedRef.current = false
+      // A rejected token / bad API key surfaces here, before the call connects.
+      device.on('error', (e: any) => { console.error('[twilio device] error', e); if (state !== 'active') { setErrorMsg(fmtCallError(e)); setState('error') } })
+
+      const call = await device.connect({
+        params: { To: dest, From: from, callRowId: rowId || '', companyId, conversationId: conversationId || '' },
+      })
+      callRef.current = call
+      setState('ringing'); startRingback()
+
+      call.on('accept', () => { setState('active'); toneConnected(); startTimer(); updateCallRow({ status: 'answered' }) })
+      call.on('disconnect', () => { toneEnded(); endCall(false) })
+      call.on('cancel', () => { endCall(false) })
+      call.on('error', (e: any) => { console.error('[twilio call] error', e); setErrorMsg(fmtCallError(e)); setState('error') })
+    } catch (e: any) {
+      console.error('[twilio call] connect failed', e)
+      setErrorMsg(fmtCallError(e)); setState('error')
+    }
   }
 
   const startCall = async () => {
@@ -169,6 +248,11 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
     placedRef.current = false
     endedRef.current = false
     try {
+      // Route to whichever calling backend this company uses.
+      const prov = await getVoiceProvider(companyId)
+      providerRef.current = prov
+      if (prov === 'twilio') { await startCallTwilio(dest); return }
+
       // 0. Ask for the microphone up-front. If it's blocked, fail NOW with a
       // clear message instead of a cryptic mid-call error from the SDK.
       try {
@@ -278,7 +362,8 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
 
       client.connect()
     } catch (e: any) {
-      setErrorMsg(e.message || 'Call failed')
+      console.error('[call] start failed', e)
+      setErrorMsg(fmtCallError(e))
       setState('error')
     }
   }
@@ -356,8 +441,8 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
     if (endedRef.current) return
     endedRef.current = true
     if (timerRef.current) clearInterval(timerRef.current)
-    if (userInitiated) { try { callRef.current?.hangup?.() } catch {} }
-    stopRecording()   // triggers upload → transcription → AI summary
+    if (userInitiated) { try { providerRef.current === 'twilio' ? callRef.current?.disconnect?.() : callRef.current?.hangup?.() } catch {} }
+    stopRecording()   // triggers upload → transcription → AI summary (Telnyx path)
     const cause = hangupCause.current
     const connected = seconds > 0
     updateCallRow({ status: connected ? 'completed' : 'failed', cause: cause || null, ended_at: new Date().toISOString(), duration_seconds: seconds })
@@ -392,8 +477,13 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
 
   const toggleMute = () => {
     try {
-      if (muted) callRef.current?.unmuteAudio?.()
-      else callRef.current?.muteAudio?.()
+      if (providerRef.current === 'twilio') {
+        callRef.current?.mute?.(!muted)
+      } else if (muted) {
+        callRef.current?.unmuteAudio?.()
+      } else {
+        callRef.current?.muteAudio?.()
+      }
       setMuted(m => !m)
     } catch {}
   }

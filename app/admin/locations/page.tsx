@@ -72,7 +72,7 @@ export default function LocationsPage() {
   // Send the user to the Calls page in "add a number" mode, pre-assigning this
   // location so the purchased number is tied to it.
   const buyForLocation = (locationId: string) => {
-    window.location.href = `/admin/integrations/telnyx?buyForLocation=${locationId}`
+    window.location.href = `/admin/integrations/calls?buyForLocation=${locationId}`
   }
 
   const save = async () => {
@@ -146,7 +146,7 @@ export default function LocationsPage() {
               <label style={label}>Label</label>
               <input value={editing.label} onChange={e => setEditing({ ...editing, label: e.target.value })} placeholder="Head Office" style={inp} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
               <div>
                 <label style={label}>Unit / Suite</label>
                 <input value={editing.unit} onChange={e => setEditing({ ...editing, unit: e.target.value })} placeholder="12" style={inp} />
@@ -156,7 +156,7 @@ export default function LocationsPage() {
                 <input value={editing.street_address} onChange={e => setEditing({ ...editing, street_address: e.target.value })} placeholder="123 Collins Street" style={inp} />
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
               <div>
                 <label style={label}>Suburb</label>
                 <input value={editing.suburb} onChange={e => setEditing({ ...editing, suburb: e.target.value })} placeholder="Melbourne" style={inp} />
@@ -172,7 +172,7 @@ export default function LocationsPage() {
                 <input value={editing.postcode} onChange={e => setEditing({ ...editing, postcode: e.target.value.replace(/\D/g, '').slice(0, 4) })} placeholder="3000" style={inp} />
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
               <div>
                 <label style={label}>Phone</label>
                 <input value={editing.phone} onChange={e => setEditing({ ...editing, phone: e.target.value })} placeholder="03 9000 0000" style={inp} />

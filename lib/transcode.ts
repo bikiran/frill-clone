@@ -6,7 +6,7 @@ import { join } from 'path'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 import ffmpegStatic from 'ffmpeg-static'
-import { uploadToR2 } from './r2'
+import { uploadToR2, isR2PublicUrl } from './r2'
 
 /**
  * Server-side video transcoding for the gallery.
@@ -64,7 +64,11 @@ export async function processTranscodeJob(db: Db, item: Item): Promise<void> {
   const outPath = join(dir, 'out.mp4')
   const posterPath = join(dir, 'poster.jpg')
   try {
-    await download(item.source_url || item.url, inPath)
+    // The source must be one of our own R2 objects — never fetch an arbitrary
+    // host (SSRF guard, in case a row was written with a foreign URL).
+    const source = item.source_url || item.url
+    if (!isR2PublicUrl(source)) throw new Error('refusing to transcode a non-R2 source')
+    await download(source, inPath)
 
     // ≤1080p, even dimensions, H.264 High + AAC, faststart for instant start.
     await runFfmpeg([

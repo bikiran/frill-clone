@@ -23,7 +23,11 @@ function stripe() {
 // still feeling inline — the widget shows amount + a secure Pay button.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId, amount, description, senderName, orderId, integrationId, pageUrl } = await req.json()
+    const { companyId, conversationId, amount, description, senderName, orderId, integrationId, pageUrl, channel } = await req.json()
+    // The customer's real channel, so the payment card is labelled correctly
+    // (SMS/email/Messenger) instead of always reading "Live Chat". The caller
+    // delivers the actual pay link over that channel.
+    const deliveryChannel = ['sms', 'email', 'instagram', 'facebook', 'chat'].includes(channel) ? channel : 'chat'
     if (!companyId || !conversationId || !amount) {
       return NextResponse.json({ error: 'Missing companyId, conversationId or amount' }, { status: 400 })
     }
@@ -123,6 +127,7 @@ export async function POST(req: NextRequest) {
       sender_name: senderName || company.name,
       content: `💳 Payment request: $${(cents / 100).toFixed(2)} AUD${description ? ` — ${description}` : ''}`,
       message_type: 'payment',
+      delivery_channel: deliveryChannel,
       message_payload: { amount_cents: cents, currency: 'aud', description: description || null, checkout_url: shortUrl || session.url, status: 'pending', order_id: orderId || null },
     }).select().maybeSingle()
 

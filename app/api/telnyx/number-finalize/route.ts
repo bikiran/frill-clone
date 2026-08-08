@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { TelnyxService } from '@/lib/telnyx-service'
+import { consumeFreeCredit, refundFreeCredit } from '@/lib/free-number-credits'
 
 function admin() {
   return createClient(
@@ -19,8 +20,11 @@ const PLATFORM_CONNECTION = process.env.TELNYX_CONNECTION_ID
 // Verifies the checkout session is paid, then provisions the number DIRECTLY
 // (does not depend on the Stripe webhook being configured). Idempotent.
 export async function POST(req: NextRequest) {
+  let freeConsumed = false
+  let freeCompanyId: string | undefined
   try {
-    const { companyId, sessionId } = await req.json()
+    const body = await req.json()
+    const { companyId, sessionId, free } = body
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
@@ -37,6 +41,21 @@ export async function POST(req: NextRequest) {
     let numberType: string | undefined
     let locality: string | undefined
     let areaCode: string | undefined
+
+    // Free path: an admin granted this company a free number. Consume a credit
+    // (authoritative check) instead of verifying a Stripe payment.
+    if (free && !sessionId) {
+      const ok = await consumeFreeCredit(db, companyId)
+      if (!ok) return NextResponse.json({ error: 'No free number credits available for this business.' }, { status: 403 })
+      freeConsumed = true
+      freeCompanyId = companyId
+      phoneNumberWanted = body.phoneNumber || undefined
+      numberType = body.numberType || 'local'
+      locationId = body.locationId || undefined
+      locality = body.locality || undefined
+      areaCode = body.areaCode || undefined
+    }
+
     if (sessionId) {
       const secret = (process.env.STRIPE_SECRET_KEY || '').trim()
       if (secret.startsWith('sk_')) {
@@ -56,10 +75,14 @@ export async function POST(req: NextRequest) {
     // Idempotency: if we already provisioned the requested number, return it.
     if (phoneNumberWanted) {
       const { data: dupe } = await db.from('phone_numbers').select('id, phone_number').eq('phone_number', phoneNumberWanted).maybeSingle()
-      if (dupe) return NextResponse.json({ ok: true, phoneNumber: dupe.phone_number, alreadyDone: true })
+      if (dupe) {
+        if (freeConsumed) { await refundFreeCredit(db, companyId); freeConsumed = false } // nothing was provisioned
+        return NextResponse.json({ ok: true, phoneNumber: dupe.phone_number, alreadyDone: true })
+      }
     }
 
     if (!PLATFORM_KEY) {
+      if (freeConsumed) { await refundFreeCredit(db, companyId); freeConsumed = false }
       return NextResponse.json({ error: 'Provisioning not configured: TELNYX_MASTER_API_KEY missing on the server.' }, { status: 503 })
     }
 
@@ -77,7 +100,10 @@ export async function POST(req: NextRequest) {
     if (!numberToBuy) {
       const available = await svc.searchAvailableNumbers({ ...searchParams, limit: 1 })
       numberToBuy = available?.[0]?.phone_number
-      if (!numberToBuy) return NextResponse.json({ error: 'No Australian numbers available right now — please contact support; your payment is safe.' }, { status: 502 })
+      if (!numberToBuy) {
+        if (freeConsumed) { await refundFreeCredit(db, companyId); freeConsumed = false }
+        return NextResponse.json({ error: 'No Australian numbers available right now — please contact support; your payment is safe.' }, { status: 502 })
+      }
       order = await svc.orderNumber(numberToBuy, {
         messaging_profile_id: PLATFORM_MESSAGING_PROFILE,
         connection_id: PLATFORM_CONNECTION,
@@ -96,6 +122,7 @@ export async function POST(req: NextRequest) {
         numberToBuy = res.phoneNumber
         substituted = res.substituted
       } catch (e: any) {
+        if (freeConsumed) { await refundFreeCredit(db, companyId); freeConsumed = false }
         return NextResponse.json({ error: e.message }, { status: 502 })
       }
     }
@@ -125,7 +152,7 @@ export async function POST(req: NextRequest) {
     else await db.from('telnyx_integrations').insert(payload)
 
     // Add the number to the multi-number table
-    const priceAud = parseFloat(process.env.COLVY_NUMBER_PRICE_AUD || '15')
+    const priceAud = freeConsumed ? 0 : parseFloat(process.env.COLVY_NUMBER_PRICE_AUD || '15')
     await db.from('phone_numbers').insert({
       company_id: companyId,
       phone_number: numberToBuy,
@@ -135,6 +162,7 @@ export async function POST(req: NextRequest) {
       status: 'active',
       provisioned_by_colvy: true,
       monthly_cost: priceAud,
+      is_free: freeConsumed,
       telnyx_number_id: orderId || null,
     })
 
@@ -154,6 +182,8 @@ export async function POST(req: NextRequest) {
     })
   } catch (err: any) {
     console.error('Number finalize error:', err)
+    // Don't let an unexpected failure eat a granted credit.
+    if (freeConsumed && freeCompanyId) { try { await refundFreeCredit(admin(), freeCompanyId) } catch {} }
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

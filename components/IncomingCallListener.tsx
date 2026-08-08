@@ -2,6 +2,16 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getVoiceProvider } from '@/lib/voice-provider-client'
+
+// Pull the useful bit out of a Twilio Voice SDK error for the status pill.
+function twErr(e: any): string {
+  const t = e?.twilioError || e
+  const code = t?.code || e?.code
+  const msg = t?.description || t?.explanation || t?.message || e?.message
+  if (code === 31201 || code === 20101 || code === 31204) return 'calling not authorised (token rejected)'
+  return code ? `${msg || 'error'} (${code})` : (msg || 'connection error')
+}
 
 interface Props {
   companyId: string | null
@@ -23,10 +33,47 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // an installed app registering with the OS dialler — see notes.)
   const [companyInitials, setCompanyInitials] = useState('')
   // Hold / warm transfer
+  // The little phone-status pill can be dismissed if it's in the way. We keep
+  // that in component state only (not storage), so it comes back on refresh.
+  const [pillDismissed, setPillDismissed] = useState(false)
+  const [pillHover, setPillHover] = useState(false)
   const [onHold, setOnHold] = useState(false)
   const [transferState, setTransferState] = useState<'none' | 'ringing' | 'consulting'>('none')
   const [transferBusy, setTransferBusy] = useState(false)
   const [transferMsg, setTransferMsg] = useState('')
+
+  // ── Draggable popup ───────────────────────────────────────────────────────
+  // Let the agent move the call card out of the way. Defaults to the top-right;
+  // once dragged we switch to absolute x/y. Resets on refresh (kept in state).
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const popupRef = useRef<HTMLDivElement | null>(null)
+  const dragOffset = useRef<{ dx: number; dy: number } | null>(null)
+
+  const onDragMove = (e: PointerEvent) => {
+    if (!dragOffset.current) return
+    const w = popupRef.current?.offsetWidth || 320
+    const h = popupRef.current?.offsetHeight || 200
+    const x = Math.min(Math.max(6, e.clientX - dragOffset.current.dx), window.innerWidth - w - 6)
+    const y = Math.min(Math.max(6, e.clientY - dragOffset.current.dy), window.innerHeight - h - 6)
+    setPos({ x, y })
+  }
+  const onDragEnd = () => {
+    dragOffset.current = null
+    window.removeEventListener('pointermove', onDragMove)
+    window.removeEventListener('pointerup', onDragEnd)
+  }
+  const onDragStart = (e: React.PointerEvent) => {
+    // Don't hijack a button press (answer/hold/hangup live in this card too).
+    if ((e.target as HTMLElement).closest('button')) return
+    const rect = popupRef.current?.getBoundingClientRect()
+    if (!rect) return
+    dragOffset.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top }
+    setPos({ x: rect.left, y: rect.top })   // pin to current spot, then follow the pointer
+    window.addEventListener('pointermove', onDragMove)
+    window.addEventListener('pointerup', onDragEnd)
+    e.preventDefault()
+  }
+  useEffect(() => () => onDragEnd(), [])   // clean up listeners if we unmount mid-drag
 
   useEffect(() => {
     if (!companyId) return
@@ -37,9 +84,16 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       if (initials) setCompanyInitials(initials)
     })()
   }, [companyId])
+  // Which calling backend this company uses. Drives whether we register the
+  // Telnyx WebRTC client or the Twilio Voice SDK, and how answer/decline/hangup
+  // are actioned. Warm-transfer/hold is Telnyx-only for now.
+  const [provider, setProvider] = useState<'telnyx' | 'twilio'>('telnyx')
   const clientRef = useRef<any>(null)
   const callRef = useRef<any>(null)
   const timerRef = useRef<any>(null)
+  // The signed-in agent's user id, so a call we accept can notify the REST of
+  // the team (excludeUserId = us) to stop their phones ringing.
+  const userIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!companyId) return
@@ -47,6 +101,47 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
 
     const connect = async () => {
       try {
+        const prov = await getVoiceProvider(companyId)
+        if (!cancelled) setProvider(prov)
+
+        // ── Twilio Voice SDK path ────────────────────────────────────────────
+        // Twilio rings this browser directly (Dial <Client>) and bridges the
+        // caller on accept — no server bridge, unlike Telnyx. So all we do here
+        // is register the Device and surface incoming calls in the same popup.
+        if (prov === 'twilio') {
+          const { data: sess } = await supabase.auth.getSession()
+          const userId = sess?.session?.user?.id || null
+          userIdRef.current = userId
+          const tRes = await fetch('/api/twilio/token', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, userId }),
+          })
+          const tData = await tRes.json()
+          if (!tRes.ok || cancelled) { if (!cancelled) setConnErr(tData.error || 'Twilio token error'); return }
+          const { Device } = await import('@twilio/voice-sdk')
+          const device = new Device(tData.token, { codecPreferences: ['opus', 'pcmu'] as any })
+          clientRef.current = device
+          device.on('registered', () => { if (!cancelled) { setReady(true); setConnErr(null); console.log('[twilio voice] registered') } })
+          device.on('error', (e: any) => { if (!cancelled) setConnErr(twErr(e)); console.error('[twilio voice] error', e) })
+          device.on('incoming', (call: any) => {
+            console.log('[twilio voice] INCOMING CALL')
+            callRef.current = call
+            const fromNum = call.parameters?.From || call.parameters?.from || ''
+            // The inbound TwiML passes our calls-row id as a custom parameter so
+            // warm transfer can reference the exact call reliably.
+            const rowId = call.customParameters?.get?.('callRowId') || null
+            setIncoming({ id: call.parameters?.CallSid || 'twilio', callRowId: rowId, from: fromNum })
+            startRing()
+            resolveCaller(fromNum)
+            call.on('accept', () => { stopRing(); setInCall(true); startTimer() })
+            call.on('disconnect', () => { stopRing(); reset() })
+            call.on('cancel', () => { stopRing(); reset() })
+            call.on('reject', () => { stopRing(); reset() })
+          })
+          try { await device.register() } catch (e: any) { if (!cancelled) setConnErr(twErr(e)); console.error('[twilio voice] register failed', e) }
+          return
+        }
+
         // Send userId so this browser gets its OWN telephony credential.
         // Sharing one credential meant Telnyx routed each call to whichever
         // client registered most recently — so a phone signing in silenced the
@@ -54,6 +149,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
         // every registered device.
         const { data: sess } = await supabase.auth.getSession()
         const userId = sess?.session?.user?.id || null
+        userIdRef.current = userId
 
         const res = await fetch('/api/telnyx/token', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -125,6 +221,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       cancelled = true
       if (timerRef.current) clearInterval(timerRef.current)
       try { clientRef.current?.disconnect?.() } catch {}
+      try { clientRef.current?.destroy?.() } catch {}   // Twilio Device teardown
     }
   }, [companyId])
 
@@ -133,8 +230,20 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     if (!companyId || !fromNumber) { setCaller({ number: fromNumber }); return }
     try {
       const digits = fromNumber.replace(/\D/g, '').slice(-9)
-      const { data: contacts } = await (supabase as any).from('contacts').select('*').eq('company_id', companyId).limit(500)
-      const contact = (contacts || []).find((c: any) => c.phone && c.phone.replace(/\D/g, '').slice(-9) === digits)
+      const matchDigits = (list: any[]) => (list || []).find((c: any) => c.phone && c.phone.replace(/\D/g, '').slice(-9) === digits)
+      // Look the caller up by number, not by scanning a capped list. The old
+      // `.limit(500)` silently missed contacts past the first 500 on busy boards
+      // (the call log resolved them server-side, so the popup disagreed). Query
+      // the digits directly; fall back to a wide scan only for numbers stored
+      // with separators that a substring match can't catch.
+      let { data: cands } = await (supabase as any).from('contacts')
+        .select('*').eq('company_id', companyId).ilike('phone', `%${digits}%`).limit(10)
+      let contact = matchDigits(cands)
+      if (!contact) {
+        const { data: more } = await (supabase as any).from('contacts')
+          .select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(2000)
+        contact = matchDigits(more)
+      }
       if (contact) {
         // Pull WooCommerce context if their email matches
         let woo: any = null
@@ -191,12 +300,33 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       // no server-side bridge is needed (the number rings this client directly,
       // it does not go through a Voice API webhook). The SDK owns media: it
       // creates the RTCPeerConnection and captures the mic on answer().
-      callRef.current?.answer?.()
-    } catch (e) { console.error('[telnyx] answer failed', e) }
+      if (provider === 'twilio') callRef.current?.accept?.()
+      else callRef.current?.answer?.()
+    } catch (e) { console.error('[call] answer failed', e) }
     setInCall(true)
+    notifyTeamCallAccepted()
   }
-  const decline = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
-  const hangup = () => { stopRing(); try { callRef.current?.hangup?.() } catch {}; reset() }
+
+  // Tell everyone ELSE on the team that this call was picked up, so their phones
+  // (and browsers) can stop ringing. Whole team minus the accepter. Fire-and-
+  // forget — the call is already answered; a push hiccup mustn't block it.
+  const notifyTeamCallAccepted = () => {
+    if (!companyId) return
+    const who = agentName || 'a teammate'
+    fetch('/api/push/send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        companyId,
+        excludeUserId: userIdRef.current || undefined,
+        title: 'Call answered',
+        body: `Phone call accepted by ${who}`,
+        // No conversationId → no 'message' category (this isn't a chat), and the
+        // default 'messages' channel so Android always renders it.
+      }),
+    }).catch(() => {})
+  }
+  const decline = () => { stopRing(); try { provider === 'twilio' ? callRef.current?.reject?.() : callRef.current?.hangup?.() } catch {}; reset() }
+  const hangup = () => { stopRing(); try { provider === 'twilio' ? callRef.current?.disconnect?.() : callRef.current?.hangup?.() } catch {}; reset() }
 
   // ── Hold and warm transfer ───────────────────────────────────────────────
   // These run server-side through Telnyx rather than in the browser: the
@@ -206,9 +336,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     if (!incoming?.id || !companyId) return
     setTransferBusy(true); setTransferMsg('')
     try {
-      const res = await fetch('/api/telnyx/call-transfer', {
+      // Twilio identifies the call by the browser leg's Call SID (which the
+      // transfer route resolves to the row); Telnyx uses its own call id.
+      const res = await fetch(provider === 'twilio' ? '/api/twilio/call-transfer' : '/api/telnyx/call-transfer', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, callId: incoming.id, action }),
+        body: JSON.stringify(provider === 'twilio'
+          // Prefer the exact calls-row id from the custom parameter; fall back to
+          // the CallSid for older calls that predate it.
+          ? { companyId, callId: incoming.callRowId || undefined, callSid: incoming.id, action, actorName: agentName }
+          : { companyId, callId: incoming.id, action }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'That did not work')
@@ -247,9 +383,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // Shared style for the answer/decline/hangup buttons — the icons previously
   // had no sizing or alignment rules and rendered squashed against the label.
   const btn = (bg: string): React.CSSProperties => ({
-    flex: 1, padding: '14px 0', border: 'none', background: bg, color: '#fff',
-    fontSize: 14, fontWeight: 700, cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, lineHeight: 1,
+    flex: 1, padding: '14px 6px', border: 'none', background: bg, color: '#fff',
+    fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, lineHeight: 1,
   })
 
   // The audio element must ALWAYS be in the DOM (not just while the popup is
@@ -260,18 +396,39 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   if (!incoming) return (<>
     {audioEl}
     {/* Tiny phone-status indicator so it's visible whether the WebRTC client is
-        actually connected to receive inbound calls (green = ready). */}
-    <div title={connErr ? `Phone: ${connErr}` : ready ? 'Phone ready to receive calls' : 'Phone connecting…'}
-      style={{ position: 'fixed', bottom: 12, left: 12, zIndex: 40, display: 'flex', alignItems: 'center', gap: 6, padding: '4px 9px', borderRadius: 20, background: '#fff', border: '1px solid var(--border)', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', fontSize: 11, fontWeight: 700, color: connErr ? '#dc2626' : ready ? '#15803d' : '#b45309' }}>
-      <span style={{ width: 7, height: 7, borderRadius: '50%', background: connErr ? '#dc2626' : ready ? '#22c55e' : '#f59e0b' }} />
-      {connErr ? 'Phone error' : ready ? 'Phone ready' : 'Connecting…'}
-    </div>
+        actually connected to receive inbound calls (green = ready). Dismissable
+        — hovering reveals a cross that hides it until the next page refresh. */}
+    {!pillDismissed && (
+      <div
+        onMouseEnter={() => setPillHover(true)}
+        onMouseLeave={() => setPillHover(false)}
+        title={connErr ? `Phone: ${connErr}` : ready ? 'Phone ready to receive calls' : 'Phone connecting…'}
+        style={{ position: 'fixed', bottom: 12, left: 12, zIndex: 40, display: 'flex', alignItems: 'center', gap: 6, padding: '4px 9px', borderRadius: 20, background: '#fff', border: '1px solid var(--border)', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', fontSize: 11, fontWeight: 700, color: connErr ? '#dc2626' : ready ? '#15803d' : '#b45309' }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: connErr ? '#dc2626' : ready ? '#22c55e' : '#f59e0b' }} />
+        {connErr ? 'Phone error' : ready ? 'Phone ready' : 'Connecting…'}
+        {/* Extends out from the pill on hover; click to dismiss. */}
+        <button type="button"
+          aria-label="Hide phone status"
+          onClick={(e) => { e.stopPropagation(); setPillDismissed(true) }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            width: pillHover ? 15 : 0, height: 15, marginLeft: pillHover ? 1 : -6,
+            padding: 0, border: 'none', borderRadius: '50%', cursor: 'pointer',
+            background: '#f3f4f6', color: '#6b7280',
+            opacity: pillHover ? 1 : 0, overflow: 'hidden',
+            transition: 'width 0.18s ease, opacity 0.18s ease, margin-left 0.18s ease',
+          }}>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    )}
   </>)
 
   return (<>
     {audioEl}
-    <div style={{ position: 'fixed', top: 20, right: 20, width: 320, background: '#0d0d0d', color: '#fff', borderRadius: 18, boxShadow: '0 16px 48px rgba(0,0,0,0.4)', zIndex: 9999, overflow: 'hidden', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
-      <div style={{ padding: '20px 20px 16px' }}>
+    <div ref={popupRef} style={{ position: 'fixed', width: 320, background: '#0d0d0d', color: '#fff', borderRadius: 18, boxShadow: '0 16px 48px rgba(0,0,0,0.4)', zIndex: 9999, overflow: 'hidden', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+      ...(pos ? { left: pos.x, top: pos.y } : { top: 20, right: 20 }) }}>
+      <div onPointerDown={onDragStart} style={{ padding: '20px 20px 16px', cursor: dragOffset.current ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none' }}>
         <p style={{ margin: 0, fontSize: 11, fontWeight: 700, letterSpacing: 1, opacity: 0.6, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
@@ -341,8 +498,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           </>
         ) : (
           <>
-            {/* Hold / transfer controls, only while actually on a call */}
-            <div style={{ display: 'flex', gap: 1, flex: 1 }}>
+            {/* Hold / transfer controls, only while actually on a call. Both
+                providers run this through conferences (Telnyx / Twilio). */}
+            <div style={{ display: 'flex', gap: 1, flex: 2 }}>
               {transferState === 'none' ? (
                 <>
                   <button onClick={() => callAction(onHold ? 'unhold' : 'hold')} disabled={transferBusy}

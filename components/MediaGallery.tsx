@@ -1,17 +1,22 @@
 'use client'
 
 import { useEffect, useCallback } from 'react'
+import VideoPlayer from '@/components/VideoPlayer'
 
 export type MediaItem = { url: string; name?: string; kind?: string; poster?: string; processing?: boolean }
 
 // Fullscreen gallery/lightbox. Opens over the current screen (not a new tab),
 // supports left/right navigation, a clickable thumbnail strip, and a close (✕)
 // button. Keyboard: ← → to navigate, Esc to close.
-export default function MediaGallery({ items, index, onClose, onIndex }: {
+export default function MediaGallery({ items, index, onClose, onIndex, onViewDetails }: {
   items: MediaItem[]
   index: number
   onClose: () => void
   onIndex: (i: number) => void
+  // Optional: show a "View details" button that opens an info panel for the
+  // item at the given index (rendered by the caller, so it can pull the full
+  // record). Omitted in contexts that have no extra metadata to show.
+  onViewDetails?: (i: number) => void
 }) {
   const count = items.length
   const go = useCallback((delta: number) => {
@@ -39,11 +44,32 @@ export default function MediaGallery({ items, index, onClose, onIndex }: {
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 100000,
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       }}>
+      <style>{`
+        .mg-icon-btn { transition: background .15s ease, transform .15s ease; }
+        .mg-icon-btn:hover { background: rgba(255,255,255,0.28) !important; transform: scale(1.05); }
+        .mg-detail-btn { transition: background .15s ease; }
+        .mg-detail-btn:hover { background: rgba(255,255,255,0.28) !important; }
+        .mg-detail-btn svg { transition: transform .2s ease; }
+        .mg-detail-btn:hover svg { transform: rotate(8deg); }
+        @media (max-width: 480px) {
+          .mg-detail-label { display: none; }
+          .mg-detail-btn { padding: 0 11px !important; }
+        }
+      `}</style>
       {/* Close */}
-      <button onClick={(e) => { e.stopPropagation(); onClose() }} aria-label="Close"
-        style={{ position: 'absolute', top: 16, right: 18, width: 42, height: 42, borderRadius: 21, background: 'rgba(255,255,255,0.14)', border: 'none', color: '#fff', fontSize: 22, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
+      <button className="mg-icon-btn" onClick={(e) => { e.stopPropagation(); onClose() }} aria-label="Close"
+        style={{ position: 'absolute', top: 16, right: 18, width: 42, height: 42, borderRadius: 21, background: 'rgba(255,255,255,0.14)', border: 'none', color: '#fff', fontSize: 22, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, zIndex: 2 }}>
         ✕
       </button>
+
+      {/* View details — opens the caller's info panel for the current item. */}
+      {onViewDetails && (
+        <button className="mg-detail-btn" onClick={(e) => { e.stopPropagation(); onViewDetails(index) }}
+          style={{ position: 'absolute', top: 18, right: 70, height: 38, padding: '0 15px', borderRadius: 19, background: 'rgba(255,255,255,0.14)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7, backdropFilter: 'blur(4px)', zIndex: 2 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span className="mg-detail-label">View details</span>
+        </button>
+      )}
 
       {/* Counter */}
       <div style={{ position: 'absolute', top: 22, left: 22, color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 600 }}>
@@ -69,7 +95,7 @@ export default function MediaGallery({ items, index, onClose, onIndex }: {
             <style>{'@keyframes colvySpin { to { transform: rotate(360deg) } }'}</style>
           </div>
         ) : current.kind === 'video' ? (
-          <video src={current.url} poster={current.poster} controls autoPlay preload="auto" playsInline style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8 }} />
+          <VideoPlayer key={current.url} src={current.url} poster={current.poster} style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8 }} />
         ) : (
           <img loading="lazy" decoding="async" src={current.url} alt={current.name || ''} style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8, objectFit: 'contain' }} />
         )}

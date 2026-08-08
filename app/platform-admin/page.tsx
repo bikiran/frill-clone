@@ -4,8 +4,57 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import LegalAdminPage from '../admin/legal/page'
 import PlatformBannerAdmin from '@/components/PlatformBannerAdmin'
+import { SmsPricing, DEFAULT_PRICING, calculateCost, aud, audRate, parsePricingRow } from '@/lib/sms-pricing'
+import { PLAN_FEATURES, PLAN_LIMITS, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
+
+// The URL of the platform console. It lives at the bare host — the root
+// redirects/rewrites to the panel, while the explicit /platform-admin path
+// 404s — so every "back to the console" navigation must target the root.
+const PLATFORM_HOME = 'https://admin.colvy.com'
+
+// Open a company workspace WITHOUT its login screen. Supabase sessions live in
+// per-origin localStorage, so the super admin's session on admin.colvy.com does
+// not exist on {slug}.colvy.com — visiting it directly shows that workspace's
+// sign-in page. /auth/handoff calls setSession() with the super admin's OWN
+// tokens on the target origin, then forwards to `next`. The admin layout already
+// grants the super admin access to any company, so this lands straight inside.
+async function enterWorkspace(slug: string, next: string = '/admin') {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    const at = session?.access_token, rt = session?.refresh_token
+    if (at && rt) {
+      window.open(`https://${slug}.colvy.com/auth/handoff#access_token=${encodeURIComponent(at)}&refresh_token=${encodeURIComponent(rt)}&next=${encodeURIComponent(next)}`, '_blank')
+      return
+    }
+  } catch {}
+  window.open(`https://${slug}.colvy.com${next}`, '_blank')
+}
+
+// Record an impersonation session (audit trail) and THEN enter the workspace,
+// landing on /admin?imp=<id> so the banner shows. Used by both the full
+// "Enter workspace" flow and the quick "Login as" button, so every admin entry
+// is logged. Returns an error string the caller can surface.
+async function auditedEnterWorkspace(
+  co: { id?: string; slug: string; name?: string },
+  reason: string, mode: string = 'full', minutes: number = 60
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/platform-admin/impersonate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ action: 'start', companyId: co.id, slug: co.slug, name: co.name, reason, mode, minutes }),
+    })
+    const d = await res.json()
+    if (!res.ok) return { ok: false, error: d.error || 'Could not start session' }
+    await enterWorkspace(co.slug, `/admin?imp=${d.id}`)
+    return { ok: true }
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'Could not start session' }
+  }
+}
 
 // ── Icons ──────────────────────────────────────────────────────────────────
 const I = {
@@ -58,7 +107,17 @@ const NAV = [
   { key: 'chat',       label: 'Live Chat',        icon: 'chat' },
   { key: 'tickets',    label: 'Support Tickets',  icon: 'tickets' },
   { key: 'moderation', label: 'Moderation',       icon: 'moderation' },
+  { section: 'Operations' },
+  { key: 'imp',        label: 'Impersonation',    icon: 'audit' },
+  { key: 'demos',      label: 'Demo Workspaces',  icon: 'companies' },
+  { key: 'calls',      label: 'Call Diagnostics', icon: 'chat' },
+  { key: 'webhooks',   label: 'Webhook Explorer', icon: 'system' },
+  { key: 'jobs',       label: 'Background Jobs',  icon: 'system' },
+  { key: 'apilogs',    label: 'API Logs',         icon: 'audit' },
+  { key: 'devices',    label: 'Mobile Devices',   icon: 'users' },
+  { key: 'integrations', label: 'Integrations',   icon: 'system' },
   { section: 'Platform' },
+  { key: 'sms',        label: 'SMS Pricing',      icon: 'billing' },
   { key: 'billing',    label: 'Billing',          icon: 'billing' },
   { key: 'flags',      label: 'Feature Flags',    icon: 'flags' },
   { key: 'system',     label: 'System Health',    icon: 'system' },
@@ -188,6 +247,1765 @@ function SearchBar({ placeholder, value, onChange }: { placeholder: string; valu
 // PAGE COMPONENTS
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Business detail — a deep-dive drawer for one company with tabs. Uses only
+// real data (company row, team_members, company_admin_notes).
+function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => void; onAction: (type: string, co: any) => void }) {
+  const [tab, setTab] = useState('overview')
+  const [users, setUsers] = useState<any[] | null>(null)
+  const [notes, setNotes] = useState<any[] | null>(null)
+  const [noteBody, setNoteBody] = useState('')
+  const [noteCat, setNoteCat] = useState('general')
+  const [savingNote, setSavingNote] = useState(false)
+  const [notesMissing, setNotesMissing] = useState(false)
+  const [repair, setRepair] = useState<{ busy: boolean; log: string } | null>(null)
+
+  // Repair customer photos embedded as inline cid: images in already-ingested
+  // email (they only render once fetched from Gmail and stored). Batched +
+  // idempotent — loops until nothing remains.
+  const runRepair = async () => {
+    if (repair?.busy) return
+    setRepair({ busy: true, log: 'Starting…' })
+    let totalFixed = 0
+    try {
+      for (let round = 0; round < 40; round++) {
+        const res = await fetch('/api/email/backfill-inline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: co.id, limit: 50 }) })
+        const d = await res.json()
+        if (!res.ok) { setRepair({ busy: false, log: `Error: ${d.error || 'failed'}` }); return }
+        totalFixed += d.updated || 0
+        setRepair({ busy: true, log: `Repaired ${totalFixed} email(s)…` })
+        // Stop once a batch found nothing left to scan, or made no progress
+        // (the remaining cid: messages can't be re-fetched from Gmail).
+        if (!d.scanned || !d.updated) break
+      }
+      setRepair({ busy: false, log: `Done — repaired ${totalFixed} email${totalFixed === 1 ? '' : 's'}.` })
+    } catch (e: any) { setRepair({ busy: false, log: `Error: ${e.message}` }) }
+  }
+
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      const { data } = await (supabase as any).from('team_members').select('*').eq('company_id', co.id)
+      if (active) setUsers(data || [])
+    })()
+    return () => { active = false }
+  }, [co.id])
+
+  const loadNotes = async () => {
+    const { data, error } = await (supabase as any).from('company_admin_notes').select('*')
+      .eq('company_id', co.id).order('pinned', { ascending: false }).order('created_at', { ascending: false })
+    if (error) { if (/does not exist|schema cache/i.test(error.message)) setNotesMissing(true); setNotes([]) }
+    else { setNotesMissing(false); setNotes(data || []) }
+  }
+  useEffect(() => { loadNotes() }, [co.id])
+
+  const addNote = async () => {
+    if (!noteBody.trim() || savingNote) return
+    setSavingNote(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const { error } = await (supabase as any).from('company_admin_notes').insert({
+      company_id: co.id, author_id: session?.user?.id || null, author_email: session?.user?.email || null,
+      body: noteBody.trim(), category: noteCat,
+    })
+    setSavingNote(false)
+    if (error) { if (/does not exist|schema cache/i.test(error.message)) setNotesMissing(true); return }
+    setNoteBody(''); loadNotes()
+  }
+  const togglePin = async (n: any) => { await (supabase as any).from('company_admin_notes').update({ pinned: !n.pinned }).eq('id', n.id); loadNotes() }
+  const delNote = async (n: any) => { await (supabase as any).from('company_admin_notes').delete().eq('id', n.id); loadNotes() }
+
+  // ── Subscription management (change plan, trial, complimentary) ─────────────
+  const [sub, setSub] = useState({
+    plan: co.plan || 'free',
+    trial_ends_at: co.trial_ends_at || '',
+    is_complimentary: !!co.is_complimentary,
+    complimentary_reason: co.complimentary_reason || '',
+  })
+  const [savingSub, setSavingSub] = useState('')
+  const [subMsg, setSubMsg] = useState('')
+  const subErr = (e: any) => setSubMsg(/does not exist|schema cache|column/i.test(e?.message || '') ? 'Run COLVY_V221_COMPANY_SUBSCRIPTION_FIELDS.sql, then reload.' : (e?.message || 'Could not save'))
+  // Every subscription change is recorded as an admin note so it shows in Audit Logs.
+  const auditChange = async (body: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      await (supabase as any).from('company_admin_notes').insert({
+        company_id: co.id, author_id: session?.user?.id || null, author_email: session?.user?.email || null,
+        body, category: 'billing',
+      })
+    } catch {}
+    loadNotes()
+  }
+  const applyPlan = async (newPlan: string) => {
+    if (newPlan === sub.plan) return
+    setSavingSub('plan'); setSubMsg('')
+    const { error } = await (supabase as any).from('companies').update({ plan: newPlan, plan_changed_at: new Date().toISOString() }).eq('id', co.id)
+    setSavingSub('')
+    if (error) { subErr(error); return }
+    co.plan = newPlan; setSub(s => ({ ...s, plan: newPlan }))
+    await auditChange(`Changed plan: ${sub.plan} → ${newPlan}`)
+    setSubMsg(`Plan set to ${newPlan}.`)
+  }
+  const extendTrial = async (days: number) => {
+    const base = sub.trial_ends_at ? new Date(sub.trial_ends_at).getTime() : Date.now()
+    const end = new Date(Math.max(base, Date.now()) + days * 86400000).toISOString()
+    setSavingSub('trial'); setSubMsg('')
+    const upd: any = { trial_ends_at: end }
+    if (sub.plan !== 'trial') upd.plan = 'trial'
+    const { error } = await (supabase as any).from('companies').update(upd).eq('id', co.id)
+    setSavingSub('')
+    if (error) { subErr(error); return }
+    co.trial_ends_at = end; if (upd.plan) co.plan = upd.plan
+    setSub(s => ({ ...s, trial_ends_at: end, plan: upd.plan || s.plan }))
+    await auditChange(`Extended trial by ${days} days → ${new Date(end).toLocaleDateString()}`)
+    setSubMsg(`Trial now ends ${new Date(end).toLocaleDateString()}.`)
+  }
+  const toggleComp = async () => {
+    const next = !sub.is_complimentary
+    if (next && !sub.complimentary_reason.trim()) { setSubMsg('A reason is required to comp an account.'); return }
+    setSavingSub('comp'); setSubMsg('')
+    const { error } = await (supabase as any).from('companies').update({
+      is_complimentary: next, complimentary_reason: next ? sub.complimentary_reason.trim() : null,
+    }).eq('id', co.id)
+    setSavingSub('')
+    if (error) { subErr(error); return }
+    co.is_complimentary = next; setSub(s => ({ ...s, is_complimentary: next }))
+    await auditChange(next ? `Marked complimentary — ${sub.complimentary_reason.trim()}` : 'Removed complimentary status')
+    setSubMsg(next ? 'Account marked complimentary.' : 'Complimentary status removed.')
+  }
+
+  // ── Entitlements & limits overrides ────────────────────────────────────────
+  // features/limits maps hold ONLY explicit overrides; an absent key = plan default.
+  const [entFeatures, setEntFeatures] = useState<Record<string, boolean>>({})
+  const [entLimits, setEntLimits] = useState<Record<string, any>>({})
+  const [entReason, setEntReason] = useState('')
+  const [entLoaded, setEntLoaded] = useState(false)
+  const [entMissing, setEntMissing] = useState(false)
+  const [savingEnt, setSavingEnt] = useState(false)
+  const [entMsg, setEntMsg] = useState('')
+  useEffect(() => {
+    ;(async () => {
+      const { data, error } = await (supabase as any).from('company_entitlements').select('*').eq('company_id', co.id).maybeSingle()
+      if (error) { if (/does not exist|schema cache/i.test(error.message)) setEntMissing(true) }
+      else if (data) { setEntFeatures(data.features || {}); setEntLimits(data.limits || {}); setEntReason(data.reason || '') }
+      setEntLoaded(true)
+    })()
+  }, [co.id])
+  const planKey = (co.plan || 'free') as Plan
+  const planHasFeature = (k: string) => {
+    const f = PLAN_FEATURES[planKey] || []
+    return planKey === 'enterprise' || f.includes('*') || f.includes(k)
+  }
+  const planLimit = (k: string) => (PLAN_LIMITS[planKey] || {})[k]
+  const fmtLimit = (v: any) => v === Infinity || v === 'unlimited' ? 'unlimited' : (v == null ? '—' : String(v))
+  const saveEnt = async () => {
+    if (!entReason.trim()) { setEntMsg('A reason is required (audited).'); return }
+    setSavingEnt(true); setEntMsg('')
+    const { data: { session } } = await supabase.auth.getSession()
+    const { error } = await (supabase as any).from('company_entitlements').upsert({
+      company_id: co.id, features: entFeatures, limits: entLimits, reason: entReason.trim(),
+      updated_by: session?.user?.email || null, updated_at: new Date().toISOString(),
+    }, { onConflict: 'company_id' })
+    setSavingEnt(false)
+    if (error) { setEntMsg(/does not exist|schema cache/i.test(error.message) ? 'Run COLVY_V222_COMPANY_ENTITLEMENTS.sql, then reload.' : error.message); return }
+    const fCount = Object.keys(entFeatures).length, lCount = Object.keys(entLimits).length
+    await auditChange(`Updated entitlements (${fCount} feature + ${lCount} limit override${fCount + lCount === 1 ? '' : 's'}) — ${entReason.trim()}`)
+    setEntMsg('Overrides saved.')
+  }
+
+  // Simple account-health heuristic from real signals.
+  const ageDays = co.created_at ? (Date.now() - new Date(co.created_at).getTime()) / 86400000 : 0
+  const plan = String(co.plan || '').toLowerCase()
+  let health = 100
+  if (plan === 'suspended') health -= 60
+  if (plan === 'trial' && ageDays > 21) health -= 25
+  if ((users?.length || 0) === 0) health -= 20
+  if (plan === 'free' && ageDays > 45) health -= 10
+  health = Math.max(0, Math.min(100, health))
+  const healthColor = health >= 75 ? '#10b981' : health >= 45 ? '#f59e0b' : '#ef4444'
+
+  const catColor: Record<string, string> = { general: '#6366f1', billing: '#10b981', support: '#f59e0b', technical: '#0891b2', risk: '#ef4444' }
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  const TABS = [['overview', 'Overview'], ['plan', 'Subscription'], ['ent', 'Entitlements'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 560, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* header */}
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: co.accent_color || '#ff7a6b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>{co.name?.[0]?.toUpperCase()}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{co.name}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{co.slug}.colvy.com · {plan || 'free'}</p>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: healthColor, padding: '3px 10px', borderRadius: 999, background: healthColor + '22' }}>{health}/100</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        {/* action bar */}
+        <div style={{ display: 'flex', gap: 8, padding: '12px 20px', borderBottom: '1px solid var(--sa-border)', flexWrap: 'wrap' }}>
+          <button onClick={() => onAction('impersonate', co)} style={paBtn('#ff7a6b', true)}>Enter workspace</button>
+          <a href={`https://${co.slug}.colvy.com`} target="_blank" rel="noopener" style={{ ...paBtn(), textDecoration: 'none' }}>View public</a>
+          {plan === 'suspended'
+            ? <button onClick={() => { onAction('reactivate', co); onClose() }} style={paBtn()}>Reactivate</button>
+            : <button onClick={() => { onAction('suspend', co); onClose() }} style={paBtn('#ef4444')}>Suspend</button>}
+        </div>
+        {/* tabs */}
+        <div style={{ display: 'flex', gap: 4, padding: '10px 16px 0', borderBottom: '1px solid var(--sa-border)' }}>
+          {TABS.map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ padding: '8px 12px', borderRadius: '8px 8px 0 0', border: 'none', borderBottom: tab === k ? '2px solid #ff7a6b' : '2px solid transparent', background: 'transparent', color: tab === k ? 'var(--sa-text)' : 'var(--sa-muted)', fontSize: 13, fontWeight: tab === k ? 700 : 500, cursor: 'pointer' }}>{l}</button>
+          ))}
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          {tab === 'overview' && (
+            <div>
+              <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: healthColor + '18', border: `1px solid ${healthColor}44` }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: healthColor }}>Account health {health}/100</span>
+                <span style={{ fontSize: 11.5, color: 'var(--sa-muted)', marginLeft: 8 }}>{plan === 'suspended' ? 'Suspended' : (users?.length || 0) === 0 ? 'No team members yet' : 'Looking healthy'}</span>
+              </div>
+              <Row k="Business name" v={co.name} />
+              <Row k="Slug" v={co.slug} />
+              <Row k="Plan" v={(sub.plan || 'free') + (sub.is_complimentary ? ' · complimentary' : '')} />
+              <Row k="Trial ends" v={sub.trial_ends_at ? new Date(sub.trial_ends_at).toLocaleDateString() : '—'} />
+              <Row k="Industry" v={co.industry} />
+              <Row k="Owner ID" v={co.owner_id} />
+              <Row k="Business email" v={co.business_email} />
+              <Row k="Business mobile" v={co.business_mobile} />
+              <Row k="Website" v={co.website} />
+              <Row k="Created" v={co.created_at ? new Date(co.created_at).toLocaleString() : '—'} />
+              <Row k="Team members" v={users?.length ?? '…'} />
+            </div>
+          )}
+
+          {tab === 'plan' && (() => {
+            const PLANS = ['free', 'trial', 'pro', 'enterprise', 'suspended']
+            const planColor: Record<string, string> = { free: '#6b7280', trial: '#6366f1', pro: '#10b981', enterprise: '#8b5cf6', suspended: '#ef4444' }
+            const trialLeft = sub.trial_ends_at ? Math.ceil((new Date(sub.trial_ends_at).getTime() - Date.now()) / 86400000) : null
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {subMsg && <div style={{ padding: '9px 12px', borderRadius: 9, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 12.5, color: 'var(--sa-text)' }}>{subMsg}</div>}
+
+                {/* Current state */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)', background: 'var(--sa-card)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: planColor[sub.plan] || 'var(--sa-text)' }}>{(sub.plan || 'free').toUpperCase()}</span>
+                    {sub.is_complimentary && <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: '#10b98122', color: '#10b981' }}>COMPLIMENTARY</span>}
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>
+                    {sub.trial_ends_at ? `Trial ends ${new Date(sub.trial_ends_at).toLocaleDateString()}${trialLeft != null ? ` (${trialLeft} day${trialLeft === 1 ? '' : 's'} left)` : ''}` : 'No trial end set'}
+                    {co.stripe_customer_id ? ' · Stripe customer linked' : ' · no Stripe customer'}
+                  </p>
+                  {co.stripe_customer_id && <a href={`https://dashboard.stripe.com/customers/${co.stripe_customer_id}`} target="_blank" rel="noopener" style={{ fontSize: 12.5, color: '#635BFF', fontWeight: 600 }}>Open in Stripe ↗</a>}
+                </div>
+
+                {/* Change plan */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 3px' }}>Change plan</p>
+                  <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Sets the company's plan directly. Recorded in the audit log.</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {PLANS.map(pl => (
+                      <button key={pl} onClick={() => applyPlan(pl)} disabled={savingSub === 'plan'}
+                        style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${sub.plan === pl ? (planColor[pl] || '#ff7a6b') : 'var(--sa-border)'}`, background: sub.plan === pl ? (planColor[pl] || '#ff7a6b') + '22' : 'transparent', color: sub.plan === pl ? (planColor[pl] || '#ff7a6b') : 'var(--sa-text)', fontSize: 12.5, fontWeight: sub.plan === pl ? 700 : 500, cursor: 'pointer', textTransform: 'capitalize' }}>{pl}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Trial */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 3px' }}>Extend trial</p>
+                  <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Pushes the trial end date out and puts the account on the trial plan.</p>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[7, 14, 30].map(d => (
+                      <button key={d} onClick={() => extendTrial(d)} disabled={savingSub === 'trial'} style={paBtn()}>+{d} days</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Complimentary */}
+                <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 3px' }}>Make complimentary</p>
+                  <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Flags the account as comped (e.g. partner, internal). Doesn't change the plan; a reason is required.</p>
+                  {!sub.is_complimentary && (
+                    <input value={sub.complimentary_reason} onChange={e => setSub(s => ({ ...s, complimentary_reason: e.target.value }))} placeholder="Reason (required)…" style={{ ...paInput, marginBottom: 8 }} />
+                  )}
+                  {sub.is_complimentary && sub.complimentary_reason && <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 8px' }}>Reason: {sub.complimentary_reason}</p>}
+                  <button onClick={toggleComp} disabled={savingSub === 'comp'} style={paBtn(sub.is_complimentary ? '#ef4444' : '#10b981', true)}>{sub.is_complimentary ? 'Remove complimentary' : 'Mark complimentary'}</button>
+                </div>
+              </div>
+            )
+          })()}
+
+          {tab === 'ent' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: 0, lineHeight: 1.5 }}>Override features and usage limits for this business without changing its plan ({co.plan || 'free'}). Blank = use the plan default. Every change is audited.</p>
+              {entMissing && <div style={{ padding: '12px 14px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 12.5, color: 'var(--sa-text)' }}>Run <b>COLVY_V222_COMPANY_ENTITLEMENTS.sql</b> to store entitlement overrides, then reload.</div>}
+              {entMsg && <div style={{ padding: '9px 12px', borderRadius: 9, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 12.5, color: 'var(--sa-text)' }}>{entMsg}</div>}
+              <input value={entReason} onChange={e => setEntReason(e.target.value)} placeholder="Reason for these overrides (required, audited)…" style={paInput} />
+
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px' }}>Feature overrides</p>
+                <div style={{ border: '1px solid var(--sa-border)', borderRadius: 12, overflow: 'hidden' }}>
+                  {OVERRIDABLE_FEATURES.map((f, i) => {
+                    const def = planHasFeature(f.key)
+                    const ov = entFeatures[f.key]                  // undefined = default
+                    const val = ov === undefined ? 'default' : (ov ? 'on' : 'off')
+                    return (
+                      <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderTop: i ? '1px solid var(--sa-border)' : 'none' }}>
+                        <span style={{ flex: 1, fontSize: 13, color: 'var(--sa-text)' }}>{f.label}</span>
+                        <span style={{ fontSize: 11, color: def ? '#10b981' : 'var(--sa-muted)' }}>plan: {def ? 'on' : 'off'}</span>
+                        <select value={val} onChange={e => {
+                          const v = e.target.value
+                          setEntFeatures(prev => { const n = { ...prev }; if (v === 'default') delete n[f.key]; else n[f.key] = v === 'on'; return n })
+                        }} style={{ ...paInput, width: 'auto', padding: '6px 10px' }}>
+                          <option value="default">Plan default</option>
+                          <option value="on">Force on</option>
+                          <option value="off">Force off</option>
+                        </select>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px' }}>Usage-limit overrides</p>
+                <div style={{ border: '1px solid var(--sa-border)', borderRadius: 12, overflow: 'hidden' }}>
+                  {OVERRIDABLE_LIMITS.map((l, i) => {
+                    const has = entLimits[l.key] !== undefined
+                    return (
+                      <div key={l.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderTop: i ? '1px solid var(--sa-border)' : 'none' }}>
+                        <span style={{ flex: 1, fontSize: 13, color: 'var(--sa-text)' }}>{l.label} <span style={{ fontSize: 11, color: 'var(--sa-muted)' }}>plan: {fmtLimit(planLimit(l.key))}</span></span>
+                        <select value={has ? 'custom' : 'default'} onChange={e => {
+                          setEntLimits(prev => { const n = { ...prev }; if (e.target.value === 'default') delete n[l.key]; else n[l.key] = typeof planLimit(l.key) === 'number' && isFinite(planLimit(l.key)) ? planLimit(l.key) : 0; return n })
+                        }} style={{ ...paInput, width: 'auto', padding: '6px 10px' }}>
+                          <option value="default">Plan default</option>
+                          <option value="custom">Custom</option>
+                        </select>
+                        {has && <input type="number" value={entLimits[l.key]} onChange={e => setEntLimits(prev => ({ ...prev, [l.key]: parseInt(e.target.value) || 0 }))} style={{ ...paInput, width: 90, padding: '6px 10px' }} />}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <button onClick={saveEnt} disabled={savingEnt || !entLoaded} style={{ ...paBtn('#ff7a6b', true), alignSelf: 'flex-start' }}>{savingEnt ? 'Saving…' : 'Save overrides'}</button>
+            </div>
+          )}
+
+          {tab === 'users' && (
+            users === null ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>Loading…</p>
+            : users.length === 0 ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>No team members.</p>
+            : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {users.map(u => (
+                  <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--sa-border)' }}>
+                    <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#6366f1', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{(u.email || '?')[0]?.toUpperCase()}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', margin: 0 }}>{u.email || '—'}</p>
+                      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: 0 }}>{u.role || 'member'} · {u.status || 'active'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+
+          {tab === 'notes' && (
+            <div>
+              {notesMissing ? (
+                <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', lineHeight: 1.5, padding: '10px 12px', borderRadius: 9, border: '1px solid #f59e0b55', background: '#f59e0b18' }}>Admin notes need a database update — run <b>COLVY_V216_ADMIN_NOTES.sql</b>, then reload.</p>
+              ) : (
+                <>
+                  <div style={{ marginBottom: 16 }}>
+                    <textarea value={noteBody} onChange={e => setNoteBody(e.target.value)} placeholder="Add an internal note about this business…" rows={3} style={{ ...paInput, resize: 'vertical' }} />
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                      <select value={noteCat} onChange={e => setNoteCat(e.target.value)} style={{ ...paInput, width: 'auto', padding: '7px 10px' }}>
+                        {['general', 'billing', 'support', 'technical', 'risk'].map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <button onClick={addNote} disabled={savingNote || !noteBody.trim()} style={{ ...paBtn('#ff7a6b', true), marginLeft: 'auto' }}>{savingNote ? 'Saving…' : 'Add note'}</button>
+                    </div>
+                  </div>
+                  {notes === null ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>Loading…</p>
+                  : notes.length === 0 ? <p style={{ color: 'var(--sa-muted)', fontSize: 13 }}>No notes yet.</p>
+                  : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {notes.map(n => (
+                        <div key={n.id} style={{ padding: '11px 13px', borderRadius: 10, border: `1px solid ${n.pinned ? '#ff7a6b55' : 'var(--sa-border)'}`, background: n.pinned ? '#ff7a6b12' : 'transparent' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                            <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '1px 7px', borderRadius: 5, background: (catColor[n.category] || '#6366f1') + '22', color: catColor[n.category] || '#6366f1' }}>{n.category || 'general'}</span>
+                            <span style={{ fontSize: 11, color: 'var(--sa-muted)' }}>{n.author_email || 'admin'} · {new Date(n.created_at).toLocaleDateString()}</span>
+                            <button onClick={() => togglePin(n)} title={n.pinned ? 'Unpin' : 'Pin'} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: n.pinned ? '#ff7a6b' : 'var(--sa-muted)', fontSize: 13 }}>📌</button>
+                            <button onClick={() => delNote(n)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 13 }}>🗑</button>
+                          </div>
+                          <p style={{ fontSize: 13, color: 'var(--sa-text)', margin: 0, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{n.body}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {tab === 'danger' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ padding: 14, borderRadius: 12, border: '1px solid #ef444455', background: '#ef444410' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 4px' }}>Suspend business</p>
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Sets the plan to suspended. The workspace stays but is flagged.</p>
+                {plan === 'suspended'
+                  ? <button onClick={() => { onAction('reactivate', co); onClose() }} style={paBtn('#10b981', true)}>Reactivate</button>
+                  : <button onClick={() => { onAction('suspend', co); onClose() }} style={paBtn('#ef4444', true)}>Suspend business</button>}
+              </div>
+              <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 4px' }}>Seed sample data</p>
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Clears and re-seeds example ideas for this workspace.</p>
+                <button onClick={() => { onAction('seed', co); onClose() }} style={paBtn()}>Seed sample data</button>
+              </div>
+              <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 4px' }}>Repair inline email images</p>
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 10px' }}>Re-fetches customer photos embedded as <code>cid:</code> in already-ingested emails and stores them so they render on web &amp; mobile. Idempotent — safe to run any time.</p>
+                <button onClick={runRepair} disabled={!!repair?.busy} style={{ ...paBtn(), opacity: repair?.busy ? 0.6 : 1, cursor: repair?.busy ? 'default' : 'pointer' }}>{repair?.busy ? 'Repairing…' : 'Repair inline images'}</button>
+                {repair && <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--sa-muted)' }}>{repair.log}</p>}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Operations · Impersonation Sessions — the audit trail of admins entering
+// customer workspaces (real data from impersonation_sessions).
+function ImpersonationSessionsPage() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  useEffect(() => {
+    ;(async () => {
+      const { data, error } = await (supabase as any).from('impersonation_sessions').select('*').order('started_at', { ascending: false }).limit(200)
+      if (error) { if (/does not exist|schema cache/i.test(error.message)) setMissing(true); setRows([]) }
+      else setRows(data || [])
+    })()
+  }, [])
+  const now = Date.now()
+  const statusOf = (s: any) => s.ended_at ? { l: 'Ended', c: '#6b7280' } : (s.expires_at && new Date(s.expires_at).getTime() < now ? { l: 'Expired', c: '#f59e0b' } : { l: 'Active', c: '#10b981' })
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  return (
+    <div>
+      <SectionHeader title="Impersonation Sessions" sub="Every time an admin entered a customer workspace" />
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V215_IMPERSONATION.sql</b> to start recording impersonation sessions.</div>
+      ) : (
+        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+            <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Admin', 'Business', 'Reason', 'Mode', 'Started', 'Status'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {rows === null ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+              : rows.length === 0 ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>No impersonation sessions yet.</td></tr>
+              : rows.map((s, i) => {
+                const st = statusOf(s)
+                return (
+                  <tr key={s.id} style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+                    <td style={td}>{s.admin_email || '—'}</td>
+                    <td style={td}>{s.company_name || s.company_slug || '—'}</td>
+                    <td style={{ ...td, maxWidth: 260, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={s.reason}>{s.reason || '—'}</td>
+                    <td style={td}>{s.mode === 'read_only' ? 'Read-only' : 'Full'}</td>
+                    <td style={{ ...td, color: 'var(--sa-muted)' }}>{s.started_at ? new Date(s.started_at).toLocaleString() : '—'}</td>
+                    <td style={td}><span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: st.c + '22', color: st.c }}>{st.l}</span></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Operations · Integrations — connected channels across every business, with
+// status (real data: email_channels, woocommerce_integrations, telnyx).
+function IntegrationsPage() {
+  const [cos, setCos] = useState<Record<string, any>>({})
+  const [rows, setRows] = useState<any[] | null>(null)
+  useEffect(() => {
+    ;(async () => {
+      const [c, e, w, t] = await Promise.all([
+        (supabase as any).from('companies').select('id,name,slug'),
+        (supabase as any).from('email_channels').select('*'),
+        (supabase as any).from('woocommerce_integrations').select('*'),
+        (supabase as any).from('telnyx_integrations').select('*'),
+      ])
+      const map: Record<string, any> = {}; (c.data || []).forEach((x: any) => { map[x.id] = x })
+      setCos(map)
+      const staleDays = (d: string) => d ? (Date.now() - new Date(d).getTime()) / 86400000 : Infinity
+      const all: any[] = [
+        ...(e.data || []).map((x: any) => ({ type: 'Email', color: '#8b5cf6', company_id: x.company_id, detail: x.inbound_address, active: x.is_active !== false, last: x.created_at, note: '' })),
+        ...(w.data || []).map((x: any) => ({ type: 'WooCommerce', color: '#96588a', company_id: x.company_id, detail: x.store_url, active: x.is_active !== false, last: x.last_synced_at || x.created_at, note: staleDays(x.last_synced_at) > 2 ? 'Sync stale' : '' })),
+        ...(t.data || []).map((x: any) => ({ type: 'Phone (Telnyx)', color: '#0891b2', company_id: x.company_id, detail: x.phone_number, active: x.is_active === true, last: x.created_at, note: x.is_active ? '' : 'Inactive' })),
+      ]
+      setRows(all)
+    })()
+  }, [])
+  const list = rows || []
+  const byType = (t: string) => list.filter(r => r.type === t)
+  const summary = [
+    { type: 'Email', color: '#8b5cf6' },
+    { type: 'WooCommerce', color: '#96588a' },
+    { type: 'Phone (Telnyx)', color: '#0891b2' },
+  ].map(s => ({ ...s, total: byType(s.type).length, active: byType(s.type).filter(r => r.active).length, warn: byType(s.type).filter(r => r.note).length }))
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  return (
+    <div>
+      <SectionHeader title="Integrations" sub="Connected channels across every business" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 12, marginBottom: 20 }}>
+        {summary.map(s => (
+          <div key={s.type} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: s.color }} />
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)' }}>{s.type}</span>
+            </div>
+            <p style={{ fontSize: 24, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{rows === null ? '…' : s.total}</p>
+            <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{s.active} active{s.warn ? ` · ${s.warn} need attention` : ''}</p>
+          </div>
+        ))}
+      </div>
+      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+          <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Type', 'Business', 'Detail', 'Last activity', 'Status'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {rows === null ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+            : list.length === 0 ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>No connected integrations.</td></tr>
+            : list.map((r, i) => (
+              <tr key={i} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+                <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: r.color }}>{r.type}</span></td>
+                <td style={td}>{cos[r.company_id]?.name || cos[r.company_id]?.slug || '—'}</td>
+                <td style={{ ...td, color: 'var(--sa-muted)', maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.detail}>{r.detail || '—'}</td>
+                <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.last ? new Date(r.last).toLocaleDateString() : '—'}</td>
+                <td style={td}>
+                  {r.note
+                    ? <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: '#f59e0b22', color: '#f59e0b' }}>{r.note}</span>
+                    : r.active
+                      ? <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: '#10b98122', color: '#10b981' }}>Connected</span>
+                      : <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: '#6b728022', color: '#6b7280' }}>Inactive</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// Operations · Call Diagnostics — every voice call across the platform, with a
+// per-call detail drawer (status, hangup cause, recording, transcript, sentiment,
+// AI to-dos). Real data only, from the `calls` table (COLVY_V115_TELNYX + ALTERs).
+function CallDetail({ call, coName, onClose }: { call: any; coName: string; onClose: () => void }) {
+  const dur = (s: number) => {
+    if (!s && s !== 0) return '—'
+    const m = Math.floor(s / 60), r = s % 60
+    return m > 0 ? `${m}m ${r}s` : `${r}s`
+  }
+  const statusColor: Record<string, string> = {
+    completed: '#10b981', answered: '#10b981', ringing: '#f59e0b', initiated: '#6366f1',
+    busy: '#f59e0b', failed: '#ef4444', 'no-answer': '#ef4444',
+  }
+  const sc = statusColor[String(call.status)] || '#6b7280'
+  const sentColor = (v: string) => v === 'positive' ? '#10b981' : v === 'negative' ? '#ef4444' : '#6b7280'
+  const segs: any[] = Array.isArray(call.transcript_segments) ? call.transcript_segments : []
+  const todos: any[] = Array.isArray(call.ai_todos) ? call.ai_todos : []
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 560, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: call.direction === 'inbound' ? '#6366f1' : '#0891b2', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{call.direction === 'inbound' ? '↙' : '↗'}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{call.direction === 'inbound' ? 'Inbound call' : 'Outbound call'}{call.is_voicemail ? ' · Voicemail' : ''}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{coName} · {call.started_at ? new Date(call.started_at).toLocaleString() : '—'}</p>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: sc, padding: '3px 10px', borderRadius: 999, background: sc + '22' }}>{call.status || '—'}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          <Row k="Direction" v={call.direction === 'inbound' ? 'Inbound' : 'Outbound'} />
+          <Row k="From" v={call.from_number} />
+          <Row k="To" v={call.to_number} />
+          <Row k="Caller" v={call.caller_name || call.contact_name} />
+          <Row k="Status" v={call.status} />
+          <Row k="Hangup cause" v={call.cause} />
+          <Row k="Duration" v={dur(call.duration_seconds)} />
+          <Row k="Answered by" v={call.answered_by} />
+          <Row k="Started" v={call.started_at ? new Date(call.started_at).toLocaleString() : '—'} />
+          <Row k="Ended" v={call.ended_at ? new Date(call.ended_at).toLocaleString() : '—'} />
+          <Row k="Voicemail" v={call.is_voicemail ? 'Yes' : 'No'} />
+          {call.sentiment && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+              <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Sentiment</span>
+              <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: sentColor(call.sentiment) + '22', color: sentColor(call.sentiment) }}>{call.sentiment}</span>
+            </div>
+          )}
+
+          {call.recording_url ? (
+            <div style={{ marginTop: 18 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Recording{call.recording_duration ? ` · ${dur(call.recording_duration)}` : ''}</p>
+              <audio controls src={call.recording_url} style={{ width: '100%' }} />
+            </div>
+          ) : call.recording_error ? (
+            <p style={{ marginTop: 18, fontSize: 12, color: '#f59e0b' }}>Recording unavailable: {call.recording_error}</p>
+          ) : null}
+
+          {todos.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>AI follow-ups</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {todos.map((t, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 9, border: '1px solid var(--sa-border)' }}>
+                    <span style={{ color: '#6366f1', fontSize: 13 }}>›</span>
+                    <span style={{ fontSize: 12.5, color: 'var(--sa-text)', lineHeight: 1.4 }}>{typeof t === 'string' ? t : (t.text || t.task || JSON.stringify(t))}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {segs.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Transcript</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {segs.map((s, i) => (
+                  <div key={i} style={{ padding: '8px 11px', borderRadius: 9, background: 'var(--sa-card)', border: '1px solid var(--sa-border)' }}>
+                    <p style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--sa-muted)', margin: '0 0 3px' }}>{s.speaker || 'Speaker'}{s.start != null ? ` · ${dur(Math.floor(Number(s.start)))}` : ''}</p>
+                    <p style={{ fontSize: 12.5, color: 'var(--sa-text)', margin: 0, lineHeight: 1.5 }}>{s.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CallDiagnosticsPage() {
+  const [cos, setCos] = useState<Record<string, any>>({})
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  const [q, setQ] = useState('')
+  const [dir, setDir] = useState('all')
+  const [stat, setStat] = useState('all')
+  const [sel, setSel] = useState<any>(null)
+  useEffect(() => {
+    ;(async () => {
+      const [c, r] = await Promise.all([
+        (supabase as any).from('companies').select('id,name,slug'),
+        (supabase as any).from('calls').select('*').order('created_at', { ascending: false }).limit(300),
+      ])
+      const map: Record<string, any> = {}; (c.data || []).forEach((x: any) => { map[x.id] = x })
+      setCos(map)
+      if (r.error) { if (/does not exist|schema cache/i.test(r.error.message)) setMissing(true); setRows([]) }
+      else setRows(r.data || [])
+    })()
+  }, [])
+  const coName = (id: string) => cos[id]?.name || cos[id]?.slug || '—'
+  const all = rows || []
+  const answered = (s: string) => s === 'completed' || s === 'answered'
+  const list = all.filter(r => {
+    if (dir !== 'all' && r.direction !== dir) return false
+    if (stat === 'answered' && !answered(r.status)) return false
+    if (stat === 'missed' && answered(r.status)) return false
+    if (stat === 'voicemail' && !r.is_voicemail) return false
+    if (q.trim()) {
+      const hay = `${r.from_number} ${r.to_number} ${r.caller_name || ''} ${r.contact_name || ''} ${coName(r.company_id)}`.toLowerCase()
+      if (!hay.includes(q.trim().toLowerCase())) return false
+    }
+    return true
+  })
+  const answeredN = all.filter(r => answered(r.status)).length
+  const answerRate = all.length ? Math.round((answeredN / all.length) * 100) : 0
+  const durs = all.filter(r => answered(r.status) && r.duration_seconds).map(r => r.duration_seconds)
+  const avgDur = durs.length ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) : 0
+  const kpis = [
+    { label: 'Total calls', value: all.length, color: '#6366f1' },
+    { label: 'Answer rate', value: `${answerRate}%`, color: '#10b981' },
+    { label: 'Avg duration', value: avgDur ? `${Math.floor(avgDur / 60)}m ${avgDur % 60}s` : '—', color: '#0891b2' },
+    { label: 'Voicemails', value: all.filter(r => r.is_voicemail).length, color: '#f59e0b' },
+    { label: 'Failed / missed', value: all.filter(r => !answered(r.status) && !r.is_voicemail).length, color: '#ef4444' },
+  ]
+  const statusColor: Record<string, string> = {
+    completed: '#10b981', answered: '#10b981', ringing: '#f59e0b', initiated: '#6366f1',
+    busy: '#f59e0b', failed: '#ef4444', 'no-answer': '#ef4444',
+  }
+  const dur = (s: number) => {
+    if (!s && s !== 0) return '—'
+    const m = Math.floor(s / 60), r = s % 60
+    return m > 0 ? `${m}m ${r}s` : `${r}s`
+  }
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const chip = (active: boolean): React.CSSProperties => ({ padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? '#ff7a6b' : 'var(--sa-border)'}`, background: active ? '#ff7a6b22' : 'var(--sa-card)', color: active ? '#ff7a6b' : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' })
+  return (
+    <div>
+      <SectionHeader title="Call Diagnostics" sub="Every voice call across the platform — status, recordings and transcripts" />
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Voice calling isn't set up yet — run <b>COLVY_V115_TELNYX.sql</b> to start recording calls.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(170px,1fr))', gap: 12, marginBottom: 18 }}>
+            {kpis.map(k => (
+              <div key={k.label} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+                <p style={{ fontSize: 24, fontWeight: 800, color: k.color, margin: 0 }}>{rows === null ? '…' : k.value}</p>
+                <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{k.label}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <SearchBar placeholder="Search number, caller, business…" value={q} onChange={setQ} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['all', 'All'], ['inbound', 'Inbound'], ['outbound', 'Outbound']].map(([k, l]) => (
+                <button key={k} onClick={() => setDir(k)} style={chip(dir === k)}>{l}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['all', 'Any status'], ['answered', 'Answered'], ['missed', 'Missed'], ['voicemail', 'Voicemail']].map(([k, l]) => (
+                <button key={k} onClick={() => setStat(k)} style={chip(stat === k)}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+              <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Business', 'Direction', 'From', 'To', 'Status', 'Duration', 'Started', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows === null ? <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                : list.length === 0 ? <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{all.length === 0 ? 'No calls recorded yet.' : 'No calls match these filters.'}</td></tr>
+                : list.map((r, i) => {
+                  const sc = statusColor[String(r.status)] || '#6b7280'
+                  return (
+                    <tr key={r.id} onClick={() => setSel(r)} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none', cursor: 'pointer' }}>
+                      <td style={td}>{coName(r.company_id)}</td>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: r.direction === 'inbound' ? '#6366f1' : '#0891b2' }}>{r.direction === 'inbound' ? '↙ Inbound' : '↗ Outbound'}</span></td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.from_number || '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.to_number || '—'}</td>
+                      <td style={td}>
+                        <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: sc + '22', color: sc }}>{r.is_voicemail ? 'voicemail' : (r.status || '—')}</span>
+                      </td>
+                      <td style={td}>{dur(r.duration_seconds)}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.started_at ? new Date(r.started_at).toLocaleString() : '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', textAlign: 'right' }}>›</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {sel && <CallDetail call={sel} coName={coName(sel.company_id)} onClose={() => setSel(null)} />}
+    </div>
+  )
+}
+
+// Operations · Webhook Explorer — a live feed of every inbound webhook Colvy
+// receives (Telnyx, Stripe, Meta, WooCommerce, email), with per-event payload
+// inspection. Real data from webhook_events (COLVY_V217).
+const WH_SOURCES: Record<string, { label: string; color: string }> = {
+  telnyx: { label: 'Telnyx', color: '#0891b2' },
+  stripe: { label: 'Stripe', color: '#635bff' },
+  meta: { label: 'Meta', color: '#0866ff' },
+  woocommerce: { label: 'WooCommerce', color: '#96588a' },
+  email: { label: 'Email', color: '#8b5cf6' },
+}
+
+function WebhookDetail({ ev, coName, onClose }: { ev: any; coName: string; onClose: () => void }) {
+  const src = WH_SOURCES[ev.source] || { label: ev.source, color: '#6b7280' }
+  const pretty = (() => { try { return JSON.stringify(ev.payload, null, 2) } catch { return String(ev.payload) } })()
+  const [copied, setCopied] = useState(false)
+  const copy = () => { try { navigator.clipboard.writeText(pretty); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {} }
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  const statusColor: Record<string, string> = { received: '#6366f1', processed: '#10b981', ignored: '#6b7280', error: '#ef4444', rejected: '#f59e0b' }
+  const sc = statusColor[String(ev.status)] || '#6b7280'
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 620, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: src.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>{src.label[0]}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{src.label}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.event_type || '—'}</p>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: sc, padding: '3px 10px', borderRadius: 999, background: sc + '22' }}>{ev.status || '—'}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          <Row k="Source" v={src.label} />
+          <Row k="Event type" v={ev.event_type} />
+          <Row k="Business" v={coName} />
+          <Row k="Status" v={ev.status} />
+          {ev.error && <Row k="Error" v={ev.error} />}
+          <Row k="Received" v={ev.created_at ? new Date(ev.created_at).toLocaleString() : '—'} />
+          <div style={{ marginTop: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Payload</p>
+              {ev.payload != null && <button onClick={copy} style={{ marginLeft: 'auto', ...paBtn() }}>{copied ? 'Copied' : 'Copy'}</button>}
+            </div>
+            {ev.payload == null ? (
+              <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>No payload captured for this event.</p>
+            ) : (
+              <pre style={{ margin: 0, padding: 14, borderRadius: 10, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 11.5, lineHeight: 1.5, color: 'var(--sa-text)', overflowX: 'auto', whiteSpace: 'pre', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{pretty}</pre>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function WebhookExplorerPage() {
+  const [cos, setCos] = useState<Record<string, any>>({})
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  const [q, setQ] = useState('')
+  const [src, setSrc] = useState('all')
+  const [stat, setStat] = useState('all')
+  const [sel, setSel] = useState<any>(null)
+  const load = async () => {
+    const [c, r] = await Promise.all([
+      (supabase as any).from('companies').select('id,name,slug'),
+      (supabase as any).from('webhook_events').select('*').order('created_at', { ascending: false }).limit(300),
+    ])
+    const map: Record<string, any> = {}; (c.data || []).forEach((x: any) => { map[x.id] = x })
+    setCos(map)
+    if (r.error) { if (/does not exist|schema cache/i.test(r.error.message)) setMissing(true); setRows([]) }
+    else setRows(r.data || [])
+  }
+  useEffect(() => { load() }, [])
+  const coName = (id: string) => cos[id]?.name || cos[id]?.slug || '—'
+  const all = rows || []
+  const list = all.filter(r => {
+    if (src !== 'all' && r.source !== src) return false
+    if (stat === 'errors' && !['error', 'rejected'].includes(r.status)) return false
+    if (stat === 'ok' && ['error', 'rejected'].includes(r.status)) return false
+    if (q.trim()) {
+      const hay = `${r.source} ${r.event_type || ''} ${r.error || ''} ${coName(r.company_id)}`.toLowerCase()
+      if (!hay.includes(q.trim().toLowerCase())) return false
+    }
+    return true
+  })
+  const errors = all.filter(r => ['error', 'rejected'].includes(r.status)).length
+  const bySource = Object.keys(WH_SOURCES).map(k => ({ k, ...WH_SOURCES[k], n: all.filter(r => r.source === k).length }))
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const chip = (active: boolean, color?: string): React.CSSProperties => ({ padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? (color || '#ff7a6b') : 'var(--sa-border)'}`, background: active ? (color || '#ff7a6b') + '22' : 'var(--sa-card)', color: active ? (color || '#ff7a6b') : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' })
+  const statusColor: Record<string, string> = { received: '#6366f1', processed: '#10b981', ignored: '#6b7280', error: '#ef4444', rejected: '#f59e0b' }
+  return (
+    <div>
+      <SectionHeader title="Webhook Explorer" sub="Live feed of every inbound webhook across the platform"
+        action={<button onClick={() => { setRows(null); load() }} style={paBtn()}>Refresh</button>} />
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V217_WEBHOOK_EVENTS.sql</b> to start capturing inbound webhooks. New events appear here automatically once the table exists.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 12, marginBottom: 18 }}>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: '#6366f1', margin: 0 }}>{rows === null ? '…' : all.length}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Recent events</p>
+            </div>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: errors ? '#ef4444' : '#10b981', margin: 0 }}>{rows === null ? '…' : errors}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Errors / rejected</p>
+            </div>
+            {bySource.map(s => (
+              <div key={s.k} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+                <p style={{ fontSize: 24, fontWeight: 800, color: s.color, margin: 0 }}>{rows === null ? '…' : s.n}</p>
+                <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{s.label}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <SearchBar placeholder="Search type, business, error…" value={q} onChange={setQ} />
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button onClick={() => setSrc('all')} style={chip(src === 'all')}>All sources</button>
+              {Object.keys(WH_SOURCES).map(k => (
+                <button key={k} onClick={() => setSrc(k)} style={chip(src === k, WH_SOURCES[k].color)}>{WH_SOURCES[k].label}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['all', 'Any'], ['ok', 'OK'], ['errors', 'Errors']].map(([k, l]) => (
+                <button key={k} onClick={() => setStat(k)} style={chip(stat === k)}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
+              <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Source', 'Event type', 'Business', 'Status', 'Received', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows === null ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                : list.length === 0 ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{all.length === 0 ? 'No webhooks received yet.' : 'No events match these filters.'}</td></tr>
+                : list.map((r, i) => {
+                  const s = WH_SOURCES[r.source] || { label: r.source, color: '#6b7280' }
+                  const sc = statusColor[String(r.status)] || '#6b7280'
+                  return (
+                    <tr key={r.id} onClick={() => setSel(r)} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none', cursor: 'pointer' }}>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: s.color }}>{s.label}</span></td>
+                      <td style={{ ...td, maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.event_type}>{r.event_type || '—'}</td>
+                      <td style={td}>{coName(r.company_id)}</td>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: sc + '22', color: sc }}>{r.status || '—'}</span></td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', textAlign: 'right' }}>›</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {sel && <WebhookDetail ev={sel} coName={coName(sel.company_id)} onClose={() => setSel(null)} />}
+    </div>
+  )
+}
+
+// Operations · Background Jobs — health of the scheduled workers (email sync,
+// campaign sender) with cadence, duration, throughput and failures. Real data
+// from job_runs (COLVY_V218). The registry lists the jobs Colvy actually runs.
+const JOBS: { key: string; label: string; schedule: string; desc: string; color: string }[] = [
+  { key: 'email-sync', label: 'Email Sync', schedule: 'Every 5 min', desc: 'Pulls new mail into every connected Gmail mailbox', color: '#8b5cf6' },
+  { key: 'campaigns-process', label: 'Campaign Worker', schedule: 'Every 2 min', desc: 'Starts scheduled campaigns and drips the next sending batch', color: '#ff7a6b' },
+]
+const JOB_STATUS_COLOR: Record<string, string> = { success: '#10b981', idle: '#6b7280', error: '#ef4444', running: '#6366f1' }
+
+function JobRunDetail({ run, onClose }: { run: any; onClose: () => void }) {
+  const job = JOBS.find(j => j.key === run.job)
+  const sc = JOB_STATUS_COLOR[String(run.status)] || '#6b7280'
+  const pretty = (() => { try { return JSON.stringify(run.detail, null, 2) } catch { return String(run.detail) } })()
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 560, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: job?.color || '#6366f1', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>{(job?.label || run.job)[0]}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{job?.label || run.job}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{run.started_at ? new Date(run.started_at).toLocaleString() : '—'}</p>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: sc, padding: '3px 10px', borderRadius: 999, background: sc + '22' }}>{run.status || '—'}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          <Row k="Job" v={job?.label || run.job} />
+          <Row k="Status" v={run.status} />
+          <Row k="Started" v={run.started_at ? new Date(run.started_at).toLocaleString() : '—'} />
+          <Row k="Finished" v={run.finished_at ? new Date(run.finished_at).toLocaleString() : '—'} />
+          <Row k="Duration" v={run.duration_ms != null ? `${run.duration_ms} ms` : '—'} />
+          {run.error && <Row k="Error" v={run.error} />}
+          {run.detail != null && (
+            <div style={{ marginTop: 18 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Run summary</p>
+              <pre style={{ margin: 0, padding: 14, borderRadius: 10, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 11.5, lineHeight: 1.5, color: 'var(--sa-text)', overflowX: 'auto', whiteSpace: 'pre', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{pretty}</pre>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BackgroundJobsPage() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  const [jobFilter, setJobFilter] = useState('all')
+  const [sel, setSel] = useState<any>(null)
+  const load = async () => {
+    const { data, error } = await (supabase as any).from('job_runs').select('*').order('created_at', { ascending: false }).limit(300)
+    if (error) { if (/does not exist|schema cache/i.test(error.message)) setMissing(true); setRows([]) }
+    else setRows(data || [])
+  }
+  useEffect(() => { load() }, [])
+  const all = rows || []
+  const dayAgo = Date.now() - 86400000
+  const stat = (key: string) => {
+    const runs = all.filter(r => r.job === key)
+    const last = runs[0]
+    const last24 = runs.filter(r => r.created_at && new Date(r.created_at).getTime() > dayAgo)
+    const errored = last24.filter(r => r.status === 'error').length
+    const worked = last24.filter(r => r.status === 'success' || r.status === 'idle').length
+    const durs = runs.filter(r => r.duration_ms != null).slice(0, 30).map(r => r.duration_ms)
+    const avg = durs.length ? Math.round(durs.reduce((a: number, b: number) => a + b, 0) / durs.length) : null
+    const rate = last24.length ? Math.round((worked / last24.length) * 100) : null
+    return { last, runs24: last24.length, errored, avg, rate }
+  }
+  const list = all.filter(r => jobFilter === 'all' || r.job === jobFilter)
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const chip = (active: boolean): React.CSSProperties => ({ padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? '#ff7a6b' : 'var(--sa-border)'}`, background: active ? '#ff7a6b22' : 'var(--sa-card)', color: active ? '#ff7a6b' : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' })
+  const ago = (d: string) => {
+    if (!d) return 'never'
+    const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000)
+    if (m < 1) return 'just now'
+    if (m < 60) return `${m}m ago`
+    const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`
+    return `${Math.floor(h / 24)}d ago`
+  }
+  return (
+    <div>
+      <SectionHeader title="Background Jobs" sub="Health of the scheduled workers that keep Colvy running"
+        action={<button onClick={() => { setRows(null); load() }} style={paBtn()}>Refresh</button>} />
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V218_JOB_RUNS.sql</b> to start recording job runs. The workers keep running either way — this just gives them a visible heartbeat here.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14, marginBottom: 22 }}>
+            {JOBS.map(j => {
+              const s = stat(j.key)
+              const lastColor = s.last ? (JOB_STATUS_COLOR[String(s.last.status)] || '#6b7280') : '#6b7280'
+              const stale = s.last?.created_at ? (Date.now() - new Date(s.last.created_at).getTime()) > 3600000 : true
+              return (
+                <div key={j.key} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 18 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, background: j.color + '22', color: j.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>{j.label[0]}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 14, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{j.label}</p>
+                      <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}>{j.schedule}</p>
+                    </div>
+                    {rows !== null && (
+                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 999, background: (s.last && !stale ? '#10b981' : s.last ? '#f59e0b' : '#6b7280') + '22', color: s.last && !stale ? '#10b981' : s.last ? '#f59e0b' : '#6b7280' }}>{s.last ? (stale ? 'Stale' : 'Healthy') : 'No runs'}</span>
+                    )}
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 14px', lineHeight: 1.4 }}>{j.desc}</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
+                    <div>
+                      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 2px' }}>Last run</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: lastColor, margin: 0 }}>{rows === null ? '…' : s.last ? `${s.last.status} · ${ago(s.last.created_at)}` : 'never'}</p>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 2px' }}>Runs (24h)</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>{rows === null ? '…' : s.runs24}{s.errored ? <span style={{ color: '#ef4444' }}> · {s.errored} failed</span> : null}</p>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 2px' }}>Avg duration</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>{rows === null ? '…' : s.avg != null ? `${s.avg} ms` : '—'}</p>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 2px' }}>Success (24h)</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: s.rate != null && s.rate < 90 ? '#f59e0b' : '#10b981', margin: 0 }}>{rows === null ? '…' : s.rate != null ? `${s.rate}%` : '—'}</p>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+            <button onClick={() => setJobFilter('all')} style={chip(jobFilter === 'all')}>All jobs</button>
+            {JOBS.map(j => <button key={j.key} onClick={() => setJobFilter(j.key)} style={chip(jobFilter === j.key)}>{j.label}</button>)}
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+              <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Job', 'Status', 'Started', 'Duration', 'Summary', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows === null ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                : list.length === 0 ? <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>No job runs recorded yet.</td></tr>
+                : list.map((r, i) => {
+                  const job = JOBS.find(j => j.key === r.job)
+                  const sc = JOB_STATUS_COLOR[String(r.status)] || '#6b7280'
+                  const summary = r.detail ? Object.entries(r.detail).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}: ${v}`).join(' · ') : ''
+                  return (
+                    <tr key={r.id} onClick={() => setSel(r)} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none', cursor: 'pointer' }}>
+                      <td style={td}><span style={{ fontWeight: 600 }}>{job?.label || r.job}</span></td>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: sc + '22', color: sc }}>{r.status || '—'}</span></td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{r.started_at ? new Date(r.started_at).toLocaleString() : (r.created_at ? new Date(r.created_at).toLocaleString() : '—')}</td>
+                      <td style={td}>{r.duration_ms != null ? `${r.duration_ms} ms` : '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', maxWidth: 280, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.error || summary}>{r.error ? <span style={{ color: '#ef4444' }}>{r.error}</span> : (summary || '—')}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', textAlign: 'right' }}>›</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {sel && <JobRunDetail run={sel} onClose={() => setSel(null)} />}
+    </div>
+  )
+}
+
+// Operations · API Logs — the stream of server-side warnings and errors from
+// across the API routes and libraries (captured from console.error/warn via
+// instrumentation.ts). Real data from api_logs (COLVY_V219).
+const LOG_LEVEL_COLOR: Record<string, string> = { error: '#ef4444', warn: '#f59e0b', info: '#6366f1' }
+
+function ApiLogDetail({ row, coName, onClose }: { row: any; coName: string; onClose: () => void }) {
+  const lc = LOG_LEVEL_COLOR[String(row.level)] || '#6b7280'
+  const meta = (() => { try { return row.meta != null ? JSON.stringify(row.meta, null, 2) : null } catch { return String(row.meta) } })()
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 620, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '4px 10px', borderRadius: 8, background: lc + '22', color: lc }}>{row.level}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{row.source || 'app'}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{row.created_at ? new Date(row.created_at).toLocaleString() : '—'}</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          <Row k="Level" v={row.level} />
+          <Row k="Source" v={row.source} />
+          {row.route && <Row k="Route" v={row.route} />}
+          {row.company_id && <Row k="Business" v={coName} />}
+          <Row k="Time" v={row.created_at ? new Date(row.created_at).toLocaleString() : '—'} />
+          <div style={{ marginTop: 18 }}>
+            <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Message</p>
+            <pre style={{ margin: 0, padding: 14, borderRadius: 10, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 11.5, lineHeight: 1.5, color: 'var(--sa-text)', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{row.message || '—'}</pre>
+          </div>
+          {meta && (
+            <div style={{ marginTop: 16 }}>
+              <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 8px' }}>Metadata</p>
+              <pre style={{ margin: 0, padding: 14, borderRadius: 10, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 11.5, lineHeight: 1.5, color: 'var(--sa-text)', overflowX: 'auto', whiteSpace: 'pre', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{meta}</pre>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ApiLogsPage() {
+  const [cos, setCos] = useState<Record<string, any>>({})
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  const [q, setQ] = useState('')
+  const [level, setLevel] = useState('all')
+  const [source, setSource] = useState('all')
+  const [sel, setSel] = useState<any>(null)
+  const load = async () => {
+    const [c, r] = await Promise.all([
+      (supabase as any).from('companies').select('id,name,slug'),
+      (supabase as any).from('api_logs').select('*').order('created_at', { ascending: false }).limit(300),
+    ])
+    const map: Record<string, any> = {}; (c.data || []).forEach((x: any) => { map[x.id] = x })
+    setCos(map)
+    if (r.error) { if (/does not exist|schema cache/i.test(r.error.message)) setMissing(true); setRows([]) }
+    else setRows(r.data || [])
+  }
+  useEffect(() => { load() }, [])
+  const coName = (id: string) => cos[id]?.name || cos[id]?.slug || '—'
+  const all = rows || []
+  const dayAgo = Date.now() - 86400000
+  const in24 = (r: any) => r.created_at && new Date(r.created_at).getTime() > dayAgo
+  const sources = Array.from(new Set(all.map(r => r.source || 'app')))
+    .map(s => ({ s, n: all.filter(r => (r.source || 'app') === s).length }))
+    .sort((a, b) => b.n - a.n).slice(0, 8)
+  const list = all.filter(r => {
+    if (level !== 'all' && r.level !== level) return false
+    if (source !== 'all' && (r.source || 'app') !== source) return false
+    if (q.trim()) {
+      const hay = `${r.source || ''} ${r.message || ''} ${r.route || ''}`.toLowerCase()
+      if (!hay.includes(q.trim().toLowerCase())) return false
+    }
+    return true
+  })
+  const errors24 = all.filter(r => r.level === 'error' && in24(r)).length
+  const warns24 = all.filter(r => r.level === 'warn' && in24(r)).length
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const chip = (active: boolean, color?: string): React.CSSProperties => ({ padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? (color || '#ff7a6b') : 'var(--sa-border)'}`, background: active ? (color || '#ff7a6b') + '22' : 'var(--sa-card)', color: active ? (color || '#ff7a6b') : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' })
+  return (
+    <div>
+      <SectionHeader title="API Logs" sub="Server-side warnings and errors from across the platform"
+        action={<button onClick={() => { setRows(null); load() }} style={paBtn()}>Refresh</button>} />
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V219_API_LOGS.sql</b> to start capturing server logs. Once the table exists, every warning and error from the API routes flows here automatically.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 12, marginBottom: 18 }}>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: errors24 ? '#ef4444' : '#10b981', margin: 0 }}>{rows === null ? '…' : errors24}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Errors (24h)</p>
+            </div>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: warns24 ? '#f59e0b' : '#10b981', margin: 0 }}>{rows === null ? '…' : warns24}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Warnings (24h)</p>
+            </div>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: '#6366f1', margin: 0 }}>{rows === null ? '…' : sources.length}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Active sources</p>
+            </div>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--sa-text)', margin: '4px 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{rows === null ? '…' : (sources[0]?.s || '—')}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Noisiest source{sources[0] ? ` · ${sources[0].n}` : ''}</p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <SearchBar placeholder="Search message, source, route…" value={q} onChange={setQ} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['all', 'All'], ['error', 'Errors'], ['warn', 'Warnings']].map(([k, l]) => (
+                <button key={k} onClick={() => setLevel(k)} style={chip(level === k, k === 'error' ? '#ef4444' : k === 'warn' ? '#f59e0b' : undefined)}>{l}</button>
+              ))}
+            </div>
+            {sources.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button onClick={() => setSource('all')} style={chip(source === 'all')}>All sources</button>
+                {sources.map(s => <button key={s.s} onClick={() => setSource(s.s)} style={chip(source === s.s)}>{s.s}</button>)}
+              </div>
+            )}
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+              <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Level', 'Source', 'Message', 'Time', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows === null ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                : list.length === 0 ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{all.length === 0 ? 'No logs captured yet — nothing has errored since the table was created.' : 'No logs match these filters.'}</td></tr>
+                : list.map((r, i) => {
+                  const lc = LOG_LEVEL_COLOR[String(r.level)] || '#6b7280'
+                  return (
+                    <tr key={r.id} onClick={() => setSel(r)} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none', cursor: 'pointer' }}>
+                      <td style={td}><span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 6, background: lc + '22', color: lc }}>{r.level}</span></td>
+                      <td style={td}><span style={{ fontWeight: 600 }}>{r.source || 'app'}</span></td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', maxWidth: 460, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5 }} title={r.message}>{r.message || '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', textAlign: 'right' }}>›</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {sel && <ApiLogDetail row={sel} coName={coName(sel.company_id)} onClose={() => setSel(null)} />}
+    </div>
+  )
+}
+
+// Operations · Mobile Devices — the fleet of registered mobile apps (push_tokens)
+// cross-referenced with live agent heartbeats (agent_presence). All real data,
+// no new backend: push_tokens = devices reachable by push, agent_presence =
+// who has a live session (browser or app) right now.
+const PRESENCE_WINDOW_MS = 120000   // "online" = heartbeat in the last 2 minutes
+
+function MobileDeviceDetail({ d, onClose }: { d: any; onClose: () => void }) {
+  const Row = ({ k, v }: { k: string; v: any }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
+    </div>
+  )
+  const plat = String(d.platform || '').toLowerCase()
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 520, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: plat === 'ios' ? '#111' : '#3ddc84', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{plat === 'ios' ? '' : '🤖'}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{d.device_name || 'Unnamed device'}</p>
+            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{d.coName}</p>
+          </div>
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: d.online ? '#10b981' : '#6b7280', padding: '3px 10px', borderRadius: 999, background: (d.online ? '#10b981' : '#6b7280') + '22' }}>{d.online ? 'Online' : 'Offline'}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          <Row k="Device" v={d.device_name} />
+          <Row k="Platform" v={plat ? (plat === 'ios' ? 'iOS' : plat[0].toUpperCase() + plat.slice(1)) : '—'} />
+          <Row k="Business" v={d.coName} />
+          <Row k="User" v={d.email} />
+          <Row k="Live session" v={d.online ? `Yes · heartbeat ${d.lastSeenAgo}` : (d.lastSeenAgo ? `No · last seen ${d.lastSeenAgo}` : 'No heartbeat recorded')} />
+          <Row k="Push reachable" v="Yes (registered token)" />
+          <Row k="Registered" v={d.created_at ? new Date(d.created_at).toLocaleString() : '—'} />
+          <Row k="Last updated" v={d.updated_at ? new Date(d.updated_at).toLocaleString() : '—'} />
+          <div style={{ marginTop: 16 }}>
+            <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 6px' }}>Push token</p>
+            <p style={{ fontSize: 11, color: 'var(--sa-text)', margin: 0, wordBreak: 'break-all', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', padding: 12, borderRadius: 9, background: 'var(--sa-card)', border: '1px solid var(--sa-border)' }}>{d.expo_token || '—'}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MobileDevicesPage() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [missing, setMissing] = useState(false)
+  const [onlineAgents, setOnlineAgents] = useState<number | null>(null)
+  const [q, setQ] = useState('')
+  const [plat, setPlat] = useState('all')
+  const [sel, setSel] = useState<any>(null)
+  const load = async () => {
+    const [co, pt, ap, tm] = await Promise.all([
+      (supabase as any).from('companies').select('id,name,slug'),
+      (supabase as any).from('push_tokens').select('*').order('updated_at', { ascending: false }).limit(500),
+      (supabase as any).from('agent_presence').select('company_id,user_id,last_seen_at'),
+      (supabase as any).from('team_members').select('user_id, email'),
+    ])
+    if (pt.error) { if (/does not exist|schema cache/i.test(pt.error.message)) setMissing(true); setRows([]); return }
+    const coMap: Record<string, any> = {}; (co.data || []).forEach((x: any) => { coMap[x.id] = x })
+    const emailMap: Record<string, string> = {}; (tm.data || []).forEach((x: any) => { if (x.user_id) emailMap[x.user_id] = x.email })
+    const presMap: Record<string, string> = {}
+    ;(ap.data || []).forEach((x: any) => { if (x.user_id) presMap[`${x.company_id}:${x.user_id}`] = x.last_seen_at })
+    setOnlineAgents((ap.data || []).filter((x: any) => x.last_seen_at && (Date.now() - new Date(x.last_seen_at).getTime()) < PRESENCE_WINDOW_MS).length)
+    const ago = (d: string) => {
+      if (!d) return ''
+      const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000)
+      if (m < 1) return 'just now'; if (m < 60) return `${m}m ago`
+      const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`
+      return `${Math.floor(h / 24)}d ago`
+    }
+    const list = (pt.data || []).map((d: any) => {
+      const seen = presMap[`${d.company_id}:${d.user_id}`]
+      const online = seen ? (Date.now() - new Date(seen).getTime()) < PRESENCE_WINDOW_MS : false
+      return { ...d, coName: coMap[d.company_id]?.name || coMap[d.company_id]?.slug || '—', email: emailMap[d.user_id] || null, online, lastSeenAgo: seen ? ago(seen) : '' }
+    })
+    setRows(list)
+  }
+  useEffect(() => { load() }, [])
+  const all = rows || []
+  const list = all.filter(d => {
+    if (plat !== 'all' && String(d.platform || '').toLowerCase() !== plat) return false
+    if (q.trim()) {
+      const hay = `${d.device_name || ''} ${d.coName || ''} ${d.email || ''} ${d.platform || ''}`.toLowerCase()
+      if (!hay.includes(q.trim().toLowerCase())) return false
+    }
+    return true
+  })
+  const ios = all.filter(d => String(d.platform || '').toLowerCase() === 'ios').length
+  const android = all.filter(d => String(d.platform || '').toLowerCase() !== 'ios').length
+  const businesses = new Set(all.map(d => d.company_id)).size
+  const onlineDevices = all.filter(d => d.online).length
+  const kpis = [
+    { label: 'Registered devices', value: all.length, color: '#6366f1' },
+    { label: 'Online now', value: onlineDevices, color: '#10b981' },
+    { label: 'iOS', value: ios, color: '#111827' },
+    { label: 'Android', value: android, color: '#3ddc84' },
+    { label: 'Businesses with app', value: businesses, color: '#f59e0b' },
+    { label: 'Live agent sessions', value: onlineAgents ?? '…', color: '#0891b2' },
+  ]
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const chip = (active: boolean): React.CSSProperties => ({ padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? '#ff7a6b' : 'var(--sa-border)'}`, background: active ? '#ff7a6b22' : 'var(--sa-card)', color: active ? '#ff7a6b' : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' })
+  return (
+    <div>
+      <SectionHeader title="Mobile Devices" sub="Registered mobile apps across every business, with live status"
+        action={<button onClick={() => { setRows(null); load() }} style={paBtn()}>Refresh</button>} />
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Mobile push isn't set up yet — run <b>COLVY_V122_PUSH.sql</b> to start tracking registered devices.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 12, marginBottom: 18 }}>
+            {kpis.map(k => (
+              <div key={k.label} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+                <p style={{ fontSize: 24, fontWeight: 800, color: k.color, margin: 0 }}>{rows === null ? '…' : k.value}</p>
+                <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{k.label}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+            <SearchBar placeholder="Search device, business, user…" value={q} onChange={setQ} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['all', 'All'], ['ios', 'iOS'], ['android', 'Android']].map(([k, l]) => (
+                <button key={k} onClick={() => setPlat(k)} style={chip(plat === k)}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+              <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Status', 'Device', 'Platform', 'Business', 'User', 'Registered', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows === null ? <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                : list.length === 0 ? <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{all.length === 0 ? 'No mobile devices registered yet.' : 'No devices match these filters.'}</td></tr>
+                : list.map((d, i) => {
+                  const p = String(d.platform || '').toLowerCase()
+                  return (
+                    <tr key={d.id} onClick={() => setSel(d)} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none', cursor: 'pointer' }}>
+                      <td style={td}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: d.online ? '#10b981' : '#6b7280' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: d.online ? '#10b981' : '#9ca3af' }} />{d.online ? 'Online' : 'Offline'}</span></td>
+                      <td style={td}>{d.device_name || 'Unnamed device'}</td>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: p === 'ios' ? 'var(--sa-text)' : '#0a7d43' }}>{p === 'ios' ? 'iOS' : (p ? p[0].toUpperCase() + p.slice(1) : '—')}</span></td>
+                      <td style={td}>{d.coName}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{d.email || '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{d.created_at ? new Date(d.created_at).toLocaleDateString() : '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', textAlign: 'right' }}>›</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '12px 2px 0' }}>Online status reflects a live agent heartbeat (browser or app) in the last 2 minutes. Every registered device is reachable by push notification even when offline.</p>
+        </>
+      )}
+      {sel && <MobileDeviceDetail d={sel} onClose={() => setSel(null)} />}
+    </div>
+  )
+}
+
+// Platform · Audit Logs — a chronological trail of privileged platform actions.
+// Merges the two records that actually capture admin activity and are readable
+// cross-company: impersonation sessions (an admin entered a workspace) and
+// company admin notes (an admin annotated a business). Both are real data.
+function AuditPage() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [q, setQ] = useState('')
+  const [kind, setKind] = useState('all')
+  const load = async () => {
+    const [co, imp, notes] = await Promise.all([
+      (supabase as any).from('companies').select('id,name,slug'),
+      (supabase as any).from('impersonation_sessions').select('*').order('started_at', { ascending: false }).limit(200),
+      (supabase as any).from('company_admin_notes').select('*').order('created_at', { ascending: false }).limit(200),
+    ])
+    const coMap: Record<string, any> = {}; (co.data || []).forEach((x: any) => { coMap[x.id] = x })
+    const events: any[] = []
+    ;(imp.data || []).forEach((s: any) => events.push({
+      id: `imp-${s.id}`, kind: 'impersonation', at: s.started_at || s.created_at,
+      actor: s.admin_email || 'admin',
+      business: s.company_name || s.company_slug || coMap[s.company_id]?.name || '—',
+      detail: `Entered workspace${s.mode === 'read_only' ? ' (read-only)' : ''}${s.reason ? ` — ${s.reason}` : ''}`,
+    }))
+    ;(notes.data || []).forEach((n: any) => events.push({
+      id: `note-${n.id}`, kind: 'note', at: n.created_at,
+      actor: n.author_email || 'admin',
+      business: coMap[n.company_id]?.name || coMap[n.company_id]?.slug || '—',
+      detail: `Added ${n.category || 'general'} note — ${String(n.body || '').slice(0, 120)}`,
+    }))
+    events.sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime())
+    setRows(events)
+  }
+  useEffect(() => { load() }, [])
+  const all = rows || []
+  const list = all.filter(e => {
+    if (kind !== 'all' && e.kind !== kind) return false
+    if (q.trim()) {
+      const hay = `${e.actor} ${e.business} ${e.detail}`.toLowerCase()
+      if (!hay.includes(q.trim().toLowerCase())) return false
+    }
+    return true
+  })
+  const meta: Record<string, { label: string; color: string }> = {
+    impersonation: { label: 'Impersonation', color: '#f59e0b' },
+    note: { label: 'Admin note', color: '#6366f1' },
+  }
+  const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const chip = (active: boolean): React.CSSProperties => ({ padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? '#ff7a6b' : 'var(--sa-border)'}`, background: active ? '#ff7a6b22' : 'var(--sa-card)', color: active ? '#ff7a6b' : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' })
+  return (
+    <div>
+      <SectionHeader title="Audit Logs" sub="A trail of privileged platform actions across every business"
+        action={<button onClick={() => { setRows(null); load() }} style={paBtn()}>Refresh</button>} />
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+        <SearchBar placeholder="Search actor, business, detail…" value={q} onChange={setQ} />
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[['all', 'All'], ['impersonation', 'Impersonation'], ['note', 'Admin notes']].map(([k, l]) => (
+            <button key={k} onClick={() => setKind(k)} style={chip(kind === k)}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+          <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Action', 'Admin', 'Business', 'Detail', 'When'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {rows === null ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+            : list.length === 0 ? <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>{all.length === 0 ? 'No privileged actions recorded yet.' : 'No entries match these filters.'}</td></tr>
+            : list.map((e, i) => {
+              const m = meta[e.kind] || { label: e.kind, color: '#6b7280' }
+              return (
+                <tr key={e.id} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+                  <td style={td}><span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: m.color + '22', color: m.color }}>{m.label}</span></td>
+                  <td style={td}>{e.actor}</td>
+                  <td style={td}>{e.business}</td>
+                  <td style={{ ...td, color: 'var(--sa-muted)', maxWidth: 340, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={e.detail}>{e.detail}</td>
+                  <td style={{ ...td, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{e.at ? new Date(e.at).toLocaleString() : '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// Operations · Demo Workspaces — create and manage the public showcase and
+// private, branded prospect demos. Backed by /api/platform-admin/demos.
+const DEMO_TYPE_META: Record<string, { label: string; color: string }> = {
+  shared_showcase: { label: 'Shared showcase', color: '#10b981' },
+  private_sales: { label: 'Private sales', color: '#6366f1' },
+  internal_testing: { label: 'Internal testing', color: '#f59e0b' },
+  trial: { label: 'Trial', color: '#0891b2' },
+}
+const DEMO_STATUS_COLOR: Record<string, string> = { active: '#10b981', disabled: '#6b7280', expired: '#f59e0b', converted: '#8b5cf6' }
+const DEMO_TEMPLATES = [['cafe', 'Café & hospitality'], ['retail', 'Retail & ecommerce'], ['automotive', 'Automotive workshop'], ['aquarium', 'Aquarium & pet store']]
+
+function DemoWorkspacesPage() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [analytics, setAnalytics] = useState<any>(null)
+  const [missing, setMissing] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState('')
+  const [showNew, setShowNew] = useState(false)
+  const [form, setForm] = useState<any>({ businessName: '', template: 'cafe', demoType: 'private_sales', contactName: '', contactEmail: '', salesperson: '', days: 14, notes: '' })
+  const [creating, setCreating] = useState(false)
+
+  const authFetch = async (init?: RequestInit) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    return fetch('/api/platform-admin/demos', { ...init, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}`, ...(init?.headers || {}) } })
+  }
+  const load = async () => {
+    try {
+      const res = await authFetch()
+      const d = await res.json()
+      if (d.missing) { setMissing(true); setRows([]); return }
+      setRows(d.demos || [])
+      setAnalytics(d.analytics || null)
+    } catch { setRows([]) }
+  }
+  useEffect(() => { load() }, [])
+
+  const act = async (op: string, id: string, extra?: any) => {
+    setBusy(id + op); setMsg('')
+    try {
+      const res = await authFetch({ method: 'POST', body: JSON.stringify({ op, id, ...extra }) })
+      const d = await res.json()
+      if (!res.ok) { setMsg(d.error || 'Action failed'); return }
+      setMsg(`Done: ${op}`)
+      await load()
+    } finally { setBusy('') }
+  }
+  const create = async () => {
+    if (!form.businessName.trim()) { setMsg('Business name is required.'); return }
+    setCreating(true); setMsg('')
+    try {
+      const res = await authFetch({ method: 'POST', body: JSON.stringify({ op: 'create', ...form }) })
+      const d = await res.json()
+      if (!res.ok) { setMsg(d.error || 'Could not create demo'); return }
+      setShowNew(false); setForm({ businessName: '', template: 'cafe', demoType: 'private_sales', contactName: '', contactEmail: '', salesperson: '', days: 14, notes: '' })
+      setMsg(`Created ${d.slug} (${Object.values(d.counts || {}).reduce((a: any, b: any) => a + b, 0)} sample records)`)
+      await load()
+    } finally { setCreating(false) }
+  }
+
+  const list = rows || []
+  const byType = (t: string) => list.filter(r => r.demo_type === t).length
+  const th: React.CSSProperties = { padding: '12px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }
+  const td: React.CSSProperties = { padding: '10px 14px', fontSize: 12.5, color: 'var(--sa-text)' }
+  const expLabel = (r: any) => { const e = r.expires_at || r.company?.demo_expires_at; if (!e) return '—'; const days = Math.ceil((new Date(e).getTime() - Date.now()) / 86400000); return days < 0 ? 'expired' : `${days}d` }
+
+  return (
+    <div>
+      <SectionHeader title="Demo Workspaces" sub="The public showcase and private, branded prospect demos"
+        action={<button onClick={() => setShowNew(true)} style={paBtn('#ff7a6b', true)}>+ New demo</button>} />
+      {msg && <div style={{ padding: '9px 12px', borderRadius: 9, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 12.5, color: 'var(--sa-text)', marginBottom: 12 }}>{msg}</div>}
+      {missing ? (
+        <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)' }}>Run <b>COLVY_V223_DEMO.sql</b> to enable demo workspaces.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 12, marginBottom: 18 }}>
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+              <p style={{ fontSize: 24, fontWeight: 800, color: '#6366f1', margin: 0 }}>{rows === null ? '…' : list.length}</p>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>Total demos</p>
+            </div>
+            {Object.keys(DEMO_TYPE_META).map(t => (
+              <div key={t} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
+                <p style={{ fontSize: 24, fontWeight: 800, color: DEMO_TYPE_META[t].color, margin: 0 }}>{rows === null ? '…' : byType(t)}</p>
+                <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{DEMO_TYPE_META[t].label}</p>
+              </div>
+            ))}
+          </div>
+          {analytics && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, padding: '12px 16px', marginBottom: 16, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', alignSelf: 'center' }}>Demo activity</span>
+              {[
+                { label: 'Sessions', v: analytics.byEvent?.session_start || 0, c: '#10b981' },
+                { label: 'Created', v: analytics.byEvent?.demo_created || 0, c: '#6366f1' },
+                { label: 'Resets', v: (analytics.byEvent?.demo_reset || 0) + (analytics.byEvent?.seed_reset || 0), c: '#0891b2' },
+                { label: 'Conversions', v: analytics.byEvent?.demo_converted || 0, c: '#8b5cf6' },
+                { label: 'Blocked sends', v: analytics.byEvent?.blocked_send || 0, c: '#ef4444' },
+              ].map(s => (
+                <span key={s.label} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
+                  <span style={{ fontSize: 18, fontWeight: 800, color: s.c }}>{s.v}</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>{s.label}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+              <thead><tr style={{ borderBottom: '1px solid var(--sa-border)' }}>{['Business', 'Type', 'Template', 'Slug', 'Status', 'Expiry', 'Contact', 'Actions'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows === null ? <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>Loading…</td></tr>
+                : list.length === 0 ? <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--sa-muted)' }}>No demo workspaces yet. Create one, or seed the public showcase from the SMS-free /demo page.</td></tr>
+                : list.map((r, i) => {
+                  const tm = DEMO_TYPE_META[r.demo_type] || { label: r.demo_type, color: '#6b7280' }
+                  const sc = DEMO_STATUS_COLOR[r.status] || '#6b7280'
+                  const slug = r.slug || r.company?.slug
+                  return (
+                    <tr key={r.id} style={{ borderBottom: i < list.length - 1 ? '1px solid var(--sa-border)' : 'none' }}>
+                      <td style={{ ...td, fontWeight: 600 }}>{r.business_name || r.company?.name || '—'}</td>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: tm.color }}>{tm.label}</span></td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', textTransform: 'capitalize' }}>{r.template || '—'}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{slug || '—'}</td>
+                      <td style={td}><span style={{ fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 999, background: sc + '22', color: sc }}>{r.status}</span></td>
+                      <td style={{ ...td, color: 'var(--sa-muted)' }}>{expLabel(r)}</td>
+                      <td style={{ ...td, color: 'var(--sa-muted)', maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.contact_email || ''}>{r.contact_name || r.contact_email || '—'}</td>
+                      <td style={td}>
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                          {slug && <button onClick={() => enterWorkspace(slug)} style={paBtn('#6366f1')}>Open</button>}
+                          <button onClick={() => act('reset', r.id)} disabled={!!busy} style={paBtn()}>{busy === r.id + 'reset' ? '…' : 'Reset'}</button>
+                          <button onClick={() => act('extend', r.id, { days: 14 })} disabled={!!busy} style={paBtn()}>+14d</button>
+                          {r.status === 'disabled'
+                            ? <button onClick={() => act('enable', r.id)} disabled={!!busy} style={paBtn('#10b981')}>Enable</button>
+                            : <button onClick={() => act('disable', r.id)} disabled={!!busy} style={paBtn('#f59e0b')}>Disable</button>}
+                          {r.status !== 'converted' && <button onClick={() => act('convert', r.id)} disabled={!!busy} style={paBtn('#8b5cf6')}>Convert</button>}
+                          <button onClick={() => { if (confirm('Delete this demo workspace and all its sample data? This cannot be undone.')) act('delete', r.id) }} disabled={!!busy} style={paBtn('#ef4444')}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {showNew && (
+        <div onClick={() => setShowNew(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 480, maxWidth: '96vw', maxHeight: '90vh', overflowY: 'auto', background: 'var(--sa-bg)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: '0 0 14px' }}>New demo workspace</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Business name *</label><input value={form.businessName} onChange={e => setForm({ ...form, businessName: e.target.value })} placeholder="Bright Auto" style={paInput} /></div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Industry template</label>
+                  <select value={form.template} onChange={e => setForm({ ...form, template: e.target.value })} style={paInput}>{DEMO_TEMPLATES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+                <div style={{ flex: 1 }}><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Demo type</label>
+                  <select value={form.demoType} onChange={e => setForm({ ...form, demoType: e.target.value })} style={paInput}>
+                    <option value="private_sales">Private sales</option>
+                    <option value="internal_testing">Internal testing</option>
+                    <option value="trial">Trial (sending on)</option>
+                  </select></div>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Contact name</label><input value={form.contactName} onChange={e => setForm({ ...form, contactName: e.target.value })} style={paInput} /></div>
+                <div style={{ flex: 1 }}><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Contact email</label><input value={form.contactEmail} onChange={e => setForm({ ...form, contactEmail: e.target.value })} style={paInput} /></div>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Salesperson</label><input value={form.salesperson} onChange={e => setForm({ ...form, salesperson: e.target.value })} style={paInput} /></div>
+                <div style={{ width: 110 }}><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Expiry (days)</label><input type="number" value={form.days} onChange={e => setForm({ ...form, days: parseInt(e.target.value) || 14 })} style={paInput} /></div>
+              </div>
+              <div><label style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>Internal notes</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} style={{ ...paInput, resize: 'vertical' }} /></div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button onClick={() => setShowNew(false)} style={paBtn()}>Cancel</button>
+              <button onClick={create} disabled={creating || !form.businessName.trim()} style={paBtn('#ff7a6b', true)}>{creating ? 'Creating & seeding…' : 'Create & seed'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Attention Required — surfaces businesses that need a look right now, computed
+// purely from companies.plan + created_at (no invented columns, no backend).
+function AttentionPanel() {
+  const [rows, setRows] = useState<any[] | null>(null)
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any).from('companies').select('id,name,slug,plan,created_at').limit(1000)
+        if (active) setRows(data || [])
+      } catch { if (active) setRows([]) }
+    })()
+    return () => { active = false }
+  }, [])
+
+  const now = Date.now()
+  const ageDays = (d: string) => d ? (now - new Date(d).getTime()) / 86400000 : 0
+  const list = rows || []
+  const p = (c: any) => String(c.plan || '').toLowerCase()
+  const buckets = [
+    { key: 'suspended', color: '#ef4444', icon: '⛔', label: 'Suspended businesses', hint: 'Review or reactivate',
+      items: list.filter(c => p(c) === 'suspended') },
+    { key: 'trial_ending', color: '#f59e0b', icon: '⏳', label: 'Trials ending soon', hint: 'Assuming a 14-day trial — under ~3 days left',
+      items: list.filter(c => p(c) === 'trial' && ageDays(c.created_at) >= 11 && ageDays(c.created_at) <= 14) },
+    { key: 'trial_stale', color: '#ef4444', icon: '💤', label: 'Stale trials', hint: 'On trial 21+ days and never converted',
+      items: list.filter(c => p(c) === 'trial' && ageDays(c.created_at) > 21) },
+    { key: 'new_signup', color: '#10b981', icon: '✨', label: 'New signups to onboard', hint: 'Joined in the last 2 days',
+      items: list.filter(c => ['trial', 'free'].includes(p(c)) && ageDays(c.created_at) < 2) },
+    { key: 'free_long', color: '#6366f1', icon: '📈', label: 'Long-time free (upsell)', hint: 'On the free plan 45+ days',
+      items: list.filter(c => p(c) === 'free' && ageDays(c.created_at) > 45) },
+  ].filter(b => b.items.length > 0)
+  const total = buckets.reduce((n, b) => n + b.items.length, 0)
+
+  return (
+    <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20, marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Attention Required</p>
+        {rows !== null && (
+          <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: total ? '#ef444422' : '#10b98122', color: total ? '#ef4444' : '#10b981' }}>{total}</span>
+        )}
+      </div>
+      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 14px' }}>Businesses that need a look right now</p>
+      {rows === null ? (
+        <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Loading…</p>
+      ) : buckets.length === 0 ? (
+        <p style={{ fontSize: 13, color: '#10b981', fontWeight: 600, margin: 0 }}>✓ All clear — nothing needs attention.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {buckets.map(b => (
+            <div key={b.key} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, background: b.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{b.icon}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)' }}>{b.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 999, background: b.color + '22', color: b.color }}>{b.items.length}</span>
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '2px 0 7px' }}>{b.hint}</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {b.items.slice(0, 10).map((c: any) => (
+                    <a key={c.id} href={`https://${c.slug}.colvy.com/admin`} target="_blank" rel="noopener"
+                      title={`Open ${c.name || c.slug} workspace`}
+                      style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-text)', textDecoration: 'none' }}>
+                      {c.name || c.slug || 'Untitled'}
+                    </a>
+                  ))}
+                  {b.items.length > 10 && <span style={{ fontSize: 11.5, color: 'var(--sa-muted)', alignSelf: 'center' }}>+{b.items.length - 10} more</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function OverviewPage({ data }: { data: any }) {
   const sparkA = [12,18,15,22,19,28,25,32,30,38,35,42]
   const sparkB = [5,8,6,11,9,14,12,16,14,19,17,22]
@@ -237,6 +2055,9 @@ function OverviewPage({ data }: { data: any }) {
         <KPI label="Total Ideas" value={data.ideas?.toLocaleString() ?? '—'} sub="across all boards" color="#f59e0b" />
         <KPI label="Help Articles" value={data.articles?.toLocaleString() ?? '—'} sub="published" color="#0891b2" />
       </div>
+
+      {/* Attention Required */}
+      <AttentionPanel />
 
       {/* Charts row */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 24 }}>
@@ -329,6 +2150,9 @@ function OverviewPage({ data }: { data: any }) {
   )
 }
 
+function paBtn(color = 'var(--sa-muted)', filled = false): React.CSSProperties {
+  return { padding: '7px 13px', borderRadius: 9, border: filled ? 'none' : '1px solid var(--sa-border)', background: filled ? color : 'transparent', color: filled ? '#fff' : color, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-block' }
+}
 const paLabel: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--sa-muted)', marginTop: 14, marginBottom: 5 }
 const paInput: React.CSSProperties = { width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 13.5, boxSizing: 'border-box', fontFamily: 'inherit' }
 function paQuick(color: string): React.CSSProperties {
@@ -355,14 +2179,58 @@ function CompaniesPage() {
   const [form, setForm] = useState<any>({})
   const [saving, setSaving] = useState(false)
   const [editErr, setEditErr] = useState('')
+  // Assigning an existing (already-purchased) Twilio number to this company.
+  const [assignNum, setAssignNum] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  const [assignMsg, setAssignMsg] = useState('')
+  // The company's currently-assigned numbers, shown in the drawer so the admin
+  // can see what's on file (the assign box above is an action input, not state).
+  const [coNumbers, setCoNumbers] = useState<any[]>([])
+  const [coNumbersLoading, setCoNumbersLoading] = useState(false)
+
+  const loadCoNumbers = async (companyId: string) => {
+    setCoNumbersLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/admin/assign-number?companyId=${companyId}`, {
+        headers: { 'Authorization': `Bearer ${session?.access_token}` },
+      })
+      const data = await res.json()
+      setCoNumbers(res.ok ? (data.numbers || []) : [])
+    } catch { setCoNumbers([]) } finally { setCoNumbersLoading(false) }
+  }
+
+  const assignExistingNumber = async () => {
+    if (!editCo || !assignNum.trim()) return
+    setAssigning(true); setAssignMsg('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/admin/assign-number', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ companyId: editCo.id, phoneNumber: assignNum.trim(), makePrimary: true }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not assign number')
+      setAssignMsg(`✓ ${data.phoneNumber} assigned and routed to Twilio.`)
+      setAssignNum('')
+      // Reflect the carrier switch the endpoint performed.
+      setForm((f: any) => ({ ...f, number_provider: 'twilio' }))
+      setCompanies(prev => prev.map(c => c.id === editCo.id ? { ...c, number_provider: 'twilio', sms_provider: 'twilio', voice_provider: 'twilio' } : c))
+      loadCoNumbers(editCo.id) // refresh the "current numbers" list
+    } catch (e: any) { setAssignMsg(`✕ ${e.message}`) } finally { setAssigning(false) }
+  }
 
   const openEdit = (co: any) => {
+    setAssignNum(''); setAssignMsg(''); setCoNumbers([]); loadCoNumbers(co.id)
     setEditErr('')
     setForm({
       name: co.name || '', slug: co.slug || '', plan: co.plan || 'free',
       business_phone: co.business_phone || '', assigned_admin_email: co.assigned_admin_email || '',
       board_domain: co.board_domain || '', help_domain: co.help_domain || '',
       accent_color: co.accent_color || '#ff7a6b', owner_email: '', notes: co.notes || '',
+      number_provider: co.number_provider || 'telnyx',
+      free_number_credits: co.free_number_credits ?? 0,
     })
     setEditCo(co)
   }
@@ -393,9 +2261,21 @@ function CompaniesPage() {
     })()
   }, [])
 
+  const [imp, setImp] = useState<any>(null)
+  const [detailCo, setDetailCo] = useState<any>(null)
+  const startImpersonation = async () => {
+    if (!imp?.reason?.trim()) { setImp((s: any) => ({ ...s, err: 'A reason is required.' })); return }
+    setImp((s: any) => ({ ...s, busy: true, err: '' }))
+    const r = await auditedEnterWorkspace(imp.co, imp.reason, imp.mode, imp.minutes)
+    if (!r.ok) { setImp((s: any) => ({ ...s, busy: false, err: r.error })); return }
+    setImp(null)
+  }
+
   const action = async (type: string, co: any) => {
     setMsg('')
-    if (type === 'impersonate') { window.open(`https://${co.slug}.colvy.com/admin`, '_blank'); return }
+    // Safe impersonation: capture a reason + mode, record an audit session,
+    // then open the workspace with the session id so it shows the banner.
+    if (type === 'impersonate') { setImp({ co, reason: '', mode: 'full', minutes: 60, busy: false, err: '' }); return }
     if (type === 'view') { window.open(`https://${co.slug}.colvy.com`, '_blank'); return }
     if (type === 'suspend') {
       await (supabase as any).from('companies').update({ plan: 'suspended' }).eq('id', co.id)
@@ -427,6 +2307,35 @@ function CompaniesPage() {
         </div>}
       />
       {msg && <div style={{ padding: '10px 16px', borderRadius: 10, background: '#d1fae5', color: '#065f46', fontSize: 13, marginBottom: 16, fontWeight: 500 }}>{msg}</div>}
+
+      {/* Safe impersonation modal */}
+      {imp && (
+        <div onClick={() => !imp.busy && setImp(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '94vw', background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 24 }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: '0 0 4px' }}>Enter {imp.co.name} workspace</p>
+            <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '0 0 18px', lineHeight: 1.5 }}>You'll enter as super admin using your own account. This session is recorded in the audit log, and a banner shows inside the workspace until you exit.</p>
+            <label style={paLabel}>Reason (required)</label>
+            <input value={imp.reason} onChange={e => setImp((s: any) => ({ ...s, reason: e.target.value }))} placeholder="e.g. Investigating support ticket #1042" style={paInput} autoFocus />
+            <label style={paLabel}>Mode</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[['full', 'Full support'], ['read_only', 'Read-only']].map(([v, l]) => (
+                <button key={v} onClick={() => setImp((s: any) => ({ ...s, mode: v }))} style={{ flex: 1, padding: '9px', borderRadius: 9, border: `1px solid ${imp.mode === v ? '#ff7a6b' : 'var(--sa-border)'}`, background: imp.mode === v ? '#ff7a6b22' : 'transparent', color: imp.mode === v ? '#ff7a6b' : 'var(--sa-muted)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>{l}</button>
+              ))}
+            </div>
+            <label style={paLabel}>Auto-expire after</label>
+            <select value={imp.minutes} onChange={e => setImp((s: any) => ({ ...s, minutes: Number(e.target.value) }))} style={paInput}>
+              {[15, 30, 60, 120, 240].map(m => <option key={m} value={m}>{m} minutes</option>)}
+            </select>
+            {imp.err && <p style={{ fontSize: 12, color: '#ef4444', margin: '12px 0 0' }}>{imp.err}</p>}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+              <button onClick={() => setImp(null)} disabled={imp.busy} style={{ padding: '9px 16px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={startImpersonation} disabled={imp.busy} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: '#ff7a6b', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{imp.busy ? 'Entering…' : 'Enter workspace →'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailCo && <BusinessDetail co={detailCo} onClose={() => setDetailCo(null)} onAction={action} />}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' as const }}>
         <SearchBar placeholder="Search companies..." value={search} onChange={setSearch} />
@@ -464,7 +2373,9 @@ function CompaniesPage() {
                       {co.name?.[0]?.toUpperCase()}
                     </div>
                     <div>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--sa-text)' }}>{co.name}</p>
+                      <p onClick={() => setDetailCo(co)} title="Open business detail" style={{ fontSize: 13, fontWeight: 600, color: 'var(--sa-text)', cursor: 'pointer' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = '#ff7a6b')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--sa-text)')}>{co.name}</p>
                       <p style={{ fontSize: 11, color: 'var(--sa-muted)' }}>{co.industry || 'No industry'}</p>
                     </div>
                   </div>
@@ -517,6 +2428,78 @@ function CompaniesPage() {
               <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} style={paInput}>
                 {['free', 'trial', 'startup', 'business', 'growth', 'suspended'].map(p => <option key={p} value={p}>{p}</option>)}
               </select>
+
+              {/* Which carrier backs this company's phone-number provisioning +
+                  telephony. Transparent to the customer; Telnyx is the default. */}
+              <label style={paLabel}>Number carrier</label>
+              <select value={form.number_provider || 'telnyx'} onChange={e => setForm({ ...form, number_provider: e.target.value })} style={paInput}>
+                <option value="telnyx">Telnyx (default)</option>
+                <option value="twilio">Twilio (real MMS)</option>
+              </select>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '-4px 0 4px' }}>
+                Which carrier the “Get a business number” flow uses for this company. The customer never sees it. Existing numbers keep working.
+              </p>
+
+              {/* What's currently on the company, so the drawer reflects state. */}
+              <label style={paLabel}>Current numbers</label>
+              {coNumbersLoading ? (
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 6px' }}>Loading…</p>
+              ) : coNumbers.length === 0 ? (
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 6px' }}>No numbers assigned yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: '0 0 8px' }}>
+                  {coNumbers.map((n: any) => (
+                    <div key={n.phone_number} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 11px', borderRadius: 8, border: '1px solid var(--sa-border)', fontSize: 12.5 }}>
+                      <span style={{ fontWeight: 700, color: 'var(--sa-fg, #111)' }}>{n.phone_number}</span>
+                      {n.is_primary && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#dcfce7', color: '#059669' }}>PRIMARY</span>}
+                      <span style={{ fontSize: 10.5, color: 'var(--sa-muted)', textTransform: 'uppercase' }}>{n.provider}</span>
+                      {(n.is_free || Number(n.monthly_cost) === 0) && <span style={{ fontSize: 10.5, color: '#059669', fontWeight: 700 }}>· Free</span>}
+                      <span style={{ marginLeft: 'auto', fontSize: 10.5, color: n.status === 'active' ? '#059669' : 'var(--sa-muted)' }}>{n.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Attach a number already bought in Colvy's Twilio account to this
+                  company — no purchase flow, no Stripe. Sets webhooks + routing. */}
+              <label style={paLabel}>Assign an existing Twilio number</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  value={assignNum}
+                  onChange={e => setAssignNum(e.target.value)}
+                  placeholder="+61468012345"
+                  style={{ ...paInput, marginBottom: 0, flex: 1 }}
+                />
+                <button type="button" onClick={assignExistingNumber} disabled={assigning || !assignNum.trim()}
+                  style={{ padding: '9px 14px', borderRadius: 8, border: 'none', background: '#ff7a6b', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: assigning || !assignNum.trim() ? 'default' : 'pointer', opacity: assigning || !assignNum.trim() ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                  {assigning ? 'Assigning…' : 'Assign'}
+                </button>
+              </div>
+              <p style={{ fontSize: 11.5, margin: '6px 0 4px', color: assignMsg.startsWith('✕') ? '#dc2626' : assignMsg.startsWith('✓') ? '#059669' : 'var(--sa-muted)' }}>
+                {assignMsg || 'The number must already exist in Colvy’s platform Twilio account. It becomes this company’s primary number and routes calls + SMS to them.'}
+              </p>
+
+              {/* Grant this business one or more free numbers. While the balance
+                  is > 0, the "Get a business number" flow skips payment and
+                  provisions directly, consuming one credit per number. */}
+              <label style={paLabel}>Free number credits</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="number" min={0} step={1}
+                  value={form.free_number_credits ?? 0}
+                  onChange={e => setForm({ ...form, free_number_credits: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+                  style={{ ...paInput, marginBottom: 0, width: 100 }}
+                />
+                <button type="button" onClick={() => setForm({ ...form, free_number_credits: (Number(form.free_number_credits) || 0) + 1 })}
+                  style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'transparent', color: '#ff7a6b', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>+1 free number</button>
+                {(Number(form.free_number_credits) || 0) > 0 && (
+                  <button type="button" onClick={() => setForm({ ...form, free_number_credits: 0 })}
+                    style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-muted)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Clear</button>
+                )}
+              </div>
+              <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '6px 0 4px' }}>
+                Numbers this business can provision for free — one credit is used per number, no card required. Set to 0 to require payment.
+              </p>
 
               <label style={paLabel}>Accent colour</label>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -598,7 +2581,13 @@ function UsersPage() {
                 <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--sa-muted)' }}>{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : 'never'}</td>
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    {u.companies[0]?.slug && <button onClick={() => window.open(`https://${u.companies[0].slug}.colvy.com/admin`, '_blank')} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: 'pointer', fontSize: 12 }}>Login as</button>}
+                    {u.companies[0]?.slug && <button onClick={async () => {
+                      const co = u.companies[0]
+                      const reason = window.prompt(`Reason for entering ${co.name || co.slug} as an admin — recorded in the audit log:`, 'Support / troubleshooting')
+                      if (!reason || !reason.trim()) return
+                      const r = await auditedEnterWorkspace({ id: co.id, slug: co.slug, name: co.name }, reason.trim())
+                      if (!r.ok) alert(r.error || 'Could not start session')
+                    }} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: '#6366f1', cursor: 'pointer', fontSize: 12 }}>Login as</button>}
                   </div>
                 </td>
               </tr>
@@ -1254,6 +3243,113 @@ function BillingPage() {
   )
 }
 
+// Platform · SMS Pricing — the GLOBAL SMS pricing set by the super admin, which
+// applies to every organisation. Stored in platform_settings (key 'sms_pricing')
+// and read by the campaign cost estimator (resolveSmsPricing). Moved here from
+// the customer dashboard: what a customer is charged is a platform decision.
+function SmsPricingPage() {
+  const [p, setP] = useState<SmsPricing>(DEFAULT_PRICING)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [savedAt, setSavedAt] = useState('')
+  const [missing, setMissing] = useState(false)
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data, error } = await (supabase as any).from('platform_settings').select('value').eq('key', 'sms_pricing').maybeSingle()
+        if (error) { if (/does not exist|schema cache/i.test(error.message)) setMissing(true) }
+        else if (data?.value) setP(parsePricingRow(data.value))
+      } finally { setLoading(false) }
+    })()
+  }, [])
+  const save = async () => {
+    setSaving(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const { error } = await (supabase as any).from('platform_settings').upsert({
+        key: 'sms_pricing', value: p, updated_by: session?.user?.email || null, updated_at: new Date().toISOString(),
+      }, { onConflict: 'key' })
+      if (error) { if (/does not exist|schema cache/i.test(error.message)) { setMissing(true); return } throw error }
+      setSavedAt(new Date().toLocaleTimeString())
+    } catch (e: any) { alert('Could not save: ' + e.message) } finally { setSaving(false) }
+  }
+  const costAud = p.fx_rate > 0 ? p.carrier_cost / p.fx_rate : 0
+  const marginAt = (price: number) => {
+    const ex = p.gst_inclusive ? price / (1 + p.gst_rate) : price
+    const m = ex - costAud
+    return { ex, m, pct: ex > 0 ? (m / ex) * 100 : 0 }
+  }
+  const std = marginAt(p.price_per_part)
+  const card: React.CSSProperties = { background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20, marginBottom: 14 }
+  const input: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 13, boxSizing: 'border-box' }
+  const label: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 10 }
+  const sub: React.CSSProperties = { fontSize: 12.5, color: 'var(--sa-muted)', display: 'block', marginBottom: 5 }
+  const mColor = (pct: number) => pct > 25 ? '#10b981' : pct > 10 ? '#f59e0b' : '#ef4444'
+  if (loading) return <div><SectionHeader title="SMS Pricing" sub="Global pricing for all organisations" /><p style={{ color: 'var(--sa-muted)' }}>Loading…</p></div>
+  return (
+    <div style={{ maxWidth: 860 }}>
+      <SectionHeader title="SMS Pricing" sub="Global SMS pricing — applies to every organisation's campaign cost estimates"
+        action={<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{savedAt && <span style={{ fontSize: 12, color: '#10b981' }}>Saved {savedAt}</span>}<button onClick={save} disabled={saving} style={paBtn('#ff7a6b', true)}>{saving ? 'Saving…' : 'Save pricing'}</button></div>} />
+      {missing && <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 13, color: 'var(--sa-text)', marginBottom: 14 }}>Run <b>COLVY_V220_PLATFORM_SETTINGS.sql</b> to store the global pricing. Until then the built-in default applies.</div>}
+      <div style={card}>
+        <label style={label}>Price charged to customers</label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div><span style={sub}>Per SMS part (AUD)</span><input type="number" step="0.001" value={p.price_per_part} onChange={e => setP(v => ({ ...v, price_per_part: parseFloat(e.target.value) || 0 }))} style={input} /></div>
+          <div><span style={sub}>GST rate</span><input type="number" step="0.01" value={p.gst_rate} onChange={e => setP(v => ({ ...v, gst_rate: parseFloat(e.target.value) || 0 }))} style={input} /></div>
+        </div>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, cursor: 'pointer', color: 'var(--sa-text)', fontSize: 13 }}>
+          <input type="checkbox" checked={p.gst_inclusive} onChange={e => setP(v => ({ ...v, gst_inclusive: e.target.checked }))} /> Price includes GST
+        </label>
+      </div>
+      <div style={card}>
+        <label style={label}>Platform cost</label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <div><span style={sub}>Carrier cost / part</span><input type="number" step="0.001" value={p.carrier_cost} onChange={e => setP(v => ({ ...v, carrier_cost: parseFloat(e.target.value) || 0 }))} style={input} /></div>
+          <div><span style={sub}>Currency</span><input value={p.carrier_currency} onChange={e => setP(v => ({ ...v, carrier_currency: e.target.value }))} style={input} /></div>
+          <div><span style={sub}>AUD/{p.carrier_currency} rate</span><input type="number" step="0.001" value={p.fx_rate} onChange={e => setP(v => ({ ...v, fx_rate: parseFloat(e.target.value) || 0 }))} style={input} /></div>
+        </div>
+        <p style={{ margin: '12px 0 0', fontSize: 12.5, color: 'var(--sa-muted)' }}>Cost per part in AUD: <b style={{ color: 'var(--sa-text)' }}>{audRate(costAud)}</b> · margin at standard rate: <b style={{ color: mColor(std.pct) }}>{audRate(std.m)} ({std.pct.toFixed(1)}%)</b></p>
+      </div>
+      <div style={card}>
+        <label style={label}>Volume discounts</label>
+        {p.volume_tiers.map((t, i) => {
+          const m = marginAt(t.price)
+          return (
+            <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+              <input type="number" value={t.min} onChange={e => setP(v => { const tiers = [...v.volume_tiers]; tiers[i] = { ...tiers[i], min: parseInt(e.target.value) || 0 }; return { ...v, volume_tiers: tiers } })} style={{ ...input, width: 120 }} />
+              <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>parts and above →</span>
+              <input type="number" step="0.001" value={t.price} onChange={e => setP(v => { const tiers = [...v.volume_tiers]; tiers[i] = { ...tiers[i], price: parseFloat(e.target.value) || 0 }; return { ...v, volume_tiers: tiers } })} style={{ ...input, width: 110 }} />
+              <span style={{ fontSize: 12, color: mColor(m.pct), fontWeight: 600 }}>{m.pct.toFixed(1)}% margin</span>
+              <button onClick={() => setP(v => ({ ...v, volume_tiers: v.volume_tiers.filter((_, j) => j !== i) }))} style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Remove</button>
+            </div>
+          )
+        })}
+        <button onClick={() => setP(v => ({ ...v, volume_tiers: [...v.volume_tiers, { min: 1000, price: v.price_per_part }] }))} style={paBtn()}>+ Add tier</button>
+      </div>
+      <div style={card}>
+        <label style={label}>What campaigns would cost</label>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <thead><tr style={{ textAlign: 'left', color: 'var(--sa-muted)' }}>{['Campaign', 'Parts', 'Rate', 'Charged', 'Margin'].map(h => <th key={h} style={{ padding: '5px 6px', fontWeight: 700 }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {[[1, 300], [1, 842], [1, 1240], [3, 200], [1, 5000]].map(([seg, rec], i) => {
+              const c = calculateCost(p, seg, rec)
+              return (
+                <tr key={i} style={{ borderTop: '1px solid var(--sa-border)' }}>
+                  <td style={{ padding: '6px', color: 'var(--sa-text)' }}>{seg} seg × {rec.toLocaleString()}</td>
+                  <td style={{ padding: '6px', color: 'var(--sa-muted)' }}>{c.parts.toLocaleString()}</td>
+                  <td style={{ padding: '6px', color: 'var(--sa-muted)' }}>{audRate(c.pricePerPart)}</td>
+                  <td style={{ padding: '6px', color: 'var(--sa-text)', fontWeight: 600 }}>{aud(c.totalIncGst)}</td>
+                  <td style={{ padding: '6px', color: mColor(c.marginPct), fontWeight: 600 }}>{aud(c.margin)} ({c.marginPct.toFixed(0)}%)</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function SettingsPage() {
   const [me, setMe] = useState<any>(null)
   useEffect(() => { supabase.auth.getSession().then(({ data }: any) => setMe(data?.session?.user || null)) }, [])
@@ -1330,10 +3426,36 @@ function PlaceholderPage({ title, sub }: { title: string; sub: string }) {
 // ══════════════════════════════════════════════════════════════════════════════
 export default function SuperAdmin() {
   const [authed, setAuthed] = useState<boolean | null>(null)
-  const [dark, setDark] = useState(true)
-  const [page, setPage] = useState('overview')
+  // Default to LIGHT. The choice is remembered in localStorage so it no longer
+  // flips back on every reload. Initial state is deterministic (light) for SSR,
+  // then the stored preference is applied on mount below.
+  const [dark, setDarkState] = useState(false)
+  // The active tab is mirrored in the URL hash so a reload stays on the same
+  // page instead of snapping back to Overview.
+  const [page, setPageState] = useState('overview')
   const [data, setData] = useState<any>({})
   const [collapsed, setCollapsed] = useState(false)
+
+  const setDark = (v: boolean) => {
+    setDarkState(v)
+    try { localStorage.setItem('colvy:pa-theme', v ? 'dark' : 'light') } catch {}
+  }
+  const setPage = (p: string) => {
+    setPageState(p)
+    try { window.history.replaceState(null, '', `#${p}`) } catch {}
+  }
+
+  // On mount: restore the remembered theme and the tab from the URL hash.
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem('colvy:pa-theme')
+      if (t === 'dark') setDarkState(true)
+    } catch {}
+    try {
+      const h = window.location.hash.replace(/^#/, '')
+      if (h) setPageState(h)
+    } catch {}
+  }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: s }: any) => {
@@ -1501,9 +3623,18 @@ export default function SuperAdmin() {
           {page === 'chat'       && <LiveChatPage />}
           {page === 'tickets'    && <TicketsPage />}
           {page === 'moderation' && <ModerationPage />}
+          {page === 'imp'          && <ImpersonationSessionsPage />}
+          {page === 'demos'        && <DemoWorkspacesPage />}
+          {page === 'calls'        && <CallDiagnosticsPage />}
+          {page === 'webhooks'     && <WebhookExplorerPage />}
+          {page === 'jobs'         && <BackgroundJobsPage />}
+          {page === 'apilogs'      && <ApiLogsPage />}
+          {page === 'devices'      && <MobileDevicesPage />}
+          {page === 'integrations' && <IntegrationsPage />}
           {page === 'billing'    && <BillingPage />}
           {page === 'legal'      && <LegalAdminPage />}
           {page === 'banner'     && <PlatformBannerAdmin />}
+          {page === 'sms'        && <SmsPricingPage />}
           {page === 'settings'   && <SettingsPage />}
         </div>
       </main>

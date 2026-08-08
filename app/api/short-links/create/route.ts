@@ -30,7 +30,7 @@ function classify(url: string): string {
 // Returns a branded short link on the company's own subdomain.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, kind, conversationId, url, label, customCode, sentBy, mediaUrls, note } = await req.json()
+    const { companyId, kind, conversationId, url, label, customCode, sentBy, mediaUrls, note, channel, expiresAt, expiryMode } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
 
@@ -115,6 +115,12 @@ export async function POST(req: NextRequest) {
       if (Array.isArray(mediaUrls) && mediaUrls.length) await patch({ media_urls: mediaUrls })
       if (note) await patch({ note })
       if (sentBy) await patch({ sent_by: sentBy })
+      // Media expiry (V247). Patched separately so a pre-migration DB still
+      // creates the link (just without an enforced expiry).
+      if (expiresAt) await patch({ expires_at: expiresAt, expiry_mode: expiryMode === 'delete' ? 'delete' : 'access' })
+      // Where the link was created from (e.g. 'gallery') so Link Reports groups
+      // it correctly instead of defaulting to SMS.
+      if (channel) await patch({ channel })
     }
 
     // Build the branded URL on the company's subdomain.

@@ -16,10 +16,10 @@ const CHANNELS = [
     href: '/admin/crm-settings/channels/email', ready: true,
     note: 'Customers email you; replies thread back.' },
   { id: 'sms',       name: 'SMS',              color: '#00c08b', icon: '✉',
-    href: '/admin/crm-settings/channels/telnyx', ready: true,
+    href: '/admin/crm-settings/channels/calls', ready: true,
     note: 'Two-way texting with a business number.' },
   { id: 'phone',     name: 'Calls',            color: '#6366F1', icon: '☎',
-    href: '/admin/crm-settings/channels/telnyx', ready: true,
+    href: '/admin/crm-settings/channels/calls', ready: true,
     note: 'Inbound and outbound calling.' },
   { id: 'google',    name: 'Google Reviews',   color: '#4285F4', icon: 'G',
     href: '/admin/crm-settings/channels/google-reviews', ready: true,
@@ -50,6 +50,13 @@ export default function ChannelsSettings() {
         const { data: telnyx } = await (supabase as any).from('telnyx_integrations')
           .select('api_key, phone_number').eq('company_id', companyId).maybeSingle()
         if (telnyx?.api_key && telnyx?.phone_number) { status.sms = true; status.phone = true }
+      } catch {}
+
+      // Twilio — a second SMS/MMS + calling provider (BYO account).
+      try {
+        const { data: twilio } = await (supabase as any).from('twilio_integrations')
+          .select('account_sid, phone_number').eq('company_id', companyId).maybeSingle()
+        status.twilio = !!(twilio?.account_sid && twilio?.phone_number)
       } catch {}
 
       // Email — an active inbound address.

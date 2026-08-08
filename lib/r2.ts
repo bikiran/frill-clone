@@ -34,6 +34,15 @@ const R2_BUCKET = () => process.env.R2_BUCKET || process.env.R2_BUCKET_NAME || '
 const R2_DOMAIN = () =>
   (process.env.R2_PUBLIC_DOMAIN || process.env.NEXT_PUBLIC_R2_PUBLIC_URL || 'https://media.colvy.com').replace(/\/+$/, '')
 
+/** The public base URL objects are served from (no trailing slash). */
+export function r2PublicBase(): string { return R2_DOMAIN() }
+
+/** True only for a URL served from our own R2 public domain. Used to keep the
+ *  transcode worker from being pointed at arbitrary hosts (SSRF). */
+export function isR2PublicUrl(url: string | null | undefined): boolean {
+  return !!url && url.startsWith(R2_DOMAIN() + '/')
+}
+
 /** Upload bytes to R2 and return the public URL on the media domain. */
 export async function uploadToR2(key: string, body: Uint8Array | Buffer, contentType: string): Promise<string> {
   const cleanKey = key.replace(/^\/+/, '')

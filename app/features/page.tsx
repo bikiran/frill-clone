@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import MarketingFooter from '@/components/MarketingFooter'
 
 const features = [
   {
@@ -176,6 +177,7 @@ export default function Features() {
           Get started free
         </Link>
       </div>
+      <MarketingFooter />
     </div>
   )
 }

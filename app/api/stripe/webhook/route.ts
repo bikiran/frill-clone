@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { logWebhookEvent } from '@/lib/webhook-log'
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || ''
 
@@ -21,8 +22,12 @@ export async function POST(req: NextRequest) {
         ? stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET)
         : JSON.parse(body)
     } catch (err: any) {
+      await logWebhookEvent({ source: 'stripe', status: 'rejected', error: 'signature verification failed' })
       return NextResponse.json({ error: 'Webhook signature failed' }, { status: 400 })
     }
+
+    // Record the event for the Super Admin webhook explorer (best-effort).
+    logWebhookEvent({ source: 'stripe', eventType: event?.type, companyId: event?.data?.object?.metadata?.companyId || null, payload: event })
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -179,11 +184,16 @@ export async function POST(req: NextRequest) {
         if (meta.kind === 'phone_number' && meta.companyId) {
           try {
             const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
-            await fetch(`${origin}/api/telnyx/number`, {
+            // Provision on whichever carrier this purchase was for. Both endpoints
+            // take the same shape; the customer never learns which one ran.
+            const prov = meta.provider === 'twilio' ? 'twilio' : 'telnyx'
+            await fetch(`${origin}/api/${prov}/number`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 companyId: meta.companyId,
                 phoneNumber: meta.phoneNumber || undefined,
+                numberType: meta.numberType || undefined,
+                locationId: meta.locationId || undefined,
                 stripeSubscriptionId: session.subscription,
               }),
             })
@@ -228,6 +238,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ received: true })
   } catch (err: any) {
+    await logWebhookEvent({ source: 'stripe', status: 'error', error: err?.message })
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

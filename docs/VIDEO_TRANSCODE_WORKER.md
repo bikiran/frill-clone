@@ -10,7 +10,7 @@ clients prefer. No Cloudflare Stream — plain R2.
 
 | File | Purpose |
 |------|---------|
-| `COLVY_V92_MEDIA_TRANSCODE.sql` | Adds `playback_url`, `processing_status`, `variants`, `source_url`, `transcode_attempts`, `transcode_error`, `transcode_started_at` to `media_items`; backfills existing rows to `ready`; adds the pending index; ensures realtime. |
+| `COLVY_V252_MEDIA_TRANSCODE.sql` | Adds `playback_url`, `processing_status`, `variants`, `source_url`, `transcode_attempts`, `transcode_error`, `transcode_started_at` to `media_items`; backfills existing rows to `ready`; adds the pending index; ensures realtime. |
 | `lib/transcode.ts` | FFmpeg pipeline: download → 1080p H.264/AAC/+faststart + poster → upload to R2 → update row. Claim/retry/stale-reclaim logic. |
 | `app/api/storage/transcode/route.ts` | `POST` enqueue (called by mobile). Marks pending and runs the job in an `after()` hook so the response is instant. |
 | `app/api/cron/transcode-worker/route.ts` | `GET` backstop that drains pending/stale jobs. Wired in `vercel.json` every minute. |
@@ -19,7 +19,7 @@ clients prefer. No Cloudflare Stream — plain R2.
 
 ## Deploy steps
 
-1. **Run the migration** `COLVY_V92_MEDIA_TRANSCODE.sql` in Supabase.
+1. **Run the migration** `COLVY_V252_MEDIA_TRANSCODE.sql` in Supabase.
 2. **`npm install`** — adds `ffmpeg-static` (ships a static FFmpeg binary).
 3. **Env vars** (most already set):
    - `R2_ACCOUNT_ID` / `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_DOMAIN` — same R2 the uploads use. The worker fetches the source from its public URL, so `R2_PUBLIC_DOMAIN` must be publicly readable (it already serves gallery images).

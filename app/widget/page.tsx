@@ -461,70 +461,18 @@ function WidgetContent() {
           setHelpArticles(data.helpArticles || [])
         }
       })()
-    }, 5000) // Refetch every 5 seconds
+    }, 20000) // Refetch every 20s — widget content (ideas, announcements, help) rarely changes, so a tight 5s poll just added HTTP load for no real freshness gain
     
     return () => clearInterval(interval)
   }, [slug])
 
-  // Real-time subscriptions for announcements and help articles
-  useEffect(() => {
-    if (!company?.id) return
-
-    console.log('[WIDGET] Setting up real-time subscriptions for company:', company.id)
-
-    const annChannel = supabase
-      .channel(`announcements-${company.id}`)
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'announcements', 
-          filter: `company_id=eq.${company.id}` 
-        }, 
-        (payload) => {
-          console.log('[WIDGET] Announcement changed:', payload)
-          if (payload.eventType === 'DELETE') {
-            setAnnouncements(prev => prev.filter(a => a.id !== payload.old.id))
-          } else {
-            setAnnouncements(prev => {
-              const exists = prev.find(a => a.id === payload.new.id)
-              if (exists) return prev.map(a => a.id === payload.new.id ? payload.new : a)
-              return [payload.new, ...prev]
-            })
-          }
-        }
-      )
-      .subscribe()
-
-    const helpChannel = supabase
-      .channel(`help-articles-${company.id}`)
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'help_articles', 
-          filter: `company_id=eq.${company.id}` 
-        }, 
-        (payload) => {
-          console.log('[WIDGET] Help article changed:', payload)
-          if (payload.eventType === 'DELETE') {
-            setHelpArticles(prev => prev.filter(a => a.id !== payload.old.id))
-          } else {
-            setHelpArticles(prev => {
-              const exists = prev.find(a => a.id === payload.new.id)
-              if (exists) return prev.map(a => a.id === payload.new.id ? payload.new : a)
-              return [payload.new, ...prev]
-            })
-          }
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(annChannel)
-      supabase.removeChannel(helpChannel)
-    }
-  }, [company?.id])
+  // NOTE: announcements and help articles used to have their own Realtime
+  // postgres_changes subscriptions here. They were redundant — the periodic
+  // /api/widget-data refetch above already refreshes both within 5s — and every
+  // visitor tab opened two WAL subscriptions, which dominated Realtime load
+  // (realtime.list_changes) and churned realtime.subscription rows. Removed in
+  // favour of the existing poll; live-updating these for anonymous visitors is
+  // not worth the per-connection cost.
 
   const trackWidgetView = async (slug: string) => {
     try {

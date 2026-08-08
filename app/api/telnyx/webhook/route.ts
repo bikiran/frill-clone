@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { notifyCompany } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
 import { TelnyxService } from '@/lib/telnyx-service'
+import { logWebhookEvent } from '@/lib/webhook-log'
 
 function admin() {
   return createClient(
@@ -22,6 +23,9 @@ export async function POST(req: NextRequest) {
     const event = body?.data
     const eventType: string = event?.event_type || ''
     const db = admin()
+
+    // Record the event for the Super Admin webhook explorer (best-effort).
+    logWebhookEvent({ source: 'telnyx', eventType, payload: body })
 
     // ── Delivery receipts ────────────────────────────────────────────────────
     // Telnyx reports the outcome of an outbound message with message.finalized
@@ -77,6 +81,40 @@ export async function POST(req: NextRequest) {
       const from = payload?.from?.phone_number
       const to = Array.isArray(payload?.to) ? payload.to[0]?.phone_number : payload?.to?.phone_number
       const text = payload?.text || ''
+
+      // Inbound MMS media. Telnyx puts each attachment in payload.media
+      // [{ url, content_type, size }]. Carriers rarely deliver MMS on Australian
+      // numbers, but when they DO (or on a US/CA number), capture it so the
+      // customer's photo appears in the thread instead of being silently dropped.
+      const inboundMedia = (Array.isArray(payload?.media) ? payload.media : [])
+        .map((m: any) => {
+          const url = m?.url
+          if (!url) return null
+          const ct = String(m?.content_type || '')
+          const kind = ct.startsWith('image/') ? 'image'
+            : ct.startsWith('video/') ? 'video'
+            : ct.startsWith('audio/') ? 'audio' : 'file'
+          return { url, kind, type: ct || undefined, name: (kind === 'file' ? 'attachment' : kind) }
+        })
+        .filter(Boolean)
+      const mediaPreview = inboundMedia.length
+        ? (inboundMedia[0].kind === 'image' ? '📷 Photo'
+          : inboundMedia[0].kind === 'video' ? '🎥 Video'
+          : inboundMedia[0].kind === 'audio' ? '🎤 Voice message' : '📎 Attachment')
+        : ''
+
+      // The customer TRIED to send media but the carrier couldn't hand it to us
+      // (common on Australian numbers, which don't carry MMS). Telnyx still marks
+      // the message as MMS, or includes media metadata with no fetchable url — so
+      // when we see that signal but captured nothing usable, flag the attempt so
+      // the agent can one-tap back a secure upload link instead of the photo
+      // silently vanishing.
+      const rawMediaCount = Array.isArray(payload?.media) ? payload.media.length : 0
+      const isMmsType = String(payload?.type || '').toUpperCase() === 'MMS'
+      const mediaAttemptFailed = (isMmsType || rawMediaCount > 0) && inboundMedia.length === 0
+
+      // What the conversation list / notifications show when there's no caption.
+      const summary = text || mediaPreview || (mediaAttemptFailed ? '📷 Tried to send media' : '')
 
       // Which company owns the receiving number?
       const { data: integ } = await db.from('telnyx_integrations').select('company_id').eq('phone_number', to).maybeSingle()
@@ -194,7 +232,7 @@ export async function POST(req: NextRequest) {
           status: 'open',
           is_unread: true,
           unread_count: 1,
-          last_message: text,
+          last_message: summary,
           last_message_at: new Date().toISOString(),
         }).select().maybeSingle()
         conv = newConv
@@ -223,11 +261,13 @@ export async function POST(req: NextRequest) {
           sender_type: 'visitor',
           sender_name: from,
           content: text,
+          ...(inboundMedia.length ? { attachments: inboundMedia } : {}),
+          ...(mediaAttemptFailed ? { metadata: { media_attempt: true } } : {}),
           delivery_channel: 'sms',
           telnyx_message_id: payload?.id || null,
         })
         await db.from('conversations').update({
-          last_message: text,
+          last_message: summary,
           last_message_at: new Date().toISOString(),
           is_unread: true,
           // Inbound text ⇒ this is an SMS conversation now, whatever it started as.
@@ -241,7 +281,7 @@ export async function POST(req: NextRequest) {
         // Alert agents' phones
         try {
           const origin = req.headers.get('host') ? `${req.headers.get('x-forwarded-proto') || 'https'}://${req.headers.get('host')}` : (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com')
-          fetch(`${origin}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `New SMS from ${from}`, body: text, conversationId: conv.id }) })
+          fetch(`${origin}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `New SMS from ${from}`, body: summary, conversationId: conv.id }) })
           fetch(`${origin}/api/inbox/smart-trigger`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, text }) })
         } catch {}
 
@@ -267,7 +307,45 @@ export async function POST(req: NextRequest) {
           })
         } catch (e) { console.error('[sms keyword reply]', e) }
 
-        try { await notifyCompany({ db, companyId, type: 'sms', message: `New SMS from ${from}: ${(text || '').slice(0, 80)}`, actorName: from }) } catch {}
+        // Auto-reply to a failed media attempt: text the customer a secure upload
+        // link so their photo isn't lost. Throttled to once per conversation per
+        // 6h (checks recent media_request messages) so repeated failed MMS don't
+        // spam them.
+        if (mediaAttemptFailed) {
+          try {
+            const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString()
+            const { data: recentReq } = await db.from('messages')
+              .select('id').eq('conversation_id', conv.id)
+              .eq('message_type', 'media_request').gte('created_at', sixHoursAgo).limit(1)
+            if (!recentReq || recentReq.length === 0) {
+              const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+              const mr = await fetch(`${origin}/api/media-requests`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  companyId, conversationId: conv.id, contactId: conv.contact_id || matchedContactId || null,
+                  prompt: 'It looks like you tried to send us a photo or video. Please upload it here.',
+                  accept: ['image', 'video'], maxFiles: 10, expiryHours: null, createdBy: 'Auto-reply',
+                }),
+              })
+              const mrData = await mr.json().catch(() => ({}))
+              if (mr.ok && mrData.link) {
+                const { data: integ2 } = await db.from('telnyx_integrations')
+                  .select('api_key, phone_number, messaging_profile_id')
+                  .eq('company_id', companyId).maybeSingle()
+                if (integ2?.api_key && integ2.phone_number) {
+                  const svc = new TelnyxService(integ2.api_key)
+                  await svc.sendSMS({
+                    from: integ2.phone_number, to: from,
+                    text: `It looks like you tried to send a photo — our number can't receive picture messages. Please upload it here: ${mrData.link}`,
+                    messaging_profile_id: integ2.messaging_profile_id || undefined,
+                  })
+                }
+              }
+            }
+          } catch (e) { console.error('[media attempt auto-reply]', e) }
+        }
+
+        try { await notifyCompany({ db, companyId, type: 'sms', message: `New SMS from ${from}: ${summary.slice(0, 80)}`, actorName: from }) } catch {}
       }
       return NextResponse.json({ ok: true })
     }
@@ -843,6 +921,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   } catch (err: any) {
     console.error('Telnyx webhook error:', err)
+    await logWebhookEvent({ source: 'telnyx', status: 'error', error: err?.message })
     // Always 200 so Telnyx doesn't retry-storm us
     return NextResponse.json({ ok: true })
   }

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getGoogleToken, listLocations, syncReviews, replyToReview } from '@/lib/google-business'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60   // a full review sync pages through hundreds of rows
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
 
     const { data: reviews } = await db.from('google_reviews')
       .select('*').eq('company_id', companyId)
-      .order('review_created_at', { ascending: false }).limit(50)
+      .order('review_created_at', { ascending: false }).limit(5000)
 
     return NextResponse.json({
       connected: !!account?.access_token,
@@ -82,6 +83,19 @@ export async function POST(req: NextRequest) {
       const { reviewId, comment } = body
       if (!reviewId || !comment) return NextResponse.json({ error: 'reviewId and comment required' }, { status: 400 })
       await replyToReview(companyId, reviewId, comment)
+      return NextResponse.json({ ok: true })
+    }
+
+    // Link (or unlink) a review to a customer contact. contactId null = unlink.
+    if (action === 'link_contact') {
+      const { reviewId, contactId, contactName } = body
+      if (!reviewId) return NextResponse.json({ error: 'reviewId required' }, { status: 400 })
+      const { error } = await db.from('google_reviews').update({
+        contact_id: contactId || null,
+        contact_name: contactId ? (contactName || null) : null,
+        match_checked_at: new Date().toISOString(),
+      }).eq('company_id', companyId).eq('review_id', reviewId)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TelnyxService } from '@/lib/telnyx-service'
+import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +20,7 @@ export async function POST(req: NextRequest) {
     const { companyId, action } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
     const db = admin()
+    if (await isExternalSendBlocked(companyId, db)) { logBlockedSend(companyId, 'call', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
 
     const { data: integ } = await db.from('telnyx_integrations').select('api_key').eq('company_id', companyId).maybeSingle()
     if (!integ?.api_key) return NextResponse.json({ error: 'no api key' }, { status: 400 })

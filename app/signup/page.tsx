@@ -93,6 +93,17 @@ function SignUpForm() {
     return () => clearTimeout(t)
   }, [slug])
 
+  // Resend countdown timer. This MUST live with the other hooks, above every
+  // conditional return below — on a company subdomain the "resolving board" and
+  // "board not found" screens return early, and a hook placed after them would
+  // run on some renders but not others (React error #300: the hook count changed
+  // between renders), crashing /signup on every *.colvy.com board.
+  useEffect(() => {
+    if (resendCountdown <= 0) return
+    const t = setTimeout(() => setResendCountdown(c => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [resendCountdown])
+
   const handleStep1 = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -239,14 +250,6 @@ function SignUpForm() {
     )
   }
 
-  // Email confirmation screen
-  // Countdown timer effect
-  useEffect(() => {
-    if (resendCountdown <= 0) return
-    const t = setTimeout(() => setResendCountdown(c => c - 1), 1000)
-    return () => clearTimeout(t)
-  }, [resendCountdown])
-
   const handleResend = async () => {
     setResendLoading(true)
     setResendSuccess('')
@@ -347,7 +350,8 @@ function SignUpForm() {
       <div className="su-form-col" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '40px clamp(24px, 7vw, 80px)', overflowY: 'auto' }}>
         <div style={{ maxWidth: 400, width: '100%', margin: '0 auto' }}>
           <a href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 28, textDecoration: 'none' }}>
-            <img src="/logo.png" alt="Colvy" style={{ height: 26, width: 'auto' }} onError={(e: any) => e.target.style.display = 'none'} />
+            {/* Wordmark only — /logo.png 404s, and the broken <img> rendered its
+                "Colvy" alt text next to the wordmark, showing "Colvy" twice. */}
             <span style={{ fontWeight: 800, fontSize: 17, color: '#ff7a6b' }}>Colvy</span>
           </a>
 

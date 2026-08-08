@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
       // consultation nobody can pick up.
       const cutoff = new Date(Date.now() - 120000).toISOString()
       const { data: online } = await db.from('agent_presence')
-        .select('user_id, agent_name').eq('company_id', companyId)
+        .select('user_id').eq('company_id', companyId)
         .gte('last_seen_at', cutoff).neq('available', false)
 
       // Exclude the agent already on the call — if they're the only one

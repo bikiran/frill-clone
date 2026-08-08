@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { TelnyxService, toE164 } from '@/lib/telnyx-service'
+import { toE164 } from '@/lib/telnyx-service'
+import { resolveSmsSender } from '@/lib/sms-provider'
 import { trackLinksInText } from '@/lib/link-tracking'
+import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 
 function admin() {
   return createClient(
@@ -23,9 +25,14 @@ export async function POST(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
-    const { data: integ } = await db.from('telnyx_integrations').select('*').eq('company_id', companyId).maybeSingle()
-    if (!integ?.api_key || !integ.phone_number) {
-      return NextResponse.json({ error: 'Telnyx SMS not configured (need API key + number)' }, { status: 400 })
+    if (await isExternalSendBlocked(companyId, db)) { logBlockedSend(companyId, 'sms', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
+
+    // Resolve whichever provider this company sends SMS through (Telnyx by
+    // default, Twilio when selected). One uniform sender — the rest of this
+    // route no longer cares which carrier is underneath.
+    const sender = await resolveSmsSender(db, companyId)
+    if (!sender) {
+      return NextResponse.json({ error: 'SMS not configured (connect Telnyx or Twilio with a number)' }, { status: 400 })
     }
 
     // Resolve destination number
@@ -43,6 +50,12 @@ export async function POST(req: NextRequest) {
     // like spam in a text message.
     let body = text || ''
     const atts = Array.isArray(attachments) ? attachments : []
+    // When the provider carries real MMS (Twilio), photos go as actual picture
+    // messages; everything else (and every attachment on Telnyx) still goes as a
+    // short /m/ link. Videos/large files stay link-based even on MMS providers so
+    // they can't be rejected for exceeding the carrier's MMS size cap.
+    const mmsUrls: string[] = []
+    const isImageAtt = (a: any) => a?.kind === 'image' || String(a?.type || '').startsWith('image/')
     if (atts.length > 0) {
       // Send media links on the COMPANY's own subdomain (roxyaquarium.colvy.com)
       // rather than the bare Colvy domain — it looks like the business, which
@@ -58,6 +71,8 @@ export async function POST(req: NextRequest) {
       } catch {}
       const links: string[] = []
       for (const a of atts) {
+        // Photo on an MMS-capable provider → send the real image, no link needed.
+        if (sender.supportsMms && isImageAtt(a) && a.url) { mmsUrls.push(a.url); continue }
         try {
           // Reuse an existing link for this exact file in this conversation,
           // so the same image can't go out as two different links.
@@ -78,9 +93,11 @@ export async function POST(req: NextRequest) {
         }
       }
       // De-dupe in case the same file was passed twice.
-      body = (body ? body + '\n' : '') + Array.from(new Set(links)).join('\n')
+      const uniqueLinks = Array.from(new Set(links))
+      if (uniqueLinks.length) body = (body ? body + '\n' : '') + uniqueLinks.join('\n')
     }
-    if (!body.trim()) return NextResponse.json({ error: 'Nothing to send' }, { status: 400 })
+    // Allow a bare photo (real MMS) with no caption; otherwise require some text.
+    if (!body.trim() && mmsUrls.length === 0) return NextResponse.json({ error: 'Nothing to send' }, { status: 400 })
 
     // Rewrite any URLs in the message to trackable {company}.colvy.com/l/<code>
     // links so we can report on clicks. Fail-safe: on any error the original
@@ -104,13 +121,18 @@ export async function POST(req: NextRequest) {
       })
     } catch {}
 
-    const svc = new TelnyxService(integ.api_key)
-    const result = await svc.sendSMS({
-      from: integ.phone_number,
+    // Twilio delivery receipts (for campaign reporting) come back to the Twilio
+    // webhook, so give it a public status-callback URL.
+    const statusCallback = sender.provider === 'twilio'
+      ? `${(process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')}/api/twilio/webhook`
+      : undefined
+    const result = await sender.send({
       to: e164,
       text: body,
-      messaging_profile_id: integ.messaging_profile_id || undefined,
+      mediaUrls: mmsUrls.length ? mmsUrls : undefined,
+      statusCallback,
     })
+    const providerMessageId = result.id
 
     // Log into the conversation thread as an agent message sent via SMS
     if (conversationId && !skipChatMessage) {
@@ -122,7 +144,7 @@ export async function POST(req: NextRequest) {
         content: text || (atts.length ? '📎 Sent attachment link' : ''),
         attachments: atts,
         delivery_channel: 'sms',
-        telnyx_message_id: result?.data?.id || null,
+        telnyx_message_id: providerMessageId,
       })
       await db.from('conversations').update({
         last_message: text || 'Attachment',
@@ -175,10 +197,10 @@ export async function POST(req: NextRequest) {
           channel: 'sms', sms_number: e164, status: 'open',
         }).eq('id', convId)
       }
-      return NextResponse.json({ ok: true, id: result?.data?.id, conversationId: convId })
+      return NextResponse.json({ ok: true, id: providerMessageId, conversationId: convId })
     }
 
-    return NextResponse.json({ ok: true, id: result?.data?.id })
+    return NextResponse.json({ ok: true, id: providerMessageId })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

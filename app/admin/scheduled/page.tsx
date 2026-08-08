@@ -1,20 +1,23 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 
 export default function ScheduledPage() {
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [items, setItems] = useState<any[]>([])
+  const seededCid = peekCompanyUser()?.companyId ?? null
+  const seededItems = seededCid ? readCache<any[]>(`scheduled:${seededCid}`) : undefined
+  const [companyId, setCompanyId] = useState<string | null>(seededCid)
+  const [items, setItems] = useState<any[]>(seededItems ?? [])
   const [tab, setTab] = useState<'all' | 'message' | 'review_request'>('all')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!seededItems)
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({ type: 'message', message: '', scheduled_for: '', channel: 'widget' })
 
   useEffect(() => {
     const init = async () => {
-      let cid: string | null = null
-      if (typeof window !== 'undefined') {
+      let cid: string | null = seededCid
+      if (!cid && typeof window !== 'undefined') {
         const h = window.location.hostname
         if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
           const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', h.replace('.colvy.com', '')).maybeSingle()
@@ -32,6 +35,7 @@ export default function ScheduledPage() {
       if (cid) {
         const { data } = await (supabase as any).from('scheduled_messages').select('*').eq('company_id', cid).order('scheduled_for', { ascending: true })
         setItems(data || [])
+        writeCache(`scheduled:${cid}`, data || [])
       }
       setLoading(false)
     }
@@ -96,7 +100,7 @@ export default function ScheduledPage() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 24 }}>
         <div style={{ borderRadius: 12, border: '1px solid var(--border)', padding: '16px 20px', background: '#fff' }}>
           <p style={{ margin: '0 0 8px', fontSize: 12, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase' }}>Total Scheduled Messages</p>
           <p style={{ margin: 0, fontSize: 32, fontWeight: 800, color: 'var(--ink)' }}>{pending}</p>

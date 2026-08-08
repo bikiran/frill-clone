@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
+import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 
 function admin() {
   return createClient(
@@ -22,6 +23,7 @@ export async function POST(req: NextRequest) {
     if (!companyId || !conversationId || !amount) return NextResponse.json({ error: 'Missing companyId, conversationId or amount' }, { status: 400 })
 
     const db = admin()
+    if (await isExternalSendBlocked(companyId, db)) { logBlockedSend(companyId, 'coupon', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
     let integ: any = null
     if (integrationId) {
       const r = await db.from('woocommerce_integrations').select('*').eq('id', integrationId).maybeSingle()

@@ -10,7 +10,9 @@ import { SkeletonList } from '@/components/Skeleton'
 export default function TeamPage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
   const [members, setMembers] = useState<any[]>([])
+  const [outlets, setOutlets] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showInvite, setShowInvite] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
@@ -34,7 +36,36 @@ export default function TeamPage() {
 
   const fetchMembers = async () => {
     try {
-      const { data } = await (supabase as any).from('team_members').select('*').order('created_at', { ascending: false })
+      // Resolve THIS admin's company first, then only ever load that company's
+      // members. The query used to be unscoped (no company_id filter), so it
+      // returned every company's team members — a cross-tenant leak. On a board
+      // subdomain we use the subdomain's company (only if the viewer owns it or
+      // is a member); otherwise the company they own.
+      const { data: sess } = await supabase.auth.getSession()
+      const u = sess?.session?.user
+      if (!u) { setMembers([]); setLoading(false); return }
+
+      let cid: string | null = null
+      const host = typeof window !== 'undefined' ? window.location.hostname : ''
+      if (host.endsWith('.colvy.com') && host !== 'colvy.com' && host !== 'www.colvy.com') {
+        const slug = host.split('.')[0]
+        const { data: coBySlug } = await (supabase as any).from('companies').select('id, owner_id').eq('slug', slug).maybeSingle()
+        if (coBySlug) {
+          if (coBySlug.owner_id === u.id) cid = coBySlug.id
+          else {
+            const { data: mem } = await (supabase as any).from('team_members').select('role').eq('company_id', coBySlug.id).eq('user_id', u.id).limit(1)
+            if (mem && mem.length) cid = coBySlug.id
+          }
+        }
+      }
+      if (!cid) {
+        const { data: owned } = await (supabase as any).from('companies').select('id').eq('owner_id', u.id).order('created_at', { ascending: true }).limit(1).maybeSingle()
+        cid = owned?.id || null
+      }
+      setCompanyId(cid)
+      if (!cid) { setMembers([]); setLoading(false); return }
+
+      const { data } = await (supabase as any).from('team_members').select('*').eq('company_id', cid).order('created_at', { ascending: false })
       let rows: any[] = data || []
       // Fill in real profile names for members who've signed in (their name
       // lives in auth metadata, which the client can't read for other users —
@@ -55,8 +86,22 @@ export default function TeamPage() {
         } catch { /* fall back to email */ }
       }
       setMembers(rows)
+      // Outlets for the "default outlet" picker (scoped to this company).
+      if (cid) {
+        try {
+          const { data: locs } = await (supabase as any).from('company_locations')
+            .select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })
+          setOutlets(locs || [])
+        } catch {}
+      }
     } catch {}
     setLoading(false)
+  }
+
+  const updateDefaultOutlet = async (id: string, locId: string) => {
+    setMembers(ms => ms.map(m => m.id === id ? { ...m, default_location_id: locId || null } : m))
+    try { await (supabase as any).from('team_members').update({ default_location_id: locId || null }).eq('id', id) }
+    catch { /* best effort — the column may need the V213 migration */ }
   }
 
   const showMsg = (text: string) => {
@@ -262,21 +307,23 @@ export default function TeamPage() {
           <div className="col-span-2 text-right">Actions</div>
         </div>
 
-        {/* Current admin */}
+        {/* Current admin — column spans mirror the header (4/3/2/1/2) so the
+            Owner and Active pills line up under Role and Status. */}
         <div className="grid grid-cols-12 px-5 py-4 border-b items-center" style={{ borderColor: 'var(--border)' }}>
-          <div className="col-span-5 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ background: 'var(--coral)' }}>
+          <div className="col-span-4 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: 'var(--coral)' }}>
               {user.email?.[0].toUpperCase()}
             </div>
-            <div>
-              <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{user.email}</p>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{user.email}</p>
               <p className="text-xs" style={{ color: 'var(--slate)' }}>You (Owner)</p>
             </div>
           </div>
-          <div className="col-span-3">
+          <div className="col-span-3" />
+          <div className="col-span-2">
             <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>Owner</span>
           </div>
-          <div className="col-span-2">
+          <div className="col-span-1">
             <span className="text-xs px-2 py-1 rounded-full" style={{ background: '#d1fae5', color: '#059669' }}>Active</span>
           </div>
           <div className="col-span-2 text-right text-xs" style={{ color: 'var(--slate)' }}>—</div>
@@ -305,6 +352,15 @@ export default function TeamPage() {
                 <div className="min-w-0">
                   <p className="text-sm truncate" style={{ color: 'var(--ink)', fontWeight: 600 }}>{m.display_name || m.email}</p>
                   {m.display_name && <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{m.email}</p>}
+                  {outlets.length > 0 && (
+                    <select value={m.default_location_id || ''} onChange={e => updateDefaultOutlet(m.id, e.target.value)}
+                      title="Default outlet — used to pre-filter their Tasks page"
+                      className="text-xs mt-1 px-2 py-1 rounded border focus:outline-none cursor-pointer bg-white max-w-full"
+                      style={{ borderColor: 'var(--border)', color: m.default_location_id ? 'var(--coral)' : 'var(--slate)' }}>
+                      <option value="">No default outlet</option>
+                      {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
+                    </select>
+                  )}
                 </div>
               </div>
               {/* Mobile — SMS reminders for assigned events go to this number.
