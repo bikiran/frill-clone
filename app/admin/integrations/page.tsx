@@ -41,23 +41,12 @@ const INTEGRATIONS = [
     isDedicated: true,
   },
   {
-    id: 'telnyx',
+    id: 'calls',
     name: 'Calls & SMS',
     desc: 'Call customers from your browser and continue live chats over SMS to their mobile.',
     icon: '📞',
     color: '#00c08b',
     bg: '#e6faf4',
-    logo: '',
-    category: 'Communication',
-    isDedicated: true,
-  },
-  {
-    id: 'twilio',
-    name: 'Twilio (SMS/MMS & Calls)',
-    desc: 'Alternative Calls & SMS provider with real MMS — send and receive photos. Chosen per company, so it never affects your other boards.',
-    icon: '📱',
-    color: '#F22F46',
-    bg: '#fdecee',
     logo: '',
     category: 'Communication',
     isDedicated: true,
@@ -290,23 +279,23 @@ export default function IntegrationsPage() {
           .limit(1)
         enb['shopify'] = !!(shopRows && shopRows.length > 0)
 
-        // Check for Telnyx integration
+        // Calls & SMS is active if the company has a number on EITHER carrier
+        // (Telnyx or the platform Twilio) — the carrier is invisible to them.
         const { data: telnyxData } = await (supabase as any)
           .from('telnyx_integrations')
-          .select('is_active')
+          .select('is_active, phone_number')
           .eq('company_id', cid)
           .maybeSingle()
-        enb['telnyx'] = !!(telnyxData && telnyxData.is_active)
-
-        // Check for Twilio integration (table may not exist pre-migration).
+        let callsActive = !!(telnyxData?.is_active || telnyxData?.phone_number)
         try {
           const { data: twilioData } = await (supabase as any)
             .from('twilio_integrations')
             .select('account_sid, phone_number')
             .eq('company_id', cid)
             .maybeSingle()
-          enb['twilio'] = !!(twilioData?.account_sid && twilioData?.phone_number)
+          if (twilioData?.account_sid && twilioData?.phone_number) callsActive = true
         } catch {}
+        enb['calls'] = callsActive
 
         // Check for Stripe connection
         const { data: co } = await (supabase as any).from('companies').select('stripe_connected').eq('id', cid).maybeSingle()

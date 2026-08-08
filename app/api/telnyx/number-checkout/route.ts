@@ -58,8 +58,8 @@ export async function POST(req: NextRequest) {
         locality: locality || '',
         areaCode: areaCode || '',
       },
-      success_url: `${origin}/admin/integrations/telnyx?provisioning=1&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/admin/integrations/telnyx`,
+      success_url: `${origin}/admin/integrations/calls?provisioning=1&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/admin/integrations/calls`,
     })
 
     return NextResponse.json({ url: session.url })
