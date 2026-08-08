@@ -127,7 +127,10 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             console.log('[twilio voice] INCOMING CALL')
             callRef.current = call
             const fromNum = call.parameters?.From || call.parameters?.from || ''
-            setIncoming({ id: call.parameters?.CallSid || 'twilio', from: fromNum })
+            // The inbound TwiML passes our calls-row id as a custom parameter so
+            // warm transfer can reference the exact call reliably.
+            const rowId = call.customParameters?.get?.('callRowId') || null
+            setIncoming({ id: call.parameters?.CallSid || 'twilio', callRowId: rowId, from: fromNum })
             startRing()
             resolveCaller(fromNum)
             call.on('accept', () => { stopRing(); setInCall(true); startTimer() })
@@ -338,7 +341,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       const res = await fetch(provider === 'twilio' ? '/api/twilio/call-transfer' : '/api/telnyx/call-transfer', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(provider === 'twilio'
-          ? { companyId, callSid: incoming.id, action, actorName: agentName }
+          // Prefer the exact calls-row id from the custom parameter; fall back to
+          // the CallSid for older calls that predate it.
+          ? { companyId, callId: incoming.callRowId || undefined, callSid: incoming.id, action, actorName: agentName }
           : { companyId, callId: incoming.id, action }),
       })
       const d = await res.json()
