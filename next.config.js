@@ -4,10 +4,14 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   // The transcode routes shell out to the static FFmpeg binary; make sure Next's
-  // file tracing bundles it into those serverless functions.
+  // file tracing bundles the WHOLE ffmpeg-static package (binary + its index)
+  // into those serverless functions. Globbing the package (not just the binary
+  // path) is what reliably ships the executable; without it the function throws
+  // "spawn …/ffmpeg ENOENT" at runtime.
   outputFileTracingIncludes: {
-    '/api/storage/transcode': ['./node_modules/ffmpeg-static/ffmpeg'],
-    '/api/cron/transcode-worker': ['./node_modules/ffmpeg-static/ffmpeg'],
+    '/api/storage/transcode': ['./node_modules/ffmpeg-static/**'],
+    '/api/cron/transcode-worker': ['./node_modules/ffmpeg-static/**'],
+    '/api/media/upload': ['./node_modules/ffmpeg-static/**'],
   },
   // Allow images from any subdomain
   images: {
