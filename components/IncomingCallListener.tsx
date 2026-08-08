@@ -227,8 +227,20 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     if (!companyId || !fromNumber) { setCaller({ number: fromNumber }); return }
     try {
       const digits = fromNumber.replace(/\D/g, '').slice(-9)
-      const { data: contacts } = await (supabase as any).from('contacts').select('*').eq('company_id', companyId).limit(500)
-      const contact = (contacts || []).find((c: any) => c.phone && c.phone.replace(/\D/g, '').slice(-9) === digits)
+      const matchDigits = (list: any[]) => (list || []).find((c: any) => c.phone && c.phone.replace(/\D/g, '').slice(-9) === digits)
+      // Look the caller up by number, not by scanning a capped list. The old
+      // `.limit(500)` silently missed contacts past the first 500 on busy boards
+      // (the call log resolved them server-side, so the popup disagreed). Query
+      // the digits directly; fall back to a wide scan only for numbers stored
+      // with separators that a substring match can't catch.
+      let { data: cands } = await (supabase as any).from('contacts')
+        .select('*').eq('company_id', companyId).ilike('phone', `%${digits}%`).limit(10)
+      let contact = matchDigits(cands)
+      if (!contact) {
+        const { data: more } = await (supabase as any).from('contacts')
+          .select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(2000)
+        contact = matchDigits(more)
+      }
       if (contact) {
         // Pull WooCommerce context if their email matches
         let woo: any = null
