@@ -1755,6 +1755,7 @@ export default function InboxPage() {
   const markMessagesRead = async (convId: string, msgs: Message[]) => {
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
     const initial = me[0]?.toUpperCase() || 'A'
+    const avatar = user?.user_metadata?.avatar_url || null   // show a real photo on the read receipt
     // Stamp read_by on every message this agent has now seen — including other
     // agents' replies. "Did my colleague see this?" is the question people
     // actually have, and previously only customer messages were stamped.
@@ -1764,7 +1765,7 @@ export default function InboxPage() {
       if (m.sender_type === 'agent' && (m as any).sender_id === user?.id) continue
       const readBy = Array.isArray((m as any).read_by) ? (m as any).read_by : []
       if (readBy.some((r: any) => r.name === me)) continue
-      const updated = [...readBy, { name: me, initial, at: new Date().toISOString() }]
+      const updated = [...readBy, { name: me, initial, at: new Date().toISOString(), ...(avatar ? { avatar } : {}) }]
       await (supabase as any).from('messages').update({
         read_by: updated,
         ...(m.sender_type === 'visitor' ? { is_read: true } : {}),
@@ -6585,7 +6586,7 @@ export default function InboxPage() {
                     )}
                     <div style={{ maxWidth: '70%', position: 'relative' }}
                       onMouseEnter={() => setShowReactPicker(null)}>
-                      {!isAgent && <p style={{ margin: '0 0 3px 4px', fontSize: 10, color: '#9ca3af' }}>{msg.sender_name || 'Visitor'}</p>}
+                      {!isAgent && <p style={{ margin: '0 0 3px 4px', fontSize: 10, color: '#9ca3af' }}>{contact?.name || msg.sender_name || 'Visitor'}</p>}
 
                       {/* Reply-to quote */}
                       {repliedMsg && (
@@ -6946,12 +6947,22 @@ export default function InboxPage() {
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                             <span>Read by:</span>
                             <span style={{ display: 'inline-flex', gap: 2 }}>
-                              {readBy.slice(0, 3).map((r: any, ri: number) => (
-                                <span key={ri} title={`Read by ${r.name}${r.at ? ` · ${new Date(r.at).toLocaleString('en-AU', { hour: 'numeric', minute: '2-digit', day: 'numeric', month: 'short' })}` : ''}`}
-                                  style={{ width: 15, height: 15, borderRadius: '50%', background: companyInfo?.accent_color || 'var(--coral)', color: '#fff', fontSize: 8, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  {r.initial}
-                                </span>
-                              ))}
+                              {readBy.slice(0, 3).map((r: any, ri: number) => {
+                                // Prefer a real profile photo: the reader stamps
+                                // their own avatar; older entries fall back to the
+                                // team-member list, then to the initial.
+                                const rAvatar = r.avatar || teamMembers.find((t: any) => t.name === r.name)?.avatar
+                                const tip = `Read by ${r.name}${r.at ? ` · ${new Date(r.at).toLocaleString('en-AU', { hour: 'numeric', minute: '2-digit', day: 'numeric', month: 'short' })}` : ''}`
+                                return rAvatar ? (
+                                  <img key={ri} src={rAvatar} alt={r.name || ''} title={tip}
+                                    style={{ width: 15, height: 15, borderRadius: '50%', objectFit: 'cover', display: 'inline-block' }} />
+                                ) : (
+                                  <span key={ri} title={tip}
+                                    style={{ width: 15, height: 15, borderRadius: '50%', background: companyInfo?.accent_color || 'var(--coral)', color: '#fff', fontSize: 8, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {r.initial}
+                                  </span>
+                                )
+                              })}
                               {readBy.length > 3 && (
                                 <span style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af' }}>+{readBy.length - 3}</span>
                               )}
