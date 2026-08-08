@@ -42,6 +42,39 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const [transferBusy, setTransferBusy] = useState(false)
   const [transferMsg, setTransferMsg] = useState('')
 
+  // ── Draggable popup ───────────────────────────────────────────────────────
+  // Let the agent move the call card out of the way. Defaults to the top-right;
+  // once dragged we switch to absolute x/y. Resets on refresh (kept in state).
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const popupRef = useRef<HTMLDivElement | null>(null)
+  const dragOffset = useRef<{ dx: number; dy: number } | null>(null)
+
+  const onDragMove = (e: PointerEvent) => {
+    if (!dragOffset.current) return
+    const w = popupRef.current?.offsetWidth || 320
+    const h = popupRef.current?.offsetHeight || 200
+    const x = Math.min(Math.max(6, e.clientX - dragOffset.current.dx), window.innerWidth - w - 6)
+    const y = Math.min(Math.max(6, e.clientY - dragOffset.current.dy), window.innerHeight - h - 6)
+    setPos({ x, y })
+  }
+  const onDragEnd = () => {
+    dragOffset.current = null
+    window.removeEventListener('pointermove', onDragMove)
+    window.removeEventListener('pointerup', onDragEnd)
+  }
+  const onDragStart = (e: React.PointerEvent) => {
+    // Don't hijack a button press (answer/hold/hangup live in this card too).
+    if ((e.target as HTMLElement).closest('button')) return
+    const rect = popupRef.current?.getBoundingClientRect()
+    if (!rect) return
+    dragOffset.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top }
+    setPos({ x: rect.left, y: rect.top })   // pin to current spot, then follow the pointer
+    window.addEventListener('pointermove', onDragMove)
+    window.addEventListener('pointerup', onDragEnd)
+    e.preventDefault()
+  }
+  useEffect(() => () => onDragEnd(), [])   // clean up listeners if we unmount mid-drag
+
   useEffect(() => {
     if (!companyId) return
     ;(async () => {
@@ -333,9 +366,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // Shared style for the answer/decline/hangup buttons — the icons previously
   // had no sizing or alignment rules and rendered squashed against the label.
   const btn = (bg: string): React.CSSProperties => ({
-    flex: 1, padding: '14px 0', border: 'none', background: bg, color: '#fff',
-    fontSize: 14, fontWeight: 700, cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, lineHeight: 1,
+    flex: 1, padding: '14px 6px', border: 'none', background: bg, color: '#fff',
+    fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, lineHeight: 1,
   })
 
   // The audio element must ALWAYS be in the DOM (not just while the popup is
@@ -376,8 +409,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
 
   return (<>
     {audioEl}
-    <div style={{ position: 'fixed', top: 20, right: 20, width: 320, background: '#0d0d0d', color: '#fff', borderRadius: 18, boxShadow: '0 16px 48px rgba(0,0,0,0.4)', zIndex: 9999, overflow: 'hidden', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
-      <div style={{ padding: '20px 20px 16px' }}>
+    <div ref={popupRef} style={{ position: 'fixed', width: 320, background: '#0d0d0d', color: '#fff', borderRadius: 18, boxShadow: '0 16px 48px rgba(0,0,0,0.4)', zIndex: 9999, overflow: 'hidden', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+      ...(pos ? { left: pos.x, top: pos.y } : { top: 20, right: 20 }) }}>
+      <div onPointerDown={onDragStart} style={{ padding: '20px 20px 16px', cursor: dragOffset.current ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none' }}>
         <p style={{ margin: 0, fontSize: 11, fontWeight: 700, letterSpacing: 1, opacity: 0.6, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
@@ -449,7 +483,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           <>
             {/* Hold / transfer controls, only while actually on a call. Both
                 providers run this through conferences (Telnyx / Twilio). */}
-            <div style={{ display: 'flex', gap: 1, flex: 1 }}>
+            <div style={{ display: 'flex', gap: 1, flex: 2 }}>
               {transferState === 'none' ? (
                 <>
                   <button onClick={() => callAction(onHold ? 'unhold' : 'hold')} disabled={transferBusy}
