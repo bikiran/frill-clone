@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { compressImage, uploadDirect } from '@/lib/upload-attachment'
 import { supabase } from '@/lib/supabase'
+import { playbackUrl, isVideoProcessing } from '@/lib/mediaPlayback'
 import { readCache, writeCache } from '@/lib/client-cache'
 import { useCompanyUser } from '../crm-settings/_shared'
 import MediaGallery from '@/components/MediaGallery'
@@ -953,9 +954,9 @@ export default function GalleryPage() {
                     onMouseEnter={item.kind === 'video' ? (e => { const v = e.currentTarget.querySelector('video'); if (v) { v.muted = true; v.play().catch(() => {}) } }) : undefined}
                     onMouseLeave={item.kind === 'video' ? (e => { const v = e.currentTarget.querySelector('video'); if (v) { v.pause(); try { v.currentTime = 0.1 } catch {} } }) : undefined}>
                     {item.kind === 'video' ? (
-                      // Resting shows the poster/first frame; on hover it plays MUTED
-                      // (no download until then when a real thumbnail poster exists).
-                      <video src={item.url + '#t=0.1'}
+                      // Resting shows the poster/first frame; on hover it plays MUTED.
+                      // Prefer the transcoded playback URL once the worker's done.
+                      <video src={playbackUrl(item) + '#t=0.1'}
                         poster={item.thumbnail_url && item.thumbnail_url !== item.url ? item.thumbnail_url : undefined}
                         preload={item.thumbnail_url && item.thumbnail_url !== item.url ? 'none' : 'metadata'}
                         muted playsInline loop tabIndex={-1}
@@ -963,7 +964,8 @@ export default function GalleryPage() {
                     ) : (
                       <img loading="lazy" decoding="async" src={item.thumbnail_url || item.url} alt={item.title || ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                     )}
-                    {item.kind === 'video' && <div className="gal-playbadge" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,0.5)', transition: 'opacity .15s', pointerEvents: 'none' }}><svg width="34" height="34" viewBox="0 0 24 24" fill="#fff" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg></div>}
+                    {item.kind === 'video' && !isVideoProcessing(item) && <div className="gal-playbadge" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,0.5)', transition: 'opacity .15s', pointerEvents: 'none' }}><svg width="34" height="34" viewBox="0 0 24 24" fill="#fff" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg></div>}
+                    {item.kind === 'video' && isVideoProcessing(item) && <div style={{ position: 'absolute', left: 6, bottom: 6, display: 'flex', alignItems: 'center', gap: 4, padding: '3px 7px', borderRadius: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 10, fontWeight: 700 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>Processing</div>}
 
                     {/* Select checkbox — always available on hover, sticky in select mode */}
                     <button type="button"
@@ -1137,7 +1139,7 @@ export default function GalleryPage() {
 
       {lightboxIndex !== null && visibleItems[lightboxIndex] && (
         <MediaGallery
-          items={visibleItems.map(it => ({ url: it.url, kind: it.kind, name: it.title }))}
+          items={visibleItems.map(it => ({ url: playbackUrl(it), kind: it.kind, name: it.title, poster: it.thumbnail_url, processing: isVideoProcessing(it) }))}
           index={lightboxIndex}
           onIndex={setLightboxIndex}
           onClose={() => { setLightboxIndex(null); setDetailsOpen(false) }}
