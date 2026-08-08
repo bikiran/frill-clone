@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 import { createWriteStream } from 'fs'
-import { mkdtemp, readFile, rm } from 'fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { Readable } from 'stream'
@@ -55,6 +55,31 @@ async function download(url: string, dest: string) {
 }
 
 /**
+ * Segment the finished MP4 into VOD HLS (stream-copy — no re-encode, so it's
+ * cheap) and upload the playlist + .ts segments to R2 under `<keyBase>/hls/`.
+ * The playlist references segments by relative name, which resolve against the
+ * master URL. Returns the master .m3u8 URL, or null on failure (best-effort —
+ * the MP4 is always the reliable primary). Enabled by TRANSCODE_HLS=1.
+ */
+async function generateHls(dir: string, mp4Path: string, keyBase: string): Promise<string | null> {
+  const hlsDir = join(dir, 'hls')
+  await mkdir(hlsDir, { recursive: true })
+  await runFfmpeg([
+    '-y', '-i', mp4Path, '-c', 'copy',
+    '-start_number', '0', '-hls_time', '6', '-hls_list_size', '0', '-hls_playlist_type', 'vod',
+    '-hls_segment_filename', join(hlsDir, 'seg_%03d.ts'),
+    '-f', 'hls', join(hlsDir, 'index.m3u8'),
+  ])
+  let masterUrl: string | null = null
+  for (const f of await readdir(hlsDir)) {
+    const ct = f.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t'
+    const url = await uploadToR2(`${keyBase}/hls/${f}`, await readFile(join(hlsDir, f)), ct)
+    if (f === 'index.m3u8') masterUrl = url
+  }
+  return masterUrl
+}
+
+/**
  * Transcode one claimed row end to end. Assumes the row is already marked
  * `processing`. Throws on failure so the caller can record the error/retry.
  */
@@ -92,12 +117,24 @@ export async function processTranscodeJob(db: Db, item: Item): Promise<void> {
     let thumbUrl: string | null = item.thumbnail_url || null
     try { thumbUrl = await uploadToR2(`${base}/poster.jpg`, await readFile(posterPath), 'image/jpeg') } catch {}
 
+    // Optional HLS rendition (off by default). The faststart MP4 above is the
+    // primary playback_url; HLS is stored in `variants` for adaptive/streaming
+    // clients (the mobile app plays it natively; web can opt in via hls.js).
+    const variants: Array<{ type: string; url: string }> = [{ type: 'mp4', url: playbackUrl }]
+    if (process.env.TRANSCODE_HLS === '1') {
+      try {
+        const hlsUrl = await generateHls(dir, outPath, base)
+        if (hlsUrl) variants.push({ type: 'hls', url: hlsUrl })
+      } catch (e) { console.warn('[transcode] HLS generation failed (non-fatal):', e) }
+    }
+
     await db.from('media_items').update({
       playback_url: playbackUrl,
       thumbnail_url: thumbUrl,
       source_url: item.source_url || item.url,
       processing_status: 'ready',
       transcode_error: null,
+      variants,
     }).eq('id', item.id)
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {})
