@@ -168,8 +168,21 @@ function listTime(d: string) {
   if (!d) return ''
   const parsed = parseTs(d)
   if (!parsed) return ''
-  const t = parsed.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true })
-  return `${t} · ${parsed.getDate()}/${parsed.getMonth() + 1}`
+  // Relative for recent activity ("just now", "5m ago", "1h ago"), then fall
+  // back to a date once it's older than a day so the list stays scannable.
+  const diffMs = Date.now() - parsed.getTime()
+  const sec = Math.floor(diffMs / 1000)
+  if (sec < 0) return 'just now'          // clock skew — don't show "in the future"
+  if (sec < 45) return 'just now'
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  if (day < 7) return `${day}d ago`
+  // Older than a week → a plain date (add the year once it's a different year).
+  const sameYear = parsed.getFullYear() === new Date().getFullYear()
+  return parsed.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })
 }
 
 // Safe time formatter — handles null, undefined, and non-ISO timestamps
