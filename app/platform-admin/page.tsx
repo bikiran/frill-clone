@@ -2183,6 +2183,22 @@ function CompaniesPage() {
   const [assignNum, setAssignNum] = useState('')
   const [assigning, setAssigning] = useState(false)
   const [assignMsg, setAssignMsg] = useState('')
+  // The company's currently-assigned numbers, shown in the drawer so the admin
+  // can see what's on file (the assign box above is an action input, not state).
+  const [coNumbers, setCoNumbers] = useState<any[]>([])
+  const [coNumbersLoading, setCoNumbersLoading] = useState(false)
+
+  const loadCoNumbers = async (companyId: string) => {
+    setCoNumbersLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/admin/assign-number?companyId=${companyId}`, {
+        headers: { 'Authorization': `Bearer ${session?.access_token}` },
+      })
+      const data = await res.json()
+      setCoNumbers(res.ok ? (data.numbers || []) : [])
+    } catch { setCoNumbers([]) } finally { setCoNumbersLoading(false) }
+  }
 
   const assignExistingNumber = async () => {
     if (!editCo || !assignNum.trim()) return
@@ -2201,11 +2217,12 @@ function CompaniesPage() {
       // Reflect the carrier switch the endpoint performed.
       setForm((f: any) => ({ ...f, number_provider: 'twilio' }))
       setCompanies(prev => prev.map(c => c.id === editCo.id ? { ...c, number_provider: 'twilio', sms_provider: 'twilio', voice_provider: 'twilio' } : c))
+      loadCoNumbers(editCo.id) // refresh the "current numbers" list
     } catch (e: any) { setAssignMsg(`✕ ${e.message}`) } finally { setAssigning(false) }
   }
 
   const openEdit = (co: any) => {
-    setAssignNum(''); setAssignMsg('')
+    setAssignNum(''); setAssignMsg(''); setCoNumbers([]); loadCoNumbers(co.id)
     setEditErr('')
     setForm({
       name: co.name || '', slug: co.slug || '', plan: co.plan || 'free',
@@ -2422,6 +2439,26 @@ function CompaniesPage() {
               <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '-4px 0 4px' }}>
                 Which carrier the “Get a business number” flow uses for this company. The customer never sees it. Existing numbers keep working.
               </p>
+
+              {/* What's currently on the company, so the drawer reflects state. */}
+              <label style={paLabel}>Current numbers</label>
+              {coNumbersLoading ? (
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 6px' }}>Loading…</p>
+              ) : coNumbers.length === 0 ? (
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 6px' }}>No numbers assigned yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: '0 0 8px' }}>
+                  {coNumbers.map((n: any) => (
+                    <div key={n.phone_number} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 11px', borderRadius: 8, border: '1px solid var(--sa-border)', fontSize: 12.5 }}>
+                      <span style={{ fontWeight: 700, color: 'var(--sa-fg, #111)' }}>{n.phone_number}</span>
+                      {n.is_primary && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#dcfce7', color: '#059669' }}>PRIMARY</span>}
+                      <span style={{ fontSize: 10.5, color: 'var(--sa-muted)', textTransform: 'uppercase' }}>{n.provider}</span>
+                      {(n.is_free || Number(n.monthly_cost) === 0) && <span style={{ fontSize: 10.5, color: '#059669', fontWeight: 700 }}>· Free</span>}
+                      <span style={{ marginLeft: 'auto', fontSize: 10.5, color: n.status === 'active' ? '#059669' : 'var(--sa-muted)' }}>{n.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Attach a number already bought in Colvy's Twilio account to this
                   company — no purchase flow, no Stripe. Sets webhooks + routing. */}
