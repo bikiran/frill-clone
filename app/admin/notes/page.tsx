@@ -176,22 +176,60 @@ export default function NotesPage() {
   }, [companyId, activeId])
 
   const saveTimer = useRef<any>(null)
+  // True from the first keystroke until the debounced save lands. While dirty we
+  // never let a live remote refresh overwrite what's being typed.
+  const dirtyRef = useRef(false)
   const queueSave = (next: Note) => {
     setNote(next)
     setList(prev => prev.map(n => n.id === next.id ? { ...n, ...next, updated_at: new Date().toISOString() } : n))
+    dirtyRef.current = true
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
       if (!companyId) return
       setSaving(true)
       try {
         await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-          companyId, action: 'update', id: next.id, title: next.title, body: next.body,
+          companyId, action: 'update', id: next.id, userId: uid, title: next.title, body: next.body,
           checklist: next.checklist, attachments: next.attachments, cover_image: next.cover_image ?? null,
           allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned, shared_with_team: !!next.shared_with_team, shared_members: next.shared_members || [], linked_tasks: next.linked_tasks || [],
         }) })
-      } catch {} finally { setSaving(false) }
+      } catch {} finally { setSaving(false); dirtyRef.current = false }
     }, 650)
   }
+
+  // ── Live sync (web ⇄ mobile) ──────────────────────────────────────────────
+  // The notes API broadcasts a lightweight "changed" nudge on every write; we
+  // refetch the list and (if not mid-edit) the open note, so edits/checklists
+  // appear without a reload. Payload carries only an id — never note content.
+  const activeIdRef = useRef<string | null>(null)
+  useEffect(() => { activeIdRef.current = activeId }, [activeId])
+  const [remoteVer, setRemoteVer] = useState(0)   // bumps only on a remote refresh → remounts the editor with fresh body
+  const listRefreshTimer = useRef<any>(null)
+
+  const refreshActiveNote = useCallback(async (id: string) => {
+    if (!companyId) return
+    try {
+      const res = await fetch(`/api/notes?companyId=${companyId}&userId=${uid}&id=${id}`)
+      const d = await res.json()
+      if (d.note && activeIdRef.current === id && !dirtyRef.current) {
+        setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [], shared_members: d.note.shared_members || [], comments: d.note.comments || [], edit_log: d.note.edit_log || [], linked_tasks: d.note.linked_tasks || [] })
+        setRemoteVer(v => v + 1)
+      }
+    } catch {}
+  }, [companyId, uid])
+
+  useEffect(() => {
+    if (!companyId) return
+    const ch = (supabase as any).channel(`notes:${companyId}`)
+      .on('broadcast', { event: 'changed' }, ({ payload }: any) => {
+        if (payload?.by && payload.by === uid) return   // ignore our own echo
+        clearTimeout(listRefreshTimer.current)
+        listRefreshTimer.current = setTimeout(() => { loadList() }, 300)
+        if (payload?.id && payload.id === activeIdRef.current && !dirtyRef.current) refreshActiveNote(payload.id)
+      })
+      .subscribe()
+    return () => { try { (supabase as any).removeChannel(ch) } catch {} }
+  }, [companyId, uid, loadList, refreshActiveNote])
 
   const createNote = async () => {
     if (!companyId) return
@@ -635,7 +673,7 @@ export default function NotesPage() {
                 </div>
               )}
 
-              <RichTextEditor key={note.id} value={note.body} onChange={html => queueSave({ ...note, body: html })}
+              <RichTextEditor key={`${note.id}:${remoteVer}`} value={note.body} onChange={html => queueSave({ ...note, body: html })}
                 placeholder="Start writing… use @ to mention a teammate, / for a voice note" mentions={team} bordered={false} big enableVoice companyId={companyId} toolbarPortal={toolbarEl} blockDrag minHeight={200} maxHeight={'none' as any} />
 
               <div style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
