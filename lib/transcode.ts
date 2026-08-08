@@ -1,5 +1,5 @@
 import { spawn } from 'child_process'
-import { createWriteStream } from 'fs'
+import { createWriteStream, existsSync } from 'fs'
 import { mkdtemp, mkdir, readFile, readdir, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -25,7 +25,32 @@ import { uploadToR2, isR2PublicUrl } from './r2'
 
 const MAX_ATTEMPTS = 3
 const STALE_MS = 10 * 60 * 1000
-const ffmpegPath = (ffmpegStatic as unknown as string) || 'ffmpeg'
+
+// Resolve the ffmpeg-static binary robustly on Vercel. Next's bundler rewrites
+// ffmpeg-static's __dirname to a build-time `/ROOT/...` path, so the value it
+// exports points at a file that doesn't exist at runtime (the "spawn …/ffmpeg
+// ENOENT" failure). The real, traced binary lives under the function's cwd —
+// try the reported path, then cwd-relative rewrites, and use the first that
+// actually exists on disk.
+function resolveFfmpeg(): string {
+  const raw = (ffmpegStatic as unknown as string) || ''
+  const cwd = process.cwd()
+  const candidates = [
+    raw,
+    raw.replace(/^\/ROOT/, cwd),
+    raw.replace(/^.*?node_modules/, join(cwd, 'node_modules')),
+    join(cwd, 'node_modules/ffmpeg-static/ffmpeg'),
+    '/var/task/node_modules/ffmpeg-static/ffmpeg',
+  ].filter(Boolean)
+  for (const c of candidates) { try { if (existsSync(c)) return c } catch {} }
+  return raw || 'ffmpeg'
+}
+const ffmpegPath = resolveFfmpeg()
+
+// HLS makes playback start almost instantly on mobile (ExoPlayer/AVPlayer fetch
+// a tiny first segment instead of buffering the whole MP4). On by default now;
+// set TRANSCODE_HLS=0 to skip it.
+const HLS_ENABLED = process.env.TRANSCODE_HLS !== '0'
 
 type Db = any
 type Item = {
@@ -121,7 +146,7 @@ export async function processTranscodeJob(db: Db, item: Item): Promise<void> {
     // primary playback_url; HLS is stored in `variants` for adaptive/streaming
     // clients (the mobile app plays it natively; web can opt in via hls.js).
     const variants: Array<{ type: string; url: string }> = [{ type: 'mp4', url: playbackUrl }]
-    if (process.env.TRANSCODE_HLS === '1') {
+    if (HLS_ENABLED) {
       try {
         const hlsUrl = await generateHls(dir, outPath, base)
         if (hlsUrl) variants.push({ type: 'hls', url: hlsUrl })
@@ -203,6 +228,15 @@ export async function claimNextJob(db: Db): Promise<Item | null> {
  * nothing. Returns how many it queued.
  */
 export async function backfillLegacy(db: Db, limit = 8): Promise<number> {
+  // Rescue rows that failed ONLY because the ffmpeg binary wasn't bundled
+  // ("spawn … ENOENT"): that was an environmental bug, not a bad video, so give
+  // them a clean slate. A genuinely un-transcodable video fails with a different
+  // error and is left in `failed`, so this can't loop forever.
+  await db.from('media_items')
+    .update({ processing_status: 'pending', transcode_attempts: 0, transcode_error: null })
+    .eq('kind', 'video').eq('processing_status', 'failed').is('playback_url', null)
+    .like('transcode_error', '%ENOENT%')
+
   const { data } = await db.from('media_items')
     .select('id, url, source_url')
     .eq('kind', 'video').is('playback_url', null)
