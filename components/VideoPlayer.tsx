@@ -51,6 +51,11 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
   const [hover, setHover] = useState<{ x: number; t: number } | null>(null)
   const [visible, setVisible] = useState(true)
   const [isFs, setIsFs] = useState(false)
+  // Show the poster until the first frame is actually decoded, so a video that's
+  // waiting on a decoder/bandwidth (e.g. many clips playing at once) shows its
+  // still frame instead of a black rectangle.
+  const [firstFrame, setFirstFrame] = useState(false)
+  useEffect(() => { setFirstFrame(false) }, [src])
 
   // Track fullscreen so we can fill + centre the video; an inline-flex wrapper
   // otherwise pins a portrait clip to the top-left corner of a black screen.
@@ -158,7 +163,15 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(34px) saturate(1.5)', transform: 'scale(1.25)', zIndex: 0, pointerEvents: 'none' }} />
       )}
       <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} preload="auto" onClick={toggle}
+        onLoadedData={() => setFirstFrame(true)} onPlaying={() => setFirstFrame(true)}
         style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', position: 'relative', zIndex: 1, ...style, ...(isFs ? { width: '100%', height: '100%', objectFit: 'contain' } : null) }} />
+
+      {/* Poster shown over the video until its first frame decodes — no black
+          flash while it's waiting its turn for a decoder. */}
+      {poster && !firstFrame && (
+        <img src={poster} alt="" aria-hidden
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: 1, background: '#000', pointerEvents: 'none' }} />
+      )}
 
       {/* Centre transport: rewind 10 · play/pause · forward 10 */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 30, pointerEvents: 'none', opacity: chromeOn ? 1 : 0, transition: 'opacity .25s ease' }}>
