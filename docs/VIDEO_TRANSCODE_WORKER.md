@@ -59,8 +59,37 @@ realtime UPDATE → gallery swaps "Processing…" → playable, automatically
 4. Kill the cron / unset FFmpeg to confirm the 10-min grace + failure fallback
    still plays the original.
 
-## Later: 720p / HLS
+## Backfill existing videos
 
-Add renditions in `lib/transcode.ts` (write them into the `variants` column;
-for HLS point `playback_url` at the `.m3u8`). Clients read only `playback_url`
-+ `variants`, so no mobile/web release is needed.
+Videos uploaded before this pipeline were backfilled to `ready` = the raw
+original, so they still play slowly. Re-queue them through the worker:
+
+```
+POST /api/admin/transcode-backfill        { }                 # all companies
+POST /api/admin/transcode-backfill        { "companyId": "…" } # one board
+Authorization: Bearer <super-admin token | CRON_SECRET>
+```
+
+It marks every video without a `playback_url` (and with an R2 source) `pending`;
+the minute cron then drains a few at a time. Idempotent and SSRF-safe (only our
+own R2 objects are queued).
+
+## HLS (adaptive / instant on any network)
+
+HLS generation is implemented and **off by default**. Set **`TRANSCODE_HLS=1`**
+and the worker also segments the finished MP4 into VOD HLS (stream-copy — no
+re-encode) and stores the master playlist in the row's `variants`
+(`[{type:'mp4',url},{type:'hls',url}]`). The faststart **MP4 stays the
+`playback_url`**, so nothing changes for existing clients.
+
+- **Mobile** plays the HLS `variants` entry natively — enable the flag and it
+  benefits with no app release.
+- **Web** still uses the MP4 (already near-instant via `+faststart`). To make
+  the web player use HLS, add `hls.js` (dynamic import) in `components/VideoPlayer.tsx`
+  for non-Safari browsers and prefer the `hls` variant — the one remaining step,
+  isolated to that component.
+
+### Full ABR ladder (later)
+The current HLS is a single 1080p rendition. For true adaptive bitrate, add
+720p/480p re-encodes in `generateHls()` and write a master playlist referencing
+all renditions — clients still read only `playback_url` + `variants`.

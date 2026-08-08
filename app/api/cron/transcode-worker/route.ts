@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { drainQueue } from '@/lib/transcode'
+import { drainQueue, backfillLegacy } from '@/lib/transcode'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,8 +32,11 @@ export async function GET(req: NextRequest) {
     }
   }
   try {
+    // Catch-up: queue a small batch of never-transcoded originals each run, then
+    // drain. Clears the pre-pipeline backlog automatically over a few minutes.
+    const backfilled = await backfillLegacy(admin())
     const processed = await drainQueue(admin())
-    return NextResponse.json({ ok: true, processed })
+    return NextResponse.json({ ok: true, backfilled, processed })
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 })
   }
