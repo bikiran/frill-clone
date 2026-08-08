@@ -121,14 +121,31 @@ export async function processTranscodeJob(db: Db, item: Item): Promise<void> {
     await download(source, inPath)
 
     // ≤1080p, even dimensions, H.264 High + AAC, faststart for instant start.
-    await runFfmpeg([
-      '-y', '-i', inPath,
-      '-vf', "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2",
-      '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'veryfast', '-crf', '23',
-      '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
-      '-movflags', '+faststart',
-      outPath,
-    ])
+    // `format=yuv420p` + `-pix_fmt yuv420p` force 8-bit 4:2:0: phone HDR / 10-bit
+    // HEVC otherwise makes libx264 abort with "-22 (Invalid argument) / received
+    // no packets". If the primary command still fails (rotation, odd stream
+    // layout, exotic input), fall back to a simpler, maximally-tolerant encode.
+    try {
+      await runFfmpeg([
+        '-y', '-i', inPath,
+        '-vf', "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
+        '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
+        '-movflags', '+faststart',
+        outPath,
+      ])
+    } catch (primaryErr) {
+      console.warn('[transcode] primary encode failed, trying fallback:', primaryErr)
+      await runFfmpeg([
+        '-y', '-i', inPath,
+        '-map', '0:v:0', '-map', '0:a:0?',
+        '-vf', 'scale=trunc(min(1920\\,iw)/2)*2:-2,format=yuv420p',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '128k',
+        '-movflags', '+faststart',
+        outPath,
+      ])
+    }
 
     // Poster frame ~1s in (best-effort — a missing poster never fails the job).
     await runFfmpeg([
@@ -228,14 +245,16 @@ export async function claimNextJob(db: Db): Promise<Item | null> {
  * nothing. Returns how many it queued.
  */
 export async function backfillLegacy(db: Db, limit = 8): Promise<number> {
-  // Rescue rows that failed ONLY because the ffmpeg binary wasn't bundled
-  // ("spawn … ENOENT"): that was an environmental bug, not a bad video, so give
-  // them a clean slate. A genuinely un-transcodable video fails with a different
-  // error and is left in `failed`, so this can't loop forever.
+  // Rescue rows that failed for reasons since fixed in the pipeline (not bad
+  // videos): the ffmpeg binary wasn't bundled ("spawn … ENOENT"), or libx264
+  // rejected an HDR/10-bit frame ("-22 (Invalid argument)" / "received no
+  // packets") before we forced yuv420p. Give those a clean slate so they
+  // reprocess. A genuinely un-transcodable video fails with some OTHER error and
+  // is left in `failed`, so this converges rather than looping.
   await db.from('media_items')
     .update({ processing_status: 'pending', transcode_attempts: 0, transcode_error: null })
     .eq('kind', 'video').eq('processing_status', 'failed').is('playback_url', null)
-    .like('transcode_error', '%ENOENT%')
+    .or('transcode_error.ilike.%ENOENT%,transcode_error.ilike.%Invalid argument%,transcode_error.ilike.%received no packets%')
 
   const { data } = await db.from('media_items')
     .select('id, url, source_url')
