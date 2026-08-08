@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { compressImage, uploadDirect } from '@/lib/upload-attachment'
 import { supabase } from '@/lib/supabase'
+import { playbackUrl, isVideoProcessing } from '@/lib/mediaPlayback'
 import { useCompanyUser } from '../crm-settings/_shared'
 import MediaGallery from '@/components/MediaGallery'
 import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
@@ -434,11 +435,18 @@ export default function GalleryPage() {
                   <div style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: 'var(--canvas)', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}
                     onClick={() => selectMode ? toggleSelect(item.id) : setLightboxIndex(i)}>
                     {item.kind === 'video' ? (
-                      <video src={item.url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                      // Poster the tile from the still frame (fast) rather than
+                      // mounting a <video> element for every card.
+                      item.thumbnail_url && item.thumbnail_url !== item.url ? (
+                        <img loading="lazy" decoding="async" src={item.thumbnail_url} alt={item.title || ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <video src={playbackUrl(item)} preload="metadata" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                      )
                     ) : (
                       <img loading="lazy" decoding="async" src={item.thumbnail_url || item.url} alt={item.title || ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                     )}
-                    {item.kind === 'video' && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}><svg width="34" height="34" viewBox="0 0 24 24" fill="#fff" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg></div>}
+                    {item.kind === 'video' && !isVideoProcessing(item) && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}><svg width="34" height="34" viewBox="0 0 24 24" fill="#fff" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg></div>}
+                    {item.kind === 'video' && isVideoProcessing(item) && <div style={{ position: 'absolute', left: 6, bottom: 6, display: 'flex', alignItems: 'center', gap: 4, padding: '3px 7px', borderRadius: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 10, fontWeight: 700 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>Processing</div>}
 
                     {/* Select checkbox — always available on hover, sticky in select mode */}
                     <button type="button"
@@ -541,7 +549,7 @@ export default function GalleryPage() {
 
       {lightboxIndex !== null && items[lightboxIndex] && (
         <MediaGallery
-          items={items.map(it => ({ url: it.url, kind: it.kind, name: it.title }))}
+          items={items.map(it => ({ url: playbackUrl(it), kind: it.kind, name: it.title, poster: it.thumbnail_url, processing: isVideoProcessing(it) }))}
           index={lightboxIndex}
           onIndex={setLightboxIndex}
           onClose={() => setLightboxIndex(null)}

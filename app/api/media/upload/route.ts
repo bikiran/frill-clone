@@ -1,6 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { uploadToR2, r2Configured } from '@/lib/r2'
+import { processJobById } from '@/lib/transcode'
+
+export const runtime = 'nodejs'
+export const maxDuration = 300
 
 function admin() {
   return createClient(
@@ -8,6 +12,20 @@ function admin() {
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
+}
+
+// A video is stored pending + transcoded; an image is ready immediately. Videos
+// keep the original as `url`/`source_url` with no poster yet (the worker fills
+// thumbnail_url + playback_url).
+function mediaFields(url: string, kind: string) {
+  return kind === 'video'
+    ? { url, thumbnail_url: null as string | null, source_url: url, processing_status: 'pending' }
+    : { url, thumbnail_url: url, processing_status: 'ready' }
+}
+
+// Transcode right after responding; the cron worker is the backstop.
+function enqueue(db: any, item: any, kind: string) {
+  if (kind === 'video' && item?.id) after(async () => { try { await processJobById(db, item.id) } catch {} })
 }
 
 // POST multipart: upload a file into the media-gallery bucket and create a
@@ -30,8 +48,9 @@ export async function POST(req: NextRequest) {
       const kind = preType.startsWith('video/') ? 'video' : 'image'
       const { data: item } = await db.from('media_items').insert({
         company_id: companyId, folder_id: folderId, title: title || preName,
-        url: preUrl, thumbnail_url: preUrl, kind, sku,
+        kind, sku, ...mediaFields(preUrl, kind),
       }).select().maybeSingle()
+      enqueue(db, item, kind)
       return NextResponse.json({ ok: true, item })
     }
     if (!file || !companyId) return NextResponse.json({ error: 'Missing file or companyId' }, { status: 400 })
@@ -66,9 +85,10 @@ export async function POST(req: NextRequest) {
     }
 
     const { data: item } = await db.from('media_items').insert({
-      company_id: companyId, folder_id: folderId, title: title || file.name, url: publicUrl,
-      thumbnail_url: publicUrl, kind, sku,
+      company_id: companyId, folder_id: folderId, title: title || file.name,
+      kind, sku, ...mediaFields(publicUrl, kind),
     }).select().maybeSingle()
+    enqueue(db, item, kind)
 
     return NextResponse.json({ ok: true, item })
   } catch (err: any) {

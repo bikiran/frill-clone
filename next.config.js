@@ -3,6 +3,12 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // The transcode routes shell out to the static FFmpeg binary; make sure Next's
+  // file tracing bundles it into those serverless functions.
+  outputFileTracingIncludes: {
+    '/api/storage/transcode': ['./node_modules/ffmpeg-static/ffmpeg'],
+    '/api/cron/transcode-worker': ['./node_modules/ffmpeg-static/ffmpeg'],
+  },
   // Allow images from any subdomain
   images: {
     remotePatterns: [

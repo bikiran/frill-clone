@@ -1,0 +1,49 @@
+import { NextRequest, NextResponse, after } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { processJobById } from '@/lib/transcode'
+
+// FFmpeg needs the Node runtime (not Edge) and time to work.
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 300
+
+function admin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  )
+}
+
+/**
+ * POST /api/storage/transcode
+ *
+ * Called by the app right after a video's ORIGINAL lands in R2. We mark the row
+ * pending, remember the source, and start the transcode in an after() hook so
+ * the response returns immediately (the phone never waits on FFmpeg). The cron
+ * worker is the backstop if this invocation is cut short.
+ *
+ * Body: { companyId, mediaItemId, sourceUrl, sourceKey?, contentType? }
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const { companyId, mediaItemId, sourceUrl } = await req.json().catch(() => ({}))
+    if (!companyId || !mediaItemId || !sourceUrl) {
+      return NextResponse.json({ ok: false, error: 'Missing companyId, mediaItemId or sourceUrl' }, { status: 400 })
+    }
+    const db = admin()
+
+    // Idempotent: only (re)queue a row that isn't already processed.
+    await db.from('media_items')
+      .update({ processing_status: 'pending', source_url: sourceUrl })
+      .eq('id', mediaItemId).eq('company_id', companyId)
+      .is('playback_url', null)
+
+    // Process just after responding — near-instant, no cron wait.
+    after(async () => { try { await processJobById(db, mediaItemId) } catch {} })
+
+    return NextResponse.json({ ok: true, queued: true })
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e.message }, { status: 500 })
+  }
+}

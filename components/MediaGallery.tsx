@@ -2,7 +2,7 @@
 
 import { useEffect, useCallback } from 'react'
 
-export type MediaItem = { url: string; name?: string; kind?: string }
+export type MediaItem = { url: string; name?: string; kind?: string; poster?: string; processing?: boolean }
 
 // Fullscreen gallery/lightbox. Opens over the current screen (not a new tab),
 // supports left/right navigation, a clickable thumbnail strip, and a close (✕)
@@ -60,8 +60,16 @@ export default function MediaGallery({ items, index, onClose, onIndex }: {
 
       {/* Main media */}
       <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '74vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {current.kind === 'video' ? (
-          <video src={current.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8 }} />
+        {current.kind === 'video' && current.processing ? (
+          <div style={{ width: 'min(90vw, 720px)', aspectRatio: '16 / 9', borderRadius: 8, background: '#000', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, overflow: 'hidden' }}>
+            {current.poster && <img src={current.poster} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', opacity: 0.4 }} />}
+            <div style={{ width: 34, height: 34, border: '3px solid rgba(255,255,255,0.35)', borderTopColor: '#fff', borderRadius: '50%', animation: 'colvySpin 0.8s linear infinite', zIndex: 1 }} />
+            <div style={{ color: '#fff', fontWeight: 800, fontSize: 16, zIndex: 1 }}>Processing video…</div>
+            <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, textAlign: 'center', maxWidth: 320, zIndex: 1 }}>Optimising for smooth playback. It&rsquo;ll be ready shortly.</div>
+            <style>{'@keyframes colvySpin { to { transform: rotate(360deg) } }'}</style>
+          </div>
+        ) : current.kind === 'video' ? (
+          <video src={current.url} poster={current.poster} controls autoPlay preload="auto" playsInline style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8 }} />
         ) : (
           <img loading="lazy" decoding="async" src={current.url} alt={current.name || ''} style={{ maxWidth: '90vw', maxHeight: '74vh', borderRadius: 8, objectFit: 'contain' }} />
         )}
@@ -82,7 +90,11 @@ export default function MediaGallery({ items, index, onClose, onIndex }: {
             <button key={i} onClick={() => onIndex(i)}
               style={{ flexShrink: 0, width: 56, height: 56, borderRadius: 8, overflow: 'hidden', border: i === index ? '2px solid #fff' : '2px solid transparent', background: '#000', cursor: 'pointer', padding: 0, opacity: i === index ? 1 : 0.55 }}>
               {it.kind === 'video' ? (
-                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#222', color: '#fff', fontSize: 18 }}>▶</div>
+                it.poster ? (
+                  <img loading="lazy" decoding="async" src={it.poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#222', color: '#fff', fontSize: 18 }}>▶</div>
+                )
               ) : (
                 <img loading="lazy" decoding="async" src={it.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               )}
