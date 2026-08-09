@@ -308,6 +308,11 @@ export function createVoiceAccessToken(params: {
   apiKeySecret: string
   identity: string
   twimlAppSid: string
+  // A Twilio Push Credential (FCM) SID. REQUIRED for the mobile SDK to receive
+  // incoming calls: unlike the browser (live socket), the phone gets invites via
+  // an FCM push that Twilio only sends when the grant names a push credential.
+  // Omit for browser-only tokens; when absent, mobile registers but never rings.
+  pushCredentialSid?: string | null
   ttlSeconds?: number
   nowSeconds: number   // pass an explicit clock — callers stamp it
 }): string {
@@ -324,6 +329,7 @@ export function createVoiceAccessToken(params: {
       voice: {
         incoming: { allow: true },
         outgoing: { application_sid: params.twimlAppSid },
+        ...(params.pushCredentialSid ? { push_credential_sid: params.pushCredentialSid } : {}),
       },
     },
   }
