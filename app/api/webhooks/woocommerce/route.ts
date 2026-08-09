@@ -464,11 +464,14 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       if (rr.enabled) {
         const delayHours = Number(rr.delay_hours ?? 24)
         const sendAfter = new Date(Date.now() + delayHours * 3600 * 1000).toISOString()
-        // One request per order (unique index on company_id, order_id).
+        // One request per order. The fast-path check handles the common case;
+        // the unique index (company_id, order_id) is the real guard against a
+        // duplicate "completed" webhook racing this select-then-insert, so
+        // swallow a conflict here rather than creating a second request.
         const { data: seen } = await db.from('review_requests')
           .select('id').eq('company_id', companyId).eq('order_id', String(order.id)).maybeSingle()
         if (!seen) {
-          await db.from('review_requests').insert({
+          const { error: rrErr } = await db.from('review_requests').insert({
             company_id: companyId,
             conversation_id: conv.id,
             contact_id: contact?.id || null,
@@ -476,6 +479,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
             send_after: sendAfter,
             status: 'pending',
           })
+          if (rrErr && rrErr.code !== '23505') throw rrErr   // 23505 = unique_violation, expected on a duplicate webhook
         }
       }
     } catch (e) { console.error('[review request] schedule failed', e) }
