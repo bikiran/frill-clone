@@ -11,6 +11,7 @@ import VoiceRecorder from '@/components/VoiceRecorder'
 import AudioDock from '@/components/AudioDock'
 import VoiceBlocks from '@/components/VoiceBlocks'
 import NoteComments from '@/components/NoteComments'
+import { broadcastNotesChange } from '@/lib/notes-broadcast'
 
 type Note = {
   id: string; title: string; body: string; checklist: ChecklistItem[]; attachments: any[]
@@ -175,23 +176,71 @@ export default function NotesPage() {
     })()
   }, [companyId, activeId])
 
+  // Per-session id — stable for this tab/device. We suppress our OWN broadcast
+  // echoes by this, NOT by user id: the same person is often signed in on both
+  // web and mobile, and keying on user id would make each device ignore the
+  // other's changes.
+  const clientId = useRef(rid())
+  const announce = (id: string | null, action: string) => {
+    if (companyId) void broadcastNotesChange(companyId, { id, action, by: clientId.current })
+  }
+
   const saveTimer = useRef<any>(null)
+  // True from the first keystroke until the debounced save lands. While dirty we
+  // never let a live remote refresh overwrite what's being typed.
+  const dirtyRef = useRef(false)
   const queueSave = (next: Note) => {
     setNote(next)
     setList(prev => prev.map(n => n.id === next.id ? { ...n, ...next, updated_at: new Date().toISOString() } : n))
+    dirtyRef.current = true
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
       if (!companyId) return
       setSaving(true)
       try {
         await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-          companyId, action: 'update', id: next.id, title: next.title, body: next.body,
+          companyId, action: 'update', id: next.id, userId: uid, title: next.title, body: next.body,
           checklist: next.checklist, attachments: next.attachments, cover_image: next.cover_image ?? null,
           allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned, shared_with_team: !!next.shared_with_team, shared_members: next.shared_members || [], linked_tasks: next.linked_tasks || [],
         }) })
-      } catch {} finally { setSaving(false) }
+        announce(next.id, 'update')
+      } catch {} finally { setSaving(false); dirtyRef.current = false }
     }, 650)
   }
+
+  // ── Live sync (web ⇄ mobile) ──────────────────────────────────────────────
+  // The notes API broadcasts a lightweight "changed" nudge on every write; we
+  // refetch the list and (if not mid-edit) the open note, so edits/checklists
+  // appear without a reload. Payload carries only an id — never note content.
+  const activeIdRef = useRef<string | null>(null)
+  useEffect(() => { activeIdRef.current = activeId }, [activeId])
+  const [remoteVer, setRemoteVer] = useState(0)   // bumps only on a remote refresh → remounts the editor with fresh body
+  const listRefreshTimer = useRef<any>(null)
+
+  const refreshActiveNote = useCallback(async (id: string) => {
+    if (!companyId) return
+    try {
+      const res = await fetch(`/api/notes?companyId=${companyId}&userId=${uid}&id=${id}`)
+      const d = await res.json()
+      if (d.note && activeIdRef.current === id && !dirtyRef.current) {
+        setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [], shared_members: d.note.shared_members || [], comments: d.note.comments || [], edit_log: d.note.edit_log || [], linked_tasks: d.note.linked_tasks || [] })
+        setRemoteVer(v => v + 1)
+      }
+    } catch {}
+  }, [companyId, uid])
+
+  useEffect(() => {
+    if (!companyId) return
+    const ch = (supabase as any).channel(`notes:${companyId}`)
+      .on('broadcast', { event: 'changed' }, ({ payload }: any) => {
+        if (payload?.by && payload.by === clientId.current) return   // ignore our own echo
+        clearTimeout(listRefreshTimer.current)
+        listRefreshTimer.current = setTimeout(() => { loadList() }, 300)
+        if (payload?.id && payload.id === activeIdRef.current && !dirtyRef.current) refreshActiveNote(payload.id)
+      })
+      .subscribe()
+    return () => { try { (supabase as any).removeChannel(ch) } catch {} }
+  }, [companyId, loadList, refreshActiveNote])
 
   const createNote = async () => {
     if (!companyId) return
@@ -199,7 +248,7 @@ export default function NotesPage() {
       const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'create', userId: user?.id, userName: me, title: '' }) })
       const d = await res.json()
       if (d.needsMigration) { setNeedsMigration(true); return }
-      if (d.note) { setTab('notes'); setList(prev => [d.note, ...prev]); setActiveId(d.note.id); setNote({ ...d.note, checklist: [], attachments: [], tags: [] }) }
+      if (d.note) { setTab('notes'); setList(prev => [d.note, ...prev]); setActiveId(d.note.id); setNote({ ...d.note, checklist: [], attachments: [], tags: [] }); announce(d.note.id, 'create') }
     } catch {}
   }
 
@@ -209,21 +258,21 @@ export default function NotesPage() {
     setList(prev => prev.filter(x => x.id !== id))
     if (n) setTrashList(prev => [{ ...n, trashed_at: new Date().toISOString() }, ...prev])
     if (activeId === id) { setActiveId(null); setNote(null) }
-    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'trash', id }) }) } catch {}
+    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'trash', id }) }); announce(id, 'trash') } catch {}
     showToast('Moved to Trash')
   }
   const restoreNote = async (id: string) => {
     const n = trashList.find(x => x.id === id)
     setTrashList(prev => prev.filter(x => x.id !== id))
     if (n) setList(prev => [{ ...n, trashed_at: null }, ...prev])
-    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'restore', id }) }) } catch {}
+    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'restore', id }) }); announce(id, 'restore') } catch {}
     showToast('Restored')
   }
   const deleteForever = async (id: string) => {
     if (!confirm('Delete this note permanently? This can’t be undone.')) return
     setTrashList(prev => prev.filter(x => x.id !== id))
     if (activeId === id) { setActiveId(null); setNote(null) }
-    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete', id }) }) } catch {}
+    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete', id }) }); announce(id, 'delete') } catch {}
   }
   const duplicateNote = async () => {
     if (!companyId || !note) return
@@ -231,7 +280,7 @@ export default function NotesPage() {
     try {
       const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'duplicate', id: note.id, userId: user?.id, userName: me }) })
       const d = await res.json()
-      if (d.note) { setList(prev => [d.note, ...prev]); setActiveId(d.note.id); setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [] }); showToast('Duplicated') }
+      if (d.note) { setList(prev => [d.note, ...prev]); setActiveId(d.note.id); setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [] }); announce(d.note.id, 'duplicate'); showToast('Duplicated') }
     } catch {}
   }
   const copyLink = async () => {
@@ -635,7 +684,7 @@ export default function NotesPage() {
                 </div>
               )}
 
-              <RichTextEditor key={note.id} value={note.body} onChange={html => queueSave({ ...note, body: html })}
+              <RichTextEditor key={`${note.id}:${remoteVer}`} value={note.body} onChange={html => queueSave({ ...note, body: html })}
                 placeholder="Start writing… use @ to mention a teammate, / for a voice note" mentions={team} bordered={false} big enableVoice companyId={companyId} toolbarPortal={toolbarEl} blockDrag minHeight={200} maxHeight={'none' as any} />
 
               <div style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
