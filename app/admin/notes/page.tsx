@@ -11,7 +11,6 @@ import VoiceRecorder from '@/components/VoiceRecorder'
 import AudioDock from '@/components/AudioDock'
 import VoiceBlocks from '@/components/VoiceBlocks'
 import NoteComments from '@/components/NoteComments'
-import { broadcastNotesChange } from '@/lib/notes-broadcast'
 
 type Note = {
   id: string; title: string; body: string; checklist: ChecklistItem[]; attachments: any[]
@@ -176,15 +175,6 @@ export default function NotesPage() {
     })()
   }, [companyId, activeId])
 
-  // Per-session id — stable for this tab/device. We suppress our OWN broadcast
-  // echoes by this, NOT by user id: the same person is often signed in on both
-  // web and mobile, and keying on user id would make each device ignore the
-  // other's changes.
-  const clientId = useRef(rid())
-  const announce = (id: string | null, action: string) => {
-    if (companyId) void broadcastNotesChange(companyId, { id, action, by: clientId.current })
-  }
-
   const saveTimer = useRef<any>(null)
   // True from the first keystroke until the debounced save lands. While dirty we
   // never let a live remote refresh overwrite what's being typed.
@@ -203,15 +193,19 @@ export default function NotesPage() {
           checklist: next.checklist, attachments: next.attachments, cover_image: next.cover_image ?? null,
           allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned, shared_with_team: !!next.shared_with_team, shared_members: next.shared_members || [], linked_tasks: next.linked_tasks || [],
         }) })
-        announce(next.id, 'update')
       } catch {} finally { setSaving(false); dirtyRef.current = false }
     }, 650)
   }
 
   // ── Live sync (web ⇄ mobile) ──────────────────────────────────────────────
-  // The notes API broadcasts a lightweight "changed" nudge on every write; we
-  // refetch the list and (if not mid-edit) the open note, so edits/checklists
-  // appear without a reload. Payload carries only an id — never note content.
+  // We watch the `notes` table over Supabase realtime (postgres_changes) — the
+  // same mechanism the Tasks/inbox surfaces and the mobile app use, so a write
+  // from any client reaches every other. Requires `notes` in the
+  // supabase_realtime publication (migration COLVY_V255_NOTES_REALTIME).
+  //
+  // The row payload is ignored; on any change we refetch the list and (if not
+  // mid-edit) the open note through the access-controlled /api/notes, so a
+  // user's personal/shared visibility is applied at the app layer.
   const activeIdRef = useRef<string | null>(null)
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
   const [remoteVer, setRemoteVer] = useState(0)   // bumps only on a remote refresh → remounts the editor with fresh body
@@ -231,12 +225,12 @@ export default function NotesPage() {
 
   useEffect(() => {
     if (!companyId) return
-    const ch = (supabase as any).channel(`notes:${companyId}`)
-      .on('broadcast', { event: 'changed' }, ({ payload }: any) => {
-        if (payload?.by && payload.by === clientId.current) return   // ignore our own echo
+    const ch = (supabase as any).channel(`notes-rt:${companyId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes', filter: `company_id=eq.${companyId}` }, (payload: any) => {
+        const id = payload?.new?.id || payload?.old?.id
         clearTimeout(listRefreshTimer.current)
         listRefreshTimer.current = setTimeout(() => { loadList() }, 300)
-        if (payload?.id && payload.id === activeIdRef.current && !dirtyRef.current) refreshActiveNote(payload.id)
+        if (id && id === activeIdRef.current && !dirtyRef.current) refreshActiveNote(id)
       })
       .subscribe()
     return () => { try { (supabase as any).removeChannel(ch) } catch {} }
@@ -248,7 +242,7 @@ export default function NotesPage() {
       const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'create', userId: user?.id, userName: me, title: '' }) })
       const d = await res.json()
       if (d.needsMigration) { setNeedsMigration(true); return }
-      if (d.note) { setTab('notes'); setList(prev => [d.note, ...prev]); setActiveId(d.note.id); setNote({ ...d.note, checklist: [], attachments: [], tags: [] }); announce(d.note.id, 'create') }
+      if (d.note) { setTab('notes'); setList(prev => [d.note, ...prev]); setActiveId(d.note.id); setNote({ ...d.note, checklist: [], attachments: [], tags: [] }) }
     } catch {}
   }
 
@@ -258,21 +252,21 @@ export default function NotesPage() {
     setList(prev => prev.filter(x => x.id !== id))
     if (n) setTrashList(prev => [{ ...n, trashed_at: new Date().toISOString() }, ...prev])
     if (activeId === id) { setActiveId(null); setNote(null) }
-    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'trash', id }) }); announce(id, 'trash') } catch {}
+    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'trash', id }) }) } catch {}
     showToast('Moved to Trash')
   }
   const restoreNote = async (id: string) => {
     const n = trashList.find(x => x.id === id)
     setTrashList(prev => prev.filter(x => x.id !== id))
     if (n) setList(prev => [{ ...n, trashed_at: null }, ...prev])
-    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'restore', id }) }); announce(id, 'restore') } catch {}
+    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'restore', id }) }) } catch {}
     showToast('Restored')
   }
   const deleteForever = async (id: string) => {
     if (!confirm('Delete this note permanently? This can’t be undone.')) return
     setTrashList(prev => prev.filter(x => x.id !== id))
     if (activeId === id) { setActiveId(null); setNote(null) }
-    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete', id }) }); announce(id, 'delete') } catch {}
+    try { await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete', id }) }) } catch {}
   }
   const duplicateNote = async () => {
     if (!companyId || !note) return
@@ -280,7 +274,7 @@ export default function NotesPage() {
     try {
       const res = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'duplicate', id: note.id, userId: user?.id, userName: me }) })
       const d = await res.json()
-      if (d.note) { setList(prev => [d.note, ...prev]); setActiveId(d.note.id); setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [] }); announce(d.note.id, 'duplicate'); showToast('Duplicated') }
+      if (d.note) { setList(prev => [d.note, ...prev]); setActiveId(d.note.id); setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [] }); showToast('Duplicated') }
     } catch {}
   }
   const copyLink = async () => {
