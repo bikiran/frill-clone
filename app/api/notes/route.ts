@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { broadcast } from '@/lib/realtime-broadcast'
 
 export const dynamic = 'force-dynamic'
 
-// Nudge every open Notes view (web + mobile) for this company to refetch. Sent
-// on any change; the client that made it ignores its own echo via `by`.
-function nudge(companyId: string, id: string | null, action: string, by?: string | null) {
-  void broadcast(`notes:${companyId}`, 'changed', { id: id || null, action, by: by || null })
-}
+// Live sync (web ⇄ mobile) is driven by Supabase realtime on the `notes` table
+// itself (postgres_changes) — see the notes page and migration
+// COLVY_V255_NOTES_REALTIME. Every DB write here is picked up automatically, so
+// this route doesn't need to emit its own nudge.
 
 // Company notes (COLVY_V233). Service-role so it works regardless of RLS, keyed
 // by companyId like the other admin data APIs. Resilient: if the table hasn't
@@ -63,7 +61,6 @@ export async function POST(req: NextRequest) {
         created_by: body.userId || null, created_by_name: body.userName || null,
       }).select().maybeSingle()
       if (error) { if (missing(error.message)) return NextResponse.json({ needsMigration: true }, { status: 200 }); throw error }
-      nudge(companyId, data?.id || null, 'create', body.userId)
       return NextResponse.json({ note: data })
     }
 
@@ -79,14 +76,12 @@ export async function POST(req: NextRequest) {
         error = retry.error
       }
       if (error && !missing(error.message)) throw error
-      nudge(companyId, body.id, 'update', body.userId)
       return NextResponse.json({ ok: true })
     }
 
     if (action === 'trash' || action === 'restore') {
       const { error } = await db.from('notes').update({ trashed_at: action === 'trash' ? new Date().toISOString() : null }).eq('id', body.id).eq('company_id', companyId)
       if (error && !missing(error.message)) throw error
-      nudge(companyId, body.id, action, body.userId)
       return NextResponse.json({ ok: true, degraded: !!error })
     }
 
@@ -102,7 +97,6 @@ export async function POST(req: NextRequest) {
       let { data, error } = await db.from('notes').insert(copy).select().maybeSingle()
       if (error && missing(error.message)) { delete copy.tags; const retry = await db.from('notes').insert(copy).select().maybeSingle(); data = retry.data; error = retry.error }
       if (error) throw error
-      nudge(companyId, data?.id || null, 'duplicate', body.userId)
       return NextResponse.json({ note: data })
     }
 
@@ -129,13 +123,11 @@ export async function POST(req: NextRequest) {
       const entry = { id: genCode(), name: body.name || 'Someone', email: body.email || '', body: String(body.body || '').slice(0, 4000), at: new Date().toISOString() }
       const { error } = await db.from('notes').update({ comments: [...list, entry] }).eq('id', body.id).eq('company_id', companyId)
       if (error && !missing(error.message)) throw error
-      nudge(companyId, body.id, 'comment', body.userId)
       return NextResponse.json({ ok: !error, degraded: !!error, comment: entry })
     }
 
     if (action === 'delete') {
       await db.from('notes').delete().eq('id', body.id).eq('company_id', companyId)
-      nudge(companyId, body.id, 'delete', body.userId)
       return NextResponse.json({ ok: true })
     }
 
