@@ -32,30 +32,52 @@ export async function POST(req: NextRequest) {
     if (!companyId || !body) return NextResponse.json({ error: 'Missing companyId or body' }, { status: 400 })
 
     const db = admin()
-    let q = db.from('push_tokens').select('expo_token, user_id').eq('company_id', companyId)
+    let q = db.from('push_tokens').select('expo_token, user_id, platform').eq('company_id', companyId)
     if (Array.isArray(userIds) && userIds.length > 0) q = q.in('user_id', userIds)
     const { data: tokens } = await q
     if (!tokens || tokens.length === 0) return NextResponse.json({ ok: true, sent: 0 })
+
+    const category = categoryId || (conversationId ? 'message' : undefined)
+    const text = body.slice(0, 500)
 
     // De-dupe and optionally skip the person who sent the message
     const seen = new Set<string>()
     const messages = tokens
       .filter(t => t.expo_token && (!excludeUserId || t.user_id !== excludeUserId))
       .filter(t => { if (seen.has(t.expo_token)) return false; seen.add(t.expo_token); return true })
-      .map(t => ({
-        to: t.expo_token,
-        sound: 'default',
-        title: title || 'New message',
-        // Android expands long text when the shade is pulled down, so there's
-        // no reason to truncate this hard.
-        body: body.slice(0, 500),
+      .map(t => {
         // companyId + from let the device's Reply action call /api/telnyx/sms/send
         // straight from the notification, and Mark-read call /api/inbox/mark-read.
-        data: { conversationId: conversationId || null, route: route || null, companyId, from: from || null },
-        channelId: channelId || 'messages',
-        // Enables the inline Reply / Mark read actions on the device.
-        categoryId: categoryId || (conversationId ? 'message' : undefined),
-      }))
+        const data = { conversationId: conversationId || null, route: route || null, companyId, from: from || null }
+
+        // Android: a notification-payload push is auto-shown by the OS with no
+        // action buttons, and @react-native-firebase (not Expo) owns the FCM
+        // service. So for the interactive 'message' category we send DATA-ONLY;
+        // the app presents it locally via expo-notifications, which is the only
+        // path on Android that attaches the Reply / Mark-read actions.
+        if (t.platform === 'android' && category === 'message') {
+          return {
+            to: t.expo_token,
+            // High priority so the data message is delivered promptly (incl. Doze).
+            priority: 'high',
+            data: { ...data, colvyLocal: '1', type: 'message', title: title || 'New message', body: text },
+            channelId: channelId || 'messages',
+          }
+        }
+        return {
+          to: t.expo_token,
+          sound: 'default',
+          title: title || 'New message',
+          // Android expands long text when the shade is pulled down, so there's
+          // no reason to truncate this hard.
+          body: text,
+          data,
+          channelId: channelId || 'messages',
+          // Enables the inline Reply / Mark read actions on the device (iOS, and
+          // Android tokens whose platform predates data-only presentation).
+          categoryId: category,
+        }
+      })
 
     if (messages.length === 0) return NextResponse.json({ ok: true, sent: 0 })
 
