@@ -91,7 +91,27 @@ export async function POST(req: NextRequest) {
       .select('user_id').eq('company_id', companyId)
       .gte('last_seen_at', cutoff).neq('available', false)
 
-    const identities = Array.from(new Set((online || []).map((a: any) => twilioIdentity(a.user_id, companyId))))
+    // Mobile agents also, even when the app is closed. Their presence heartbeat
+    // only beats while the app is foregrounded and is cleared on close, so a
+    // closed/screen-off phone dropped out of `online` and the call went straight
+    // to voicemail. But a registered push token means Twilio's own Voice push
+    // can wake the app and deliver the invite — so include every agent that has
+    // one. Twilio rings all identities at once and cancels the losers.
+    const { data: mobileTokens } = await db.from('push_tokens')
+      .select('user_id').eq('company_id', companyId).not('user_id', 'is', null)
+
+    // Respect an explicit "unavailable": someone online who turned calls off
+    // shouldn't be pulled back in just because their phone holds a token.
+    const { data: away } = await db.from('agent_presence')
+      .select('user_id').eq('company_id', companyId)
+      .gte('last_seen_at', cutoff).eq('available', false)
+    const unavailable = new Set<string>(((away || []).map((a: any) => a.user_id)).filter(Boolean))
+
+    const userIds = new Set<string>([
+      ...((online || []).map((a: any) => a.user_id)),
+      ...((mobileTokens || []).map((t: any) => t.user_id)),
+    ].filter((id: any) => id && !unavailable.has(id)))
+    const identities = Array.from(userIds).map(uid => twilioIdentity(uid, companyId))
 
     // Fire a push so mobile devices/agents know a call is ringing.
     try {
