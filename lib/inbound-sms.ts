@@ -142,9 +142,18 @@ export async function ingestInboundSms(params: {
     unread_count: (conv.unread_count || 0) + 1, updated_at: new Date().toISOString(),
   }).eq('id', conv.id)
 
-  // Alert agents' phones + run smart triggers.
+  // Alert agents' phones + run smart triggers. Prefer the saved contact's name
+  // over the raw number in the title; fall back to the number when unknown.
+  let senderLabel = matchedContactName || conv.subject || null
+  if (!senderLabel && matchedContactId) {
+    try {
+      const { data: c } = await db.from('contacts').select('name').eq('id', matchedContactId).eq('company_id', companyId).maybeSingle()
+      senderLabel = c?.name || null
+    } catch {}
+  }
+  if (!senderLabel || /^\+?\d[\d\s-]*$/.test(senderLabel)) senderLabel = from
   try {
-    fetch(`${origin}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `New SMS from ${from}`, body: summary, conversationId: conv.id }) })
+    fetch(`${origin}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `New SMS from ${senderLabel}`, body: summary, conversationId: conv.id, from }) })
     fetch(`${origin}/api/inbox/smart-trigger`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: conv.id, text }) })
   } catch {}
 

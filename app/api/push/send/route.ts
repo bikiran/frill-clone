@@ -22,6 +22,9 @@ export async function POST(req: NextRequest) {
       // Optional deep link for notifications that aren't about a conversation.
       route,
       categoryId,
+      // The customer's number for a conversation notification. Carried in `data`
+      // so the device's inline Reply action can send back without a lookup.
+      from,
       // Optional Android notification channel (sound/importance). Defaults to
       // 'messages'; a caller can pass e.g. 'calls' for a distinct channel.
       channelId,
@@ -46,7 +49,9 @@ export async function POST(req: NextRequest) {
         // Android expands long text when the shade is pulled down, so there's
         // no reason to truncate this hard.
         body: body.slice(0, 500),
-        data: { conversationId: conversationId || null, route: route || null },
+        // companyId + from let the device's Reply action call /api/telnyx/sms/send
+        // straight from the notification, and Mark-read call /api/inbox/mark-read.
+        data: { conversationId: conversationId || null, route: route || null, companyId, from: from || null },
         channelId: channelId || 'messages',
         // Enables the inline Reply / Mark read actions on the device.
         categoryId: categoryId || (conversationId ? 'message' : undefined),
