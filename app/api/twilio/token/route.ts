@@ -77,9 +77,38 @@ export async function POST(req: NextRequest) {
     }
 
     const identity = twilioIdentity(userId, companyId)
-    // Required for mobile to receive incoming calls (see createVoiceAccessToken).
-    // Browser tokens work without it; a mobile device registers but never rings.
-    const pushCredentialSid = integ.push_credential_sid || null
+
+    // ── Mobile push credential (auto-provisioned, per Twilio account) ──────────
+    // The mobile SDK only rings when the token names a Push Credential (see
+    // createVoiceAccessToken). It's account-scoped, so — exactly like the API Key
+    // and TwiML App above — each company's Twilio account needs its own, made
+    // once from the app's single Firebase credential (TWILIO_FCM_SECRET). This
+    // removes any per-company setup: it's created + cached automatically, and a
+    // SID that was made in a different account (Twilio "31404 Not Found") is
+    // detected here and re-created on the right one. Best-effort: if it fails,
+    // the token is still minted (browser calling unaffected; mobile just won't
+    // ring until the next successful provision).
+    let pushCredentialSid = integ.push_credential_sid || null
+    const fcmSecret = process.env.TWILIO_FCM_SECRET
+    if (fcmSecret) {
+      try {
+        let credOk = !!pushCredentialSid
+        if (credOk) credOk = !!(await svc.getPushCredential(pushCredentialSid!))
+        if (!credOk) {
+          const cred = await svc.createPushCredential({
+            friendlyName: `Colvy Mobile ${String(companyId).slice(0, 8)}`,
+            fcmSecret,
+          })
+          if (cred?.sid) {
+            pushCredentialSid = cred.sid
+            await db.from('twilio_integrations').update({ push_credential_sid: pushCredentialSid }).eq('company_id', companyId)
+          }
+        }
+      } catch (e: any) {
+        console.error('[twilio token] push credential provision failed', e?.message || e)
+      }
+    }
+
     const token = createVoiceAccessToken({
       accountSid: integ.account_sid,
       apiKeySid, apiKeySecret,
