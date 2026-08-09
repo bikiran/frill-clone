@@ -158,6 +158,33 @@ export class TwilioService {
     })
   }
 
+  // ── Voice: mobile push credential (FCM) ────────────────────────────────────
+  // The mobile Voice SDK only receives incoming calls via an FCM push that
+  // Twilio sends when the Access Token names a Push Credential (CRxxxx). These
+  // live on Twilio's Notify Credentials API and are account-scoped — so, exactly
+  // like the API Key / TwiML App above, each Twilio account needs its own,
+  // provisioned once from the app's single (shared) FCM credential.
+  private static PUSH_CREDENTIALS = 'https://notify.twilio.com/v1/Credentials'
+
+  // Does this Push Credential (CRxxxx) exist ON THIS account? A SID created in a
+  // different account/subaccount returns 404 here — the cause of the "31404 Not
+  // Found" the SDK throws when a token names a credential the account can't see.
+  async getPushCredential(sid: string): Promise<any | null> {
+    try { return await this.req(`${TwilioService.PUSH_CREDENTIALS}/${sid}`, 'GET') } catch { return null }
+  }
+
+  // Create an FCM push credential from the app's Firebase credential. `fcmSecret`
+  // is the FCM v1 service-account JSON (or a legacy server key); Twilio pushes to
+  // the app's Firebase project with it. Returns the new CRxxxx SID.
+  async createPushCredential(params: { friendlyName: string; fcmSecret: string }): Promise<{ sid: string } | null> {
+    const data = await this.req(TwilioService.PUSH_CREDENTIALS, 'POST', {
+      Type: 'fcm',
+      FriendlyName: params.friendlyName,
+      Secret: params.fcmSecret,
+    })
+    return data?.sid ? { sid: data.sid } : null
+  }
+
   async updateTwimlApp(appSid: string, params: { voiceUrl?: string; voiceMethod?: string; statusCallback?: string }): Promise<any> {
     const form: Record<string, any> = {}
     if (params.voiceUrl) form.VoiceUrl = params.voiceUrl
