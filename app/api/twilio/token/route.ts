@@ -109,13 +109,16 @@ export async function POST(req: NextRequest) {
     const fcmSecret = resolveFcmSecret()
     if (fcmSecret) {
       try {
-        const existing = pushCredentialSid ? await svc.getPushCredential(pushCredentialSid) : null
-        if (existing) {
-          // Keep the stored secret in sync with the env value, so a credential
-          // first created from a mangled key (52005) heals on the next mint once
-          // the key is fixed — no manual delete/recreate needed.
-          await svc.updatePushCredential(pushCredentialSid!, fcmSecret)
-        } else {
+        // Create ONCE, then never touch it again. Rewriting an existing
+        // credential's secret on every mint (an earlier "self-heal") corrupted a
+        // known-good credential — Twilio's update path mangles the FCM v1 JSON
+        // differently than create — so a working credential silently died after
+        // a few mints. Only create when there isn't a valid one for this account
+        // (missing, or a SID from a different account → Twilio 31404). To re-heal
+        // a bad credential, null push_credential_sid and it's rebuilt cleanly.
+        let credOk = !!pushCredentialSid
+        if (credOk) credOk = !!(await svc.getPushCredential(pushCredentialSid!))
+        if (!credOk) {
           const cred = await svc.createPushCredential({
             friendlyName: `Colvy Mobile ${String(companyId).slice(0, 8)}`,
             fcmSecret,
