@@ -67,6 +67,11 @@ export default function CallsPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [contact, setContact] = useState<any>(null)
   const [convId, setConvId] = useState<string | null>(null)
+  // Saved contacts keyed by phone last-9-digit tail, so a call whose row never
+  // captured a contact (arrived before the contact was saved, or the ingestion
+  // scan missed it) still shows the person's name here. Formatting differs
+  // (+61466270100 vs 0466270100) so we always compare on the 9-digit tail.
+  const [contactsByTail, setContactsByTail] = useState<Record<string, { id: string; name: string }>>({})
   const [openTranscript, setOpenTranscript] = useState<Set<string>>(new Set())
   const [summarizing, setSummarizing] = useState<Set<string>>(new Set())
   const [width, setWidth] = useState(1400)
@@ -126,6 +131,26 @@ export default function CallsPage() {
     return () => { (supabase as any).removeChannel(channel) }
   }, [companyId])
 
+  // Build the phone-tail → contact map once per company (small id/name/phone
+  // rows), so the call log can resolve names the calls table never stored.
+  useEffect(() => {
+    if (!companyId) return
+    let active = true
+    ;(async () => {
+      const { data } = await (supabase as any).from('contacts')
+        .select('id, name, phone').eq('company_id', companyId).not('phone', 'is', null).limit(10000)
+      if (!active) return
+      const map: Record<string, { id: string; name: string }> = {}
+      for (const c of (data || [])) {
+        const tail = String(c.phone || '').replace(/\D/g, '').slice(-9)
+        if (tail && c.name && !map[tail]) map[tail] = { id: c.id, name: c.name }
+      }
+      setContactsByTail(map)
+    })()
+    return () => { active = false }
+  }, [companyId])
+
+  const tailOf = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
   const fmtDuration = (s: number | null) => { if (!s) return '0:00'; const m = Math.floor(s / 60), sec = s % 60; return `${m}:${sec.toString().padStart(2, '0')}` }
   const relTime = (iso: string) => {
     const diff = Date.now() - new Date(iso).getTime()
@@ -163,16 +188,25 @@ export default function CallsPage() {
     for (const c of calls) {
       if (!passesTab(c)) continue
       const key = otherParty(c)
-      if (q && !key.toLowerCase().includes(q) && !(c.caller_name || '').toLowerCase().includes(q)) continue
+      const resolvedName = contactsByTail[tailOf(key)]?.name || ''
+      if (q && !key.toLowerCase().includes(q) && !(c.caller_name || '').toLowerCase().includes(q) && !resolvedName.toLowerCase().includes(q)) continue
       const arr = map.get(key) || []; arr.push(c); map.set(key, arr)
     }
     const out = Array.from(map.entries()).map(([key, cs]) => {
       const sorted = [...cs].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
-      return { key, name: sorted.find(c => c.caller_name)?.caller_name || key, calls: sorted, latest: sorted[0], contactId: sorted.find(c => c.contact_id)?.contact_id || null }
+      // Prefer the name frozen on the call row; fall back to a saved contact
+      // resolved by phone tail so calls that never captured one still get named.
+      const resolved = contactsByTail[tailOf(key)]
+      return {
+        key,
+        name: sorted.find(c => c.caller_name)?.caller_name || resolved?.name || key,
+        calls: sorted, latest: sorted[0],
+        contactId: sorted.find(c => c.contact_id)?.contact_id || resolved?.id || null,
+      }
     })
     out.sort((a, b) => +new Date(b.latest.created_at) - +new Date(a.latest.created_at))
     return out
-  }, [calls, filter, search])
+  }, [calls, filter, search, contactsByTail])
 
   useEffect(() => {
     if (isMobile) return

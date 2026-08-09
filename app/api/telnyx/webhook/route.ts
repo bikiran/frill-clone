@@ -377,13 +377,20 @@ export async function POST(req: NextRequest) {
         const { data: integ } = await db.from('telnyx_integrations').select('*').eq('phone_number', toNum).maybeSingle()
         const companyId = integ?.company_id
         if (companyId && integ) {
-          // Match caller to a contact by phone.
+          // Match caller to a contact by phone. Query by the last-9-digit tail
+          // in the DB rather than scanning a capped page of contacts — a big
+          // contact list would otherwise leave a saved caller unmatched (and
+          // then unnamed on the call log / card / voicemail alert).
           let contactId: string | null = null
           let callerName: string | null = null
-          const { data: contacts } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).limit(500)
           const digitsOf = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
-          const match = (contacts || []).find((c: any) => c.phone && digitsOf(c.phone) === digitsOf(fromNum))
-          if (match) { contactId = match.id; callerName = match.name }
+          const fromTail = digitsOf(fromNum)
+          if (fromTail) {
+            const { data: contacts } = await db.from('contacts')
+              .select('id, name, phone').eq('company_id', companyId).ilike('phone', `%${fromTail}%`).limit(10)
+            const match = (contacts || []).find((c: any) => c.phone && digitsOf(c.phone) === fromTail)
+            if (match) { contactId = match.id; callerName = match.name }
+          }
 
           // No saved contact — fall back to WooCommerce so a shopper still shows
           // a name on the call log, card and voicemail alert.

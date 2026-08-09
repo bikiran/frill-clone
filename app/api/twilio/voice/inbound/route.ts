@@ -54,9 +54,15 @@ export async function POST(req: NextRequest) {
     let callerName: string | null = null
     let conversationId: string | null = null
     try {
-      const { data: contacts } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).limit(1000)
-      const c = (contacts || []).find((x: any) => x.phone && digitsOf(x.phone) === digitsOf(from))
-      if (c) { contactId = c.id; callerName = c.name || null }
+      // Query by the last-9-digit tail rather than scanning a capped page of
+      // contacts, so a saved caller is matched regardless of contact-list size.
+      const fromTail = digitsOf(from)
+      if (fromTail) {
+        const { data: contacts } = await db.from('contacts')
+          .select('id, name, phone').eq('company_id', companyId).ilike('phone', `%${fromTail}%`).limit(10)
+        const c = (contacts || []).find((x: any) => x.phone && digitsOf(x.phone) === fromTail)
+        if (c) { contactId = c.id; callerName = c.name || null }
+      }
       if (contactId) {
         const { data: conv } = await db.from('conversations')
           .select('id').eq('company_id', companyId).eq('contact_id', contactId)
