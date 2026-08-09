@@ -408,11 +408,18 @@ export default function InboxPage() {
     { text: reply },
     { enabled: !!selected, isEmpty: (v: any) => !v?.text || !v.text.trim() }
   )
-  // Restore once the draft for this conversation has loaded.
+  // Load THIS conversation's draft into the composer — and drop the previous
+  // conversation's text the moment we switch. `reply` is a single state cell
+  // shared across conversations, so without this the leftover text would be
+  // auto-saved under whatever conversation is opened next. Gated on
+  // `restoredFor` (not `ready`), which tells us the loaded draft is for the
+  // currently-selected conversation, since ready/restored lag a render behind.
   useEffect(() => {
-    if (draft.ready && draft.restored?.text && !reply) setReply(draft.restored.text)
+    const id = selected?.id || ''
+    if (draft.restoredFor !== id) { setReply(''); return }   // switched; this conv's draft not loaded yet
+    setReply(draft.restored?.text || '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.ready, selected?.id])
+  }, [selected?.id, draft.restoredFor])
   const [sending, setSending] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [locationFilter, setLocationFilter] = useState<string>('all')

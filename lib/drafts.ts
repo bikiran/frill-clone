@@ -70,6 +70,11 @@ export function useDraft(
 ) {
   const [restored, setRestored] = useState<any | null>(null)
   const [ready, setReady] = useState(false)
+  // Which refId `restored` actually belongs to. `ready`/`restored` lag one
+  // render behind a refId change, so callers that key UI off the draft (e.g. a
+  // shared composer) need an unambiguous "this draft is for conversation X"
+  // signal to avoid applying the previous thing's draft to the new one.
+  const [restoredFor, setRestoredFor] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const timer = useRef<any>(null)
   const skipFirst = useRef(true)
@@ -77,11 +82,11 @@ export function useDraft(
   // Restore whatever was left behind for this user + thing.
   useEffect(() => {
     let cancelled = false
-    setReady(false); setRestored(null); skipFirst.current = true
-    if (!userId || !enabled) { setReady(true); return }
+    setReady(false); setRestored(null); setRestoredFor(null); skipFirst.current = true
+    if (!userId || !enabled) { setReady(true); setRestoredFor(refId); return }
     ;(async () => {
       const d = await loadDraft(userId, kind, refId)
-      if (!cancelled) { setRestored(d); setReady(true) }
+      if (!cancelled) { setRestored(d); setRestoredFor(refId); setReady(true) }
     })()
     return () => { cancelled = true }
   }, [userId, kind, refId, enabled])
@@ -115,5 +120,5 @@ export function useDraft(
     setSaved(false)
   }, [userId, kind, refId])
 
-  return { restored, ready, saved, discard }
+  return { restored, ready, restoredFor, saved, discard }
 }
