@@ -55,13 +55,26 @@ export async function POST(req: NextRequest) {
     if (!call) return NextResponse.json({ error: 'Call not found' }, { status: 404 })
 
     const customerLeg = call.twilio_call_sid
-    const agentLeg = call.twilio_child_call_sid
     if (!customerLeg) return NextResponse.json({ error: 'This call has no active leg' }, { status: 400 })
-    if (!agentLeg) return NextResponse.json({ error: 'Transfer is available once the call is answered' }, { status: 400 })
 
     const { data: integ } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
     if (!integ?.account_sid || !integ.auth_token) return NextResponse.json({ error: 'Twilio is not configured' }, { status: 400 })
     const svc = new TwilioService(integ.account_sid, integ.auth_token)
+
+    // The agent (browser <Client>) leg SID is normally captured by the
+    // child-status webhook at answer. If that callback didn't land, the column
+    // is null and transfer would be permanently blocked on a call that's plainly
+    // answered and running. Resolve it live from Twilio before giving up, and
+    // persist it so subsequent actions on this call are instant.
+    let agentLeg = call.twilio_child_call_sid
+    if (!agentLeg) {
+      agentLeg = await svc.getAnsweredChildCallSid(customerLeg)
+      if (agentLeg) {
+        call.twilio_child_call_sid = agentLeg
+        try { await db.from('calls').update({ twilio_child_call_sid: agentLeg, status: 'in_progress' }).eq('id', call.id) } catch {}
+      }
+    }
+    if (!agentLeg) return NextResponse.json({ error: 'Transfer is available once the call is answered' }, { status: 400 })
     const fromCallerId = integ.phone_number || call.to_number || call.from_number
 
     const confName = call.conference_name || `colvy-${call.id}`

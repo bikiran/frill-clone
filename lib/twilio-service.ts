@@ -245,6 +245,23 @@ export class TwilioService {
     return this.req(`/Conferences/${conferenceSid}/Participants/${callSid}.json`, 'DELETE')
   }
 
+  // Live-resolve the answered agent leg of an inbound ring-all call.
+  //
+  // A <Dial><Client> child leg carries ParentCallSid = the inbound customer
+  // call, and its `to` is `client:<identity>`. The child-status webhook is
+  // supposed to capture this SID at answer, but if that callback never lands
+  // (base URL not publicly reachable, delivery dropped) warm transfer would be
+  // stuck. This asks Twilio directly for the in-progress child so transfer can
+  // proceed regardless. Returns the client leg's SID, or null if none is live.
+  async getAnsweredChildCallSid(parentCallSid: string): Promise<string | null> {
+    try {
+      const data = await this.req(`/Calls.json?ParentCallSid=${encodeURIComponent(parentCallSid)}&Status=in-progress`, 'GET')
+      const calls: any[] = data?.calls || []
+      const client = calls.find(c => typeof c?.to === 'string' && c.to.startsWith('client:'))
+      return client?.sid || calls[0]?.sid || null
+    } catch { return null }
+  }
+
   // ── Number provisioning (used with the platform account) ────────────────────
   // Search buyable numbers in a country. `type` maps to Twilio's number classes.
   async searchAvailableNumbers(params: { country?: string; type?: 'local' | 'mobile' | 'national' | 'tollfree'; areaCode?: string; contains?: string; limit?: number }): Promise<any[]> {
