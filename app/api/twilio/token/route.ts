@@ -77,15 +77,19 @@ export async function POST(req: NextRequest) {
     }
 
     const identity = twilioIdentity(userId, companyId)
+    // Required for mobile to receive incoming calls (see createVoiceAccessToken).
+    // Browser tokens work without it; a mobile device registers but never rings.
+    const pushCredentialSid = integ.push_credential_sid || null
     const token = createVoiceAccessToken({
       accountSid: integ.account_sid,
       apiKeySid, apiKeySecret,
       identity, twimlAppSid,
+      pushCredentialSid,
       nowSeconds: Math.floor(Date.now() / 1000),
       ttlSeconds: 3600,
     })
 
-    return NextResponse.json({ token, identity, from: integ.phone_number || null })
+    return NextResponse.json({ token, identity, from: integ.phone_number || null, hasPushCredential: !!pushCredentialSid })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
