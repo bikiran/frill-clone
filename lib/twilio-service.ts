@@ -185,6 +185,16 @@ export class TwilioService {
     return data?.sid ? { sid: data.sid } : null
   }
 
+  // Overwrite an existing credential's stored secret. Lets a credential first
+  // created from a bad/mangled key (Twilio 52005 "invalid credential contents")
+  // heal itself once the key is corrected, without deleting + recreating.
+  async updatePushCredential(sid: string, fcmSecret: string): Promise<boolean> {
+    try {
+      await this.req(`${TwilioService.PUSH_CREDENTIALS}/${sid}`, 'POST', { Secret: fcmSecret })
+      return true
+    } catch { return false }
+  }
+
   async updateTwimlApp(appSid: string, params: { voiceUrl?: string; voiceMethod?: string; statusCallback?: string }): Promise<any> {
     const form: Record<string, any> = {}
     if (params.voiceUrl) form.VoiceUrl = params.voiceUrl

@@ -12,6 +12,23 @@ function admin() {
   )
 }
 
+// The Firebase service-account credential Twilio pushes with. It's the FCM v1
+// service-account JSON — but multi-line JSON pasted into an env var routinely
+// has its private_key newlines mangled, which makes Twilio store an unusable
+// credential ("52005 invalid credential contents"). So we ALSO accept a base64
+// encoding of that JSON, which survives env vars byte-for-byte. Detect which by
+// the leading brace and decode when needed.
+function resolveFcmSecret(): string | null {
+  const raw = (process.env.TWILIO_FCM_SECRET || '').trim()
+  if (!raw) return null
+  if (raw.startsWith('{')) return raw
+  try {
+    const decoded = Buffer.from(raw, 'base64').toString('utf8').trim()
+    if (decoded.startsWith('{')) return decoded
+  } catch {}
+  return raw
+}
+
 // Mint a short-lived Twilio Voice Access Token for the browser SDK. Never
 // exposes the account credentials — only this JWT, scoped to the TwiML App.
 export async function POST(req: NextRequest) {
@@ -89,12 +106,16 @@ export async function POST(req: NextRequest) {
     // the token is still minted (browser calling unaffected; mobile just won't
     // ring until the next successful provision).
     let pushCredentialSid = integ.push_credential_sid || null
-    const fcmSecret = process.env.TWILIO_FCM_SECRET
+    const fcmSecret = resolveFcmSecret()
     if (fcmSecret) {
       try {
-        let credOk = !!pushCredentialSid
-        if (credOk) credOk = !!(await svc.getPushCredential(pushCredentialSid!))
-        if (!credOk) {
+        const existing = pushCredentialSid ? await svc.getPushCredential(pushCredentialSid) : null
+        if (existing) {
+          // Keep the stored secret in sync with the env value, so a credential
+          // first created from a mangled key (52005) heals on the next mint once
+          // the key is fixed — no manual delete/recreate needed.
+          await svc.updatePushCredential(pushCredentialSid!, fcmSecret)
+        } else {
           const cred = await svc.createPushCredential({
             friendlyName: `Colvy Mobile ${String(companyId).slice(0, 8)}`,
             fcmSecret,
