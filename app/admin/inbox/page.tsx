@@ -1217,6 +1217,27 @@ export default function InboxPage() {
       for (const c of convs) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
     }
 
+    // Fallback: a conversation with no contact_id but a phone (sms_number) may
+    // match a contact that was added AFTER the thread started — the manual link
+    // never happened. Resolve by the last 9 digits, attach the name, and persist
+    // contact_id so the list, thread and Details panel all show it from now on.
+    const dig = (p: string) => (p || '').replace(/\D/g, '')
+    const unlinked = convs.filter((c: any) => !c.contact_id && dig(c.sms_number || c.phone).length >= 8)
+    if (unlinked.length) {
+      const tails = Array.from(new Set(unlinked.map((c: any) => dig(c.sms_number || c.phone).slice(-9))))
+      const ors = tails.map((t: string) => `phone.ilike.%${t}%`).join(',')
+      const { data: cand } = await (supabase as any).from('contacts').select('id, name, email, phone').eq('company_id', id).or(ors).limit(200)
+      if (cand && cand.length) {
+        const linked: { conv: string; contact: string }[] = []
+        for (const c of unlinked) {
+          const tail = dig(c.sms_number || c.phone).slice(-9)
+          const m = cand.find((ct: any) => ct.phone && dig(ct.phone).endsWith(tail))
+          if (m) { (c as any).contacts = m; (c as any).contact_id = m.id; linked.push({ conv: c.id, contact: m.id }) }
+        }
+        for (const l of linked) { try { await (supabase as any).from('conversations').update({ contact_id: l.contact }).eq('id', l.conv) } catch {} }
+      }
+    }
+
     setConversations(convs)
     writeCache(cacheKey, convs)
     // On first load (desktop), OPEN the top conversation — including its messages
@@ -1533,13 +1554,40 @@ export default function InboxPage() {
         } catch {}
       }
     } else {
-      setContact(null)
-      setEditContact({})
+      // No linked contact — try to match one added after the thread started, by
+      // phone tail, then link it so the Details panel and title show the name.
+      const dig = (p: string) => (p || '').replace(/\D/g, '')
+      const tail = dig((conv as any).sms_number).slice(-9)
+      let matched: any = null
+      if (tail.length >= 8 && companyId) {
+        const { data: cand } = await (supabase as any).from('contacts').select('*').eq('company_id', companyId).ilike('phone', `%${tail}%`).limit(10)
+        matched = (cand || []).find((ct: any) => ct.phone && dig(ct.phone).endsWith(tail)) || null
+      }
+      if (matched) {
+        setContact(matched); setEditContact(matched)
+        try { await (supabase as any).from('conversations').update({ contact_id: matched.id }).eq('id', conv.id) } catch {}
+        ;(conv as any).contact_id = matched.id
+        setSelected(s => (s && s.id === conv.id ? ({ ...s, contact_id: matched.id } as any) : s))
+        setConversations(prev => prev.map(c => c.id === conv.id ? ({ ...c, contact_id: matched.id, contacts: matched } as any) : c))
+        if ((matched.email || matched.phone)) {
+          try {
+            const params = new URLSearchParams({ companyId })
+            if (matched.email) params.set('email', matched.email)
+            if (matched.phone) params.set('phone', matched.phone)
+            const res = await fetch(`/api/doa/match?${params.toString()}`)
+            const data = await res.json()
+            if (data.match) setDoaMatch(true)
+          } catch {}
+        }
+      } else {
+        setContact(null)
+        setEditContact({})
+      }
     }
     // Load timeline events, notes, tasks
     loadConversationExtras(conv.id)
     // Load WooCommerce data if the contact's email matches an order
-    loadWooData(conv.contact_id)
+    loadWooData((conv as any).contact_id)
     // Scan messages for AI-detected info — only real visitor text, never
     // system/interactive/payment messages (those contain UUIDs/JSON).
     setTimeout(() => {
@@ -5708,7 +5756,7 @@ export default function InboxPage() {
               {conversations.filter(c => c.id !== selected.id).map(c => (
                 <button key={c.id} type="button" onClick={() => mergeConversation(c.id)}
                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 18px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{dec(c.subject) || (c as any).sms_number || 'Visitor'}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{(c as any).contacts?.name || dec(c.subject) || (c as any).sms_number || 'Visitor'}</div>
                   <div style={{ fontSize: 12, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.last_message || 'No messages'}</div>
                 </button>
               ))}
