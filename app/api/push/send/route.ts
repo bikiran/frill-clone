@@ -60,8 +60,14 @@ export async function POST(req: NextRequest) {
             to: t.expo_token,
             // High priority so the data message is delivered promptly (incl. Doze).
             priority: 'high',
-            data: { ...data, colvyLocal: '1', type: 'message', title: title || 'New message', body: text },
-            channelId: channelId || 'messages',
+            // DATA-ONLY: no title/body/sound/channelId at the top level. Expo
+            // treats a push carrying ANY of those (channelId included) as a
+            // notification and attaches an FCM `notification` block — which
+            // Android then renders as a second, EMPTY heads-up alongside the one
+            // the app presents locally. Keeping this to `to`/`priority`/`data`
+            // makes it a true data message the OS never displays itself. The
+            // channel is applied by presentMessageNotification when it presents.
+            data: { ...data, colvyLocal: '1', type: 'message', title: title || 'New message', body: text, channelId: channelId || 'messages' },
           }
         }
         return {
