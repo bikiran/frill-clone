@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolveSmsSender } from '@/lib/sms-provider'
 
 function admin() {
   return createClient(
@@ -43,17 +44,34 @@ export async function POST(req: NextRequest) {
       }
     } catch {}
 
+    const smsText = `📎 ${request.prompt}\nUpload here (private, full quality): ${link}`
+
     // Post the request into the conversation as an agent message.
     if (conversationId) {
-      const acceptLabel = (request.accept || []).join(', ')
       await db.from('messages').insert({
         conversation_id: conversationId, company_id: companyId,
         sender_type: 'agent', sender_name: createdBy || 'Support',
-        content: `📎 ${request.prompt}\nUpload here (private, full quality): ${link}`,
+        content: smsText,
         message_type: 'media_request',
         message_payload: { kind: 'media_request', token, prompt: request.prompt, accept: request.accept, max_files: request.max_files, expires_at, link },
       })
       await db.from('conversations').update({ last_message: 'Requested media upload', last_message_at: new Date().toISOString() }).eq('id', conversationId)
+
+      // Actually deliver the link to the customer over SMS. Previously we only
+      // inserted the message row, so it showed in the agent's thread but the
+      // customer never received it — the agent had to copy the link and text it
+      // by hand. Send it for real over whichever provider owns the number.
+      try {
+        const { data: conv } = await db.from('conversations')
+          .select('sms_number, sms_enabled').eq('id', conversationId).maybeSingle()
+        const to = conv?.sms_number
+        if (to && conv?.sms_enabled !== false) {
+          const sender = await resolveSmsSender(db, companyId)
+          if (sender) await sender.send({ to, text: smsText })
+        }
+      } catch (e: any) {
+        console.error('[media-requests] sms send failed', e?.message || e)
+      }
     }
 
     return NextResponse.json({ ok: true, token, link })
