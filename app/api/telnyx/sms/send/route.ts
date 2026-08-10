@@ -74,11 +74,22 @@ export async function POST(req: NextRequest) {
         // Photo on an MMS-capable provider → send the real image, no link needed.
         if (sender.supportsMms && isImageAtt(a) && a.url) { mmsUrls.push(a.url); continue }
         try {
+          // A per-attachment expiry (set in the composer's media preview) makes
+          // the /m/ viewer stop serving the file after the deadline. 'access'
+          // mode just revokes access; 'delete' also purges the media via the
+          // expire-media cron. Patched separately so a pre-migration DB still
+          // creates the link.
+          const expiresAt: string | null = a.expires_at || null
+          const expiryMode: string = a.expiry_mode === 'delete' ? 'delete' : 'access'
           // Reuse an existing link for this exact file in this conversation,
-          // so the same image can't go out as two different links.
+          // so the same image can't go out as two different links. A fresh
+          // expiry choice still updates the existing link's deadline.
           const { data: existing } = await db.from('short_links')
             .select('code').eq('company_id', companyId).eq('target_url', a.url).limit(1)
           if (existing?.[0]?.code) {
+            if (expiresAt) {
+              try { await db.from('short_links').update({ expires_at: expiresAt, expiry_mode: expiryMode }).eq('code', existing[0].code).eq('company_id', companyId) } catch {}
+            }
             links.push(`${origin}/m/${existing[0].code}`)
             continue
           }
@@ -87,6 +98,9 @@ export async function POST(req: NextRequest) {
             code, company_id: companyId, target_url: a.url, label: a.name,
             kind: 'media', conversation_id: conversationId || null,
           })
+          if (expiresAt) {
+            try { await db.from('short_links').update({ expires_at: expiresAt, expiry_mode: expiryMode }).eq('code', code).eq('company_id', companyId) } catch {}
+          }
           links.push(`${origin}/m/${code}`)
         } catch {
           links.push(a.url) // fall back to the raw URL if the shortlink insert fails
