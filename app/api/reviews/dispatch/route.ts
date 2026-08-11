@@ -130,15 +130,6 @@ async function run(req: NextRequest) {
 
         const channels = cfg.channels || { chat: true }
 
-        // Atomically claim this request so an overlapping dispatch run — cron
-        // overlap, or a manual GET/POST fired while one is in flight — can't
-        // send the same request twice. Only the run that flips pending→sending
-        // proceeds; a loser matches 0 rows and skips. (This is what made the
-        // review request appear more than once.)
-        const { data: claimed } = await db.from('review_requests')
-          .update({ status: 'sending' }).eq('id', rr.id).eq('status', 'pending').select('id')
-        if (!claimed || claimed.length === 0) { results.push({ id: rr.id, skipped: 'already in progress' }); continue }
-
         // ── SMS. skipChatMessage stops the send route logging its OWN row — we
         // log a single review-request card row below, stamped with the channel
         // it actually went out on. Previously this sent SMS without the flag AND
