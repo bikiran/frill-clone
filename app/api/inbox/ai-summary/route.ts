@@ -48,7 +48,13 @@ export async function POST(req: NextRequest) {
 
     if (!res.ok) {
       const err = await res.text()
-      return NextResponse.json({ error: 'AI request failed', detail: err }, { status: 500 })
+      // Surface the real reason (status + Anthropic's message) so a bad key,
+      // exhausted credits, or a retired model is diagnosable from the device
+      // instead of a generic "AI request failed". Log the full body server-side.
+      console.error('[ai-summary] anthropic error', res.status, err)
+      let detail = err
+      try { detail = JSON.parse(err)?.error?.message || err } catch {}
+      return NextResponse.json({ error: `AI request failed (${res.status})`, detail: String(detail).slice(0, 300) }, { status: 502 })
     }
 
     const data = await res.json()
