@@ -737,24 +737,30 @@ export default function TasksPage() {
   const ACT_LABEL: Record<string, string> = { todo: 'To do', in_progress: 'In progress', done: 'Done' }
   const cap = (s: string) => (s || '').charAt(0).toUpperCase() + (s || '').slice(1)
   const fmtDueShort = (v: any) => { const d = parseTs(v); return d ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '' }
+  // Build the activity entries for a change. Each `detail` is phrased to follow
+  // the actor's name, so the card reads as a sentence — "Amit completed this
+  // task", "Amit updated the description" (see the Activity render).
   const diffActivity = (prev: any, fields: any): { kind: string; detail: string }[] => {
     if (!prev) return []
     const out: { kind: string; detail: string }[] = []
     if (fields.status && fields.status !== statusOf(prev))
-      out.push({ kind: 'status', detail: fields.status === 'done' ? 'Marked as done' : (statusOf(prev) === 'done' ? `Reopened → ${ACT_LABEL[fields.status] || fields.status}` : `Moved to ${ACT_LABEL[fields.status] || fields.status}`) })
+      out.push({ kind: 'status', detail: fields.status === 'done' ? 'completed this task' : (statusOf(prev) === 'done' ? `reopened this task (${ACT_LABEL[fields.status] || fields.status})` : `moved this to ${ACT_LABEL[fields.status] || fields.status}`) })
     if (fields.assignees !== undefined) {
       const before = (Array.isArray(prev.assignees) ? prev.assignees : []).map((a: any) => a.name).filter(Boolean).sort().join(',')
       const names = (fields.assignees || []).map((a: any) => a.name).filter(Boolean)
-      if (names.slice().sort().join(',') !== before) out.push({ kind: 'assignee', detail: names.length ? `Assigned to ${names.join(', ')}` : 'Cleared assignees' })
+      if (names.slice().sort().join(',') !== before) out.push({ kind: 'assignee', detail: names.length ? `assigned this to ${names.join(', ')}` : 'cleared the assignees' })
     }
-    if (fields.priority !== undefined && fields.priority !== prev.priority) out.push({ kind: 'priority', detail: fields.priority ? `Priority set to ${cap(fields.priority)}` : 'Priority cleared' })
-    if (fields.due_date !== undefined && fields.due_date !== prev.due_date) out.push({ kind: 'due', detail: fields.due_date ? `Due date set to ${fmtDueShort(fields.due_date)}` : 'Due date cleared' })
-    if (fields.title !== undefined && (fields.title || '') !== (prev.title || '')) out.push({ kind: 'edit', detail: `Renamed to “${(fields.title || '').slice(0, 60)}”` })
-    if ((fields.text !== undefined && (fields.text || '') !== (prev.text || '')) || (fields.description !== undefined && (fields.description || '') !== (prev.description || ''))) out.push({ kind: 'edit', detail: 'Updated the details' })
-    if (fields.checklist !== undefined && JSON.stringify(fields.checklist || []) !== JSON.stringify(prev.checklist || [])) out.push({ kind: 'checklist', detail: 'Updated the checklist' })
-    if (fields.linked_notes !== undefined) { const b = (Array.isArray(prev.linked_notes) ? prev.linked_notes : []).length, a = (fields.linked_notes || []).length; if (a !== b) out.push({ kind: 'edit', detail: a > b ? 'Linked a note' : 'Unlinked a note' }) }
-    if (fields.cover_image !== undefined && fields.cover_image !== prev.cover_image) out.push({ kind: 'edit', detail: fields.cover_image ? 'Changed the cover image' : 'Removed the cover image' })
-    if (fields.color !== undefined && fields.color !== prev.color) out.push({ kind: 'edit', detail: 'Changed the color' })
+    if (fields.priority !== undefined && fields.priority !== prev.priority) out.push({ kind: 'priority', detail: fields.priority ? `set the priority to ${cap(fields.priority)}` : 'cleared the priority' })
+    if (fields.due_date !== undefined && fields.due_date !== prev.due_date) out.push({ kind: 'due', detail: fields.due_date ? `set the due date to ${fmtDueShort(fields.due_date)}` : 'cleared the due date' })
+    if (fields.title !== undefined && (fields.title || '') !== (prev.title || '')) out.push({ kind: 'edit', detail: `renamed this to “${(fields.title || '').slice(0, 60)}”` })
+    if ((fields.text !== undefined && (fields.text || '') !== (prev.text || '')) || (fields.description !== undefined && (fields.description || '') !== (prev.description || ''))) out.push({ kind: 'edit', detail: 'updated the description' })
+    if (fields.checklist !== undefined && JSON.stringify(fields.checklist || []) !== JSON.stringify(prev.checklist || [])) out.push({ kind: 'checklist', detail: 'updated the checklist' })
+    if (fields.linked_notes !== undefined) { const b = (Array.isArray(prev.linked_notes) ? prev.linked_notes : []).length, a = (fields.linked_notes || []).length; if (a !== b) out.push({ kind: 'edit', detail: a > b ? 'linked a note' : 'unlinked a note' }) }
+    if (fields.attachments !== undefined) { const b = (Array.isArray(prev.attachments) ? prev.attachments : []).length, a = (fields.attachments || []).length; if (a !== b) out.push({ kind: 'edit', detail: a > b ? 'added an attachment' : 'removed an attachment' }) }
+    if (fields.order_id !== undefined && fields.order_id !== prev.order_id) out.push({ kind: 'edit', detail: fields.order_id ? 'linked an order' : 'removed the linked order' })
+    if (fields.location_id !== undefined && fields.location_id !== prev.location_id) out.push({ kind: 'edit', detail: 'changed the location' })
+    if (fields.cover_image !== undefined && fields.cover_image !== prev.cover_image) out.push({ kind: 'edit', detail: fields.cover_image ? 'changed the cover image' : 'removed the cover image' })
+    if (fields.color !== undefined && fields.color !== prev.color) out.push({ kind: 'edit', detail: 'changed the colour' })
     return out
   }
 
@@ -807,7 +813,7 @@ export default function TasksPage() {
     const ids = realSelectedIds()
     if (!ids.length) return
     try { await (supabase as any).from('conversation_tasks').update({ status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null }).in('id', ids) } catch (e: any) { alert('Could not update: ' + e.message); return }
-    ids.forEach(id => logActivity(id, [{ kind: 'status', detail: status === 'done' ? 'Marked as done' : `Moved to ${ACT_LABEL[status] || status}` }]))
+    ids.forEach(id => logActivity(id, [{ kind: 'status', detail: status === 'done' ? 'completed this task' : `moved this to ${ACT_LABEL[status] || status}` }]))
     exitSelect()
     if (companyId) loadTasks(companyId)
   }
@@ -815,7 +821,7 @@ export default function TasksPage() {
     const ids = realSelectedIds()
     if (!ids.length) return
     try { await (supabase as any).from('conversation_tasks').update({ priority }).in('id', ids) } catch (e: any) { alert('Could not update: ' + e.message); return }
-    ids.forEach(id => logActivity(id, [{ kind: 'priority', detail: priority ? `Priority set to ${cap(priority)}` : 'Priority cleared' }]))
+    ids.forEach(id => logActivity(id, [{ kind: 'priority', detail: priority ? `set the priority to ${cap(priority)}` : 'cleared the priority' }]))
     exitSelect()
     if (companyId) loadTasks(companyId)
   }
@@ -852,6 +858,19 @@ export default function TasksPage() {
         ;({ error } = await runScoped())
       }
       if (error) { console.error('[task scoped update] failed', error); if (companyId) loadTasks(companyId) }
+      else {
+        // Record the change on every occurrence the edit touched, so a
+        // series-wide completion (or reschedule, priority change, …) shows up in
+        // each card's Activity — not just single-occurrence edits.
+        const entries = diffActivity(task, fields)
+        if (entries.length) {
+          const affected = tasks.filter(t =>
+            t.series_id === task.series_id &&
+            !(scope === 'following' && parseTs(t.due_date) && parseTs(task.due_date) && (parseTs(t.due_date)! < parseTs(task.due_date)!))
+          ).map(t => t.id)
+          affected.forEach(id => logActivity(id, entries))
+        }
+      }
     } catch (e) { console.error('[task scoped update] threw', e); if (companyId) loadTasks(companyId) }
   }
 
@@ -2185,8 +2204,10 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
               <div key={a.id || i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '5px 0' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot[a.kind] || '#9ca3af', marginTop: 6, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.4 }}>{a.detail}</div>
-                  <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{a.actor_name || 'Someone'} <span title={fmtExact(a.created_at)}>· {fmtAgo(a.created_at)}</span></div>
+                  <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.4 }}>
+                    <strong style={{ fontWeight: 700 }}>{a.actor_name || 'Someone'}</strong> {a.detail}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#9ca3af' }} title={fmtExact(a.created_at)}>{fmtAgo(a.created_at)}</div>
                 </div>
               </div>
             ))}
@@ -2194,8 +2215,10 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
               <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '5px 0' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16a34a', marginTop: 6, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.4 }}>Task created</div>
-                  <div style={{ fontSize: 11.5, color: '#9ca3af' }}>{task.created_by_name || task.assigned_to || ''} <span title={fmtExact(created)}>· {fmtAgo(created)}</span></div>
+                  <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.4 }}>
+                    <strong style={{ fontWeight: 700 }}>{task.created_by_name || task.assigned_to || 'Someone'}</strong> created this task
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#9ca3af' }} title={fmtExact(created)}>{fmtAgo(created)}</div>
                 </div>
               </div>
             )}

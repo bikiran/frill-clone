@@ -995,12 +995,52 @@ export default function InboxPage() {
   const [podSending, setPodSending] = useState(false)
   const [showDeliveryPanel, setShowDeliveryPanel] = useState(false)
   const [filters, setFilters] = useState<any>({
-    dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', oldestFirst: false,
+    dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', relationship: '', purchased: '', oldestFirst: false,
   })
-  const activeFilterCount = ['dateFrom', 'dateTo', 'channel', 'assignedTo', 'source']
+  const activeFilterCount = ['dateFrom', 'dateTo', 'channel', 'assignedTo', 'source', 'relationship', 'purchased']
     .filter(k => filters[k]).length + (filters.oldestFirst ? 1 : 0)
-  const resetFilters = () => setFilters({ dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', oldestFirst: false })
+  const resetFilters = () => setFilters({ dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', relationship: '', purchased: '', oldestFirst: false })
+  // Purchase-history lookup for the "Purchased (SKU or title)" filter, keyed by
+  // lowercased contact email (a contact's orders live in woocommerce_customers,
+  // not on the conversation). Loaded lazily only when that filter is in use, and
+  // cached per company so switching filters doesn't refetch.
+  const [wooItemsMap, setWooItemsMap] = useState<Map<string, any[]>>(new Map())
+  const wooItemsRef = useRef<{ companyId: string; map: Map<string, any[]> } | null>(null)
   const [showAssignMenu, setShowAssignMenu] = useState(false)
+
+  // Load the email → purchased-items map when (and only when) the Purchased
+  // filter is active. Mirrors the Contacts page enrichment source.
+  useEffect(() => {
+    if (!filters.purchased?.trim() || !companyId) return
+    if (wooItemsRef.current?.companyId === companyId) { setWooItemsMap(wooItemsRef.current.map); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any)
+          .from('woocommerce_customers').select('email, items_purchased').eq('company_id', companyId).limit(5000)
+        const m = new Map<string, any[]>()
+        for (const c of data || []) {
+          if (!c.email) continue
+          let ip = c.items_purchased
+          if (typeof ip === 'string') { try { ip = JSON.parse(ip) } catch { ip = [ip] } }
+          m.set(String(c.email).toLowerCase(), Array.isArray(ip) ? ip : [])
+        }
+        if (!cancelled) { wooItemsRef.current = { companyId, map: m }; setWooItemsMap(m) }
+      } catch (e) { console.error('inbox purchased-filter load failed', e) }
+    })()
+    return () => { cancelled = true }
+  }, [filters.purchased, companyId])
+
+  // Does this contact's purchase history include something matching the query
+  // (by SKU or product title)?
+  const purchasedMatches = (email: string | undefined, query: string) => {
+    const items = wooItemsMap.get((email || '').toLowerCase())
+    if (!items || !items.length) return false
+    const q = query.trim().toLowerCase()
+    return items.some((it: any) => typeof it === 'string'
+      ? it.toLowerCase().includes(q)
+      : String(it.sku || '').toLowerCase().includes(q) || String(it.name || it.title || '').toLowerCase().includes(q))
+  }
   // The contact card has its own assign dropdown and overflow menu, anchored to
   // their own buttons (previously the card's assign button faked a click on the
   // header menu, which opened a panel at the top of the page).
@@ -1218,7 +1258,7 @@ export default function InboxPage() {
     const contactIds = Array.from(new Set(convs.map((c: any) => c.contact_id).filter(Boolean)))
     if (contactIds.length) {
       const { data: cts } = await (supabase as any)
-        .from('contacts').select('id, name, email, phone').in('id', contactIds)
+        .from('contacts').select('id, name, email, phone, relationship_type').in('id', contactIds)
       const byId: Record<string, any> = {}
       for (const ct of cts || []) byId[ct.id] = ct
       for (const c of convs) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
@@ -1233,7 +1273,7 @@ export default function InboxPage() {
     if (unlinked.length) {
       const tails = Array.from(new Set(unlinked.map((c: any) => dig(c.sms_number || c.phone).slice(-9))))
       const ors = tails.map((t: string) => `phone.ilike.%${t}%`).join(',')
-      const { data: cand } = await (supabase as any).from('contacts').select('id, name, email, phone').eq('company_id', id).or(ors).limit(200)
+      const { data: cand } = await (supabase as any).from('contacts').select('id, name, email, phone, relationship_type').eq('company_id', id).or(ors).limit(200)
       if (cand && cand.length) {
         const linked: { conv: string; contact: string }[] = []
         for (const c of unlinked) {
@@ -3578,6 +3618,38 @@ export default function InboxPage() {
   // Right-click context menu on the conversation list.
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; conv: any } | null>(null)
 
+  // ── Pinned conversations (per user) ───────────────────────────────────────
+  // Each agent keeps their own pins, so pinning floats a chat to the top of
+  // *their* inbox without touching anyone else's list.
+  const [pinUserId, setPinUserId] = useState<string>('')
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set())
+  useEffect(() => { (async () => { try { const { data: { user } } = await supabase.auth.getUser(); if (user?.id) setPinUserId(user.id) } catch {} })() }, [])
+  useEffect(() => {
+    if (!pinUserId || !companyId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any).from('conversation_pins')
+          .select('conversation_id').eq('user_id', pinUserId).eq('company_id', companyId)
+        if (!cancelled) setPinnedIds(new Set((data || []).map((r: any) => r.conversation_id)))
+      } catch { /* table may not be migrated yet */ }
+    })()
+    return () => { cancelled = true }
+  }, [pinUserId, companyId])
+  const togglePin = async (conv: any) => {
+    const id = conv?.id
+    if (!id || !pinUserId || !companyId) return
+    const wasPinned = pinnedIds.has(id)
+    setPinnedIds(prev => { const n = new Set(prev); wasPinned ? n.delete(id) : n.add(id); return n })
+    try {
+      if (wasPinned) await (supabase as any).from('conversation_pins').delete().eq('user_id', pinUserId).eq('conversation_id', id)
+      else await (supabase as any).from('conversation_pins').insert({ user_id: pinUserId, conversation_id: id, company_id: companyId })
+    } catch (e) {
+      // Revert the optimistic change if the write failed.
+      setPinnedIds(prev => { const n = new Set(prev); wasPinned ? n.add(id) : n.delete(id); return n })
+    }
+  }
+
   // ── Move or view enquiries across outlets ─────────────────────────────────
   const [showMoveMenu, setShowMoveMenu] = useState(false)
 
@@ -4307,6 +4379,18 @@ export default function InboxPage() {
       if (filters.dateFrom && t < new Date(filters.dateFrom).getTime()) return false
       if (filters.dateTo && t > new Date(filters.dateTo).getTime() + 86400000) return false
     }
+    // Relationship: a missing value counts as 'customer' (the default for every
+    // contact that predates the field). A conversation with no linked contact is
+    // excluded once a specific relationship is chosen.
+    if (filters.relationship) {
+      if ((ct.relationship_type || 'customer') !== filters.relationship) return false
+    }
+    // Purchased (SKU or title): keep only conversations whose contact has bought
+    // a matching product. Needs the woo items map; while it loads, matches are
+    // empty, then fill in once loaded.
+    if (filters.purchased && filters.purchased.trim()) {
+      if (!purchasedMatches(ct.email, filters.purchased)) return false
+    }
     // No search term: the conversation has passed every active filter above, so
     // it belongs in the list.
     if (!searchTerm) return true
@@ -4329,6 +4413,10 @@ export default function InboxPage() {
     return contactMatch || surfaceMatch || deepHit
   })
     .sort((a: any, b: any) => {
+      // Pinned conversations float to the top (per-user), then normal ordering.
+      const pa = pinnedIds.has(a.id) ? 1 : 0
+      const pb = pinnedIds.has(b.id) ? 1 : 0
+      if (pa !== pb) return pb - pa
       const ta = (parseTs(a.last_message_at)?.getTime() || 0)
       const tb = (parseTs(b.last_message_at)?.getTime() || 0)
       return filters.oldestFirst ? ta - tb : tb - ta
@@ -5340,12 +5428,28 @@ export default function InboxPage() {
 
                 <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Source</label>
                 <select value={filters.source} onChange={e => setFilters({ ...filters, source: e.target.value })}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', background: '#fff' }}>
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 16, boxSizing: 'border-box', background: '#fff' }}>
                   <option value="">Select source</option>
                   <option value="chat">Live chat enquiry</option>
                   <option value="order">Order placed</option>
                   <option value="cart">Abandoned cart</option>
                 </select>
+
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Relationship</label>
+                <select value={filters.relationship} onChange={e => setFilters({ ...filters, relationship: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 16, boxSizing: 'border-box', background: '#fff' }}>
+                  <option value="">All types</option>
+                  <option value="customer">Customer</option>
+                  <option value="supplier">Supplier</option>
+                  <option value="wholesaler">Wholesaler</option>
+                  <option value="business">Business contact</option>
+                </select>
+
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Purchased (SKU or title)</label>
+                <input value={filters.purchased} onChange={e => setFilters({ ...filters, purchased: e.target.value })}
+                  placeholder="e.g. 1132 or Pleco"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', background: '#fff' }} />
+                <p style={{ margin: '7px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>Matches the contact&rsquo;s order history.</p>
               </div>
             </div>
 
@@ -5365,6 +5469,7 @@ export default function InboxPage() {
           onClick={e => e.stopPropagation()}
           style={{ position: 'fixed', top: Math.min(ctxMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 240), left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 210), width: 200, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.16)', zIndex: 500, overflow: 'hidden', padding: '4px 0' }}>
           {([
+            [pinnedIds.has(ctxMenu.conv.id) ? 'Unpin' : 'Pin to top', <svg key="p" width="15" height="15" viewBox="0 0 24 24" fill={pinnedIds.has(ctxMenu.conv.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-3V7a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7z"/></svg>, () => togglePin(ctxMenu.conv)],
             ['Mark as read', <svg key="r" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>, () => markRead(ctxMenu.conv)],
             ['Open in new tab', <svg key="o" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>, () => window.open(`/admin/inbox?conversation=${ctxMenu.conv.id}`, '_blank')],
             ['Copy link', <svg key="c" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>, () => copyConvLink(ctxMenu.conv)],
@@ -6124,6 +6229,11 @@ export default function InboxPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                   {unread && <span style={{ width: 7, height: 7, borderRadius: '50%', background: accent, flexShrink: 0 }} />}
+                  {pinnedIds.has(conv.id) && (
+                    <span title="Pinned" style={{ color: 'var(--coral)', flexShrink: 0, display: 'inline-flex' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-3V7a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7z"/></svg>
+                    </span>
+                  )}
                   <span style={{ fontSize: 13.5, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {displayName}
                   </span>
@@ -6251,6 +6361,19 @@ export default function InboxPage() {
                         : <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>via {CHANNEL_NAME[activeChannel] || activeChannel}</p>
                     })()}
               </div>
+
+              {/* Pin / unpin this conversation for the current agent. Mirrors the
+                  right-click action so it's reachable while the thread is open. */}
+              {(() => {
+                const isPinned = pinnedIds.has(selected.id)
+                return (
+                  <button type="button" onClick={() => togglePin(selected)}
+                    title={isPinned ? 'Unpin from top' : 'Pin to top'} aria-label={isPinned ? 'Unpin conversation' : 'Pin conversation'}
+                    style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid ' + (isPinned ? 'var(--coral)' : 'var(--border)'), background: isPinned ? 'var(--peach)' : '#fff', color: isPinned ? 'var(--coral)' : 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill={isPinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-3V7a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7z"/></svg>
+                  </button>
+                )
+              })()}
 
               {/* Browser calling (Telnyx WebRTC) */}
               {(contact?.phone || (selected as any).sms_number) && (
