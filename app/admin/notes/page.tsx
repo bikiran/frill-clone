@@ -25,6 +25,22 @@ type ChecklistItem = { id: string; text: string; done: boolean }
 const rid = () => Math.random().toString(36).slice(2, 9)
 const isAudio = (a: any) => a?.kind === 'audio' || (a?.type || '').startsWith('audio/')
 
+// Turn a note's HTML body into a plain-text snippet for list previews / search:
+// strip tags AND decode the common HTML entities, so a preview reads "Fish Name
+// Qty" instead of the raw "&nbsp;Fish Name &nbsp;Qty".
+const plainText = (html: string): string =>
+  (html || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, n) => { try { return String.fromCodePoint(parseInt(n, 10)) } catch { return ' ' } })
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
+
 const fmtAgo = (iso?: string) => {
   if (!iso) return ''
   const d = new Date(iso), s = Math.floor((Date.now() - d.getTime()) / 1000)
@@ -376,7 +392,7 @@ export default function NotesPage() {
   const q = search.trim().toLowerCase()
   const filterActive = !!q || filter.kind !== 'all'
   const visibleRows = shown.filter(n => {
-    if (q) { const hay = `${n.title || ''} ${(n.body || '').replace(/<[^>]+>/g, ' ')} ${(n.tags || []).join(' ')}`.toLowerCase(); if (!hay.includes(q)) return false }
+    if (q) { const hay = `${n.title || ''} ${plainText(n.body || '')} ${(n.tags || []).join(' ')}`.toLowerCase(); if (!hay.includes(q)) return false }
     if (filter.kind === 'pinned' && !n.pinned) return false
     if (filter.kind === 'shared' && !(n.shared_with_team || (n.shared_members || []).length)) return false
     if (filter.kind === 'reminder' && !n.reminder_at) return false
@@ -541,7 +557,7 @@ export default function NotesPage() {
               )
             ) : visibleRows.map(n => {
               const on = n.id === activeId && tab !== 'trash'
-              const plain = (n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+              const plain = plainText(n.body || '')
               const total = (n.checklist || []).length
               const done = (n.checklist || []).filter(c => c.done).length
               return (
