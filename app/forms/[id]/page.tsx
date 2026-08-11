@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getVisibleQuestions } from '@/lib/conditional-logic'
+import { scaleImageToJpeg } from '@/lib/scan-image'
 import Confetti from '@/components/Confetti'
 
 export default function PublicForm() {
@@ -22,6 +23,10 @@ export default function PublicForm() {
   const [showConfetti, setShowConfetti] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Scan a business card / photo on the welcome screen → pre-fill contact answers.
+  const cardInputRef = useRef<HTMLInputElement>(null)
+  const [scanning, setScanning] = useState(false)
+  const [scanMsg, setScanMsg] = useState('')
 
   useEffect(() => {
     ;(async () => {
@@ -153,6 +158,77 @@ export default function PublicForm() {
     return () => window.removeEventListener('keydown', handler)
   }, [step, answers, questions])
 
+  // Map a scanned contact (from /api/contacts/scan) onto one of this form's
+  // questions. Matches by question type first, then by the question's wording
+  // for free-text fields — so "Your name", "Company", "Suburb" etc. line up.
+  const scannedValueFor = (q: any, c: Record<string, string>): string => {
+    const t = q?.type
+    const label = `${q?.title || ''} ${q?.label || ''}`.toLowerCase()
+    const has = (...ws: string[]) => ws.some(w => label.includes(w))
+    const fullAddress = [c.address, c.city, [c.state, c.postcode].filter(Boolean).join(' '), c.country]
+      .map(s => (s || '').trim()).filter(Boolean).join(', ')
+
+    if (t === 'email') return c.email || ''
+    if (t === 'phone') return c.phone || ''
+    if (t === 'address') return fullAddress
+    if (t === 'contact_info') return c.name || ''
+    if (t === 'website') return '' // not something a card scan provides
+    if (t === 'short_text' || t === 'long_text') {
+      if (has('email')) return c.email || ''
+      if (has('mobile', 'phone', 'tel', 'contact number')) return c.phone || ''
+      if (has('first name')) return (c.name || '').split(' ')[0] || ''
+      if (has('last name', 'surname')) return (c.name || '').split(' ').slice(1).join(' ')
+      if (has('company', 'business', 'organisation', 'organization', 'employer')) return c.company_name || ''
+      if (has('street', 'address')) return c.address || ''
+      if (has('suburb', 'city', 'town')) return c.city || ''
+      if (has('state', 'province', 'region')) return c.state || ''
+      if (has('postcode', 'post code', 'postal', 'zip')) return c.postcode || ''
+      if (has('country')) return c.country || ''
+      if (has('name') && !has('user', 'file', 'business')) return c.name || ''
+    }
+    return ''
+  }
+
+  // Does this form have any question a card scan could fill? Drives whether the
+  // "Scan a business card" affordance shows on the welcome screen at all.
+  const SCAN_PROBE = { name: 'x', phone: 'x', email: 'x', company_name: 'x', address: 'x', city: 'x', state: 'x', postcode: 'x', country: 'x' }
+  const formIsScannable = (questions as any[]).some(q => !!scannedValueFor(q, SCAN_PROBE))
+
+  const scanCard = async (file: File) => {
+    setScanMsg('')
+    if (!file.type.startsWith('image/')) { setScanMsg('Please choose a photo or image file.'); return }
+    setScanning(true)
+    try {
+      const { data } = await scaleImageToJpeg(file)
+      // /api/contacts/scan wants raw base64 with no data: prefix.
+      const base64 = data.slice(data.indexOf(',') + 1)
+      const res = await fetch('/api/contacts/scan', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ companyId: form?.company_id, image: base64, mediaType: 'image/jpeg' }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json?.contact) {
+        setScanMsg(json?.error || 'Could not read that photo. Try a clearer, well-lit shot.')
+        return
+      }
+      const c: Record<string, string> = json.contact
+      // Fill only empty answers — never overwrite something already entered.
+      const patch: Record<string, any> = {}
+      for (const q of questions as any[]) {
+        const v = scannedValueFor(q, c)
+        if (v && (answers[q.id] === undefined || answers[q.id] === '')) patch[q.id] = v
+      }
+      const n = Object.keys(patch).length
+      if (n) setAnswers(prev => ({ ...prev, ...patch }))
+      setScanMsg(n ? `Filled ${n} field${n > 1 ? 's' : ''} from your card — review each as you go.` : 'No matching details found on that photo.')
+    } catch (e: any) {
+      setScanMsg(e?.message || 'Could not scan that photo.')
+    } finally {
+      setScanning(false)
+    }
+  }
+
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ width: 32, height: 32, border: '3px solid #f0f0f0', borderTopColor: '#ff7a6b', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -249,6 +325,40 @@ export default function PublicForm() {
               Start →
             </button>
             <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 16 }}>Press <kbd style={{ padding: '1px 6px', borderRadius: 4, background: '#f0f0f0', fontSize: 11 }}>Enter ↵</kbd></p>
+
+            {formIsScannable && (
+              <div style={{ marginTop: 28, paddingTop: 24, borderTop: '1px solid #eee' }}>
+                <input
+                  ref={cardInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) scanCard(f); e.target.value = '' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => cardInputRef.current?.click()}
+                  disabled={scanning}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                    padding: '11px 20px', borderRadius: 12,
+                    border: `1.5px solid ${themeColor}`, background: '#fff', color: themeColor,
+                    fontWeight: 700, fontSize: 14, cursor: scanning ? 'default' : 'pointer', opacity: scanning ? 0.7 : 1,
+                  }}
+                >
+                  {scanning ? 'Scanning…' : '📇 Scan a business card'}
+                </button>
+                <p style={{ fontSize: 12.5, color: '#9ca3af', marginTop: 10, maxWidth: 380 }}>
+                  Snap or upload a card and we&rsquo;ll fill in the contact details for you.
+                </p>
+                {scanMsg && (
+                  <p style={{ fontSize: 12.5, marginTop: 8, fontWeight: 600, color: scanMsg.startsWith('Filled') ? '#047857' : '#dc2626' }}>
+                    {scanMsg}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         ) : current ? (
           <div key={current.id} className="ff-anim">
