@@ -4,6 +4,7 @@ import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
 import { passesRules } from '@/lib/gmail'
 import { logWebhookEvent } from '@/lib/webhook-log'
+import { logEnquiryReopened } from '@/lib/conversation-timeline'
 
 export const dynamic = 'force-dynamic'
 
@@ -147,6 +148,9 @@ export async function POST(req: NextRequest) {
       conv = newConv
     }
     if (!conv) return NextResponse.json({ ok: false, reason: 'Could not create conversation' })
+
+    // Customer replied to a closed enquiry — log the reopen before we flip it.
+    await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status })
 
     // ── Store the message ────────────────────────────────────────────────────
     await db.from('messages').insert({

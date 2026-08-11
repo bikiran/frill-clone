@@ -5,6 +5,7 @@ import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile } from '@/lib/meta
 import { linkContactIdentity } from '@/lib/identity'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
+import { logEnquiryReopened } from '@/lib/conversation-timeline'
 
 export const dynamic = 'force-dynamic'
 
@@ -175,6 +176,8 @@ export async function POST(req: NextRequest) {
           }).select().maybeSingle()
           conv = newConv
         } else {
+          // Customer DM'd a closed enquiry — log the reopen before we flip it.
+          await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status })
           await db.from('conversations').update({
             status: 'open', is_unread: true,
             unread_count: (conv.unread_count || 0) + 1,

@@ -23,7 +23,7 @@ export async function ensureCallCard(db: SupabaseClient, callRowId: string): Pro
   try {
     const { data: call } = await (db as any)
       .from('calls')
-      .select('id, conversation_id, company_id, duration_seconds, agent_name, direction, is_voicemail')
+      .select('id, conversation_id, company_id, duration_seconds, agent_name, direction, is_voicemail, recording_url, ai_summary, status')
       .eq('id', callRowId)
       .maybeSingle()
     if (!call) return
@@ -31,8 +31,16 @@ export async function ensureCallCard(db: SupabaseClient, callRowId: string): Pro
     // Only connected calls that belong to a conversation get a card — the same
     // rule the browser applies. Failed/missed attempts and dial-pad calls (no
     // conversation) live in the dialer's Recent Calls, not the thread.
+    //
+    // "Connected" can't rely on duration alone: some providers (Telnyx inbound
+    // answered on a SIP/mobile leg) finalise the row with duration_seconds still
+    // 0 even though the call plainly happened — it has a recording, a transcript
+    // and an AI summary. Treat any of those, or a completed/answered status, as
+    // proof it connected so those calls aren't silently kept out of the thread.
     const secs = call.duration_seconds || 0
-    if (!call.conversation_id || !call.company_id || call.is_voicemail || secs <= 0) return
+    const connected = secs > 0 || !!call.recording_url || !!call.ai_summary ||
+      ['completed', 'answered'].includes(String(call.status || ''))
+    if (!call.conversation_id || !call.company_id || call.is_voicemail || !connected) return
 
     // Skip if a card for this call already exists (browser or a prior webhook).
     const { data: existing } = await (db as any)
@@ -43,11 +51,12 @@ export async function ensureCallCard(db: SupabaseClient, callRowId: string): Pro
       .limit(1)
     if (existing && existing.length) return
 
+    const label = call.direction === 'inbound' ? 'Call received' : 'Call made'
     await (db as any).from('messages').insert({
       conversation_id: call.conversation_id,
       company_id: call.company_id,
       sender_type: 'system',
-      content: `Call — ${fmtDuration(secs)}`,
+      content: secs > 0 ? `${label} — ${fmtDuration(secs)}` : label,
       metadata: {
         call_event: true,
         call_id: call.id,

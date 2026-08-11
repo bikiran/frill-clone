@@ -5,6 +5,8 @@ import { notifyCompany } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
 import { TelnyxService } from '@/lib/telnyx-service'
 import { logWebhookEvent } from '@/lib/webhook-log'
+import { ensureCallCard } from '@/lib/call-card'
+import { logEnquiryReopened } from '@/lib/conversation-timeline'
 
 function admin() {
   return createClient(
@@ -255,6 +257,8 @@ export async function POST(req: NextRequest) {
       }
 
       if (conv) {
+        // Customer texted a closed enquiry — log the reopen before we flip it.
+        await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status })
         await db.from('messages').insert({
           conversation_id: conv.id,
           company_id: companyId,
@@ -837,6 +841,11 @@ export async function POST(req: NextRequest) {
           if (url && recRow && !isVoicemail) {
             await db.from('calls').update({ recording_url: url }).eq('id', recRow.id)
 
+            // A recording proves the call connected — post its thread card now
+            // (idempotent) so answered inbound calls appear in the inbox even
+            // when the browser never posted one and the row's duration is 0.
+            await ensureCallCard(db, recRow.id)
+
             // Transcribe, then summarise. Fire-and-forget: the recording is
             // already saved, and transcription can take a while.
             try {
@@ -903,6 +912,7 @@ export async function POST(req: NextRequest) {
         }
         const status = statusMap[eventType] || eventType.replace('call.', '')
         const update: any = { status }
+        let hangupCallRowId = ''
         if (eventType === 'call.hangup') {
           update.ended_at = new Date().toISOString()
           const dur = payload?.call_duration_secs || payload?.duration_secs || 0
@@ -914,7 +924,7 @@ export async function POST(req: NextRequest) {
           // Only downgrade to missed for inbound calls that never connected;
           // don't clobber a voicemail state the inbound flow already set.
           const { data: existing } = await db.from('calls')
-            .select('status, is_voicemail').or(`telnyx_call_control_id.eq.${callControlId},telnyx_call_session_id.eq.${sessionId}`).maybeSingle()
+            .select('id, status, is_voicemail').or(`telnyx_call_control_id.eq.${callControlId},telnyx_call_session_id.eq.${sessionId}`).maybeSingle()
           if (existing?.is_voicemail || String(existing?.status || '').startsWith('voicemail')) {
             update.status = 'voicemail'
           } else if (isInbound && !answered && !dur) {
@@ -922,8 +932,13 @@ export async function POST(req: NextRequest) {
           } else if (dur > 0) {
             update.status = 'completed'
           }
+          hangupCallRowId = existing?.id || ''
         }
         await db.from('calls').update(update).or(`telnyx_call_control_id.eq.${callControlId},telnyx_call_session_id.eq.${sessionId}`)
+        // On hangup, ensure a connected call has its thread card (idempotent).
+        // ensureCallCard re-reads the freshly-updated row, so it sees the final
+        // status/duration. Skipped internally for voicemail/missed/unconnected.
+        if (hangupCallRowId) await ensureCallCard(db, hangupCallRowId)
       }
       return NextResponse.json({ ok: true })
     }
