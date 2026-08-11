@@ -1725,64 +1725,69 @@ export default function InboxPage() {
         }
       }
     }
-    // Abandoned carts match by email or phone (independent of WooCommerce sync).
-    try {
-      if (email || phone) {
-        const p = new URLSearchParams({ companyId })
-        if (email) p.set('email', email); else if (phone) p.set('phone', phone)
-        const res = await fetch(`/api/abandoned-carts?${p}`)
-        const data = await res.json()
-        if (!isCurrent()) return
-        setAbandonedCarts(data.carts || [])
-        if (contactId) {
-          const prev = wooCacheRef.current.get(contactId)
-          wooCacheRef.current.set(contactId, {
-            customer: prev?.customer || null, orders: prev?.orders || [], carts: data.carts || [],
-          })
-        }
-      }
-    } catch {}
     if (!email && !phone) return
+    // Abandoned carts match by email or phone (independent of WooCommerce sync).
+    // Run it in the BACKGROUND — it used to be awaited before the order query,
+    // so a slow carts endpoint delayed the whole Order History panel. It now
+    // resolves on its own and merges into state/cache when ready.
+    if (email || phone) {
+      ;(async () => {
+        try {
+          const p = new URLSearchParams({ companyId })
+          if (email) p.set('email', email); else if (phone) p.set('phone', phone)
+          const res = await fetch(`/api/abandoned-carts?${p}`)
+          const data = await res.json()
+          if (!isCurrent()) return
+          setAbandonedCarts(data.carts || [])
+          if (contactId) {
+            const prev = wooCacheRef.current.get(contactId)
+            wooCacheRef.current.set(contactId, {
+              customer: prev?.customer || null, orders: prev?.orders || [], carts: data.carts || [],
+            })
+          }
+        } catch {}
+      })()
+    }
     const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-9)
-    // Match WooCommerce customer by email OR phone.
+    const ordersByEmail = (e: string) => (supabase as any).from('woocommerce_orders')
+      .select('*').eq('company_id', companyId).ilike('customer_email', e)
+      .order('order_date', { ascending: false }).limit(50)
+    const ordersByPhone = (p: string) => (supabase as any).from('woocommerce_orders')
+      .select('*').eq('company_id', companyId).eq('billing_phone_norm', norm(p))
+      .order('order_date', { ascending: false }).limit(50)
+
+    // Match the WooCommerce customer by email OR phone. When we already hold the
+    // email (the common case), fire the order queries ALONGSIDE the customer
+    // lookup rather than behind it, so Order History stops waiting on the
+    // customer row before it can render.
     let woo: any = null
+    let ordersPromise: Promise<any[]>
     if (email) {
+      ordersPromise = Promise.all([ordersByEmail(email), phone ? ordersByPhone(phone) : Promise.resolve({ data: [] })])
       const { data } = await (supabase as any).from('woocommerce_customers')
         .select('*').eq('company_id', companyId).ilike('email', email).maybeSingle()
       woo = data
-    }
-    if (!woo && phone) {
-      // Fall back to phone match (SMS-only contacts with no email on file),
-      // using the indexed normalised column from the V186 migration.
+    } else if (phone) {
+      // Phone-only (SMS contact with no email on file): resolve the customer
+      // first, since it may backfill an email we then match orders on. Uses the
+      // indexed normalised column from the V186 migration.
       const { data } = await (supabase as any).from('woocommerce_customers')
         .select('*').eq('company_id', companyId).eq('phone_norm', norm(phone)).maybeSingle()
       woo = data || null
-      // Backfill this contact's email from the matched customer so order-status
-      // automations and future lookups work (SMS contact ↔ WooCommerce customer).
       if (woo?.email && contactId) {
         try { await (supabase as any).from('contacts').update({ email: woo.email }).eq('id', contactId).is('email', null) } catch {}
         email = woo.email
       }
+      ordersPromise = Promise.all([email ? ordersByEmail(email) : Promise.resolve({ data: [] }), ordersByPhone(phone)])
+    } else {
+      ordersPromise = Promise.resolve([{ data: [] }, { data: [] }])
     }
     if (!isCurrent()) return
     if (woo) setWooCustomer(woo)
 
     // Orders by email (covers guest orders too), and ALSO by phone via billing.
     let orders: any[] = []
-    // Ask for both at once — these are independent queries and running them one
-    // after the other doubled the wait before the tab showed anything.
-    const [byEmailRes, byPhoneRes] = await Promise.all([
-      email
-        ? (supabase as any).from('woocommerce_orders')
-            .select('*').eq('company_id', companyId).ilike('customer_email', email)
-            .order('order_date', { ascending: false }).limit(50)
-        : Promise.resolve({ data: [] }),
-      phone
-        ? (supabase as any).from('woocommerce_orders')
-            .select('*').eq('company_id', companyId).eq('billing_phone_norm', norm(phone))
-            .order('order_date', { ascending: false }).limit(50)
-        : Promise.resolve({ data: [] }),
-    ])
+    const [byEmailRes, byPhoneRes] = await ordersPromise
     if (!isCurrent()) return
     orders = byEmailRes.data || []
     if (phone) {
@@ -3005,7 +3010,9 @@ export default function InboxPage() {
     let cancelled = false
     ;(async () => {
       const updates: Record<string, any> = {}
-      for (const o of toEnrich) {
+      // Fetch the order details concurrently — this used to await each order in
+      // turn, so N orders took N round-trips end to end before any image showed.
+      await Promise.all(toEnrich.map(async (o: any) => {
         const id = String(o.order_id)
         enrichedOrdersRef.current.add(id)
         try {
@@ -3013,7 +3020,7 @@ export default function InboxPage() {
           const d = await res.json()
           if (res.ok && d.order) updates[id] = d.order
         } catch { /* leave this order as-is */ }
-      }
+      }))
       if (cancelled || Object.keys(updates).length === 0) return
       setWooOrders(prev => prev.map((o: any) => {
         const u = updates[String(o.order_id)]
@@ -8159,10 +8166,12 @@ export default function InboxPage() {
                       }
                       return ([
                       ['name', 'Name', contact.name],
-                      ['company', 'Company', (contact as any).company],
+                      // The contacts table column is `company_name` (there is no
+                      // `company` column); keying this row on `company` made every
+                      // save write a non-existent column, so it silently reverted.
+                      ['company_name', 'Company', (contact as any).company_name],
                       ['email', 'Email', contact.email],
                       ['phone', 'Phone', contact.phone],
-                      ['suburb', 'Suburb', (contact as any).suburb],
                       ['address', 'Address', addressValue],
                     ] as [string, string, string][])
                       .map(([field, label, value]) => {
