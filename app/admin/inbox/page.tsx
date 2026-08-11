@@ -6362,6 +6362,19 @@ export default function InboxPage() {
                     })()}
               </div>
 
+              {/* Pin / unpin this conversation for the current agent. Mirrors the
+                  right-click action so it's reachable while the thread is open. */}
+              {(() => {
+                const isPinned = pinnedIds.has(selected.id)
+                return (
+                  <button type="button" onClick={() => togglePin(selected)}
+                    title={isPinned ? 'Unpin from top' : 'Pin to top'} aria-label={isPinned ? 'Unpin conversation' : 'Pin conversation'}
+                    style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid ' + (isPinned ? 'var(--coral)' : 'var(--border)'), background: isPinned ? 'var(--peach)' : '#fff', color: isPinned ? 'var(--coral)' : 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill={isPinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-3V7a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7z"/></svg>
+                  </button>
+                )
+              })()}
+
               {/* Browser calling (Telnyx WebRTC) */}
               {(contact?.phone || (selected as any).sms_number) && (
                 <CallBar
