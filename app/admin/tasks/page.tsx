@@ -511,6 +511,10 @@ export default function TasksPage() {
     if (t.assigned_to_id && t.assigned_to_id === userId) return true
     if (Array.isArray(t.assignees) && t.assignees.some((a: any) => a.id === userId)) return true
     if (Array.isArray(t.mentions) && t.mentions.some((a: any) => a.id === userId)) return true
+    // A task you created is your work too — so a task you add (e.g. from the
+    // inbox, often left unassigned) still surfaces under the default
+    // "Assigned to me" view instead of vanishing until you switch to "All".
+    if (t.created_by_id && t.created_by_id === userId) return true
     return false
   }, [userId])
 

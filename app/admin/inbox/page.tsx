@@ -2515,12 +2515,16 @@ export default function InboxPage() {
     // person picked from the dropdown.
     const mentioned = resolveTeamMentions(newTask, teamMembers as any)
 
+    // Carry the conversation's outlet onto the task, so it isn't a location-less
+    // row that a teammate's home-outlet filter would hide on the Tasks board.
+    const convLoc = (selected as any).assigned_location_id || (selected as any).location_id || null
     const { data: created } = await (supabase as any).from('conversation_tasks').insert({
       conversation_id: selected.id, company_id: companyId,
       text: newTask.trim(), done: false,
       assigned_to: assignee?.name || null,
       assigned_to_id: assignee?.id || null,
       created_by: me, created_by_id: user?.id || null,
+      location_id: convLoc, location_ids: convLoc ? [convLoc] : [],
       mentions: (mentioned as any[]).map(m => ({ id: m.id, name: m.name })),
     }).select().maybeSingle()
 
@@ -4275,7 +4279,7 @@ export default function InboxPage() {
   // remember which conversations matched, so the list filter includes them.
   useEffect(() => {
     const q = searchTerm.trim()
-    if (!q || !companyId || !['all', 'messages', 'notes', 'tasks', 'activity'].includes(searchScope)) {
+    if (!q || !companyId || !['all', 'contact', 'messages', 'notes', 'tasks', 'activity'].includes(searchScope)) {
       setSearchMsgHits({})
       setSearchExtraConvs([])
       return
@@ -4295,6 +4299,26 @@ export default function InboxPage() {
       if (searchScope === 'all' || searchScope === 'notes') await collect('conversation_notes', 'content')
       if (searchScope === 'all' || searchScope === 'tasks') await collect('conversation_tasks', 'text')
       if (searchScope === 'all' || searchScope === 'activity') await collect('conversation_events', 'detail')
+
+      // Match the WHOLE inbox by the contact's identity (name / email / phone),
+      // not just the loaded page. Previously a name search only matched rows
+      // already on screen, so a contact further down the list didn't appear
+      // until you hit "Load more". Resolve matching contacts, then mark all of
+      // their conversations as hits so the pull-in below fetches them.
+      if (searchScope === 'all' || searchScope === 'contact') {
+        try {
+          const safe = q.replace(/[%_]/g, m => '\\' + m).replace(/[(),]/g, ' ')
+          const { data: cts } = await (supabase as any).from('contacts')
+            .select('id').eq('company_id', companyId)
+            .or(`name.ilike.%${safe}%,email.ilike.%${safe}%,phone.ilike.%${safe}%`).limit(500)
+          const cids = (cts || []).map((c: any) => c.id).filter(Boolean)
+          for (let i = 0; i < cids.length; i += 100) {
+            const { data: cv } = await (supabase as any).from('conversations')
+              .select('id').eq('company_id', companyId).in('contact_id', cids.slice(i, i + 100)).limit(1000)
+            for (const r of cv || []) if (r.id) hits[r.id] = true
+          }
+        } catch { /* skip */ }
+      }
       if (!cancelled) setSearchMsgHits(hits)
 
       // Pull in any matching conversations that aren't in the loaded page, so a
