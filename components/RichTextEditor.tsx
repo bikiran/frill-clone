@@ -18,11 +18,15 @@ const BLOCK_TAGS = new Set(['DIV', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLO
 type Mention = { id: string; name: string }
 
 export default function RichTextEditor({
-  value, onChange, placeholder = 'Add a description…', mentions, minHeight = 120, maxHeight = 360, bordered = true,
+  value, onChange, onEditing, placeholder = 'Add a description…', mentions, minHeight = 120, maxHeight = 360, bordered = true,
   enableVoice = false, companyId, big = false, toolbarPortal, blockDrag = false,
 }: {
   value: string
   onChange: (html: string) => void
+  // Fired synchronously on every keystroke, before the debounced onChange — lets
+  // the host mark the record dirty immediately so a background refresh can't
+  // remount the editor over content that hasn't been emitted yet.
+  onEditing?: () => void
   placeholder?: string
   mentions?: Mention[]
   minHeight?: number
@@ -515,7 +519,7 @@ export default function RichTextEditor({
         contentEditable
         suppressContentEditableWarning
         data-ph={placeholder}
-        onInput={() => { emitSoon(); detectMention() }}
+        onInput={() => { onEditing?.(); emitSoon(); detectMention() }}
         onKeyDown={onKeyDown}
         onKeyUp={detectMention}
         onClick={() => setMenu(null)}

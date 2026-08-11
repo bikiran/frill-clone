@@ -25,6 +25,22 @@ type ChecklistItem = { id: string; text: string; done: boolean }
 const rid = () => Math.random().toString(36).slice(2, 9)
 const isAudio = (a: any) => a?.kind === 'audio' || (a?.type || '').startsWith('audio/')
 
+// Turn a note's HTML body into a plain-text snippet for list previews / search:
+// strip tags AND decode the common HTML entities, so a preview reads "Fish Name
+// Qty" instead of the raw "&nbsp;Fish Name &nbsp;Qty".
+const plainText = (html: string): string =>
+  (html || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, n) => { try { return String.fromCodePoint(parseInt(n, 10)) } catch { return ' ' } })
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
+
 const fmtAgo = (iso?: string) => {
   if (!iso) return ''
   const d = new Date(iso), s = Math.floor((Date.now() - d.getTime()) / 1000)
@@ -179,10 +195,16 @@ export default function NotesPage() {
   // True from the first keystroke until the debounced save lands. While dirty we
   // never let a live remote refresh overwrite what's being typed.
   const dirtyRef = useRef(false)
+  // Monotonic edit counter. Each edit bumps it; a save only clears `dirty` if no
+  // newer edit was queued while it was in flight — otherwise an older, slower
+  // save could mark the note clean and let a remote refresh remount the editor
+  // over content typed since (data loss).
+  const editSeqRef = useRef(0)
   const queueSave = (next: Note) => {
     setNote(next)
     setList(prev => prev.map(n => n.id === next.id ? { ...n, ...next, updated_at: new Date().toISOString() } : n))
     dirtyRef.current = true
+    const mySeq = ++editSeqRef.current
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
       if (!companyId) return
@@ -193,7 +215,7 @@ export default function NotesPage() {
           checklist: next.checklist, attachments: next.attachments, cover_image: next.cover_image ?? null,
           allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned, shared_with_team: !!next.shared_with_team, shared_members: next.shared_members || [], linked_tasks: next.linked_tasks || [],
         }) })
-      } catch {} finally { setSaving(false); dirtyRef.current = false }
+      } catch {} finally { setSaving(false); if (editSeqRef.current === mySeq) dirtyRef.current = false }
     }, 650)
   }
 
@@ -208,6 +230,10 @@ export default function NotesPage() {
   // user's personal/shared visibility is applied at the app layer.
   const activeIdRef = useRef<string | null>(null)
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
+  // Mirror the open note so the realtime refresh can compare bodies without
+  // depending on a stale closure.
+  const noteRef = useRef<Note | null>(null)
+  useEffect(() => { noteRef.current = note }, [note])
   const [remoteVer, setRemoteVer] = useState(0)   // bumps only on a remote refresh → remounts the editor with fresh body
   const listRefreshTimer = useRef<any>(null)
 
@@ -217,8 +243,14 @@ export default function NotesPage() {
       const res = await fetch(`/api/notes?companyId=${companyId}&userId=${uid}&id=${id}`)
       const d = await res.json()
       if (d.note && activeIdRef.current === id && !dirtyRef.current) {
+        // Only remount the editor (bump remoteVer) when the body actually changed
+        // on the server. The common case here is the echo of our OWN save, where
+        // the body is identical — remounting then would needlessly reset the
+        // editor and could drop content typed since the last emit. Metadata still
+        // refreshes without disturbing the editor.
+        const bodyChanged = (d.note.body || '') !== (noteRef.current?.body || '')
         setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [], shared_members: d.note.shared_members || [], comments: d.note.comments || [], edit_log: d.note.edit_log || [], linked_tasks: d.note.linked_tasks || [] })
-        setRemoteVer(v => v + 1)
+        if (bodyChanged) setRemoteVer(v => v + 1)
       }
     } catch {}
   }, [companyId, uid])
@@ -360,7 +392,7 @@ export default function NotesPage() {
   const q = search.trim().toLowerCase()
   const filterActive = !!q || filter.kind !== 'all'
   const visibleRows = shown.filter(n => {
-    if (q) { const hay = `${n.title || ''} ${(n.body || '').replace(/<[^>]+>/g, ' ')} ${(n.tags || []).join(' ')}`.toLowerCase(); if (!hay.includes(q)) return false }
+    if (q) { const hay = `${n.title || ''} ${plainText(n.body || '')} ${(n.tags || []).join(' ')}`.toLowerCase(); if (!hay.includes(q)) return false }
     if (filter.kind === 'pinned' && !n.pinned) return false
     if (filter.kind === 'shared' && !(n.shared_with_team || (n.shared_members || []).length)) return false
     if (filter.kind === 'reminder' && !n.reminder_at) return false
@@ -525,7 +557,7 @@ export default function NotesPage() {
               )
             ) : visibleRows.map(n => {
               const on = n.id === activeId && tab !== 'trash'
-              const plain = (n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+              const plain = plainText(n.body || '')
               const total = (n.checklist || []).length
               const done = (n.checklist || []).filter(c => c.done).length
               return (
@@ -679,6 +711,7 @@ export default function NotesPage() {
               )}
 
               <RichTextEditor key={`${note.id}:${remoteVer}`} value={note.body} onChange={html => queueSave({ ...note, body: html })}
+                onEditing={() => { dirtyRef.current = true }}
                 placeholder="Start writing… use @ to mention a teammate, / for a voice note" mentions={team} bordered={false} big enableVoice companyId={companyId} toolbarPortal={toolbarEl} blockDrag minHeight={200} maxHeight={'none' as any} />
 
               <div style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--border)' }}>

@@ -3653,6 +3653,35 @@ export default function InboxPage() {
       setPinnedIds(prev => { const n = new Set(prev); wasPinned ? n.add(id) : n.delete(id); return n })
     }
   }
+  // A pinned conversation must stay visible even when it's no longer in the
+  // recent page the inbox loads (otherwise it vanishes on reload). Fetch the
+  // pinned rows by id and merge them into the list below.
+  const [pinnedExtraConvs, setPinnedExtraConvs] = useState<any[]>([])
+  useEffect(() => {
+    if (!companyId || pinnedIds.size === 0) { setPinnedExtraConvs([]); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const ids = Array.from(pinnedIds)
+        const rows: any[] = []
+        for (let i = 0; i < ids.length; i += 100) {
+          const { data } = await (supabase as any).from('conversations')
+            .select('*').eq('company_id', companyId).in('id', ids.slice(i, i + 100))
+          rows.push(...(data || []))
+        }
+        const cids = Array.from(new Set(rows.map((r: any) => r.contact_id).filter(Boolean)))
+        if (cids.length) {
+          const { data: cts } = await (supabase as any).from('contacts')
+            .select('id, name, email, phone, relationship_type').in('id', cids)
+          const byId: Record<string, any> = {}
+          for (const ct of cts || []) byId[ct.id] = ct
+          for (const r of rows) (r as any).contacts = r.contact_id ? byId[r.contact_id] || null : null
+        }
+        if (!cancelled) setPinnedExtraConvs(rows)
+      } catch { if (!cancelled) setPinnedExtraConvs([]) }
+    })()
+    return () => { cancelled = true }
+  }, [pinnedIds, companyId])
 
   // ── Move or view enquiries across outlets ─────────────────────────────────
   const [showMoveMenu, setShowMoveMenu] = useState(false)
@@ -4355,10 +4384,25 @@ export default function InboxPage() {
   }, [searchTerm, searchScope, companyId])
 
   // When searching, include conversations pulled in from the deep search that
-  // aren't in the loaded page — deduped by id.
-  const convSource = searchTerm && searchExtraConvs.length
-    ? [...conversations, ...searchExtraConvs.filter(e => !conversations.some((c: any) => c.id === e.id))]
-    : conversations
+  // aren't in the loaded page — deduped by id. Also always fold in pinned
+  // conversations (matching the current Open/Closed tab) so a pinned chat that
+  // has fallen below the loaded page still shows — and stays pinned on reload.
+  const convSource = (() => {
+    let base: any[] = conversations
+    if (searchTerm && searchExtraConvs.length) {
+      base = [...base, ...searchExtraConvs.filter(e => !base.some((c: any) => c.id === e.id))]
+    }
+    if (pinnedExtraConvs.length) {
+      const wantClosed = statusFilter === 'closed'
+      const extra = pinnedExtraConvs.filter(e => {
+        const closed = e.status === 'closed' || e.status === 'resolved'
+        if (wantClosed ? !closed : closed) return false
+        return !base.some((c: any) => c.id === e.id)
+      })
+      if (extra.length) base = [...base, ...extra]
+    }
+    return base
+  })()
   const filteredConvs = convSource.filter(c => {
     // Location filter (whole Inbox & CRM). "all" shows everything; otherwise
     // only conversations assigned to the chosen outlet. Conversations with no
@@ -6728,28 +6772,42 @@ export default function InboxPage() {
                   </div>
                 ) : null
                 // Internal staff-only note — sits inline in the timeline so the
-                // team reads it in sequence, but is visually unmistakable
-                // (amber, dashed, italic, "Only your team can see this") so it's
-                // never confused with something the customer received.
-                if (isInternal) return (
+                // team reads it in sequence, but is visually unmistakable (amber
+                // card with a left accent, a lock, a "Team only" badge and the
+                // author) so it's never confused with a customer message.
+                if (isInternal) {
+                  const noteAuthor = (msg as any).sender_name || 'Team'
+                  const noteInitials = noteAuthor.split(/\s+/).filter(Boolean).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || 'T'
+                  const noteRel = timeAgo(msg.created_at)
+                  return (
                   <div key={msg.id}>
                     {dateDivider}
-                    <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0' }}>
-                      <div style={{ maxWidth: '86%', width: '100%', background: '#fffbeb', border: '1px dashed #f59e0b', borderRadius: 12, padding: '10px 13px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, fontSize: 11, fontWeight: 700, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/></svg>
-                          Internal note · only your team can see this
+                    <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0' }}>
+                      <div style={{ maxWidth: '86%', width: '100%', background: '#fffbeb', border: '1px solid #fde68a', borderLeft: '4px solid #f59e0b', borderRadius: 14, padding: '12px 14px', boxShadow: '0 1px 2px rgba(180,83,9,0.06)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, rowGap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <span style={{ width: 26, height: 26, borderRadius: 8, background: '#fef3c7', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            </span>
+                            <span style={{ fontSize: 13.5, fontWeight: 800, color: '#78350f' }}>Internal note</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 20, background: '#fff', border: '1px solid #fde68a', color: '#a16207', fontSize: 10.5, fontWeight: 700 }}>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.5 18.5 0 0 0 2 12s3 8 10 8a9.12 9.12 0 0 0 5.39-1.61"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                              Team only
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
+                            <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#fde68a', color: '#92400e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 800, flexShrink: 0 }}>{noteInitials}</span>
+                            <span style={{ fontSize: 11.5, color: '#a16207', whiteSpace: 'nowrap' }}>{noteAuthor} · {noteRel === 'now' ? 'just now' : `${noteRel} ago`}</span>
+                          </div>
                         </div>
-                        <p style={{ margin: 0, fontSize: 13.5, color: '#78350f', fontStyle: 'italic', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: '#422006', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                           {renderWithMentions(msg.content)}
-                        </p>
-                        <p style={{ margin: '6px 0 0', fontSize: 10.5, color: '#b08968', fontStyle: 'italic' }}>
-                          {(msg as any).sender_name || 'Team'} · {fmtTime(msg.created_at)}
                         </p>
                       </div>
                     </div>
                   </div>
-                )
+                  )
+                }
                 // A connected call renders as a full Coax-style card — AI
                 // summary, action items, recording player, transcript — not a
                 // grey one-line pill.
