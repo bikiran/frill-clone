@@ -3618,6 +3618,38 @@ export default function InboxPage() {
   // Right-click context menu on the conversation list.
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; conv: any } | null>(null)
 
+  // ── Pinned conversations (per user) ───────────────────────────────────────
+  // Each agent keeps their own pins, so pinning floats a chat to the top of
+  // *their* inbox without touching anyone else's list.
+  const [pinUserId, setPinUserId] = useState<string>('')
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set())
+  useEffect(() => { (async () => { try { const { data: { user } } = await supabase.auth.getUser(); if (user?.id) setPinUserId(user.id) } catch {} })() }, [])
+  useEffect(() => {
+    if (!pinUserId || !companyId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any).from('conversation_pins')
+          .select('conversation_id').eq('user_id', pinUserId).eq('company_id', companyId)
+        if (!cancelled) setPinnedIds(new Set((data || []).map((r: any) => r.conversation_id)))
+      } catch { /* table may not be migrated yet */ }
+    })()
+    return () => { cancelled = true }
+  }, [pinUserId, companyId])
+  const togglePin = async (conv: any) => {
+    const id = conv?.id
+    if (!id || !pinUserId || !companyId) return
+    const wasPinned = pinnedIds.has(id)
+    setPinnedIds(prev => { const n = new Set(prev); wasPinned ? n.delete(id) : n.add(id); return n })
+    try {
+      if (wasPinned) await (supabase as any).from('conversation_pins').delete().eq('user_id', pinUserId).eq('conversation_id', id)
+      else await (supabase as any).from('conversation_pins').insert({ user_id: pinUserId, conversation_id: id, company_id: companyId })
+    } catch (e) {
+      // Revert the optimistic change if the write failed.
+      setPinnedIds(prev => { const n = new Set(prev); wasPinned ? n.add(id) : n.delete(id); return n })
+    }
+  }
+
   // ── Move or view enquiries across outlets ─────────────────────────────────
   const [showMoveMenu, setShowMoveMenu] = useState(false)
 
@@ -4381,6 +4413,10 @@ export default function InboxPage() {
     return contactMatch || surfaceMatch || deepHit
   })
     .sort((a: any, b: any) => {
+      // Pinned conversations float to the top (per-user), then normal ordering.
+      const pa = pinnedIds.has(a.id) ? 1 : 0
+      const pb = pinnedIds.has(b.id) ? 1 : 0
+      if (pa !== pb) return pb - pa
       const ta = (parseTs(a.last_message_at)?.getTime() || 0)
       const tb = (parseTs(b.last_message_at)?.getTime() || 0)
       return filters.oldestFirst ? ta - tb : tb - ta
@@ -5433,6 +5469,7 @@ export default function InboxPage() {
           onClick={e => e.stopPropagation()}
           style={{ position: 'fixed', top: Math.min(ctxMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 240), left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 210), width: 200, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.16)', zIndex: 500, overflow: 'hidden', padding: '4px 0' }}>
           {([
+            [pinnedIds.has(ctxMenu.conv.id) ? 'Unpin' : 'Pin to top', <svg key="p" width="15" height="15" viewBox="0 0 24 24" fill={pinnedIds.has(ctxMenu.conv.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-3V7a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7z"/></svg>, () => togglePin(ctxMenu.conv)],
             ['Mark as read', <svg key="r" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>, () => markRead(ctxMenu.conv)],
             ['Open in new tab', <svg key="o" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>, () => window.open(`/admin/inbox?conversation=${ctxMenu.conv.id}`, '_blank')],
             ['Copy link', <svg key="c" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>, () => copyConvLink(ctxMenu.conv)],
@@ -6192,6 +6229,11 @@ export default function InboxPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                   {unread && <span style={{ width: 7, height: 7, borderRadius: '50%', background: accent, flexShrink: 0 }} />}
+                  {pinnedIds.has(conv.id) && (
+                    <span title="Pinned" style={{ color: 'var(--coral)', flexShrink: 0, display: 'inline-flex' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-3V7a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7z"/></svg>
+                    </span>
+                  )}
                   <span style={{ fontSize: 13.5, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {displayName}
                   </span>

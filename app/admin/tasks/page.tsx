@@ -858,6 +858,19 @@ export default function TasksPage() {
         ;({ error } = await runScoped())
       }
       if (error) { console.error('[task scoped update] failed', error); if (companyId) loadTasks(companyId) }
+      else {
+        // Record the change on every occurrence the edit touched, so a
+        // series-wide completion (or reschedule, priority change, …) shows up in
+        // each card's Activity — not just single-occurrence edits.
+        const entries = diffActivity(task, fields)
+        if (entries.length) {
+          const affected = tasks.filter(t =>
+            t.series_id === task.series_id &&
+            !(scope === 'following' && parseTs(t.due_date) && parseTs(task.due_date) && (parseTs(t.due_date)! < parseTs(task.due_date)!))
+          ).map(t => t.id)
+          affected.forEach(id => logActivity(id, entries))
+        }
+      }
     } catch (e) { console.error('[task scoped update] threw', e); if (companyId) loadTasks(companyId) }
   }
 
