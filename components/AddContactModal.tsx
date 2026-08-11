@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
 const RELATIONSHIPS = [
@@ -43,7 +43,90 @@ export default function AddContactModal({
   const [existingMatch, setExistingMatch] = useState<any>(null)
   const [allowDuplicate, setAllowDuplicate] = useState(false)
 
+  // Scan a photo (business card, signature, handwritten details) → fill the form.
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [scanning, setScanning] = useState(false)
+  const [scanError, setScanError] = useState('')
+  const [scanNote, setScanNote] = useState('')
+
   const normPhone = (p: string) => p.replace(/[^\d+]/g, '')
+
+  // Downscale a camera photo to a sane size before upload — a raw phone shot is
+  // several MB, most of which is wasted on the model and slows the request. Cap
+  // the long edge at 1600px and re-encode as JPEG. Returns { data, mediaType }.
+  const toScaledImage = (file: File): Promise<{ data: string; mediaType: string }> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(new Error('Could not read that file'))
+      reader.onload = () => {
+        const img = new Image()
+        img.onerror = () => reject(new Error('That file is not a readable image'))
+        img.onload = () => {
+          const MAX = 1600
+          let { width, height } = img
+          if (width > MAX || height > MAX) {
+            const scale = MAX / Math.max(width, height)
+            width = Math.round(width * scale)
+            height = Math.round(height * scale)
+          }
+          const canvas = document.createElement('canvas')
+          canvas.width = width; canvas.height = height
+          const ctx = canvas.getContext('2d')
+          if (!ctx) { reject(new Error('Could not process that image')); return }
+          ctx.drawImage(img, 0, 0, width, height)
+          resolve({ data: canvas.toDataURL('image/jpeg', 0.8), mediaType: 'image/jpeg' })
+        }
+        img.src = reader.result as string
+      }
+      reader.readAsDataURL(file)
+    })
+
+  // Fill a field only when it's still empty, so a scan never clobbers something
+  // the user already typed. Country is special-cased: it's pre-filled with the
+  // 'Australia' default, so allow the scan to correct it while it's untouched.
+  const fillEmpty = (cur: string, val: string | null, set: (v: string) => void) => {
+    if (val && !cur.trim()) set(val)
+  }
+
+  const runScan = async (file: File) => {
+    setScanError(''); setScanNote(''); setError('')
+    if (!file.type.startsWith('image/')) { setScanError('Choose a photo or image file.'); return }
+    setScanning(true)
+    try {
+      const { data, mediaType } = await toScaledImage(file)
+      const res = await fetch('/api/contacts/scan-card', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ companyId, image: data, mediaType }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json?.ok) {
+        setScanError(json?.error || 'Could not scan that photo. Try a clearer, well-lit shot.')
+        return
+      }
+      const f = json.fields || {}
+      fillEmpty(name, f.name, setName)
+      fillEmpty(phone, f.phone, setPhone)
+      fillEmpty(email, f.email, setEmail)
+      fillEmpty(companyName, f.company_name, setCompanyName)
+      fillEmpty(address, f.address, setAddress)
+      fillEmpty(city, f.city, setCity)
+      fillEmpty(state, f.state, setState)
+      fillEmpty(postcode, f.postcode, setPostcode)
+      // Country carries an 'Australia' default; let a scan overwrite it while
+      // it's still the untouched default, but never once the user has changed it.
+      if (f.country && (!country.trim() || country.trim() === 'Australia')) setCountry(f.country)
+      fillEmpty(notes, f.notes, setNotes)
+
+      const filled = ['name', 'phone', 'email', 'company_name', 'address', 'city', 'state', 'postcode', 'country', 'notes']
+        .filter(k => f[k]).length
+      setScanNote(filled ? 'Filled from photo — check the details before saving.' : 'No new details found in that photo.')
+    } catch (e: any) {
+      setScanError(e?.message || 'Could not scan that photo.')
+    } finally {
+      setScanning(false)
+    }
+  }
 
   const save = async () => {
     if (!name.trim() && !phone.trim() && !email.trim()) {
@@ -127,6 +210,39 @@ export default function AddContactModal({
       <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24 }}>
         <h3 style={{ margin: '0 0 2px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>New contact</h3>
         <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>Added manually — you can message them through Colvy.</p>
+
+        {/* Scan a photo → auto-fill. A hidden input drives both file pick and,
+            on mobile, the camera (capture="environment"). */}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={e => {
+            const file = e.target.files?.[0]
+            if (file) runScan(file)
+            e.target.value = '' // allow re-selecting the same file
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={scanning}
+          style={{
+            marginTop: 14, width: '100%', padding: '11px 12px', borderRadius: 11,
+            border: '1px dashed var(--coral)', background: 'var(--peach)', color: 'var(--coral)',
+            fontSize: 13.5, fontWeight: 700, cursor: scanning ? 'default' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: scanning ? 0.7 : 1,
+          }}
+        >
+          {scanning ? 'Scanning photo…' : '📇 Scan a business card or photo'}
+        </button>
+        <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)', textAlign: 'center' }}>
+          Upload or snap a card — Colvy reads the details and fills the form below.
+        </p>
+        {scanError && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: '#dc2626' }}>{scanError}</p>}
+        {scanNote && !scanError && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: '#047857', fontWeight: 600 }}>{scanNote}</p>}
 
         <label style={L}>Name</label>
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Full name" style={I} autoFocus />

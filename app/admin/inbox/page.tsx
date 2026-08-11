@@ -408,11 +408,18 @@ export default function InboxPage() {
     { text: reply },
     { enabled: !!selected, isEmpty: (v: any) => !v?.text || !v.text.trim() }
   )
-  // Restore once the draft for this conversation has loaded.
+  // Load THIS conversation's draft into the composer — and drop the previous
+  // conversation's text the moment we switch. `reply` is a single state cell
+  // shared across conversations, so without this the leftover text would be
+  // auto-saved under whatever conversation is opened next. Gated on
+  // `restoredFor` (not `ready`), which tells us the loaded draft is for the
+  // currently-selected conversation, since ready/restored lag a render behind.
   useEffect(() => {
-    if (draft.ready && draft.restored?.text && !reply) setReply(draft.restored.text)
+    const id = selected?.id || ''
+    if (draft.restoredFor !== id) { setReply(''); return }   // switched; this conv's draft not loaded yet
+    setReply(draft.restored?.text || '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.ready, selected?.id])
+  }, [selected?.id, draft.restoredFor])
   const [sending, setSending] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [locationFilter, setLocationFilter] = useState<string>('all')
@@ -7787,7 +7794,7 @@ export default function InboxPage() {
 
                 {showContactEdit ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {[['name', 'Name', 'text'], ['email', 'Email', 'email'], ['phone', 'Phone', 'tel'], ['address', 'Address', 'text'], ['city', 'City', 'text'], ['state', 'State', 'text'], ['postcode', 'Postcode', 'text'], ['country', 'Country', 'text']].map(([field, label, type]) => (
+                    {[['name', 'Name', 'text'], ['email', 'Email', 'email'], ['phone', 'Phone', 'tel'], ['suburb', 'Suburb', 'text'], ['address', 'Address', 'text'], ['city', 'City', 'text'], ['state', 'State', 'text'], ['postcode', 'Postcode', 'text'], ['country', 'Country', 'text']].map(([field, label, type]) => (
                       <div key={field}>
                         <label style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>{label}</label>
                         {field === 'address' ? (
@@ -7887,6 +7894,7 @@ export default function InboxPage() {
                       ['company', 'Company', (contact as any).company],
                       ['email', 'Email', contact.email],
                       ['phone', 'Phone', contact.phone],
+                      ['suburb', 'Suburb', (contact as any).suburb],
                       ['address', 'Address', addressValue],
                     ] as [string, string, string][])
                       .map(([field, label, value]) => {

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { TwilioService } from '@/lib/twilio-service'
 import { uploadToR2, r2Configured } from '@/lib/r2'
 import { notifyCompany } from '@/lib/notify'
+import { ensureCallCard } from '@/lib/call-card'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,6 +73,9 @@ export async function POST(req: NextRequest) {
     }
 
     await db.from('calls').update({ recording_url: publicUrl }).eq('id', rowId)
+    // Make sure the thread has a card to display this recording/summary, even if
+    // the browser never posted one. Idempotent — no-op if it already exists.
+    await ensureCallCard(db, rowId)
     // Transcribe → AI summary (reuses the existing transcriber).
     try {
       const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')

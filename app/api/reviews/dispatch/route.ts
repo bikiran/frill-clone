@@ -130,28 +130,44 @@ async function run(req: NextRequest) {
 
         const channels = cfg.channels || { chat: true }
 
-        // ── Chat (in the conversation the order created)
-        if (channels.chat !== false && rr.conversation_id) {
+        // Atomically claim this request so an overlapping dispatch run — cron
+        // overlap, or a manual GET/POST fired while one is in flight — can't
+        // send the same request twice. Only the run that flips pending→sending
+        // proceeds; a loser matches 0 rows and skips. (This is what made the
+        // review request appear more than once.)
+        const { data: claimed } = await db.from('review_requests')
+          .update({ status: 'sending' }).eq('id', rr.id).eq('status', 'pending').select('id')
+        if (!claimed || claimed.length === 0) { results.push({ id: rr.id, skipped: 'already in progress' }); continue }
+
+        // ── SMS. skipChatMessage stops the send route logging its OWN row — we
+        // log a single review-request card row below, stamped with the channel
+        // it actually went out on. Previously this sent SMS without the flag AND
+        // posted its own default-'chat' card, so one request produced a
+        // "Live Chat" card plus a duplicate "SMS" row.
+        let smsSent = false
+        if (channels.sms && contact?.phone) {
+          try {
+            const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+            const res = await fetch(`${base}/api/telnyx/sms/send`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ companyId: rr.company_id, conversationId: rr.conversation_id, to: contact.phone, text, senderName: business, skipChatMessage: true }),
+            })
+            smsSent = res.ok
+          } catch (e) { console.error('[review request] sms failed', e) }
+        }
+
+        // ── One thread card row, stamped with the real delivery channel.
+        if (rr.conversation_id && (channels.chat !== false || smsSent)) {
           await db.from('messages').insert({
             conversation_id: rr.conversation_id, company_id: rr.company_id,
             sender_type: 'agent', sender_name: business,
             content: text, message_type: 'text', is_read: true,
             metadata: { auto: true, review_request: true },
+            delivery_channel: smsSent ? 'sms' : 'chat',
           })
           await db.from('conversations').update({
             last_message: text.slice(0, 200), last_message_at: new Date().toISOString(), review_requested: true,
           }).eq('id', rr.conversation_id)
-        }
-
-        // ── SMS
-        if (channels.sms && contact?.phone) {
-          try {
-            const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
-            await fetch(`${base}/api/telnyx/sms/send`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ companyId: rr.company_id, conversationId: rr.conversation_id, to: contact.phone, text, senderName: business }),
-            })
-          } catch (e) { console.error('[review request] sms failed', e) }
         }
 
         // ── Email

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { ensureCallCard } from '@/lib/call-card'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,6 +39,10 @@ export async function POST(req: NextRequest) {
           ...(durSecs ? { duration_seconds: durSecs } : {}),
         }).eq('id', callRowId)
       } catch {}
+      // Guarantee the call logs in the thread even if the browser never posted
+      // the card (tab closed before hang-up, missed disconnect event, etc.).
+      // Idempotent — no-op when the browser already posted it.
+      await ensureCallCard(db, callRowId)
     }
     return twiml('<Response></Response>')
   } catch {
