@@ -214,7 +214,7 @@ function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: st
 }
 // Interleave conversation events (assignments, channel switches, moves) into the
 // message list in chronological order, so the thread reads like a real timeline.
-function mergeEvents(msgs: any[], events: any[]) {
+function mergeEvents(msgs: any[], events: any[], calls: any[] = []) {
   const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request', 'page_view', 'note_created']
   const evs = (events || [])
     .filter(e => SHOW.includes(e.event_type))
@@ -233,7 +233,7 @@ function mergeEvents(msgs: any[], events: any[]) {
     return isNaN(d.getTime()) ? 0 : d.getTime()
   }
 
-  return [...msgs, ...evs].sort((a, b) => ts(a.created_at) - ts(b.created_at))
+  return [...msgs, ...evs, ...(calls || [])].sort((a, b) => ts(a.created_at) - ts(b.created_at))
 }
 
 // Returns "Today" / "Yesterday" / "12 Jul 2026" for a date divider
@@ -1091,6 +1091,11 @@ export default function InboxPage() {
   const [showEmoji, setShowEmoji] = useState(false)
   const [showReactPicker, setShowReactPicker] = useState<string | null>(null)
   const [events, setEvents] = useState<any[]>([])
+  // Calls belonging to the open conversation, pulled from the `calls` table.
+  // Used to surface historical calls that predate the server-side call-card
+  // linking rows (and any call the browser/webhook never posted a card for),
+  // deduped in the render against calls that already have a timeline message.
+  const [convCalls, setConvCalls] = useState<any[]>([])
   const [notes, setNotes] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
   // Collapsible Notes/Tasks panels (Coax-style headers with a chevron).
@@ -1573,6 +1578,13 @@ export default function InboxPage() {
     const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', conv.id).order('created_at', { ascending: true })
     setMessages(msgs || [])
     scrollBottom()
+    // Load this conversation's calls so any that lack a timeline card (historical
+    // calls, or calls the browser/webhook never posted) still show in the thread.
+    setConvCalls([])
+    ;(supabase as any).from('calls')
+      .select('id, created_at, direction, duration_seconds, recording_url, ai_summary, status, is_voicemail, agent_name')
+      .eq('conversation_id', conv.id).order('created_at', { ascending: true }).limit(200)
+      .then(({ data }: any) => setConvCalls(data || []))
     // Mark read + stamp read receipt on visitor messages
     await (supabase as any).from('conversations').update({ is_unread: false, unread_count: 0 }).eq('id', conv.id)
     markMessagesRead(conv.id, msgs || [])
@@ -6735,7 +6747,38 @@ export default function InboxPage() {
                   </div>
                 )
 
-                return [header, ...mergeEvents(list, events).map((item: any) => {
+                // Calls that already have a timeline message (server-posted or
+                // browser-posted card) — don't double-render those from convCalls.
+                const linkedCallIds = new Set(
+                  messages.filter((m: any) => m.metadata?.call_event && m.metadata?.call_id).map((m: any) => m.metadata.call_id)
+                )
+                // A call is worth showing once it connected. Duration alone is
+                // unreliable (Telnyx inbound can finalise at 0s), so a recording,
+                // a summary or a completed/answered status also counts. Voicemail
+                // and never-connected attempts stay out of the thread.
+                const extraCalls = (msgSearch ? [] : convCalls)
+                  .filter((c: any) => !linkedCallIds.has(c.id) && !c.is_voicemail && (
+                    (c.duration_seconds || 0) > 0 || c.recording_url || c.ai_summary ||
+                    ['completed', 'answered'].includes(String(c.status || ''))
+                  ))
+                  .map((c: any) => ({ __call: true, ...c }))
+
+                return [header, ...mergeEvents(list, events, extraCalls).map((item: any) => {
+                if (item.__call) {
+                  const thisDay = dayLabel(item.created_at)
+                  const showDivider = thisDay && thisDay !== lastDay
+                  if (thisDay) lastDay = thisDay
+                  return (
+                    <div key={`call-${item.id}`}>
+                      {showDivider ? (
+                        <div style={{ textAlign: 'center', margin: '10px 0 4px' }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', background: '#eef0f2', padding: '3px 12px', borderRadius: 20 }}>{thisDay}</span>
+                        </div>
+                      ) : null}
+                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} />
+                    </div>
+                  )
+                }
                 if (item.__event) {
                   // Inline timeline event: "Conversation assigned to X",
                   // "Now chatting through SMS", "Enquiry moved to …"

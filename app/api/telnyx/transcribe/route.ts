@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { ensureCallCard } from '@/lib/call-card'
 
 export const maxDuration = 60
 
@@ -181,20 +182,26 @@ ${text.slice(0, 12000)}`
       return NextResponse.json({ ok: false, transcription: text, reason })
     }
 
-    // Refresh the call card already sitting in the thread, so the summary and
-    // transcript appear without the agent reloading. (The card reads the row.)
-    if (conversationId && companyId) {
-      try {
+    // Make sure the call has a thread card, then flag it transcribed so the
+    // summary/transcript show without a reload. ensureCallCard is the retroactive
+    // net: if the browser never posted a card (e.g. an inbound call answered off
+    // the tab), this creates it now that we know the call connected — reading the
+    // conversation straight off the `calls` row, so we don't depend on the body
+    // carrying conversationId/companyId. Idempotent.
+    try {
+      await ensureCallCard(db, callId)
+      const cid = conversationId || call.conversation_id
+      if (cid) {
         const { data: msgs } = await db.from('messages')
-          .select('id, metadata').eq('conversation_id', conversationId)
+          .select('id, metadata').eq('conversation_id', cid)
         const card = (msgs || []).find((m: any) => m.metadata?.call_id === callId)
         if (card) {
           await db.from('messages')
             .update({ metadata: { ...(card.metadata || {}), transcribed: true } })
             .eq('id', card.id)
         }
-      } catch {}
-    }
+      }
+    } catch {}
 
     return NextResponse.json({ ok: true, transcription: text, summary, todos, sentiment })
   } catch (err: any) {
