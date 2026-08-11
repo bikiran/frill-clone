@@ -995,12 +995,52 @@ export default function InboxPage() {
   const [podSending, setPodSending] = useState(false)
   const [showDeliveryPanel, setShowDeliveryPanel] = useState(false)
   const [filters, setFilters] = useState<any>({
-    dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', oldestFirst: false,
+    dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', relationship: '', purchased: '', oldestFirst: false,
   })
-  const activeFilterCount = ['dateFrom', 'dateTo', 'channel', 'assignedTo', 'source']
+  const activeFilterCount = ['dateFrom', 'dateTo', 'channel', 'assignedTo', 'source', 'relationship', 'purchased']
     .filter(k => filters[k]).length + (filters.oldestFirst ? 1 : 0)
-  const resetFilters = () => setFilters({ dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', oldestFirst: false })
+  const resetFilters = () => setFilters({ dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', relationship: '', purchased: '', oldestFirst: false })
+  // Purchase-history lookup for the "Purchased (SKU or title)" filter, keyed by
+  // lowercased contact email (a contact's orders live in woocommerce_customers,
+  // not on the conversation). Loaded lazily only when that filter is in use, and
+  // cached per company so switching filters doesn't refetch.
+  const [wooItemsMap, setWooItemsMap] = useState<Map<string, any[]>>(new Map())
+  const wooItemsRef = useRef<{ companyId: string; map: Map<string, any[]> } | null>(null)
   const [showAssignMenu, setShowAssignMenu] = useState(false)
+
+  // Load the email → purchased-items map when (and only when) the Purchased
+  // filter is active. Mirrors the Contacts page enrichment source.
+  useEffect(() => {
+    if (!filters.purchased?.trim() || !companyId) return
+    if (wooItemsRef.current?.companyId === companyId) { setWooItemsMap(wooItemsRef.current.map); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any)
+          .from('woocommerce_customers').select('email, items_purchased').eq('company_id', companyId).limit(5000)
+        const m = new Map<string, any[]>()
+        for (const c of data || []) {
+          if (!c.email) continue
+          let ip = c.items_purchased
+          if (typeof ip === 'string') { try { ip = JSON.parse(ip) } catch { ip = [ip] } }
+          m.set(String(c.email).toLowerCase(), Array.isArray(ip) ? ip : [])
+        }
+        if (!cancelled) { wooItemsRef.current = { companyId, map: m }; setWooItemsMap(m) }
+      } catch (e) { console.error('inbox purchased-filter load failed', e) }
+    })()
+    return () => { cancelled = true }
+  }, [filters.purchased, companyId])
+
+  // Does this contact's purchase history include something matching the query
+  // (by SKU or product title)?
+  const purchasedMatches = (email: string | undefined, query: string) => {
+    const items = wooItemsMap.get((email || '').toLowerCase())
+    if (!items || !items.length) return false
+    const q = query.trim().toLowerCase()
+    return items.some((it: any) => typeof it === 'string'
+      ? it.toLowerCase().includes(q)
+      : String(it.sku || '').toLowerCase().includes(q) || String(it.name || it.title || '').toLowerCase().includes(q))
+  }
   // The contact card has its own assign dropdown and overflow menu, anchored to
   // their own buttons (previously the card's assign button faked a click on the
   // header menu, which opened a panel at the top of the page).
@@ -1218,7 +1258,7 @@ export default function InboxPage() {
     const contactIds = Array.from(new Set(convs.map((c: any) => c.contact_id).filter(Boolean)))
     if (contactIds.length) {
       const { data: cts } = await (supabase as any)
-        .from('contacts').select('id, name, email, phone').in('id', contactIds)
+        .from('contacts').select('id, name, email, phone, relationship_type').in('id', contactIds)
       const byId: Record<string, any> = {}
       for (const ct of cts || []) byId[ct.id] = ct
       for (const c of convs) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
@@ -1233,7 +1273,7 @@ export default function InboxPage() {
     if (unlinked.length) {
       const tails = Array.from(new Set(unlinked.map((c: any) => dig(c.sms_number || c.phone).slice(-9))))
       const ors = tails.map((t: string) => `phone.ilike.%${t}%`).join(',')
-      const { data: cand } = await (supabase as any).from('contacts').select('id, name, email, phone').eq('company_id', id).or(ors).limit(200)
+      const { data: cand } = await (supabase as any).from('contacts').select('id, name, email, phone, relationship_type').eq('company_id', id).or(ors).limit(200)
       if (cand && cand.length) {
         const linked: { conv: string; contact: string }[] = []
         for (const c of unlinked) {
@@ -4307,6 +4347,18 @@ export default function InboxPage() {
       if (filters.dateFrom && t < new Date(filters.dateFrom).getTime()) return false
       if (filters.dateTo && t > new Date(filters.dateTo).getTime() + 86400000) return false
     }
+    // Relationship: a missing value counts as 'customer' (the default for every
+    // contact that predates the field). A conversation with no linked contact is
+    // excluded once a specific relationship is chosen.
+    if (filters.relationship) {
+      if ((ct.relationship_type || 'customer') !== filters.relationship) return false
+    }
+    // Purchased (SKU or title): keep only conversations whose contact has bought
+    // a matching product. Needs the woo items map; while it loads, matches are
+    // empty, then fill in once loaded.
+    if (filters.purchased && filters.purchased.trim()) {
+      if (!purchasedMatches(ct.email, filters.purchased)) return false
+    }
     // No search term: the conversation has passed every active filter above, so
     // it belongs in the list.
     if (!searchTerm) return true
@@ -5340,12 +5392,28 @@ export default function InboxPage() {
 
                 <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Source</label>
                 <select value={filters.source} onChange={e => setFilters({ ...filters, source: e.target.value })}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', background: '#fff' }}>
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 16, boxSizing: 'border-box', background: '#fff' }}>
                   <option value="">Select source</option>
                   <option value="chat">Live chat enquiry</option>
                   <option value="order">Order placed</option>
                   <option value="cart">Abandoned cart</option>
                 </select>
+
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Relationship</label>
+                <select value={filters.relationship} onChange={e => setFilters({ ...filters, relationship: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 16, boxSizing: 'border-box', background: '#fff' }}>
+                  <option value="">All types</option>
+                  <option value="customer">Customer</option>
+                  <option value="supplier">Supplier</option>
+                  <option value="wholesaler">Wholesaler</option>
+                  <option value="business">Business contact</option>
+                </select>
+
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Purchased (SKU or title)</label>
+                <input value={filters.purchased} onChange={e => setFilters({ ...filters, purchased: e.target.value })}
+                  placeholder="e.g. 1132 or Pleco"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', background: '#fff' }} />
+                <p style={{ margin: '7px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>Matches the contact&rsquo;s order history.</p>
               </div>
             </div>
 
