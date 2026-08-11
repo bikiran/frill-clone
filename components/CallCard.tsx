@@ -16,6 +16,8 @@ const MicIcon = () => ico(<><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0
 const DocIcon = () => ico(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>)
 const PersonIcon = () => ico(<><circle cx="12" cy="7" r="4"/><path d="M5.5 21a8.38 8.38 0 0 1 13 0"/></>)
 const PhoneIcon = (size = 13) => ico(<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>, size)
+const PhoneMissedIcon = (size = 13) => ico(<><line x1="23" y1="1" x2="17" y2="7"/><line x1="17" y1="1" x2="23" y2="7"/><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></>, size)
+const VoicemailIcon = (size = 13) => ico(<><circle cx="6" cy="12" r="4"/><circle cx="18" cy="12" r="4"/><line x1="6" y1="16" x2="18" y2="16"/></>, size)
 
 const SENTIMENT: Record<string, { label: string; color: string; bg: string }> = {
   positive: { label: 'Positive', color: '#15803d', bg: '#dcfce7' },
@@ -64,6 +66,11 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
   useEffect(() => {
     if (!callId) return
     if (call?.ai_summary || call?.transcription) return
+    // Nothing to wait for on a call that never connected (missed/failed with no
+    // recording) — don't poll it. Connected/voicemail rows may still be waiting
+    // for the recording + summary to upload, so keep polling those.
+    const st = String(call?.status || '')
+    if (call && !call.recording_url && !['completed', 'answered'].includes(st) && !st.startsWith('voicemail')) return
     let n = 0
     const iv = setInterval(() => {
       n++
@@ -71,10 +78,33 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
       if (n > 20) clearInterval(iv)   // give up after ~2 min
     }, 6000)
     return () => clearInterval(iv)
-  }, [callId, call?.ai_summary, call?.transcription])
+  }, [callId, call?.ai_summary, call?.transcription, call?.recording_url, call?.status])
 
   const duration = call?.duration_seconds ?? meta?.duration_seconds ?? 0
   const inbound = (call?.direction || meta?.direction) === 'inbound'
+  const status = String(call?.status || '')
+  const isVoicemail = !!call?.is_voicemail || status.startsWith('voicemail')
+  // A missed call never connected: no recording, no talk time, and a status that
+  // says so. (Voicemail takes precedence — it's a missed call that left a message.)
+  const isMissed = !isVoicemail && !call?.recording_url && (duration || 0) <= 0 &&
+    ['missed', 'no-answer', 'no_answer', 'failed', 'busy', 'canceled', 'cancelled'].includes(status)
+  const when = timestamp ? new Date(timestamp).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''
+
+  // Missed call — a compact timeline pill, not a full card (there's nothing to
+  // play or summarise). Rendered once the row loads so we know it truly missed.
+  if (call && isMissed) {
+    const num = inbound ? call.from_number : call.to_number
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', margin: '8px 0' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 20, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12, fontWeight: 600 }}>
+          <span style={{ display: 'inline-flex', color: '#dc2626' }}>{PhoneMissedIcon(13)}</span>
+          {inbound ? 'Missed call' : 'Call not answered'}{num ? ` · ${num}` : ''}{when ? ` · ${when}` : ''}
+        </span>
+      </div>
+    )
+  }
+
+  const headLabel = isVoicemail ? 'Voicemail' : (inbound ? 'Call received' : 'Call made')
   // Show a badge whenever we have any AI output. Older calls summarised before
   // sentiment was persisted have a summary but a null sentiment — treat those
   // as neutral rather than showing no badge at all.
@@ -88,12 +118,12 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
     <div style={{ maxWidth: 560, margin: '10px auto', background: '#f7f9fc', border: '1px solid #e3e9f2', borderRadius: 14, padding: 14 }}>
       {/* Header: direction + duration */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: summary || call?.recording_url ? 12 : 0 }}>
-        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: '50%', background: '#dcfce7', color: '#15803d' }}>
-          {PhoneIcon(13)}
+        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: '50%', background: isVoicemail ? '#fef3c7' : '#dcfce7', color: isVoicemail ? '#b45309' : '#15803d' }}>
+          {isVoicemail ? VoicemailIcon(14) : PhoneIcon(13)}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>
-            {inbound ? 'Call received' : 'Call made'} · {fmt(duration)}
+            {headLabel}{duration ? ` · ${fmt(duration)}` : ''}
           </p>
           <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}>
             {(call?.agent_name || meta?.agent_name) ? `Handled by ${call?.agent_name || meta?.agent_name}` : ''}
@@ -157,7 +187,7 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
       {call?.recording_url ? (
         <div style={{ paddingTop: 12, borderTop: '1px solid #e3e9f2' }}>
           <p style={{ margin: '0 0 7px', fontSize: 12.5, fontWeight: 700, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <MicIcon /> Call Recording
+            <MicIcon /> {isVoicemail ? 'Voicemail' : 'Call Recording'}
           </p>
           <audio controls src={call.recording_url} style={{ width: '100%', height: 34 }} />
           <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>

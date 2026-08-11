@@ -6,6 +6,7 @@ import { runKeywordReply } from '@/lib/keyword-reply'
 import { TelnyxService } from '@/lib/telnyx-service'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { ensureCallCard } from '@/lib/call-card'
+import { logEnquiryReopened } from '@/lib/conversation-timeline'
 
 function admin() {
   return createClient(
@@ -256,6 +257,8 @@ export async function POST(req: NextRequest) {
       }
 
       if (conv) {
+        // Customer texted a closed enquiry — log the reopen before we flip it.
+        await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status })
         await db.from('messages').insert({
           conversation_id: conv.id,
           company_id: companyId,

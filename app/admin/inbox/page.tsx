@@ -215,7 +215,7 @@ function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: st
 // Interleave conversation events (assignments, channel switches, moves) into the
 // message list in chronological order, so the thread reads like a real timeline.
 function mergeEvents(msgs: any[], events: any[], calls: any[] = []) {
-  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request', 'page_view', 'note_created']
+  const SHOW = ['assigned', 'channel_switch', 'moved', 'status', 'review_request', 'page_view', 'note_created', 'closed', 'reopened']
   const evs = (events || [])
     .filter(e => SHOW.includes(e.event_type))
     .map(e => ({ ...e, __event: true }))
@@ -3756,7 +3756,15 @@ export default function InboxPage() {
     showToast(`Snoozed for ${hours}h`)
   }
   const closeConv = async (conv: any) => {
+    const wasClosed = ['closed', 'resolved'].includes(String(conv.status || ''))
     await (supabase as any).from('conversations').update({ status: 'closed' }).eq('id', conv.id)
+    if (!wasClosed && companyId) {
+      const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      await (supabase as any).from('conversation_events').insert({
+        conversation_id: conv.id, company_id: companyId, event_type: 'closed', actor_name: actorName, detail: 'Enquiry closed.',
+      })
+      if (selected?.id === conv.id) loadConversationExtras(conv.id)
+    }
     loadConversations()
     showToast('Enquiry closed')
   }
@@ -4091,9 +4099,16 @@ export default function InboxPage() {
   // ── Update status ──────────────────────────────────────────────────────────
   const setStatus = async (status: string) => {
     if (!selected) return
+    const prev = String((selected as any).status || '')
+    const wasClosed = ['closed', 'resolved'].includes(prev)
+    const nowClosed = ['closed', 'resolved'].includes(status)
     await (supabase as any).from('conversations').update({ status }).eq('id', selected.id)
     setSelected(s => s ? { ...s, status } : s)
-    logEvent('status_change', `Status changed to ${status}`)
+    // Log a legible timeline entry for the close/reopen transition; fall back to
+    // the generic status_change note for other moves.
+    if (nowClosed && !wasClosed) logEvent('closed', 'Enquiry closed.')
+    else if (!nowClosed && wasClosed) logEvent('reopened', 'Enquiry opened again.')
+    else logEvent('status_change', `Status changed to ${status}`)
     loadConversations()
   }
 
@@ -6752,15 +6767,20 @@ export default function InboxPage() {
                 const linkedCallIds = new Set(
                   messages.filter((m: any) => m.metadata?.call_event && m.metadata?.call_id).map((m: any) => m.metadata.call_id)
                 )
-                // A call is worth showing once it connected. Duration alone is
-                // unreliable (Telnyx inbound can finalise at 0s), so a recording,
-                // a summary or a completed/answered status also counts. Voicemail
-                // and never-connected attempts stay out of the thread.
+                // Which calls belong in the thread. Connected calls (duration
+                // alone is unreliable — Telnyx inbound can finalise at 0s — so a
+                // recording, a summary or a completed/answered status also count),
+                // plus voicemails and missed calls. Only in-progress/ringing
+                // attempts and dial-pad calls (no conversation) stay out.
                 const extraCalls = (msgSearch ? [] : convCalls)
-                  .filter((c: any) => !linkedCallIds.has(c.id) && !c.is_voicemail && (
-                    (c.duration_seconds || 0) > 0 || c.recording_url || c.ai_summary ||
-                    ['completed', 'answered'].includes(String(c.status || ''))
-                  ))
+                  .filter((c: any) => {
+                    if (linkedCallIds.has(c.id)) return false
+                    const st = String(c.status || '')
+                    const connected = (c.duration_seconds || 0) > 0 || c.recording_url || c.ai_summary || ['completed', 'answered'].includes(st)
+                    const voicemail = c.is_voicemail || st.startsWith('voicemail')
+                    const missed = ['missed', 'no-answer', 'no_answer', 'failed', 'busy', 'canceled', 'cancelled'].includes(st)
+                    return connected || voicemail || missed
+                  })
                   .map((c: any) => ({ __call: true, ...c }))
 
                 return [header, ...mergeEvents(list, events, extraCalls).map((item: any) => {
