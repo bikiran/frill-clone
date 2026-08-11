@@ -42,6 +42,9 @@ export default function RichTextEditor({
   const timer = useRef<any>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: Mention[]; active: number } | null>(null)
   const [pop, setPop] = useState<{ kind: 'font' | 'size' | 'fore' | 'hilite'; x: number; y: number } | null>(null)
+  // Floating +1/−1 stepper shown over the focused numeric table cell.
+  const [stepper, setStepper] = useState<{ x: number; y: number } | null>(null)
+  const stepperCell = useRef<HTMLTableCellElement | null>(null)
   // Block drag-to-reorder (Notion/Evernote style): a floating handle follows the
   // block under the cursor; dragging shows a drop line and moves that block.
   const handleRef = useRef<HTMLButtonElement>(null)
@@ -248,7 +251,7 @@ export default function RichTextEditor({
       html += '</tr>'
     }
     html += '</tbody></table><p><br></p>'
-    exec('insertHTML', html)
+    onEditing?.(); exec('insertHTML', html)
   }
 
   const addRow = () => {
@@ -256,12 +259,118 @@ export default function RichTextEditor({
     const cols = t.rows[0]?.cells.length || 1
     const tr = t.insertRow(-1)
     for (let i = 0; i < cols; i++) { const td = tr.insertCell(-1); td.setAttribute('style', CELL); td.innerHTML = '&nbsp;' }
-    emit()
+    onEditing?.(); emit()
   }
   const addCol = () => {
     const t = currentTable(); if (!t) return
     for (let i = 0; i < t.rows.length; i++) { const td = t.rows[i].insertCell(-1); td.setAttribute('style', CELL); td.innerHTML = '&nbsp;' }
-    emit()
+    onEditing?.(); emit()
+  }
+
+  // ── In-table keyboard nav + numeric steppers ───────────────────────────────
+  const cellOf = (node: Node | null): HTMLTableCellElement | null => {
+    let n = node
+    while (n && n !== ref.current) {
+      const tag = (n as HTMLElement).tagName
+      if (tag === 'TD' || tag === 'TH') return n as HTMLTableCellElement
+      n = n.parentNode
+    }
+    return null
+  }
+  const currentCell = (): HTMLTableCellElement | null => cellOf(window.getSelection()?.anchorNode || null)
+
+  // Move the caret into a cell. selectAll=true (Tab/Enter nav) selects the cell's
+  // contents so the next keystroke overtypes, spreadsheet-style; false collapses
+  // to the end (used after a numeric bump so typing continues the value).
+  const focusCell = (cell: HTMLTableCellElement, selectAll = true) => {
+    const sel = window.getSelection(); if (!sel) return
+    ref.current?.focus()
+    const range = document.createRange()
+    range.selectNodeContents(cell)
+    if (!selectAll) range.collapse(false)
+    sel.removeAllRanges(); sel.addRange(range)
+  }
+
+  // Tab / Shift+Tab move between cells (Tab past the last cell appends a row);
+  // Enter drops to the cell below (adding a row from the last one). Shift+Enter
+  // falls through to the default so a line break inside a cell still works.
+  const tableNav = (e: React.KeyboardEvent): boolean => {
+    const cell = currentCell(); if (!cell) return false
+    const row = cell.parentElement as HTMLTableRowElement | null
+    const table = cell.closest('table') as HTMLTableElement | null
+    if (!row || !table) return false
+    const cells = Array.from(row.cells)
+    const rows = Array.from(table.rows)
+    const ci = cells.indexOf(cell)
+    const ri = rows.indexOf(row)
+
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      if (e.shiftKey) {
+        if (ci > 0) focusCell(cells[ci - 1])
+        else if (ri > 0) { const pr = rows[ri - 1]; focusCell(pr.cells[pr.cells.length - 1]) }
+      } else if (ci < cells.length - 1) {
+        focusCell(cells[ci + 1])
+      } else if (ri < rows.length - 1) {
+        focusCell(rows[ri + 1].cells[0])
+      } else {
+        addRow(); focusCell(table.rows[table.rows.length - 1].cells[0])
+      }
+      syncStepper(); return true
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (ri < rows.length - 1) {
+        const below = rows[ri + 1]
+        focusCell(below.cells[Math.min(ci, below.cells.length - 1)])
+      } else {
+        addRow()
+        const nr = table.rows[table.rows.length - 1]
+        focusCell(nr.cells[Math.min(ci, nr.cells.length - 1)])
+      }
+      syncStepper(); return true
+    }
+    return false
+  }
+
+  // Split a cell's text into an optional prefix ($, etc.), the number itself, and
+  // an optional suffix (%, kg, …). Returns null when the cell isn't a single number.
+  const numberInfo = (cell: HTMLTableCellElement) => {
+    const raw = (cell.textContent || '').trim()
+    const m = raw.match(/^([^\d+-]*)([+-]?\d[\d,]*(?:\.\d+)?)(\D*)$/)
+    return m ? { prefix: m[1], num: m[2], suffix: m[3] } : null
+  }
+  const applyBump = (cell: HTMLTableCellElement, delta: number, restoreCaret = true): boolean => {
+    const info = numberInfo(cell); if (!info) return false
+    const clean = info.num.replace(/,/g, '')
+    const dec = (clean.split('.')[1] || '').length
+    const val = parseFloat(clean); if (isNaN(val)) return false
+    let out = (val + delta).toFixed(dec)
+    if (info.num.includes(',')) {
+      const [ip, fp] = out.split('.')
+      out = ip.replace('-', '').replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+      out = (val + delta < 0 ? '-' : '') + out + (fp ? '.' + fp : '')
+    }
+    cell.textContent = info.prefix + out + info.suffix
+    onEditing?.(); emit()
+    if (restoreCaret) focusCell(cell, false)
+    return true
+  }
+  // Recompute the stepper's visibility/position from the current selection.
+  const syncStepper = () => {
+    const cell = currentCell()
+    const content = ref.current
+    if (!cell || !content || !numberInfo(cell)) { stepperCell.current = null; setStepper(null); return }
+    const cr = content.getBoundingClientRect()
+    const r = cell.getBoundingClientRect()
+    if (r.bottom < cr.top || r.top > cr.bottom) { setStepper(null); return }   // scrolled out of view
+    stepperCell.current = cell
+    setStepper({ x: r.right, y: r.top })
+  }
+  const bump = (delta: number) => {
+    const cell = stepperCell.current; if (!cell) return
+    applyBump(cell, delta)
+    syncStepper()
   }
 
   // ── @mentions ──────────────────────────────────────────────────────────────
@@ -308,11 +417,22 @@ export default function RichTextEditor({
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (!menu) return
-    if (e.key === 'ArrowDown') { e.preventDefault(); setMenu(m => m && { ...m, active: (m.active + 1) % m.items.length }) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setMenu(m => m && { ...m, active: (m.active - 1 + m.items.length) % m.items.length }) }
-    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(menu.items[menu.active].name) }
-    else if (e.key === 'Escape') { setMenu(null) }
+    if (menu) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMenu(m => m && { ...m, active: (m.active + 1) % m.items.length }) }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setMenu(m => m && { ...m, active: (m.active - 1 + m.items.length) % m.items.length }) }
+      else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(menu.items[menu.active].name) }
+      else if (e.key === 'Escape') { setMenu(null) }
+      return
+    }
+    // Alt+↑ / Alt+↓ bump the number in the current cell by ±1.
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      const cell = currentCell()
+      if (cell && applyBump(cell, e.key === 'ArrowUp' ? 1 : -1)) { e.preventDefault(); syncStepper(); return }
+    }
+    // Spreadsheet-style Tab / Enter navigation inside tables.
+    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+      if (tableNav(e)) return
+    }
   }
 
   // ── Block drag-to-reorder ─────────────────────────────────────────────────
@@ -519,13 +639,14 @@ export default function RichTextEditor({
         contentEditable
         suppressContentEditableWarning
         data-ph={placeholder}
-        onInput={() => { onEditing?.(); emitSoon(); detectMention() }}
+        onInput={() => { onEditing?.(); emitSoon(); detectMention(); syncStepper() }}
         onKeyDown={onKeyDown}
-        onKeyUp={detectMention}
-        onClick={() => setMenu(null)}
+        onKeyUp={() => { detectMention(); syncStepper() }}
+        onClick={() => { setMenu(null); syncStepper() }}
+        onScroll={syncStepper}
         onMouseMove={onContentMove}
         onMouseLeave={() => { if (!dragBlockRef.current) scheduleHide() }}
-        onBlur={() => { if (blockDrag) normalizeBlocks(); emit(); setTimeout(() => setMenu(null), 150) }}
+        onBlur={() => { if (blockDrag) normalizeBlocks(); emit(); setTimeout(() => { setMenu(null); setStepper(null) }, 150) }}
         style={{ minHeight, maxHeight, overflowY: 'auto', padding: bordered ? '10px 12px' : '4px 0', fontSize: 16, lineHeight: 1.6, color: 'var(--ink)' }}
       />
 
@@ -538,6 +659,19 @@ export default function RichTextEditor({
           </button>
           <div ref={indicatorRef} style={{ position: 'fixed', top: 0, left: 0, height: 3, borderRadius: 2, background: 'var(--coral,#ff7a6b)', opacity: 0, zIndex: 100054, pointerEvents: 'none', transform: 'translateY(-50%)', boxShadow: '0 0 0 3px rgba(255,122,107,0.18)', transition: 'opacity .1s' }} />
         </>
+      )}
+
+      {stepper && (
+        <div style={{ position: 'fixed', left: stepper.x, top: stepper.y, transform: 'translate(-100%, -50%)', zIndex: 100058, display: 'inline-flex', gap: 2, borderRadius: 8, background: '#fff', border: '1px solid var(--border,#e5e7eb)', boxShadow: '0 4px 12px rgba(0,0,0,0.14)', padding: 2 }}>
+          <button type="button" title="Decrease by 1 (Alt+↓)" onMouseDown={e => { e.preventDefault(); bump(-1) }}
+            style={{ minWidth: 24, height: 20, padding: '0 5px', borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--slate,#6b7280)', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', lineHeight: 1 }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--peach,#ffe8e3)'; e.currentTarget.style.color = 'var(--coral,#ff7a6b)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--slate,#6b7280)' }}>−1</button>
+          <button type="button" title="Increase by 1 (Alt+↑)" onMouseDown={e => { e.preventDefault(); bump(1) }}
+            style={{ minWidth: 24, height: 20, padding: '0 5px', borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--slate,#6b7280)', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', lineHeight: 1 }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--peach,#ffe8e3)'; e.currentTarget.style.color = 'var(--coral,#ff7a6b)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--slate,#6b7280)' }}>+1</button>
+        </div>
       )}
 
       {pop && (
