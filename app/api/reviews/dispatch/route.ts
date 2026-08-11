@@ -100,6 +100,21 @@ async function run(req: NextRequest) {
           continue
         }
 
+        // Atomically claim this request BEFORE sending, so two overlapping cron
+        // runs (or a retry) can't each send it: flip pending → sending and only
+        // proceed if THIS update won the row. Without this the row stayed
+        // 'pending' through the whole send and was only marked 'sent' at the
+        // end, so a concurrent run sent the same review request a second time
+        // (the duplicate message reported by users).
+        const { data: claimed } = await db.from('review_requests')
+          .update({ status: 'sending' })
+          .eq('id', rr.id).eq('status', 'pending')
+          .select('id')
+        if (!claimed || claimed.length === 0) {
+          results.push({ id: rr.id, skipped: 'already in progress' })
+          continue
+        }
+
         const { data: contact } = rr.contact_id
           ? await db.from('contacts').select('*').eq('id', rr.contact_id).maybeSingle()
           : { data: null as any }
