@@ -1,29 +1,33 @@
+import crypto from 'crypto'
+
 // Colvy's OWN realestate.com.au Partner Platform integration. Agencies never
 // enter REA credentials — Colvy authenticates to REA with ITS partner
 // credentials (system-to-system, OAuth 2.0 Client Credentials) and, on the
 // agency's authorization, manages an EnquiryCreated webhook subscription and
 // pulls full lead detail via the Leads API on their behalf.
 //
-// Server-only. Configure in the environment:
+// Server-only. Configure in the environment (the defaults below match REA's
+// confirmed Partner Platform values, so only the credentials are required):
 //   REA_CLIENT_ID, REA_CLIENT_SECRET   — Colvy's REA Partner Platform app
 //   REA_TOKEN_URL                       — OAuth2 token endpoint (client_credentials)
 //   REA_API_BASE                        — REA API base (Leads / webhook subscriptions)
-//   REA_SCOPES                          — space-separated scopes to request
-//   REA_WEBHOOK_SIGNING_SECRET          — (optional) verify inbound webhook signatures
+//   REA_SCOPES                          — space-separated scopes the app is granted
 //
-// The exact REA endpoint paths live behind the partner portal; they're kept in
-// one place here and overridable via env so they can be corrected without
+// Inbound webhooks are verified with REA's Ed25519 signatures — the public keys
+// are fetched from GET /webhooks/v1/signing; there is NO shared signing secret.
+// Endpoint paths are overridable via env so they can be corrected without
 // touching callers.
 
 const TOKEN_URL = process.env.REA_TOKEN_URL || 'https://api.realestate.com.au/oauth/token'
 const API_BASE = (process.env.REA_API_BASE || 'https://api.realestate.com.au').replace(/\/+$/, '')
 const SUBSCRIPTIONS_PATH = process.env.REA_SUBSCRIPTIONS_PATH || '/webhooks/v1/subscriptions'
-const LEADS_PATH = process.env.REA_LEADS_PATH || '/listings/enquiries/v1/leads'
+const LEADS_PATH = process.env.REA_LEADS_PATH || '/lead/v1/enquiries'
+const SIGNING_PATH = process.env.REA_SIGNING_PATH || '/webhooks/v1/signing'
 
 export const REA_MASTER = {
   clientId: process.env.REA_CLIENT_ID || '',
   clientSecret: process.env.REA_CLIENT_SECRET || '',
-  scopes: process.env.REA_SCOPES || 'enquiries:read webhooks:manage',
+  scopes: process.env.REA_SCOPES || 'lead:enquiries:read webhooks:subscriptions:write',
 }
 
 export function reaConfigured(): boolean {
@@ -41,10 +45,13 @@ export async function getAccessToken(): Promise<string> {
   if (cached && cached.exp - 60 > now) return cached.token
 
   const basic = Buffer.from(`${REA_MASTER.clientId}:${REA_MASTER.clientSecret}`).toString('base64')
+  // Client id + secret go in the HTTP Basic header; the body carries only the
+  // grant type. Scopes are granted to the credentials by REA, not requested
+  // per-call, so they are NOT sent in the token body.
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'client_credentials', scope: REA_MASTER.scopes }).toString(),
+    body: new URLSearchParams({ grant_type: 'client_credentials' }).toString(),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok || !data.access_token) throw new Error(`REA token request failed (${res.status}): ${data.error_description || data.error || 'no access_token'}`)
@@ -86,10 +93,137 @@ export async function deleteSubscription(id: string): Promise<void> {
   await reaReq(`${SUBSCRIPTIONS_PATH}/${encodeURIComponent(id)}`, 'DELETE')
 }
 
-// ── Leads API ───────────────────────────────────────────────────────────────
-// The EnquiryCreated webhook carries a lead reference; the full buyer + listing
-// detail is fetched here with the master token.
+// ── Leads / Enquiries API ───────────────────────────────────────────────────
+// The EnquiryCreated webhook carries an enquiry reference (and often a
+// `resourceUrl`); the full buyer + listing detail is fetched here with the
+// master token, from /lead/v1/enquiries/{id}.
 export async function getLead(leadId: string): Promise<any> {
   if (!leadId) throw new Error('missing leadId')
   return reaReq(`${LEADS_PATH}/${encodeURIComponent(leadId)}`, 'GET')
+}
+
+// Fetch the enquiry straight from the event's `resourceUrl`, when present. The
+// URL is confined to the REA API host so a spoofed payload can't point us at an
+// arbitrary server; it's then fetched with the master token like any other call.
+export async function getEnquiryByUrl(resourceUrl: string): Promise<any> {
+  if (!resourceUrl) throw new Error('missing resourceUrl')
+  const u = new URL(resourceUrl)
+  const apiHost = new URL(API_BASE).host
+  if (u.host !== apiHost) throw new Error(`resourceUrl host ${u.host} is not the REA API host`)
+  return reaReq(u.pathname + u.search, 'GET')
+}
+
+// ── Inbound webhook signature verification (Ed25519) ─────────────────────────
+// REA signs each webhook delivery with Ed25519 over `timestamp + raw body` and
+// sends the signature in `x-rea-signature`. The verifying public keys are
+// published at GET /webhooks/v1/signing (keys rotate, so we fetch + cache them
+// rather than holding a static secret).
+
+interface ReaSigningKey { id: string | null; key: crypto.KeyObject }
+
+// SPKI DER prefix for a raw 32-byte Ed25519 public key (lets us accept keys
+// published as raw bytes as well as full DER/PEM/JWK).
+const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
+
+let signingKeysCache: { keys: ReaSigningKey[]; exp: number } | null = null
+
+function toEd25519PublicKey(material: any): crypto.KeyObject | null {
+  try {
+    if (!material) return null
+    if (typeof material === 'object' && (material.kty || material.crv)) {
+      return crypto.createPublicKey({ key: material, format: 'jwk' })   // JWK (OKP/Ed25519)
+    }
+    const s = String(material).trim()
+    if (s.startsWith('-----BEGIN')) return crypto.createPublicKey(s)     // PEM
+    const buf = Buffer.from(s.replace(/\s+/g, ''), 'base64')
+    if (buf.length === 32) {                                             // raw 32-byte key
+      return crypto.createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, buf]), format: 'der', type: 'spki' })
+    }
+    return crypto.createPublicKey({ key: buf, format: 'der', type: 'spki' })  // SPKI DER
+  } catch { return null }
+}
+
+function parseSigningKey(k: any): ReaSigningKey | null {
+  if (k == null) return null
+  if (typeof k === 'string') { const key = toEd25519PublicKey(k); return key ? { id: null, key } : null }
+  if (typeof k === 'object') {
+    const id = k.id ?? k.kid ?? k.keyId ?? null
+    const source = (k.kty || k.crv) ? k : (k.publicKey ?? k.key ?? k.value ?? k.pem ?? k.publicKeyBase64 ?? null)
+    const key = toEd25519PublicKey(source)
+    return key ? { id: id != null ? String(id) : null, key } : null
+  }
+  return null
+}
+
+export async function getSigningKeys(force = false): Promise<ReaSigningKey[]> {
+  const now = Math.floor(Date.now() / 1000)
+  if (!force && signingKeysCache && signingKeysCache.exp > now) return signingKeysCache.keys
+  const data = await reaReq(SIGNING_PATH, 'GET')
+  const raw: any[] = Array.isArray(data) ? data
+    : Array.isArray(data?.keys) ? data.keys
+    : Array.isArray(data?.publicKeys) ? data.publicKeys
+    : data ? [data] : []
+  const keys = raw.map(parseSigningKey).filter(Boolean) as ReaSigningKey[]
+  // Cache only a non-empty set; keep retrying if a fetch came back empty/garbled.
+  if (keys.length) signingKeysCache = { keys, exp: now + 3600 }
+  return keys
+}
+
+function decodeSignature(v: string): Buffer | null {
+  const s = v.trim()
+  if (/^[0-9a-f]+$/i.test(s) && s.length % 2 === 0) {          // hex
+    const b = Buffer.from(s, 'hex'); if (b.length === 64) return b
+  }
+  try {                                                         // base64 / base64url
+    const b = Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')
+    if (b.length) return b
+  } catch {}
+  return null
+}
+
+// Verify the `x-rea-signature` header over `timestamp + raw body`. The header is
+// read tolerantly: a bare signature, or comma-separated `t=…,k=…,s=…` pairs.
+export async function verifyWebhookSignature(params: {
+  rawBody: string
+  signatureHeader: string | null
+  timestamp?: string | null
+}): Promise<{ ok: boolean; reason?: string }> {
+  const header = (params.signatureHeader || '').trim()
+  if (!header) return { ok: false, reason: 'missing x-rea-signature header' }
+
+  let sigValue = header
+  let keyId: string | null = null
+  let timestamp = params.timestamp || null
+  if (header.includes('=') && /\b(s|v1|sig|signature)=/.test(header)) {
+    const parts: Record<string, string> = {}
+    for (const p of header.split(',')) { const i = p.indexOf('='); if (i > 0) parts[p.slice(0, i).trim()] = p.slice(i + 1).trim() }
+    sigValue = parts.s || parts.v1 || parts.sig || parts.signature || sigValue
+    keyId = parts.k || parts.kid || parts.keyId || keyId
+    timestamp = parts.t || parts.timestamp || timestamp
+  } else {
+    sigValue = sigValue.replace(/^(ed25519=|v1=)/i, '')
+  }
+
+  const sig = decodeSignature(sigValue)
+  if (!sig || sig.length !== 64) return { ok: false, reason: 'unparseable Ed25519 signature' }
+
+  // REA concatenates timestamp + raw body. Try the plain concatenation first,
+  // then a dotted variant, so a minor delimiter difference doesn't reject a
+  // genuinely-signed request (each candidate still requires a valid signature).
+  const messages = [
+    Buffer.from(`${timestamp ?? ''}${params.rawBody}`, 'utf8'),
+    Buffer.from(`${timestamp ?? ''}.${params.rawBody}`, 'utf8'),
+  ]
+
+  let keys: ReaSigningKey[]
+  try { keys = await getSigningKeys() } catch (e: any) { return { ok: false, reason: `could not fetch signing keys: ${e?.message || e}` } }
+  if (!keys.length) return { ok: false, reason: 'no signing keys published by REA' }
+
+  const candidates = keyId ? keys.filter(k => k.id === keyId || k.id == null) : keys
+  for (const k of (candidates.length ? candidates : keys)) {
+    for (const msg of messages) {
+      try { if (crypto.verify(null, msg, k.key, sig)) return { ok: true } } catch {}
+    }
+  }
+  return { ok: false, reason: 'signature did not match any REA signing key' }
 }
