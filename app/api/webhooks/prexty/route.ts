@@ -264,7 +264,33 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Prexty (and manual testing) may verify the endpoint with a GET.
-export async function GET() {
-  return NextResponse.json({ ok: true, service: 'Colvy Prexty POS order webhook' })
+// Prexty (and manual testing) may verify the endpoint with a GET. When a token
+// or key is supplied, report whether it actually maps to a connected company —
+// so opening the webhook URL in a browser is a real auth check, not just a
+// liveness ping. Only a boolean is revealed (never company data), and only to
+// someone who already supplied a credential.
+export async function GET(req: NextRequest) {
+  const url = new URL(req.url)
+  const provided = url.searchParams.get('t') || url.searchParams.get('key')
+    || req.headers.get('x-prexty') || req.headers.get('x-colvy-token')
+  if (!provided) {
+    return NextResponse.json({ ok: true, service: 'Colvy Prexty POS order webhook' })
+  }
+  try {
+    const who = await resolveCompany(admin(), req)
+    return NextResponse.json({
+      ok: true,
+      service: 'Colvy Prexty POS order webhook',
+      authenticated: !!who,
+      via: who?.base || null,          // 'token' or 'key' — how it matched
+      message: who
+        ? 'Token recognised — this URL is ready to receive Prexty orders.'
+        : 'Token not recognised. Use the exact webhook URL from the Prexty integration page (the ?t= token), or send the X-Prexty key.',
+    })
+  } catch {
+    return NextResponse.json({
+      ok: true, service: 'Colvy Prexty POS order webhook',
+      authenticated: false, message: 'Could not verify the token right now.',
+    })
+  }
 }
