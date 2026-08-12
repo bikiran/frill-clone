@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { deliverAutomatedMessage } from '@/lib/channel-fallback'
 
 export const dynamic = 'force-dynamic'
 
@@ -124,12 +125,14 @@ export async function POST(req: NextRequest) {
     // status (a PARTIAL refund stays "completed" in Woo; only a FULL refund flips
     // to "refunded") and the running refunded total, so the panel shows the right
     // "Partially refunded / Refunded" state instead of a hardcoded guess.
+    let refreshedStatus: string | null = null
     try {
       const freshRes = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}`, {
         headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
       })
       const fresh = await freshRes.json().catch(() => null)
       if (fresh) {
+        refreshedStatus = fresh.status || null
         const refundedTotal = (fresh.refunds || []).reduce((s: number, r: any) => s + Math.abs(parseFloat(r.total || 0)), 0)
         const up = await db.from('woocommerce_orders')
           .update({ status: fresh.status, total_refunded: refundedTotal })
@@ -147,6 +150,80 @@ export async function POST(req: NextRequest) {
           detail: `Refunded $${Number(refundAmount).toFixed(2)} on order #${orderId}`,
         })
       } catch {}
+    }
+
+    // Tell the customer, using the business's "Refunded" template, over whatever
+    // channel reaches them (live chat → SMS → email). This mirrors the
+    // WooCommerce order-automation but fires on the explicit staff refund, so the
+    // customer is notified immediately instead of relying on (or missing) the
+    // store's order.updated webhook. The team-only internal note is posted
+    // separately by the inbox and remains the audit record. Best-effort — a
+    // delivery failure never affects the refund itself.
+    if (conversationId) {
+      try {
+        const [{ data: company }, { data: conv }] = await Promise.all([
+          db.from('companies').select('name, order_chat_automation').eq('id', companyId).maybeSingle(),
+          db.from('conversations').select('id, contact_id, sms_number').eq('id', conversationId).maybeSingle(),
+        ])
+        let contact: any = null
+        if (conv?.contact_id) {
+          const { data: c } = await db.from('contacts').select('name, phone, email').eq('id', conv.contact_id).maybeSingle()
+          contact = c
+        }
+
+        const cfg: any = company?.order_chat_automation || {}
+        const businessName = company?.name || 'us'
+        const template: string = (cfg.messages && cfg.messages.refunded)
+          || 'Your order has been refunded. The refund of {amount} has been processed and should appear shortly.'
+        const amountStr = `$${Number(refundAmount).toFixed(2)}`
+        const body = template
+          .replace(/\{business\}/g, businessName)
+          .replace(/\{name\}/g, contact?.name || 'there')
+          .replace(/\{order\}/g, String(orderId))
+          .replace(/\{amount\}/g, amountStr)
+          .replace(/\{total\}/g, amountStr)
+
+        // Post the customer-facing line into the thread (NOT internal).
+        await db.from('messages').insert({
+          conversation_id: conversationId, company_id: companyId,
+          sender_type: 'agent', sender_name: businessName, content: body,
+          message_type: 'text', is_read: true,
+          metadata: { auto: true, order_automation: 'refunded', order_id: orderId, agent_refund: true },
+        })
+        await db.from('conversations')
+          .update({ last_message: body, last_message_at: new Date().toISOString() })
+          .eq('id', conversationId)
+
+        // Reach them off live chat too (SMS → email); the thread message is
+        // already written, so those routes skip re-posting it.
+        const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+        await deliverAutomatedMessage({
+          companyId, conversationId, text: body,
+          phone: contact?.phone || conv?.sms_number || null,
+          email: contact?.email || null,
+          senderName: businessName,
+          subject: `Update on your order #${orderId}`,
+          origin, db,
+        })
+
+        // A FULL refund flips WooCommerce to "refunded"; if the store's
+        // order.updated webhook is wired up, it would send the same template
+        // again. Claim the (order, refunded) dedup marker the webhook checks so
+        // the customer isn't messaged twice, and keep the thread's status badge
+        // in step. Partial refunds leave Woo "completed", so there's nothing to
+        // suppress.
+        if (String(refreshedStatus).toLowerCase() === 'refunded') {
+          try {
+            await db.from('order_chat_events')
+              .insert({ company_id: companyId, order_id: orderId, status: 'refunded', conversation_id: conversationId })
+          } catch {}
+          try {
+            await db.from('conversations').update({ order_status: 'refunded' }).eq('id', conversationId)
+          } catch {}
+        }
+      } catch (e) {
+        console.error('[Refund] customer notify failed', e)
+      }
     }
 
     return NextResponse.json({ ok: true, refund: data, amount: refundAmount })

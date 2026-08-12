@@ -1073,6 +1073,26 @@ export default function InboxPage() {
   const [activePanel, setActivePanel] = useState<'info' | 'timeline' | 'orders'>('info')
   const [wooCustomer, setWooCustomer] = useState<any>(null)
   const [wooOrders, setWooOrders] = useState<any[]>([])
+  const [prextyCustomer, setPrextyCustomer] = useState<any>(null)
+  // Look up the contact's Prexty POS profile (spend, loyalty, store credit) when
+  // one is selected. Silent no-op if Prexty isn't connected or there's no match.
+  useEffect(() => {
+    setPrextyCustomer(null)
+    if (!companyId || !contact || (!contact.email && !contact.phone)) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const p = new URLSearchParams({ companyId })
+        if (contact.id) p.set('contactId', String(contact.id))
+        if (contact.email) p.set('email', contact.email)
+        if (contact.phone) p.set('phone', contact.phone)
+        const res = await fetch(`/api/prexty/customer?${p.toString()}`)
+        const d = await res.json()
+        if (!cancelled && d?.connected && d?.customer) setPrextyCustomer(d.customer)
+      } catch { /* Prexty is best-effort; never blocks the panel */ }
+    })()
+    return () => { cancelled = true }
+  }, [companyId, contact?.id, contact?.email, contact?.phone])
   // Switching chats quickly used to let a slow response from the PREVIOUS
   // contact land after the new one and overwrite the panel. Every load takes a
   // ticket; only the newest is allowed to write to state.
@@ -1263,7 +1283,7 @@ export default function InboxPage() {
     const contactIds = Array.from(new Set(convs.map((c: any) => c.contact_id).filter(Boolean)))
     if (contactIds.length) {
       const { data: cts } = await (supabase as any)
-        .from('contacts').select('id, name, email, phone, relationship_type').in('id', contactIds)
+        .from('contacts').select('id, name, email, phone, relationship_type, prexty_customer_id').in('id', contactIds)
       const byId: Record<string, any> = {}
       for (const ct of cts || []) byId[ct.id] = ct
       for (const c of convs) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
@@ -6339,6 +6359,9 @@ export default function InboxPage() {
                   <span style={{ fontSize: 13.5, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {displayName}
                   </span>
+                  {contact.prexty_customer_id && (
+                    <span title="Prexty POS customer" style={{ flexShrink: 0, width: 15, height: 15, borderRadius: 4, background: '#4f46e5', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 800 }}>P</span>
+                  )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 6 }}>
                   {isOverdue && (
@@ -8613,6 +8636,47 @@ export default function InboxPage() {
                       <a href={`/admin/customers/profile?id=${contact.id}`} style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#6d28d9', fontWeight: 600, textDecoration: 'none' }}>
                         View full profile →
                       </a>
+                    )}
+                  </div>
+                )}
+
+                {/* Prexty POS customer summary (order history activates when
+                    Prexty's /orders endpoint ships; for now we show aggregates). */}
+                {prextyCustomer && (
+                  <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid #c7d2fe' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                      <span style={{ width: 18, height: 18, borderRadius: 5, background: '#4f46e5', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>P</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#4338ca' }}>Prexty POS Customer</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Total Spend</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>
+                          {prextyCustomer.totalSpent > 0 ? `$${Number(prextyCustomer.totalSpent).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Orders</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>{prextyCustomer.totalOrders || 0}</p>
+                      </div>
+                      {(prextyCustomer.loyaltyPoints > 0 || prextyCustomer.storeCredit > 0) && (
+                        <>
+                          <div>
+                            <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Loyalty Pts</p>
+                            <p style={{ margin: '2px 0 0', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{prextyCustomer.loyaltyPoints || 0}</p>
+                          </div>
+                          <div>
+                            <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Store Credit</p>
+                            <p style={{ margin: '2px 0 0', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>${Number(prextyCustomer.storeCredit || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    {(prextyCustomer.city || prextyCustomer.state || prextyCustomer.memberSince) && (
+                      <p style={{ margin: '10px 0 0', fontSize: 11.5, color: '#6366f1' }}>
+                        {[prextyCustomer.city, prextyCustomer.state].filter(Boolean).join(', ')}
+                        {prextyCustomer.memberSince ? `${(prextyCustomer.city || prextyCustomer.state) ? ' · ' : ''}Member since ${new Date(prextyCustomer.memberSince).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })}` : ''}
+                      </p>
                     )}
                   </div>
                 )}

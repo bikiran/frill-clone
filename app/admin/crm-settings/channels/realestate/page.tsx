@@ -16,6 +16,9 @@ export default function RealEstateChannelPage() {
   const [authorizedAt, setAuthorizedAt] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [isSuper, setIsSuper] = useState(false)
+  const [diag, setDiag] = useState<any>(null)
+  const [diagBusy, setDiagBusy] = useState(false)
 
   const authFetch = async (url: string, init?: RequestInit) => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -38,6 +41,19 @@ export default function RealEstateChannelPage() {
     } catch {}
   }
   useEffect(() => { load() }, [companyId])
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setIsSuper((data.session?.user?.email || '').toLowerCase() === 'bishalstha76@gmail.com')
+    })
+  }, [])
+
+  const runDiag = async () => {
+    setDiagBusy(true); setDiag(null)
+    try {
+      const res = await authFetch('/api/realestate/diag')
+      setDiag(await res.json())
+    } catch (e: any) { setDiag({ error: e.message }) } finally { setDiagBusy(false) }
+  }
 
   const connect = async () => {
     if (!companyId) return
@@ -128,6 +144,43 @@ export default function RealEstateChannelPage() {
       <p style={{ ...S.hint, lineHeight: 1.6 }}>
         Connecting authorizes Colvy (an approved realestate.com.au partner) to receive your listing enquiries on your behalf — you never handle API keys. Enquiries appear in the inbox under the <strong>RealEstate</strong> channel, tagged with the listing.
       </p>
+
+      {/* Super-admin only: platform-level health check for Colvy's REA partner setup. */}
+      {isSuper && (
+        <div style={{ ...S.card, marginTop: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: diag ? 12 : 0 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>Platform diagnostic</div>
+              <div style={{ fontSize: 12, color: 'var(--slate)' }}>Super-admin only · checks Colvy&rsquo;s REA credentials, OAuth token, and webhook signing keys.</div>
+            </div>
+            <button onClick={runDiag} disabled={diagBusy} style={{ ...S.btnGhost, opacity: diagBusy ? 0.6 : 1 }}>{diagBusy ? 'Running…' : 'Run diagnostic'}</button>
+          </div>
+
+          {diag?.error && <p style={{ margin: '8px 0 0', fontSize: 13, color: '#dc2626' }}>{diag.error}</p>}
+
+          {diag?.checks && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: diag.ok ? '#059669' : '#dc2626' }}>
+                {diag.ok ? '✅ All checks passed' : '❌ Some checks need attention'}
+              </div>
+              {diag.checks.map((c: any, i: number) => (
+                <div key={i} style={{ display: 'flex', gap: 8, fontSize: 12.5, lineHeight: 1.5 }}>
+                  <span>{c.ok ? '✅' : '❌'}</span>
+                  <span><strong style={{ color: 'var(--ink)' }}>{c.name}</strong> — <span style={{ color: 'var(--slate)' }}>{c.detail}</span></span>
+                </div>
+              ))}
+              {diag.config && (
+                <div style={{ marginTop: 6, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.7, wordBreak: 'break-all' }}>
+                  <div>token: {diag.config.tokenUrl}</div>
+                  <div>api: {diag.config.apiBase} · leads: {diag.config.leadsPath} · signing: {diag.config.signingPath}</div>
+                  <div>scopes: {diag.config.scopes}</div>
+                  <div>client: {diag.config.clientId || '(unset)'} · secret: {diag.config.clientSecretSet ? 'set' : 'missing'}</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

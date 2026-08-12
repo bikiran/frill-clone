@@ -30,6 +30,17 @@ const INTEGRATIONS = [
     isDedicated: true,
   },
   {
+    id: 'prexty',
+    name: 'Prexty POS',
+    desc: 'Connect your Prexty point-of-sale to pull customer order history into the chat.',
+    icon: '🧾',
+    color: '#4f46e5',
+    bg: '#eef2ff',
+    logo: '',
+    category: 'E-Commerce',
+    isDedicated: true,
+  },
+  {
     id: 'stripe',
     name: 'Stripe Payments',
     desc: 'Take card payments and send invoices directly inside the chat. Connect your own Stripe account.',
@@ -278,6 +289,17 @@ export default function IntegrationsPage() {
           .eq('is_active', true)
           .limit(1)
         enb['shopify'] = !!(shopRows && shopRows.length > 0)
+
+        // Prexty POS connection
+        try {
+          const { data: prextyRows } = await (supabase as any)
+            .from('prexty_integrations')
+            .select('is_active')
+            .eq('company_id', cid)
+            .eq('is_active', true)
+            .limit(1)
+          enb['prexty'] = !!(prextyRows && prextyRows.length > 0)
+        } catch { enb['prexty'] = false }
 
         // Calls & SMS is active if the company has a number on EITHER carrier
         // (Telnyx or the platform Twilio) — the carrier is invisible to them.
