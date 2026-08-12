@@ -84,6 +84,7 @@ export async function notifyCompany(params: {
     if (recipients.length === 0) return
     const rows = recipients.map(uid => ({
       user_id: uid,
+      company_id: params.companyId,
       type: params.type,
       message: params.message,
       actor_name: params.actorName || null,
