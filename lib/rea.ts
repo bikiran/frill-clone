@@ -181,19 +181,16 @@ function decodeSignature(v: string): Buffer | null {
   return null
 }
 
-// Verify the `x-rea-signature` header over `timestamp + raw body`. The header is
-// read tolerantly: a bare signature, or comma-separated `t=…,k=…,s=…` pairs.
-export async function verifyWebhookSignature(params: {
-  rawBody: string
-  signatureHeader: string | null
-  timestamp?: string | null
-}): Promise<{ ok: boolean; reason?: string }> {
-  const header = (params.signatureHeader || '').trim()
-  if (!header) return { ok: false, reason: 'missing x-rea-signature header' }
+interface ParsedSignature { sig: Buffer | null; keyId: string | null; timestamp: string | null }
 
+// The `x-rea-signature` header is read tolerantly: a bare signature, or
+// comma-separated `t=…,k=…,s=…` pairs. `timestamp` falls back to a header value.
+function parseSignatureHeader(header0: string | null, tsFallback?: string | null): ParsedSignature | null {
+  const header = (header0 || '').trim()
+  if (!header) return null
   let sigValue = header
   let keyId: string | null = null
-  let timestamp = params.timestamp || null
+  let timestamp = tsFallback || null
   if (header.includes('=') && /\b(s|v1|sig|signature)=/.test(header)) {
     const parts: Record<string, string> = {}
     for (const p of header.split(',')) { const i = p.indexOf('='); if (i > 0) parts[p.slice(0, i).trim()] = p.slice(i + 1).trim() }
@@ -203,27 +200,85 @@ export async function verifyWebhookSignature(params: {
   } else {
     sigValue = sigValue.replace(/^(ed25519=|v1=)/i, '')
   }
-
   const sig = decodeSignature(sigValue)
-  if (!sig || sig.length !== 64) return { ok: false, reason: 'unparseable Ed25519 signature' }
+  return { sig: sig && sig.length === 64 ? sig : null, keyId, timestamp }
+}
 
+// Verify an already-parsed signature against a set of Ed25519 keys. Pure (no
+// network) so it's shared by the live check and the self-test.
+function verifyAgainstKeys(rawBody: string, parsed: ParsedSignature, keys: ReaSigningKey[]): { ok: boolean; reason?: string } {
+  if (!parsed.sig) return { ok: false, reason: 'unparseable Ed25519 signature' }
   // REA concatenates timestamp + raw body. Try the plain concatenation first,
   // then a dotted variant, so a minor delimiter difference doesn't reject a
   // genuinely-signed request (each candidate still requires a valid signature).
   const messages = [
-    Buffer.from(`${timestamp ?? ''}${params.rawBody}`, 'utf8'),
-    Buffer.from(`${timestamp ?? ''}.${params.rawBody}`, 'utf8'),
+    Buffer.from(`${parsed.timestamp ?? ''}${rawBody}`, 'utf8'),
+    Buffer.from(`${parsed.timestamp ?? ''}.${rawBody}`, 'utf8'),
   ]
-
-  let keys: ReaSigningKey[]
-  try { keys = await getSigningKeys() } catch (e: any) { return { ok: false, reason: `could not fetch signing keys: ${e?.message || e}` } }
-  if (!keys.length) return { ok: false, reason: 'no signing keys published by REA' }
-
-  const candidates = keyId ? keys.filter(k => k.id === keyId || k.id == null) : keys
+  const candidates = parsed.keyId ? keys.filter(k => k.id === parsed.keyId || k.id == null) : keys
   for (const k of (candidates.length ? candidates : keys)) {
     for (const msg of messages) {
-      try { if (crypto.verify(null, msg, k.key, sig)) return { ok: true } } catch {}
+      try { if (crypto.verify(null, msg, k.key, parsed.sig)) return { ok: true } } catch {}
     }
   }
   return { ok: false, reason: 'signature did not match any REA signing key' }
+}
+
+// Verify the `x-rea-signature` header over `timestamp + raw body`, fetching
+// REA's current public keys.
+export async function verifyWebhookSignature(params: {
+  rawBody: string
+  signatureHeader: string | null
+  timestamp?: string | null
+}): Promise<{ ok: boolean; reason?: string }> {
+  const parsed = parseSignatureHeader(params.signatureHeader, params.timestamp)
+  if (!parsed) return { ok: false, reason: 'missing x-rea-signature header' }
+  if (!parsed.sig) return { ok: false, reason: 'unparseable Ed25519 signature' }
+  let keys: ReaSigningKey[]
+  try { keys = await getSigningKeys() } catch (e: any) { return { ok: false, reason: `could not fetch signing keys: ${e?.message || e}` } }
+  if (!keys.length) return { ok: false, reason: 'no signing keys published by REA' }
+  return verifyAgainstKeys(params.rawBody, parsed, keys)
+}
+
+// ── Diagnostics ──────────────────────────────────────────────────────────────
+
+// Non-secret snapshot of the resolved REA configuration, for the super-admin
+// diagnostic. The client secret is never included (only whether it's set), and
+// the client id is masked.
+export function reaConfigSummary() {
+  const mask = (s: string) => (s ? `${s.slice(0, 8)}…(${s.length})` : '')
+  return {
+    tokenUrl: TOKEN_URL,
+    apiBase: API_BASE,
+    subscriptionsPath: SUBSCRIPTIONS_PATH,
+    leadsPath: LEADS_PATH,
+    signingPath: SIGNING_PATH,
+    scopes: REA_MASTER.scopes,
+    clientId: mask(REA_MASTER.clientId),
+    clientSecretSet: !!REA_MASTER.clientSecret,
+  }
+}
+
+// Exercise the REAL parse + verify code path end-to-end with an ephemeral key
+// (no network, no REA): a valid signature must pass and a tampered body must
+// fail. Proves the verifier itself is sound independent of REA's live keys.
+export function signatureSelfTest(): { ok: boolean; detail: string } {
+  try {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519')
+    const raw32 = publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64')
+    const key = parseSigningKey(raw32)
+    if (!key) return { ok: false, detail: 'could not build a test key from a raw Ed25519 public key' }
+    const ts = '1700000000', body = '{"selfTest":true}'
+    const sigB64 = crypto.sign(null, Buffer.from(ts + body, 'utf8'), privateKey).toString('base64')
+    const parsed = parseSignatureHeader(sigB64, ts)
+    if (!parsed) return { ok: false, detail: 'signature header failed to parse' }
+    const good = verifyAgainstKeys(body, parsed, [key])
+    const tampered = verifyAgainstKeys('{"selfTest":false}', parsed, [key])
+    const ok = good.ok && !tampered.ok
+    return { ok, detail: ok
+      ? 'Ed25519 verify path works — valid signature accepted, tampered body rejected'
+      : `unexpected result (valid=${good.ok}, tamperedAccepted=${tampered.ok})` }
+  } catch (e: any) {
+    return { ok: false, detail: e?.message || 'self-test threw' }
+  }
 }
