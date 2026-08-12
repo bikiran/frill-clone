@@ -584,6 +584,7 @@ export default function RootLayout({
           <title>Colvy — Customer Feedback Made Beautiful</title>
           <meta name="description" content="Colvy helps you capture, organize and announce product feedback in one place." />
           <link rel="icon" href="/favicon.png" />
+          <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         </head>
         <body>
           {children}
@@ -708,7 +709,7 @@ export default function RootLayout({
         <title>Colvy — Customer Feedback Made Beautiful</title>
         <meta name="description" content="Colvy helps you capture, organize and announce product feedback in one place." />
         <link rel="icon" href="/favicon.png" />
-        <link rel="apple-touch-icon" href="/logo.png" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
       <body style={{ background: 'var(--canvas)' }}>
         {/* Header */}
