@@ -64,6 +64,13 @@ export async function GET(req: NextRequest) {
     // Best-effort: note that we synced (ignore failures).
     db.from('prexty_integrations').update({ last_synced_at: new Date().toISOString() }).eq('company_id', companyId).then(() => {}, () => {})
 
+    // Cache the match on the contact so the conversation list can show a Prexty
+    // indicator without a live lookup per row. Best-effort; only when it changed.
+    if (contactId && customer?.id) {
+      db.from('contacts').update({ prexty_customer_id: customer.id })
+        .eq('id', contactId).is('prexty_customer_id', null).then(() => {}, () => {})
+    }
+
     return NextResponse.json({ connected: true, customer })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Lookup failed' }, { status: 500 })

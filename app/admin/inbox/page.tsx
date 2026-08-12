@@ -1283,7 +1283,7 @@ export default function InboxPage() {
     const contactIds = Array.from(new Set(convs.map((c: any) => c.contact_id).filter(Boolean)))
     if (contactIds.length) {
       const { data: cts } = await (supabase as any)
-        .from('contacts').select('id, name, email, phone, relationship_type').in('id', contactIds)
+        .from('contacts').select('id, name, email, phone, relationship_type, prexty_customer_id').in('id', contactIds)
       const byId: Record<string, any> = {}
       for (const ct of cts || []) byId[ct.id] = ct
       for (const c of convs) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
@@ -6359,6 +6359,9 @@ export default function InboxPage() {
                   <span style={{ fontSize: 13.5, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {displayName}
                   </span>
+                  {contact.prexty_customer_id && (
+                    <span title="Prexty POS customer" style={{ flexShrink: 0, width: 15, height: 15, borderRadius: 4, background: '#4f46e5', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 800 }}>P</span>
+                  )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 6 }}>
                   {isOverdue && (
