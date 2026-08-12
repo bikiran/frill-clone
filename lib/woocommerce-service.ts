@@ -158,7 +158,7 @@ export class WooCommerceService {
 
   // Create a refund on an order. With Stripe, api_refund=true refunds the actual
   // card. `lineItems` optionally refunds specific items; `amount` refunds a total.
-  async createRefund(orderId: number, params: { amount?: string; reason?: string; lineItems?: any[]; refundPayment?: boolean }): Promise<{ ok: boolean; refund?: any; error?: string }> {
+  async createRefund(orderId: number, params: { amount?: string; reason?: string; lineItems?: any[]; shippingLines?: any[]; refundPayment?: boolean }): Promise<{ ok: boolean; refund?: any; error?: string }> {
     try {
       const body: any = {
         reason: params.reason || 'DOA claim',
@@ -166,6 +166,7 @@ export class WooCommerceService {
       }
       if (params.amount) body.amount = params.amount
       if (params.lineItems && params.lineItems.length) body.line_items = params.lineItems
+      if (params.shippingLines && params.shippingLines.length) body.shipping_lines = params.shippingLines
 
       const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders/${orderId}/refunds`, {
         method: 'POST', headers: this.wcHeaders(), body: JSON.stringify(body),
