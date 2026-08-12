@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
         is_active: true,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'company_id' })
-      .select('id, company_id, base_url, store_name, is_active, last_synced_at, created_at, updated_at')
+      .select('id, company_id, base_url, store_name, is_active, webhook_token, last_synced_at, created_at, updated_at')
       .single()
 
     if (error) {
@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
     const { data } = await db.from('prexty_integrations')
-      .select('id, company_id, base_url, store_name, is_active, last_synced_at, created_at, updated_at')
+      .select('id, company_id, base_url, store_name, is_active, webhook_token, last_synced_at, created_at, updated_at')
       .eq('company_id', companyId).maybeSingle()
     return NextResponse.json({ data: data || null })
   } catch (e: any) {

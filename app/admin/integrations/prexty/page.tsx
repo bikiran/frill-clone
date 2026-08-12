@@ -30,6 +30,11 @@ export default function PrextyIntegration() {
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const [integration, setIntegration] = useState<any>(null)
+  const [copied, setCopied] = useState(false)
+
+  const webhookUrl = integration?.webhook_token && typeof window !== 'undefined'
+    ? `${window.location.origin}/api/webhooks/prexty?t=${integration.webhook_token}`
+    : ''
 
   // Resolve the company the same way the WooCommerce page does: ?slug=, then
   // hostname, then the signed-in user's own/member company.
@@ -203,8 +208,31 @@ export default function PrextyIntegration() {
         )}
       </div>
 
+      {integration && webhookUrl && (
+        <div className="mt-4 bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+          <h3 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Order webhook URL</h3>
+          <p className="text-sm mb-3" style={{ color: 'var(--slate)' }}>
+            Give this to Prexty (or your developer) to send new orders and status changes into the chat — matched to the customer by email/phone, just like WooCommerce. Prexty should <strong>POST</strong> each order here.
+          </p>
+          <div className="flex gap-2">
+            <input readOnly value={webhookUrl} onFocus={e => e.currentTarget.select()}
+              className="flex-1 px-3 py-2.5 rounded-xl border text-xs font-mono"
+              style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: 'var(--canvas)' }} />
+            <button type="button"
+              onClick={() => { navigator.clipboard?.writeText(webhookUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }}
+              className="px-4 rounded-xl border text-sm font-semibold cursor-pointer whitespace-nowrap"
+              style={{ borderColor: 'var(--border)', color: copied ? '#16a34a' : 'var(--slate)' }}>
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>
+            This URL contains a secret token — treat it like a password. Prexty may also send the <code>X-Prexty</code> key on each call as an alternative to the token.
+          </p>
+        </div>
+      )}
+
       <div className="mt-6 p-4 rounded-xl text-sm" style={{ background: 'var(--canvas)', color: 'var(--slate)' }}>
-        <strong style={{ color: 'var(--ink)' }}>What's next:</strong> once connected, this verifies against Prexty's live <code>customers</code> API. Pulling order history into the customer's chat (matched by email/phone, with each order's outlet shown) turns on as soon as Prexty's <code>orders</code> endpoint is available.
+        <strong style={{ color: 'var(--ink)' }}>What's next:</strong> once connected, this verifies against Prexty's live <code>customers</code> API and shows each customer's spend in the chat. Paste the <strong>order webhook URL</strong> above into Prexty to have new orders land in the conversation automatically (matched by email/phone, with the outlet shown).
       </div>
     </div>
   )
