@@ -681,6 +681,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <span style={{ flexShrink: 0, display: 'flex', opacity: 0.65 }}>{icons.lock || icons.company}</span>
                 Platform panel
               </a>
+              <Link href="/admin/legal"
+                style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px', borderRadius: 8, fontSize: 13, textDecoration: 'none', color: 'var(--slate)', background: 'transparent' }}>
+                <span style={{ flexShrink: 0, display: 'flex', opacity: 0.65 }}>{icons.legal || icons.settings}</span>
+                Legal Pages
+              </Link>
             </div>
           )}
         </nav>
