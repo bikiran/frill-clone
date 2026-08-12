@@ -112,6 +112,10 @@ export default function RootLayout({
   // mismatch that can throw React #300 (hydration/hook mismatch).
   const [company, setCompany] = useState<any>(null)
   const [isSubdomain, setIsSubdomain] = useState(false)
+  // Latest current-company id, readable inside the realtime callback without
+  // re-subscribing (the notifications channel keys on user, not company).
+  const companyIdRef = useRef<string | null>(null)
+  companyIdRef.current = company?.id || null
   useEffect(() => {
     try {
       const h = window.location.hostname
@@ -452,6 +456,15 @@ export default function RootLayout({
         try {
           if (payload.eventType === 'INSERT' && payload.new) {
             const n = payload.new
+
+            // Only alert for the company this tab is viewing. The same user can
+            // belong to several companies (several Colvy subdomains open at once);
+            // without this, EVERY tab chimes for EVERY company's notifications.
+            // The unread badge (getCount above) still reflects all of them; only
+            // the chime + popup are scoped. On the root domain (no company
+            // context) nothing is filtered.
+            const currentCo = companyIdRef.current
+            if (currentCo && n.company_id && n.company_id !== currentCo) return
 
             // A soft two-note chime — pleasant, quiet, and short. Synthesised so
             // there's no audio file to load, and it fails silently if the browser

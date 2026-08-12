@@ -93,6 +93,7 @@ export async function POST(req: NextRequest) {
       await db.from('notifications').insert(
         userIds.map((uid: string) => ({
           user_id: uid,
+          company_id: companyId,
           type: 'mention',
           message: `${mentionedBy || 'A teammate'} mentioned you in ${where}`,
           actor_name: mentionedBy || null,
