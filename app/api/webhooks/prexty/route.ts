@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
+import { normalizePrextyCustomer } from '@/lib/prexty-service'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,6 +49,60 @@ async function resolveCompany(db: any, req: NextRequest): Promise<{ companyId: s
   return null
 }
 
+// customer.created / customer.updated → find-or-create the Colvy contact.
+// Existing contacts are enriched (gaps filled, Prexty id linked) but never
+// clobbered; a brand-new Prexty customer becomes a new contact.
+async function handleCustomerEvent(db: any, companyId: string, body: any) {
+  const c = normalizePrextyCustomer(body?.customer || body?.data || body)
+  const email = (c.email || '').toLowerCase() || null
+  const phone = c.mobile || null
+  const prextyId = c.id || null
+
+  await logWebhookEvent({ source: 'prexty', eventType: 'customer', companyId, payload: { prextyId, email, phone } })
+
+  if (!email && !phone) {
+    return NextResponse.json({ ok: false, reason: 'Customer had no email or phone to match on' })
+  }
+
+  let contact: any = null
+  if (email) {
+    const { data } = await db.from('contacts').select('*').eq('company_id', companyId).ilike('email', email).limit(1)
+    contact = data?.[0] || null
+  }
+  if (!contact && phone) {
+    const d9 = digits(phone).slice(-9)
+    if (d9) {
+      const { data } = await db.from('contacts').select('*').eq('company_id', companyId).limit(1000)
+      contact = (data || []).find((x: any) => x.phone && digits(x.phone).slice(-9) === d9) || null
+    }
+  }
+
+  if (contact) {
+    const upd: any = {}
+    if (prextyId && !contact.prexty_customer_id) upd.prexty_customer_id = prextyId
+    if (c.name && !contact.name) upd.name = c.name
+    if (email && !contact.email) upd.email = email
+    if (phone && !contact.phone) upd.phone = phone
+    if (c.city && !contact.suburb) upd.suburb = c.city
+    if (c.state && !contact.state) upd.state = c.state
+    if (c.postcode && !contact.postcode) upd.postcode = c.postcode
+    if (Object.keys(upd).length) await db.from('contacts').update(upd).eq('id', contact.id)
+    return NextResponse.json({ ok: true, contactId: contact.id, created: false, updated: Object.keys(upd) })
+  }
+
+  const { data: created } = await db.from('contacts').insert({
+    company_id: companyId,
+    name: c.name || email || phone || 'Prexty customer',
+    email, phone,
+    prexty_customer_id: prextyId,
+    suburb: c.city || null,
+    state: c.state || null,
+    postcode: c.postcode || null,
+    source: 'prexty',
+  }).select('id').maybeSingle()
+  return NextResponse.json({ ok: true, contactId: created?.id || null, created: true })
+}
+
 export async function POST(req: NextRequest) {
   try {
     const db = admin()
@@ -64,6 +119,11 @@ export async function POST(req: NextRequest) {
     const who = await resolveCompany(db, req)
     if (!who) return NextResponse.json({ ok: false, reason: 'Unrecognised Prexty webhook token/key' }, { status: 401 })
     const companyId = who.companyId
+
+    // Customer created/updated in Prexty → upsert a Colvy contact (no order).
+    if (evt.includes('customer') && !evt.includes('order')) {
+      return await handleCustomerEvent(db, companyId, body)
+    }
 
     // ── Parse the order (tolerant) ───────────────────────────────────────────
     const orderId = pick(body, 'id', 'order_id', 'orderId', 'data.id', 'order.id', 'data.order_id', 'invoice_id')

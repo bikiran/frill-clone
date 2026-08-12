@@ -250,7 +250,7 @@ export default function PrextyIntegration() {
         <div className="mt-4 bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
           <h3 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Order webhook URL</h3>
           <p className="text-sm mb-3" style={{ color: 'var(--slate)' }}>
-            Give this to Prexty (or your developer) to send new orders and status changes into the chat — matched to the customer by email/phone, just like WooCommerce. Prexty should <strong>POST</strong> each order here.
+            Give this to Prexty (or your developer) to send new orders (and new/updated customers) into Colvy — matched by email/phone, just like WooCommerce. Prexty should <strong>POST</strong> each <code>order.*</code> and <code>customer.*</code> event here.
           </p>
           <div className="flex gap-2">
             <input readOnly value={webhookUrl} onFocus={e => e.currentTarget.select()}
