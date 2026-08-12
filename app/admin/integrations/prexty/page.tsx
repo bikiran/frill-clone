@@ -31,6 +31,9 @@ export default function PrextyIntegration() {
 
   const [integration, setIntegration] = useState<any>(null)
   const [copied, setCopied] = useState(false)
+  const [testTarget, setTestTarget] = useState('')
+  const [testBusy, setTestBusy] = useState(false)
+  const [testMsg, setTestMsg] = useState('')
 
   const webhookUrl = integration?.webhook_token && typeof window !== 'undefined'
     ? `${window.location.origin}/api/webhooks/prexty?t=${integration.webhook_token}`
@@ -108,6 +111,41 @@ export default function PrextyIntegration() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const sendTestOrder = async () => {
+    if (!webhookUrl) return
+    setTestBusy(true); setTestMsg('')
+    try {
+      const target = testTarget.trim()
+      const isEmail = target.includes('@')
+      const stamp = Date.now()
+      const payload = {
+        event: 'order.created',
+        id: stamp,
+        order_number: `TEST-${String(stamp).slice(-5)}`,
+        status: 'completed',
+        total: 12.34,
+        currency: 'AUD',
+        outlet_name: 'Test Outlet',
+        customer: {
+          name: 'Prexty Test Customer',
+          email: isEmail ? target : 'test+prexty@example.com',
+          mobile: isEmail ? '' : target,
+        },
+        items: [{ name: 'Test item', qty: 1, price: 12.34 }],
+        created_at: new Date().toISOString(),
+      }
+      const res = await fetch(webhookUrl, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.ok === false) throw new Error(d.reason || d.error || 'Test failed')
+      setTestMsg(`✓ Sent order #${payload.order_number} — open the inbox to see it land.`)
+    } catch (e: any) {
+      setTestMsg(e.message || 'Test failed')
+    } finally { setTestBusy(false) }
   }
 
   const disconnect = async () => {
@@ -228,6 +266,24 @@ export default function PrextyIntegration() {
           <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>
             This URL contains a secret token — treat it like a password. Prexty may also send the <code>X-Prexty</code> key on each call as an alternative to the token.
           </p>
+
+          <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Send a test order</label>
+            <div className="flex gap-2">
+              <input value={testTarget} onChange={e => setTestTarget(e.target.value)}
+                placeholder="Customer email or phone (optional)"
+                className="flex-1 px-3 py-2.5 rounded-xl border text-sm" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+              <button type="button" onClick={sendTestOrder} disabled={testBusy}
+                className="px-4 rounded-xl font-semibold text-white cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                style={{ background: 'var(--coral)' }}>
+                {testBusy ? 'Sending…' : 'Send test order'}
+              </button>
+            </div>
+            {testMsg && <p className="text-xs mt-2" style={{ color: testMsg.startsWith('✓') ? '#16a34a' : '#b91c1c' }}>{testMsg}</p>}
+            <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>
+              Posts a synthetic order to the webhook above so you can watch one land end-to-end. Enter a real customer&rsquo;s email or phone to have it thread into their existing chat; leave blank to create a test conversation.
+            </p>
+          </div>
         </div>
       )}
 
