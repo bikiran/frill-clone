@@ -1679,12 +1679,14 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   // Land on today when the timeline first shows, the data loads, or the density
   // changes.
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollLeft = Math.max(0, todayIdx * COL_W - COL_W)
+    // Offset by the pinned "No due date" column (if present) so today isn't
+    // hidden behind it.
+    if (scrollRef.current) scrollRef.current.scrollLeft = Math.max(0, todayIdx * COL_W - COL_W + (byDay.noDate.length ? COL_W : 0))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayIdx, COL_W])
+  }, [todayIdx, COL_W, byDay.noDate.length])
 
   const scrollBy = (cols: number) => { if (scrollRef.current) scrollRef.current.scrollBy({ left: cols * COL_W, behavior: 'smooth' }) }
-  const goToday = () => { if (scrollRef.current) scrollRef.current.scrollTo({ left: Math.max(0, todayIdx * COL_W - COL_W), behavior: 'smooth' }) }
+  const goToday = () => { if (scrollRef.current) scrollRef.current.scrollTo({ left: Math.max(0, todayIdx * COL_W - COL_W + (byDay.noDate.length ? COL_W : 0)), behavior: 'smooth' }) }
 
   if (tasks.length === 0) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>No tasks to show on the timeline.</div>
 
@@ -1706,13 +1708,13 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   }
   const dropLine = <div style={{ height: 3, background: 'var(--coral)', borderRadius: 3, margin: '3px 2px' }} />
 
-  const renderColumn = (key: string, header: string, sub: string, isToday: boolean, weekend: boolean, list: any[], dateObj: Date | null) => {
+  const renderColumn = (key: string, header: string, sub: string, isToday: boolean, weekend: boolean, list: any[], dateObj: Date | null, sticky = false) => {
     const overCol = dropTarget?.key === key
     return (
     <div key={key} className="tl-col"
       onDragOver={(e) => { if (dragId) { e.preventDefault(); setDrop(key, list.length) } }}
       onDrop={(e) => { e.preventDefault(); doDrop(dateObj, list, overCol ? dropTarget!.index : list.length) }}
-      style={{ width: COL_W, boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff'), outline: overCol ? '2px dashed var(--coral)' : 'none', outlineOffset: -2 }}>
+      style={{ width: COL_W, boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff'), outline: overCol ? '2px dashed var(--coral)' : 'none', outlineOffset: -2, ...(sticky ? { position: 'sticky' as const, left: 0, zIndex: 3, background: 'var(--canvas)', boxShadow: '4px 0 10px rgba(0,0,0,0.06)' } : {}) }}>
       <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '8px 10px', borderBottom: `2px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, background: 'inherit', display: 'flex', alignItems: 'baseline', gap: 6 }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)' }}>{header}</span>
         {sub && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>{sub}</span>}
@@ -1774,6 +1776,9 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
       </div>
       <div ref={scrollRef} style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', borderTop: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'stretch', height: '100%', minWidth: 'min-content' }}>
+          {/* Unscheduled tasks (no due date) pinned to the left so they're always
+              visible — otherwise they hid at the far right, past every future day. */}
+          {byDay.noDate.length > 0 && renderColumn('nodate', 'No due date', 'unscheduled', false, false, byDay.noDate, null, true)}
           {days.map(d => {
             const k = dayKey(d)
             const list = byDay.m.get(k) || []
@@ -1787,7 +1792,6 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
               isToday, weekend, list, d,
             )
           })}
-          {byDay.noDate.length > 0 && renderColumn('nodate', 'No due date', '', false, false, byDay.noDate, null)}
         </div>
       </div>
     </div>

@@ -20,7 +20,7 @@ function genCouponCode(email: string) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { companyId, conversationId, contactId, order, resolution, selectedItems, amount, notes, createdBy } = body
+    const { companyId, conversationId, contactId, order, resolution, selectedItems, shipping, amount, notes, createdBy } = body
     if (!companyId || !order?.order_id || !resolution) {
       return NextResponse.json({ error: 'Missing companyId, order, or resolution' }, { status: 400 })
     }
@@ -55,9 +55,11 @@ export async function POST(req: NextRequest) {
       const lineItems = (selectedItems && selectedItems.length)
         ? selectedItems.map((it: any) => ({ id: it.id, quantity: it.quantity, refund_total: String(it.total).replace('-', '') }))
         : undefined
+      const shipNum = Number(shipping) || 0
+      const shippingLines = shipNum > 0 ? [{ id: 0, refund_total: shipNum }] : undefined
       const refundAmount = amount ? String(amount) : undefined
       const r = await woo.createRefund(order.order_id, {
-        amount: refundAmount, lineItems, reason: notes || 'DOA claim', refundPayment: true,
+        amount: refundAmount, lineItems, shippingLines, reason: notes || 'DOA claim', refundPayment: true,
       })
       if (!r.ok) {
         await db.from('doa_claims').update({ ...updatePatch, status: 'open', error: r.error }).eq('id', claimId)

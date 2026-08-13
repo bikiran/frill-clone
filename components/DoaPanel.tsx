@@ -21,6 +21,7 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
   const [looking, setLooking] = useState(false)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Record<number, boolean>>({})
+  const [refundShipping, setRefundShipping] = useState(false)
   const [customAmount, setCustomAmount] = useState('')
   const [notes, setNotes] = useState('')
   const [processing, setProcessing] = useState(false)
@@ -65,17 +66,21 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
 
   const selectedItems = order ? (order.items || []).filter((it: any) => selected[it.id]) : []
   const selectedTotal = selectedItems.reduce((s: number, it: any) => s + (parseFloat(it.total) || 0), 0)
+  const shippingTotal = order ? (parseFloat(order.shipping_total) || 0) : 0
+  const shipRefund = refundShipping ? shippingTotal : 0
+  const refundDefault = selectedTotal + shipRefund
 
   const process = async (resolution: 'refund' | 'coupon' | 'resend') => {
     if (!order) return
     setProcessing(true); setError('')
     try {
-      const amount = customAmount ? customAmount : (resolution === 'refund' ? selectedTotal.toFixed(2) : undefined)
+      const amount = customAmount ? customAmount : (resolution === 'refund' ? refundDefault.toFixed(2) : undefined)
       const res = await fetch('/api/doa/process', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, conversationId, contactId, order, resolution,
           selectedItems: resolution === 'refund' && !customAmount ? selectedItems : undefined,
+          shipping: resolution === 'refund' && !customAmount ? shipRefund : 0,
           amount, notes,
         }),
       })
@@ -200,6 +205,13 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
                           <span style={{ fontSize: 13, fontWeight: 600 }}>${it.total}</span>
                         </label>
                       ))}
+                      {shippingTotal > 0 && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', cursor: 'pointer', borderTop: '1px solid var(--border)', marginTop: 4 }}>
+                          <input type="checkbox" checked={refundShipping} onChange={e => setRefundShipping(e.target.checked)} />
+                          <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)' }}>Shipping{order.shipping_method ? ` (${order.shipping_method})` : ''}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>${order.shipping_total}</span>
+                        </label>
+                      )}
                     </div>
 
                     {/* Totals */}
@@ -212,8 +224,8 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
                   </div>
 
                   {/* Refund amount override */}
-                  <label style={L}>Refund amount (leave blank to refund selected items: ${selectedTotal.toFixed(2)})</label>
-                  <input style={I} value={customAmount} onChange={e => setCustomAmount(e.target.value)} placeholder={`${selectedTotal.toFixed(2)}`} />
+                  <label style={L}>Refund amount (leave blank to refund selected items{refundShipping ? ' + shipping' : ''}: ${refundDefault.toFixed(2)})</label>
+                  <input style={I} value={customAmount} onChange={e => setCustomAmount(e.target.value)} placeholder={`${refundDefault.toFixed(2)}`} />
 
                   <label style={L}>Notes (reason)</label>
                   <textarea style={{ ...I, minHeight: 54, resize: 'vertical' }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Arrived cracked, customer sent photos." />
@@ -233,7 +245,7 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
                   <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <button onClick={() => process('refund')} disabled={processing}
                       style={{ padding: '12px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                      {processing ? 'Processing…' : `💳 Refund to original payment (${order.currency || 'AUD'} $${customAmount || selectedTotal.toFixed(2)})`}
+                      {processing ? 'Processing…' : `💳 Refund to original payment (${order.currency || 'AUD'} $${customAmount || refundDefault.toFixed(2)})`}
                     </button>
                     <button onClick={() => process('coupon')} disabled={processing}
                       style={{ padding: '12px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
