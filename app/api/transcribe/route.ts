@@ -69,18 +69,36 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const form = await req.formData()
-    const file = form.get('audio')
-    if (!file || typeof file === 'string') {
-      return NextResponse.json({ error: 'No audio file provided.' }, { status: 400 })
+    // Accept either base64 JSON (what the mobile app sends — most reliable from
+    // React Native) or multipart/form-data.
+    let audio: ArrayBuffer
+    let contentType = 'audio/m4a'
+    let filename = 'audio.m4a'
+    const reqType = req.headers.get('content-type') || ''
+    if (reqType.includes('application/json')) {
+      const body = await req.json().catch(() => null)
+      const b64 = body?.audio
+      if (!b64 || typeof b64 !== 'string') {
+        return NextResponse.json({ error: 'No audio provided.' }, { status: 400 })
+      }
+      const buf = Buffer.from(b64, 'base64')
+      audio = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+      contentType = body?.mime || contentType
+      filename = body?.filename || filename
+    } else {
+      const form = await req.formData()
+      const file = form.get('audio')
+      if (!file || typeof file === 'string') {
+        return NextResponse.json({ error: 'No audio file provided.' }, { status: 400 })
+      }
+      const blob = file as unknown as File
+      audio = await blob.arrayBuffer()
+      contentType = blob.type || contentType
+      filename = (blob as any).name || filename
     }
-    const blob = file as unknown as File
-    const audio = await blob.arrayBuffer()
     if (!audio.byteLength) {
       return NextResponse.json({ error: 'Empty audio.' }, { status: 400 })
     }
-    const contentType = blob.type || 'audio/m4a'
-    const filename = (blob as any).name || 'audio.m4a'
 
     // Deepgram first (fast), fall back to Whisper if Deepgram errors OR returns
     // nothing (e.g. an unrecognised container). Whisper is very format-tolerant.
