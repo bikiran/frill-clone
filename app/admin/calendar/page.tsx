@@ -580,7 +580,7 @@ export default function CalendarPage() {
             const when = new Date(e.starts_at)
             const as = (Array.isArray(e.assignees) && e.assignees.length) ? e.assignees : (e.assigned_to_name ? [{ name: e.assigned_to_name }] : [])
             return (
-              <button key={e.id} onClick={() => { if (e._fromTasks) { window.location.href = '/admin/tasks'; return } setSearch(''); setEditing({ ...e, date: localYmd(new Date(e.starts_at)), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: as }) }}
+              <button key={e.id} onClick={() => { if (e._fromTasks) { window.location.href = `/admin/tasks?task=${e._taskId}&date=${localYmd(new Date(e.starts_at))}`; return } setSearch(''); setEditing({ ...e, date: localYmd(new Date(e.starts_at)), time: new Date(e.starts_at).toTimeString().slice(0, 5), assignees: as }) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '12px 16px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
