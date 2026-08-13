@@ -96,7 +96,11 @@ export async function GET(req: NextRequest) {
         total_refunded: (order.refunds || []).reduce((s: number, r: any) => s + Math.abs(parseFloat(r.total || 0)), 0),
         status: order.status,
         billing: order.billing,
+        shipping: order.shipping,
+        customer_note: order.customer_note,
         payment_method_title: order.payment_method_title,
+        date_created: order.date_created,
+        date_paid: order.date_paid,
       },
     })
   } catch (e: any) {
