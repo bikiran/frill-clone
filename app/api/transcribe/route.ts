@@ -17,13 +17,25 @@ async function fetchWithTimeout(url: string, opts: any, ms = 45000) {
   finally { clearTimeout(t) }
 }
 
+// Deepgram is picky about Content-Type and does NOT recognise "audio/m4a"
+// (the type the phone records) — it returns an empty transcript. m4a is an
+// MPEG-4 audio container, so map it (and aac) to the type Deepgram accepts.
+function deepgramContentType(raw: string, filename: string): string {
+  const s = `${raw} ${filename}`.toLowerCase()
+  if (/m4a|mp4|aac/.test(s)) return 'audio/mp4'
+  if (/wav/.test(s)) return 'audio/wav'
+  if (/webm/.test(s)) return 'audio/webm'
+  if (/mp3|mpeg/.test(s)) return 'audio/mpeg'
+  return raw || 'audio/mp4'
+}
+
 async function transcribeDeepgram(audio: ArrayBuffer, contentType: string, key: string) {
   // No diarization for dictation — a single speaker, we just want clean text.
   const res = await fetchWithTimeout(
     'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true',
     {
       method: 'POST',
-      headers: { Authorization: `Token ${key}`, 'Content-Type': contentType || 'audio/m4a' },
+      headers: { Authorization: `Token ${key}`, 'Content-Type': contentType },
       body: Buffer.from(audio),
     }
   )
@@ -70,10 +82,11 @@ export async function POST(req: NextRequest) {
     const contentType = blob.type || 'audio/m4a'
     const filename = (blob as any).name || 'audio.m4a'
 
-    // Deepgram first (fast), fall back to Whisper if Deepgram errors.
+    // Deepgram first (fast), fall back to Whisper if Deepgram errors OR returns
+    // nothing (e.g. an unrecognised container). Whisper is very format-tolerant.
     let text = ''
     if (DEEPGRAM) {
-      try { text = await transcribeDeepgram(audio, contentType, DEEPGRAM) }
+      try { text = await transcribeDeepgram(audio, deepgramContentType(contentType, filename), DEEPGRAM) }
       catch (e) { if (!OPENAI) throw e }
     }
     if (!text && OPENAI) {
