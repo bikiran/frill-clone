@@ -9,6 +9,7 @@ import { decodeEntities as dec } from '@/lib/decode-entities'
 import { enrichNames } from '@/lib/team-names'
 import AddContactModal from '@/components/AddContactModal'
 import SendTrackingModal from '@/components/SendTrackingModal'
+import VoiceDictationButton from '@/components/VoiceDictationButton'
 import { useDraft } from '@/lib/drafts'
 import { uploadQueue } from '@/lib/upload-queue'
 import { toPublicUrl } from '@/lib/storage-url'
@@ -3670,14 +3671,25 @@ export default function InboxPage() {
   useEffect(() => {
     if (!pinUserId || !companyId) return
     let cancelled = false
-    ;(async () => {
+    const load = async () => {
       try {
         const { data } = await (supabase as any).from('conversation_pins')
           .select('conversation_id').eq('user_id', pinUserId).eq('company_id', companyId)
         if (!cancelled) setPinnedIds(new Set((data || []).map((r: any) => r.conversation_id)))
       } catch { /* table may not be migrated yet */ }
-    })()
-    return () => { cancelled = true }
+    }
+    load()
+    // Live-sync pins across devices/tabs — a pin made on the mobile app (or
+    // another browser) shows here without a reload, as long as it reached the
+    // conversation_pins table.
+    let ch: any = null
+    try {
+      ch = (supabase as any)
+        .channel(`conversation_pins-${pinUserId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_pins', filter: `user_id=eq.${pinUserId}` }, () => load())
+        .subscribe()
+    } catch {}
+    return () => { cancelled = true; if (ch) { try { (supabase as any).removeChannel(ch) } catch {} } }
   }, [pinUserId, companyId])
   const togglePin = async (conv: any) => {
     const id = conv?.id
@@ -7702,6 +7714,13 @@ export default function InboxPage() {
 
               <div className="composer-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <div className="composer-tools" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {/* Colvy Voice — dictate into the reply (Whispr-Flow style). */}
+                  <VoiceDictationButton
+                    size={32}
+                    title="Voice type"
+                    keyterms={[contact?.name, (contact as any)?.company_name].filter(Boolean) as string[]}
+                    onText={(t) => setReply(prev => (prev.trim() ? prev.replace(/\s*$/, ' ') : '') + t)}
+                  />
                   {/* Send poll/survey/form/payment */}
                   <div ref={sendMenuRef} style={{ position: 'relative' }}>
                     <button type="button" onClick={() => setShowSendMenu(v => !v)} title="Send poll, survey, form or payment"
