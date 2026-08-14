@@ -49,7 +49,10 @@ export async function POST(req: NextRequest) {
     const companyId = integ.company_id
     const greeting = integ.voicemail_greeting || 'Please leave a message after the tone.'
 
-    // Resolve caller → contact + latest conversation (best-effort).
+    // Resolve caller → contact + conversation, and make sure a conversation
+    // EXISTS so the call is visible in the inbox for the whole team — even an
+    // unanswered call from a number with no prior thread (which otherwise left
+    // no trace anywhere but the call log).
     let contactId: string | null = null
     let callerName: string | null = null
     let conversationId: string | null = null
@@ -63,14 +66,39 @@ export async function POST(req: NextRequest) {
         const c = (contacts || []).find((x: any) => x.phone && digitsOf(x.phone) === fromTail)
         if (c) { contactId = c.id; callerName = c.name || null }
       }
-      if (contactId) {
+
+      // Find an existing thread by the contact OR by the caller's number — many
+      // threads key off contact_id with no sms_number, and vice-versa.
+      const ors: string[] = []
+      if (fromTail) ors.push(`sms_number.ilike.%${fromTail}%`)
+      if (contactId) ors.push(`contact_id.eq.${contactId}`)
+      if (ors.length) {
         const { data: conv } = await db.from('conversations')
-          .select('id').eq('company_id', companyId).eq('contact_id', contactId)
+          .select('id').eq('company_id', companyId).or(ors.join(','))
           .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
         conversationId = conv?.id || null
-        if (conv?.id) {
-          try { await db.from('conversations').update({ last_message: '📞 Incoming call', last_message_at: new Date().toISOString(), is_unread: true }).eq('id', conv.id) } catch {}
-        }
+      }
+
+      const nowIso = new Date().toISOString()
+      if (conversationId) {
+        // Bump the existing thread to the top with a call preview.
+        try { await db.from('conversations').update({ last_message: '📞 Incoming call', last_message_at: nowIso, is_unread: true }).eq('id', conversationId) } catch {}
+      } else {
+        // No thread yet — create one so the call lands in the inbox. Keyed to the
+        // contact when known, otherwise to the caller's number.
+        try {
+          const { data: created } = await db.from('conversations').insert({
+            company_id: companyId,
+            contact_id: contactId,
+            channel: 'phone',
+            sms_number: from,
+            status: 'open',
+            last_message: '📞 Incoming call',
+            last_message_at: nowIso,
+            is_unread: true,
+          }).select('id').maybeSingle()
+          conversationId = created?.id || null
+        } catch (e: any) { console.error('[twilio inbound] conversation create failed', e?.message || e) }
       }
     } catch {}
 
