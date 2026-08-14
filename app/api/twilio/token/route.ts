@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService, createVoiceAccessToken, twilioIdentity } from '@/lib/twilio-service'
+import { inspectFcmSecret } from '@/lib/fcm-secret'
 
 export const dynamic = 'force-dynamic'
 
@@ -99,30 +100,34 @@ export async function POST(req: NextRequest) {
     // The mobile SDK only rings when the token names a Push Credential (see
     // createVoiceAccessToken). It's account-scoped, so — exactly like the API Key
     // and TwiML App above — each company's Twilio account needs its own, made
-    // once from the app's single Firebase credential (TWILIO_FCM_SECRET). This
-    // removes any per-company setup: it's created + cached automatically, and a
-    // SID that was made in a different account (Twilio "31404 Not Found") is
-    // detected here and re-created on the right one. Best-effort: if it fails,
-    // the token is still minted (browser calling unaffected; mobile just won't
-    // ring until the next successful provision).
+    // from the app's single Firebase credential (TWILIO_FCM_SECRET). This removes
+    // any per-company setup: it's created + cached automatically.
+    //
+    // The credential is only good if it (a) exists on THIS account and (b) was
+    // built from the CURRENT secret. We stamp the secret's fingerprint into the
+    // credential's FriendlyName ("#<fp>"), so a changed or corrected
+    // TWILIO_FCM_SECRET — swapping a dead legacy server key for an FCM v1 service
+    // account, or fixing a wrong Firebase project — is detected here and the
+    // credential rebuilt cleanly, with NO manual DB reset. A SID from a different
+    // account (Twilio "31404 Not Found") is likewise re-created on the right one.
+    // We always CREATE a fresh credential rather than update an existing one:
+    // Twilio's update path mangles the FCM v1 JSON differently than create, which
+    // silently corrupts a known-good credential. Best-effort: if it fails, the
+    // token is still minted (browser calling unaffected; mobile just won't ring
+    // until the next successful provision).
     let pushCredentialSid = integ.push_credential_sid || null
     const fcmSecret = resolveFcmSecret()
-    if (fcmSecret) {
+    const fcmInfo = inspectFcmSecret(fcmSecret)
+    if (fcmSecret && fcmInfo.fingerprint) {
       try {
-        // Create ONCE, then never touch it again. Rewriting an existing
-        // credential's secret on every mint (an earlier "self-heal") corrupted a
-        // known-good credential — Twilio's update path mangles the FCM v1 JSON
-        // differently than create — so a working credential silently died after
-        // a few mints. Only create when there isn't a valid one for this account
-        // (missing, or a SID from a different account → Twilio 31404). To re-heal
-        // a bad credential, null push_credential_sid and it's rebuilt cleanly.
-        let credOk = !!pushCredentialSid
-        if (credOk) credOk = !!(await svc.getPushCredential(pushCredentialSid!))
+        const friendlyName = `Colvy Mobile ${String(companyId).slice(0, 8)} #${fcmInfo.fingerprint}`
+        let credOk = false
+        if (pushCredentialSid) {
+          const cred = await svc.getPushCredential(pushCredentialSid)
+          credOk = !!cred && typeof cred.friendly_name === 'string' && cred.friendly_name.includes(`#${fcmInfo.fingerprint}`)
+        }
         if (!credOk) {
-          const cred = await svc.createPushCredential({
-            friendlyName: `Colvy Mobile ${String(companyId).slice(0, 8)}`,
-            fcmSecret,
-          })
+          const cred = await svc.createPushCredential({ friendlyName, fcmSecret })
           if (cred?.sid) {
             pushCredentialSid = cred.sid
             await db.from('twilio_integrations').update({ push_credential_sid: pushCredentialSid }).eq('company_id', companyId)

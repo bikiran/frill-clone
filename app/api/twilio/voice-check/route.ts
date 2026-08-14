@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService, twilioIdentity } from '@/lib/twilio-service'
+import { inspectFcmSecret } from '@/lib/fcm-secret'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,6 +75,36 @@ export async function GET(req: NextRequest) {
             `voice_url=${pn.voice_url || '(unset)'} sms_url=${pn.sms_url || '(unset)'} (expected ${wantVoice} / ${wantSms})`)
         }
       } catch (e: any) { add('number inbound webhooks', false, e.message) }
+    }
+
+    // ── Mobile push credential — the piece that makes an inbound call RING a
+    // phone (browser calling doesn't need it). Without a valid one the phone
+    // registers fine but Twilio has no channel to deliver the invite, so it
+    // never rings even though outbound works. This is the usual cause of "only
+    // inbound doesn't ring the app".
+    const fcmInfo = inspectFcmSecret(process.env.TWILIO_FCM_SECRET)
+    if (!fcmInfo.present) {
+      add('fcm push secret', false, 'TWILIO_FCM_SECRET is not set — mobile tokens carry no push credential, so phones never ring on inbound.')
+    } else if (fcmInfo.kind === 'legacy') {
+      add('fcm push secret', false, 'TWILIO_FCM_SECRET looks like a LEGACY FCM server key — Google shut these down. Replace it with an FCM v1 service-account JSON.')
+    } else if (fcmInfo.kind === 'unknown') {
+      add('fcm push secret', false, 'TWILIO_FCM_SECRET is set but is not a recognisable FCM v1 service-account JSON.')
+    } else {
+      add('fcm push secret', true, `FCM v1 service account for Firebase project "${fcmInfo.projectId}" — this MUST match the mobile app's google-services.json project_id.`)
+    }
+
+    if (!integ.push_credential_sid) {
+      add('push credential', false, 'No push_credential_sid stored — it is created on the next mobile token mint (needs TWILIO_FCM_SECRET set).')
+    } else {
+      const cred = await svc.getPushCredential(integ.push_credential_sid)
+      if (!cred) {
+        add('push credential', false, `${integ.push_credential_sid} not found on this account — it will be recreated on the next token mint.`)
+      } else {
+        const fresh = !!(fcmInfo.fingerprint && typeof cred.friendly_name === 'string' && cred.friendly_name.includes(`#${fcmInfo.fingerprint}`))
+        add('push credential', fresh, fresh
+          ? `${cred.sid} (${cred.type}) is built from the current secret.`
+          : `${cred.sid} (${cred.type}) was built from a DIFFERENT/older secret — it will be rebuilt on the next token mint.`)
+      }
     }
 
     // Who's online to receive an inbound call right now.
