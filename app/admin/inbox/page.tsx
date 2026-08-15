@@ -1046,41 +1046,51 @@ export default function InboxPage() {
   // Order-status filter: keep conversations whose contact has at least one order
   // in the chosen WooCommerce status (order placed / processing / completed /
   // refunded / failed …). Keyed by lowercased contact email against the orders
-  // table; loaded lazily only when the filter is in use and cached per company.
-  const [wooStatusMap, setWooStatusMap] = useState<Map<string, Set<string>>>(new Map())
-  const wooStatusRef = useRef<{ companyId: string; map: Map<string, Set<string>> } | null>(null)
+  // table; loaded lazily only when the filter is in use and cached per company +
+  // status. We fetch the set of customer emails that have an order IN THE CHOSEN
+  // status — scoped server-side and newest-first — rather than pulling the whole
+  // orders table and grouping client-side. The old approach capped an UNordered
+  // full-table read at 8000 rows: on a store with tens of thousands of orders
+  // that slice held the oldest rows and almost never the (recent) orders in the
+  // status being filtered, so the filter matched nothing.
+  const [orderStatusEmails, setOrderStatusEmails] = useState<Set<string>>(new Set())
+  const orderStatusRef = useRef<{ companyId: string; status: string; emails: Set<string> } | null>(null)
   useEffect(() => {
-    if (!filters.orderStatus || !companyId) return
-    if (wooStatusRef.current?.companyId === companyId) { setWooStatusMap(wooStatusRef.current.map); return }
+    if (!filters.orderStatus || !companyId) { setOrderStatusEmails(new Set()); return }
+    const status = filters.orderStatus
+    if (orderStatusRef.current?.companyId === companyId && orderStatusRef.current?.status === status) {
+      setOrderStatusEmails(orderStatusRef.current.emails); return
+    }
     let cancelled = false
     ;(async () => {
       try {
-        const { data } = await (supabase as any)
-          .from('woocommerce_orders').select('customer_email, status').eq('company_id', companyId).limit(8000)
-        const m = new Map<string, Set<string>>()
-        for (const o of data || []) {
-          const email = String(o.customer_email || '').toLowerCase()
-          if (!email) continue
-          // Woo stores statuses either bare ("completed") or wc-prefixed
-          // ("wc-completed") depending on the sync path — normalise both.
-          const st = String(o.status || '').replace(/^wc-/, '').toLowerCase()
-          if (!st) continue
-          if (!m.has(email)) m.set(email, new Set())
-          m.get(email)!.add(st)
+        // Woo stores the status bare ("processing") or wc-prefixed
+        // ("wc-processing") depending on the sync path — match both. "Order
+        // placed" also covers a draft checkout still awaiting payment.
+        const statusVals = status === 'pending'
+          ? ['pending', 'wc-pending', 'checkout-draft', 'wc-checkout-draft']
+          : [status, `wc-${status}`]
+        const emails = new Set<string>()
+        const PAGE = 1000
+        for (let from = 0; from < 20000; from += PAGE) {
+          const { data, error } = await (supabase as any).from('woocommerce_orders')
+            .select('customer_email')
+            .eq('company_id', companyId)
+            .in('status', statusVals)
+            .order('order_date', { ascending: false })
+            .range(from, from + PAGE - 1)
+          if (error || !data || !data.length) break
+          for (const o of data) { const e = String(o.customer_email || '').toLowerCase(); if (e) emails.add(e) }
+          if (data.length < PAGE) break
         }
-        if (!cancelled) { wooStatusRef.current = { companyId, map: m }; setWooStatusMap(m) }
+        if (!cancelled) { orderStatusRef.current = { companyId, status, emails }; setOrderStatusEmails(emails) }
       } catch (e) { console.error('inbox order-status filter load failed', e) }
     })()
     return () => { cancelled = true }
   }, [filters.orderStatus, companyId])
 
-  const orderStatusMatches = (email: string | undefined, status: string) => {
-    const set = wooStatusMap.get((email || '').toLowerCase())
-    if (!set) return false
-    // "Order placed" covers a freshly-placed order still awaiting payment.
-    if (status === 'pending') return set.has('pending') || set.has('checkout-draft')
-    return set.has(status)
-  }
+  const orderStatusMatches = (email: string | undefined) =>
+    !!email && orderStatusEmails.has(email.toLowerCase())
   // The contact card has its own assign dropdown and overflow menu, anchored to
   // their own buttons (previously the card's assign button faked a click on the
   // header menu, which opened a panel at the top of the page).
@@ -1105,6 +1115,9 @@ export default function InboxPage() {
   useEffect(() => { convLimitRef.current = convLimit }, [convLimit])
   const [searchExtraConvs, setSearchExtraConvs] = useState<any[]>([])
   const [hasMoreConvs, setHasMoreConvs] = useState(false)
+  // True while a conversation page is being fetched — gates the filter auto-fill
+  // (below) so it doesn't stack page requests while one is already in flight.
+  const convLoadingRef = useRef(false)
   const [showContactEdit, setShowContactEdit] = useState(false)
   const [editContact, setEditContact] = useState<Partial<Contact>>({})
   const [aiDetected, setAiDetected] = useState<{ name?: string | null; phone?: string | null; email?: string | null; address?: string | null } | null>(null)
@@ -1144,6 +1157,11 @@ export default function InboxPage() {
   // Remembering what we already fetched makes going back to a chat instant
   // instead of re-running the whole sequence.
   const wooCacheRef = useRef<Map<string, { customer: any; orders: any[]; carts: any[] }>>(new Map())
+  // Does woocommerce_orders have the normalised-email column (V265)? null = not
+  // probed yet, true = use the index-backed eq lookup, false = migration not run
+  // so fall back to the (slower) ilike scan. Memoised for the session so we only
+  // pay the probe once.
+  const wooEmailNormRef = useRef<boolean | null>(null)
   const [abandonedCarts, setAbandonedCarts] = useState<any[]>([])
   const [orderSearch, setOrderSearch] = useState('')
   const [orderDateFrom, setOrderDateFrom] = useState('')
@@ -1305,6 +1323,8 @@ export default function InboxPage() {
   const loadConversations = useCallback(async (cid?: string | null) => {
     const id = cid || companyId
     if (!id) return
+    convLoadingRef.current = true
+    try {
     // NOTE: conversations.contact_id has no FK to contacts in some deployments,
     // so a PostgREST embed (`contacts(...)`) fails the WHOLE query and returns
     // nothing (blank inbox). Fetch conversations plainly, then attach contacts.
@@ -1361,6 +1381,7 @@ export default function InboxPage() {
     if (data && data.length > 0 && !selectedRef.current && typeof window !== 'undefined' && window.innerWidth >= 768) {
       selectConversation(data[0])
     }
+    } finally { convLoadingRef.current = false }
   }, [companyId, statusFilter, convLimit])
 
   useEffect(() => { loadConversations() }, [statusFilter, loadConversations])
@@ -1752,7 +1773,7 @@ export default function InboxPage() {
     }, 300)
   }
 
-  const loadWooData = async (contactId: string | null) => {
+  const loadWooData = async (contactId: string | null, knownEmail?: string | null, knownPhone?: string | null) => {
     const seq = ++wooSeqRef.current
     const isCurrent = () => wooSeqRef.current === seq
 
@@ -1773,10 +1794,13 @@ export default function InboxPage() {
     // from a prior contact whose load lost the race.
     setWooOrdersLoading(!cached)
     if (!companyId) { setWooOrdersLoading(false); return }
-    // Resolve the contact's email + phone
-    let email: string | null = null
-    let phone: string | null = null
-    if (contactId) {
+    // Resolve the contact's email + phone. The caller almost always already
+    // holds these (the contact card is loaded), so use them directly and skip a
+    // whole round trip. Only hit the DB when nothing was handed to us — e.g. a
+    // realtime event carrying just a contact id.
+    let email: string | null = knownEmail || null
+    let phone: string | null = knownPhone || null
+    if (contactId && !email && !phone) {
       const { data: c } = await (supabase as any).from('contacts').select('email, phone, identity_group_id').eq('id', contactId).maybeSingle()
       email = c?.email || null
       phone = c?.phone || null
@@ -1817,31 +1841,51 @@ export default function InboxPage() {
       })()
     }
     const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-9)
-    const ordersByEmail = (e: string) => (supabase as any).from('woocommerce_orders')
-      .select('*').eq('company_id', companyId).ilike('customer_email', e)
-      .order('order_date', { ascending: false }).limit(50)
+    // Look orders up by email. Prefer the index-backed normalised column
+    // (V265) — an exact eq the (company_id, customer_email_norm) index serves
+    // directly — instead of a case-insensitive ilike, which can't use the index
+    // and scans every one of the company's orders (the "always slow" cause). If
+    // that column isn't there yet (migration not run), fall back to ilike once
+    // and remember, so we don't probe on every load.
+    const ordersByEmail = async (e: string) => {
+      const base = () => (supabase as any).from('woocommerce_orders').select('*').eq('company_id', companyId)
+      if (wooEmailNormRef.current !== false) {
+        const res = await base().eq('customer_email_norm', e.toLowerCase()).order('order_date', { ascending: false }).limit(50)
+        if (!res.error) { wooEmailNormRef.current = true; return res }
+        wooEmailNormRef.current = false   // column absent → stop trying it
+      }
+      return await base().ilike('customer_email', e).order('order_date', { ascending: false }).limit(50)
+    }
     const ordersByPhone = (p: string) => (supabase as any).from('woocommerce_orders')
       .select('*').eq('company_id', companyId).eq('billing_phone_norm', norm(p))
       .order('order_date', { ascending: false }).limit(50)
 
-    // Match the WooCommerce customer by email OR phone. When we already hold the
-    // email (the common case), fire the order queries ALONGSIDE the customer
-    // lookup rather than behind it, so Order History stops waiting on the
-    // customer row before it can render.
-    let woo: any = null
+    // Fetch the WooCommerce customer row (spend/orders totals for the card).
+    // This is NOT on the order-history critical path, so run it fully detached —
+    // orders render the moment their own query returns, and the customer card
+    // fills in whenever it lands.
     let ordersPromise: Promise<any[]>
     if (email) {
       ordersPromise = Promise.all([ordersByEmail(email), phone ? ordersByPhone(phone) : Promise.resolve({ data: [] })])
-      const { data } = await (supabase as any).from('woocommerce_customers')
-        .select('*').eq('company_id', companyId).ilike('email', email).maybeSingle()
-      woo = data
+      ;(async () => {
+        const { data } = await (supabase as any).from('woocommerce_customers')
+          .select('*').eq('company_id', companyId).ilike('email', email as string).maybeSingle()
+        if (!isCurrent() || !data) return
+        setWooCustomer(data)
+        if (contactId) {
+          const prev = wooCacheRef.current.get(contactId)
+          wooCacheRef.current.set(contactId, { customer: data, orders: prev?.orders || [], carts: prev?.carts || [] })
+        }
+      })()
     } else if (phone) {
       // Phone-only (SMS contact with no email on file): resolve the customer
       // first, since it may backfill an email we then match orders on. Uses the
       // indexed normalised column from the V186 migration.
       const { data } = await (supabase as any).from('woocommerce_customers')
         .select('*').eq('company_id', companyId).eq('phone_norm', norm(phone)).maybeSingle()
-      woo = data || null
+      const woo = data || null
+      if (!isCurrent()) return
+      if (woo) setWooCustomer(woo)
       if (woo?.email && contactId) {
         try { await (supabase as any).from('contacts').update({ email: woo.email }).eq('id', contactId).is('email', null) } catch {}
         email = woo.email
@@ -1851,7 +1895,6 @@ export default function InboxPage() {
       ordersPromise = Promise.resolve([{ data: [] }, { data: [] }])
     }
     if (!isCurrent()) return
-    if (woo) setWooCustomer(woo)
 
     // Orders by email (covers guest orders too), and ALSO by phone via billing.
     let orders: any[] = []
@@ -1881,8 +1924,9 @@ export default function InboxPage() {
     setWooOrders(orders)
     setWooOrdersLoading(false)
     if (contactId) {
+      // Keep whatever customer row the detached lookup may have already cached.
       const prev = wooCacheRef.current.get(contactId)
-      wooCacheRef.current.set(contactId, { customer: woo || prev?.customer || null, orders, carts: prev?.carts || [] })
+      wooCacheRef.current.set(contactId, { customer: prev?.customer || null, orders, carts: prev?.carts || [] })
     }
     // Live WooCommerce fetch runs in the background (don't block the panel — the
     // synced orders above already render instantly; live results merge in when
@@ -3153,7 +3197,7 @@ export default function InboxPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not update the order')
       showToast(`Order #${payload.order_number || orderId} marked completed`)
-      if (selected) { loadWooData(contact?.id || null); loadConversationExtras(selected.id) }
+      if (selected) { loadWooData(contact?.id || null, contact?.email, contact?.phone); loadConversationExtras(selected.id) }
     } catch (e: any) {
       alert('Could not mark the order completed: ' + e.message)
     }
@@ -3298,7 +3342,7 @@ export default function InboxPage() {
           })
         } catch {}
       }
-      if (selected) { loadWooData(contact?.id || null); loadConversationExtras(selected.id) }
+      if (selected) { loadWooData(contact?.id || null, contact?.email, contact?.phone); loadConversationExtras(selected.id) }
     } catch (e) {
       alert('Could not issue the refund: ' + e.message)
       setRefundModal((v) => v ? { ...v, busy: false } : v)
@@ -4576,7 +4620,7 @@ export default function InboxPage() {
     // Order status: keep only conversations whose contact has an order in the
     // chosen WooCommerce status. Empty while the map loads, then fills in.
     if (filters.orderStatus) {
-      if (!orderStatusMatches(ct.email, filters.orderStatus)) return false
+      if (!orderStatusMatches(ct.email)) return false
     }
     // No search term: the conversation has passed every active filter above, so
     // it belongs in the list.
@@ -4608,6 +4652,28 @@ export default function InboxPage() {
       const tb = (parseTs(b.last_message_at)?.getTime() || 0)
       return filters.oldestFirst ? ta - tb : tb - ta
     })
+
+  // Filter auto-fill. The server returns the newest `convLimit` conversations
+  // and every filter except Open/Closed is applied here on the client, so a
+  // selective filter (a channel, an order status, the Unread tab, a search…)
+  // could leave the visible list nearly empty while matching threads sat beyond
+  // the fetched window — the list grew one row at a time on "Load more", and
+  // could even read "No conversations yet" with more still to come. When a
+  // filter or search is active and few matches are showing, pull the next page
+  // automatically until the list is reasonably full or the server runs out.
+  // Bounded by a page ceiling so a filter that matches nothing never fetches
+  // unboundedly; "Load more" still lets the user go past it by hand.
+  const AUTO_FILL_TARGET = 20
+  const AUTO_FILL_CEILING = 500
+  useEffect(() => {
+    const filterActive = assignFilter !== 'all' || locationFilter !== 'all' || activeFilterCount > 0 || !!searchTerm.trim()
+    if (!filterActive) return
+    if (convLoadingRef.current) return
+    if (!hasMoreConvs) return
+    if (filteredConvs.length >= AUTO_FILL_TARGET) return
+    if (convLimit >= AUTO_FILL_CEILING) return
+    setConvLimit(l => l + 50)
+  }, [filteredConvs.length, hasMoreConvs, assignFilter, locationFilter, activeFilterCount, searchTerm, convLimit])
 
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--slate)' }}>Loading inbox…</div>
