@@ -4,11 +4,16 @@ import { useState, useEffect } from 'react'
 import type { CSSProperties, ReactNode, MouseEvent } from 'react'
 
 /**
- * An <img> that recovers from transient load failures instead of getting stuck
- * on a broken image forever. On error it retries a few times, cache-busting the
- * URL so the browser re-requests rather than replaying the cached failure; once
- * the retries are exhausted it renders `fallback` (a placeholder) instead of the
- * browser's broken-image glyph.
+ * An <img> that loads eagerly (so it appears as soon as its source is known)
+ * and recovers on its own from a failed OR silently-stalled load — no page
+ * reload needed:
+ *
+ *  - onError → retry with a cache-busting URL (so the browser re-requests
+ *    instead of replaying the cached failure), up to maxRetries, then fall back
+ *    to `fallback`.
+ *  - a watchdog retries the same way if an attempt neither loads nor errors
+ *    within `stallMs` (the "it just stopped" case — a hung request that never
+ *    fires either event).
  */
 export default function ResilientImage({
   src,
@@ -17,8 +22,9 @@ export default function ResilientImage({
   className,
   onClick,
   fallback,
-  maxRetries = 3,
-  retryDelay = 700,
+  maxRetries = 4,
+  retryDelay = 400,
+  stallMs = 4000,
 }: {
   src?: string | null
   alt?: string
@@ -28,15 +34,30 @@ export default function ResilientImage({
   fallback?: ReactNode
   maxRetries?: number
   retryDelay?: number
+  stallMs?: number
 }) {
   const [attempt, setAttempt] = useState(0)
   const [failed, setFailed] = useState(false)
+  const [loaded, setLoaded] = useState(false)
 
-  // A new source is a fresh start — clear any prior failure/retry state.
+  // A new source is a fresh start — clear any prior failure/retry/loaded state.
   useEffect(() => {
     setAttempt(0)
     setFailed(false)
+    setLoaded(false)
   }, [src])
+
+  // Watchdog: if the current attempt hasn't loaded (or errored) within stallMs,
+  // treat it as stalled and re-request. This re-activates a load that silently
+  // stopped, without a page reload.
+  useEffect(() => {
+    if (!src || failed || loaded) return
+    const t = setTimeout(() => {
+      if (attempt < maxRetries) setAttempt(attempt + 1)
+      else setFailed(true)
+    }, stallMs)
+    return () => clearTimeout(t)
+  }, [src, attempt, failed, loaded, maxRetries, stallMs])
 
   if (!src || failed) {
     return <>{fallback ?? <div style={style} className={className} />}</>
@@ -54,10 +75,10 @@ export default function ResilientImage({
       style={style}
       className={className}
       onClick={onClick}
-      loading="lazy"
+      decoding="async"
+      onLoad={() => setLoaded(true)}
       onError={() => {
         if (attempt < maxRetries) {
-          // Small increasing back-off before re-requesting.
           setTimeout(() => setAttempt(a => a + 1), retryDelay * (attempt + 1))
         } else {
           setFailed(true)
