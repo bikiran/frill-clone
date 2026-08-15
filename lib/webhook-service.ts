@@ -80,7 +80,10 @@ export class WebhookService {
           await this.handleCustomerEvent(companyId, action, payload.id)
           break
         case 'order':
-          await this.handleOrderEvent(companyId, action, payload.id)
+          // Pass the full webhook payload through — order topics deliver the
+          // whole order (billing, line_items, totals), so we can persist it
+          // without a REST round-trip that would fail if creds are missing.
+          await this.handleOrderEvent(companyId, action, payload.id, payload)
           break
         default:
           console.log(`Unknown resource: ${resource}`)
@@ -158,7 +161,7 @@ export class WebhookService {
   /**
    * Handle order events (created/updated)
    */
-  private async handleOrderEvent(companyId: string, action: string, orderId: number) {
+  private async handleOrderEvent(companyId: string, action: string, orderId: number, payloadOrder?: any) {
     try {
       const { data: integration } = await this.supabase
         .from('woocommerce_integrations')
@@ -168,36 +171,49 @@ export class WebhookService {
 
       if (!integration) return
 
-      const basicAuth = Buffer.from(`${integration.consumer_key}:${integration.consumer_secret}`).toString('base64')
+      // Prefer the order object delivered with the webhook — it already carries
+      // billing, line_items and totals. Only call back to the REST API when the
+      // payload is a bare notification without those fields (so a missing/invalid
+      // key can't silently stop orders from being recorded).
+      let order: any = payloadOrder && (payloadOrder.line_items || payloadOrder.billing)
+        ? payloadOrder
+        : null
+      if (!order) {
+        const basicAuth = Buffer.from(`${integration.consumer_key}:${integration.consumer_secret}`).toString('base64')
+        const response = await fetch(
+          `${integration.store_url}/wp-json/wc/v3/orders/${orderId}`,
+          { headers: { 'Authorization': `Basic ${basicAuth}` } }
+        )
+        if (!response.ok) return
+        order = await response.json()
+      }
 
-      // Fetch order
-      const response = await fetch(
-        `${integration.store_url}/wp-json/wc/v3/orders/${orderId}`,
-        {
-          headers: { 'Authorization': `Basic ${basicAuth}` }
-        }
-      )
-
-      if (!response.ok) return
-
-      const order = await response.json()
-
-      // Upsert order
-      await this.supabase
+      // Upsert the order using the ACTUAL columns the Order History panel reads
+      // (customer_email, status, total, line_items, billing …). The previous
+      // upsert wrote order_total/order_status/items/billing_address/synced_at —
+      // none of which exist on this table — so every sync silently failed; and
+      // it never wrote customer_email, so even a row that did land was invisible
+      // to the email-keyed lookup. Keyed on the UNIQUE(company_id, woo_order_id).
+      const orderRow: any = {
+        company_id: companyId,
+        woo_order_id: order.id,
+        woo_customer_id: order.customer_id ?? null,
+        customer_email: (order.billing?.email || '').trim().toLowerCase() || null,
+        status: (order.status || '').toLowerCase() || null,
+        total: parseFloat(order.total) || 0,
+        shipping_total: parseFloat(order.shipping_total || '0') || 0,
+        currency: order.currency || 'AUD',
+        order_date: order.date_created ? new Date(order.date_created).toISOString() : new Date().toISOString(),
+        line_items: order.line_items || [],
+        billing: order.billing || {},
+      }
+      const { error: upsertErr } = await this.supabase
         .from('woocommerce_orders')
-        .upsert({
-          company_id: companyId,
-          woo_customer_id: order.customer_id,
-          woo_order_id: order.id,
-          order_date: order.date_created,
-          order_total: parseFloat(order.total),
-          order_status: order.status,
-          items: order.line_items,
-          billing_address: order.billing,
-          synced_at: new Date().toISOString()
-        })
+        .upsert(orderRow, { onConflict: 'company_id,woo_order_id' })
+      if (upsertErr) console.error('[WebhookService] woocommerce_orders upsert failed:', upsertErr)
 
-      // Re-sync customer stats
+      // Re-sync customer stats (best-effort; guest orders have customer_id 0).
+      if (!order.customer_id) { console.log(`Order ${orderId} ${action}d`); return }
       const { data: customer } = await this.supabase
         .from('woocommerce_customers')
         .select('*')

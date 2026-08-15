@@ -10,23 +10,51 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+// Resolve a colleague's display name for the "Talking to …" label. Prefers the
+// auth profile name, then a team_members.name, then the raw phone number.
+async function colleagueName(db: any, companyId: string, toUserId?: string, toNumber?: string): Promise<string> {
+  if (toUserId) {
+    try {
+      const { data } = await db.auth.admin.getUserById(toUserId)
+      const nm = data?.user?.user_metadata?.display_name || data?.user?.user_metadata?.full_name
+      if (nm) return nm
+    } catch { /* not an auth user */ }
+    try {
+      const { data } = await db.from('team_members').select('name').eq('company_id', companyId).eq('user_id', toUserId).maybeSingle()
+      if (data?.name) return data.name
+    } catch {}
+  }
+  return toNumber || 'colleague'
+}
+
 /**
  * POST /api/twilio/call-transfer — warm (attended) transfer, Twilio edition.
  *
- * Same idea as the Telnyx route: a 2-leg call can't hold one side while
- * consulting a third party, so both legs are moved into a named conference where
- * each participant is independently holdable and colleagues can be dialled in.
+ * A 2-leg call can't hold one side while consulting a third party, so both legs
+ * are moved into a named Conference where each participant is independently
+ * holdable and colleagues can be dialled in. The mobile app is a thin client
+ * (colvy-mobile docs/CALL_TRANSFER.md): it POSTs an intent and renders whatever
+ * this route writes onto the calls row via Supabase realtime.
  *
  * Roles (inbound call): customer = the parent leg (twilio_call_sid); agent = the
- * answered browser leg (twilio_child_call_sid, captured by the child-status
- * callback). Both SIDs are required, so transfer is available once a received
- * call is answered.
+ * answered browser leg (twilio_child_call_sid); colleague = the participant we
+ * dial in (consult_call_control_id).
  *
- * Actions: consult · complete · conference · cancel · hold · unhold
+ * Request: { companyId, callId, action, actorName?, toUserId?, toNumber? }
+ *   (callSid accepted instead of callId for older web calls).
+ *
+ * Actions (contract): consult · swap · complete · cancel · status
+ * Also kept for the web client: conference · hold · unhold
+ *
+ * Calls-row columns written (drive the mobile UI):
+ *   transfer_state  null/idle·ringing·active·completed·cancelled
+ *   transfer_with   colleague display name
+ *   transfer_talking_to  customer|colleague  ('colleague' ⇒ customer on hold)
+ *   conference_sid  Twilio Conference SID
  */
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, callSid, callId, action, actorName } = await req.json()
+    const { companyId, callSid, callId, action, actorName, toUserId, toNumber } = await req.json()
     if (!companyId || !action || (!callSid && !callId)) {
       return NextResponse.json({ error: 'Missing companyId, action or call reference' }, { status: 400 })
     }
@@ -53,6 +81,19 @@ export async function POST(req: NextRequest) {
       call = recent?.[0]
     }
     if (!call) return NextResponse.json({ error: 'Call not found' }, { status: 404 })
+
+    // ── status: report the row state the webhooks keep current ─────────────────
+    // Read-only, so it needs no live legs or Twilio credentials.
+    if (action === 'status') {
+      return NextResponse.json({
+        ok: true,
+        state: call.transfer_state || 'idle',
+        with: call.transfer_with || null,
+        talkingTo: call.transfer_talking_to || null,
+        conferenceSid: call.conference_sid || call.conference_id || null,
+        onHold: !!call.customer_on_hold,
+      })
+    }
 
     const customerLeg = call.twilio_call_sid
     if (!customerLeg) return NextResponse.json({ error: 'This call has no active leg' }, { status: 400 })
@@ -81,7 +122,8 @@ export async function POST(req: NextRequest) {
     const conferenceTwiml = () =>
       `<?xml version="1.0" encoding="UTF-8"?><Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false">${confName}</Conference></Dial></Response>`
 
-    // Move both live legs into the conference, then resolve its SID.
+    // Move both live legs into the conference, then resolve its SID. Mirrors the
+    // SID into both conference_id (existing logic) and conference_sid (contract).
     const ensureConference = async (): Promise<string> => {
       if (call.conference_id) return call.conference_id
       try { await svc.updateCall(customerLeg, { twiml: conferenceTwiml() }) } catch (e: any) { throw new Error(`Could not move the customer into a conference: ${e.message}`) }
@@ -93,48 +135,100 @@ export async function POST(req: NextRequest) {
         try { confSid = await svc.getConferenceSid(confName) } catch {}
       }
       if (!confSid) throw new Error('Conference did not start in time')
-      await db.from('calls').update({ conference_id: confSid, conference_name: confName }).eq('id', call.id)
+      await db.from('calls').update({ conference_id: confSid, conference_name: confName, conference_sid: confSid }).eq('id', call.id)
       call.conference_id = confSid
+      call.conference_sid = confSid
       return confSid
     }
 
-    // ── consult: hold the customer, ring the team into the conference ──────────
+    // ── consult: hold the customer, ring a colleague (or the team) in ──────────
     if (action === 'consult') {
-      const cutoff = new Date(Date.now() - 120000).toISOString()
-      const { data: online } = await db.from('agent_presence')
-        .select('user_id').eq('company_id', companyId).gte('last_seen_at', cutoff).neq('available', false)
-      const identities = Array.from(new Set((online || []).map((a: any) => twilioIdentity(a.user_id, companyId))))
-      if (identities.length === 0) return NextResponse.json({ error: 'No team members are online to consult' }, { status: 400 })
-
+      const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
       const confSid = await ensureConference()
       try { await svc.holdParticipant(confSid, customerLeg, true, integ.hold_music_url || undefined) } catch {}
       await db.from('calls').update({ customer_on_hold: true }).eq('id', call.id)
 
-      const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
+      // Participant status callback lets us flip ringing → active when the
+      // colleague answers, and revert if they never do (see participant-status).
+      const cbFor = (role: string) => `${base}/api/twilio/call-transfer/participant-status?callId=${encodeURIComponent(call.id)}&role=${role}`
+
+      // Targeted (mobile): a specific colleague by app identity or phone number.
+      if (toUserId || toNumber) {
+        const to = toUserId ? `client:${twilioIdentity(toUserId, companyId)}` : String(toNumber)
+        const withName = await colleagueName(db, companyId, toUserId, toNumber)
+        let colleagueSid: string | null = null
+        try {
+          const p = await svc.addParticipant(confSid, { from: fromCallerId, to, timeout: 30, statusCallback: cbFor('colleague') })
+          colleagueSid = p.callSid
+        } catch (e: any) {
+          // Dial failed outright — don't strand the customer on hold.
+          try { await svc.holdParticipant(confSid, customerLeg, false) } catch {}
+          await db.from('calls').update({ customer_on_hold: false, transfer_state: 'idle' }).eq('id', call.id)
+          return NextResponse.json({ error: `Could not reach ${withName}: ${e.message}` }, { status: 502 })
+        }
+        await db.from('calls').update({
+          consult_call_control_id: colleagueSid,
+          consult_user_id: toUserId || null,
+          transfer_state: 'ringing',
+          transfer_with: withName,
+          transfer_talking_to: 'colleague',
+          transfer_started_at: new Date().toISOString(),
+        }).eq('id', call.id)
+        try { await db.from('call_transfers').insert({ company_id: companyId, call_id: call.id, from_name: actorName || null, to_name: withName, outcome: 'ringing' }) } catch {}
+        return NextResponse.json({ ok: true, state: 'ringing', with: withName, ringing: withName, targeted: true })
+      }
+
+      // Untargeted (web): ring every online team member into the conference.
+      const cutoff = new Date(Date.now() - 120000).toISOString()
+      const { data: online } = await db.from('agent_presence')
+        .select('user_id').eq('company_id', companyId).gte('last_seen_at', cutoff).neq('available', false)
+      const identities = Array.from(new Set((online || []).map((a: any) => twilioIdentity(a.user_id, companyId))))
+      if (identities.length === 0) {
+        try { await svc.holdParticipant(confSid, customerLeg, false) } catch {}
+        await db.from('calls').update({ customer_on_hold: false }).eq('id', call.id)
+        return NextResponse.json({ error: 'No team members are online to consult' }, { status: 400 })
+      }
       let firstConsultSid: string | null = null
       for (const id of identities) {
         try {
-          const p = await svc.addParticipant(confSid, { from: fromCallerId, to: `client:${id}`, timeout: 30, statusCallback: `${base}/api/twilio/voice/status?callRowId=${encodeURIComponent(call.id)}` })
+          const p = await svc.addParticipant(confSid, { from: fromCallerId, to: `client:${id}`, timeout: 30, statusCallback: cbFor('colleague') })
           if (!firstConsultSid) firstConsultSid = p.callSid
         } catch { /* try the next agent */ }
       }
-
       await db.from('calls').update({
         consult_call_control_id: firstConsultSid,
         transfer_state: 'ringing',
+        transfer_with: 'the team',
+        transfer_talking_to: 'colleague',
         transfer_started_at: new Date().toISOString(),
       }).eq('id', call.id)
       try { await db.from('call_transfers').insert({ company_id: companyId, call_id: call.id, from_name: actorName || null, to_name: 'the team', outcome: 'ringing' }) } catch {}
-
       return NextResponse.json({ ok: true, state: 'ringing', ringing: 'the team', targeted: false })
     }
 
+    // ── swap: flip who the agent is talking to (customer ↔ colleague) ──────────
+    if (action === 'swap') {
+      const confSid = call.conference_id
+      const colleagueLeg = call.consult_call_control_id
+      if (!confSid || !colleagueLeg) return NextResponse.json({ error: 'No consultation in progress' }, { status: 400 })
+      // Currently talking to the colleague ⇒ switch back to the customer:
+      // unhold the customer, hold the colleague. And vice-versa.
+      const toCustomer = call.transfer_talking_to === 'colleague'
+      try { await svc.holdParticipant(confSid, customerLeg, !toCustomer, integ.hold_music_url || undefined) } catch {}
+      try { await svc.holdParticipant(confSid, colleagueLeg, toCustomer, integ.hold_music_url || undefined) } catch {}
+      const talkingTo = toCustomer ? 'customer' : 'colleague'
+      await db.from('calls').update({ transfer_talking_to: talkingTo, customer_on_hold: !toCustomer }).eq('id', call.id)
+      return NextResponse.json({ ok: true, talkingTo })
+    }
+
     // ── conference: everyone hears everyone (take the customer off hold) ───────
+    // (web client action; not in the mobile contract but harmless to keep)
     if (action === 'conference') {
       const confSid = call.conference_id
       if (!confSid) return NextResponse.json({ error: 'No conference active' }, { status: 400 })
       try { await svc.holdParticipant(confSid, customerLeg, false) } catch {}
-      await db.from('calls').update({ transfer_state: 'consulting', customer_on_hold: false }).eq('id', call.id)
+      if (call.consult_call_control_id) { try { await svc.holdParticipant(confSid, call.consult_call_control_id, false) } catch {} }
+      await db.from('calls').update({ transfer_state: 'active', transfer_talking_to: 'customer', customer_on_hold: false }).eq('id', call.id)
       return NextResponse.json({ ok: true, state: 'conference' })
     }
 
@@ -143,9 +237,10 @@ export async function POST(req: NextRequest) {
       const confSid = call.conference_id
       if (!confSid) return NextResponse.json({ error: 'No consultation in progress' }, { status: 400 })
       try { await svc.holdParticipant(confSid, customerLeg, false) } catch {}
+      if (call.consult_call_control_id) { try { await svc.holdParticipant(confSid, call.consult_call_control_id, false) } catch {} }
       try { await svc.removeParticipant(confSid, agentLeg) } catch {}
       await db.from('calls').update({
-        transfer_state: 'completed', customer_on_hold: false,
+        transfer_state: 'completed', customer_on_hold: false, transfer_talking_to: 'customer',
         transferred_at: new Date().toISOString(),
         twilio_child_call_sid: call.consult_call_control_id || agentLeg,
       }).eq('id', call.id)
@@ -158,7 +253,10 @@ export async function POST(req: NextRequest) {
       const confSid = call.conference_id
       if (call.consult_call_control_id && confSid) { try { await svc.removeParticipant(confSid, call.consult_call_control_id) } catch {} }
       if (confSid) { try { await svc.holdParticipant(confSid, customerLeg, false) } catch {} }
-      await db.from('calls').update({ transfer_state: 'cancelled', customer_on_hold: false, consult_call_control_id: null }).eq('id', call.id)
+      await db.from('calls').update({
+        transfer_state: 'cancelled', customer_on_hold: false, transfer_talking_to: 'customer',
+        transfer_with: null, consult_call_control_id: null, consult_user_id: null,
+      }).eq('id', call.id)
       try { await db.from('call_transfers').update({ outcome: 'cancelled', ended_at: new Date().toISOString() }).eq('call_id', call.id).eq('outcome', 'ringing') } catch {}
       return NextResponse.json({ ok: true, state: 'cancelled' })
     }
