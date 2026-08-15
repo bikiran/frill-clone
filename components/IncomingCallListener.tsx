@@ -27,6 +27,10 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const [seconds, setSeconds] = useState(0)
   const [ready, setReady] = useState(false)
   const [connErr, setConnErr] = useState<string | null>(null)
+  // Bumping this re-runs the registration effect so the phone can re-connect
+  // without a page reload — after the socket drops on tab-sleep or a token
+  // expiry, coming back to the tab (or the periodic check) recovers it.
+  const [reconnectNonce, setReconnectNonce] = useState(0)
   // Coax shows "RA · Customer name" on an incoming call — the outlet initials
   // so staff know WHICH business the caller rang. We can do that here in the
   // browser popup. (On a native phone's own call screen we cannot: that needs
@@ -94,6 +98,13 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // The signed-in agent's user id, so a call we accept can notify the REST of
   // the team (excludeUserId = us) to stop their phones ringing.
   const userIdRef = useRef<string | null>(null)
+  // Live mirror of the call/connection state, read by the auto-recovery effect
+  // without making it depend on (and re-subscribe to) every state change.
+  const liveRef = useRef({ ready: false, inCall: false, incoming: false })
+  liveRef.current = { ready, inCall, incoming: !!incoming }
+  // Throttle so a flurry of focus/visibility/online events triggers at most one
+  // reconnect attempt every few seconds.
+  const lastRecoverRef = useRef(0)
 
   useEffect(() => {
     if (!companyId) return
@@ -122,7 +133,20 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           const device = new Device(tData.token, { codecPreferences: ['opus', 'pcmu'] as any })
           clientRef.current = device
           device.on('registered', () => { if (!cancelled) { setReady(true); setConnErr(null); console.log('[twilio voice] registered') } })
-          device.on('error', (e: any) => { if (!cancelled) setConnErr(twErr(e)); console.error('[twilio voice] error', e) })
+          device.on('unregistered', () => { if (!cancelled) { setReady(false); console.log('[twilio voice] unregistered') } })
+          // Twilio access tokens are short-lived. Refresh in place before expiry
+          // so a long-idle tab keeps its registration instead of silently dying.
+          device.on('tokenWillExpire', async () => {
+            try {
+              const r = await fetch('/api/twilio/token', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ companyId, userId }),
+              })
+              const d = await r.json()
+              if (r.ok && d.token && !cancelled) { device.updateToken(d.token); console.log('[twilio voice] token refreshed') }
+            } catch (e) { console.error('[twilio voice] token refresh failed', e) }
+          })
+          device.on('error', (e: any) => { if (!cancelled) { setReady(false); setConnErr(twErr(e)) } console.error('[twilio voice] error', e) })
           device.on('incoming', (call: any) => {
             console.log('[twilio voice] INCOMING CALL')
             callRef.current = call
@@ -177,12 +201,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           if (!cancelled) { setReady(true); setConnErr(null); console.log('[telnyx] client registered and ready') }
         })
         client.on('telnyx.error', (e: any) => {
-          if (!cancelled) setConnErr(e?.error?.message || 'connection error')
+          if (!cancelled) { setReady(false); setConnErr(e?.error?.message || 'connection error') }
           console.error('[telnyx] client error', e)
         })
         ;(client as any).on?.('telnyx.socket.error', (e: any) => {
-          if (!cancelled) setConnErr('socket error')
+          if (!cancelled) { setReady(false); setConnErr('socket error') }
           console.error('[telnyx] socket error', e)
+        })
+        ;(client as any).on?.('telnyx.socket.close', () => {
+          if (!cancelled) { setReady(false); console.log('[telnyx] socket closed') }
         })
         client.on('telnyx.notification', (n: any) => {
           // Log the FULL notification so we can see exactly what (if anything)
@@ -222,6 +249,40 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       if (timerRef.current) clearInterval(timerRef.current)
       try { clientRef.current?.disconnect?.() } catch {}
       try { clientRef.current?.destroy?.() } catch {}   // Twilio Device teardown
+      clientRef.current = null
+    }
+  }, [companyId, reconnectNonce])
+
+  // ── Auto-recovery ─────────────────────────────────────────────────────────
+  // Browsers throttle/suspend background tabs, which can drop the WebRTC socket;
+  // it used to stay dead ("Phone error") until a manual reload. Instead, when
+  // the tab becomes visible again — or on network 'online', or via a periodic
+  // check — we tear down and re-register by bumping reconnectNonce. Guarded so
+  // we never disturb a live or ringing call, and throttled so a burst of events
+  // is a single attempt.
+  useEffect(() => {
+    if (!companyId) return
+    const tryRecover = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      const s = liveRef.current
+      if (s.ready || s.inCall || s.incoming) return   // healthy, or mid-call — leave it
+      const now = Date.now()
+      if (now - lastRecoverRef.current < 4000) return
+      lastRecoverRef.current = now
+      console.log('[phone] auto-reconnect')
+      setConnErr(null)
+      setReconnectNonce(n => n + 1)
+    }
+    const onVisible = () => { if (document.visibilityState === 'visible') tryRecover() }
+    window.addEventListener('focus', tryRecover)
+    window.addEventListener('online', tryRecover)
+    document.addEventListener('visibilitychange', onVisible)
+    const iv = setInterval(tryRecover, 30000)
+    return () => {
+      window.removeEventListener('focus', tryRecover)
+      window.removeEventListener('online', tryRecover)
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(iv)
     }
   }, [companyId])
 
