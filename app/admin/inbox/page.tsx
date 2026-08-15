@@ -1046,41 +1046,51 @@ export default function InboxPage() {
   // Order-status filter: keep conversations whose contact has at least one order
   // in the chosen WooCommerce status (order placed / processing / completed /
   // refunded / failed …). Keyed by lowercased contact email against the orders
-  // table; loaded lazily only when the filter is in use and cached per company.
-  const [wooStatusMap, setWooStatusMap] = useState<Map<string, Set<string>>>(new Map())
-  const wooStatusRef = useRef<{ companyId: string; map: Map<string, Set<string>> } | null>(null)
+  // table; loaded lazily only when the filter is in use and cached per company +
+  // status. We fetch the set of customer emails that have an order IN THE CHOSEN
+  // status — scoped server-side and newest-first — rather than pulling the whole
+  // orders table and grouping client-side. The old approach capped an UNordered
+  // full-table read at 8000 rows: on a store with tens of thousands of orders
+  // that slice held the oldest rows and almost never the (recent) orders in the
+  // status being filtered, so the filter matched nothing.
+  const [orderStatusEmails, setOrderStatusEmails] = useState<Set<string>>(new Set())
+  const orderStatusRef = useRef<{ companyId: string; status: string; emails: Set<string> } | null>(null)
   useEffect(() => {
-    if (!filters.orderStatus || !companyId) return
-    if (wooStatusRef.current?.companyId === companyId) { setWooStatusMap(wooStatusRef.current.map); return }
+    if (!filters.orderStatus || !companyId) { setOrderStatusEmails(new Set()); return }
+    const status = filters.orderStatus
+    if (orderStatusRef.current?.companyId === companyId && orderStatusRef.current?.status === status) {
+      setOrderStatusEmails(orderStatusRef.current.emails); return
+    }
     let cancelled = false
     ;(async () => {
       try {
-        const { data } = await (supabase as any)
-          .from('woocommerce_orders').select('customer_email, status').eq('company_id', companyId).limit(8000)
-        const m = new Map<string, Set<string>>()
-        for (const o of data || []) {
-          const email = String(o.customer_email || '').toLowerCase()
-          if (!email) continue
-          // Woo stores statuses either bare ("completed") or wc-prefixed
-          // ("wc-completed") depending on the sync path — normalise both.
-          const st = String(o.status || '').replace(/^wc-/, '').toLowerCase()
-          if (!st) continue
-          if (!m.has(email)) m.set(email, new Set())
-          m.get(email)!.add(st)
+        // Woo stores the status bare ("processing") or wc-prefixed
+        // ("wc-processing") depending on the sync path — match both. "Order
+        // placed" also covers a draft checkout still awaiting payment.
+        const statusVals = status === 'pending'
+          ? ['pending', 'wc-pending', 'checkout-draft', 'wc-checkout-draft']
+          : [status, `wc-${status}`]
+        const emails = new Set<string>()
+        const PAGE = 1000
+        for (let from = 0; from < 20000; from += PAGE) {
+          const { data, error } = await (supabase as any).from('woocommerce_orders')
+            .select('customer_email')
+            .eq('company_id', companyId)
+            .in('status', statusVals)
+            .order('order_date', { ascending: false })
+            .range(from, from + PAGE - 1)
+          if (error || !data || !data.length) break
+          for (const o of data) { const e = String(o.customer_email || '').toLowerCase(); if (e) emails.add(e) }
+          if (data.length < PAGE) break
         }
-        if (!cancelled) { wooStatusRef.current = { companyId, map: m }; setWooStatusMap(m) }
+        if (!cancelled) { orderStatusRef.current = { companyId, status, emails }; setOrderStatusEmails(emails) }
       } catch (e) { console.error('inbox order-status filter load failed', e) }
     })()
     return () => { cancelled = true }
   }, [filters.orderStatus, companyId])
 
-  const orderStatusMatches = (email: string | undefined, status: string) => {
-    const set = wooStatusMap.get((email || '').toLowerCase())
-    if (!set) return false
-    // "Order placed" covers a freshly-placed order still awaiting payment.
-    if (status === 'pending') return set.has('pending') || set.has('checkout-draft')
-    return set.has(status)
-  }
+  const orderStatusMatches = (email: string | undefined) =>
+    !!email && orderStatusEmails.has(email.toLowerCase())
   // The contact card has its own assign dropdown and overflow menu, anchored to
   // their own buttons (previously the card's assign button faked a click on the
   // header menu, which opened a panel at the top of the page).
@@ -4610,7 +4620,7 @@ export default function InboxPage() {
     // Order status: keep only conversations whose contact has an order in the
     // chosen WooCommerce status. Empty while the map loads, then fills in.
     if (filters.orderStatus) {
-      if (!orderStatusMatches(ct.email, filters.orderStatus)) return false
+      if (!orderStatusMatches(ct.email)) return false
     }
     // No search term: the conversation has passed every active filter above, so
     // it belongs in the list.
