@@ -996,11 +996,11 @@ export default function InboxPage() {
   const [podSending, setPodSending] = useState(false)
   const [showDeliveryPanel, setShowDeliveryPanel] = useState(false)
   const [filters, setFilters] = useState<any>({
-    dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', relationship: '', purchased: '', oldestFirst: false,
+    dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', relationship: '', purchased: '', orderStatus: '', oldestFirst: false,
   })
-  const activeFilterCount = ['dateFrom', 'dateTo', 'channel', 'assignedTo', 'source', 'relationship', 'purchased']
+  const activeFilterCount = ['dateFrom', 'dateTo', 'channel', 'assignedTo', 'source', 'relationship', 'purchased', 'orderStatus']
     .filter(k => filters[k]).length + (filters.oldestFirst ? 1 : 0)
-  const resetFilters = () => setFilters({ dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', relationship: '', purchased: '', oldestFirst: false })
+  const resetFilters = () => setFilters({ dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', relationship: '', purchased: '', orderStatus: '', oldestFirst: false })
   // Purchase-history lookup for the "Purchased (SKU or title)" filter, keyed by
   // lowercased contact email (a contact's orders live in woocommerce_customers,
   // not on the conversation). Loaded lazily only when that filter is in use, and
@@ -1042,6 +1042,45 @@ export default function InboxPage() {
       ? it.toLowerCase().includes(q)
       : String(it.sku || '').toLowerCase().includes(q) || String(it.name || it.title || '').toLowerCase().includes(q))
   }
+
+  // Order-status filter: keep conversations whose contact has at least one order
+  // in the chosen WooCommerce status (order placed / processing / completed /
+  // refunded / failed …). Keyed by lowercased contact email against the orders
+  // table; loaded lazily only when the filter is in use and cached per company.
+  const [wooStatusMap, setWooStatusMap] = useState<Map<string, Set<string>>>(new Map())
+  const wooStatusRef = useRef<{ companyId: string; map: Map<string, Set<string>> } | null>(null)
+  useEffect(() => {
+    if (!filters.orderStatus || !companyId) return
+    if (wooStatusRef.current?.companyId === companyId) { setWooStatusMap(wooStatusRef.current.map); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any)
+          .from('woocommerce_orders').select('customer_email, status').eq('company_id', companyId).limit(8000)
+        const m = new Map<string, Set<string>>()
+        for (const o of data || []) {
+          const email = String(o.customer_email || '').toLowerCase()
+          if (!email) continue
+          // Woo stores statuses either bare ("completed") or wc-prefixed
+          // ("wc-completed") depending on the sync path — normalise both.
+          const st = String(o.status || '').replace(/^wc-/, '').toLowerCase()
+          if (!st) continue
+          if (!m.has(email)) m.set(email, new Set())
+          m.get(email)!.add(st)
+        }
+        if (!cancelled) { wooStatusRef.current = { companyId, map: m }; setWooStatusMap(m) }
+      } catch (e) { console.error('inbox order-status filter load failed', e) }
+    })()
+    return () => { cancelled = true }
+  }, [filters.orderStatus, companyId])
+
+  const orderStatusMatches = (email: string | undefined, status: string) => {
+    const set = wooStatusMap.get((email || '').toLowerCase())
+    if (!set) return false
+    // "Order placed" covers a freshly-placed order still awaiting payment.
+    if (status === 'pending') return set.has('pending') || set.has('checkout-draft')
+    return set.has(status)
+  }
   // The contact card has its own assign dropdown and overflow menu, anchored to
   // their own buttons (previously the card's assign button faked a click on the
   // header menu, which opened a panel at the top of the page).
@@ -1074,6 +1113,10 @@ export default function InboxPage() {
   const [activePanel, setActivePanel] = useState<'info' | 'timeline' | 'orders'>('info')
   const [wooCustomer, setWooCustomer] = useState<any>(null)
   const [wooOrders, setWooOrders] = useState<any[]>([])
+  // True while the order history for the selected contact is being fetched, so
+  // the panel shows "Loading…" instead of "No orders found" before the query
+  // returns (that flash of the empty state read as "it's broken").
+  const [wooOrdersLoading, setWooOrdersLoading] = useState(false)
   const [prextyCustomer, setPrextyCustomer] = useState<any>(null)
   // Look up the contact's Prexty POS profile (spend, loyalty, store credit) when
   // one is selected. Silent no-op if Prexty isn't connected or there's no match.
@@ -1725,7 +1768,11 @@ export default function InboxPage() {
       setWooOrders([])
       setAbandonedCarts([])
     }
-    if (!companyId) return
+    // Show a spinner only when we have nothing to display yet; a cached hit is
+    // refreshed silently behind the existing rows. Also clears any stale flag
+    // from a prior contact whose load lost the race.
+    setWooOrdersLoading(!cached)
+    if (!companyId) { setWooOrdersLoading(false); return }
     // Resolve the contact's email + phone
     let email: string | null = null
     let phone: string | null = null
@@ -1746,7 +1793,7 @@ export default function InboxPage() {
         }
       }
     }
-    if (!email && !phone) return
+    if (!email && !phone) { setWooOrdersLoading(false); return }
     // Abandoned carts match by email or phone (independent of WooCommerce sync).
     // Run it in the BACKGROUND — it used to be awaited before the order query,
     // so a slow carts endpoint delayed the whole Order History panel. It now
@@ -1832,6 +1879,7 @@ export default function InboxPage() {
     }
     if (!isCurrent()) return
     setWooOrders(orders)
+    setWooOrdersLoading(false)
     if (contactId) {
       const prev = wooCacheRef.current.get(contactId)
       wooCacheRef.current.set(contactId, { customer: woo || prev?.customer || null, orders, carts: prev?.carts || [] })
@@ -4525,6 +4573,11 @@ export default function InboxPage() {
     if (filters.purchased && filters.purchased.trim()) {
       if (!purchasedMatches(ct.email, filters.purchased)) return false
     }
+    // Order status: keep only conversations whose contact has an order in the
+    // chosen WooCommerce status. Empty while the map loads, then fills in.
+    if (filters.orderStatus) {
+      if (!orderStatusMatches(ct.email, filters.orderStatus)) return false
+    }
     // No search term: the conversation has passed every active filter above, so
     // it belongs in the list.
     if (!searchTerm) return true
@@ -5578,6 +5631,20 @@ export default function InboxPage() {
                   <option value="wholesaler">Wholesaler</option>
                   <option value="business">Business contact</option>
                 </select>
+
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Order status</label>
+                <select value={filters.orderStatus} onChange={e => setFilters({ ...filters, orderStatus: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 6, boxSizing: 'border-box', background: '#fff' }}>
+                  <option value="">Any status</option>
+                  <option value="pending">Order placed (pending payment)</option>
+                  <option value="processing">Processing</option>
+                  <option value="on-hold">On hold</option>
+                  <option value="completed">Completed</option>
+                  <option value="refunded">Refunded</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="failed">Failed</option>
+                </select>
+                <p style={{ margin: '0 0 16px', fontSize: 11.5, color: 'var(--slate)' }}>Contacts with an order in this WooCommerce status. For abandoned carts, use Source above.</p>
 
                 <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Purchased (SKU or title)</label>
                 <input value={filters.purchased} onChange={e => setFilters({ ...filters, purchased: e.target.value })}
@@ -8747,7 +8814,14 @@ export default function InboxPage() {
                     return hay.includes(q)
                   })
                   return filteredOrders.length === 0 ? (
-                    <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>{wooOrders.length === 0 ? "No orders found for this customer's email." : 'No orders match your search.'}</p>
+                    wooOrdersLoading ? (
+                      <p style={{ fontSize: 12, color: '#9ca3af', margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" style={{ animation: 'spin 0.8s linear infinite' }}><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10h-2a8 8 0 1 1-8-8z" /></svg>
+                        Loading orders…
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>{wooOrders.length === 0 ? "No orders found for this customer's email." : 'No orders match your search.'}</p>
+                    )
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {filteredOrders.map(o => {
