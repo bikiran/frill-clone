@@ -1144,6 +1144,11 @@ export default function InboxPage() {
   // Remembering what we already fetched makes going back to a chat instant
   // instead of re-running the whole sequence.
   const wooCacheRef = useRef<Map<string, { customer: any; orders: any[]; carts: any[] }>>(new Map())
+  // Does woocommerce_orders have the normalised-email column (V265)? null = not
+  // probed yet, true = use the index-backed eq lookup, false = migration not run
+  // so fall back to the (slower) ilike scan. Memoised for the session so we only
+  // pay the probe once.
+  const wooEmailNormRef = useRef<boolean | null>(null)
   const [abandonedCarts, setAbandonedCarts] = useState<any[]>([])
   const [orderSearch, setOrderSearch] = useState('')
   const [orderDateFrom, setOrderDateFrom] = useState('')
@@ -1752,7 +1757,7 @@ export default function InboxPage() {
     }, 300)
   }
 
-  const loadWooData = async (contactId: string | null) => {
+  const loadWooData = async (contactId: string | null, knownEmail?: string | null, knownPhone?: string | null) => {
     const seq = ++wooSeqRef.current
     const isCurrent = () => wooSeqRef.current === seq
 
@@ -1773,10 +1778,13 @@ export default function InboxPage() {
     // from a prior contact whose load lost the race.
     setWooOrdersLoading(!cached)
     if (!companyId) { setWooOrdersLoading(false); return }
-    // Resolve the contact's email + phone
-    let email: string | null = null
-    let phone: string | null = null
-    if (contactId) {
+    // Resolve the contact's email + phone. The caller almost always already
+    // holds these (the contact card is loaded), so use them directly and skip a
+    // whole round trip. Only hit the DB when nothing was handed to us — e.g. a
+    // realtime event carrying just a contact id.
+    let email: string | null = knownEmail || null
+    let phone: string | null = knownPhone || null
+    if (contactId && !email && !phone) {
       const { data: c } = await (supabase as any).from('contacts').select('email, phone, identity_group_id').eq('id', contactId).maybeSingle()
       email = c?.email || null
       phone = c?.phone || null
@@ -1817,31 +1825,51 @@ export default function InboxPage() {
       })()
     }
     const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-9)
-    const ordersByEmail = (e: string) => (supabase as any).from('woocommerce_orders')
-      .select('*').eq('company_id', companyId).ilike('customer_email', e)
-      .order('order_date', { ascending: false }).limit(50)
+    // Look orders up by email. Prefer the index-backed normalised column
+    // (V265) — an exact eq the (company_id, customer_email_norm) index serves
+    // directly — instead of a case-insensitive ilike, which can't use the index
+    // and scans every one of the company's orders (the "always slow" cause). If
+    // that column isn't there yet (migration not run), fall back to ilike once
+    // and remember, so we don't probe on every load.
+    const ordersByEmail = async (e: string) => {
+      const base = () => (supabase as any).from('woocommerce_orders').select('*').eq('company_id', companyId)
+      if (wooEmailNormRef.current !== false) {
+        const res = await base().eq('customer_email_norm', e.toLowerCase()).order('order_date', { ascending: false }).limit(50)
+        if (!res.error) { wooEmailNormRef.current = true; return res }
+        wooEmailNormRef.current = false   // column absent → stop trying it
+      }
+      return await base().ilike('customer_email', e).order('order_date', { ascending: false }).limit(50)
+    }
     const ordersByPhone = (p: string) => (supabase as any).from('woocommerce_orders')
       .select('*').eq('company_id', companyId).eq('billing_phone_norm', norm(p))
       .order('order_date', { ascending: false }).limit(50)
 
-    // Match the WooCommerce customer by email OR phone. When we already hold the
-    // email (the common case), fire the order queries ALONGSIDE the customer
-    // lookup rather than behind it, so Order History stops waiting on the
-    // customer row before it can render.
-    let woo: any = null
+    // Fetch the WooCommerce customer row (spend/orders totals for the card).
+    // This is NOT on the order-history critical path, so run it fully detached —
+    // orders render the moment their own query returns, and the customer card
+    // fills in whenever it lands.
     let ordersPromise: Promise<any[]>
     if (email) {
       ordersPromise = Promise.all([ordersByEmail(email), phone ? ordersByPhone(phone) : Promise.resolve({ data: [] })])
-      const { data } = await (supabase as any).from('woocommerce_customers')
-        .select('*').eq('company_id', companyId).ilike('email', email).maybeSingle()
-      woo = data
+      ;(async () => {
+        const { data } = await (supabase as any).from('woocommerce_customers')
+          .select('*').eq('company_id', companyId).ilike('email', email as string).maybeSingle()
+        if (!isCurrent() || !data) return
+        setWooCustomer(data)
+        if (contactId) {
+          const prev = wooCacheRef.current.get(contactId)
+          wooCacheRef.current.set(contactId, { customer: data, orders: prev?.orders || [], carts: prev?.carts || [] })
+        }
+      })()
     } else if (phone) {
       // Phone-only (SMS contact with no email on file): resolve the customer
       // first, since it may backfill an email we then match orders on. Uses the
       // indexed normalised column from the V186 migration.
       const { data } = await (supabase as any).from('woocommerce_customers')
         .select('*').eq('company_id', companyId).eq('phone_norm', norm(phone)).maybeSingle()
-      woo = data || null
+      const woo = data || null
+      if (!isCurrent()) return
+      if (woo) setWooCustomer(woo)
       if (woo?.email && contactId) {
         try { await (supabase as any).from('contacts').update({ email: woo.email }).eq('id', contactId).is('email', null) } catch {}
         email = woo.email
@@ -1851,7 +1879,6 @@ export default function InboxPage() {
       ordersPromise = Promise.resolve([{ data: [] }, { data: [] }])
     }
     if (!isCurrent()) return
-    if (woo) setWooCustomer(woo)
 
     // Orders by email (covers guest orders too), and ALSO by phone via billing.
     let orders: any[] = []
@@ -1881,8 +1908,9 @@ export default function InboxPage() {
     setWooOrders(orders)
     setWooOrdersLoading(false)
     if (contactId) {
+      // Keep whatever customer row the detached lookup may have already cached.
       const prev = wooCacheRef.current.get(contactId)
-      wooCacheRef.current.set(contactId, { customer: woo || prev?.customer || null, orders, carts: prev?.carts || [] })
+      wooCacheRef.current.set(contactId, { customer: prev?.customer || null, orders, carts: prev?.carts || [] })
     }
     // Live WooCommerce fetch runs in the background (don't block the panel — the
     // synced orders above already render instantly; live results merge in when
@@ -3153,7 +3181,7 @@ export default function InboxPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not update the order')
       showToast(`Order #${payload.order_number || orderId} marked completed`)
-      if (selected) { loadWooData(contact?.id || null); loadConversationExtras(selected.id) }
+      if (selected) { loadWooData(contact?.id || null, contact?.email, contact?.phone); loadConversationExtras(selected.id) }
     } catch (e: any) {
       alert('Could not mark the order completed: ' + e.message)
     }
@@ -3298,7 +3326,7 @@ export default function InboxPage() {
           })
         } catch {}
       }
-      if (selected) { loadWooData(contact?.id || null); loadConversationExtras(selected.id) }
+      if (selected) { loadWooData(contact?.id || null, contact?.email, contact?.phone); loadConversationExtras(selected.id) }
     } catch (e) {
       alert('Could not issue the refund: ' + e.message)
       setRefundModal((v) => v ? { ...v, busy: false } : v)
