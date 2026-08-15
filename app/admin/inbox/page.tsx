@@ -1105,6 +1105,9 @@ export default function InboxPage() {
   useEffect(() => { convLimitRef.current = convLimit }, [convLimit])
   const [searchExtraConvs, setSearchExtraConvs] = useState<any[]>([])
   const [hasMoreConvs, setHasMoreConvs] = useState(false)
+  // True while a conversation page is being fetched — gates the filter auto-fill
+  // (below) so it doesn't stack page requests while one is already in flight.
+  const convLoadingRef = useRef(false)
   const [showContactEdit, setShowContactEdit] = useState(false)
   const [editContact, setEditContact] = useState<Partial<Contact>>({})
   const [aiDetected, setAiDetected] = useState<{ name?: string | null; phone?: string | null; email?: string | null; address?: string | null } | null>(null)
@@ -1310,6 +1313,8 @@ export default function InboxPage() {
   const loadConversations = useCallback(async (cid?: string | null) => {
     const id = cid || companyId
     if (!id) return
+    convLoadingRef.current = true
+    try {
     // NOTE: conversations.contact_id has no FK to contacts in some deployments,
     // so a PostgREST embed (`contacts(...)`) fails the WHOLE query and returns
     // nothing (blank inbox). Fetch conversations plainly, then attach contacts.
@@ -1366,6 +1371,7 @@ export default function InboxPage() {
     if (data && data.length > 0 && !selectedRef.current && typeof window !== 'undefined' && window.innerWidth >= 768) {
       selectConversation(data[0])
     }
+    } finally { convLoadingRef.current = false }
   }, [companyId, statusFilter, convLimit])
 
   useEffect(() => { loadConversations() }, [statusFilter, loadConversations])
@@ -4636,6 +4642,28 @@ export default function InboxPage() {
       const tb = (parseTs(b.last_message_at)?.getTime() || 0)
       return filters.oldestFirst ? ta - tb : tb - ta
     })
+
+  // Filter auto-fill. The server returns the newest `convLimit` conversations
+  // and every filter except Open/Closed is applied here on the client, so a
+  // selective filter (a channel, an order status, the Unread tab, a search…)
+  // could leave the visible list nearly empty while matching threads sat beyond
+  // the fetched window — the list grew one row at a time on "Load more", and
+  // could even read "No conversations yet" with more still to come. When a
+  // filter or search is active and few matches are showing, pull the next page
+  // automatically until the list is reasonably full or the server runs out.
+  // Bounded by a page ceiling so a filter that matches nothing never fetches
+  // unboundedly; "Load more" still lets the user go past it by hand.
+  const AUTO_FILL_TARGET = 20
+  const AUTO_FILL_CEILING = 500
+  useEffect(() => {
+    const filterActive = assignFilter !== 'all' || locationFilter !== 'all' || activeFilterCount > 0 || !!searchTerm.trim()
+    if (!filterActive) return
+    if (convLoadingRef.current) return
+    if (!hasMoreConvs) return
+    if (filteredConvs.length >= AUTO_FILL_TARGET) return
+    if (convLimit >= AUTO_FILL_CEILING) return
+    setConvLimit(l => l + 50)
+  }, [filteredConvs.length, hasMoreConvs, assignFilter, locationFilter, activeFilterCount, searchTerm, convLimit])
 
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--slate)' }}>Loading inbox…</div>
