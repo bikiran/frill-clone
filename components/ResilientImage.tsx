@@ -1,19 +1,26 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { CSSProperties, ReactNode, MouseEvent } from 'react'
 
+// Upgrade http:// (and protocol-relative //) to https:// so the image isn't
+// blocked as mixed content on our https page.
+const httpsify = (u: string) => u.replace(/^http:\/\//i, 'https://').replace(/^\/\//, 'https://')
+// Route through our same-origin proxy — bypasses mixed content, hotlink
+// protection and CORS, and is cached for instant repeat loads.
+const proxied = (u: string) => `/api/img?src=${encodeURIComponent(u)}`
+const bust = (u: string) => `${u}${u.includes('?') ? '&' : '?'}_r=1`
+
 /**
- * An <img> that loads eagerly (so it appears as soon as its source is known)
- * and recovers on its own from a failed OR silently-stalled load — no page
- * reload needed:
+ * An <img> that actually loads — and recovers on its own, no page reload.
  *
- *  - onError → retry with a cache-busting URL (so the browser re-requests
- *    instead of replaying the cached failure), up to maxRetries, then fall back
- *    to `fallback`.
- *  - a watchdog retries the same way if an attempt neither loads nor errors
- *    within `stallMs` (the "it just stopped" case — a hung request that never
- *    fires either event).
+ * It walks an escalation ladder of source URLs, advancing whenever an attempt
+ * errors OR silently stalls (a hung request that never fires load/error):
+ *   1. direct https   2. direct + cache-buster
+ *   3. same-origin proxy   4. proxy + cache-buster
+ * The proxy step is what fixes the common "blank thumbnail" cases (http image
+ * on an https page, hotlink protection). It loads eagerly so it paints as soon
+ * as the source is known; when the ladder is exhausted it shows `fallback`.
  */
 export default function ResilientImage({
   src,
@@ -22,9 +29,8 @@ export default function ResilientImage({
   className,
   onClick,
   fallback,
-  maxRetries = 4,
-  retryDelay = 400,
   stallMs = 4000,
+  retryDelay = 400,
 }: {
   src?: string | null
   alt?: string
@@ -32,58 +38,47 @@ export default function ResilientImage({
   className?: string
   onClick?: (e: MouseEvent<HTMLImageElement>) => void
   fallback?: ReactNode
-  maxRetries?: number
-  retryDelay?: number
   stallMs?: number
+  retryDelay?: number
 }) {
-  const [attempt, setAttempt] = useState(0)
-  const [failed, setFailed] = useState(false)
-  const [loaded, setLoaded] = useState(false)
-
-  // A new source is a fresh start — clear any prior failure/retry/loaded state.
-  useEffect(() => {
-    setAttempt(0)
-    setFailed(false)
-    setLoaded(false)
+  const candidates = useMemo(() => {
+    if (!src) return [] as string[]
+    const https = httpsify(src)
+    return Array.from(new Set([https, bust(https), proxied(src), bust(proxied(src))]))
   }, [src])
 
-  // Watchdog: if the current attempt hasn't loaded (or errored) within stallMs,
-  // treat it as stalled and re-request. This re-activates a load that silently
-  // stopped, without a page reload.
-  useEffect(() => {
-    if (!src || failed || loaded) return
-    const t = setTimeout(() => {
-      if (attempt < maxRetries) setAttempt(attempt + 1)
-      else setFailed(true)
-    }, stallMs)
-    return () => clearTimeout(t)
-  }, [src, attempt, failed, loaded, maxRetries, stallMs])
+  const [i, setI] = useState(0)
+  const [loaded, setLoaded] = useState(false)
 
-  if (!src || failed) {
+  // A new source restarts the ladder.
+  useEffect(() => { setI(0); setLoaded(false) }, [src])
+
+  const exhausted = i >= candidates.length
+
+  // Watchdog: if the current candidate hasn't loaded within stallMs (and hasn't
+  // errored — that path advances on its own), move to the next one. Re-activates
+  // a load that just stopped, without a page reload.
+  useEffect(() => {
+    if (!candidates.length || loaded || exhausted) return
+    const t = setTimeout(() => setI(x => x + 1), stallMs)
+    return () => clearTimeout(t)
+  }, [i, loaded, exhausted, candidates.length, stallMs])
+
+  if (!candidates.length || exhausted) {
     return <>{fallback ?? <div style={style} className={className} />}</>
   }
 
-  // First attempt uses the clean URL; retries append a cache-buster so the
-  // browser actually re-fetches instead of serving the cached error.
-  const url = attempt === 0 ? src : `${src}${src.includes('?') ? '&' : '?'}_r=${attempt}`
-
   return (
     <img
-      key={attempt}
-      src={url}
+      key={i}
+      src={candidates[i]}
       alt={alt}
       style={style}
       className={className}
       onClick={onClick}
       decoding="async"
       onLoad={() => setLoaded(true)}
-      onError={() => {
-        if (attempt < maxRetries) {
-          setTimeout(() => setAttempt(a => a + 1), retryDelay * (attempt + 1))
-        } else {
-          setFailed(true)
-        }
-      }}
+      onError={() => setTimeout(() => setI(x => x + 1), retryDelay)}
     />
   )
 }
