@@ -20,6 +20,7 @@ import Link from 'next/link'
 import CallBar from '@/components/CallBar'
 import CallCard from '@/components/CallCard'
 import Dialer from '@/components/Dialer'
+import ResilientImage from '@/components/ResilientImage'
 import ComposeMessage from '@/components/ComposeMessage'
 import EmailMessage from '@/components/EmailMessage'
 import EmailComposer from '@/components/EmailComposer'
@@ -1952,6 +1953,7 @@ export default function InboxPage() {
                 order_id: o.id, order_number: o.number, status: o.status, total: o.total,
                 currency: o.currency, order_date: o.date, customer_email: email,
                 line_items: o.items, integration_id: o.integration_id, store_url: o.store_url,
+                shipping_total: o.shipping_total ?? null, shipping_method: o.shipping_method ?? null,
                 order_key: o.order_key, payment_url: o.payment_url, total_refunded: o.total_refunded || 0, _live: true,
               })
             }
@@ -5380,7 +5382,8 @@ export default function InboxPage() {
                 <button type="button" onClick={() => setOrderGallery(g => g ? { ...g, index: (g.index - 1 + g.images.length) % g.images.length } : g)}
                   style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: 40, height: 40, borderRadius: '50%', fontSize: 22, cursor: 'pointer', flexShrink: 0 }}>‹</button>
               )}
-              <img src={orderGallery.images[orderGallery.index].src} alt=""
+              <ResilientImage src={orderGallery.images[orderGallery.index].src}
+                fallback={<div style={{ width: 320, height: 320, maxWidth: '80vw', maxHeight: '68vh', borderRadius: 10, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 13 }}>Image unavailable</div>}
                 style={{ maxWidth: '80vw', maxHeight: '68vh', objectFit: 'contain', borderRadius: 10, background: '#fff' }} />
               {orderGallery.images.length > 1 && (
                 <button type="button" onClick={() => setOrderGallery(g => g ? { ...g, index: (g.index + 1) % g.images.length } : g)}
@@ -5394,7 +5397,8 @@ export default function InboxPage() {
             {orderGallery.images.length > 1 && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', maxWidth: '90vw' }}>
                 {orderGallery.images.map((im, i) => (
-                  <img key={i} src={im.src} alt="" onClick={() => setOrderGallery(g => g ? { ...g, index: i } : g)}
+                  <ResilientImage key={i} src={im.src} onClick={() => setOrderGallery(g => g ? { ...g, index: i } : g)}
+                    fallback={<div style={{ width: 50, height: 50, borderRadius: 7, background: 'rgba(255,255,255,0.12)', border: i === orderGallery.index ? '2px solid var(--coral)' : '2px solid transparent' }} />}
                     style={{ width: 50, height: 50, objectFit: 'cover', borderRadius: 7, cursor: 'pointer', border: i === orderGallery.index ? '2px solid var(--coral)' : '2px solid transparent', opacity: i === orderGallery.index ? 1 : 0.55 }} />
                 ))}
               </div>
@@ -8922,28 +8926,28 @@ export default function InboxPage() {
                           }
                           return (
                             <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
-                              {o.line_items.slice(0, 3).map((li: any, i: number) => (
+                              {o.line_items.map((li: any, i: number) => {
+                                const placeholder = <div style={{ width: 34, height: 34, borderRadius: 6, background: 'var(--canvas)', border: '1px solid var(--border)', flexShrink: 0 }} />
+                                return (
                                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '3px 0' }}>
                                   {li.image?.src ? (
-                                    <img src={li.image.src} alt="" onClick={(e) => { e.stopPropagation(); openAt(li.image.src) }}
+                                    <ResilientImage src={li.image.src} onClick={(e) => { e.stopPropagation(); openAt(li.image.src) }}
+                                      fallback={placeholder}
                                       style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', border: '1px solid var(--border)', cursor: 'pointer', flexShrink: 0 }} />
-                                  ) : (
-                                    <div style={{ width: 34, height: 34, borderRadius: 6, background: 'var(--canvas)', border: '1px solid var(--border)', flexShrink: 0 }} />
-                                  )}
+                                  ) : placeholder}
                                   <div style={{ minWidth: 0 }}>
                                     <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}>{li.quantity}× {dec(li.name)}</p>
                                     {li.sku ? <p style={{ margin: '1px 0 0', fontSize: 9.5, color: '#9ca3af', letterSpacing: '0.02em' }}>SKU: {li.sku}</p> : null}
                                   </div>
                                 </div>
-                              ))}
-                              {o.line_items.length > 3 && <p style={{ margin: '2px 0 0 42px', fontSize: 11, color: '#9ca3af' }}>+{o.line_items.length - 3} more</p>}
+                              )})}
                               {images.length > 0 && (
                                 <button type="button" onClick={(e) => { e.stopPropagation(); openAt() }}
                                   style={{ marginTop: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
                                   View {images.length} product image{images.length > 1 ? 's' : ''}
                                 </button>
                               )}
-                              {(o.shipping_method || Number(o.shipping_total) > 0) && (
+                              {(o.shipping_method || o.shipping_total != null) && (
                                 <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
                                   <span>🚚</span>
                                   {o.shipping_method || 'Shipping'}{Number(o.shipping_total) > 0 ? ` — $${Number(o.shipping_total).toFixed(2)}` : ' — Free'}

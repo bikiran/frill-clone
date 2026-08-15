@@ -201,7 +201,10 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
           total: li.total,
           total_tax: li.total_tax,
           id: li.id,
-          image: li.image?.src || null,
+          sku: li.sku || null,
+          // Store as { src } so the order card's `li.image?.src` reads it the
+          // same way it reads live/detail-enriched items.
+          image: li.image?.src ? { src: li.image.src } : null,
         })),
         billing: o.billing || {},
         // Normalised billing phone (last 9 digits) so SMS-only customers can be

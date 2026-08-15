@@ -396,7 +396,15 @@ export class WooCommerceService {
         .map((o: any) => ({
           id: o.id, number: o.number || o.id, status: o.status, total: o.total, currency: o.currency,
           date: o.date_created, payment_method: o.payment_method_title,
-          items: (o.line_items || []).map((li: any) => ({ name: li.name, quantity: li.quantity, total: li.total })),
+          // Carry SKU + product image so the order card can show them without a
+          // second detail round-trip. Shipping comes from shipping_lines.
+          items: (o.line_items || []).map((li: any) => ({
+            id: li.id, product_id: li.product_id, name: li.name, quantity: li.quantity,
+            total: li.total, sku: li.sku || null,
+            image: li.image?.src ? { src: li.image.src } : null,
+          })),
+          shipping_total: o.shipping_total ?? null,
+          shipping_method: (o.shipping_lines || [])[0]?.method_title || null,
           order_key: o.order_key, payment_url: o.payment_url,
           total_refunded: (o.refunds || []).reduce((s: number, r: any) => s + Math.abs(parseFloat(r.total || 0)), 0),
         }))
