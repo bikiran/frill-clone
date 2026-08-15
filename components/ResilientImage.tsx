@@ -1,14 +1,26 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { CSSProperties, ReactNode, MouseEvent } from 'react'
 
+// Upgrade http:// (and protocol-relative //) to https:// so the image isn't
+// blocked as mixed content on our https page.
+const httpsify = (u: string) => u.replace(/^http:\/\//i, 'https://').replace(/^\/\//, 'https://')
+// Route through our same-origin proxy — bypasses mixed content, hotlink
+// protection and CORS, and is cached for instant repeat loads.
+const proxied = (u: string) => `/api/img?src=${encodeURIComponent(u)}`
+const bust = (u: string) => `${u}${u.includes('?') ? '&' : '?'}_r=1`
+
 /**
- * An <img> that recovers from transient load failures instead of getting stuck
- * on a broken image forever. On error it retries a few times, cache-busting the
- * URL so the browser re-requests rather than replaying the cached failure; once
- * the retries are exhausted it renders `fallback` (a placeholder) instead of the
- * browser's broken-image glyph.
+ * An <img> that actually loads — and recovers on its own, no page reload.
+ *
+ * It walks an escalation ladder of source URLs, advancing whenever an attempt
+ * errors OR silently stalls (a hung request that never fires load/error):
+ *   1. direct https   2. direct + cache-buster
+ *   3. same-origin proxy   4. proxy + cache-buster
+ * The proxy step is what fixes the common "blank thumbnail" cases (http image
+ * on an https page, hotlink protection). It loads eagerly so it paints as soon
+ * as the source is known; when the ladder is exhausted it shows `fallback`.
  */
 export default function ResilientImage({
   src,
@@ -17,8 +29,8 @@ export default function ResilientImage({
   className,
   onClick,
   fallback,
-  maxRetries = 3,
-  retryDelay = 700,
+  stallMs = 4000,
+  retryDelay = 400,
 }: {
   src?: string | null
   alt?: string
@@ -26,43 +38,47 @@ export default function ResilientImage({
   className?: string
   onClick?: (e: MouseEvent<HTMLImageElement>) => void
   fallback?: ReactNode
-  maxRetries?: number
+  stallMs?: number
   retryDelay?: number
 }) {
-  const [attempt, setAttempt] = useState(0)
-  const [failed, setFailed] = useState(false)
-
-  // A new source is a fresh start — clear any prior failure/retry state.
-  useEffect(() => {
-    setAttempt(0)
-    setFailed(false)
+  const candidates = useMemo(() => {
+    if (!src) return [] as string[]
+    const https = httpsify(src)
+    return Array.from(new Set([https, bust(https), proxied(src), bust(proxied(src))]))
   }, [src])
 
-  if (!src || failed) {
+  const [i, setI] = useState(0)
+  const [loaded, setLoaded] = useState(false)
+
+  // A new source restarts the ladder.
+  useEffect(() => { setI(0); setLoaded(false) }, [src])
+
+  const exhausted = i >= candidates.length
+
+  // Watchdog: if the current candidate hasn't loaded within stallMs (and hasn't
+  // errored — that path advances on its own), move to the next one. Re-activates
+  // a load that just stopped, without a page reload.
+  useEffect(() => {
+    if (!candidates.length || loaded || exhausted) return
+    const t = setTimeout(() => setI(x => x + 1), stallMs)
+    return () => clearTimeout(t)
+  }, [i, loaded, exhausted, candidates.length, stallMs])
+
+  if (!candidates.length || exhausted) {
     return <>{fallback ?? <div style={style} className={className} />}</>
   }
 
-  // First attempt uses the clean URL; retries append a cache-buster so the
-  // browser actually re-fetches instead of serving the cached error.
-  const url = attempt === 0 ? src : `${src}${src.includes('?') ? '&' : '?'}_r=${attempt}`
-
   return (
     <img
-      key={attempt}
-      src={url}
+      key={i}
+      src={candidates[i]}
       alt={alt}
       style={style}
       className={className}
       onClick={onClick}
-      loading="lazy"
-      onError={() => {
-        if (attempt < maxRetries) {
-          // Small increasing back-off before re-requesting.
-          setTimeout(() => setAttempt(a => a + 1), retryDelay * (attempt + 1))
-        } else {
-          setFailed(true)
-        }
-      }}
+      decoding="async"
+      onLoad={() => setLoaded(true)}
+      onError={() => setTimeout(() => setI(x => x + 1), retryDelay)}
     />
   )
 }

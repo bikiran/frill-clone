@@ -72,6 +72,28 @@ export async function GET(req: NextRequest) {
     const shipLine = (order.shipping_lines || [])[0] || null
     const shippingMethod = shipLine?.method_title || null
 
+    // Some order line items come back with an empty image (a variation, or a
+    // product whose image just wasn't echoed onto the order) — that's why the
+    // order card showed a blank thumbnail. Backfill those from the product
+    // catalog so the card has a real image to load.
+    const missing = lineItems.filter((li: any) => !li?.image?.src && li?.product_id)
+    if (missing.length) {
+      const ids = Array.from(new Set(missing.map((li: any) => li.product_id)))
+      const imgById: Record<string, string> = {}
+      await Promise.all(ids.map(async (pid: any) => {
+        try {
+          const pr = await fetch(`${integ.store_url}/wp-json/wc/v3/products/${pid}`, { headers: { Authorization: auth } })
+          if (!pr.ok) return
+          const p = await pr.json()
+          const src = p?.images?.[0]?.src || p?.image?.src || null
+          if (src) imgById[String(pid)] = src
+        } catch { /* skip this product */ }
+      }))
+      for (const li of lineItems) {
+        if (!li?.image?.src && imgById[String(li.product_id)]) li.image = { src: imgById[String(li.product_id)] }
+      }
+    }
+
     // Persist the enriched items + shipping (and refund state) so the next open
     // is instant and the panel reflects refunds without waiting on a live call.
     const refundedTotal = (order.refunds || []).reduce((s: number, r: any) => s + Math.abs(parseFloat(r.total || 0)), 0)
