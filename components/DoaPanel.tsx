@@ -1,6 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
+
+// Default customer-facing DOA messages. The business can override these in
+// CRM settings → Order Automation → "DOA claim messages"; {amount} and {code}
+// are filled in per claim.
+const DOA_DEFAULTS: Record<string, string> = {
+  refund: "We're sorry your order arrived damaged. We've refunded {amount} — it should appear on your original payment method within 3–5 business days.",
+  coupon: "We're sorry your order arrived damaged. We've issued you {amount} in store credit — use code {code} at checkout.",
+  resend: "We're sorry your order arrived damaged. A replacement is on its way at no charge — we'll send tracking once it ships.",
+}
 
 // The DOA claim panel. Pre-fills name/phone/email from the chat contact, looks
 // up the order by number from WooCommerce, lets the agent select items or an
@@ -32,6 +42,18 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
   // delicate case they'd rather handle by hand.
   const [notify, setNotify] = useState(true)
   const canNotify = !!(onDeliver && (channel || contact?.email))
+
+  // The business's DOA message templates (CRM settings → Order Automation).
+  const [doaTemplates, setDoaTemplates] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (!companyId) return
+    ;(async () => {
+      try {
+        const { data } = await (supabase as any).from('companies').select('order_chat_automation').eq('id', companyId).maybeSingle()
+        setDoaTemplates(data?.order_chat_automation?.doa || {})
+      } catch { /* fall back to defaults */ }
+    })()
+  }, [companyId])
 
   // Load the customer's recent orders so the agent can pick one without knowing
   // the number (the most recent is tagged RECENT). Search still works too.
@@ -90,16 +112,12 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
       // Notify the customer on their channel, matching the resolution.
       if (notify && canNotify) {
         const amt = amount ? `$${parseFloat(amount).toFixed(2)}` : ''
-        let body = ''
         let url: string | null = null
-        if (resolution === 'refund') {
-          body = `We're sorry your order arrived damaged. We've refunded ${amt} — it should appear on your original payment method within 3–5 business days.`
-        } else if (resolution === 'coupon') {
-          body = `We're sorry your order arrived damaged. We've issued you ${amt} in store credit — use code ${data.code || ''} at checkout.`
-          url = (data.shop_url as string) || null
-        } else {
-          body = `We're sorry your order arrived damaged. A replacement is on its way at no charge — we'll send tracking once it ships.`
-        }
+        if (resolution === 'coupon') url = (data.shop_url as string) || null
+        // Use the business's template if set, else the default, and fill in the
+        // per-claim {amount} / {code}.
+        const tpl = (doaTemplates[resolution]?.trim()) || DOA_DEFAULTS[resolution]
+        const body = tpl.replace(/\{amount\}/g, amt).replace(/\{code\}/g, data.code || '')
         try {
           const how = await onDeliver!({ subject: `About your order #${order.number || order.id}`, body, url })
           setResult(`${data.message || 'Done'} · ${how}`)
