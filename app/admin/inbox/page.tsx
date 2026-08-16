@@ -1065,24 +1065,34 @@ export default function InboxPage() {
     let cancelled = false
     ;(async () => {
       try {
-        // Woo stores the status bare ("processing") or wc-prefixed
-        // ("wc-processing") depending on the sync path — match both. "Order
-        // placed" also covers a draft checkout still awaiting payment.
-        const statusVals = status === 'pending'
-          ? ['pending', 'wc-pending', 'checkout-draft', 'wc-checkout-draft']
-          : [status, `wc-${status}`]
         const emails = new Set<string>()
-        const PAGE = 1000
-        for (let from = 0; from < 20000; from += PAGE) {
-          const { data, error } = await (supabase as any).from('woocommerce_orders')
-            .select('customer_email')
-            .eq('company_id', companyId)
-            .in('status', statusVals)
-            .order('order_date', { ascending: false })
-            .range(from, from + PAGE - 1)
-          if (error || !data || !data.length) break
-          for (const o of data) { const e = String(o.customer_email || '').toLowerCase(); if (e) emails.add(e) }
-          if (data.length < PAGE) break
+        // Primary: the server endpoint reads the synced table AND queries
+        // WooCommerce live, so it still finds orders that were never synced
+        // (which is why "Processing" used to show nothing on some stores).
+        try {
+          const res = await fetch(`/api/orders/emails-by-status?companyId=${encodeURIComponent(companyId)}&status=${encodeURIComponent(status)}`)
+          if (res.ok) { const d = await res.json(); for (const e of (d.emails || [])) emails.add(String(e).toLowerCase()) }
+        } catch { /* fall back to the direct read below */ }
+
+        // Fallback: read the synced woocommerce_orders table directly. Woo stores
+        // the status bare ("processing") or wc-prefixed ("wc-processing")
+        // depending on the sync path — match both.
+        if (emails.size === 0) {
+          const statusVals = status === 'pending'
+            ? ['pending', 'wc-pending', 'checkout-draft', 'wc-checkout-draft']
+            : [status, `wc-${status}`]
+          const PAGE = 1000
+          for (let from = 0; from < 20000; from += PAGE) {
+            const { data, error } = await (supabase as any).from('woocommerce_orders')
+              .select('customer_email')
+              .eq('company_id', companyId)
+              .in('status', statusVals)
+              .order('order_date', { ascending: false })
+              .range(from, from + PAGE - 1)
+            if (error || !data || !data.length) break
+            for (const o of data) { const e = String(o.customer_email || '').toLowerCase(); if (e) emails.add(e) }
+            if (data.length < PAGE) break
+          }
         }
         if (!cancelled) { orderStatusRef.current = { companyId, status, emails }; setOrderStatusEmails(emails) }
       } catch (e) { console.error('inbox order-status filter load failed', e) }
