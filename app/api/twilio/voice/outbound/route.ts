@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { xmlEscape } from '@/lib/twilio-service'
 
 export const dynamic = 'force-dynamic'
@@ -22,8 +23,25 @@ export async function POST(req: NextRequest) {
   const callRowId = get('callRowId')
   const companyId = get('companyId')
   const conversationId = get('conversationId')
+  const callSid = get('CallSid')
 
   if (!to) return twiml('<Response><Say>No number was provided.</Say><Hangup/></Response>')
+
+  // Stamp the Twilio Call SID onto our outbound row at dial time — this is the
+  // one point where we hold both callRowId (from the SDK params) and the parent
+  // CallSid. Without it the row stays with a null twilio_call_sid, so if a later
+  // recording/status callback arrives without callRowId it can't fall back to
+  // matching by SID — the outbound call ends up with no recording attached.
+  if (callRowId && callSid) {
+    try {
+      const db = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      )
+      await db.from('calls').update({ twilio_call_sid: callSid, status: 'in_progress' }).eq('id', callRowId)
+    } catch { /* never block the call on this */ }
+  }
 
   const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
   const cbQuery = `callRowId=${encodeURIComponent(callRowId)}&companyId=${encodeURIComponent(companyId)}&conversationId=${encodeURIComponent(conversationId)}`
