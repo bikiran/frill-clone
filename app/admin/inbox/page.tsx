@@ -1065,24 +1065,34 @@ export default function InboxPage() {
     let cancelled = false
     ;(async () => {
       try {
-        // Woo stores the status bare ("processing") or wc-prefixed
-        // ("wc-processing") depending on the sync path — match both. "Order
-        // placed" also covers a draft checkout still awaiting payment.
-        const statusVals = status === 'pending'
-          ? ['pending', 'wc-pending', 'checkout-draft', 'wc-checkout-draft']
-          : [status, `wc-${status}`]
         const emails = new Set<string>()
-        const PAGE = 1000
-        for (let from = 0; from < 20000; from += PAGE) {
-          const { data, error } = await (supabase as any).from('woocommerce_orders')
-            .select('customer_email')
-            .eq('company_id', companyId)
-            .in('status', statusVals)
-            .order('order_date', { ascending: false })
-            .range(from, from + PAGE - 1)
-          if (error || !data || !data.length) break
-          for (const o of data) { const e = String(o.customer_email || '').toLowerCase(); if (e) emails.add(e) }
-          if (data.length < PAGE) break
+        // Primary: the server endpoint reads the synced table AND queries
+        // WooCommerce live, so it still finds orders that were never synced
+        // (which is why "Processing" used to show nothing on some stores).
+        try {
+          const res = await fetch(`/api/orders/emails-by-status?companyId=${encodeURIComponent(companyId)}&status=${encodeURIComponent(status)}`)
+          if (res.ok) { const d = await res.json(); for (const e of (d.emails || [])) emails.add(String(e).toLowerCase()) }
+        } catch { /* fall back to the direct read below */ }
+
+        // Fallback: read the synced woocommerce_orders table directly. Woo stores
+        // the status bare ("processing") or wc-prefixed ("wc-processing")
+        // depending on the sync path — match both.
+        if (emails.size === 0) {
+          const statusVals = status === 'pending'
+            ? ['pending', 'wc-pending', 'checkout-draft', 'wc-checkout-draft']
+            : [status, `wc-${status}`]
+          const PAGE = 1000
+          for (let from = 0; from < 20000; from += PAGE) {
+            const { data, error } = await (supabase as any).from('woocommerce_orders')
+              .select('customer_email')
+              .eq('company_id', companyId)
+              .in('status', statusVals)
+              .order('order_date', { ascending: false })
+              .range(from, from + PAGE - 1)
+            if (error || !data || !data.length) break
+            for (const o of data) { const e = String(o.customer_email || '').toLowerCase(); if (e) emails.add(e) }
+            if (data.length < PAGE) break
+          }
         }
         if (!cancelled) { orderStatusRef.current = { companyId, status, emails }; setOrderStatusEmails(emails) }
       } catch (e) { console.error('inbox order-status filter load failed', e) }
@@ -8927,7 +8937,11 @@ export default function InboxPage() {
                           return (
                             <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
                               {o.line_items.map((li: any, i: number) => {
-                                const placeholder = <div style={{ width: 34, height: 34, borderRadius: 6, background: 'var(--canvas)', border: '1px solid var(--border)', flexShrink: 0 }} />
+                                const placeholder = (
+                                  <div style={{ width: 34, height: 34, borderRadius: 6, background: 'var(--canvas)', border: '1px solid var(--border)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1' }}>
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                                  </div>
+                                )
                                 return (
                                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '3px 0' }}>
                                   {li.image?.src ? (
