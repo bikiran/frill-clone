@@ -72,7 +72,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
-    await db.from('calls').update({ recording_url: publicUrl }).eq('id', rowId)
+    const callSid = get('CallSid')
+    await db.from('calls').update({ recording_url: publicUrl, ...(callSid ? { twilio_call_sid: callSid } : {}) }).eq('id', rowId)
     // Make sure the thread has a card to display this recording/summary, even if
     // the browser never posted one. Idempotent — no-op if it already exists.
     await ensureCallCard(db, rowId)

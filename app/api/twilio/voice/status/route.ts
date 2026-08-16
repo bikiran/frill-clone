@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
     const dialStatus = (get('DialCallStatus') || '').toLowerCase()
     const durSecs = parseInt(get('DialCallDuration') || '0', 10) || 0
     const answered = dialStatus === 'completed' || dialStatus === 'answered'
+    const callSid = get('CallSid')
 
     if (callRowId) {
       const db = admin()
@@ -36,6 +37,9 @@ export async function POST(req: NextRequest) {
         await db.from('calls').update({
           status,
           ended_at: new Date().toISOString(),
+          // Backfill the SID here too, so the row is always linkable even if the
+          // dial-time stamp was missed.
+          ...(callSid ? { twilio_call_sid: callSid } : {}),
           ...(durSecs ? { duration_seconds: durSecs } : {}),
         }).eq('id', callRowId)
       } catch {}

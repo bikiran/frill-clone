@@ -120,10 +120,18 @@ export async function POST(req: NextRequest) {
       // current models in order and report the REAL upstream error if all fail —
       // "the summary step failed" told us nothing about why.
       const MODELS = ['claude-sonnet-4-6', 'claude-3-5-haiku-20241022']   // 4-6 is what the rest of Colvy's AI uses and is known to work with this key
-      const prompt = `You are summarising a phone call between a support agent at an aquarium business and a customer.
+      // Tell the model who initiated the call, so an outbound call isn't
+      // summarised as "a customer called" (the row already knows its direction).
+      const dir = String(call.direction || '').toLowerCase()
+      const whoInitiated = dir === 'outbound'
+        ? 'This was an OUTBOUND call: the aquarium business (the agent) called the customer. Do not say the customer called.'
+        : dir === 'inbound'
+        ? 'This was an INBOUND call: the customer called the aquarium business.'
+        : ''
+      const prompt = `You are summarising a phone call between a support agent at an aquarium business and a customer.${whoInitiated ? `\n\n${whoInitiated}` : ''}
 
 Respond ONLY with JSON, no preamble and no markdown fences:
-{"summary":"2-3 sentences, past tense, naming who called and what they wanted and how it was left","todos":["specific follow-up actions for the business, [] if none"],"sentiment":"positive|neutral|negative"}
+{"summary":"2-3 sentences, past tense, naming who called whom and what they wanted and how it was left","todos":["specific follow-up actions for the business, [] if none"],"sentiment":"positive|neutral|negative"}
 
 Transcript:
 ${text.slice(0, 12000)}`
