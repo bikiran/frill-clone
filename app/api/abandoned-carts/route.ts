@@ -22,6 +22,9 @@ function normalize(body: any) {
     sku: it.sku || null,
     quantity: it.quantity || it.qty || 1,
     price: it.price || it.line_total || it.total || null,
+    // Use an image if the payload already carries one (some bridges do); if not,
+    // enrichItemImages() backfills it from the WooCommerce product catalog.
+    image: it.image || it.image_url || it.thumbnail || it.img || null,
   }))
   const address = {
     address_1: billing.address_1 || body.address || null,
@@ -42,6 +45,56 @@ function normalize(body: any) {
     total: body.total != null ? Number(body.total) : (items.reduce((s: number, it: any) => s + (parseFloat(it.price) || 0) * (it.quantity || 1), 0) || null),
     currency: body.currency || 'AUD',
     cart_url: body.cart_url || body.recovery_url || body.checkout_url || null,
+  }
+}
+
+// Fill each cart item's `image` from the WooCommerce product catalog when the
+// bridge payload didn't include one — the abandonment bridge sends product_id
+// but no image, so the app would otherwise show a placeholder for every item.
+// Mirrors the image backfill in app/api/orders/detail. Mutates items in place
+// and never throws: a missing/broken integration must not block cart capture.
+async function enrichItemImages(db: any, companyId: string, items: any[]) {
+  try {
+    const need = (items || []).filter((it: any) => !it.image && (it.product_id || it.variation_id))
+    if (!need.length) return
+
+    const { data: integ } = await db.from('woocommerce_integrations')
+      .select('store_url, consumer_key, consumer_secret')
+      .eq('company_id', companyId).eq('is_active', true)
+      .order('created_at', { ascending: true }).limit(1).maybeSingle()
+    if (!integ?.store_url) return
+
+    const auth = `Basic ${Buffer.from(`${integ.consumer_key}:${integ.consumer_secret}`).toString('base64')}`
+
+    // Parent-product images by id (one fetch per distinct product — carts are small).
+    const ids = Array.from(new Set(need.map((it: any) => it.product_id).filter(Boolean)))
+    const imgById: Record<string, string> = {}
+    await Promise.all(ids.map(async (pid: any) => {
+      try {
+        const pr = await fetch(`${integ.store_url}/wp-json/wc/v3/products/${pid}`, { headers: { Authorization: auth } })
+        if (!pr.ok) return
+        const p = await pr.json()
+        const src = p?.images?.[0]?.src || p?.image?.src || null
+        if (src) imgById[String(pid)] = src
+      } catch { /* skip this product */ }
+    }))
+
+    // A variation with its own image takes precedence over the parent product.
+    await Promise.all(need.filter((it: any) => it.variation_id && it.product_id).map(async (it: any) => {
+      try {
+        const vr = await fetch(`${integ.store_url}/wp-json/wc/v3/products/${it.product_id}/variations/${it.variation_id}`, { headers: { Authorization: auth } })
+        if (!vr.ok) return
+        const v = await vr.json()
+        const src = v?.image?.src || null
+        if (src) it.image = { src }
+      } catch { /* skip this variation */ }
+    }))
+
+    for (const it of items) {
+      if (!it.image && it.product_id && imgById[String(it.product_id)]) it.image = { src: imgById[String(it.product_id)] }
+    }
+  } catch (e) {
+    console.error('[abandoned-cart] image enrich failed', e)
   }
 }
 
@@ -77,6 +130,10 @@ export async function POST(req: NextRequest) {
 
     const norm = normalize(body)
     if (!norm.email && !norm.phone) return NextResponse.json({ error: 'Cart needs at least an email or phone to be useful' }, { status: 400 })
+
+    // Backfill product images before saving, so the stored items JSON carries
+    // them (the app reads abandoned_carts straight from the DB).
+    await enrichItemImages(db, companyId, norm.items)
 
     // Find-or-create the contact, then find-or-create a conversation, so the
     // abandoned cart appears as a chat in the inbox (not just a silent record).
