@@ -3777,8 +3777,12 @@ export default function InboxPage() {
     let cancelled = false
     const load = async () => {
       try {
+        // Read by user_id only — matching the realtime filter below. The pinned
+        // conversations are re-fetched scoped by company_id anyway, so filtering
+        // here too only risks hiding a pin whose company_id was written slightly
+        // differently by another client (e.g. the mobile app).
         const { data } = await (supabase as any).from('conversation_pins')
-          .select('conversation_id').eq('user_id', pinUserId).eq('company_id', companyId)
+          .select('conversation_id').eq('user_id', pinUserId)
         if (!cancelled) setPinnedIds(new Set((data || []).map((r: any) => r.conversation_id)))
       } catch { /* table may not be migrated yet */ }
     }
