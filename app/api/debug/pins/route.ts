@@ -45,6 +45,14 @@ export async function GET(req: NextRequest) {
 
     const { data: pins, error } = await q
 
+    // ALSO fetch the newest rows table-wide, regardless of user_id — so a pin the
+    // mobile app wrote under a DIFFERENT user_id (a mismatch the email filter
+    // above would hide) still shows up here. After pinning once on mobile, the
+    // newest row appears at the top; compare its user_id to resolvedUserId.
+    const { data: recentAnyUser } = await (db as any).from('conversation_pins')
+      .select('user_id, conversation_id, company_id, created_at')
+      .order('created_at', { ascending: false }).limit(30)
+
     // Summarise per user_id / company_id so a mismatch is obvious at a glance.
     const byUser: Record<string, number> = {}
     const byCompany: Record<string, number> = {}
@@ -56,10 +64,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       queriedEmail: email || null,
       resolvedUserId,
-      totalRows: pins?.length || 0,
+      totalRowsForThisUser: pins?.length || 0,
       countByUserId: byUser,
       countByCompanyId: byCompany,
-      pins: pins || [],
+      pinsForThisUser: pins || [],
+      recentAnyUser: recentAnyUser || [],
       error: error?.message || null,
     })
   } catch (e: any) {
