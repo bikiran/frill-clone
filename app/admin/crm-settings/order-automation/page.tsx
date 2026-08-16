@@ -13,10 +13,20 @@ const STATUSES: { key: string; label: string; hint: string; default: string }[] 
   { key: 'on-hold', label: 'On hold', hint: 'Sent when an order goes on hold.', default: "Your order is on hold while we confirm a few details. We'll be in touch shortly — feel free to reply here." },
 ]
 
+// Messages the DOA claim tool sends the customer when an agent resolves a
+// damaged-order claim from the inbox. These are separate from the status
+// automation above — they fire on the agent's action, not a Woo status change.
+const DOA_MESSAGES: { key: string; label: string; hint: string; default: string }[] = [
+  { key: 'refund', label: 'Refund issued', hint: 'Use {amount} for the refunded amount.', default: "We're sorry your order arrived damaged. We've refunded {amount} — it should appear on your original payment method within 3–5 business days." },
+  { key: 'coupon', label: 'Store credit issued', hint: 'Use {amount} for the credit and {code} for the coupon code.', default: "We're sorry your order arrived damaged. We've issued you {amount} in store credit — use code {code} at checkout." },
+  { key: 'resend', label: 'Replacement sent', hint: 'Sent when you flag a replacement / re-ship.', default: "We're sorry your order arrived damaged. A replacement is on its way at no charge — we'll send tracking once it ships." },
+]
+
 export default function OrderAutomationSettings() {
   const { companyId, loading } = useCompanyUser()
   const [enabled, setEnabled] = useState(false)
   const [messages, setMessages] = useState<Record<string, string>>({})
+  const [doa, setDoa] = useState<Record<string, string>>({})
   const [reviewUrl, setReviewUrl] = useState('')
   const [alsoSms, setAlsoSms] = useState(false)
   const [alsoEmail, setAlsoEmail] = useState(false)
@@ -31,6 +41,7 @@ export default function OrderAutomationSettings() {
       const cfg = co?.order_chat_automation || {}
       setEnabled(!!cfg.enabled)
       setMessages(cfg.messages || {})
+      setDoa(cfg.doa || {})
       setReviewUrl(cfg.review_url || '')
       setAlsoSms(!!cfg.also_sms)
       setAlsoEmail(!!cfg.also_email)
@@ -45,7 +56,7 @@ export default function OrderAutomationSettings() {
     if (!companyId) return
     setSaving(true)
     await (supabase as any).from('companies').update({
-      order_chat_automation: { enabled, review_url: reviewUrl, messages, also_sms: alsoSms, also_email: alsoEmail },
+      order_chat_automation: { enabled, review_url: reviewUrl, messages, also_sms: alsoSms, also_email: alsoEmail, doa },
     }).eq('id', companyId)
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
@@ -94,6 +105,22 @@ export default function OrderAutomationSettings() {
           </div>
         </>
       )}
+
+      <div style={S.card}>
+        <h2 style={S.h2}>DOA claim messages</h2>
+        <p style={{ ...S.hint, marginBottom: 14 }}>What Colvy sends the customer when you resolve a damaged-order (DOA) claim from the inbox. These fire on your action, independent of the order-automation toggle above. Placeholders: <code>{'{amount}'}</code>, <code>{'{code}'}</code> (store-credit coupon). Leave blank to use the default wording.</p>
+        {DOA_MESSAGES.map(dm => (
+          <div key={dm.key} style={{ marginBottom: 16 }}>
+            <label style={S.label}>{dm.label}</label>
+            <textarea
+              value={doa[dm.key] ?? dm.default}
+              onChange={e => setDoa(m => ({ ...m, [dm.key]: e.target.value }))}
+              style={{ ...S.input, minHeight: 54, resize: 'vertical' }}
+            />
+            <p style={S.hint}>{dm.hint}</p>
+          </div>
+        ))}
+      </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <button onClick={save} disabled={saving} style={S.btn}>{saving ? 'Saving…' : 'Save'}</button>
