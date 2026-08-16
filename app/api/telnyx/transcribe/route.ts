@@ -120,15 +120,33 @@ export async function POST(req: NextRequest) {
       // current models in order and report the REAL upstream error if all fail —
       // "the summary step failed" told us nothing about why.
       const MODELS = ['claude-sonnet-4-6', 'claude-3-5-haiku-20241022']   // 4-6 is what the rest of Colvy's AI uses and is known to work with this key
-      // Tell the model who initiated the call, so an outbound call isn't
-      // summarised as "a customer called" (the row already knows its direction).
+      // Frame the call around the contact's relationship type, so a call with a
+      // supplier / wholesaler / business contact isn't summarised as if they
+      // were a customer. Default to customer when unset.
+      let relNoun = 'customer'
+      if (call.contact_id) {
+        try {
+          const { data: ct } = await db.from('contacts').select('relationship_type').eq('id', call.contact_id).maybeSingle()
+          const rel = String(ct?.relationship_type || '').toLowerCase()
+          relNoun = rel === 'supplier' ? 'supplier'
+            : rel === 'wholesaler' ? 'wholesaler'
+            : rel === 'business' ? 'business contact'
+            : 'customer'
+        } catch { /* default to customer */ }
+      }
+      const isCustomer = relNoun === 'customer'
+      const otherParty = isCustomer ? 'a customer' : `a ${relNoun} (a business relationship, NOT a customer)`
+      const them = isCustomer ? 'the customer' : `the ${relNoun}`
+
+      // Also tell the model who initiated the call, so an outbound call isn't
+      // summarised as though the other party rang in (the row knows its direction).
       const dir = String(call.direction || '').toLowerCase()
       const whoInitiated = dir === 'outbound'
-        ? 'This was an OUTBOUND call: the aquarium business (the agent) called the customer. Do not say the customer called.'
+        ? `This was an OUTBOUND call: the aquarium business (the agent) called ${them}. Do not say ${them} called.`
         : dir === 'inbound'
-        ? 'This was an INBOUND call: the customer called the aquarium business.'
+        ? `This was an INBOUND call: ${them} called the aquarium business.`
         : ''
-      const prompt = `You are summarising a phone call between a support agent at an aquarium business and a customer.${whoInitiated ? `\n\n${whoInitiated}` : ''}
+      const prompt = `You are summarising a phone call between a staff member at an aquarium business and ${otherParty}.${whoInitiated ? `\n\n${whoInitiated}` : ''}
 
 Respond ONLY with JSON, no preamble and no markdown fences:
 {"summary":"2-3 sentences, past tense, naming who called whom and what they wanted and how it was left","todos":["specific follow-up actions for the business, [] if none"],"sentiment":"positive|neutral|negative"}

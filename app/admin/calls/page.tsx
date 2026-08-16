@@ -387,7 +387,7 @@ export default function CallsPage() {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 18 }}>
             <Avatar name={contact?.name || selected.name} size={64} />
             <p style={{ margin: '12px 0 2px', fontWeight: 800, fontSize: 17 }}>{contact?.name || selected.name}</p>
-            {contact?.id && <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)' }}>Customer</p>}
+            {contact?.id && <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)' }}>{(({ supplier: 'Supplier', wholesaler: 'Wholesaler', business: 'Business contact' } as Record<string, string>)[String(contact.relationship_type || '').toLowerCase()]) || 'Customer'}</p>}
             <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
               <a href={`tel:${contact?.phone || selected.key}`} style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z"/></svg>
