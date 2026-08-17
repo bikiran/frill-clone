@@ -7230,6 +7230,11 @@ export default function InboxPage() {
                         boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                         border: isAgent ? 'none' : '1px solid var(--border)',
                         position: 'relative',
+                        // A message carrying media caps at a phone-like width so a
+                        // short caption wraps UNDER the media instead of stretching
+                        // the bubble wide and leaving empty bubble colour beside a
+                        // portrait clip (which is how it read on desktop before).
+                        maxWidth: atts.some((a: any) => a.kind === 'image' || a.kind === 'video') ? 300 : undefined,
                       }}>
                         {/* Instagram story reply — show the story they replied
                             to (thumbnail) above their message, like Coax. */}
@@ -7260,6 +7265,11 @@ export default function InboxPage() {
                           const shown = n > 5 ? media.slice(0, 5) : media
                           const W = 268                     // collage width
                           const GAP = 2
+                          // A lone video WITH a caption should fill the bubble width
+                          // (a landscape tile) so it reads like the mobile app —
+                          // rather than hugging a narrow portrait strip beside the
+                          // text. A media-only lone video keeps its tight fit.
+                          const loneVideoWithText = n === 1 && shown[0]?.kind === 'video' && !!msg.content
 
                           // Facebook picks a shape per count. Each entry gives
                           // the grid template and the row heights.
@@ -7292,7 +7302,7 @@ export default function InboxPage() {
                                   // ('auto'), not stretch to 1fr of the collage width —
                                   // otherwise a portrait clip leaves the bubble colour
                                   // (blue on outbound) showing beside it.
-                                  gridTemplateColumns: n === 1 && shown[0]?.kind === 'video' ? 'auto' : layout.cols,
+                                  gridTemplateColumns: n === 1 && shown[0]?.kind === 'video' && !loneVideoWithText ? 'auto' : layout.cols,
                                   gridAutoRows: layout.rows.split(' ')[0],
                                   gridTemplateRows: layout.rows,
                                   gap: GAP,
@@ -7300,7 +7310,8 @@ export default function InboxPage() {
                                   // A lone video wraps tightly (fit-content) so a
                                   // portrait clip isn't letterboxed into a tall
                                   // grey box; a lone image still fills the width.
-                                  width: n === 1 ? (shown[0]?.kind === 'video' ? 'fit-content' : 'auto') : W,
+                                  // With a caption it fills the bubble width instead.
+                                  width: loneVideoWithText ? '100%' : n === 1 ? (shown[0]?.kind === 'video' ? 'fit-content' : 'auto') : W,
                                   maxWidth: W,
                                   borderRadius: 14,
                                   overflow: 'hidden',
@@ -7320,7 +7331,9 @@ export default function InboxPage() {
                                           background: a.kind === 'video' ? '#000' : '#e5e7eb', overflow: 'hidden',
                                           // A lone video tile hugs the clip; a lone photo
                                           // keeps its shape; in a mosaic tiles fill cells.
-                                          ...(n === 1 && a.kind === 'video' ? { width: 'fit-content', maxHeight: 320 } : n === 1 ? { maxHeight: 320 } : {}),
+                                          // With a caption the lone video fills a
+                                          // landscape tile (like mobile) instead.
+                                          ...(loneVideoWithText ? { width: '100%', aspectRatio: '4 / 3' } : n === 1 && a.kind === 'video' ? { width: 'fit-content', maxHeight: 320 } : n === 1 ? { maxHeight: 320 } : {}),
                                         }}>
                                         {a.kind === 'image' ? (
                                           <img
@@ -7346,7 +7359,7 @@ export default function InboxPage() {
                                               muted
                                               playsInline
                                               {...(a.thumbUrl ? { poster: toPublicUrl(a.thumbUrl) } : {})}
-                                              style={{ width: n === 1 ? 'auto' : '100%', height: n === 1 ? 'auto' : '100%', maxWidth: '100%', maxHeight: n === 1 ? 280 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block', pointerEvents: 'none', background: '#111' }} />
+                                              style={{ width: loneVideoWithText || n !== 1 ? '100%' : 'auto', height: loneVideoWithText || n !== 1 ? '100%' : 'auto', maxWidth: '100%', maxHeight: loneVideoWithText ? undefined : n === 1 ? 280 : undefined, objectFit: loneVideoWithText || n !== 1 ? 'cover' : 'contain', display: 'block', pointerEvents: 'none', background: '#111' }} />
                                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                               <div style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>▶</div>
                                             </div>
