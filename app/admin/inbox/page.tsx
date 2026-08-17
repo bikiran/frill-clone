@@ -15,6 +15,7 @@ import { uploadQueue } from '@/lib/upload-queue'
 import { toPublicUrl } from '@/lib/storage-url'
 import { broadcastMessage } from '@/lib/chat-broadcast'
 import FilePickerButton from '@/components/FilePickerButton'
+import PhoneUploadQR from '@/components/PhoneUploadQR'
 import { useClickOutside } from '@/lib/use-click-outside'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
@@ -372,6 +373,9 @@ export default function InboxPage() {
   // Media the agent has attached but NOT yet sent — shown as preview cards above
   // the composer and delivered only when Send is pressed (alongside any text).
   const [stagedMedia, setStagedMedia] = useState<any[]>([])
+  // Phone-upload QR: scan to upload photos from a phone straight into the
+  // composer as staged media (with the same preview + expiry as any attachment).
+  const [showInboxQR, setShowInboxQR] = useState(false)
   // Per-item media-expiry choice, keyed by item id: 'forever' (default) | '1d' |
   // '7d' | '30d' | a yyyy-mm-dd date. Absent = keep forever.
   const [stagedExpiry, setStagedExpiry] = useState<Record<string, string>>({})
@@ -2243,6 +2247,26 @@ export default function InboxPage() {
     } catch {
       showToast('Could not save the voice note.')
     } finally { setVoiceUploading(false) }
+  }
+
+  // Stage photos/videos uploaded from a phone via the QR into the composer, so
+  // they preview (and can carry an expiry) exactly like a gallery pick. Deduped
+  // by URL so the poll re-delivering the same item can't double-stage it.
+  const stageQrMedia = (items?: any[]) => {
+    if (!items?.length) return
+    setStagedMedia(prev => {
+      const have = new Set(prev.map((p: any) => p.url).filter(Boolean))
+      const add = items
+        .filter((it: any) => it?.url && !have.has(it.url))
+        .map((it: any) => ({
+          id: `qr_${it.id || it.url}`,
+          title: it.title || 'Photo',
+          kind: it.kind || 'image',
+          url: it.url,
+          thumbnail_url: it.kind === 'video' ? '' : it.url,
+        }))
+      return add.length ? [...prev, ...add] : prev
+    })
   }
 
   const deliverMedia = async (chosen: any[]) => {
@@ -5640,6 +5664,14 @@ export default function InboxPage() {
         />
       )}
 
+      {showInboxQR && companyId && (
+        <PhoneUploadQR
+          companyId={companyId}
+          onUploaded={(items) => stageQrMedia(items)}
+          onClose={() => setShowInboxQR(false)}
+        />
+      )}
+
       {showTracking && companyId && selected && (
         <SendTrackingModal
           companyId={companyId}
@@ -7952,6 +7984,11 @@ export default function InboxPage() {
                   <button type="button" onClick={openMediaPicker} title="Send from gallery"
                     style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                  </button>
+                  {/* Upload from phone (QR) */}
+                  <button type="button" onClick={() => setShowInboxQR(true)} title="Upload from your phone by scanning a QR code"
+                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><line x1="14" y1="14" x2="14" y2="17"/><line x1="14" y1="20" x2="14" y2="21"/><line x1="18" y1="14" x2="21" y2="14"/><line x1="21" y1="18" x2="21" y2="21"/><line x1="17" y1="21" x2="18" y2="21"/></svg>
                   </button>
                   {/* Voice note */}
                   <button type="button" onClick={() => (recording ? stopVoiceNote(true) : startVoiceNote())} disabled={voiceUploading}

@@ -63,9 +63,24 @@ export async function GET(req: NextRequest) {
     const db = admin()
 
     const { data: s } = await db.from('upload_sessions')
-      .select('uploaded_count, expires_at, last_upload_at, company_id, folder_id')
+      .select('uploaded_count, expires_at, last_upload_at, company_id, folder_id, created_at')
       .eq('token', token).maybeSingle()
     if (!s) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+
+    // The media items this session produced, so a caller (e.g. the inbox
+    // composer) can stage the freshly-uploaded photos, not just count them.
+    // Scoped to phone uploads for this company since the session opened.
+    let items: any[] = []
+    try {
+      const { data: mi } = await db.from('media_items')
+        .select('id, url, kind, title, created_at')
+        .eq('company_id', s.company_id)
+        .eq('external_source', 'phone')
+        .gte('created_at', s.created_at)
+        .order('created_at', { ascending: true })
+        .limit(50)
+      items = mi || []
+    } catch { /* count still works without the items */ }
 
     const expired = new Date(s.expires_at).getTime() < Date.now()
     return NextResponse.json({
@@ -74,6 +89,7 @@ export async function GET(req: NextRequest) {
       expired,
       expiresAt: s.expires_at,
       lastUploadAt: s.last_upload_at,
+      items,
     })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
