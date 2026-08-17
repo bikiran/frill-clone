@@ -17,6 +17,7 @@ import { broadcastMessage } from '@/lib/chat-broadcast'
 import FilePickerButton from '@/components/FilePickerButton'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
 import { useClickOutside } from '@/lib/use-click-outside'
+import { useActiveCall, callMatches } from '@/lib/active-call'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
 import CallCard from '@/components/CallCard'
@@ -384,6 +385,13 @@ export default function InboxPage() {
   // Advanced: also permanently delete the media from Colvy after it expires
   // (access-only revocation is the default). Off unless explicitly turned on.
   const [expiryDeleteMode, setExpiryDeleteMode] = useState(false)
+  // Bulk expiry — set the same expiry on every staged item at once (matches the
+  // mobile app). Its own open/date state, kept separate from the per-item menu.
+  const [bulkExpiryOpen, setBulkExpiryOpen] = useState(false)
+  const [bulkCustomDate, setBulkCustomDate] = useState(false)
+  // The live phone call, if any — so the list can flag "Call in progress" on the
+  // conversation being called. Published by CallBar / IncomingCallListener.
+  const activeCall = useActiveCall()
   // Voice note recording (works in reply and internal-note modes).
   const [recording, setRecording] = useState(false)
   const [recSeconds, setRecSeconds] = useState(0)
@@ -1447,6 +1455,16 @@ export default function InboxPage() {
     return () => document.removeEventListener('mousedown', handler)
   }, [expiryMenuFor])
 
+  // Close the bulk-expiry selector when clicking elsewhere.
+  useEffect(() => {
+    if (!bulkExpiryOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-bulk-expiry]')) { setBulkExpiryOpen(false); setBulkCustomDate(false) }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [bulkExpiryOpen])
+
   // Realtime subscription to new messages / conversation updates
   useEffect(() => {
     if (!companyId) return
@@ -2170,6 +2188,20 @@ export default function InboxPage() {
     return isNaN(d.getTime()) ? 'Keep forever' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   }
   const anyExpiring = stagedMedia.some((m: any) => stagedExpiry[m.id] && stagedExpiry[m.id] !== 'forever')
+  // Apply one expiry choice to every staged item at once.
+  const applyBulkExpiry = (val: string) => {
+    setStagedExpiry(prev => {
+      const n = { ...prev }
+      stagedMedia.forEach((m: any) => { if (val === 'forever') delete n[m.id]; else n[m.id] = val })
+      return n
+    })
+  }
+  // The shared expiry code when every staged item agrees, else '' (mixed).
+  const bulkExpiryCode = (() => {
+    if (!stagedMedia.length) return 'forever'
+    const codes = stagedMedia.map((m: any) => stagedExpiry[m.id] || 'forever')
+    return codes.every(c => c === codes[0]) ? codes[0] : ''
+  })()
 
   // Stage the picked gallery media as preview cards above the composer instead of
   // sending straight away. Nothing is delivered until Send is pressed.
@@ -6606,9 +6638,16 @@ export default function InboxPage() {
               </span>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {callMatches(activeCall, { conversationId: c.id, contactId: c.contact_id, phone: contact.phone || c.sms_number }) ? (
+                  <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: '#059669', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
+                    {activeCall?.status === 'ringing' ? 'Calling…' : 'Call in progress'}
+                  </p>
+                ) : (
                 <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {conv.last_message || 'No messages yet'}
                 </p>
+                )}
                 {conv.unread_count > 0 && (
                   <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, background: 'var(--coral)', color: '#fff', minWidth: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', borderRadius: 20, boxSizing: 'border-box' }}>{conv.unread_count}</span>
                 )}
@@ -7737,6 +7776,51 @@ export default function InboxPage() {
                   default). */}
               {stagedMedia.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
+                  {/* Bulk expiry — set one expiry for every staged item at once
+                      (mirrors the mobile app). Only worth showing for 2+ items. */}
+                  {!internalMode && stagedMedia.length > 1 && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '2px 2px 0' }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)' }}>
+                        {stagedMedia.length} attachments
+                      </span>
+                      <div data-bulk-expiry style={{ position: 'relative', flexShrink: 0 }}>
+                        <button type="button"
+                          onClick={() => { setBulkExpiryOpen(v => !v); setBulkCustomDate(false) }}
+                          title="Set when all of these expire"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 28, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: bulkExpiryCode && bulkExpiryCode !== 'forever' ? 'var(--peach)' : '#fff', color: bulkExpiryCode && bulkExpiryCode !== 'forever' ? 'var(--coral)' : 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                          Set expiry for all{bulkExpiryCode === '' ? '' : ` · ${expiryChip(bulkExpiryCode)}`}
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                        {bulkExpiryOpen && (
+                          <div style={{ position: 'absolute', bottom: '120%', right: 0, width: 180, background: '#fff', borderRadius: 10, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden', padding: '4px 0' }}>
+                            {[['forever', 'Keep forever'], ['1d', '1 day'], ['7d', '7 days'], ['30d', '30 days']].map(([val, label]) => (
+                              <button key={val} type="button"
+                                onClick={() => { applyBulkExpiry(val); setBulkExpiryOpen(false) }}
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: bulkExpiryCode === val ? 'var(--peach)' : 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', fontWeight: bulkExpiryCode === val ? 700 : 500 }}>
+                                {label}
+                                {bulkExpiryCode === val && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                              </button>
+                            ))}
+                            <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+                            {bulkCustomDate ? (
+                              <div style={{ padding: '6px 10px' }}>
+                                <input type="date" autoFocus
+                                  min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
+                                  onChange={e => { if (e.target.value) { applyBulkExpiry(e.target.value); setBulkExpiryOpen(false); setBulkCustomDate(false) } }}
+                                  style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
+                              </div>
+                            ) : (
+                              <button type="button" onClick={() => setBulkCustomDate(true)}
+                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                                Choose a date…
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   {stagedMedia.map((m: any) => {
                     const imgThumb = m.thumbnail_url && m.thumbnail_url !== m.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m.thumbnail_url) ? m.thumbnail_url : null
                     const code = stagedExpiry[m.id]
