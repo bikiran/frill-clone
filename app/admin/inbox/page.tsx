@@ -2481,17 +2481,35 @@ export default function InboxPage() {
       )
     }
 
-    // Documents → keep the original immediate send (they aren't "media" to preview).
+    // Documents → STAGE as preview cards too (was: immediate send), so the agent
+    // reviews the file before pressing Send, exactly like media. They deliver
+    // through the same uploaded-attachment path on Send.
     if (docFiles.length) {
       uploadQueue.enqueue(
         docFiles,
         { companyId, conversationId: convId },
         async (attachments, failed) => {
-          if (attachments.length === 0) {
-            showToast(failed.length ? 'Nothing uploaded — tap Try again.' : 'Nothing to send')
+          if (failed.length) showToast(`${failed.length} file${failed.length === 1 ? '' : 's'} failed to upload.`)
+          if (attachments.length === 0) return
+          // Agent moved on before the upload settled — deliver to the original
+          // thread rather than staging into the wrong conversation.
+          if (selectedRef.current?.id !== convId) {
+            await deliverUploadedAttachments(attachments, { convId, smsNumber, metaCh, me })
             return
           }
-          await deliverUploadedAttachments(attachments, { convId, smsNumber, metaCh, me })
+          const staged = attachments.map((a: any, i: number) => ({
+            id: `updoc_${i}_${a.url || a.name}`,
+            title: a.name || 'file',
+            kind: a.kind || 'file',
+            url: a.url,
+            thumbnail_url: a.thumbUrl || null,
+            _upload: true,
+            _attachment: a,
+          }))
+          setStagedMedia(prev => {
+            const have = new Set(prev.map((p: any) => p.id))
+            return [...prev, ...staged.filter((s: any) => !have.has(s.id))]
+          })
         },
       )
     }
@@ -7690,7 +7708,8 @@ export default function InboxPage() {
                   {stagedMedia.map((m: any) => {
                     const imgThumb = m.thumbnail_url && m.thumbnail_url !== m.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m.thumbnail_url) ? m.thumbnail_url : null
                     const code = stagedExpiry[m.id]
-                    const kindLabel = m.kind === 'video' ? 'Video' : m.kind === 'audio' ? 'Voice note' : 'Image'
+                    const isDoc = !!m.kind && !['image', 'video', 'audio'].includes(m.kind)
+                    const kindLabel = m.kind === 'video' ? 'Video' : m.kind === 'audio' ? 'Voice note' : isDoc ? (String(m.title || '').split('.').pop()?.toUpperCase().slice(0, 5) || 'File') : 'Image'
                     const keeps = !code || code === 'forever'
                     return (
                       <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 12, border: '1px solid var(--border)', background: '#fff' }}>
@@ -7701,6 +7720,8 @@ export default function InboxPage() {
                             ? (imgThumb
                                 ? <img src={imgThumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 : <video src={m.url + '#t=0.1'} preload="metadata" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)
+                            : isDoc
+                            ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                             : <img src={imgThumb || m.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                           {m.kind === 'video' && (
                             <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
