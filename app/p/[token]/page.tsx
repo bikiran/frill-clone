@@ -6,11 +6,20 @@ import { useParams } from 'next/navigation'
 interface Item {
   id: string
   name: string
-  status: 'uploading' | 'done' | 'error'
+  status: 'queued' | 'uploading' | 'done' | 'error'
   progress: number
   preview?: string
   error?: string
+  file?: File
 }
+
+// How many files we push at once. Phones on flaky mobile data drop uploads when
+// six large files fight for the connection — that was the intermittent
+// "Upload failed (400)". Two at a time keeps things moving without starving each
+// other; a big video won't be crowded out.
+const MAX_PARALLEL = 2
+// Auto-retry transient failures before bothering the person with a Retry button.
+const AUTO_RETRIES = 2
 
 // The page you land on after scanning the QR. Designed for one-handed phone use:
 // one big tap target, live progress, and honest per-file errors.
@@ -20,6 +29,10 @@ export default function PhoneUpload() {
   const [items, setItems] = useState<Item[]>([])
   const [expired, setExpired] = useState(false)
   const [checking, setChecking] = useState(true)
+
+  // Simple worker pool so we never have more than MAX_PARALLEL uploads in flight.
+  const queueRef = useRef<Array<{ id: string; file: File }>>([])
+  const activeRef = useRef(0)
 
   useEffect(() => {
     ;(async () => {
@@ -32,20 +45,50 @@ export default function PhoneUpload() {
     })()
   }, [token])
 
-  const pick = (files: FileList | null) => {
-    if (!files?.length) return
-    Array.from(files).forEach(f => uploadOne(f))
+  const patch = (id: string, p: Partial<Item>) =>
+    setItems(prev => prev.map(i => (i.id === id ? { ...i, ...p } : i)))
+
+  // Pull queued files off the queue while there's a free slot.
+  const pump = () => {
+    while (activeRef.current < MAX_PARALLEL && queueRef.current.length > 0) {
+      const next = queueRef.current.shift()!
+      activeRef.current++
+      patch(next.id, { status: 'uploading', progress: 0, error: undefined })
+      runUpload(next.id, next.file).finally(() => {
+        activeRef.current--
+        pump()
+      })
+    }
   }
 
-  const uploadOne = async (file: File) => {
-    const id = Math.random().toString(36).slice(2)
-    const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
-    setItems(prev => [...prev, { id, name: file.name, status: 'uploading', progress: 0, preview }])
+  const enqueue = (id: string, file: File) => {
+    queueRef.current.push({ id, file })
+    pump()
+  }
 
-    const fail = (msg: string) => {
-      setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'error', error: msg } : i))
-    }
+  const pick = (files: FileList | null) => {
+    if (!files?.length) return
+    Array.from(files).forEach(file => {
+      const id = Math.random().toString(36).slice(2)
+      const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
+      setItems(prev => [...prev, { id, name: file.name, status: 'queued', progress: 0, preview, file }])
+      enqueue(id, file)
+    })
+  }
 
+  const retryOne = (item: Item) => {
+    if (!item.file) return
+    patch(item.id, { status: 'queued', progress: 0, error: undefined })
+    enqueue(item.id, item.file)
+  }
+
+  const retryAllFailed = () => {
+    items.filter(i => i.status === 'error' && i.file).forEach(retryOne)
+  }
+
+  // One attempt at the full sign → PUT → complete dance. Throws on any failure so
+  // runUpload can decide whether to retry.
+  const attemptUpload = (id: string, file: File) => new Promise<void>(async (resolve, reject) => {
     try {
       // 1. Ask for a signed URL. The file itself goes STRAIGHT to storage —
       //    routing it through our API capped uploads at a few megabytes, which
@@ -55,38 +98,63 @@ export default function PhoneUpload() {
         body: JSON.stringify({ token, fileName: file.name, contentType: file.type }),
       })
       const sign = await signRes.json()
-      if (!signRes.ok) { fail(sign.error || 'Could not start the upload'); return }
+      if (!signRes.ok) return reject(new Error(sign.error || 'Could not start the upload'))
 
       // 2. PUT the bytes directly to storage, with real progress.
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.open('PUT', sign.signedUrl)
-        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
-        xhr.upload.onprogress = (e) => {
-          if (!e.lengthComputable) return
-          // Leave a little headroom for the "recording it" step.
-          const pct = Math.round((e.loaded / e.total) * 95)
-          setItems(prev => prev.map(i => i.id === id ? { ...i, progress: pct } : i))
+      const xhr = new XMLHttpRequest()
+      xhr.open('PUT', sign.signedUrl)
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+      // Videos are big and mobile data is slow — give them room before we bail.
+      xhr.timeout = 10 * 60 * 1000
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return
+        // Leave a little headroom for the "recording it" step.
+        const pct = Math.round((e.loaded / e.total) * 95)
+        patch(id, { progress: pct })
+      }
+      xhr.onload = async () => {
+        if (xhr.status < 200 || xhr.status >= 300) {
+          // Surface the real storage message (e.g. size-limit rejections) instead
+          // of a bare status code, so failures are actually diagnosable.
+          let msg = `Upload failed (${xhr.status})`
+          try { const j = JSON.parse(xhr.responseText); if (j?.message) msg = j.message } catch {}
+          return reject(new Error(msg))
         }
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) resolve()
-          else reject(new Error(`Upload failed (${xhr.status})`))
-        }
-        xhr.onerror = () => reject(new Error('Network error — check your connection'))
-        xhr.send(file)
-      })
-
-      // 3. Record it in the gallery.
-      const doneRes = await fetch('/api/upload-session/complete', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, path: sign.path, fileName: file.name, contentType: file.type }),
-      })
-      const done = await doneRes.json()
-      if (!doneRes.ok) { fail(done.error || 'Uploaded, but could not save it to the gallery'); return }
-
-      setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'done', progress: 100 } : i))
+        try {
+          // 3. Record it in the gallery.
+          const doneRes = await fetch('/api/upload-session/complete', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, path: sign.path, fileName: file.name, contentType: file.type }),
+          })
+          const done = await doneRes.json()
+          if (!doneRes.ok) return reject(new Error(done.error || 'Uploaded, but could not save it to the gallery'))
+          resolve()
+        } catch (e: any) { reject(new Error(e?.message || 'Could not save it to the gallery')) }
+      }
+      xhr.onerror = () => reject(new Error('Network error — check your connection'))
+      xhr.ontimeout = () => reject(new Error('Upload timed out — try again on a stronger connection'))
+      xhr.send(file)
     } catch (e: any) {
-      fail(e?.message || 'Upload failed')
+      reject(new Error(e?.message || 'Upload failed'))
+    }
+  })
+
+  const runUpload = async (id: string, file: File) => {
+    for (let attempt = 0; attempt <= AUTO_RETRIES; attempt++) {
+      try {
+        if (attempt > 0) patch(id, { status: 'uploading', progress: 0, error: undefined })
+        await attemptUpload(id, file)
+        patch(id, { status: 'done', progress: 100, error: undefined })
+        return
+      } catch (e: any) {
+        if (attempt < AUTO_RETRIES) {
+          // Quietly back off and try again — most 400/network blips clear on a retry.
+          await new Promise(r => setTimeout(r, (attempt + 1) * 1500))
+          continue
+        }
+        patch(id, { status: 'error', progress: 0, error: e?.message || 'Upload failed' })
+        return
+      }
     }
   }
 
@@ -167,7 +235,13 @@ export default function PhoneUpload() {
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: '#9aa3b2', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     {done} of {items.length} uploaded
                   </span>
-                  {failed > 0 && <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>{failed} failed</span>}
+                  {failed > 0 && (
+                    <button onClick={retryAllFailed}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 999, padding: '4px 11px', color: '#f87171', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                      Retry {failed} failed
+                    </button>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -189,23 +263,34 @@ export default function PhoneUpload() {
                         <p style={{ margin: 0, fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.name}</p>
                         {i.status === 'error' ? (
                           <p style={{ margin: '3px 0 0', fontSize: 11.5, color: '#ef4444' }}>{i.error}</p>
+                        ) : i.status === 'queued' ? (
+                          <p style={{ margin: '3px 0 0', fontSize: 11.5, color: '#9aa3b2' }}>Waiting…</p>
                         ) : (
-                          <div style={{ marginTop: 6, height: 4, borderRadius: 3, background: 'rgba(255,255,255,0.10)', overflow: 'hidden' }}>
-                            <div style={{
-                              width: `${i.progress}%`, height: '100%', borderRadius: 3,
-                              background: i.status === 'done' ? '#22c55e' : 'linear-gradient(90deg,#ff7a6b,#ff9a7b)',
-                              transition: 'width .2s ease',
-                            }} />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                            <div style={{ flex: 1, height: 4, borderRadius: 3, background: 'rgba(255,255,255,0.10)', overflow: 'hidden' }}>
+                              <div style={{
+                                width: `${i.progress}%`, height: '100%', borderRadius: 3,
+                                background: i.status === 'done' ? '#22c55e' : 'linear-gradient(90deg,#ff7a6b,#ff9a7b)',
+                                transition: 'width .2s ease',
+                              }} />
+                            </div>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: i.status === 'done' ? '#22c55e' : '#9aa3b2', fontVariantNumeric: 'tabular-nums', minWidth: 30, textAlign: 'right' }}>
+                              {i.progress}%
+                            </span>
                           </div>
                         )}
                       </div>
 
-                      <span style={{ flexShrink: 0, width: 22, display: 'flex', justifyContent: 'center' }}>
+                      <span style={{ flexShrink: 0, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', minWidth: 22 }}>
                         {i.status === 'done' && (
                           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.6" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                         )}
                         {i.status === 'error' && (
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          <button onClick={() => retryOne(i)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', borderRadius: 9, padding: '6px 10px', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                            Retry
+                          </button>
                         )}
                       </span>
                     </div>
