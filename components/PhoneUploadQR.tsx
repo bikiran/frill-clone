@@ -11,7 +11,7 @@ export default function PhoneUploadQR({
   companyId: string
   folderId?: string | null
   onClose: () => void
-  onUploaded?: () => void
+  onUploaded?: (items?: any[]) => void
 }) {
   const [url, setUrl] = useState('')
   const [token, setToken] = useState('')
@@ -47,7 +47,7 @@ export default function PhoneUploadQR({
           setUploaded(d.uploaded || 0)
           if ((d.uploaded || 0) > lastCount.current) {
             lastCount.current = d.uploaded
-            onUploaded?.()
+            onUploaded?.(d.items || [])
           }
         }
       } catch {}
