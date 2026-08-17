@@ -17,6 +17,7 @@ import { broadcastMessage } from '@/lib/chat-broadcast'
 import FilePickerButton from '@/components/FilePickerButton'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
 import { useClickOutside } from '@/lib/use-click-outside'
+import { useActiveCall, callMatches } from '@/lib/active-call'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
 import CallCard from '@/components/CallCard'
@@ -384,6 +385,13 @@ export default function InboxPage() {
   // Advanced: also permanently delete the media from Colvy after it expires
   // (access-only revocation is the default). Off unless explicitly turned on.
   const [expiryDeleteMode, setExpiryDeleteMode] = useState(false)
+  // Bulk expiry — set the same expiry on every staged item at once (matches the
+  // mobile app). Its own open/date state, kept separate from the per-item menu.
+  const [bulkExpiryOpen, setBulkExpiryOpen] = useState(false)
+  const [bulkCustomDate, setBulkCustomDate] = useState(false)
+  // The live phone call, if any — so the list can flag "Call in progress" on the
+  // conversation being called. Published by CallBar / IncomingCallListener.
+  const activeCall = useActiveCall()
   // Voice note recording (works in reply and internal-note modes).
   const [recording, setRecording] = useState(false)
   const [recSeconds, setRecSeconds] = useState(0)
@@ -1447,6 +1455,16 @@ export default function InboxPage() {
     return () => document.removeEventListener('mousedown', handler)
   }, [expiryMenuFor])
 
+  // Close the bulk-expiry selector when clicking elsewhere.
+  useEffect(() => {
+    if (!bulkExpiryOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-bulk-expiry]')) { setBulkExpiryOpen(false); setBulkCustomDate(false) }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [bulkExpiryOpen])
+
   // Realtime subscription to new messages / conversation updates
   useEffect(() => {
     if (!companyId) return
@@ -2170,6 +2188,20 @@ export default function InboxPage() {
     return isNaN(d.getTime()) ? 'Keep forever' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   }
   const anyExpiring = stagedMedia.some((m: any) => stagedExpiry[m.id] && stagedExpiry[m.id] !== 'forever')
+  // Apply one expiry choice to every staged item at once.
+  const applyBulkExpiry = (val: string) => {
+    setStagedExpiry(prev => {
+      const n = { ...prev }
+      stagedMedia.forEach((m: any) => { if (val === 'forever') delete n[m.id]; else n[m.id] = val })
+      return n
+    })
+  }
+  // The shared expiry code when every staged item agrees, else '' (mixed).
+  const bulkExpiryCode = (() => {
+    if (!stagedMedia.length) return 'forever'
+    const codes = stagedMedia.map((m: any) => stagedExpiry[m.id] || 'forever')
+    return codes.every(c => c === codes[0]) ? codes[0] : ''
+  })()
 
   // Stage the picked gallery media as preview cards above the composer instead of
   // sending straight away. Nothing is delivered until Send is pressed.
@@ -6606,9 +6638,16 @@ export default function InboxPage() {
               </span>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {callMatches(activeCall, { conversationId: c.id, contactId: c.contact_id, phone: contact.phone || c.sms_number }) ? (
+                  <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: '#059669', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
+                    {activeCall?.status === 'ringing' ? 'Calling…' : 'Call in progress'}
+                  </p>
+                ) : (
                 <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {conv.last_message || 'No messages yet'}
                 </p>
+                )}
                 {conv.unread_count > 0 && (
                   <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, background: 'var(--coral)', color: '#fff', minWidth: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', borderRadius: 20, boxSizing: 'border-box' }}>{conv.unread_count}</span>
                 )}
@@ -7191,6 +7230,11 @@ export default function InboxPage() {
                         boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                         border: isAgent ? 'none' : '1px solid var(--border)',
                         position: 'relative',
+                        // A message carrying media caps at a phone-like width so a
+                        // short caption wraps UNDER the media instead of stretching
+                        // the bubble wide and leaving empty bubble colour beside a
+                        // portrait clip (which is how it read on desktop before).
+                        maxWidth: atts.some((a: any) => a.kind === 'image' || a.kind === 'video') ? 300 : undefined,
                       }}>
                         {/* Instagram story reply — show the story they replied
                             to (thumbnail) above their message, like Coax. */}
@@ -7221,6 +7265,11 @@ export default function InboxPage() {
                           const shown = n > 5 ? media.slice(0, 5) : media
                           const W = 268                     // collage width
                           const GAP = 2
+                          // A lone video WITH a caption should fill the bubble width
+                          // (a landscape tile) so it reads like the mobile app —
+                          // rather than hugging a narrow portrait strip beside the
+                          // text. A media-only lone video keeps its tight fit.
+                          const loneVideoWithText = n === 1 && shown[0]?.kind === 'video' && !!msg.content
 
                           // Facebook picks a shape per count. Each entry gives
                           // the grid template and the row heights.
@@ -7253,7 +7302,7 @@ export default function InboxPage() {
                                   // ('auto'), not stretch to 1fr of the collage width —
                                   // otherwise a portrait clip leaves the bubble colour
                                   // (blue on outbound) showing beside it.
-                                  gridTemplateColumns: n === 1 && shown[0]?.kind === 'video' ? 'auto' : layout.cols,
+                                  gridTemplateColumns: n === 1 && shown[0]?.kind === 'video' && !loneVideoWithText ? 'auto' : layout.cols,
                                   gridAutoRows: layout.rows.split(' ')[0],
                                   gridTemplateRows: layout.rows,
                                   gap: GAP,
@@ -7261,7 +7310,8 @@ export default function InboxPage() {
                                   // A lone video wraps tightly (fit-content) so a
                                   // portrait clip isn't letterboxed into a tall
                                   // grey box; a lone image still fills the width.
-                                  width: n === 1 ? (shown[0]?.kind === 'video' ? 'fit-content' : 'auto') : W,
+                                  // With a caption it fills the bubble width instead.
+                                  width: loneVideoWithText ? '100%' : n === 1 ? (shown[0]?.kind === 'video' ? 'fit-content' : 'auto') : W,
                                   maxWidth: W,
                                   borderRadius: 14,
                                   overflow: 'hidden',
@@ -7281,7 +7331,9 @@ export default function InboxPage() {
                                           background: a.kind === 'video' ? '#000' : '#e5e7eb', overflow: 'hidden',
                                           // A lone video tile hugs the clip; a lone photo
                                           // keeps its shape; in a mosaic tiles fill cells.
-                                          ...(n === 1 && a.kind === 'video' ? { width: 'fit-content', maxHeight: 320 } : n === 1 ? { maxHeight: 320 } : {}),
+                                          // With a caption the lone video fills a
+                                          // landscape tile (like mobile) instead.
+                                          ...(loneVideoWithText ? { width: '100%', aspectRatio: '4 / 3' } : n === 1 && a.kind === 'video' ? { width: 'fit-content', maxHeight: 320 } : n === 1 ? { maxHeight: 320 } : {}),
                                         }}>
                                         {a.kind === 'image' ? (
                                           <img
@@ -7307,7 +7359,7 @@ export default function InboxPage() {
                                               muted
                                               playsInline
                                               {...(a.thumbUrl ? { poster: toPublicUrl(a.thumbUrl) } : {})}
-                                              style={{ width: n === 1 ? 'auto' : '100%', height: n === 1 ? 'auto' : '100%', maxWidth: '100%', maxHeight: n === 1 ? 280 : undefined, objectFit: n === 1 ? 'contain' : 'cover', display: 'block', pointerEvents: 'none', background: '#111' }} />
+                                              style={{ width: loneVideoWithText || n !== 1 ? '100%' : 'auto', height: loneVideoWithText || n !== 1 ? '100%' : 'auto', maxWidth: '100%', maxHeight: loneVideoWithText ? undefined : n === 1 ? 280 : undefined, objectFit: loneVideoWithText || n !== 1 ? 'cover' : 'contain', display: 'block', pointerEvents: 'none', background: '#111' }} />
                                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                               <div style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>▶</div>
                                             </div>
@@ -7737,6 +7789,51 @@ export default function InboxPage() {
                   default). */}
               {stagedMedia.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
+                  {/* Bulk expiry — set one expiry for every staged item at once
+                      (mirrors the mobile app). Only worth showing for 2+ items. */}
+                  {!internalMode && stagedMedia.length > 1 && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '2px 2px 0' }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)' }}>
+                        {stagedMedia.length} attachments
+                      </span>
+                      <div data-bulk-expiry style={{ position: 'relative', flexShrink: 0 }}>
+                        <button type="button"
+                          onClick={() => { setBulkExpiryOpen(v => !v); setBulkCustomDate(false) }}
+                          title="Set when all of these expire"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 28, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: bulkExpiryCode && bulkExpiryCode !== 'forever' ? 'var(--peach)' : '#fff', color: bulkExpiryCode && bulkExpiryCode !== 'forever' ? 'var(--coral)' : 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                          Set expiry for all{bulkExpiryCode === '' ? '' : ` · ${expiryChip(bulkExpiryCode)}`}
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                        {bulkExpiryOpen && (
+                          <div style={{ position: 'absolute', bottom: '120%', right: 0, width: 180, background: '#fff', borderRadius: 10, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden', padding: '4px 0' }}>
+                            {[['forever', 'Keep forever'], ['1d', '1 day'], ['7d', '7 days'], ['30d', '30 days']].map(([val, label]) => (
+                              <button key={val} type="button"
+                                onClick={() => { applyBulkExpiry(val); setBulkExpiryOpen(false) }}
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: bulkExpiryCode === val ? 'var(--peach)' : 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', fontWeight: bulkExpiryCode === val ? 700 : 500 }}>
+                                {label}
+                                {bulkExpiryCode === val && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                              </button>
+                            ))}
+                            <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+                            {bulkCustomDate ? (
+                              <div style={{ padding: '6px 10px' }}>
+                                <input type="date" autoFocus
+                                  min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
+                                  onChange={e => { if (e.target.value) { applyBulkExpiry(e.target.value); setBulkExpiryOpen(false); setBulkCustomDate(false) } }}
+                                  style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
+                              </div>
+                            ) : (
+                              <button type="button" onClick={() => setBulkCustomDate(true)}
+                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                                Choose a date…
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   {stagedMedia.map((m: any) => {
                     const imgThumb = m.thumbnail_url && m.thumbnail_url !== m.url && !/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m.thumbnail_url) ? m.thumbnail_url : null
                     const code = stagedExpiry[m.id]

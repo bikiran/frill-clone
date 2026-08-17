@@ -300,8 +300,16 @@ export default function ContactsPage() {
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--ink)' }}>Contacts</h1>
             <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--slate)' }}>{totalCount.toLocaleString()} contacts</p>
           </div>
-          <input placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)}
-            style={{ ...inp, maxWidth: 280, background: 'var(--canvas)' }} />
+          <div style={{ position: 'relative', maxWidth: 280, flex: '1 1 220px' }}>
+            <input placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)}
+              style={{ ...inp, width: '100%', background: 'var(--canvas)', paddingRight: search ? 32 : undefined }} />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} title="Clear search" aria-label="Clear search"
+                style={{ position: 'absolute', top: '50%', right: 8, transform: 'translateY(-50%)', width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'var(--border)', color: 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            )}
+          </div>
           <button type="button" className="press" onClick={() => setShowAddContact(true)}
             style={{ padding: '9px 15px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
             + New contact
@@ -454,8 +462,34 @@ export default function ContactsPage() {
                     </td>
                     <td style={{ padding: '11px 16px', color: 'var(--slate)' }}>{new Date(c.created_at).toLocaleDateString()}</td>
                     <td style={{ padding: '11px 16px' }}>
-                      <button onClick={e => { e.stopPropagation(); setSelected(c); setEditData(c); setEditMode(true) }}
-                        style={{ fontSize: 12, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Edit</button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={e => e.stopPropagation()}>
+                        {c.phone && (
+                          <a href={`tel:${c.phone}`} title={`Call ${c.phone}`} aria-label="Call"
+                            style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z"/></svg>
+                          </a>
+                        )}
+                        {c.phone && (
+                          <a href={`sms:${c.phone}`} title={`Message ${c.phone}`} aria-label="Message"
+                            style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                          </a>
+                        )}
+                        {c.email && (
+                          <a href={`mailto:${c.email}`} title={`Email ${c.email}`} aria-label="Email"
+                            style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
+                          </a>
+                        )}
+                        <button onClick={e => { e.stopPropagation(); setSelected(c); setEditData(c); setEditMode(true) }}
+                          style={{ fontSize: 12, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, marginLeft: 2 }}>Edit</button>
+                      </div>
                     </td>
                   </tr>
                 ))}

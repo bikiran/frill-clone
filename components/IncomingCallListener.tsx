@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getVoiceProvider } from '@/lib/voice-provider-client'
+import { setActiveCall, clearActiveCall } from '@/lib/active-call'
 
 // Pull the useful bit out of a Twilio Voice SDK error for the status pill.
 function twErr(e: any): string {
@@ -78,6 +79,18 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     e.preventDefault()
   }
   useEffect(() => () => onDragEnd(), [])   // clean up listeners if we unmount mid-drag
+
+  // Publish an answered inbound call so the inbox list can show "Call in
+  // progress" on the caller's conversation. We match by contact id / number
+  // (an inbound call has no conversation id to hand).
+  useEffect(() => {
+    if (inCall) {
+      setActiveCall({ contactId: caller?.contactId || null, number: caller?.number || null, name: caller?.name || null, status: 'active' })
+    } else {
+      clearActiveCall()
+    }
+  }, [inCall, caller])
+  useEffect(() => () => clearActiveCall(), [])
 
   useEffect(() => {
     if (!companyId) return

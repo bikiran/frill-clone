@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getVoiceProvider } from '@/lib/voice-provider-client'
+import { setActiveCall, clearActiveCall } from '@/lib/active-call'
 
 interface CallBarProps {
   companyId: string | null
@@ -166,7 +167,19 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
     }
   }
 
-  useEffect(() => () => { cleanup() }, [])
+  // Publish the live call so the inbox list can show "Call in progress" on the
+  // matching conversation. Ringing/connecting count as ringing; answered = active.
+  useEffect(() => {
+    if (state === 'active') {
+      setActiveCall({ conversationId: conversationId || null, contactId: contactId || null, number: toNumber || null, name: contactName || null, status: 'active' })
+    } else if (state === 'connecting' || state === 'ringing') {
+      setActiveCall({ conversationId: conversationId || null, contactId: contactId || null, number: toNumber || null, name: contactName || null, status: 'ringing' })
+    } else {
+      clearActiveCall()
+    }
+  }, [state, conversationId, contactId, toNumber, contactName])
+
+  useEffect(() => () => { clearActiveCall(); cleanup() }, [])
 
   const cleanup = () => {
     if (timerRef.current) clearInterval(timerRef.current)
