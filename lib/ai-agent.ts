@@ -594,6 +594,39 @@ WHAT YOU CANNOT DO
 
     if (!text) return { replied: false, reason: 'Empty reply' }
 
+    // ── Deterministic backstop: never volunteer store locations ──────────────
+    // Prompt guardrails alone kept leaking the store address into replies to
+    // messages that never asked for it (a fish-species question, a sign-off).
+    // So enforce it in code: if the customer didn't ask about where we are, and
+    // the draft nonetheless recites a location/address, strip those sentences.
+    // If a real answer remains, send that; if nothing substantive is left, hand
+    // to a person rather than reply with an address they didn't want.
+    if (text && !handoff) {
+      const askedLocation = /\b(where\s+(are|is|can|do|to)|where'?s|address|located|location|directions?|nearest|come\s+in|drop\s+in|pop\s+in|visit|in[-\s]?store|pick[-\s]?up|opening\s+hours?|open(ing)?\s+times?|store\s+hours?|what\s+time.*\bopen|find\s+you|your\s+(shop|store|premises)|\bmap\b)\b/i.test(last.content || '')
+      const locSignal = /\bwe(?:'re| are)?\s+located\b|\blocated\s+(?:in|at)\b|\bour\s+(?:stores?|shops?|locations?|address)\b|\b\d{1,5}\s+[A-Za-z][\w.'-]*\s+(?:street|st|road|rd|ave|avenue|drive|dr|lane|ln|hwy|highway|parade|pde|court|ct|place|pl|boulevard|blvd)\b/i
+      if (!askedLocation && locSignal.test(text)) {
+        const kept = text
+          .split(/\n+/)
+          .map(line => line.split(/(?<=[.!?])\s+/).filter(s => !locSignal.test(s)).join(' ').trim())
+          .filter(Boolean)
+          .join('\n')
+          .trim()
+        const substantive = kept.replace(/[^a-z0-9]/gi, '').length >= 12
+        await log(db, {
+          company_id: companyId, conversation_id: opts.conversationId, contact_id: contact?.id,
+          action: 'suppressed_location', allowed: false,
+          blocked_reason: 'Draft volunteered a store location without being asked',
+          payload: { original: text.slice(0, 400), kept: substantive ? kept.slice(0, 400) : null },
+        })
+        if (substantive) {
+          text = kept
+        } else {
+          handoff = true
+          text = `Thanks for your message — let me get one of the team to help you with this properly. They'll be with you shortly.`
+        }
+      }
+    }
+
     // Post it, clearly marked as AI.
     await db.from('messages').insert({
       conversation_id: opts.conversationId,
