@@ -145,7 +145,10 @@ export async function POST(req: NextRequest) {
       ...((online || []).map((a: any) => a.user_id)),
       ...((mobileTokens || []).map((t: any) => t.user_id)),
     ].filter((id: any) => id && !unavailable.has(id)))
-    const identities = Array.from(userIds).map(uid => twilioIdentity(uid, companyId))
+    // Keep the user ids alongside their Voice-SDK identities: the per-<Client>
+    // status callback needs the user id to record WHO answered the call.
+    const ringUsers = Array.from(userIds)
+    const identities = ringUsers.map(uid => twilioIdentity(uid, companyId))
 
     // Fire a push so mobile devices/agents know a call is ringing.
     try {
@@ -162,18 +165,21 @@ export async function POST(req: NextRequest) {
     const ring = Number(integ.ring_seconds || 25)
     const recordingCb = `${base}/api/twilio/voice/recording?${cbQuery}`
     const actionCb = `${base}/api/twilio/voice/inbound-status?${cbQuery}`
-    // Per-client status callback captures the answered agent leg's CallSid (for
-    // warm transfer). Only the client that answers fires 'answered'.
-    const childCb = `${base}/api/twilio/voice/child-status?callRowId=${encodeURIComponent(callRowId || '')}&companyId=${encodeURIComponent(companyId)}`
     // Pass the calls-row id straight to the browser as a custom parameter, so
     // warm transfer can identify the exact call without guessing from CallSids
-    // (the client leg's SID doesn't match the parent row).
-    const clients = identities.map(id =>
-      `<Client statusCallback="${xmlEscape(childCb)}" statusCallbackEvent="answered" statusCallbackMethod="POST">` +
-        `<Identity>${xmlEscape(id)}</Identity>` +
-        `<Parameter name="callRowId" value="${xmlEscape(callRowId || '')}"/>` +
-      `</Client>`
-    ).join('')
+    // (the client leg's SID doesn't match the parent row). Each <Client> gets a
+    // per-agent status callback carrying that agent's user id, so the child-status
+    // handler can record which team member answered (and tell everyone else).
+    const clients = ringUsers.map(uid => {
+      const id = twilioIdentity(uid, companyId)
+      const childCb = `${base}/api/twilio/voice/child-status?callRowId=${encodeURIComponent(callRowId || '')}&companyId=${encodeURIComponent(companyId)}&userId=${encodeURIComponent(uid)}`
+      return (
+        `<Client statusCallback="${xmlEscape(childCb)}" statusCallbackEvent="answered" statusCallbackMethod="POST">` +
+          `<Identity>${xmlEscape(id)}</Identity>` +
+          `<Parameter name="callRowId" value="${xmlEscape(callRowId || '')}"/>` +
+        `</Client>`
+      )
+    }).join('')
 
     try { await db.from('calls').update({ status: 'ringing_agents' }).eq('id', callRowId || '') } catch {}
 
