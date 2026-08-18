@@ -150,10 +150,12 @@ export async function POST(req: NextRequest) {
     const ringUsers = Array.from(userIds)
     const identities = ringUsers.map(uid => twilioIdentity(uid, companyId))
 
-    // Fire a push so mobile devices/agents know a call is ringing.
-    try {
-      fetch(`${base}/api/push/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, title: `Incoming call from ${callerName || from}`, body: '📞 Ringing now', ...(conversationId ? { conversationId } : {}) }) })
-    } catch {}
+    // NOTE: we deliberately do NOT fire a separate /api/push/send "Ringing now"
+    // notification here. Twilio's own Voice CallInvite push already raises a
+    // full incoming-call notification (Answer/Decline, full-screen intent) on
+    // every device below; a second Expo push just posted a duplicate, plain
+    // notification for the same call. It never woke a closed app — only the
+    // Twilio push does that — so dropping it leaves ringing intact.
 
     if (identities.length === 0) {
       // Nobody online → straight to voicemail (if enabled).
