@@ -40,6 +40,12 @@ function subscribe(cb: () => void) {
   return () => { listeners.delete(cb) }
 }
 
+// Subscribe to active-call changes outside React (e.g. to fire a presence ping
+// the moment a call starts/ends). Returns an unsubscribe function.
+export function subscribeActiveCall(cb: () => void) {
+  return subscribe(cb)
+}
+
 // React hook — re-renders the caller whenever the active call changes.
 export function useActiveCall(): ActiveCall | null {
   return useSyncExternalStore(subscribe, getActiveCall, () => null)

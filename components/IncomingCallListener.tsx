@@ -168,6 +168,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           device.on('error', (e: any) => { if (!cancelled) { setReady(false); setConnErr(twErr(e)) } console.error('[twilio voice] error', e) })
           device.on('incoming', (call: any) => {
             console.log('[twilio voice] INCOMING CALL')
+            // Already on a call? Don't clobber it. Reject this second leg so it
+            // rings the other available agents instead of interrupting us.
+            if (liveRef.current.inCall) { try { call.reject?.() } catch {}; return }
             callRef.current = call
             const fromNum = call.parameters?.From || call.parameters?.from || ''
             // The inbound TwiML passes our calls-row id as a custom parameter so
@@ -246,6 +249,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
               try { call.hangup?.() } catch {}
               return
             }
+            // Already on a call? Reject this second leg so it rings the other
+            // available agents instead of interrupting the live call.
+            if (liveRef.current.inCall) { try { call.hangup?.() } catch {}; return }
             console.log('[telnyx] INCOMING CALL received by browser client')
             callRef.current = call
             callIdRef.current = call.id || null

@@ -2,6 +2,23 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 const fmtDuration = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
+// Keep the inbox list preview in step with a call's latest state, so a
+// conversation doesn't stay stuck on "📞 Incoming call" after the call is
+// answered, missed, or goes to voicemail. Best-effort; never throws.
+export async function setCallPreview(
+  db: SupabaseClient,
+  conversationId: string | null | undefined,
+  text: string,
+): Promise<void> {
+  if (!conversationId) return
+  try {
+    await (db as any).from('conversations').update({
+      last_message: text,
+      last_message_at: new Date().toISOString(),
+    }).eq('id', conversationId)
+  } catch { /* best-effort — a stale preview beats a thrown webhook */ }
+}
+
 // Ensure a connected call has a timeline card in its conversation.
 //
 // The card is normally posted by the browser on hang-up (CallBar.endCall). That

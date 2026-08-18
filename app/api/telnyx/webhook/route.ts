@@ -5,7 +5,7 @@ import { notifyCompany } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
 import { TelnyxService } from '@/lib/telnyx-service'
 import { logWebhookEvent } from '@/lib/webhook-log'
-import { ensureCallCard } from '@/lib/call-card'
+import { ensureCallCard, setCallPreview } from '@/lib/call-card'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 
 function admin() {
@@ -515,9 +515,18 @@ export async function POST(req: NextRequest) {
               console.error('[telnyx inbound] telnyx_user_credentials unavailable (run migration V190):', credsErr.message)
             }
 
+            // Don't ring an agent who's already on a call — they report
+            // available:false while busy, so the call rings the OTHERS instead of
+            // interrupting them. (Their client also rejects a second leg as a
+            // backstop, but skipping the dial entirely is cleaner.)
+            const { data: busy } = await db.from('agent_presence')
+              .select('user_id').eq('company_id', companyId)
+              .gte('last_seen_at', cutoff).eq('available', false)
+            const busyUsers = new Set<string>(((busy || []).map((b: any) => b.user_id)).filter(Boolean))
+
             const sharedSip = integ.sip_username || (integ as any).sip_conn_username || null
             const sipUsernames = Array.from(new Set([
-              ...((userCreds || []).map((c: any) => c.sip_username).filter(Boolean)),
+              ...((userCreds || []).filter((c: any) => !busyUsers.has(c.user_id)).map((c: any) => c.sip_username).filter(Boolean)),
               ...(sharedSip ? [sharedSip] : []),
             ]))
             const sipTargets = sipUsernames.map((u: string) => `sip:${u}@sip.telnyx.com`)
@@ -706,6 +715,9 @@ export async function POST(req: NextRequest) {
               agent_call_control_id: callControlId,
             }).eq('id', parentRow.id)
 
+            // Move the inbox list off "Incoming call" now that it's answered.
+            try { await setCallPreview(db as any, parentRow.conversation_id, '📞 Call answered') } catch {}
+
             // Record the answered call. Until now recordStart only ran for
             // voicemail greetings, so real conversations produced no audio —
             // and therefore no transcript, summary, sentiment or action items.
@@ -870,6 +882,7 @@ export async function POST(req: NextRequest) {
               status: 'voicemail',
               is_voicemail: true,
             }).eq('telnyx_call_control_id', callControlId)
+            try { await setCallPreview(db as any, recRow?.conversation_id, '📞 Voicemail') } catch {}
             // Notify the company there's a new voicemail.
             const { data: c } = await db.from('calls').select('company_id, from_number, caller_name, contact_id').eq('telnyx_call_control_id', callControlId).maybeSingle()
             if (c?.company_id) {
@@ -924,7 +937,7 @@ export async function POST(req: NextRequest) {
           // Only downgrade to missed for inbound calls that never connected;
           // don't clobber a voicemail state the inbound flow already set.
           const { data: existing } = await db.from('calls')
-            .select('id, status, is_voicemail').or(`telnyx_call_control_id.eq.${callControlId},telnyx_call_session_id.eq.${sessionId}`).maybeSingle()
+            .select('id, status, is_voicemail, conversation_id').or(`telnyx_call_control_id.eq.${callControlId},telnyx_call_session_id.eq.${sessionId}`).maybeSingle()
           if (existing?.is_voicemail || String(existing?.status || '').startsWith('voicemail')) {
             update.status = 'voicemail'
           } else if (isInbound && !answered && !dur) {
@@ -933,6 +946,15 @@ export async function POST(req: NextRequest) {
             update.status = 'completed'
           }
           hangupCallRowId = existing?.id || ''
+          // Reflect the outcome in the inbox list. A voicemail hangup shows
+          // "Missed call" provisionally; call.recording.saved upgrades it to
+          // "Voicemail" if the caller actually left a message.
+          if (isInbound && existing?.conversation_id) {
+            const preview = update.status === 'completed'
+              ? (dur ? `📞 Call ended · ${Math.floor(dur / 60)}:${String(dur % 60).padStart(2, '0')}` : '📞 Call ended')
+              : '📞 Missed call'
+            try { await setCallPreview(db as any, existing.conversation_id, preview) } catch {}
+          }
         }
         await db.from('calls').update(update).or(`telnyx_call_control_id.eq.${callControlId},telnyx_call_session_id.eq.${sessionId}`)
         // On hangup, ensure a connected call has its thread card (idempotent).

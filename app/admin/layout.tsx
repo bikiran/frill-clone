@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import IncomingCallListener from '@/components/IncomingCallListener'
+import { getActiveCall, subscribeActiveCall } from '@/lib/active-call'
 import AdminBanner from '@/components/AdminBanner'
 import ImpersonationBanner from '@/components/ImpersonationBanner'
 import DemoBanner from '@/components/DemoBanner'
@@ -176,23 +177,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     // Agent presence heartbeat — records that this agent is online so an inbound
     // call can ring them. "Online" = seen in the last ~2 minutes.
     const beat = async () => {
-      if (document.visibilityState !== 'visible') return
+      const onCall = !!getActiveCall()
+      // Skip while hidden UNLESS we're on a call — a busy agent must keep
+      // reporting available:false even with the tab in the background, so the
+      // next inbound call rings the other agents, not them.
+      if (document.visibilityState !== 'visible' && !onCall) return
       try {
         const { data: { session } } = await supabase.auth.getSession()
         fetch('/api/telnyx/presence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
-          body: JSON.stringify({ companyId: company.id }),
+          body: JSON.stringify({ companyId: company.id, available: !onCall }),
         }).catch(() => {})
       } catch {}
     }
     const t = setTimeout(() => { sync(); beat() }, 4000)   // shortly after load
     const iv = setInterval(sync, 120000)                    // email every 2 minutes
     const hb = setInterval(beat, 45000)                     // presence every 45s
+    // Flip availability the instant a call starts or ends, so the 45s cadence
+    // doesn't leave a window where a busy agent still gets rung.
+    const unsubCall = subscribeActiveCall(() => { beat() })
     document.addEventListener('visibilitychange', () => { sync(); beat() })
     return () => {
       stop = true
       clearTimeout(t); clearInterval(iv); clearInterval(hb)
+      unsubCall()
       document.removeEventListener('visibilitychange', sync)
     }
   }, [company?.id])
