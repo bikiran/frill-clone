@@ -14,7 +14,11 @@ const admin = () => createClient(
 // visible. Uses the caller's auth to identify the user.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId } = await req.json()
+    const body = await req.json()
+    const { companyId } = body
+    // Callers can report themselves busy (on a call) so the inbound ring-all
+    // skips them and rings the other available agents instead. Defaults to true.
+    const available = body?.available === false ? false : true
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
 
     // Identify the agent from the bearer token (browser sends the Supabase JWT).
@@ -38,7 +42,7 @@ export async function POST(req: NextRequest) {
       company_id: companyId,
       user_id: userId,
       sip_username: integ?.sip_username || null,
-      available: true,
+      available,
       last_seen_at: new Date().toISOString(),
     }, { onConflict: 'company_id,user_id' })
 

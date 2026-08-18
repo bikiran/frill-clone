@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { setCallPreview } from '@/lib/call-card'
 
 export const dynamic = 'force-dynamic'
 
@@ -81,12 +82,19 @@ export async function POST(req: NextRequest) {
       // the "X received the call" ping only once. (When userId is absent — an
       // older cached TwiML — we skip the filter and keep the prior behaviour.)
       let claimed = false
+      let convId: string | null = null
       try {
         let q = db.from('calls').update(patch).eq('id', callRowId)
         if (userId) q = q.is('answered_by_user_id', null)
-        const { data: updated } = await q.select('id')
+        const { data: updated } = await q.select('id, conversation_id')
         claimed = Array.isArray(updated) && updated.length > 0
+        convId = (updated as any)?.[0]?.conversation_id || null
       } catch {}
+
+      // Reflect the answer in the inbox list — once, for the winning agent.
+      if (claimed && convId) {
+        try { await setCallPreview(db as any, convId, name ? `📞 Call answered by ${name}` : '📞 Call answered') } catch {}
+      }
 
       // Let the rest of the team know who picked it up — once.
       if (claimed && companyId && userId && name) {
