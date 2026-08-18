@@ -108,6 +108,12 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const clientRef = useRef<any>(null)
   const callRef = useRef<any>(null)
   const timerRef = useRef<any>(null)
+  // The id of the call currently in the popup, and the set of ids we've already
+  // declined. On the direct-SIP (Telnyx) path, dropping a leg can make the
+  // server re-offer the SAME ringing call — without this it re-opened the popup
+  // and restarted the ringtone, so Decline looked like it did nothing.
+  const callIdRef = useRef<string | null>(null)
+  const declinedIds = useRef<Set<string>>(new Set())
   // The signed-in agent's user id, so a call we accept can notify the REST of
   // the team (excludeUserId = us) to stop their phones ringing.
   const userIdRef = useRef<string | null>(null)
@@ -234,8 +240,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           const st = call.state
           const dir = call.direction
           if ((st === 'ringing' || st === 'new' || st === 'early') && (dir === 'inbound' || dir === 'incoming')) {
+            // Already declined this call? The server is re-offering the same leg.
+            // Reject it again silently — don't reopen the popup or ring.
+            if (call.id && declinedIds.current.has(call.id)) {
+              try { call.hangup?.() } catch {}
+              return
+            }
             console.log('[telnyx] INCOMING CALL received by browser client')
             callRef.current = call
+            callIdRef.current = call.id || null
             setIncoming(call)
             startRing()
             resolveCaller(call.options?.remoteCallerNumber || call.remoteCallerNumber)
@@ -247,6 +260,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           // Any terminal state tears down the popup — covers the caller hanging
           // up before/after answer, so the browser popup never gets stuck.
           if (['hangup', 'destroy', 'purge', 'done'].includes(String(call.state))) {
+            if (call.id) declinedIds.current.delete(call.id)   // truly over — forget it
             stopRing(); reset()
           }
         })
@@ -399,7 +413,20 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       }),
     }).catch(() => {})
   }
-  const decline = () => { stopRing(); try { provider === 'twilio' ? callRef.current?.reject?.() : callRef.current?.hangup?.() } catch {}; reset() }
+  const decline = () => {
+    stopRing()
+    // Remember this call id so a Telnyx re-offer of the same leg is auto-rejected
+    // instead of ringing again.
+    const cid = callIdRef.current || callRef.current?.id
+    if (cid) declinedIds.current.add(cid)
+    try {
+      if (provider === 'twilio') callRef.current?.reject?.()
+      // Telnyx: reject the ringing invite. hangup() sends the decline; some SDK
+      // builds also expose reject() — call whichever exists.
+      else { callRef.current?.reject?.(); callRef.current?.hangup?.() }
+    } catch {}
+    reset()
+  }
   const hangup = () => { stopRing(); try { provider === 'twilio' ? callRef.current?.disconnect?.() : callRef.current?.hangup?.() } catch {}; reset() }
 
   // ── Hold and warm transfer ───────────────────────────────────────────────
