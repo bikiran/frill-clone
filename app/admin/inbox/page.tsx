@@ -8586,8 +8586,9 @@ export default function InboxPage() {
                                 </span>
                               </span>
                             )}
-                            <p style={{ margin: 0, fontSize: 13, color: value ? 'var(--ink)' : '#c0c0c5', flex: 1, wordBreak: 'break-word', fontStyle: value ? 'normal' : 'italic', cursor: value ? 'default' : 'pointer' }}
-                               onClick={() => { if (!value) { setEditField(field); setEditFieldValue('') } }}>
+                            <p style={{ margin: 0, fontSize: 13, color: value ? 'var(--ink)' : '#c0c0c5', flex: 1, wordBreak: 'break-word', fontStyle: value ? 'normal' : 'italic', cursor: 'pointer' }}
+                               title="Click to edit"
+                               onClick={() => { setEditField(field); setEditFieldValue(value || '') }}>
                               {value || `Add ${label.toLowerCase()}`}
                             </p>
                             <div className="contact-field-actions" style={{ display: 'flex', gap: 3, opacity: 0, transition: 'opacity 0.12s' }}>

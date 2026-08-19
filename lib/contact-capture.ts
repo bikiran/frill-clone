@@ -13,6 +13,39 @@
 
 const digitsOf = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
 
+// Find, or create, a contact for a phone number — company-scoped.
+//
+// Unlike captureContactFromSms (which deliberately won't mint a nameless contact
+// for a random texter), an inbound CALL should always leave a contact behind so
+// the number is saved in the CRM and future calls/texts resolve to it. Matches
+// an existing contact by the last-9-digits of the number first; only inserts a
+// new one if there's no match. Best-effort — returns null rather than throwing.
+export async function ensureContactByPhone(
+  db: any,
+  companyId: string,
+  phone: string,
+  opts?: { name?: string | null; source?: string },
+): Promise<string | null> {
+  if (!companyId || !phone) return null
+  const tail = digitsOf(phone)
+  if (!tail || tail.length < 6) return null
+  try {
+    const { data: matches } = await db.from('contacts')
+      .select('id, phone').eq('company_id', companyId).ilike('phone', `%${tail}%`).limit(10)
+    const hit = (matches || []).find((c: any) => c.phone && digitsOf(c.phone) === tail)
+    if (hit) return hit.id
+  } catch { /* fall through to create */ }
+  try {
+    const { data: created } = await db.from('contacts').insert({
+      company_id: companyId,
+      name: opts?.name ?? null,
+      phone,
+      source: opts?.source || 'phone',
+    }).select('id').maybeSingle()
+    return created?.id || null
+  } catch { return null }
+}
+
 export interface ExtractedContact {
   name: string | null
   suburb: string | null

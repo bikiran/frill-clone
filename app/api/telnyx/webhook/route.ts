@@ -7,6 +7,7 @@ import { TelnyxService } from '@/lib/telnyx-service'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { ensureCallCard, setCallPreview } from '@/lib/call-card'
 import { companyForInboundNumber } from '@/lib/inbound-company'
+import { ensureContactByPhone } from '@/lib/contact-capture'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 
 function admin() {
@@ -424,6 +425,13 @@ export async function POST(req: NextRequest) {
                 if (b) callerName = `${b.first_name || ''} ${b.last_name || ''}`.trim() || null
               } catch {}
             }
+          }
+
+          // Unknown caller → save the number as a contact now (with any name we
+          // resolved from WooCommerce), so it's in the CRM and future calls/texts
+          // resolve to the same person.
+          if (!contactId && fromNum) {
+            contactId = await ensureContactByPhone(db, companyId, fromNum, { name: callerName, source: 'phone' })
           }
 
           // Remember which Voice API App the number rings through, so other code

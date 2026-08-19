@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { companyForInboundNumber } from '@/lib/inbound-company'
+import { ensureContactByPhone } from '@/lib/contact-capture'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,6 +73,12 @@ export async function POST(req: NextRequest) {
           .select('id, name, phone').eq('company_id', companyId).ilike('phone', `%${fromTail}%`).limit(10)
         const c = (contacts || []).find((x: any) => x.phone && digitsOf(x.phone) === fromTail)
         if (c) { contactId = c.id; callerName = c.name || null }
+      }
+
+      // Unknown caller → save the number as a contact now, so it's in the CRM and
+      // future calls/texts from them resolve to the same person.
+      if (!contactId && from) {
+        contactId = await ensureContactByPhone(db, companyId, from, { source: 'phone' })
       }
 
       // Find an existing thread by the contact OR by the caller's number — many
