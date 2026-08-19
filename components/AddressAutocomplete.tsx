@@ -64,7 +64,12 @@ export default function AddressAutocomplete({
       })
       acRef.current.addListener('place_changed', () => {
         const place = acRef.current.getPlace()
-        if (!place) return
+        // Google fires place_changed on blur / Enter / re-render too, not only on
+        // a real pick. In those cases getPlace() returns the raw typed text with
+        // NO address_components and no formatted_address. Bailing here is critical:
+        // the old code then ran onChange(place.formatted_address || '') → '' which
+        // WIPED whatever the user had typed and saved an empty address.
+        if (!place || (!place.address_components && !place.formatted_address)) return
         const get = (type: string, short = false) => {
           const c = (place.address_components || []).find((x: any) => x.types.includes(type))
           return c ? (short ? c.short_name : c.long_name) : ''
