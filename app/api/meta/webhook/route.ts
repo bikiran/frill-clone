@@ -187,7 +187,7 @@ export async function POST(req: NextRequest) {
         }
         if (!conv) continue
 
-        await db.from('messages').insert({
+        const { data: insertedMsg } = await db.from('messages').insert({
           conversation_id: conv.id, company_id: companyId,
           sender_type: 'visitor',
           sender_name: contact?.name || null,
@@ -196,7 +196,14 @@ export async function POST(req: NextRequest) {
           meta_message_id: event.message?.mid || null,
           attachments: attachments.length ? attachments : [],
           metadata: storyReply ? { story_reply: storyReply } : {},
-        })
+        }).select('id').maybeSingle()
+
+        // Detect language + translate to English (fire-and-forget) for the inbox
+        // "Translated · English / View original" toggle.
+        if (text && insertedMsg?.id) {
+          const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
+          fetch(`${base}/api/inbox/translate-message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: insertedMsg.id }) }).catch(() => {})
+        }
 
         // Alert the team: in-app bell + a phone push carrying conversationId, so
         // the notification gets the Reply / Mark-read quick actions.

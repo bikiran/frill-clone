@@ -120,6 +120,12 @@ export async function POST(req: NextRequest) {
           body: preview,
         })
       } catch {}
+      // Detect language + translate to English (fire-and-forget) for the inbox
+      // "Translated · English / View original" toggle.
+      if (content && message?.id) {
+        const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
+        fetch(`${base}/api/inbox/translate-message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: message.id }) }).catch(() => {})
+      }
     }
 
     return NextResponse.json({ ok: true, message })
