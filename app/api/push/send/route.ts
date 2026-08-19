@@ -50,26 +50,14 @@ export async function POST(req: NextRequest) {
         // straight from the notification, and Mark-read call /api/inbox/mark-read.
         const data = { conversationId: conversationId || null, route: route || null, companyId, from: from || null }
 
-        // Android: a notification-payload push is auto-shown by the OS with no
-        // action buttons, and @react-native-firebase (not Expo) owns the FCM
-        // service. So for the interactive 'message' category we send DATA-ONLY;
-        // the app presents it locally via expo-notifications, which is the only
-        // path on Android that attaches the Reply / Mark-read actions.
-        if (t.platform === 'android' && category === 'message') {
-          return {
-            to: t.expo_token,
-            // High priority so the data message is delivered promptly (incl. Doze).
-            priority: 'high',
-            // DATA-ONLY: no title/body/sound/channelId at the top level. Expo
-            // treats a push carrying ANY of those (channelId included) as a
-            // notification and attaches an FCM `notification` block — which
-            // Android then renders as a second, EMPTY heads-up alongside the one
-            // the app presents locally. Keeping this to `to`/`priority`/`data`
-            // makes it a true data message the OS never displays itself. The
-            // channel is applied by presentMessageNotification when it presents.
-            data: { ...data, colvyLocal: '1', type: 'message', title: title || 'New message', body: text, channelId: channelId || 'messages' },
-          }
-        }
+        // A real NOTIFICATION push (title/body at the top level) so the OS shows
+        // it whether the app is foregrounded, backgrounded, or KILLED. We used to
+        // send message notifications data-only on Android to attach Reply/Mark-read
+        // via a local presentation — but a data-only push needs the app process
+        // alive, and Samsung kills it after a while, so inbound messages produced
+        // no notification and no badge at all. categoryId still carries the
+        // Reply/Mark-read actions; reliable delivery wins over the richer path
+        // that only worked while the app happened to be running.
         return {
           to: t.expo_token,
           sound: 'default',
@@ -78,9 +66,10 @@ export async function POST(req: NextRequest) {
           // no reason to truncate this hard.
           body: text,
           data,
+          // High priority so it's delivered promptly even in Doze.
+          priority: 'high',
           channelId: channelId || 'messages',
-          // Enables the inline Reply / Mark read actions on the device (iOS, and
-          // Android tokens whose platform predates data-only presentation).
+          // Enables the inline Reply / Mark read actions on the device.
           categoryId: category,
         }
       })
