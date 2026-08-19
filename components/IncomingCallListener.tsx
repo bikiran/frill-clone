@@ -19,6 +19,24 @@ interface Props {
   agentName?: string
 }
 
+// A caller's known origin/channel, made human. A plain phone call carries no
+// referrer — so on a shared number we can't prove THIS call came from Google;
+// what we CAN show is where this customer is already known from.
+const SOURCE_LABELS: Record<string, string> = {
+  woocommerce: 'WooCommerce order', woo: 'WooCommerce order', order: 'Online order',
+  website: 'Website', widget: 'Website chat', chat: 'Website chat', live_chat: 'Website chat',
+  contact_form: 'Website form', form: 'Website form',
+  sms: 'SMS', email: 'Email', phone: 'Phone', call: 'Phone',
+  instagram: 'Instagram', facebook: 'Messenger', messenger: 'Messenger', whatsapp: 'WhatsApp',
+  google: 'Google', gbp: 'Google Business', rea: 'realestate.com.au', realestate: 'realestate.com.au',
+  manual: 'Added manually', import: 'Imported', csv: 'Imported', prexty: 'Prexty POS',
+}
+const prettySource = (s?: string | null): string | null => {
+  if (!s) return null
+  const key = String(s).toLowerCase().trim()
+  return SOURCE_LABELS[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1).replace(/[_-]+/g, ' ') : null)
+}
+
 // Registers the Telnyx WebRTC client and listens for INBOUND calls, showing a
 // Coax-style popup with caller context (name, past orders) before answering.
 export default function IncomingCallListener({ companyId, agentName }: Props) {
@@ -345,7 +363,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           const { data } = await (supabase as any).from('woocommerce_customers').select('total_orders,total_spend').eq('company_id', companyId).ilike('email', contact.email).maybeSingle()
           woo = data
         }
-        setCaller({ number: fromNumber, name: contact.name, email: contact.email, contactId: contact.id, woo })
+        setCaller({ number: fromNumber, name: contact.name, email: contact.email, contactId: contact.id, woo, source: contact.source || null, channels: Array.isArray(contact.channels_seen) ? contact.channels_seen : null })
       } else {
         setCaller({ number: fromNumber, unknown: true })
       }
@@ -569,6 +587,29 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             Not in your contacts yet
           </div>
         )}
+
+        {/* Where this caller is known from. Labelled "Known from" — NOT "this
+            call came via X": the number is shared, so the call itself has no
+            provable source. This is the customer's origin + channels on record. */}
+        {!caller?.loading && (() => {
+          const src = prettySource(caller?.source)
+          const chans = Array.from(new Set((caller?.channels || [])
+            .map((c: string) => prettySource(c)).filter(Boolean))) as string[]
+          const extraChans = chans.filter(c => c !== src).slice(0, 4)
+          if (!src && !extraChans.length) return null
+          return (
+            <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.08)', fontSize: 12 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.7 }}><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                <span style={{ opacity: 0.65 }}>Known from:</span>
+                {src && <span style={{ fontWeight: 700 }}>{src}</span>}
+                {extraChans.map(c => (
+                  <span key={c} style={{ padding: '1px 7px', borderRadius: 20, background: 'rgba(255,255,255,0.12)', fontSize: 11 }}>{c}</span>
+                ))}
+              </span>
+            </div>
+          )
+        })()}
       </div>
 
       {/* What's happening with hold / transfer, stated plainly */}

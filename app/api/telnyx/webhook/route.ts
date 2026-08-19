@@ -6,6 +6,7 @@ import { runKeywordReply } from '@/lib/keyword-reply'
 import { TelnyxService } from '@/lib/telnyx-service'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { ensureCallCard, setCallPreview } from '@/lib/call-card'
+import { companyForInboundNumber } from '@/lib/inbound-company'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 
 function admin() {
@@ -118,9 +119,10 @@ export async function POST(req: NextRequest) {
       // What the conversation list / notifications show when there's no caption.
       const summary = text || mediaPreview || (mediaAttemptFailed ? '📷 Tried to send media' : '')
 
-      // Which company owns the receiving number?
-      const { data: integ } = await db.from('telnyx_integrations').select('company_id').eq('phone_number', to).maybeSingle()
-      const companyId = integ?.company_id
+      // Which company owns the receiving number? Authoritative lookup via
+      // phone_numbers (the integrations.phone_number column goes stale and leaked
+      // SMS to the wrong tenant).
+      const companyId = await companyForInboundNumber(db, to, 'telnyx')
       if (!companyId) return NextResponse.json({ ok: true }) // not ours
 
       // Normalise phone numbers to their last 9 digits so E.164 (+61407207207)
@@ -378,8 +380,15 @@ export async function POST(req: NextRequest) {
 
       // Inbound call just started — answer it and ring the online agents.
       if (eventType === 'call.initiated' && isInbound) {
-        const { data: integ } = await db.from('telnyx_integrations').select('*').eq('phone_number', toNum).maybeSingle()
-        const companyId = integ?.company_id
+        // Authoritative owner of the dialled number (phone_numbers), then load
+        // that company's Telnyx settings — resolving by the stale
+        // integrations.phone_number column leaked calls into the wrong inbox.
+        const companyId = await companyForInboundNumber(db, toNum, 'telnyx')
+        let integ: any = null
+        if (companyId) {
+          const { data } = await db.from('telnyx_integrations').select('*').eq('company_id', companyId).maybeSingle()
+          integ = data
+        }
         if (companyId && integ) {
           // Match caller to a contact by phone. Query by the last-9-digit tail
           // in the DB rather than scanning a capped page of contacts — a big

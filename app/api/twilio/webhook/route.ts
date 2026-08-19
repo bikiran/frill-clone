@@ -4,6 +4,7 @@ import { TwilioService } from '@/lib/twilio-service'
 import { ingestInboundSms, InboundAttachment } from '@/lib/inbound-sms'
 import { uploadToR2, r2Configured } from '@/lib/r2'
 import { logWebhookEvent } from '@/lib/webhook-log'
+import { companyForInboundNumber } from '@/lib/inbound-company'
 
 function admin() {
   return createClient(
@@ -105,10 +106,13 @@ export async function POST(req: NextRequest) {
     const text = get('Body') || ''
     if (!from || !to) return xml(EMPTY_TWIML)
 
-    // Which company owns the receiving number?
-    const { data: integ } = await db.from('twilio_integrations').select('company_id, account_sid, auth_token').eq('phone_number', to).maybeSingle()
-    if (!integ?.company_id || !integ.account_sid || !integ.auth_token) return xml(EMPTY_TWIML) // not ours / not configured
-    const companyId = integ.company_id
+    // Which company owns the receiving number? Resolve from the authoritative
+    // phone_numbers table (NOT the stale integrations.phone_number column), then
+    // load that company's credentials.
+    const companyId = await companyForInboundNumber(db, to, 'twilio')
+    if (!companyId) return xml(EMPTY_TWIML) // not ours
+    const { data: integ } = await db.from('twilio_integrations').select('account_sid, auth_token').eq('company_id', companyId).maybeSingle()
+    if (!integ?.account_sid || !integ.auth_token) return xml(EMPTY_TWIML) // not configured
 
     // Re-host any MMS media so the actual photo/video shows in the thread.
     const media: InboundAttachment[] = []

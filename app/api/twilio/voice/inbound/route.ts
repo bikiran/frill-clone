@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
+import { companyForInboundNumber } from '@/lib/inbound-company'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,12 +42,18 @@ export async function POST(req: NextRequest) {
     const db = admin()
     const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
 
-    const { data: integ } = await db.from('twilio_integrations').select('*').eq('phone_number', to).maybeSingle()
-    if (!integ?.company_id) {
+    // Which company owns the dialled number? Resolve from the authoritative
+    // phone_numbers table (NOT the stale integrations.phone_number column, which
+    // leaked calls to the wrong tenant), then load that company's settings.
+    const companyId = await companyForInboundNumber(db, to, 'twilio')
+    if (!companyId) {
       // Not a number we manage — say so rather than hanging silently.
       return twiml('<Response><Say>This number is not configured.</Say><Hangup/></Response>')
     }
-    const companyId = integ.company_id
+    const { data: integ } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
+    if (!integ) {
+      return twiml('<Response><Say>This number is not configured.</Say><Hangup/></Response>')
+    }
     const greeting = integ.voicemail_greeting || 'Please leave a message after the tone.'
 
     // Resolve caller → contact + conversation, and make sure a conversation
