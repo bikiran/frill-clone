@@ -60,6 +60,14 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const callRef = useRef<any>(null)
   const timerRef = useRef<any>(null)
   const callRowId = useRef<string | null>(null)
+  // The conversation/contact/number this call belongs to, FROZEN at dial time.
+  // The props follow the currently-SELECTED thread, so if the agent opens a
+  // different chat mid-call, using the live props would attach the call row,
+  // summary and recording to the WRONG conversation. Snapshot the target once.
+  const callConvIdRef = useRef<string | null>(null)
+  const callContactIdRef = useRef<string | null>(null)
+  const callContactNameRef = useRef<string | null>(null)
+  const callNumberRef = useRef<string | null>(null)
   const hangupCause = useRef<string | null>(null)
   const placedRef = useRef(false)   // has newCall been placed for this attempt?
   const endedRef = useRef(false)    // has this call ended? (blocks redial on reconnect)
@@ -149,10 +157,11 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       if (!url) return
       await (supabase as any).from('calls').update({ recording_url: url }).eq('id', rowId)
 
-      // Transcribe → AI summary → post the call card into the thread.
+      // Transcribe → AI summary → post the call card into the thread the call
+      // belonged to (frozen at dial time — NOT wherever the agent navigated to).
       fetch('/api/telnyx/transcribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ callId: rowId, companyId, conversationId }),
+        body: JSON.stringify({ callId: rowId, companyId, conversationId: callConvIdRef.current }),
       }).catch(() => {})
     } catch (e: any) {
       console.error('[call recording] upload failed', e)
@@ -170,14 +179,17 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   // Publish the live call so the inbox list can show "Call in progress" on the
   // matching conversation. Ringing/connecting count as ringing; answered = active.
   useEffect(() => {
+    // Use the frozen target, not the live props — so the "Call in progress"
+    // badge stays on the call's own conversation even if the agent navigates.
+    const t = { conversationId: callConvIdRef.current, contactId: callContactIdRef.current, number: callNumberRef.current, name: callContactNameRef.current }
     if (state === 'active') {
-      setActiveCall({ conversationId: conversationId || null, contactId: contactId || null, number: toNumber || null, name: contactName || null, status: 'active' })
+      setActiveCall({ ...t, status: 'active' })
     } else if (state === 'connecting' || state === 'ringing') {
-      setActiveCall({ conversationId: conversationId || null, contactId: contactId || null, number: toNumber || null, name: contactName || null, status: 'ringing' })
+      setActiveCall({ ...t, status: 'ringing' })
     } else {
       clearActiveCall()
     }
-  }, [state, conversationId, contactId, toNumber, contactName])
+  }, [state])
 
   useEffect(() => () => { clearActiveCall(); cleanup() }, [])
 
@@ -217,16 +229,16 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       let rowId: string | null = null
       try {
         const { data: row } = await (supabase as any).from('calls').insert({
-          company_id: companyId, conversation_id: conversationId || null, contact_id: contactId || null,
+          company_id: companyId, conversation_id: callConvIdRef.current, contact_id: callContactIdRef.current,
           direction: 'outbound', provider: 'twilio', from_number: from, to_number: dest,
-          status: 'initiated', agent_name: agentName || 'Agent', contact_name: contactName || null,
+          status: 'initiated', agent_name: agentName || 'Agent', contact_name: callContactNameRef.current,
         }).select().maybeSingle()
         rowId = row?.id || null
         callRowId.current = rowId
       } catch {}
 
-      if (conversationId) {
-        try { await (supabase as any).from('conversations').update({ last_message: '📞 Call started', last_message_at: new Date().toISOString() }).eq('id', conversationId) } catch {}
+      if (callConvIdRef.current) {
+        try { await (supabase as any).from('conversations').update({ last_message: '📞 Call started', last_message_at: new Date().toISOString() }).eq('id', callConvIdRef.current) } catch {}
       }
 
       const { Device } = await import('@twilio/voice-sdk')
@@ -237,7 +249,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       device.on('error', (e: any) => { console.error('[twilio device] error', e); if (state !== 'active') { setErrorMsg(fmtCallError(e)); setState('error') } })
 
       const call = await device.connect({
-        params: { To: dest, From: from, callRowId: rowId || '', companyId, conversationId: conversationId || '' },
+        params: { To: dest, From: from, callRowId: rowId || '', companyId, conversationId: callConvIdRef.current || '' },
       })
       callRef.current = call
       setState('ringing'); startRingback()
@@ -256,6 +268,13 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
     const dest = toE164(toNumber || '')
     if (!dest) { setErrorMsg('No valid phone number'); setState('error'); return }
     if (!companyId) { setErrorMsg('No company'); setState('error'); return }
+
+    // Freeze the call's target NOW, before the agent can navigate away. Every
+    // write for this call (row, summary, recording, thread card) uses these refs.
+    callConvIdRef.current = conversationId || null
+    callContactIdRef.current = contactId || null
+    callContactNameRef.current = contactName || null
+    callNumberRef.current = toNumber || null
 
     setState('connecting'); setErrorMsg('')
     placedRef.current = false
@@ -289,7 +308,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
 
       const res = await fetch('/api/telnyx/token', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId, userId }),
+        body: JSON.stringify({ companyId, conversationId: callConvIdRef.current, userId }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not get call token')
@@ -298,21 +317,21 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       // 2. Log the call row
       try {
         const { data: row } = await (supabase as any).from('calls').insert({
-          company_id: companyId, conversation_id: conversationId || null, contact_id: contactId || null,
+          company_id: companyId, conversation_id: callConvIdRef.current, contact_id: callContactIdRef.current,
           direction: 'outbound', from_number: from, to_number: dest, status: 'initiated', agent_name: agentName || 'Agent',
-          contact_name: contactName || null,
+          contact_name: callContactNameRef.current,
         }).select().maybeSingle()
         callRowId.current = row?.id || null
       } catch {}
 
       // Bump the conversation to the top of the inbox — a call is a new, notable
       // event, so it shouldn't stay buried under older-activity threads.
-      if (conversationId && companyId) {
+      if (callConvIdRef.current && companyId) {
         try {
           await (supabase as any).from('conversations').update({
             last_message: `📞 Call started`,
             last_message_at: new Date().toISOString(),
-          }).eq('id', conversationId)
+          }).eq('id', callConvIdRef.current)
         } catch {}
       }
       // 3. Load the Telnyx WebRTC SDK and connect
@@ -468,10 +487,10 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
     // attempts are still recorded in `calls`, where the dialer's Recent Calls
     // tab shows them. Connected calls post a rich card instead: duration,
     // recording, transcript and AI summary, filled in as they arrive.
-    if (connected && conversationId && companyId) {
+    if (connected && callConvIdRef.current && companyId) {
       try {
         await (supabase as any).from('messages').insert({
-          conversation_id: conversationId, company_id: companyId, sender_type: 'system',
+          conversation_id: callConvIdRef.current, company_id: companyId, sender_type: 'system',
           content: `Call — ${fmtDuration(seconds)}`,
           metadata: {
             call_event: true,
@@ -524,7 +543,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderRadius: 12, background: state === 'error' ? '#fef2f2' : '#0d0d0d', color: '#fff' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{ margin: 0, fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {state === 'error' ? <span style={{ color: '#dc2626' }}>{errorMsg}</span> : (contactName || toNumber)}
+          {state === 'error' ? <span style={{ color: '#dc2626' }}>{errorMsg}</span> : (callContactNameRef.current || callNumberRef.current || contactName || toNumber)}
         </p>
         <p style={{ margin: 0, fontSize: 11, opacity: 0.7, display: 'flex', alignItems: 'center', gap: 6 }}>
           {state === 'connecting' && 'Connecting…'}
