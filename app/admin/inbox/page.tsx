@@ -884,6 +884,12 @@ export default function InboxPage() {
   const [toast, setToast] = useState('')
   const [editField, setEditField] = useState<string | null>(null)
   const [editFieldValue, setEditFieldValue] = useState('')
+  // Message ids currently showing the ORIGINAL (untranslated) text — the default
+  // is the English translation for a non-English inbound message.
+  const [showOriginalMsgs, setShowOriginalMsgs] = useState<Set<string>>(new Set())
+  const toggleMsgOriginal = (id: string) => setShowOriginalMsgs(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
   const [statusFilter, setStatusFilter] = useState<'open' | 'closed'>('open')
 
   // ── Filter panel (Coax style) ─────────────────────────────────────────────
@@ -7480,7 +7486,33 @@ export default function InboxPage() {
                             <div style={{ marginTop: 8, fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
                           </div>
                         ) : (
-                          msg.content && <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
+                          msg.content && (() => {
+                            // Non-English inbound message → show the English
+                            // translation by default, with a "View original" toggle.
+                            const tLang = (msg as any).content_lang
+                            const hasTr = !isAgent && !!(msg as any).translated_content && !!tLang && !/^en/i.test(String(tLang)) && tLang !== 'unknown'
+                            const showOrig = showOriginalMsgs.has(msg.id)
+                            const body = hasTr && !showOrig ? (msg as any).translated_content : msg.content
+                            let langName = ''
+                            if (hasTr) {
+                              const c = String(tLang).toLowerCase()
+                              try { const n = new Intl.DisplayNames(['en'], { type: 'language' }).of(c); langName = (n && n.toLowerCase() !== c) ? n : c.charAt(0).toUpperCase() + c.slice(1) } catch { langName = c }
+                            }
+                            return (
+                              <div style={{ padding: atts.length && atts[0].kind !== 'file' ? '4px 10px 6px' : 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                {renderTextWithLinks(body)}
+                                {hasTr && (
+                                  <div style={{ marginTop: 4, fontSize: 10.5, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                                    <span style={{ color: isAgent ? 'rgba(255,255,255,0.8)' : 'var(--slate)' }}>{showOrig ? `Original · ${langName}` : 'Translated · English'}</span>
+                                    <button type="button" onClick={() => toggleMsgOriginal(msg.id)}
+                                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: isAgent ? '#fff' : '#2563eb', fontSize: 10.5, fontWeight: 700, textDecoration: 'underline' }}>
+                                      {showOrig ? 'View translation' : 'View original'}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })()
                         )}
 
                         {/* Customer tried to send media the carrier couldn't

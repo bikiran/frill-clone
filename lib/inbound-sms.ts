@@ -128,14 +128,14 @@ export async function ingestInboundSms(params: {
 
   if (!conv) return { conversationId: null }
 
-  await db.from('messages').insert({
+  const { data: insertedMsg } = await db.from('messages').insert({
     conversation_id: conv.id, company_id: companyId,
     sender_type: 'visitor', sender_name: from, content: text,
     ...(media.length ? { attachments: media } : {}),
     ...(mediaAttemptFailed ? { metadata: { media_attempt: true } } : {}),
     delivery_channel: 'sms',
     telnyx_message_id: params.providerMessageId || null,
-  })
+  }).select('id').maybeSingle()
   await db.from('conversations').update({
     last_message: summary, last_message_at: new Date().toISOString(),
     is_unread: true, channel: 'sms', status: 'open',
@@ -158,6 +158,9 @@ export async function ingestInboundSms(params: {
     // Colvy AI: extract the sender's name/suburb and create/link their contact.
     // Fire-and-forget so the LLM call never delays ingestion.
     if (text) fetch(`${origin}/api/inbox/capture-contact`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: conv.id, from, text }) })
+    // Detect language + translate to English (fire-and-forget) so a non-English
+    // text shows a "Translated · English / View original" toggle in the inbox.
+    if (text && insertedMsg?.id) fetch(`${origin}/api/inbox/translate-message`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: insertedMsg.id }) })
   } catch {}
 
   // Keyword auto-reply — texted back over whichever provider owns this company.
