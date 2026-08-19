@@ -12,6 +12,10 @@ function admin() {
   )
 }
 
+// Gallery items sit in Trash (media_items.trashed_at) for this many days before
+// they're permanently removed — matches the web's "auto-delete after 30 days".
+const TRASH_RETENTION_DAYS = 30
+
 /**
  * GET /api/cron/expire-media
  *
@@ -22,6 +26,9 @@ function admin() {
  *   1. finds delete-mode links whose expires_at has passed and aren't purged,
  *   2. deletes the matching gallery items (by url), and
  *   3. blanks the link's media and marks it purged so it's never re-processed.
+ *
+ * It ALSO purges gallery items that have been in Trash (trashed_at) for more
+ * than TRASH_RETENTION_DAYS, so soft-deleted media doesn't linger forever.
  *
  * Runs daily (see vercel.json). Nothing here touches access-mode links.
  */
@@ -82,5 +89,25 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, purged, itemsDeleted })
+  // Purge gallery items that have been in Trash for 30+ days.
+  let trashPurged = 0
+  try {
+    const cutoff = new Date(Date.now() - TRASH_RETENTION_DAYS * 86400 * 1000).toISOString()
+    const { data: stale } = await db.from('media_items')
+      .select('id')
+      .not('trashed_at', 'is', null)
+      .lt('trashed_at', cutoff)
+      .limit(1000)
+    const ids = (stale || []).map((r: any) => r.id).filter(Boolean)
+    if (ids.length) {
+      // Drop category links first so no orphaned rows are left behind.
+      try { await db.from('media_item_categories').delete().in('media_item_id', ids) } catch {}
+      const { data: del } = await db.from('media_items').delete().in('id', ids).select('id')
+      trashPurged = del?.length || 0
+    }
+  } catch (e: any) {
+    console.error('[expire-media] trash purge failed', e?.message)
+  }
+
+  return NextResponse.json({ ok: true, purged, itemsDeleted, trashPurged })
 }
