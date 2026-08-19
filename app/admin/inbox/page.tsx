@@ -1585,7 +1585,12 @@ export default function InboxPage() {
     // statement, so it never ran.) Uses selectedRef so it always polls the
     // currently open conversation without re-running this effect.
     const poll = setInterval(async () => {
-      loadConversations()
+      // Use the ref, not the closed-over loadConversations: this effect only
+      // re-runs on (companyId, realtimeNonce), so the captured function is frozen
+      // to the status filter at subscribe time ('open'). Polling with it wiped the
+      // Closed list back to Open every 5s. The ref always points at the current
+      // filter's loader.
+      loadConversationsRef.current()
       const openId = selectedRef.current?.id
       if (openId) {
         const { data: msgs } = await (supabase as any).from('messages').select('*').eq('conversation_id', openId).order('created_at', { ascending: true })
@@ -4652,6 +4657,12 @@ export default function InboxPage() {
     return base
   })()
   const filteredConvs = convSource.filter(c => {
+    // Tab guard: the Open tab never shows closed/resolved threads and the Closed
+    // tab never shows open ones — even if a stale fetch briefly seeds the wrong
+    // set (the 5s poll used to do exactly that). This is the source of truth for
+    // which tab a row belongs to; the query is just an optimisation.
+    const isClosed = ['closed', 'resolved'].includes(String((c as any).status || ''))
+    if ((statusFilter === 'closed') !== isClosed) return false
     // Location filter (whole Inbox & CRM). "all" shows everything; otherwise
     // only conversations assigned to the chosen outlet. Conversations with no
     // location assigned show under "all" only.
