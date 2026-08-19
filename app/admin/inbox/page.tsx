@@ -6510,6 +6510,11 @@ export default function InboxPage() {
               facebook:  { label: 'Messenger', bg: '#dbeafe', fg: '#1d4ed8' },
               messenger: { label: 'Messenger', bg: '#dbeafe', fg: '#1d4ed8' },
               whatsapp:  { label: 'WhatsApp', bg: '#dcfce7', fg: '#15803d' },
+              // A phone call is NOT a live-chat enquiry — without this it fell
+              // through to the "Live Chat Enquiry" default below.
+              phone:     { label: 'Phone', bg: '#e0f2fe', fg: '#0369a1' },
+              call:      { label: 'Phone', bg: '#e0f2fe', fg: '#0369a1' },
+              voice:     { label: 'Phone', bg: '#e0f2fe', fg: '#0369a1' },
             }
             if (CHANNEL_BADGE[ch]) {
               source = CHANNEL_BADGE[ch]
