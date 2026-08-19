@@ -18,6 +18,21 @@ function admin() {
   )
 }
 
+// Resolve the owning company from a Telnyx Voice connection id (the event's
+// connection_id). Used to SCOPE the "which call is this leg part of?" fallbacks
+// so, under concurrency, a call event for company A can never bridge or
+// voicemail company B's ringing call. Returns null when it can't be resolved.
+async function companyFromConnection(db: any, connId: string | null | undefined): Promise<string | null> {
+  if (!connId) return null
+  try {
+    const { data } = await db.from('telnyx_integrations')
+      .select('company_id')
+      .or(`voice_api_application_id.eq.${connId},connection_id.eq.${connId}`)
+      .maybeSingle()
+    return data?.company_id || null
+  } catch { return null }
+}
+
 // Single webhook endpoint for Telnyx — handles inbound SMS and call status events.
 // Configure this URL in the Telnyx Messaging Profile and Voice Connection:
 //   https://<your-domain>/api/telnyx/webhook
@@ -699,17 +714,20 @@ export async function POST(req: NextRequest) {
           }
 
           if (!parentRow) {
-            // Fallback: a recent ringing leg, now scoped to the last two
-            // minutes so a stale row can't be picked up.
+            // Fallback: a recent ringing leg, scoped to the last two minutes AND
+            // to this connection's company — so a concurrent call from another
+            // tenant can never be picked up as the parent.
             const since = new Date(Date.now() - 2 * 60 * 1000).toISOString()
-            const { data: recent } = await db.from('calls')
+            const cid = await companyFromConnection(db, eventConnectionId)
+            let q = db.from('calls')
               .select('*')
               .in('status', ['ringing_agents', 'ringing'])
               .gte('created_at', since)
-              .order('created_at', { ascending: false }).limit(1)
+            if (cid) q = q.eq('company_id', cid)
+            const { data: recent } = await q.order('created_at', { ascending: false }).limit(1)
             parentRow = recent?.[0] || null
             if (parentRow) {
-              log.info('[telnyx bridge] matched parent by recency, not by agent leg id', { callId: parentRow.id })
+              log.info('[telnyx bridge] matched parent by recency', { callId: parentRow.id, scopedToCompany: !!cid })
             }
           }
           // Get the api_key from that call's company (reliable), not client_state.
@@ -914,9 +932,24 @@ export async function POST(req: NextRequest) {
       // If the parent is still ringing agents, fall through to voicemail.
       if (eventType === 'call.hangup' && isOutbound) {
         try {
-          const { data: parent } = await db.from('calls')
-            .select('*').eq('status', 'ringing_agents').order('created_at', { ascending: false }).limit(1)
-          const parentRow = parent?.[0]
+          // Find the parent this child (agent) leg belonged to. Match by the
+          // exact leg relationship first (company-safe); only then fall back to a
+          // recency guess — scoped to the last two minutes AND this connection's
+          // company, so a hangup on one tenant's leg can never send another
+          // tenant's still-ringing call to voicemail.
+          let parentRow: any = null
+          const { data: byLeg } = await db.from('calls')
+            .select('*').contains('ringing_leg_ids', [callControlId]).limit(1)
+          parentRow = byLeg?.[0] || null
+          if (!parentRow) {
+            const since = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+            const cid = await companyFromConnection(db, eventConnectionId)
+            let q = db.from('calls')
+              .select('*').eq('status', 'ringing_agents').gte('created_at', since)
+            if (cid) q = q.eq('company_id', cid)
+            const { data: parent } = await q.order('created_at', { ascending: false }).limit(1)
+            parentRow = parent?.[0] || null
+          }
           if (parentRow) {
             const { data: integ3 } = await db.from('telnyx_integrations').select('*').eq('company_id', parentRow.company_id).maybeSingle()
             if (integ3?.api_key && parentRow.telnyx_call_control_id) {
