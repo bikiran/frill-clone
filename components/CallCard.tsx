@@ -31,6 +31,8 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
   const [call, setCall] = useState<any>(null)
   const [expanded, setExpanded] = useState(false)
   const [showTranscript, setShowTranscript] = useState(false)
+  // For a non-English call: 'en' shows the translation, 'orig' the spoken language.
+  const [transcriptView, setTranscriptView] = useState<'en' | 'orig'>('en')
   const [retrying, setRetrying] = useState(false)
   const [retryMsg, setRetryMsg] = useState('')
 
@@ -114,6 +116,21 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
   const summary: string = call?.ai_summary || ''
   const longSummary = summary.length > 180
 
+  // Translation state. `transcription` holds the ORIGINAL (spoken language);
+  // `transcript_en` the English translation (only set for a non-English call).
+  const tLang: string | null = call?.transcript_lang || null
+  const nonEnglish = !!tLang && !/^en/i.test(String(tLang))
+  const hasTranslation = nonEnglish && !!call?.transcript_en
+  const langName = (() => {
+    if (!tLang) return ''
+    const code = String(tLang).toLowerCase()
+    try {
+      const n = new Intl.DisplayNames(['en'], { type: 'language' }).of(code)
+      if (n && n.toLowerCase() !== code) return n
+    } catch { /* fall through */ }
+    return code.charAt(0).toUpperCase() + code.slice(1)
+  })()
+
   return (
     <div style={{ maxWidth: 560, margin: '10px auto', background: '#f7f9fc', border: '1px solid #e3e9f2', borderRadius: 14, padding: 14 }}>
       {/* Header: direction + duration */}
@@ -140,8 +157,11 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
       {/* AI summary */}
       {summary && (
         <div style={{ marginBottom: 12 }}>
-          <p style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 700, color: '#8b5cf6', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <p style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 700, color: '#8b5cf6', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <SparkIcon /> Call Summary
+            {hasTranslation && (
+              <span style={{ fontWeight: 600, fontSize: 10.5, color: 'var(--slate)' }}>· English · translated from {langName}</span>
+            )}
           </p>
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--ink)' }}>
             {expanded || !longSummary ? summary : `${summary.slice(0, 180).trim()}…`}
@@ -231,17 +251,36 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
 
       {/* Transcript */}
       {showTranscript && call?.transcription && (
-        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e3e9f2', maxHeight: 260, overflowY: 'auto' }}>
-          {Array.isArray(call.transcript_segments) && call.transcript_segments.length ? (
-            call.transcript_segments.map((seg: any, i: number) => (
-              <div key={i} style={{ marginBottom: 8 }}>
-                <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>{seg.speaker}</p>
-                <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink)' }}>{seg.text}</p>
-              </div>
-            ))
-          ) : (
-            <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{call.transcription}</p>
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e3e9f2' }}>
+          {/* Language toggle — only for a non-English call we translated. */}
+          {hasTranslation && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 11.5 }}>
+              <button type="button" onClick={() => setTranscriptView('en')}
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: transcriptView === 'en' ? 800 : 500, color: transcriptView === 'en' ? '#2563eb' : 'var(--slate)' }}>
+                Translated · English
+              </button>
+              <span style={{ color: '#c7d0dd' }}>|</span>
+              <button type="button" onClick={() => setTranscriptView('orig')}
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: transcriptView === 'orig' ? 800 : 500, color: transcriptView === 'orig' ? '#2563eb' : 'var(--slate)' }}>
+                Original · {langName}
+              </button>
+            </div>
           )}
+          <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+            {hasTranslation && transcriptView === 'en' ? (
+              // The translation is plain text (no per-speaker diarisation).
+              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{call.transcript_en}</p>
+            ) : Array.isArray(call.transcript_segments) && call.transcript_segments.length ? (
+              call.transcript_segments.map((seg: any, i: number) => (
+                <div key={i} style={{ marginBottom: 8 }}>
+                  <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>{seg.speaker}</p>
+                  <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink)' }}>{seg.text}</p>
+                </div>
+              ))
+            ) : (
+              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{call.transcription}</p>
+            )}
+          </div>
         </div>
       )}
     </div>
