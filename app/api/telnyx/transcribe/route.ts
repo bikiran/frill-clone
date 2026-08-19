@@ -34,8 +34,10 @@ function admin() {
  * failing silently.
  */
 async function transcribeDeepgram(audio: ArrayBuffer, key: string) {
+  // detect_language=true → Deepgram returns the spoken language, so a non-English
+  // call can be transcribed in its own language and then translated to English.
   const res = await fetchWithTimeout(
-    'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true',
+    'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true&detect_language=true',
     {
       method: 'POST',
       headers: { Authorization: `Token ${key}`, 'Content-Type': 'audio/webm' },
@@ -44,8 +46,10 @@ async function transcribeDeepgram(audio: ArrayBuffer, key: string) {
   )
   if (!res.ok) throw new Error(`Deepgram: ${res.status} ${await res.text()}`)
   const data = await res.json()
-  const alt = data?.results?.channels?.[0]?.alternatives?.[0]
+  const channel = data?.results?.channels?.[0]
+  const alt = channel?.alternatives?.[0]
   const text: string = alt?.transcript || ''
+  const lang: string | null = channel?.detected_language || null
 
   // Group words into speaker turns, so the transcript reads like a dialogue.
   const segments: any[] = []
@@ -55,13 +59,15 @@ async function transcribeDeepgram(audio: ArrayBuffer, key: string) {
     if (last && last.speaker === spk) last.text += ` ${w.punctuated_word || w.word}`
     else segments.push({ speaker: spk, text: w.punctuated_word || w.word, start: w.start })
   }
-  return { text, segments }
+  return { text, segments, lang }
 }
 
 async function transcribeWhisper(audio: ArrayBuffer, key: string) {
   const form = new FormData()
   form.append('file', new Blob([audio], { type: 'audio/webm' }), 'call.webm')
   form.append('model', 'whisper-1')
+  // verbose_json so Whisper reports the detected language too.
+  form.append('response_format', 'verbose_json')
   const res = await fetchWithTimeout('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}` },
@@ -69,7 +75,36 @@ async function transcribeWhisper(audio: ArrayBuffer, key: string) {
   })
   if (!res.ok) throw new Error(`Whisper: ${res.status} ${await res.text()}`)
   const data = await res.json()
-  return { text: data.text || '', segments: null }
+  return { text: data.text || '', segments: null, lang: data.language || null }
+}
+
+// Translate a transcript to English (best-effort). Returns null on any failure —
+// the caller then just shows the original.
+async function translateToEnglish(text: string, key: string): Promise<string | null> {
+  for (const model of ['claude-sonnet-4-6', 'claude-3-5-haiku-20241022']) {
+    try {
+      const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model, max_tokens: 4000,
+          messages: [{ role: 'user', content: `Translate this phone-call transcript to natural English. Keep any "Speaker N:" labels intact. Output ONLY the translation — no preamble, no notes.\n\n${text.slice(0, 12000)}` }],
+        }),
+      })
+      if (!res.ok) continue
+      const data = await res.json()
+      const out = (data.content?.[0]?.text || '').trim()
+      if (out) return out
+    } catch { /* try next model */ }
+  }
+  return null
+}
+
+// Is a detected language English? Deepgram returns ISO ('en'), Whisper a name
+// ('english') — accept both, and treat "unknown" as English (no translation).
+function isEnglishLang(lang: string | null | undefined): boolean {
+  const l = String(lang || '').toLowerCase()
+  return !l || l.startsWith('en')
 }
 
 export async function POST(req: NextRequest) {
@@ -97,7 +132,7 @@ export async function POST(req: NextRequest) {
     if (!audioRes.ok) return NextResponse.json({ ok: false, reason: 'Could not read the recording.' })
     const audio = await audioRes.arrayBuffer()
 
-    const { text, segments } = DEEPGRAM
+    const { text, segments, lang } = DEEPGRAM
       ? await transcribeDeepgram(audio, DEEPGRAM)
       : await transcribeWhisper(audio, OPENAI!)
 
@@ -106,14 +141,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, reason: 'Nothing audible in the recording.' })
     }
 
-    await db.from('calls').update({ transcription: text, transcript_segments: segments }).eq('id', callId)
+    const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
+
+    // Non-English call → translate the transcript to English so the agent reads
+    // it in English, with the original kept for the "View original" toggle.
+    let transcriptEn: string | null = null
+    if (!isEnglishLang(lang) && ANTHROPIC_KEY) {
+      transcriptEn = await translateToEnglish(text, ANTHROPIC_KEY)
+    }
+    // What the English-speaking summary should be built from.
+    const summarySource = transcriptEn || text
+
+    await db.from('calls').update({
+      transcription: text,               // the ORIGINAL, in the spoken language
+      transcript_segments: segments,
+      transcript_lang: lang || null,
+      transcript_en: transcriptEn,       // English translation (null if already English)
+    }).eq('id', callId)
 
     // ── Summarise with Claude ────────────────────────────────────────────────
     let summary = ''
     let todos: string[] = []
     let sentiment: string | null = null
     let summaryError = ''
-    const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 
     if (ANTHROPIC_KEY) {
       // Model names get retired. Rather than fail silently on a stale one, try
@@ -152,7 +202,7 @@ Respond ONLY with JSON, no preamble and no markdown fences:
 {"summary":"2-3 sentences, past tense, naming who called whom and what they wanted and how it was left","todos":["specific follow-up actions for the business, [] if none"],"sentiment":"positive|neutral|negative"}
 
 Transcript:
-${text.slice(0, 12000)}`
+${summarySource.slice(0, 12000)}`
 
       for (const model of MODELS) {
         try {
