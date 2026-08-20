@@ -7374,28 +7374,24 @@ export default function InboxPage() {
                     .replace(new RegExp(`^\\s*${title}\\s*[—:\\-]*`, 'i'), '') // redundant title
                     .replace(/[\s:•\-–—]+$/u, '')                // trailing separators
                     .trim()
-                  const host = link ? (() => { try { return new URL(link).hostname.replace(/^www\./, '') } catch { return 'link' } })() : null
 
                   return (
                     <div key={msg.id}>
                       {dateDivider}
-                      <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 11, maxWidth: 460, background: 'var(--card, #fff)', border: '1px solid var(--border)', borderRadius: 14, padding: '9px 14px 9px 10px', boxShadow: '0 1px 2px rgba(16,24,40,0.05)' }}>
-                          <span style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${accent} 14%, transparent)`, color: accent }}>
-                            <LifecycleIcon kind={kind} />
-                          </span>
-                          <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1, textAlign: 'left' }}>
-                            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em' }}>{title}</span>
-                            {detail && <span style={{ fontSize: 11.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>{detail}</span>}
+                      <div style={{ display: 'flex', justifyContent: 'center', padding: '5px 0' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, maxWidth: 460, background: `color-mix(in srgb, ${accent} 13%, transparent)`, color: accent, padding: '5px 13px 5px 10px', borderRadius: 999, lineHeight: 1.3 }}>
+                          <span style={{ flexShrink: 0, display: 'inline-flex' }}><LifecycleIcon kind={kind} /></span>
+                          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>
+                            <span style={{ fontWeight: 700 }}>{title}</span>
+                            {detail && <span style={{ opacity: 0.78, fontWeight: 500 }}>{` · ${detail}`}</span>}
                           </span>
                           {link && (
                             <a href={link} target="_blank" rel="noreferrer" title={link}
-                              style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, color: accent, textDecoration: 'none', padding: '5px 10px', borderRadius: 8, background: `color-mix(in srgb, ${accent} 10%, transparent)` }}>
-                              {host}
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
+                              style={{ flexShrink: 0, color: accent, display: 'inline-flex', alignItems: 'center' }}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
                             </a>
                           )}
-                        </div>
+                        </span>
                       </div>
                     </div>
                   )
