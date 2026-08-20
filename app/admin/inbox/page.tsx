@@ -373,6 +373,26 @@ function makeSnippet(text: string, q: string): string {
   return (start > 0 ? '…' : '') + t.slice(start, end) + (end < t.length ? '…' : '')
 }
 
+// A small line-icon for a lifecycle event chip (cart, order, refund…).
+function LifecycleIcon({ kind }: { kind: string }) {
+  const p: React.CSSProperties = { width: 15, height: 15, display: 'block' }
+  const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  switch (kind) {
+    case 'cart':
+      return <svg viewBox="0 0 24 24" style={p} {...common}><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+    case 'recovered':
+      return <svg viewBox="0 0 24 24" style={p} {...common}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    case 'refunded':
+      return <svg viewBox="0 0 24 24" style={p} {...common}><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+    case 'failed':
+      return <svg viewBox="0 0 24 24" style={p} {...common}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    case 'placed':
+      return <svg viewBox="0 0 24 24" style={p} {...common}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+    default:
+      return <svg viewBox="0 0 24 24" style={p} {...common}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  }
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function InboxPage() {
   // Seed from the shared identity cache + the last conversation list we rendered
@@ -7312,14 +7332,74 @@ export default function InboxPage() {
                     <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
                   </div>
                 )
-                if (isSystem) return (
-                  <div key={msg.id}>
-                    {dateDivider}
-                    <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '4px 0' }}>
-                      <span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>{msg.content}</span>
+                if (isSystem) {
+                  // A lifecycle marker (order placed/refunded, cart abandoned/
+                  // recovered) renders as a compact, modern card: a neutral chip
+                  // with a small tinted icon and a clean title/detail, plus any
+                  // link surfaced as a button instead of a raw URL. Everything
+                  // else keeps the tiny neutral pill (e.g. "started a chat").
+                  const sm: any = (msg as any).metadata || {}
+                  const orderStatus = String(sm.status || sm.order_automation || '').toLowerCase()
+                  let kind = '', accent = '', title = ''
+                  if (sm.abandoned_cart) { kind = 'cart'; accent = '#d97706'; title = 'Abandoned cart' }
+                  else if (sm.cart_recovered) { kind = 'recovered'; accent = '#16a34a'; title = 'Cart recovered' }
+                  else if (sm.order_event || sm.order_id || sm.order_automation) {
+                    if (orderStatus === 'refunded') { kind = 'refunded'; accent = '#d97706'; title = 'Order refunded' }
+                    else if (orderStatus === 'failed') { kind = 'failed'; accent = '#dc2626'; title = 'Payment failed' }
+                    else if (orderStatus === 'cancelled') { kind = 'failed'; accent = '#dc2626'; title = 'Order cancelled' }
+                    else if (orderStatus === 'completed') { kind = 'placed'; accent = '#16a34a'; title = 'Order completed' }
+                    else { kind = 'placed'; accent = '#16a34a'; title = 'Order placed' }
+                  }
+
+                  if (!kind) {
+                    // Plain system line — keep it light and unobtrusive.
+                    return (
+                      <div key={msg.id}>
+                        {dateDivider}
+                        <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '4px 0' }}>
+                          <span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>{msg.content}</span>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  // Pull a link out of the body and strip the leading emoji /
+                  // redundant title so the card reads cleanly.
+                  const raw = String(msg.content || '')
+                  const urlMatch = raw.match(/https?:\/\/\S+/)
+                  const link = urlMatch ? urlMatch[0] : null
+                  let detail = raw
+                    .replace(link || '', '')
+                    .replace(/^[^\p{L}\p{N}#$]+/u, '')          // leading emoji / arrows
+                    .replace(new RegExp(`^\\s*${title}\\s*[—:\\-]*`, 'i'), '') // redundant title
+                    .replace(/[\s:•\-–—]+$/u, '')                // trailing separators
+                    .trim()
+                  const host = link ? (() => { try { return new URL(link).hostname.replace(/^www\./, '') } catch { return 'link' } })() : null
+
+                  return (
+                    <div key={msg.id}>
+                      {dateDivider}
+                      <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 11, maxWidth: 460, background: 'var(--card, #fff)', border: '1px solid var(--border)', borderRadius: 14, padding: '9px 14px 9px 10px', boxShadow: '0 1px 2px rgba(16,24,40,0.05)' }}>
+                          <span style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${accent} 14%, transparent)`, color: accent }}>
+                            <LifecycleIcon kind={kind} />
+                          </span>
+                          <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1, textAlign: 'left' }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em' }}>{title}</span>
+                            {detail && <span style={{ fontSize: 11.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>{detail}</span>}
+                          </span>
+                          {link && (
+                            <a href={link} target="_blank" rel="noreferrer" title={link}
+                              style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, color: accent, textDecoration: 'none', padding: '5px 10px', borderRadius: 8, background: `color-mix(in srgb, ${accent} 10%, transparent)` }}>
+                              {host}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
+                            </a>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                )
+                  )
+                }
                 const reactions = Array.isArray((msg as any).reactions) ? (msg as any).reactions : []
                 const readBy = Array.isArray((msg as any).read_by) ? (msg as any).read_by : []
                 const atts = Array.isArray(msg.attachments) ? msg.attachments : []
