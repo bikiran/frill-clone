@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
           conv = newConv
         } else {
           // Customer DM'd a closed enquiry — log the reopen before we flip it.
-          await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status })
+          await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: contact?.name || null, via: platform === 'instagram' ? 'Instagram message' : 'Messenger message' })
           await db.from('conversations').update({
             status: 'open', is_unread: true,
             unread_count: (conv.unread_count || 0) + 1,

@@ -150,7 +150,7 @@ export async function POST(req: NextRequest) {
     if (!conv) return NextResponse.json({ ok: false, reason: 'Could not create conversation' })
 
     // Customer replied to a closed enquiry — log the reopen before we flip it.
-    await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status })
+    await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: from?.name || from?.email || null, via: 'email' })
 
     // ── Store the message ────────────────────────────────────────────────────
     await db.from('messages').insert({

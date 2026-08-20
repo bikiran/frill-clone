@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
+import { logEnquiryReopened } from '@/lib/conversation-timeline'
 
 export const dynamic = 'force-dynamic'
 
@@ -73,6 +74,18 @@ export async function POST(req: NextRequest) {
       .eq('id', conversationId).maybeSingle()
     if (!conv || conv.company_id !== companyId) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    }
+
+    // A visitor messaging a closed enquiry from the live-chat widget reopens it
+    // — log that before we flip the status below, so the reopen shows on the
+    // timeline the same way an SMS/email/social reopen does. Not for the
+    // "started a chat" system event, which isn't a customer message.
+    if (senderType === 'visitor') {
+      await logEnquiryReopened(db, {
+        conversationId, companyId, prevStatus: conv.status,
+        actorName: (body.senderName || '').toString().slice(0, 120) || null,
+        via: 'live chat message',
+      })
     }
 
     const { data: message, error } = await db.from('messages').insert({
