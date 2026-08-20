@@ -9000,7 +9000,9 @@ export default function InboxPage() {
                     </button>
                   </div>
                   {aiSummary ? (
-                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5 }}>{aiSummary}</p>
+                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5 }}>
+                      <Highlight text={aiSummary} q={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
+                    </p>
                   ) : (
                     <p style={{ margin: 0, fontSize: 12, color: '#9ca3af' }}>Generate a summary and action items for this conversation.</p>
                   )}
@@ -9014,7 +9016,9 @@ export default function InboxPage() {
                             setAiTodos(upd)
                             ;(supabase as any).from('conversations').update({ ai_todos: upd }).eq('id', selected.id)
                           }} style={{ marginTop: 2 }} />
-                          <span style={{ textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.6 : 1 }}>{t.text}</span>
+                          <span style={{ textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.6 : 1 }}>
+                            <Highlight text={t.text} q={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
+                          </span>
                         </label>
                       ))}
                     </div>
