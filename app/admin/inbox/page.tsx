@@ -7379,18 +7379,21 @@ export default function InboxPage() {
                     <div key={msg.id}>
                       {dateDivider}
                       <div style={{ display: 'flex', justifyContent: 'center', padding: '5px 0' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, maxWidth: 460, background: `color-mix(in srgb, ${accent} 13%, transparent)`, color: accent, padding: '5px 13px 5px 10px', borderRadius: 999, lineHeight: 1.3 }}>
-                          <span style={{ flexShrink: 0, display: 'inline-flex' }}><LifecycleIcon kind={kind} /></span>
-                          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>
+                        {/* Grows to the full stream width and wraps to more lines
+                            rather than truncating, so the whole cart/order detail
+                            is readable. Keeps the rounded-pill look on one line. */}
+                        <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 8, maxWidth: '100%', background: `color-mix(in srgb, ${accent} 13%, transparent)`, color: accent, padding: '7px 15px', borderRadius: 16, lineHeight: 1.45 }}>
+                          <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 2 }}><LifecycleIcon kind={kind} /></span>
+                          <span style={{ minWidth: 0, fontSize: 12, overflowWrap: 'anywhere' }}>
                             <span style={{ fontWeight: 700 }}>{title}</span>
-                            {detail && <span style={{ opacity: 0.78, fontWeight: 500 }}>{` · ${detail}`}</span>}
+                            {detail && <span style={{ opacity: 0.8, fontWeight: 500 }}>{` · ${detail}`}</span>}
+                            {link && (
+                              <a href={link} target="_blank" rel="noreferrer" title={link}
+                                style={{ color: accent, marginLeft: 6, display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle' }}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
+                              </a>
+                            )}
                           </span>
-                          {link && (
-                            <a href={link} target="_blank" rel="noreferrer" title={link}
-                              style={{ flexShrink: 0, color: accent, display: 'inline-flex', alignItems: 'center' }}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
-                            </a>
-                          )}
                         </span>
                       </div>
                     </div>
