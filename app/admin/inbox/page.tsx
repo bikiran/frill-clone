@@ -332,6 +332,42 @@ function extractFromText(text: string) {
   return { phone: phone || null, email: email || null, address: address || null, name: name || null }
 }
 
+// Escape a user's search term so it's safe to build a RegExp from.
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// Render `text` with every (case-insensitive) occurrence of `q` wrapped in a
+// <mark>, so a search result shows exactly what matched. With no query it just
+// returns the text unchanged.
+function Highlight({ text, q }: { text: string; q: string }) {
+  const query = (q || '').trim()
+  if (!query || !text) return <>{text}</>
+  const parts = text.split(new RegExp(`(${escapeRe(query)})`, 'ig'))
+  const lower = query.toLowerCase()
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.toLowerCase() === lower
+          ? <mark key={i} style={{ background: '#fde68a', color: 'inherit', borderRadius: 3, padding: '0 1px' }}>{p}</mark>
+          : <span key={i}>{p}</span>
+      )}
+    </>
+  )
+}
+
+// Build a short excerpt centred on the first match of `q` within `text`, so a
+// deep hit (a message body, transcript, AI summary…) can show WHERE it matched
+// even when that text isn't otherwise visible in the conversation row.
+function makeSnippet(text: string, q: string): string {
+  const t = String(text || '').replace(/\s+/g, ' ').trim()
+  const query = (q || '').trim()
+  if (!query) return t.slice(0, 120)
+  const i = t.toLowerCase().indexOf(query.toLowerCase())
+  if (i < 0) return t.slice(0, 120)
+  const start = Math.max(0, i - 32)
+  const end = Math.min(t.length, i + query.length + 64)
+  return (start > 0 ? '…' : '') + t.slice(start, end) + (end < t.length ? '…' : '')
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function InboxPage() {
   // Seed from the shared identity cache + the last conversation list we rendered
@@ -470,7 +506,8 @@ export default function InboxPage() {
     try { sessionStorage.setItem('colvy_location_filter', locationFilter) } catch {}
   }, [locationFilter])
   const [searchScope, setSearchScope] = useState<'all' | 'contact' | 'messages' | 'activity' | 'tasks' | 'notes' | 'ai'>('all')
-  const [searchMsgHits, setSearchMsgHits] = useState<Record<string, boolean>>({})
+  // Deep-search hits: conversation id → where it matched + a highlighted excerpt.
+  const [searchMsgHits, setSearchMsgHits] = useState<Record<string, { field: string; snippet: string }>>({})
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -4574,33 +4611,39 @@ export default function InboxPage() {
     }
     let cancelled = false
     const run = async () => {
-      const hits: Record<string, boolean> = {}
+      const hits: Record<string, { field: string; snippet: string }> = {}
       const like = `%${q.replace(/[%_]/g, m => '\\' + m)}%`
-      const collect = async (table: string, col: string) => {
+      // Record a hit once per conversation — the first (most relevant, in scope
+      // order) match wins, so "All" doesn't clobber a message match with a
+      // weaker one from another table.
+      const mark = (id: string, field: string, text: string) => {
+        if (id && !hits[id]) hits[id] = { field, snippet: makeSnippet(text, q) }
+      }
+      const collect = async (table: string, col: string, field: string) => {
         try {
           const { data } = await (supabase as any).from(table)
-            .select('conversation_id').eq('company_id', companyId).ilike(col, like).limit(500)
-          for (const r of data || []) if (r.conversation_id) hits[r.conversation_id] = true
+            .select(`conversation_id, ${col}`).eq('company_id', companyId).ilike(col, like).limit(500)
+          for (const r of data || []) if (r.conversation_id) mark(r.conversation_id, field, String(r[col] || ''))
         } catch { /* table/column may not exist; skip */ }
       }
-      if (searchScope === 'all' || searchScope === 'messages') await collect('messages', 'content')
-      if (searchScope === 'all' || searchScope === 'notes') await collect('conversation_notes', 'content')
-      if (searchScope === 'all' || searchScope === 'tasks') await collect('conversation_tasks', 'text')
-      if (searchScope === 'all' || searchScope === 'activity') await collect('conversation_events', 'detail')
+      if (searchScope === 'all' || searchScope === 'messages') await collect('messages', 'content', 'Message')
+      if (searchScope === 'all' || searchScope === 'notes') await collect('conversation_notes', 'content', 'Note')
+      if (searchScope === 'all' || searchScope === 'tasks') await collect('conversation_tasks', 'text', 'Task')
+      if (searchScope === 'all' || searchScope === 'activity') await collect('conversation_events', 'detail', 'Activity')
 
       // AI-generated content: a call's transcription and AI summary (on the
       // `calls` table, which carries conversation_id), plus the conversation's
       // own AI summary and action items (stored on the conversation row itself).
       if (searchScope === 'all' || searchScope === 'ai') {
         // Calls link to a conversation directly, so the shared collector works.
-        await collect('calls', 'ai_summary')
-        await collect('calls', 'transcription')
-        await collect('calls', 'transcript_en')
+        await collect('calls', 'ai_summary', 'AI summary')
+        await collect('calls', 'transcription', 'Transcript')
+        await collect('calls', 'transcript_en', 'Transcript')
         // The conversation-level AI summary keyed by the conversation's own id.
         try {
           const { data } = await (supabase as any).from('conversations')
-            .select('id').eq('company_id', companyId).ilike('ai_summary', like).limit(500)
-          for (const r of data || []) if (r.id) hits[r.id] = true
+            .select('id, ai_summary').eq('company_id', companyId).ilike('ai_summary', like).limit(500)
+          for (const r of data || []) if (r.id) mark(r.id, 'AI summary', String(r.ai_summary || ''))
         } catch { /* column may not exist; skip */ }
         // Action items live in a jsonb array (ai_todos = [{ text, done }]).
         // ilike can't reach inside jsonb, so pull the rows that have to-dos and
@@ -4611,9 +4654,8 @@ export default function InboxPage() {
             .select('id, ai_todos').eq('company_id', companyId).not('ai_todos', 'is', null).limit(1000)
           for (const r of data || []) {
             const todos = Array.isArray(r.ai_todos) ? r.ai_todos : []
-            if (todos.some((t: any) => String(typeof t === 'string' ? t : (t?.text || '')).toLowerCase().includes(ql))) {
-              if (r.id) hits[r.id] = true
-            }
+            const hit = todos.find((t: any) => String(typeof t === 'string' ? t : (t?.text || '')).toLowerCase().includes(ql))
+            if (hit && r.id) mark(r.id, 'Action item', String(typeof hit === 'string' ? hit : (hit?.text || '')))
           }
         } catch { /* column may not exist; skip */ }
       }
@@ -4633,7 +4675,9 @@ export default function InboxPage() {
           for (let i = 0; i < cids.length; i += 100) {
             const { data: cv } = await (supabase as any).from('conversations')
               .select('id').eq('company_id', companyId).in('contact_id', cids.slice(i, i + 100)).limit(1000)
-            for (const r of cv || []) if (r.id) hits[r.id] = true
+            // Contact matches highlight in the row's name/last-message directly,
+            // so no snippet is needed — mark the field only.
+            for (const r of cv || []) if (r.id) mark(r.id, 'contact', '')
           }
         } catch { /* skip */ }
       }
@@ -6654,7 +6698,7 @@ export default function InboxPage() {
                     </span>
                   )}
                   <span style={{ fontSize: 13.5, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {displayName}
+                    <Highlight text={displayName} q={searchTerm} />
                   </span>
                   {contact.prexty_customer_id && (
                     <span title="Prexty POS customer" style={{ flexShrink: 0, width: 15, height: 15, borderRadius: 4, background: '#4f46e5', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 800 }}>P</span>
@@ -6697,13 +6741,33 @@ export default function InboxPage() {
                   </p>
                 ) : (
                 <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {conv.last_message || 'No messages yet'}
+                  <Highlight text={conv.last_message || 'No messages yet'} q={searchTerm} />
                 </p>
                 )}
                 {conv.unread_count > 0 && (
                   <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, background: 'var(--coral)', color: '#fff', minWidth: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', borderRadius: 20, boxSizing: 'border-box' }}>{conv.unread_count}</span>
                 )}
               </div>
+              {/* Where a deep search matched — a call transcript, an AI summary,
+                  an older message, a note. Shown only when the match isn't
+                  already visible in the name/last-message above, so the agent
+                  can see WHY this conversation is in the results. */}
+              {(() => {
+                if (!searchTerm.trim()) return null
+                const hit = searchMsgHits[c.id]
+                if (!hit || hit.field === 'contact' || !hit.snippet) return null
+                const ql = searchTerm.trim().toLowerCase()
+                // Skip if the last-message preview already shows the match.
+                if ((conv.last_message || '').toLowerCase().includes(ql)) return null
+                return (
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 3, fontSize: 11, color: '#6b7280', overflow: 'hidden' }}>
+                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#7c3aed' }}>{hit.field}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                      <Highlight text={hit.snippet} q={searchTerm} />
+                    </span>
+                  </div>
+                )
+              })()}
               {conv.assigned_name && (
                 <span style={{ fontSize: 10, color: '#2563eb', marginTop: 3, display: 'block' }}>Assigned: {conv.assigned_name}</span>
               )}
