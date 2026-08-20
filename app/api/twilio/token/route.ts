@@ -34,8 +34,9 @@ function resolveFcmSecret(): string | null {
 // exposes the account credentials — only this JWT, scoped to the TwiML App.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, userId } = await req.json()
+    const { companyId, userId, platform } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
+    const isIos = String(platform || '').toLowerCase() === 'ios'
 
     const db = admin()
     const { data: integ } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
@@ -116,25 +117,38 @@ export async function POST(req: NextRequest) {
     // token is still minted (browser calling unaffected; mobile just won't ring
     // until the next successful provision).
     let pushCredentialSid = integ.push_credential_sid || null
-    const fcmSecret = resolveFcmSecret()
-    const fcmInfo = inspectFcmSecret(fcmSecret)
-    if (fcmSecret && fcmInfo.fingerprint) {
-      try {
-        const friendlyName = `Colvy Mobile ${String(companyId).slice(0, 8)} #${fcmInfo.fingerprint}`
-        let credOk = false
-        if (pushCredentialSid) {
-          const cred = await svc.getPushCredential(pushCredentialSid)
-          credOk = !!cred && typeof cred.friendly_name === 'string' && cred.friendly_name.includes(`#${fcmInfo.fingerprint}`)
-        }
-        if (!credOk) {
-          const cred = await svc.createPushCredential({ friendlyName, fcmSecret })
-          if (cred?.sid) {
-            pushCredentialSid = cred.sid
-            await db.from('twilio_integrations').update({ push_credential_sid: pushCredentialSid }).eq('company_id', companyId)
+    if (isIos) {
+      // iOS incoming-call pushes travel over APNs (PushKit/VoIP), NOT FCM. The
+      // APNs push credential is created once in the Twilio Console from the app's
+      // VoIP Services certificate; its CRxxxx SID is supplied via env. We don't
+      // auto-provision it the way FCM is (that needs the cert + private key server
+      // side and a per-account create) — the static SID covers the single Twilio
+      // account calling runs on today. Attaching the FCM credential to an iOS
+      // token would let the device register but never ring, so iOS uses the APNs
+      // SID exclusively and falls back to no credential (hasPushCredential:false,
+      // surfaced in the app) when it isn't configured.
+      pushCredentialSid = (process.env.TWILIO_PUSH_CREDENTIAL_SID_IOS || '').trim() || null
+    } else {
+      const fcmSecret = resolveFcmSecret()
+      const fcmInfo = inspectFcmSecret(fcmSecret)
+      if (fcmSecret && fcmInfo.fingerprint) {
+        try {
+          const friendlyName = `Colvy Mobile ${String(companyId).slice(0, 8)} #${fcmInfo.fingerprint}`
+          let credOk = false
+          if (pushCredentialSid) {
+            const cred = await svc.getPushCredential(pushCredentialSid)
+            credOk = !!cred && typeof cred.friendly_name === 'string' && cred.friendly_name.includes(`#${fcmInfo.fingerprint}`)
           }
+          if (!credOk) {
+            const cred = await svc.createPushCredential({ friendlyName, fcmSecret })
+            if (cred?.sid) {
+              pushCredentialSid = cred.sid
+              await db.from('twilio_integrations').update({ push_credential_sid: pushCredentialSid }).eq('company_id', companyId)
+            }
+          }
+        } catch (e: any) {
+          console.error('[twilio token] push credential provision failed', e?.message || e)
         }
-      } catch (e: any) {
-        console.error('[twilio token] push credential provision failed', e?.message || e)
       }
     }
 
