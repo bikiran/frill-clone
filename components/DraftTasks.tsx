@@ -36,7 +36,7 @@ const fmtWhen = (iso: string) => {
 
 export default function DraftTasks({
   todos, conversationId, companyId, source, storageKey,
-  teamMembers = [], outlets = [], defaultLocationId = null, actor, onCreated, onClosedChange,
+  teamMembers = [], outlets = [], defaultLocationId = null, actor, onCreated, onClosedChange, bare = false,
 }: {
   todos: string[]
   conversationId?: string | null
@@ -49,6 +49,7 @@ export default function DraftTasks({
   actor?: { id?: string | null; name?: string | null } | null
   onCreated?: () => void
   onClosedChange?: (closed: boolean) => void
+  bare?: boolean
 }) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [closed, setClosed] = useState(false)
@@ -110,7 +111,7 @@ export default function DraftTasks({
   const chosenCount = drafts.filter(d => d.include).length
 
   return (
-    <div style={{ paddingTop: 12, borderTop: '1px solid #e3e9f2' }}>
+    <div style={bare ? { paddingTop: 4 } : { paddingTop: 12, borderTop: '1px solid #e3e9f2' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
         <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: '#7c3aed', display: 'flex', alignItems: 'center', gap: 6 }}>
           <SparkIcon /> Draft tasks

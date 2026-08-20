@@ -7909,6 +7909,24 @@ export default function InboxPage() {
                 )
               })]
               })()}
+              {/* AI-detected action items for this chat → draft tasks, inline in
+                  the thread (same panel as the call card, and mirrored in the
+                  Timeline tab). Only when the AI summary found action items. */}
+              {aiTodos.length > 0 && (
+                <div style={{ maxWidth: 560, width: '100%', margin: '4px auto 0', background: '#faf5ff', border: '1px solid #ede9fe', borderRadius: 14, padding: '4px 14px 14px' }}>
+                  <DraftTasks
+                    todos={aiTodos.map((t: any) => t.text).filter(Boolean)}
+                    source="ai_summary" storageKey={`colvy-conv-tasks-${selected.id}`}
+                    conversationId={selected.id} companyId={companyId || undefined}
+                    teamMembers={teamMembers} outlets={outlets}
+                    defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null}
+                    actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }}
+                    onCreated={() => { if (selected) loadConversationExtras(selected.id) }}
+                    onClosedChange={setChatDraftsClosed}
+                    bare
+                  />
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
@@ -9131,37 +9149,22 @@ export default function InboxPage() {
                   )}
                   {aiTodos.length > 0 && (
                     <div style={{ marginTop: 10 }}>
-                      {/* Draft real tasks from the detected action items — with
-                          priority, assignee, outlet and a reminder per task. */}
-                      <DraftTasks
-                        todos={aiTodos.map((t: any) => t.text).filter(Boolean)}
-                        source="ai_summary" storageKey={`colvy-conv-tasks-${selected.id}`}
-                        conversationId={selected.id} companyId={companyId || undefined}
-                        teamMembers={teamMembers} outlets={outlets}
-                        defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null}
-                        actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }}
-                        onCreated={() => { if (selected) loadConversationExtras(selected.id) }}
-                        onClosedChange={setChatDraftsClosed}
-                      />
-                      {/* Once the draft panel is dismissed/used, keep the plain
-                          tickable to-do list for quick reference. */}
-                      {chatDraftsClosed && (
-                        <>
-                          <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase' }}>To-dos</p>
-                          {aiTodos.map((t: any, i: number) => (
-                            <label key={i} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 12, color: 'var(--ink)', marginBottom: 4, cursor: 'pointer' }}>
-                              <input type="checkbox" checked={!!t.done} onChange={() => {
-                                const upd = aiTodos.map((x: any, xi: number) => xi === i ? { ...x, done: !x.done } : x)
-                                setAiTodos(upd)
-                                ;(supabase as any).from('conversations').update({ ai_todos: upd }).eq('id', selected.id)
-                              }} style={{ marginTop: 2 }} />
-                              <span style={{ textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.6 : 1 }}>
-                                <Highlight text={t.text} q={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
-                              </span>
-                            </label>
-                          ))}
-                        </>
-                      )}
+                      <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase' }}>To-dos</p>
+                      {aiTodos.map((t: any, i: number) => (
+                        <label key={i} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 12, color: 'var(--ink)', marginBottom: 4, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={!!t.done} onChange={() => {
+                            const upd = aiTodos.map((x: any, xi: number) => xi === i ? { ...x, done: !x.done } : x)
+                            setAiTodos(upd)
+                            ;(supabase as any).from('conversations').update({ ai_todos: upd }).eq('id', selected.id)
+                          }} style={{ marginTop: 2 }} />
+                          <span style={{ textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.6 : 1 }}>
+                            <Highlight text={t.text} q={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
+                          </span>
+                        </label>
+                      ))}
+                      <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ color: '#7c3aed' }}>✨</span> Draft tasks from these appear in the conversation.
+                      </p>
                     </div>
                   )}
                 </div>
