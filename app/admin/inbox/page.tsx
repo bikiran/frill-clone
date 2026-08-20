@@ -469,7 +469,7 @@ export default function InboxPage() {
   useEffect(() => {
     try { sessionStorage.setItem('colvy_location_filter', locationFilter) } catch {}
   }, [locationFilter])
-  const [searchScope, setSearchScope] = useState<'all' | 'contact' | 'messages' | 'activity' | 'tasks' | 'notes'>('all')
+  const [searchScope, setSearchScope] = useState<'all' | 'contact' | 'messages' | 'activity' | 'tasks' | 'notes' | 'ai'>('all')
   const [searchMsgHits, setSearchMsgHits] = useState<Record<string, boolean>>({})
   const [msgSearch, setMsgSearch] = useState('')
   const [showMsgSearch, setShowMsgSearch] = useState(false)
@@ -4567,7 +4567,7 @@ export default function InboxPage() {
   // remember which conversations matched, so the list filter includes them.
   useEffect(() => {
     const q = searchTerm.trim()
-    if (!q || !companyId || !['all', 'contact', 'messages', 'notes', 'tasks', 'activity'].includes(searchScope)) {
+    if (!q || !companyId || !['all', 'contact', 'messages', 'notes', 'tasks', 'activity', 'ai'].includes(searchScope)) {
       setSearchMsgHits({})
       setSearchExtraConvs([])
       return
@@ -4587,6 +4587,36 @@ export default function InboxPage() {
       if (searchScope === 'all' || searchScope === 'notes') await collect('conversation_notes', 'content')
       if (searchScope === 'all' || searchScope === 'tasks') await collect('conversation_tasks', 'text')
       if (searchScope === 'all' || searchScope === 'activity') await collect('conversation_events', 'detail')
+
+      // AI-generated content: a call's transcription and AI summary (on the
+      // `calls` table, which carries conversation_id), plus the conversation's
+      // own AI summary and action items (stored on the conversation row itself).
+      if (searchScope === 'all' || searchScope === 'ai') {
+        // Calls link to a conversation directly, so the shared collector works.
+        await collect('calls', 'ai_summary')
+        await collect('calls', 'transcription')
+        await collect('calls', 'transcript_en')
+        // The conversation-level AI summary keyed by the conversation's own id.
+        try {
+          const { data } = await (supabase as any).from('conversations')
+            .select('id').eq('company_id', companyId).ilike('ai_summary', like).limit(500)
+          for (const r of data || []) if (r.id) hits[r.id] = true
+        } catch { /* column may not exist; skip */ }
+        // Action items live in a jsonb array (ai_todos = [{ text, done }]).
+        // ilike can't reach inside jsonb, so pull the rows that have to-dos and
+        // match their text in JS. Bounded, and most rows have none.
+        try {
+          const ql = q.toLowerCase()
+          const { data } = await (supabase as any).from('conversations')
+            .select('id, ai_todos').eq('company_id', companyId).not('ai_todos', 'is', null).limit(1000)
+          for (const r of data || []) {
+            const todos = Array.isArray(r.ai_todos) ? r.ai_todos : []
+            if (todos.some((t: any) => String(typeof t === 'string' ? t : (t?.text || '')).toLowerCase().includes(ql))) {
+              if (r.id) hits[r.id] = true
+            }
+          }
+        } catch { /* column may not exist; skip */ }
+      }
 
       // Match the WHOLE inbox by the contact's identity (name / email / phone),
       // not just the loaded page. Previously a name search only matched rows
@@ -4746,7 +4776,7 @@ export default function InboxPage() {
 
     if (searchScope === 'contact') return contactMatch
     if (searchScope === 'messages') return deepHit || surfaceMatch
-    if (searchScope === 'notes' || searchScope === 'tasks' || searchScope === 'activity') return deepHit
+    if (searchScope === 'notes' || searchScope === 'tasks' || searchScope === 'activity' || searchScope === 'ai') return deepHit
     // 'all'
     return contactMatch || surfaceMatch || deepHit
   })
@@ -6381,7 +6411,7 @@ export default function InboxPage() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 10 }}>
               {([
                 ['all', 'All'], ['contact', 'Contact'], ['messages', 'Messages'],
-                ['activity', 'Activity & Marketing'], ['tasks', 'Tasks'], ['notes', 'Notes'],
+                ['ai', 'AI & Calls'], ['activity', 'Activity & Marketing'], ['tasks', 'Tasks'], ['notes', 'Notes'],
               ] as const).map(([key, label]) => {
                 const on = searchScope === key
                 return (
