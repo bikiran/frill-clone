@@ -235,90 +235,127 @@ export default function CustomerProfilePage() {
   const displayAov = displayOrders > 0 ? displaySpend / displayOrders : 0
   const orderItems: any[] = orders.flatMap((o: any) => Array.isArray(o.line_items) ? o.line_items : [])
 
-  const stat = (label: string, value: string, color?: string) => (
-    <div style={{ borderRadius: 12, border: '1px solid var(--border)', padding: 16, background: '#fff' }}>
-      <p style={{ margin: '0 0 6px 0', fontSize: 12, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</p>
-      <p style={{ margin: 0, fontSize: 24, fontWeight: 700, color: color || 'var(--ink)' }}>{value}</p>
+  // ── Presentation helpers ──────────────────────────────────────────────────
+  const fullName = `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || customer.email || 'Customer'
+  const initials = (((customer.first_name?.[0] || '') + (customer.last_name?.[0] || '')).toUpperCase()
+    || (customer.email?.[0] || '?').toUpperCase())
+  // Deterministic soft avatar colour from the name (no Math.random — SSR-safe).
+  const hue = Array.from(String(customer.email || fullName)).reduce((a, c) => a + c.charCodeAt(0), 0) % 360
+  const avatarBg = `hsl(${hue} 65% 93%)`
+  const avatarFg = `hsl(${hue} 50% 42%)`
+  // Status pill from the RFM band.
+  const status = rfmScore >= 6
+    ? { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' }
+    : rfmScore >= 3
+      ? { bg: '#fef3c7', fg: '#b45309', dot: '#f59e0b' }
+      : { bg: '#fee2e2', fg: '#dc2626', dot: '#ef4444' }
+  const tags: string[] = Array.isArray((customer as any).tags) ? (customer as any).tags.filter(Boolean) : []
+  const fmtMoney = (n: number) => `$${n.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  const card: React.CSSProperties = { borderRadius: 14, border: '1px solid var(--border)', background: 'var(--card, #fff)', padding: 18 }
+  const cardTitle: React.CSSProperties = { margin: '0 0 14px', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }
+  const kicker: React.CSSProperties = { margin: '0 0 4px', fontSize: 10.5, color: 'var(--slate)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }
+
+  // Compact icon-topped stat card.
+  const statCard = (icon: React.ReactNode, label: string, value: string, sub?: string, accent = 'var(--coral)') => (
+    <div style={{ ...card, padding: 16, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+      <span style={{ width: 34, height: 34, borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${accent} 13%, transparent)`, color: accent }}>{icon}</span>
+      <div style={{ minWidth: 0 }}>
+        <p style={kicker}>{label}</p>
+        <p style={{ margin: 0, fontSize: 21, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</p>
+        {sub && <p style={{ margin: '2px 0 0', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)' }}>{sub}</p>}
+      </div>
     </div>
   )
+  const I = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div style={{ maxWidth: 1180, margin: '0 auto', padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-      {/* Header */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 30, fontWeight: 700, margin: '0 0 6px 0', color: 'var(--ink)' }}>
-          {customer.first_name} {customer.last_name}
-        </h1>
-        <p style={{ margin: 0, fontSize: 14, color: '#888' }}>{customer.email}</p>
-      </div>
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        {/* ── MAIN COLUMN ─────────────────────────────────────────────────── */}
+        <div style={{ flex: '1 1 620px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-      {/* Stats grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 28 }}>
-        <div style={{ borderRadius: 12, border: '1px solid var(--border)', padding: 16, background: '#fff' }}>
-          <p style={{ margin: '0 0 6px 0', fontSize: 12, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>RFM Score</p>
-          <p style={{ margin: '0 0 2px 0', fontSize: 24, fontWeight: 700, color: 'var(--coral)' }}>{rfmScore}/9</p>
-          <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{rfmCategory}</p>
-        </div>
-        {stat('Total Spend', displaySpend > 0 ? `$${displaySpend.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A')}
-        {stat('Total Orders', String(displayOrders))}
-        {stat('Avg Order Value', displayAov > 0 ? `$${displayAov.toFixed(2)}` : 'N/A')}
-      </div>
-
-      {/* Contact Information */}
-      <div style={{ borderRadius: 12, border: '1px solid var(--border)', padding: 20, background: 'var(--peach)', marginBottom: 24 }}>
-        <h3 style={{ margin: '0 0 16px 0', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Contact Information</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-          <div>
-            <p style={{ margin: '0 0 3px 0', fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase' }}>Email</p>
-            <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>
-              <a href={`mailto:${customer.email}`} style={{ color: 'var(--coral)', textDecoration: 'none' }}>{customer.email}</a>
-            </p>
+          {/* Header card */}
+          <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <span style={{ width: 60, height: 60, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: avatarBg, color: avatarFg, fontSize: 21, fontWeight: 800 }}>{initials}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h1 style={{ fontSize: 24, fontWeight: 800, margin: '0 0 3px', color: 'var(--ink)', letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fullName}</h1>
+              <p style={{ margin: '0 0 7px', fontSize: 13.5, color: 'var(--slate)', overflowWrap: 'anywhere' }}>{customer.email}</p>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 20, background: status.bg, color: status.fg, fontSize: 11.5, fontWeight: 700 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: status.dot }} /> {rfmCategory}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {customer.phone && (
+                <a href={`tel:${customer.phone}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card, #fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                  Call
+                </a>
+              )}
+              {customer.email && (
+                <a href={`mailto:${customer.email}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" {...I}><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+                  Email
+                </a>
+              )}
+            </div>
           </div>
-          {customer.phone && (
-            <div>
-              <p style={{ margin: '0 0 3px 0', fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase' }}>Phone</p>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{customer.phone}</p>
+
+          {/* Stats grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+            {statCard(<svg width="17" height="17" viewBox="0 0 24 24" {...I}><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>, 'RFM Score', `${rfmScore}/9`, rfmCategory, '#3b82f6')}
+            {statCard(<svg width="17" height="17" viewBox="0 0 24 24" {...I}><path d="M20 12V8H6a2 2 0 0 1 0-4h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>, 'Total Spend', displaySpend > 0 ? fmtMoney(displaySpend) : 'N/A', 'Lifetime', '#16a34a')}
+            {statCard(<svg width="17" height="17" viewBox="0 0 24 24" {...I}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>, 'Total Orders', String(displayOrders), displayOrders === 1 ? 'Order' : 'Orders', '#7c3aed')}
+            {statCard(<svg width="17" height="17" viewBox="0 0 24 24" {...I}><path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none"/></svg>, 'Avg Order Value', displayAov > 0 ? fmtMoney(displayAov) : 'N/A', 'Per order', '#d97706')}
+          </div>
+
+          {/* Contact Information */}
+          <div style={card}>
+            <h3 style={cardTitle}>Contact Information</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+              <div style={{ minWidth: 0 }}>
+                <p style={kicker}>Email</p>
+                <a href={`mailto:${customer.email}`} style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--coral)', textDecoration: 'none', overflowWrap: 'anywhere' }}>{customer.email}</a>
+              </div>
+              {customer.phone && (
+                <div style={{ minWidth: 0 }}>
+                  <p style={kicker}>Phone</p>
+                  <a href={`tel:${customer.phone}`} style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', textDecoration: 'none' }}>{customer.phone}</a>
+                </div>
+              )}
+              {(addr.address_1 || addr.city) && (
+                <div style={{ minWidth: 0 }}>
+                  <p style={kicker}>Address</p>
+                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.5 }}>
+                    {[addr.address_1, addr.address_2].filter(Boolean).join(', ')}
+                    {(addr.address_1 || addr.address_2) && <br />}
+                    {[addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' ')}
+                    {(addr.city || addr.state || addr.postcode) && addr.country && <br />}
+                    {addr.country}
+                  </p>
+                </div>
+              )}
+              {firstOrderDate && (
+                <div style={{ minWidth: 0 }}>
+                  <p style={kicker}>Customer Since</p>
+                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{firstOrderDate.toLocaleDateString()}</p>
+                </div>
+              )}
             </div>
-          )}
-          {(addr.address_1 || addr.city) && (
-            <div>
-              <p style={{ margin: '0 0 3px 0', fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase' }}>Address</p>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.5 }}>
-                {/* Australian standard: street lines, then SUBURB STATE POSTCODE, then country */}
-                {[addr.address_1, addr.address_2].filter(Boolean).join(', ')}
-                {(addr.address_1 || addr.address_2) && <br />}
-                {[addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' ')}
-                {(addr.city || addr.state || addr.postcode) && addr.country && <br />}
-                {addr.country}
-              </p>
-            </div>
-          )}
-          {firstOrderDate && (
-            <div>
-              <p style={{ margin: '0 0 3px 0', fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase' }}>Customer Since</p>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{firstOrderDate.toLocaleDateString()}</p>
-            </div>
-          )}
-          {daysSinceLast !== null && (
-            <div>
-              <p style={{ margin: '0 0 3px 0', fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase' }}>Days Since Last Order</p>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{daysSinceLast} days</p>
-            </div>
-          )}
-          {lastOrderDate && (
-            <div>
-              <p style={{ margin: '0 0 3px 0', fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase' }}>Last Order Date</p>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{lastOrderDate.toLocaleDateString()}</p>
-            </div>
-          )}
-        </div>
-      </div>
+            {tags.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 14 }}>
+                {tags.map((t, i) => (
+                  <span key={i} style={{ padding: '3px 10px', borderRadius: 20, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)' }}>{t}</span>
+                ))}
+              </div>
+            )}
+          </div>
 
       {/* Products Purchased — searchable accordion list */}
       {rawItems.length > 0 && (
-        <div style={{ borderRadius: 12, border: '1px solid var(--border)', padding: 20, background: '#fff', marginBottom: 24 }}>
+        <div style={card}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>
               Products Purchased ({rawItems.length})
@@ -352,7 +389,7 @@ export default function CustomerProfilePage() {
               const sku = item.sku || ''
               const isOpen = expandedProducts.has(idx)
               return (
-                <div key={idx} style={{ borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden', background: isOpen ? 'var(--canvas)' : '#fff' }}>
+                <div key={idx} style={{ borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden', background: isOpen ? 'var(--canvas)' : 'var(--card, #fff)' }}>
                   <button
                     type="button"
                     onClick={() => {
@@ -360,21 +397,25 @@ export default function CustomerProfilePage() {
                       if (isOpen) next.delete(idx); else next.add(idx)
                       setExpandedProducts(next)
                     }}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', minHeight: 60, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-                    {image ? (
-                      <img src={image} alt={name} style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} onError={(e: any) => { e.target.style.display = 'none' }} />
-                    ) : (
-                      <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--peach)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                      </div>
-                    )}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                    {/* Fixed thumbnail box: a fallback icon always sits behind, and
+                        the photo fills the box on top — so a broken/oversized image
+                        can never collapse or overflow the row. */}
+                    <span style={{ position: 'relative', width: 44, height: 44, borderRadius: 9, flexShrink: 0, overflow: 'hidden', background: 'var(--peach)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                      {image && (
+                        <img src={image} alt="" loading="lazy" decoding="async"
+                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e: any) => { e.currentTarget.style.display = 'none' }} />
+                      )}
+                    </span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
-                      {category && <p style={{ margin: '2px 0 0 0', fontSize: 11, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{category}</p>}
+                      {category && <p style={{ margin: '2px 0 0 0', fontSize: 11, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{category}</p>}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                      {qty && <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>×{qty}</span>}
-                      {price !== '' && !isNaN(parseFloat(price)) && <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap' }}>${parseFloat(price).toFixed(2)}</span>}
+                      {qty !== '' && qty != null && <span style={{ fontSize: 12, color: 'var(--slate)', whiteSpace: 'nowrap' }}>×{qty}</span>}
+                      {price !== '' && !isNaN(parseFloat(price)) && <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap' }}>${parseFloat(price).toFixed(2)}</span>}
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}><polyline points="6 9 12 15 18 9"/></svg>
                     </div>
                   </button>
@@ -398,10 +439,8 @@ export default function CustomerProfilePage() {
 
       {/* Call History */}
       {calls.length > 0 && (
-        <div style={{ borderRadius: 12, border: '1px solid var(--border)', padding: 20, background: '#fff', marginBottom: 16 }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>
-            Call History ({calls.length})
-          </h3>
+        <div style={card}>
+          <h3 style={cardTitle}>Call History ({calls.length})</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {calls.map((call: any) => {
               const dur = call.duration_seconds || 0
@@ -445,10 +484,8 @@ export default function CustomerProfilePage() {
       )}
 
       {/* Order History */}
-      <div style={{ borderRadius: 12, border: '1px solid var(--border)', padding: 20, background: '#fff' }}>
-        <h3 style={{ margin: '0 0 16px 0', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>
-          Order History ({customer.total_orders || orders.length || 0})
-        </h3>
+      <div style={card}>
+        <h3 style={cardTitle}>Order History ({customer.total_orders || orders.length || 0})</h3>
         {orders.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {orders.map((order: any) => {
@@ -525,6 +562,50 @@ export default function CustomerProfilePage() {
           </div>
         )}
       </div>
+        </div>{/* main column */}
+
+        {/* ── SIDEBAR ─────────────────────────────────────────────────── */}
+        <div style={{ flex: '0 1 300px', minWidth: 260, display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div style={card}>
+            <h3 style={cardTitle}>Customer Value</h3>
+            {([
+              ['First order', firstOrderDate ? firstOrderDate.toLocaleDateString() : '—'],
+              ['Last order', lastOrderDate ? lastOrderDate.toLocaleDateString() : '—'],
+              ['Total spend', displaySpend > 0 ? fmtMoney(displaySpend) : '—'],
+              ['Avg order value', displayAov > 0 ? fmtMoney(displayAov) : '—'],
+              ['Total orders', String(displayOrders)],
+              ...(daysSinceLast !== null ? [['Days since last order', `${daysSinceLast} days`]] : []),
+            ] as [string, string][]).map(([k, v], i) => (
+              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderTop: i ? '1px solid var(--border)' : 'none', fontSize: 13 }}>
+                <span style={{ color: 'var(--slate)' }}>{k}</span>
+                <span style={{ fontWeight: 700, color: 'var(--ink)', textAlign: 'right' }}>{v}</span>
+              </div>
+            ))}
+            {firstOrderDate && (() => {
+              const d = Math.floor((Date.now() - firstOrderDate.getTime()) / 864e5)
+              const lbl = d < 1 ? 'Today'
+                : d < 30 ? `${d} day${d === 1 ? '' : 's'}`
+                : d < 365 ? `${Math.floor(d / 30)} month${Math.floor(d / 30) === 1 ? '' : 's'}`
+                : `${Math.floor(d / 365)} year${Math.floor(d / 365) === 1 ? '' : 's'}`
+              return (
+                <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 10, background: 'var(--peach)', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Customer since</span><span>{lbl}</span>
+                </div>
+              )
+            })()}
+          </div>
+
+          <div style={card}>
+            <h3 style={cardTitle}>Lifetime Status</h3>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 12px', borderRadius: 20, background: status.bg, color: status.fg, fontSize: 13, fontWeight: 700 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: status.dot }} /> {rfmCategory}
+            </span>
+            <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--slate)', lineHeight: 1.5 }}>
+              RFM score <strong style={{ color: 'var(--ink)' }}>{rfmScore}/9</strong> — recency, frequency &amp; monetary value across this customer&rsquo;s order history.
+            </p>
+          </div>
+        </div>
+      </div>{/* flex wrapper */}
     </div>
   )
 }
