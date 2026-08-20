@@ -276,7 +276,7 @@ export async function POST(req: NextRequest) {
 
       if (conv) {
         // Customer texted a closed enquiry — log the reopen before we flip it.
-        await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status })
+        await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: matchedContactName || null, via: 'SMS' })
         await db.from('messages').insert({
           conversation_id: conv.id,
           company_id: companyId,

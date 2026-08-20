@@ -10,18 +10,33 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // message ingestion.
 export async function logEnquiryReopened(
   db: SupabaseClient,
-  opts: { conversationId: string; companyId: string; prevStatus?: string | null },
+  opts: {
+    conversationId: string
+    companyId: string
+    prevStatus?: string | null
+    // Who reopened it (the customer's name) and over which channel, so the
+    // timeline reads "Reopened by Jane Doe's new SMS" instead of a bare pill.
+    actorName?: string | null
+    via?: string | null
+  },
 ): Promise<void> {
-  const { conversationId, companyId, prevStatus } = opts
+  const { conversationId, companyId, prevStatus, actorName, via } = opts
   if (!conversationId || !companyId) return
   if (!['closed', 'resolved'].includes(String(prevStatus || ''))) return
+  const who = (actorName || '').trim()
+  const channel = (via || '').trim()
+  const detail = who
+    ? `Reopened by ${who}'s new ${channel || 'message'}.`
+    : channel
+      ? `Reopened by the customer's new ${channel}.`
+      : 'Enquiry opened again.'
   try {
     await (db as any).from('conversation_events').insert({
       conversation_id: conversationId,
       company_id: companyId,
       event_type: 'reopened',
-      actor_name: null,
-      detail: 'Enquiry opened again.',
+      actor_name: who || null,
+      detail,
     })
   } catch {
     // A missing timeline pill is cosmetic; a thrown webhook is not.

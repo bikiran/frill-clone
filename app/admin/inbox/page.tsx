@@ -4111,6 +4111,16 @@ export default function InboxPage() {
     // conversation — only a customer-facing reply does.
     if (!internalMode) claimIfUnassigned()
 
+    // A team member replying into a CLOSED/resolved enquiry reopens it — record
+    // that on the timeline so the reopen is visible the same way a customer's
+    // reopen is. Customer-facing replies only; an internal note doesn't reopen.
+    if (!internalMode && ['closed', 'resolved'].includes(String((selected as any).status || ''))) {
+      const who = senderName || 'A team member'
+      try { await (supabase as any).from('conversations').update({ status: 'open' }).eq('id', selected.id) } catch {}
+      setSelected(s => s ? ({ ...s, status: 'open' } as any) : s)
+      logEvent('reopened', `Reopened when ${who} replied.`)
+    }
+
     // Deliver any attached-but-unsent gallery media first (internal notes never
     // carry customer-facing media). If there's no accompanying text, we're done.
     if (!internalMode && stagedMedia.length > 0) {
