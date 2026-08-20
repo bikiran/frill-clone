@@ -47,9 +47,16 @@ function HL({ text, q, accent = 'var(--coral)' }: { text: string; q?: string; ac
   )
 }
 
-export default function CallCard({ callId, meta, timestamp, highlight, accent = 'var(--coral)' }: { callId: string; meta?: any; timestamp?: string; highlight?: string; accent?: string }) {
+export default function CallCard({ callId, meta, timestamp, highlight, accent = 'var(--coral)', actor, onTasksCreated }: { callId: string; meta?: any; timestamp?: string; highlight?: string; accent?: string; actor?: { id?: string | null; name?: string | null } | null; onTasksCreated?: () => void }) {
   const [call, setCall] = useState<any>(null)
   const [expanded, setExpanded] = useState(false)
+  // AI-drafted tasks from the call's action items. Each draft is editable
+  // (include / priority) before the agent creates them as real tasks. Dismissal
+  // and creation are remembered per call so the panel doesn't nag on reload.
+  const [drafts, setDrafts] = useState<{ text: string; priority: 'low' | 'normal' | 'high'; include: boolean }[]>([])
+  const [draftsClosed, setDraftsClosed] = useState(false)
+  const [creatingTasks, setCreatingTasks] = useState(false)
+  const [createdCount, setCreatedCount] = useState<number | null>(null)
   const [showTranscript, setShowTranscript] = useState(false)
   // For a non-English call: 'en' shows the translation, 'orig' the spoken language.
   const [transcriptView, setTranscriptView] = useState<'en' | 'orig'>('en')
@@ -166,6 +173,47 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
     return code.charAt(0).toUpperCase() + code.slice(1)
   })()
 
+  // Seed one draft task per action item, unless this call's drafts were already
+  // created or dismissed on a previous visit (remembered in localStorage).
+  const draftKey = `colvy-call-tasks-${callId}`
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const closed = window.localStorage.getItem(draftKey) === 'done'
+    setDraftsClosed(closed)
+    if (closed) { setDrafts([]); return }
+    setDrafts(todos.map(t => ({ text: String(t), priority: 'normal' as const, include: true })))
+  }, [callId, JSON.stringify(todos)])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const closeDrafts = (mark: boolean) => {
+    if (mark && typeof window !== 'undefined') { try { window.localStorage.setItem(draftKey, 'done') } catch {} }
+    setDraftsClosed(true)
+  }
+
+  // Turn the included drafts into real conversation_tasks, tagged with their
+  // source so they read as "Call summary" tasks in the inbox.
+  const createTasks = async () => {
+    const chosen = drafts.filter(d => d.include && d.text.trim())
+    if (!chosen.length || !call?.conversation_id || !call?.company_id) return
+    setCreatingTasks(true)
+    try {
+      const base = chosen.map(d => ({
+        conversation_id: call.conversation_id, company_id: call.company_id,
+        text: d.text.trim(), done: false, priority: d.priority,
+        created_by: actor?.name || null, created_by_id: actor?.id || null,
+      }))
+      // Prefer tagging the origin; if the source column isn't migrated yet the
+      // insert still succeeds without it rather than dropping the tasks.
+      let { error } = await (supabase as any).from('conversation_tasks').insert(base.map(r => ({ ...r, source: 'call_summary' })))
+      if (error) { ({ error } = await (supabase as any).from('conversation_tasks').insert(base)) }
+      if (error) throw error
+      setCreatedCount(chosen.length)
+      closeDrafts(true)
+      onTasksCreated?.()
+    } catch (e) {
+      console.warn('[call tasks] create failed', e)
+    } finally { setCreatingTasks(false) }
+  }
+
   return (
     <div style={{ maxWidth: 560, margin: '10px auto', background: '#f7f9fc', border: '1px solid #e3e9f2', borderRadius: 14, padding: 14 }}>
       {/* Header: direction + duration */}
@@ -210,8 +258,56 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
         </div>
       )}
 
-      {/* Action items */}
-      {expanded && todos.length > 0 && (
+      {/* AI draft tasks — turn the call's action items into real tasks with one
+          click. Shown until the agent creates or dismisses them. */}
+      {!draftsClosed && drafts.length > 0 && (
+        <div style={{ marginBottom: 12, paddingTop: 12, borderTop: '1px solid #e3e9f2' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+            <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: '#7c3aed', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <SparkIcon /> Draft tasks
+              <span style={{ fontWeight: 600, fontSize: 10.5, color: 'var(--slate)' }}>· from {drafts.length} action item{drafts.length === 1 ? '' : 's'}</span>
+            </p>
+            <button type="button" onClick={() => closeDrafts(true)}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)' }}>
+              Dismiss
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {drafts.map((d, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '8px 10px', borderRadius: 10, background: '#faf5ff', border: '1px solid #ede9fe' }}>
+                <input type="checkbox" checked={d.include} onChange={() => setDrafts(prev => prev.map((x, xi) => xi === i ? { ...x, include: !x.include } : x))} style={{ marginTop: 2, cursor: 'pointer', accentColor: '#7c3aed' }} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.4, opacity: d.include ? 1 : 0.5 }}>{d.text}</span>
+                <select value={d.priority} onChange={e => setDrafts(prev => prev.map((x, xi) => xi === i ? { ...x, priority: e.target.value as any } : x))}
+                  aria-label="Priority"
+                  style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, padding: '3px 6px', borderRadius: 7, border: '1px solid #ede9fe', background: '#fff', color: 'var(--slate)', cursor: 'pointer' }}>
+                  <option value="low">Low</option>
+                  <option value="normal">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#7c3aed', background: '#f3e8ff', padding: '3px 8px', borderRadius: 6, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Source · Call summary</span>
+            <span style={{ flex: 1 }} />
+            <button type="button" onClick={createTasks} disabled={creatingTasks || !drafts.some(d => d.include)}
+              style={{ padding: '7px 14px', borderRadius: 9, border: 'none', background: drafts.some(d => d.include) ? '#7c3aed' : '#c4b5fd', color: '#fff', fontSize: 12, fontWeight: 700, cursor: creatingTasks || !drafts.some(d => d.include) ? 'default' : 'pointer' }}>
+              {creatingTasks ? 'Creating…' : `Create ${drafts.filter(d => d.include).length} task${drafts.filter(d => d.include).length === 1 ? '' : 's'}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* "Tasks created" confirmation after drafting. */}
+      {createdCount != null && draftsClosed && (
+        <div style={{ marginBottom: 12, paddingTop: 12, borderTop: '1px solid #e3e9f2', fontSize: 12, color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          {createdCount} task{createdCount === 1 ? '' : 's'} created from this call
+        </div>
+      )}
+
+      {/* Action items — the plain list, once drafts are created/dismissed. */}
+      {expanded && todos.length > 0 && draftsClosed && (
         <div style={{ marginBottom: 12, paddingTop: 12, borderTop: '1px solid #e3e9f2' }}>
           <p style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 700, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 6 }}>
             <ClockIcon /> Action Items
