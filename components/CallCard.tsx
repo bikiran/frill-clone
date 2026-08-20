@@ -27,7 +27,27 @@ const SENTIMENT: Record<string, { label: string; color: string; bg: string }> = 
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
-export default function CallCard({ callId, meta, timestamp }: { callId: string; meta?: any; timestamp?: string }) {
+// Wrap every (case-insensitive) occurrence of `q` in a themed <mark>, matching
+// the inbox search highlight so a call's summary/transcript lights up too.
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+function HL({ text, q, accent = 'var(--coral)' }: { text: string; q?: string; accent?: string }) {
+  const query = (q || '').trim()
+  if (!query || !text) return <>{text}</>
+  const parts = text.split(new RegExp(`(${escapeRe(query)})`, 'ig'))
+  const lower = query.toLowerCase()
+  const bg = `color-mix(in srgb, ${accent} 30%, transparent)`
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.toLowerCase() === lower
+          ? <mark key={i} style={{ background: bg, color: 'inherit', fontWeight: 700, borderRadius: 3, padding: '0 1px' }}>{p}</mark>
+          : <span key={i}>{p}</span>
+      )}
+    </>
+  )
+}
+
+export default function CallCard({ callId, meta, timestamp, highlight, accent = 'var(--coral)' }: { callId: string; meta?: any; timestamp?: string; highlight?: string; accent?: string }) {
   const [call, setCall] = useState<any>(null)
   const [expanded, setExpanded] = useState(false)
   const [showTranscript, setShowTranscript] = useState(false)
@@ -81,6 +101,21 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
     }, 6000)
     return () => clearInterval(iv)
   }, [callId, call?.ai_summary, call?.transcription, call?.recording_url, call?.status])
+
+  // When a search brought us here, reveal any match that a collapsed summary or
+  // a hidden transcript would otherwise hide — expand the card / open the
+  // transcript so the highlighted term is actually visible.
+  useEffect(() => {
+    const q = (highlight || '').trim().toLowerCase()
+    if (!q || !call) return
+    const inSummary = String(call.ai_summary || '').toLowerCase().includes(q)
+    const inTodos = (Array.isArray(call.ai_todos) ? call.ai_todos : []).some((t: any) => String(t || '').toLowerCase().includes(q))
+    const inTranscript = String(call.transcription || '').toLowerCase().includes(q)
+      || String(call.transcript_en || '').toLowerCase().includes(q)
+      || (Array.isArray(call.transcript_segments) ? call.transcript_segments : []).some((s: any) => String(s?.text || '').toLowerCase().includes(q))
+    if (inSummary || inTodos || inTranscript) setExpanded(true)
+    if (inTranscript) setShowTranscript(true)
+  }, [highlight, call])
 
   const duration = call?.duration_seconds ?? meta?.duration_seconds ?? 0
   const inbound = (call?.direction || meta?.direction) === 'inbound'
@@ -164,7 +199,7 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
             )}
           </p>
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--ink)' }}>
-            {expanded || !longSummary ? summary : `${summary.slice(0, 180).trim()}…`}
+            <HL text={expanded || !longSummary ? summary : `${summary.slice(0, 180).trim()}…`} q={highlight} accent={accent} />
           </p>
           {longSummary && (
             <button type="button" onClick={() => setExpanded(v => !v)}
@@ -183,7 +218,7 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
           </p>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             {todos.map((t, i) => (
-              <li key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink)', marginBottom: 3 }}>{t}</li>
+              <li key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink)', marginBottom: 3 }}><HL text={t} q={highlight} accent={accent} /></li>
             ))}
           </ul>
         </div>
@@ -269,16 +304,16 @@ export default function CallCard({ callId, meta, timestamp }: { callId: string; 
           <div style={{ maxHeight: 260, overflowY: 'auto' }}>
             {hasTranslation && transcriptView === 'en' ? (
               // The translation is plain text (no per-speaker diarisation).
-              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{call.transcript_en}</p>
+              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}><HL text={call.transcript_en} q={highlight} accent={accent} /></p>
             ) : Array.isArray(call.transcript_segments) && call.transcript_segments.length ? (
               call.transcript_segments.map((seg: any, i: number) => (
                 <div key={i} style={{ marginBottom: 8 }}>
                   <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>{seg.speaker}</p>
-                  <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink)' }}>{seg.text}</p>
+                  <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink)' }}><HL text={seg.text} q={highlight} accent={accent} /></p>
                 </div>
               ))
             ) : (
-              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{call.transcription}</p>
+              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}><HL text={call.transcription} q={highlight} accent={accent} /></p>
             )}
           </div>
         </div>

@@ -4020,7 +4020,14 @@ export default function InboxPage() {
   }, [ctxMenu])
 
   const markRead = async (conv: any) => {
-    await (supabase as any).from('conversations').update({ is_unread: false, unread_count: 0 }).eq('id', conv.id)
+    // Toggle: an already-read conversation is marked unread again (with a badge
+    // count of at least 1 so it reads as freshly unread), otherwise mark read.
+    const makeUnread = !conv.is_unread
+    await (supabase as any).from('conversations').update(
+      makeUnread
+        ? { is_unread: true, unread_count: Math.max(1, conv.unread_count || 0) }
+        : { is_unread: false, unread_count: 0 }
+    ).eq('id', conv.id)
     loadConversations()
   }
   const snoozeConv = async (conv: any, hours: number) => {
@@ -5933,7 +5940,7 @@ export default function InboxPage() {
           style={{ position: 'fixed', top: Math.min(ctxMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 240), left: Math.min(ctxMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 210), width: 200, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.16)', zIndex: 500, overflow: 'hidden', padding: '4px 0' }}>
           {([
             [pinnedIds.has(ctxMenu.conv.id) ? 'Unpin' : 'Pin to top', <svg key="p" width="15" height="15" viewBox="0 0 24 24" fill={pinnedIds.has(ctxMenu.conv.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-3V7a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7z"/></svg>, () => togglePin(ctxMenu.conv)],
-            ['Mark as read', <svg key="r" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>, () => markRead(ctxMenu.conv)],
+            [ctxMenu.conv.is_unread ? 'Mark as read' : 'Mark as unread', <svg key="r" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>, () => markRead(ctxMenu.conv)],
             ['Open in new tab', <svg key="o" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>, () => window.open(`/admin/inbox?conversation=${ctxMenu.conv.id}`, '_blank')],
             ['Copy link', <svg key="c" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>, () => copyConvLink(ctxMenu.conv)],
             ['Close enquiry', <svg key="x" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>, () => closeConv(ctxMenu.conv)],
@@ -7198,7 +7205,7 @@ export default function InboxPage() {
                           <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', background: '#eef0f2', padding: '3px 12px', borderRadius: 20 }}>{thisDay}</span>
                         </div>
                       ) : null}
-                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} />
+                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
                     </div>
                   )
                 }
@@ -7280,7 +7287,7 @@ export default function InboxPage() {
                 if (isSystem && (msg as any).metadata?.call_event && (msg as any).metadata?.call_id) return (
                   <div key={msg.id}>
                     {dateDivider}
-                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} />
+                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
                   </div>
                 )
                 if (isSystem) return (
