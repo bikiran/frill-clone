@@ -168,10 +168,15 @@ export default function CustomerProfilePage() {
   if (error) return <div style={{ padding: '24px', color: '#d32f2f' }}>{error}</div>
   if (!customer) return <div style={{ padding: '24px', color: '#666' }}>Customer not found</div>
 
-  const rfmScore = SegmentationService.getRFMScore(customer)
-  const rfmCategory = SegmentationService.getRFMCategory(rfmScore)
-  const firstOrderDate = customer.first_order_date ? new Date(customer.first_order_date) : null
-  const lastOrderDate = customer.last_order_date ? new Date(customer.last_order_date) : null
+  // First/last order dates: prefer the aggregate columns, but fall back to the
+  // fetched order history — the aggregates are often null on the customer row
+  // (which is exactly what made the RFM score read 0 and mislabel the customer).
+  const validDate = (v: any) => { if (!v) return null; const d = new Date(v); return isNaN(d.getTime()) ? null : d }
+  const custFirst = validDate(customer.first_order_date)
+  const custLast = validDate(customer.last_order_date)
+  const orderDates = orders.map((o: any) => validDate(o.order_date)).filter(Boolean) as Date[]
+  const firstOrderDate = custFirst || (orderDates.length ? orderDates.reduce((a, b) => (a < b ? a : b)) : null)
+  const lastOrderDate = custLast || (orderDates.length ? orderDates.reduce((a, b) => (a > b ? a : b)) : null)
   const daysSinceLast = lastOrderDate ? Math.floor((Date.now() - lastOrderDate.getTime()) / 864e5) : null
 
   // Total spend: prefer the stored value, but if $0 fall back to summing orders
@@ -234,6 +239,14 @@ export default function CustomerProfilePage() {
   const displayOrders = customer.total_orders || computedOrders || 0
   const displayAov = displayOrders > 0 ? displaySpend / displayOrders : 0
   const orderItems: any[] = orders.flatMap((o: any) => Array.isArray(o.line_items) ? o.line_items : [])
+
+  // Score RFM from the EFFECTIVE (order-derived) totals and dates, not the raw
+  // customer row — otherwise a recent high-value customer whose aggregate
+  // columns are still null scores 0/9 and reads "Lost". The lifecycle label
+  // also treats a single recent order as "New customer" rather than lapsed.
+  const rfmOverride = { totalSpend: displaySpend, totalOrders: displayOrders, lastOrderDate: lastOrderDate, firstOrderDate: firstOrderDate }
+  const rfmScore = SegmentationService.getRFMScore(customer, rfmOverride)
+  const rfmCategory = SegmentationService.getLifecycleLabel(customer, rfmOverride)
 
   // ── Presentation helpers ──────────────────────────────────────────────────
   const fullName = `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || customer.email || 'Customer'

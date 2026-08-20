@@ -166,41 +166,62 @@ export class SegmentationService {
   }
 
   /**
-   * Get customer RFM score (Recency, Frequency, Monetary)
+   * Normalise the inputs the RFM score needs from a customer record, tolerating
+   * the many shapes they arrive in (the aggregate columns are often null on the
+   * customer row while the real data lives in the order history). Callers that
+   * have already computed the effective totals/dates (e.g. the profile page,
+   * which derives them from the fetched orders) can pass them via `override`.
    */
-  static getRFMScore(customer: any): number {
-    let score = 0
-
-    // Recency (0-3 points)
-    if (customer.last_order_date) {
-      const daysSinceOrder = Math.floor((Date.now() - new Date(customer.last_order_date).getTime()) / (1000 * 60 * 60 * 24))
-      if (daysSinceOrder < 30) score += 3
-      else if (daysSinceOrder < 90) score += 2
-      else if (daysSinceOrder < 180) score += 1
+  private static rfmInputs(customer: any, override?: RFMOverride) {
+    const num = (v: any) => { const n = parseFloat(v); return isFinite(n) ? n : 0 }
+    const spend = num(override?.totalSpend ?? customer?.total_spend ?? customer?.total_spent ?? customer?.lifetime_spend ?? 0)
+    const orders = Math.round(num(override?.totalOrders ?? customer?.total_orders ?? customer?.orders_count ?? customer?.order_count ?? 0))
+    const lastRaw = override?.lastOrderDate ?? customer?.last_order_date ?? customer?.last_order ?? null
+    const firstRaw = override?.firstOrderDate ?? customer?.first_order_date ?? null
+    const toDays = (raw: any): number | null => {
+      if (!raw) return null
+      const t = new Date(raw).getTime()
+      return isFinite(t) ? Math.floor((Date.now() - t) / 86400000) : null
     }
-
-    // Frequency (0-3 points)
-    const daysSinceFirstOrder = customer.first_order_date
-      ? Math.floor((Date.now() - new Date(customer.first_order_date).getTime()) / (1000 * 60 * 60 * 24))
-      : 365
-    const frequency = daysSinceFirstOrder > 0 
-      ? (customer.total_orders / daysSinceFirstOrder) * 365 
-      : 0
-
-    if (frequency >= 12) score += 3
-    else if (frequency >= 4) score += 2
-    else if (frequency >= 1) score += 1
-
-    // Monetary (0-3 points)
-    if (customer.total_spend >= 5000) score += 3
-    else if (customer.total_spend >= 1000) score += 2
-    else if (customer.total_spend >= 100) score += 1
-
-    return score // 0-9
+    const hasData = orders > 0 || spend > 0
+    return { spend, orders, daysSinceLast: toDays(lastRaw), hasData }
   }
 
   /**
-   * Categorize by RFM score
+   * RFM score. Each of Recency / Frequency / Monetary scores 1–3 whenever the
+   * customer has *any* purchase history, so a real customer is never a raw 0/9.
+   * Total ranges 3–9 with data, and only returns 0 when there is genuinely no
+   * usable purchase data at all.
+   */
+  static getRFMScore(customer: any, override?: RFMOverride): number {
+    const { spend, orders, daysSinceLast, hasData } = this.rfmInputs(customer, override)
+    if (!hasData) return 0
+
+    let score = 0
+    // Recency (1–3): Recent / Moderate / Old. Unknown date → neutral (2) rather
+    // than penalising a customer we simply lack a date for.
+    if (daysSinceLast == null) score += 2
+    else if (daysSinceLast < 60) score += 3
+    else if (daysSinceLast < 180) score += 2
+    else score += 1
+    // Frequency (1–3): 1 purchase / 2–4 / 5+.
+    if (orders >= 5) score += 3
+    else if (orders >= 2) score += 2
+    else score += 1
+    // Monetary (1–3): Low / Medium / High.
+    if (spend >= 1000) score += 3
+    else if (spend >= 300) score += 2
+    else score += 1
+
+    return score // 3–9 (or 0 when there's no data)
+  }
+
+  /**
+   * Canonical RFM category — used for FILTERING and segment buckets, so these
+   * exact strings must stay stable (several pages match on them). For a
+   * customer-facing label use getLifecycleLabel instead.
+   *   8–9 Champions · 6–7 Loyal Customers · 4–5 Potential Loyalists ·
+   *   2–3 At Risk · 0–1 Lost
    */
   static getRFMCategory(score: number): string {
     if (score >= 8) return 'Champions'
@@ -209,4 +230,30 @@ export class SegmentationService {
     if (score >= 2) return 'At Risk'
     return 'Lost'
   }
+
+  /**
+   * Friendly, display-facing label for a customer profile.
+   *   8–9 Champion · 6–7 Loyal · 4–5 Needs attention · 2–3 At risk · 0–1 Lost
+   * A customer with a single, non-lapsed order is a "New customer" rather than
+   * being mislabelled too early; with no purchase data at all it's "No orders".
+   */
+  static getLifecycleLabel(customer: any, override?: RFMOverride): string {
+    const { orders, daysSinceLast, hasData } = this.rfmInputs(customer, override)
+    if (!hasData) return 'No orders'
+    if (orders === 1 && (daysSinceLast == null || daysSinceLast < 180)) return 'New customer'
+    const s = this.getRFMScore(customer, override)
+    if (s >= 8) return 'Champion'
+    if (s >= 6) return 'Loyal'
+    if (s >= 4) return 'Needs attention'
+    if (s >= 2) return 'At risk'
+    return 'Lost'
+  }
+}
+
+/** Optional pre-computed RFM inputs a caller can pass to override the record. */
+export type RFMOverride = {
+  totalSpend?: number
+  totalOrders?: number
+  lastOrderDate?: any
+  firstOrderDate?: any
 }
