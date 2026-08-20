@@ -125,8 +125,15 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
 
   const multiple = media.length > 1
 
+  // Open the TCP+TLS connection to the media host early, so the first byte of
+  // the (often large) image/video arrives sooner. The bytes are served from the
+  // custom storage domain, not Vercel — resolve that host from the first item.
+  let mediaOrigin: string | null = null
+  try { mediaOrigin = new URL(toPublicUrl(media[0]?.url)).origin } catch { mediaOrigin = null }
+
   return (
     <div className="mv-root" style={{ minHeight: '100dvh', background: '#fafafa', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', padding: 20, boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+      {mediaOrigin && <link rel="preconnect" href={mediaOrigin} crossOrigin="anonymous" />}
       <style>{`
         * { box-sizing: border-box; }
         /* margin:auto (not justify-content) centres the block vertically when it

@@ -162,7 +162,7 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
         <canvas ref={bgRef} width={64} height={36} aria-hidden
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(34px) saturate(1.5)', transform: 'scale(1.25)', zIndex: 0, pointerEvents: 'none' }} />
       )}
-      <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} preload="auto" onClick={toggle}
+      <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} preload={autoPlay ? 'auto' : 'metadata'} onClick={toggle}
         onLoadedData={() => setFirstFrame(true)} onPlaying={() => setFirstFrame(true)}
         style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', position: 'relative', zIndex: 1, ...style, ...(isFs ? { width: '100%', height: '100%', objectFit: 'contain' } : null) }} />
 

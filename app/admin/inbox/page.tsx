@@ -8354,7 +8354,7 @@ export default function InboxPage() {
                         </span>
                       ))}
                     </div>
-                    <h3 style={{ margin: '12px 0 0', fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>{contact.name || contact.email || 'Visitor'}</h3>
+                    <h3 style={{ margin: '12px 0 0', fontSize: 20, fontWeight: 800, color: 'var(--ink)', maxWidth: '100%', overflowWrap: 'anywhere', wordBreak: 'break-word', textAlign: 'center' }}>{contact.name || contact.email || 'Visitor'}</h3>
                     {(contact as any).is_blocked && (
                       <span style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', padding: '3px 9px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>

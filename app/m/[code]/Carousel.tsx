@@ -67,7 +67,7 @@ export default function Carousel({ items, accent }: { items: Item[]; accent: str
   // Blurred, scaled copy of an image, filling the frame behind the contained
   // image so letterbox areas glow with the photo's colours instead of black.
   const AmbientImg = ({ url }: { url: string }) => (
-    <img src={url} alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(34px) saturate(1.5)', transform: 'scale(1.25)', zIndex: 0 }} />
+    <img src={url} alt="" aria-hidden loading="lazy" decoding="async" fetchPriority="low" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(34px) saturate(1.5)', transform: 'scale(1.25)', zIndex: 0 }} />
   )
 
   return (
@@ -84,7 +84,7 @@ export default function Carousel({ items, accent }: { items: Item[]; accent: str
                     <AmbientImg url={m.url} />
                     <button onClick={() => setLb(i)} title="Expand"
                       style={{ position: 'relative', zIndex: 1, display: 'flex', width: many ? '100%' : 'auto', height: many ? '100%' : 'auto', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', padding: 0, cursor: 'zoom-in' }}>
-                      <img src={m.url} alt={`Attachment ${i + 1}`} style={{ width: many ? undefined : '100%', maxWidth: '100%', maxHeight: many ? `calc(${MEDIA_H})` : 'min(80vh, 620px)', objectFit: 'contain', display: 'block' }} />
+                      <img src={m.url} alt={`Attachment ${i + 1}`} loading={i === 0 ? 'eager' : 'lazy'} decoding="async" fetchPriority={i === 0 ? 'high' : 'low'} style={{ width: many ? undefined : '100%', maxWidth: '100%', maxHeight: many ? `calc(${MEDIA_H})` : 'min(80vh, 620px)', objectFit: 'contain', display: 'block' }} />
                     </button>
                   </>
                 ) : video ? (
