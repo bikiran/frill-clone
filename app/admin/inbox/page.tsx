@@ -3899,21 +3899,21 @@ export default function InboxPage() {
   const [pinUserId, setPinUserId] = useState<string>('')
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set())
   useEffect(() => { (async () => { try { const { data: { user } } = await supabase.auth.getUser(); if (user?.id) setPinUserId(user.id) } catch {} })() }, [])
+  // Read this user's pins from the DB — the source of truth that keeps web and
+  // mobile in step. Read by user_id only (matching the realtime filter and the
+  // mobile app), so a pin whose company_id was written slightly differently by
+  // another client still shows.
+  const loadPins = useCallback(async () => {
+    if (!pinUserId) return
+    try {
+      const { data } = await (supabase as any).from('conversation_pins')
+        .select('conversation_id').eq('user_id', pinUserId)
+      setPinnedIds(new Set((data || []).map((r: any) => r.conversation_id)))
+    } catch { /* table may not be migrated yet */ }
+  }, [pinUserId])
   useEffect(() => {
     if (!pinUserId || !companyId) return
-    let cancelled = false
-    const load = async () => {
-      try {
-        // Read by user_id only — matching the realtime filter below. The pinned
-        // conversations are re-fetched scoped by company_id anyway, so filtering
-        // here too only risks hiding a pin whose company_id was written slightly
-        // differently by another client (e.g. the mobile app).
-        const { data } = await (supabase as any).from('conversation_pins')
-          .select('conversation_id').eq('user_id', pinUserId)
-        if (!cancelled) setPinnedIds(new Set((data || []).map((r: any) => r.conversation_id)))
-      } catch { /* table may not be migrated yet */ }
-    }
-    load()
+    loadPins()
     // Live-sync pins across devices/tabs — a pin made on the mobile app (or
     // another browser) shows here without a reload, as long as it reached the
     // conversation_pins table.
@@ -3921,11 +3921,23 @@ export default function InboxPage() {
     try {
       ch = (supabase as any)
         .channel(`conversation_pins-${pinUserId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_pins', filter: `user_id=eq.${pinUserId}` }, () => load())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_pins', filter: `user_id=eq.${pinUserId}` }, () => loadPins())
         .subscribe()
     } catch {}
-    return () => { cancelled = true; if (ch) { try { (supabase as any).removeChannel(ch) } catch {} } }
-  }, [pinUserId, companyId])
+    return () => { if (ch) { try { (supabase as any).removeChannel(ch) } catch {} } }
+  }, [pinUserId, companyId, loadPins])
+  // Realtime alone isn't reliable: after the laptop sleeps or the tab is
+  // backgrounded the socket drops and missed pin/unpin events never replay, so
+  // the list drifts out of step with mobile. Re-read from the DB whenever the
+  // tab regains focus/visibility (mirrors the mobile app's focus refetch), so
+  // returning to the web inbox always reconciles to the true pin state.
+  useEffect(() => {
+    if (!pinUserId) return
+    const resync = () => { if (document.visibilityState !== 'hidden') loadPins() }
+    window.addEventListener('focus', resync)
+    document.addEventListener('visibilitychange', resync)
+    return () => { window.removeEventListener('focus', resync); document.removeEventListener('visibilitychange', resync) }
+  }, [pinUserId, loadPins])
   const togglePin = async (conv: any) => {
     const id = conv?.id
     if (!id || !pinUserId || !companyId) return
