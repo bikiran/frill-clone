@@ -2888,11 +2888,20 @@ export default function InboxPage() {
             <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
               <input type="checkbox" checked={t.done} onChange={() => toggleTask(t)} style={{ marginTop: 3, cursor: 'pointer', flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 13, textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.55 : 1, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{t.text}</span>
-                {t.assigned_to && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6, padding: '1px 8px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700, verticalAlign: 'middle' }}>
-                    {t.assigned_to}
-                  </span>
+                <div style={{ fontSize: 13, textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.55 : 1, color: 'var(--ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{t.text}</div>
+                {(t.assigned_to || (t.source && (t.source === 'call_summary' || t.source === 'ai_summary'))) && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 5 }}>
+                    {t.assigned_to && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 8px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700 }}>
+                        {t.assigned_to}
+                      </span>
+                    )}
+                    {(t.source === 'call_summary' || t.source === 'ai_summary') && (
+                      <span title="Drafted from an AI summary by Colvy" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 8px', borderRadius: 20, background: '#f3e8ff', color: '#7c3aed', fontSize: 10.5, fontWeight: 700 }}>
+                        ✨ {t.source === 'call_summary' ? 'Call summary' : 'Chat summary'}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
               {rowActions({ onCopy: () => copyTask(t.text, t.id), onEdit: () => { setEditingTaskId(t.id); setEditTaskText(t.text) }, onDelete: () => deleteTask(t.id), copied: copiedTaskId === t.id })}
@@ -3053,6 +3062,35 @@ export default function InboxPage() {
       setAiSummary('Could not generate summary.')
     }
     setGeneratingAi(false)
+  }
+
+  // Turn the conversation's AI action items (follow-ups, photo requests, order
+  // actions…) into real tasks. Skips any to-do that already matches an existing
+  // task so re-clicking doesn't duplicate. Tagged source 'ai_summary'.
+  const [draftingTasks, setDraftingTasks] = useState(false)
+  const draftTasksFromTodos = async () => {
+    if (!selected || !companyId || aiTodos.length === 0) return
+    setDraftingTasks(true)
+    try {
+      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      const existing = new Set((tasks || []).map((t: any) => String(t.text || '').trim().toLowerCase()))
+      const toCreate = aiTodos.filter((t: any) => t?.text && !existing.has(String(t.text).trim().toLowerCase()))
+      if (!toCreate.length) { showToast('Those tasks already exist'); return }
+      const convLoc = (selected as any).assigned_location_id || (selected as any).location_id || null
+      const base = toCreate.map((t: any) => ({
+        conversation_id: selected.id, company_id: companyId,
+        text: String(t.text).trim(), done: false,
+        created_by: me, created_by_id: user?.id || null,
+        location_id: convLoc, location_ids: convLoc ? [convLoc] : [],
+      }))
+      let { error } = await (supabase as any).from('conversation_tasks').insert(base.map(r => ({ ...r, source: 'ai_summary' })))
+      if (error) { ({ error } = await (supabase as any).from('conversation_tasks').insert(base)) }
+      if (error) throw error
+      await loadConversationExtras(selected.id)
+      showToast(`${toCreate.length} task${toCreate.length === 1 ? '' : 's'} created`)
+    } catch (e) {
+      console.warn('[ai tasks] create failed', e)
+    } finally { setDraftingTasks(false) }
   }
 
   // Re-scan messages for AI-detectable contact info whenever they change
@@ -7247,7 +7285,7 @@ export default function InboxPage() {
                           <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', background: '#eef0f2', padding: '3px 12px', borderRadius: 20 }}>{thisDay}</span>
                         </div>
                       ) : null}
-                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
+                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
                     </div>
                   )
                 }
@@ -7329,7 +7367,7 @@ export default function InboxPage() {
                 if (isSystem && (msg as any).metadata?.call_event && (msg as any).metadata?.call_id) return (
                   <div key={msg.id}>
                     {dateDivider}
-                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
+                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
                   </div>
                 )
                 if (isSystem) {
@@ -9129,6 +9167,10 @@ export default function InboxPage() {
                           </span>
                         </label>
                       ))}
+                      <button type="button" onClick={draftTasksFromTodos} disabled={draftingTasks}
+                        style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, border: '1px solid #d8b4fe', background: '#fff', color: '#7c3aed', fontSize: 11.5, fontWeight: 700, cursor: draftingTasks ? 'default' : 'pointer' }}>
+                        {draftingTasks ? 'Creating…' : '✨ Create tasks from action items'}
+                      </button>
                     </div>
                   )}
                 </div>

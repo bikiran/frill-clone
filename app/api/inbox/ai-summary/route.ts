@@ -41,7 +41,21 @@ export async function POST(req: NextRequest) {
         max_tokens: 400,
         messages: [{
           role: 'user',
-          content: `Summarize this customer support conversation in 1-2 sentences, then list any action items for the support agent. Respond ONLY with JSON in this exact format: {"summary": "...", "todos": ["...", "..."]}\n\nConversation:\n${transcript}`,
+          content: `You are assisting a customer-support agent.
+
+1. Summarize this conversation in 1-2 sentences.
+2. Extract concrete ACTION ITEMS the agent still needs to do — things the conversation implies are outstanding. Look especially for:
+   • follow-ups / call-backs ("get back to them", "check and reply", "let them know when…")
+   • photo / video / media requests (either party asked for or promised an image)
+   • order-related actions (place, change, refund, track, chase, confirm an order)
+   • stock / availability checks with a supplier
+   • sending a link, quote, invoice, or booking
+Write each action item as a short imperative task starting with a verb (e.g. "Send photos of the 4-5cm oranda", "Follow up with Cathy once stock arrives"). Only include real, outstanding actions — return an empty list if there are none. Do not invent tasks.
+
+Respond ONLY with JSON in this exact format: {"summary": "...", "todos": ["...", "..."]}
+
+Conversation:
+${transcript}`,
         }],
       }),
     })
