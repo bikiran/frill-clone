@@ -21,6 +21,7 @@ import { useActiveCall, callMatches } from '@/lib/active-call'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
 import CallCard from '@/components/CallCard'
+import DraftTasks from '@/components/DraftTasks'
 import Dialer from '@/components/Dialer'
 import ResilientImage from '@/components/ResilientImage'
 import ComposeMessage from '@/components/ComposeMessage'
@@ -3064,34 +3065,10 @@ export default function InboxPage() {
     setGeneratingAi(false)
   }
 
-  // Turn the conversation's AI action items (follow-ups, photo requests, order
-  // actions…) into real tasks. Skips any to-do that already matches an existing
-  // task so re-clicking doesn't duplicate. Tagged source 'ai_summary'.
-  const [draftingTasks, setDraftingTasks] = useState(false)
-  const draftTasksFromTodos = async () => {
-    if (!selected || !companyId || aiTodos.length === 0) return
-    setDraftingTasks(true)
-    try {
-      const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
-      const existing = new Set((tasks || []).map((t: any) => String(t.text || '').trim().toLowerCase()))
-      const toCreate = aiTodos.filter((t: any) => t?.text && !existing.has(String(t.text).trim().toLowerCase()))
-      if (!toCreate.length) { showToast('Those tasks already exist'); return }
-      const convLoc = (selected as any).assigned_location_id || (selected as any).location_id || null
-      const base = toCreate.map((t: any) => ({
-        conversation_id: selected.id, company_id: companyId,
-        text: String(t.text).trim(), done: false,
-        created_by: me, created_by_id: user?.id || null,
-        location_id: convLoc, location_ids: convLoc ? [convLoc] : [],
-      }))
-      let { error } = await (supabase as any).from('conversation_tasks').insert(base.map(r => ({ ...r, source: 'ai_summary' })))
-      if (error) { ({ error } = await (supabase as any).from('conversation_tasks').insert(base)) }
-      if (error) throw error
-      await loadConversationExtras(selected.id)
-      showToast(`${toCreate.length} task${toCreate.length === 1 ? '' : 's'} created`)
-    } catch (e) {
-      console.warn('[ai tasks] create failed', e)
-    } finally { setDraftingTasks(false) }
-  }
+  // The conversation-level draft-tasks panel (DraftTasks) manages its own
+  // dismissal; we mirror its closed state so the plain to-do checklist only
+  // shows once the panel is gone.
+  const [chatDraftsClosed, setChatDraftsClosed] = useState(false)
 
   // Re-scan messages for AI-detectable contact info whenever they change
   // (so a phone/address sent mid-conversation is picked up, not just on open)
@@ -7285,7 +7262,7 @@ export default function InboxPage() {
                           <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', background: '#eef0f2', padding: '3px 12px', borderRadius: 20 }}>{thisDay}</span>
                         </div>
                       ) : null}
-                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
+                      <CallCard callId={item.id} meta={{ direction: item.direction, duration_seconds: item.duration_seconds, agent_name: item.agent_name }} timestamp={item.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
                     </div>
                   )
                 }
@@ -7367,7 +7344,7 @@ export default function InboxPage() {
                 if (isSystem && (msg as any).metadata?.call_event && (msg as any).metadata?.call_id) return (
                   <div key={msg.id}>
                     {dateDivider}
-                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
+                    <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }} teamMembers={teamMembers} outlets={outlets} defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null} onTasksCreated={() => { if (selected) loadConversationExtras(selected.id) }} />
                   </div>
                 )
                 if (isSystem) {
@@ -7932,6 +7909,24 @@ export default function InboxPage() {
                 )
               })]
               })()}
+              {/* AI-detected action items for this chat → draft tasks, inline in
+                  the thread (same panel as the call card, and mirrored in the
+                  Timeline tab). Only when the AI summary found action items. */}
+              {aiTodos.length > 0 && (
+                <div style={{ maxWidth: 560, width: '100%', margin: '4px auto 0', background: '#faf5ff', border: '1px solid #ede9fe', borderRadius: 14, padding: '4px 14px 14px' }}>
+                  <DraftTasks
+                    todos={aiTodos.map((t: any) => t.text).filter(Boolean)}
+                    source="ai_summary" storageKey={`colvy-conv-tasks-${selected.id}`}
+                    conversationId={selected.id} companyId={companyId || undefined}
+                    teamMembers={teamMembers} outlets={outlets}
+                    defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null}
+                    actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }}
+                    onCreated={() => { if (selected) loadConversationExtras(selected.id) }}
+                    onClosedChange={setChatDraftsClosed}
+                    bare
+                  />
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
@@ -9167,10 +9162,9 @@ export default function InboxPage() {
                           </span>
                         </label>
                       ))}
-                      <button type="button" onClick={draftTasksFromTodos} disabled={draftingTasks}
-                        style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, border: '1px solid #d8b4fe', background: '#fff', color: '#7c3aed', fontSize: 11.5, fontWeight: 700, cursor: draftingTasks ? 'default' : 'pointer' }}>
-                        {draftingTasks ? 'Creating…' : '✨ Create tasks from action items'}
-                      </button>
+                      <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ color: '#7c3aed' }}>✨</span> Draft tasks from these appear in the conversation.
+                      </p>
                     </div>
                   )}
                 </div>

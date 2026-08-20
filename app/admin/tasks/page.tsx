@@ -1548,7 +1548,7 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
       </div>
       )}
 
-      {byDay.noDate.length > 0 && (
+      {byDay.noDate.some((t: any) => statusOf(t) !== 'done') && (
         <div style={{ marginTop: 14 }}>
           <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', margin: '0 0 8px' }}>No due date ({byDay.noDate.length})</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -1643,6 +1643,10 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
     return { m, noDate }
   }, [tasks])
 
+  // Hide the pinned "No due date" column once every unscheduled task is done —
+  // a column of nothing but ticked-off tasks is just noise.
+  const showNoDate = byDay.noDate.some((t: any) => statusOf(t) !== 'done')
+
   // The span of days to render: at least [today−3, today+30], stretched to cover
   // every dated task, and capped so a far-off outlier can't create 1000 columns.
   const { days, todayIdx } = useMemo(() => {
@@ -1681,12 +1685,12 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   useEffect(() => {
     // Offset by the pinned "No due date" column (if present) so today isn't
     // hidden behind it.
-    if (scrollRef.current) scrollRef.current.scrollLeft = Math.max(0, todayIdx * COL_W - COL_W + (byDay.noDate.length ? COL_W : 0))
+    if (scrollRef.current) scrollRef.current.scrollLeft = Math.max(0, todayIdx * COL_W - COL_W + (showNoDate ? COL_W : 0))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayIdx, COL_W, byDay.noDate.length])
+  }, [todayIdx, COL_W, showNoDate])
 
   const scrollBy = (cols: number) => { if (scrollRef.current) scrollRef.current.scrollBy({ left: cols * COL_W, behavior: 'smooth' }) }
-  const goToday = () => { if (scrollRef.current) scrollRef.current.scrollTo({ left: Math.max(0, todayIdx * COL_W - COL_W + (byDay.noDate.length ? COL_W : 0)), behavior: 'smooth' }) }
+  const goToday = () => { if (scrollRef.current) scrollRef.current.scrollTo({ left: Math.max(0, todayIdx * COL_W - COL_W + (showNoDate ? COL_W : 0)), behavior: 'smooth' }) }
 
   if (tasks.length === 0) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>No tasks to show on the timeline.</div>
 
@@ -1778,7 +1782,7 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
         <div style={{ display: 'flex', alignItems: 'stretch', height: '100%', minWidth: 'min-content' }}>
           {/* Unscheduled tasks (no due date) pinned to the left so they're always
               visible — otherwise they hid at the far right, past every future day. */}
-          {byDay.noDate.length > 0 && renderColumn('nodate', 'No due date', 'unscheduled', false, false, byDay.noDate, null, true)}
+          {showNoDate && renderColumn('nodate', 'No due date', 'unscheduled', false, false, byDay.noDate, null, true)}
           {days.map(d => {
             const k = dayKey(d)
             const list = byDay.m.get(k) || []
@@ -2224,7 +2228,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16a34a', marginTop: 6, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.4 }}>
-                    <strong style={{ fontWeight: 700 }}>{task.created_by_name || task.assigned_to || 'Someone'}</strong> created this task
+                    <strong style={{ fontWeight: 700 }}>{task.created_by || task.created_by_name || task.assigned_to || 'Someone'}</strong> created this task
                   </div>
                   <div style={{ fontSize: 11.5, color: '#9ca3af' }} title={fmtExact(created)}>{fmtAgo(created)}</div>
                 </div>
