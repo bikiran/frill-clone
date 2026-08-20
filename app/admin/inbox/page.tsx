@@ -7374,28 +7374,27 @@ export default function InboxPage() {
                     .replace(new RegExp(`^\\s*${title}\\s*[—:\\-]*`, 'i'), '') // redundant title
                     .replace(/[\s:•\-–—]+$/u, '')                // trailing separators
                     .trim()
-                  const host = link ? (() => { try { return new URL(link).hostname.replace(/^www\./, '') } catch { return 'link' } })() : null
 
                   return (
                     <div key={msg.id}>
                       {dateDivider}
-                      <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 11, maxWidth: 460, background: 'var(--card, #fff)', border: '1px solid var(--border)', borderRadius: 14, padding: '9px 14px 9px 10px', boxShadow: '0 1px 2px rgba(16,24,40,0.05)' }}>
-                          <span style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${accent} 14%, transparent)`, color: accent }}>
-                            <LifecycleIcon kind={kind} />
+                      <div style={{ display: 'flex', justifyContent: 'center', padding: '5px 0' }}>
+                        {/* Grows to the full stream width and wraps to more lines
+                            rather than truncating, so the whole cart/order detail
+                            is readable. Keeps the rounded-pill look on one line. */}
+                        <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 8, maxWidth: '100%', background: `color-mix(in srgb, ${accent} 13%, transparent)`, color: accent, padding: '7px 15px', borderRadius: 16, lineHeight: 1.45 }}>
+                          <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 2 }}><LifecycleIcon kind={kind} /></span>
+                          <span style={{ minWidth: 0, fontSize: 12, overflowWrap: 'anywhere' }}>
+                            <span style={{ fontWeight: 700 }}>{title}</span>
+                            {detail && <span style={{ opacity: 0.8, fontWeight: 500 }}>{` · ${detail}`}</span>}
+                            {link && (
+                              <a href={link} target="_blank" rel="noreferrer" title={link}
+                                style={{ color: accent, marginLeft: 6, display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle' }}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
+                              </a>
+                            )}
                           </span>
-                          <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1, textAlign: 'left' }}>
-                            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em' }}>{title}</span>
-                            {detail && <span style={{ fontSize: 11.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>{detail}</span>}
-                          </span>
-                          {link && (
-                            <a href={link} target="_blank" rel="noreferrer" title={link}
-                              style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, color: accent, textDecoration: 'none', padding: '5px 10px', borderRadius: 8, background: `color-mix(in srgb, ${accent} 10%, transparent)` }}>
-                              {host}
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
-                            </a>
-                          )}
-                        </div>
+                        </span>
                       </div>
                     </div>
                   )
