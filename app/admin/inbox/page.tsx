@@ -337,17 +337,22 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 // Render `text` with every (case-insensitive) occurrence of `q` wrapped in a
 // <mark>, so a search result shows exactly what matched. With no query it just
-// returns the text unchanged.
-function Highlight({ text, q }: { text: string; q: string }) {
+// returns the text unchanged. The highlight is a translucent tint of the theme
+// accent (the company's brand colour, coral by default) so it reads correctly
+// in both light and dark mode instead of a fixed amber.
+function Highlight({ text, q, accent = 'var(--coral)' }: { text: string; q: string; accent?: string }) {
   const query = (q || '').trim()
   if (!query || !text) return <>{text}</>
   const parts = text.split(new RegExp(`(${escapeRe(query)})`, 'ig'))
   const lower = query.toLowerCase()
+  // color-mix tints the accent over whatever background it sits on, so the same
+  // rule works on a light row and a dark one; text stays `inherit` for contrast.
+  const bg = `color-mix(in srgb, ${accent} 30%, transparent)`
   return (
     <>
       {parts.map((p, i) =>
         p.toLowerCase() === lower
-          ? <mark key={i} style={{ background: '#fde68a', color: 'inherit', borderRadius: 3, padding: '0 1px' }}>{p}</mark>
+          ? <mark key={i} style={{ background: bg, color: 'inherit', fontWeight: 700, borderRadius: 3, padding: '0 1px' }}>{p}</mark>
           : <span key={i}>{p}</span>
       )}
     </>
@@ -6698,7 +6703,7 @@ export default function InboxPage() {
                     </span>
                   )}
                   <span style={{ fontSize: 13.5, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    <Highlight text={displayName} q={searchTerm} />
+                    <Highlight text={displayName} q={searchTerm} accent={accent} />
                   </span>
                   {contact.prexty_customer_id && (
                     <span title="Prexty POS customer" style={{ flexShrink: 0, width: 15, height: 15, borderRadius: 4, background: '#4f46e5', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 800 }}>P</span>
@@ -6741,7 +6746,7 @@ export default function InboxPage() {
                   </p>
                 ) : (
                 <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <Highlight text={conv.last_message || 'No messages yet'} q={searchTerm} />
+                  <Highlight text={conv.last_message || 'No messages yet'} q={searchTerm} accent={accent} />
                 </p>
                 )}
                 {conv.unread_count > 0 && (
@@ -6763,7 +6768,7 @@ export default function InboxPage() {
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 3, fontSize: 11, color: '#6b7280', overflow: 'hidden' }}>
                     <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#7c3aed' }}>{hit.field}</span>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-                      <Highlight text={hit.snippet} q={searchTerm} />
+                      <Highlight text={hit.snippet} q={searchTerm} accent={accent} />
                     </span>
                   </div>
                 )
