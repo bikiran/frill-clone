@@ -7312,14 +7312,34 @@ export default function InboxPage() {
                     <CallCard callId={(msg as any).metadata.call_id} meta={(msg as any).metadata} timestamp={msg.created_at} highlight={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
                   </div>
                 )
-                if (isSystem) return (
+                if (isSystem) {
+                  // Colour the lifecycle markers (order placed/refunded, cart
+                  // abandoned/recovered) by their metadata so they read as
+                  // meaningful events in the stream rather than identical grey
+                  // pills. Anything else keeps the neutral pill.
+                  const sm: any = (msg as any).metadata || {}
+                  const orderStatus = String(sm.status || sm.order_automation || '').toLowerCase()
+                  let pill = { bg: '#f3f4f6', fg: '#6b7280', dot: '' }
+                  if (sm.abandoned_cart) pill = { bg: '#fef3c7', fg: '#b45309', dot: '#f59e0b' }
+                  else if (sm.cart_recovered) pill = { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' }
+                  else if (sm.order_event || sm.order_id || sm.order_automation) {
+                    if (orderStatus === 'refunded') pill = { bg: '#fef3c7', fg: '#b45309', dot: '#f59e0b' }
+                    else if (orderStatus === 'failed' || orderStatus === 'cancelled') pill = { bg: '#fee2e2', fg: '#dc2626', dot: '#ef4444' }
+                    else pill = { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' }
+                  }
+                  const styled = pill.dot !== ''
+                  return (
                   <div key={msg.id}>
                     {dateDivider}
-                    <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '4px 0' }}>
-                      <span style={{ background: '#f3f4f6', padding: '3px 10px', borderRadius: 20 }}>{msg.content}</span>
+                    <div style={{ textAlign: 'center', fontSize: 11, color: pill.fg, padding: '4px 0' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: pill.bg, color: pill.fg, padding: '4px 12px', borderRadius: 20, fontWeight: styled ? 700 : 400, maxWidth: 460, textAlign: 'left' }}>
+                        {styled && <span style={{ width: 6, height: 6, borderRadius: '50%', background: pill.dot, flexShrink: 0 }} />}
+                        {msg.content}
+                      </span>
                     </div>
                   </div>
-                )
+                  )
+                }
                 const reactions = Array.isArray((msg as any).reactions) ? (msg as any).reactions : []
                 const readBy = Array.isArray((msg as any).read_by) ? (msg as any).read_by : []
                 const atts = Array.isArray(msg.attachments) ? msg.attachments : []
