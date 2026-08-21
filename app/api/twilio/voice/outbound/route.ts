@@ -47,10 +47,14 @@ async function handoffJoinTwiml(req: NextRequest, get: (k: string) => string): P
   // "join" fires /confirm with this leg's CallSid → it becomes the active leg and
   // the old one is removed. No <Dial record> here: the recording belongs to the
   // original customer leg (matching how warm transfer behaves today).
+  // endConferenceOnExit="true": once this device is the sole agent, hanging up
+  // ends the whole call (drops the customer) — the expected behaviour. During
+  // the brief overlap the old agent's leg has endConferenceOnExit="false", so
+  // removing it after confirm does NOT end the call.
   return twiml(
     `<Response>` +
       `<Dial answerOnBridge="true">` +
-        `<Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false" ` +
+        `<Conference startConferenceOnEnter="true" endConferenceOnExit="true" beep="false" ` +
           `statusCallback="${xmlEscape(confirmCb)}" statusCallbackEvent="join" statusCallbackMethod="POST">` +
           `${xmlEscape(confName)}` +
         `</Conference>` +
