@@ -249,7 +249,7 @@ export default function OrdersPage() {
       const tabDef = STATUS_TABS.find(t => t.key === tab)
       if (tab === 'alerts') { if (!o.flagged) return false }
       else if (tabDef?.match) { if (!tabDef.match.includes(o.status)) return false }
-      if (fStore === 'unassigned') { if (o.store_location_id) return false }
+      if (fStore === 'unassigned') { if (o.store_location_id || (Array.isArray(o.tags) && o.tags.length > 0)) return false }
       else if (fStore !== 'all' && o.store_location_id !== fStore) return false
       if (fAssignee !== 'all') { if (fAssignee === 'none' ? o.assignee_id : o.assignee_id !== fAssignee) return false }
       if (fTag !== 'all' && !(Array.isArray(o.tags) && o.tags.includes(fTag))) return false
