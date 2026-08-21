@@ -8732,6 +8732,23 @@ export default function InboxPage() {
                         )}
                       </div>
                     ))}
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>Relationship</label>
+                      <select
+                        value={(editContact as any).relationship_type || 'customer'}
+                        onChange={e => {
+                          const rt = e.target.value
+                          // A non-customer (supplier/wholesaler/business) is excluded
+                          // from marketing by default.
+                          setEditContact(c => ({ ...c, relationship_type: rt, ...(rt === 'customer' ? {} : { subscribed_to_marketing: false }) }))
+                        }}
+                        style={{ ...inp, fontSize: 12, cursor: 'pointer' }}>
+                        <option value="customer">Customer</option>
+                        <option value="supplier">Supplier</option>
+                        <option value="wholesaler">Wholesaler</option>
+                        <option value="business">Business contact</option>
+                      </select>
+                    </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <input type="checkbox" id="marketing" checked={!!editContact.subscribed_to_marketing} onChange={e => setEditContact(c => ({ ...c, subscribed_to_marketing: e.target.checked }))} />
                       <label htmlFor="marketing" style={{ fontSize: 12, color: 'var(--slate)' }}>Subscribed to marketing</label>
