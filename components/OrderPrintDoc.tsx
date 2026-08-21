@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { fmtMoney, CARRIER_LABEL, carrierTrackUrl } from '@/lib/orders'
+import { fmtMoney, CARRIER_LABEL, carrierTrackUrl, isClickCollect } from '@/lib/orders'
 import { barcodeSVG } from '@/lib/barcode'
 
 type Order = any
@@ -104,6 +104,11 @@ function PackingSlip({ order, items, notes, company, from, accent }: any) {
   const ship = order.shipping_address || {}
   const total = items.reduce((s: number, it: any) => s + (Number(it.quantity) || 0), 0)
   const barcode = useMemo(() => barcodeSVG(String(order.order_number || ''), { moduleWidth: 1.5, height: 52 }), [order.order_number])
+  const subtotal = order.subtotal != null ? Number(order.subtotal) : items.reduce((s: number, it: any) => s + (Number(it.total_price) || 0), 0)
+  const shipping = Number(order.shipping_total) || 0
+  const grand = order.total != null ? Number(order.total) : subtotal + shipping
+  const tax = Math.max(0, grand - subtotal - shipping)
+  const isClickCollectSlip = isClickCollect(order)
   const customerNote = order.customer_note || order.note || ''
   const internalNotes = (notes || []).filter((n: any) => (n.body || '').trim())
   const contacts = contactLines(company, from)
@@ -127,6 +132,8 @@ function PackingSlip({ order, items, notes, company, from, accent }: any) {
           <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em' }}>PACKING SLIP</div>
           <div style={{ fontSize: 13, fontWeight: 700, color: accent, marginTop: 2 }}>Order {order.order_number}</div>
           <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>{order.order_date ? new Date(order.order_date).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}</div>
+          <div style={{ marginTop: 8, display: 'inline-block', width: 200 }} dangerouslySetInnerHTML={{ __html: barcode.replace('<svg ', '<svg style="width:100%;height:40px" ') }} />
+          <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.12em', color: '#0f172a' }}>{order.order_number}</div>
         </div>
       </div>
 
@@ -157,34 +164,56 @@ function PackingSlip({ order, items, notes, company, from, accent }: any) {
             <th style={{ ...th, width: 46 }}></th>
             <th style={th}>Item</th>
             <th style={th}>SKU</th>
+            <th style={{ ...th, textAlign: 'right' }}>Unit Price</th>
             <th style={{ ...th, textAlign: 'center' }}>Qty</th>
+            <th style={{ ...th, textAlign: 'right' }}>Total</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((it: any) => (
-            <tr key={it.id}>
-              <td style={{ ...td, width: 46 }}>
-                <span style={{ display: 'inline-flex', width: 38, height: 38, borderRadius: 6, overflow: 'hidden', background: '#f1f5f9', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0' }}>
-                  {it.image_url
-                    ? <img src={it.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e: any) => { e.currentTarget.style.display = 'none' }} />
-                    : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /></svg>}
-                </span>
-              </td>
-              <td style={td}>{it.product_name || 'Item'}</td>
-              <td style={{ ...td, color: '#475569', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{it.sku || '—'}</td>
-              <td style={{ ...td, textAlign: 'center', fontWeight: 700 }}>{it.quantity}</td>
-            </tr>
-          ))}
-          {items.length === 0 && <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: '#94a3b8' }}>No items on this order.</td></tr>}
+          {items.map((it: any) => {
+            const qty = Number(it.quantity) || 1
+            const line = it.total_price != null ? Number(it.total_price) : (Number(it.unit_price) || 0) * qty
+            const unit = it.unit_price != null ? Number(it.unit_price) : line / qty
+            return (
+              <tr key={it.id}>
+                <td style={{ ...td, width: 46 }}>
+                  <span style={{ display: 'inline-flex', width: 38, height: 38, borderRadius: 6, overflow: 'hidden', background: '#f1f5f9', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0' }}>
+                    {it.image_url
+                      ? <img src={it.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e: any) => { e.currentTarget.style.display = 'none' }} />
+                      : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /></svg>}
+                  </span>
+                </td>
+                <td style={td}>{it.product_name || 'Item'}</td>
+                <td style={{ ...td, color: '#475569', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{it.sku || '—'}</td>
+                <td style={{ ...td, textAlign: 'right' }}>{fmtMoney(unit, order.currency)}</td>
+                <td style={{ ...td, textAlign: 'center', fontWeight: 700 }}>{qty}</td>
+                <td style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{fmtMoney(line, order.currency)}</td>
+              </tr>
+            )
+          })}
+          {items.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', color: '#94a3b8' }}>No items on this order.</td></tr>}
         </tbody>
-        <tfoot>
-          <tr>
-            <td style={{ padding: '10px 8px', fontWeight: 700 }} colSpan={2} />
-            <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, color: '#64748b', fontSize: 12 }}>Total units</td>
-            <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 800, fontSize: 15 }}>{total}</td>
-          </tr>
-        </tfoot>
       </table>
+
+      {/* Totals */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+        <table style={{ minWidth: 260, borderCollapse: 'collapse' }}>
+          <tbody>
+            {([
+              ['Total units', String(total), false],
+              ['Subtotal', fmtMoney(subtotal, order.currency), false],
+              ['Tax (GST)', fmtMoney(tax, order.currency), false],
+              ['Shipping', isClickCollectSlip ? 'Click & Collect' : (shipping > 0 ? fmtMoney(shipping, order.currency) : 'Free'), false],
+              ['Grand Total', `${fmtMoney(grand, order.currency)} ${order.currency || ''}`, true],
+            ] as [string, string, boolean][]).map(([k, v, strong]) => (
+              <tr key={k} style={{ borderTop: strong ? '2px solid #0f172a' : '1px solid #e2e8f0' }}>
+                <td style={{ padding: '6px 10px', fontSize: strong ? 13.5 : 12.5, color: strong ? '#0f172a' : '#64748b', fontWeight: strong ? 800 : 500 }}>{k}</td>
+                <td style={{ padding: '6px 10px', fontSize: strong ? 14 : 12.5, textAlign: 'right', fontWeight: strong ? 800 : 600 }}>{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {/* Notes — customer note (from checkout) + internal notes */}
       {(customerNote || internalNotes.length > 0) && (
@@ -211,13 +240,7 @@ function PackingSlip({ order, items, notes, company, from, accent }: any) {
         </div>
       )}
 
-      {/* Order barcode (Code128 of the order number) */}
-      <div style={{ marginTop: 24, textAlign: 'center' }}>
-        <div style={{ display: 'inline-block', maxWidth: 360, width: '60%' }} dangerouslySetInnerHTML={{ __html: barcode.replace('<svg ', '<svg style="width:100%;height:52px" ') }} />
-        <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, fontWeight: 700, letterSpacing: '0.16em', marginTop: 2, color: '#0f172a' }}>{order.order_number}</div>
-      </div>
-
-      <div style={{ marginTop: 20, textAlign: 'center', fontSize: 11.5, color: '#94a3b8' }}>
+      <div style={{ marginTop: 26, textAlign: 'center', fontSize: 11.5, color: '#94a3b8' }}>
         Thank you for your order{company?.website ? ` · ${String(company.website).replace(/^https?:\/\//, '')}` : ''}
       </div>
     </div>
