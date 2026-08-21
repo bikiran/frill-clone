@@ -96,7 +96,10 @@ function itemRows(companyId: string, orderId: string, o: any) {
       unit_price: parseFloat(li.price ?? (li.total ? li.total / qty : 0)) || null,
       total_price: parseFloat(li.total ?? li.subtotal ?? 0) || null,
       image_url: typeof img === 'string' ? img : null,
-      metadata: {},
+      // Stash the WooCommerce line id so per-line fulfilment (order_fulfillments)
+      // has a stable key that survives this order's items being deleted and
+      // re-inserted on the next webhook update.
+      metadata: { woo_line_id: li.id != null ? String(li.id) : null },
     }
   })
 }

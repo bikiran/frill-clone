@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import { statusMeta, channelMeta, orderAge, fmtMoney, isClickCollect } from '@/lib/orders'
 import { ChannelIcon, CopyBtn, copyToClipboard, TagMenu, CreateLabelModal, TagChip, hashColor, PrintModal } from '../page'
+import OrderItemsPanel from '@/components/OrderItemsPanel'
 
 type Order = any
 
@@ -92,6 +93,13 @@ export default function OrderDetailPage() {
         const { data } = await (supabase as any).from('order_events').insert(row).select().maybeSingle()
         if (data) setEvents(e => [data, ...e])
       }
+    } catch {}
+  }
+  const logItemEvent = async (type: string, detail: string) => {
+    if (!companyId) return
+    try {
+      const { data } = await (supabase as any).from('order_events').insert({ order_id: orderId, company_id: companyId, type, detail, actor_id: me.id, actor_name: me.name }).select().maybeSingle()
+      if (data) setEvents(e => [data, ...e])
     } catch {}
   }
   const addNote = async () => {
@@ -204,26 +212,8 @@ export default function OrderDetailPage() {
 
           {/* Items */}
           <div style={card}>
-            <p style={kick}>Items ({items.length})</p>
-            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {items.map((it: any, idx: number) => (
-                <div key={it.id} className="od-item" onClick={() => setGalleryIdx(idx)} title="Click to view" style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', borderRadius: 10, padding: 5, margin: -5 }}>
-                  <span style={{ position: 'relative', width: 48, height: 48, borderRadius: 9, flexShrink: 0, overflow: 'hidden', background: 'var(--peach)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /></svg>
-                    {it.image_url && <img src={it.image_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e: any) => { e.currentTarget.style.display = 'none' }} />}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{it.product_name}</p>
-                    {it.sku && <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>SKU: {it.sku}</p>}
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)' }}>Qty {it.quantity}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: 14, fontWeight: 700 }}>{fmtMoney(it.total_price ?? it.unit_price, order.currency)}</p>
-                  </div>
-                </div>
-              ))}
-              {items.length === 0 && <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>No items synced.</p>}
-            </div>
+            <OrderItemsPanel order={order} companyId={companyId} items={items} accent={ACCENT}
+              onLog={logItemEvent} onFlash={flash} onOpenItem={(idx: number) => setGalleryIdx(idx)} />
           </div>
 
           {/* Order summary */}

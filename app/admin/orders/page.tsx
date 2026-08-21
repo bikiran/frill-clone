@@ -9,6 +9,7 @@ import {
   CARRIERS, CARRIER_LABEL, CARRIER_SERVICES, isClickCollect,
 } from '@/lib/orders'
 import OrderPrintDoc from '@/components/OrderPrintDoc'
+import OrderItemsPanel from '@/components/OrderItemsPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 
@@ -1276,26 +1277,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
 
           {/* Items */}
           <div style={sect}>
-            <p style={kick}>Items ({items.length})</p>
-            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {items.map((it: any, idx: number) => (
-                <div key={it.id} className="ord-item" onClick={() => setGalleryIdx(idx)} title="Click to view" style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', borderRadius: 9, padding: 4, margin: -4 }}>
-                  <span style={{ position: 'relative', width: 40, height: 40, borderRadius: 8, flexShrink: 0, overflow: 'hidden', background: 'var(--peach)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /></svg>
-                    {it.image_url && <img src={it.image_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e: any) => { e.currentTarget.style.display = 'none' }} />}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.product_name}</p>
-                    {it.sku && <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}>SKU: {it.sku}</p>}
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>Qty {it.quantity}</p>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{fmtMoney(it.total_price ?? it.unit_price, order.currency)}</p>
-                  </div>
-                </div>
-              ))}
-              {items.length === 0 && <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>No items synced.</p>}
-            </div>
+            <OrderItemsPanel order={order} companyId={companyId} items={items} accent={ACCENT}
+              onLog={logEvent} onFlash={onFlash} onOpenItem={(idx: number) => setGalleryIdx(idx)} />
           </div>
 
           {/* Tags */}
