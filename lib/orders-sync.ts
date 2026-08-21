@@ -94,7 +94,8 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
     fulfilment_status: ['completed'].includes(String(o.status)) ? 'fulfilled' : 'unfulfilled',
     flagged: ['failed', 'on-hold'].includes(String(o.status)),
   }))
-  const { data: inserted } = await db.from('orders').insert(rows).select('id, external_order_id')
+  const { data: inserted, error: insErr } = await db.from('orders').insert(rows).select('id, external_order_id')
+  if (insErr) throw new Error(`orders insert failed: ${insErr.message || insErr.code || insErr}`)
   const idByExt = new Map<string, string>((inserted || []).map((r: any) => [String(r.external_order_id), r.id]))
 
   // Bulk items + created events.

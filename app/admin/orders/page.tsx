@@ -59,8 +59,9 @@ export default function OrdersPage() {
   }
 
   const loadOrders = useCallback(async (cid: string) => {
-    const { data } = await (supabase as any).from('orders').select('*')
+    const { data, error } = await (supabase as any).from('orders').select('*')
       .eq('company_id', cid).order('order_date', { ascending: false }).limit(2000)
+    if (error) { setToast(`Couldn’t load orders: ${error.message}`); setTimeout(() => setToast(''), 6000) }
     setOrders(data || [])
   }, [])
 
@@ -69,9 +70,12 @@ export default function OrdersPage() {
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
-      await fetch('/api/orders/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ companyId: cid }) })
+      const res = await fetch('/api/orders/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ companyId: cid }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.error) { setToast(`Sync failed: ${d.error || res.status}`); setTimeout(() => setToast(''), 8000) }
+      else if (typeof d.synced === 'number') { setToast(d.synced > 0 ? `Synced ${d.synced} new orders` : 'Orders are up to date'); setTimeout(() => setToast(''), 3000) }
       await loadOrders(cid)
-    } catch {}
+    } catch (e: any) { setToast(`Sync error: ${e?.message || e}`); setTimeout(() => setToast(''), 8000) }
     setSyncing(false)
   }, [loadOrders])
 
