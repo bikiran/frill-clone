@@ -611,7 +611,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
             <div style={{ position: 'absolute', bottom: 44, right: 0, width: 244, background: 'var(--card, #fff)', color: 'var(--ink)', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.2)', padding: 8, zIndex: 3200 }}>
               <p style={{ margin: '2px 8px 6px', fontSize: 11, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Continue call on</p>
               {switchDevices.length === 0 ? (
-                <p style={{ margin: 0, padding: '8px 8px 10px', fontSize: 12.5, color: 'var(--slate)' }}>No other devices online. Open Colvy on your phone or another browser, then try again.</p>
+                <p style={{ margin: 0, padding: '8px 8px 10px', fontSize: 12.5, color: 'var(--slate)' }}>No other devices online. Open Colvy in another browser, or on your phone with the latest app version, then try again.</p>
               ) : switchDevices.map(d => (
                 <button key={d.deviceId} type="button" disabled={switchBusy} onClick={() => moveCallTo(d.deviceId, d.deviceName)}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 8px', borderRadius: 9, border: 'none', background: 'none', cursor: switchBusy ? 'default' : 'pointer', textAlign: 'left' }}>

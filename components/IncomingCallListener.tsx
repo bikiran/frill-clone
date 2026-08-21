@@ -667,7 +667,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             <div style={{ marginTop: 6, borderRadius: 10, background: 'rgba(255,255,255,0.06)', padding: 6 }}>
               <p style={{ margin: '2px 8px 6px', fontSize: 10.5, fontWeight: 800, opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Continue call on</p>
               {switchDevices.length === 0 ? (
-                <p style={{ margin: 0, padding: '6px 8px 8px', fontSize: 12, opacity: 0.75, lineHeight: 1.4 }}>No other devices online. Open Colvy on your phone or another browser, then try again.</p>
+                <p style={{ margin: 0, padding: '6px 8px 8px', fontSize: 12, opacity: 0.75, lineHeight: 1.4 }}>No other devices online. Open Colvy in another browser, or on your phone with the latest app version, then try again.</p>
               ) : switchDevices.map(d => (
                 <button key={d.deviceId} type="button" disabled={switchBusy} onClick={() => moveCallTo(d.deviceId, d.deviceName)}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '8px', borderRadius: 8, border: 'none', background: 'none', color: '#fff', cursor: switchBusy ? 'default' : 'pointer', textAlign: 'left' }}>
