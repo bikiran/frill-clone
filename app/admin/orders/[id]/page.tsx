@@ -99,6 +99,9 @@ export default function OrderDetailPage() {
     const mentions = Array.from(body.matchAll(/@(\w[\w.-]*)/g)).map(m => m[1])
     const row = { order_id: orderId, company_id: companyId, author_id: me.id, author_name: me.name, body, mentions }
     try { const { data } = await (supabase as any).from('order_notes').insert(row).select().maybeSingle(); if (data) setNotes(n => [data, ...n]) } catch {}
+    if (order.conversation_id) {
+      try { await (supabase as any).from('conversation_notes').insert({ conversation_id: order.conversation_id, company_id: companyId, author_name: me.name, content: `[Order ${order.order_number}] ${body}` }) } catch {}
+    }
     setNoteBody('')
   }
   const addTask = async () => {

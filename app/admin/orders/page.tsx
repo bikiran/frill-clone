@@ -7,6 +7,7 @@ import {
   STATUS_TABS, statusMeta, channelMeta, orderAge, fmtMoney, SAVED_FILTERS,
   CARRIERS, CARRIER_LABEL, CARRIER_SERVICES,
 } from '@/lib/orders'
+import SendTrackingModal from '@/components/SendTrackingModal'
 
 type Order = any
 
@@ -882,6 +883,24 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const [addingTag, setAddingTag] = useState(false)
   const [galleryIdx, setGalleryIdx] = useState<number | null>(null)
   const [wooNotes, setWooNotes] = useState<any[] | null>(null)
+  const [showTracking, setShowTracking] = useState(false)
+
+  const sendTracking = async (info: { text: string; url: string; carrierLabel: string; number: string }) => {
+    setShowTracking(false)
+    try {
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token
+      const res = await fetch('/api/orders/send-tracking', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ companyId, orderId: order.id, text: info.text, trackingNumber: info.number, trackingUrl: info.url, senderName: me.name }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j.error) { onFlash(`Tracking failed: ${j.error || res.status}`); return }
+      onPatch({ tracking_number: info.number }); order.tracking_number = info.number
+      logEvent('tracking_sent', `Tracking sent to customer · ${info.carrierLabel} ${info.number}`)
+      onFlash(j.channel === 'email' ? 'Tracking emailed to customer' : 'Tracking sent to customer')
+    } catch (e: any) { onFlash(`Tracking error: ${e?.message || e}`) }
+  }
 
   const load = useCallback(async () => {
     const [it, nt, ev, tk] = await Promise.all([
@@ -921,6 +940,11 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     const mentions = Array.from(body.matchAll(/@(\w[\w.-]*)/g)).map(m => m[1])
     const row = { order_id: order.id, company_id: companyId, author_id: me.id, author_name: me.name, body, mentions }
     try { const { data } = await (supabase as any).from('order_notes').insert(row).select().maybeSingle(); if (data) { setNotes(n => [data, ...n]); logEvent('note_added', 'Internal note added') } } catch {}
+    // Mirror the note onto the linked conversation so it also shows in the inbox
+    // Notes section (right sidebar).
+    if (order.conversation_id) {
+      try { await (supabase as any).from('conversation_notes').insert({ conversation_id: order.conversation_id, company_id: companyId, author_name: me.name, content: `[Order ${order.order_number}] ${body}` }) } catch {}
+    }
     setNoteBody('')
   }
   const addTask = async () => {
@@ -1104,6 +1128,15 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             </div>
           </div>
 
+          {/* Send tracking — dispatch a tracking link to the customer (SMS/email) */}
+          <div style={sect}>
+            <button type="button" onClick={() => setShowTracking(true)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 12px', borderRadius: 11, border: `1px solid ${ACCENT}`, background: 'var(--card,#fff)', color: ACCENT, fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1" /><path d="M16 8h4l3 3v5h-7V8z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
+              Send tracking
+            </button>
+          </div>
+
           {/* Tasks */}
           <div style={sect}>
             <p style={kick}>Tasks</p>
@@ -1171,6 +1204,12 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           </div>
         </div>
       </div>
+
+      {showTracking && (
+        <SendTrackingModal companyId={companyId} conversationId={order.conversation_id || ''} contactId={order.contact_id || null}
+          orderNumber={order.order_number} senderName={me.name}
+          onClose={() => setShowTracking(false)} onSent={sendTracking} />
+      )}
 
       {/* Item gallery / lightbox */}
       {galleryIdx != null && items[galleryIdx] && (() => {
