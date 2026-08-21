@@ -58,15 +58,17 @@ export async function ensureCallCard(db: SupabaseClient, callRowId: string): Pro
     const connected = secs > 0 || !!call.recording_url || !!call.ai_summary ||
       ['completed', 'answered'].includes(String(call.status || ''))
     if (!call.company_id || call.is_voicemail || !connected) return
-    // A dial-pad call to an unknown number (no contact, no thread) stays in the
-    // dialer's Recent Calls — not the inbox.
-    if (!call.conversation_id && !call.contact_id) return
+    // Every connected call gets a thread — including a cold dial-pad call to a
+    // number with no contact yet (a conversation is created for the number, and
+    // the transcript later backfills the contact's name/address). We do need a
+    // number or a contact to key it on.
+    if (!call.conversation_id && !call.contact_id && !call.from_number && !call.to_number) return
 
     // Attach the call to a conversation. An OUTBOUND call to a known contact
     // (and inbound calls that weren't pre-linked) should land in the customer's
     // thread — resolve the contact's most recent thread, then by number, and
-    // create one only if the contact has none. This is what brings the contact
-    // to the top of the inbox when a call is MADE, just like when one comes in.
+    // create one if there's none. This is what brings the contact to the top of
+    // the inbox when a call is MADE, just like when one comes in.
     let conversationId: string | null = call.conversation_id || null
     const num = call.direction === 'inbound' ? call.from_number : call.to_number
     if (!conversationId) {
