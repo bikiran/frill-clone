@@ -1212,6 +1212,35 @@ export default function InboxPage() {
   const convLoadingRef = useRef(false)
   const [showContactEdit, setShowContactEdit] = useState(false)
   const [editContact, setEditContact] = useState<Partial<Contact>>({})
+  // The linked WooCommerce order's billing, fetched explicitly for the "Fill from
+  // order" backfill — the merged `wooOrders` list drops the billing object, so we
+  // read it straight from woocommerce_orders here.
+  const [orderBilling, setOrderBilling] = useState<any>(null)
+  useEffect(() => {
+    setOrderBilling(null)
+    if (!showContactEdit || !companyId) return
+    const email = String((editContact as any).email || '').trim()
+    const phone = String((editContact as any).phone || '')
+    const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-9)
+    const hasBilling = (o: any) => o?.billing && (o.billing.first_name || o.billing.last_name || o.billing.phone || o.billing.address_1)
+    ;(async () => {
+      let order: any = null
+      if (email) {
+        const { data } = await (supabase as any).from('woocommerce_orders')
+          .select('billing, order_date').eq('company_id', companyId).ilike('customer_email', email)
+          .order('order_date', { ascending: false }).limit(10)
+        order = (data || []).find(hasBilling)
+      }
+      if (!order && norm(phone).length >= 8) {
+        const { data } = await (supabase as any).from('woocommerce_orders')
+          .select('billing, order_date').eq('company_id', companyId).eq('billing_phone_norm', norm(phone))
+          .order('order_date', { ascending: false }).limit(10)
+        order = (data || []).find(hasBilling)
+      }
+      setOrderBilling(order?.billing || null)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showContactEdit, (editContact as any).email, (editContact as any).phone, companyId])
   const [aiDetected, setAiDetected] = useState<{ name?: string | null; phone?: string | null; email?: string | null; address?: string | null } | null>(null)
   const [aiSavedFields, setAiSavedFields] = useState<Set<string>>(new Set())
   const [savingContact, setSavingContact] = useState(false)
@@ -8713,7 +8742,7 @@ export default function InboxPage() {
                         billing — recovers name / phone / address when the order
                         matched the contact only by email and left them empty. */}
                     {(() => {
-                      const b = wooOrders.map((o: any) => o.billing).find((x: any) => x && (x.first_name || x.last_name || x.phone || x.address_1))
+                      const b = orderBilling
                       if (!b) return null
                       const billingName = `${b.first_name || ''} ${b.last_name || ''}`.trim()
                       const billingAddr = [b.address_1, b.address_2].filter(Boolean).join(', ')

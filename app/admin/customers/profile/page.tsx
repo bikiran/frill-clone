@@ -377,6 +377,39 @@ export default function CustomerProfilePage() {
     return new Date(v).toLocaleDateString()
   }
 
+  // "Fill from order": recover blank contact fields (name / phone / address /
+  // company) from a linked WooCommerce order's billing. Same two conditions as
+  // the inbox: a loaded order with billing, and at least one blank field.
+  const orderBilling = orders.map((o: any) => o.billing).find((x: any) => x && (x.first_name || x.last_name || x.phone || x.address_1))
+  const curName = `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || contactRow?.name || ''
+  const curPhone = customer.phone || contactRow?.phone || ''
+  const curHasAddr = hasWooAddr || !!contactAddrStr
+  const curCompany = contactRow?.company_name || (customer as any).company_name || ''
+  const fillPatch = (() => {
+    const b = orderBilling
+    if (!b || !contactId) return null
+    const billingName = `${b.first_name || ''} ${b.last_name || ''}`.trim()
+    const billingAddr = [b.address_1, b.address_2].filter(Boolean).join(', ')
+    const patch: any = {}
+    if (!curName && billingName) patch.name = billingName
+    if (!curPhone && b.phone) patch.phone = b.phone
+    if (!curHasAddr && billingAddr) { patch.address = billingAddr; patch.city = b.city || null; patch.state = b.state || null; patch.postcode = b.postcode || null; patch.country = b.country || null }
+    if (!curCompany && b.company) patch.company_name = b.company
+    return Object.keys(patch).length ? patch : null
+  })()
+  const fillFromOrder = async () => {
+    if (!fillPatch || !contactId) return
+    try { await (supabase as any).from('contacts').update(fillPatch).eq('id', contactId) } catch {}
+    setContactRow((c: any) => ({ ...(c || {}), ...fillPatch }))
+    setCustomer((c: any) => {
+      const nx = { ...c }
+      if (fillPatch.name) { const p = String(fillPatch.name).split(' '); nx.first_name = p[0]; nx.last_name = p.slice(1).join(' ') }
+      if (fillPatch.phone) nx.phone = fillPatch.phone
+      if (fillPatch.address) nx.address = { ...(c.address || {}), address_1: fillPatch.address, city: fillPatch.city, state: fillPatch.state, postcode: fillPatch.postcode, country: fillPatch.country }
+      return nx
+    })
+  }
+
   // Anchor notes/tasks to the contact's conversation (create one lazily if the
   // contact has never had a thread) so they show in the inbox too.
   const ensureConversationId = async (): Promise<string | null> => {
