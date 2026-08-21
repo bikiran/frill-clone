@@ -101,6 +101,7 @@ export default function OrdersPage() {
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [tagFilterOpen, setTagFilterOpen] = useState(false)
   const [showCreateOrder, setShowCreateOrder] = useState(false)
+  const [saveViewName, setSaveViewName] = useState<string | null>(null)
   const [labelOrder, setLabelOrder] = useState<Order | null>(null)
   const [tagDefs, setTagDefs] = useState<{ id: string; name: string; color: string }[]>([])
   const [manageTagsOpen, setManageTagsOpen] = useState(false)
@@ -324,13 +325,15 @@ export default function OrdersPage() {
     setSavedViews(views)
     if (companyId && me.id) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'order_views', value: { views } }) }).catch(() => {})
   }
-  const saveView = () => {
-    const name = (window.prompt('Name this view (e.g. Somerton — Backorder)') || '').trim()
-    if (!name) return
+  const saveView = () => setSaveViewName('')
+  const confirmSaveView = () => {
+    const name = (saveViewName || '').trim()
+    if (!name) { setSaveViewName(null); return }
     const f = { tab, fStore, fAssignee, fTag, fDate, saved, sortCol, sortDir }
     const existing = savedViews.find(v => v.name.toLowerCase() === name.toLowerCase())
     const v = { id: existing?.id || `v${Date.now()}`, name, f }
     persistViews([...savedViews.filter(x => x.id !== v.id), v]); setActiveView(v.id); flash(`View “${name}” saved`)
+    setSaveViewName(null)
   }
   const applyView = (v: { id: string; f: any }) => {
     const f = v.f || {}
@@ -401,7 +404,14 @@ export default function OrdersPage() {
 
   return (
     <div style={{ padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      <style>{`@keyframes ospin{to{transform:rotate(360deg)}} .ord-row:hover{background:var(--canvas)} .tag-opt:hover{background:var(--canvas)} .ord-item:hover{background:var(--canvas)} .ord-note-actions{opacity:0;transition:opacity .12s} .ord-note:hover .ord-note-actions{opacity:1}`}</style>
+      <style>{`@keyframes ospin{to{transform:rotate(360deg)}} .ord-row:hover{background:var(--canvas)} .tag-opt:hover{background:var(--canvas)} .ord-item:hover{background:var(--canvas)} .ord-note-actions{opacity:0;transition:opacity .12s} .ord-note:hover .ord-note-actions{opacity:1}
+        @keyframes ordFade{from{opacity:0}to{opacity:1}}
+        @keyframes ordPop{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+        .ord-create-btn{position:relative;transition:transform .16s cubic-bezier(.16,1,.3,1),box-shadow .16s ease,border-color .16s ease,background .16s ease;box-shadow:0 1px 2px rgba(15,23,42,.06)}
+        .ord-create-btn:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(15,23,42,.14);border-color:var(--ink)}
+        .ord-create-btn:active{transform:translateY(0) scale(.97);box-shadow:0 1px 2px rgba(15,23,42,.08)}
+        .ord-create-btn .ord-plus{transition:transform .22s cubic-bezier(.16,1,.3,1)}
+        .ord-create-btn:hover .ord-plus{transform:rotate(90deg)}`}</style>
 
       {/* Header + KPIs */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
@@ -410,8 +420,11 @@ export default function OrdersPage() {
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.02em' }}>Orders</h1>
             <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--slate)' }}>Manage and fulfil customer orders{syncing ? ' · syncing…' : ''}</p>
           </div>
-          <button type="button" onClick={() => setShowCreateOrder(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
-            <span style={{ fontSize: 15, lineHeight: 1 }}>＋</span> Create Order
+          <button type="button" onClick={() => setShowCreateOrder(true)} className="ord-create-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 17px', borderRadius: 11, border: '1.5px solid var(--border)', background: '#fff', color: '#0f172a', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '-0.01em' }}>
+            <span className="ord-plus" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            </span>
+            Create Order
           </button>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -639,6 +652,28 @@ export default function OrdersPage() {
         <CreateOrderPanel companyId={companyId} staffName={me.name} staffId={me.id || undefined}
           onClose={() => setShowCreateOrder(false)}
           onCreated={() => { flash('Order created'); runSync(companyId) }} />
+      )}
+
+      {saveViewName !== null && (
+        <div onClick={() => setSaveViewName(null)} style={{ position: 'fixed', inset: 0, zIndex: 5200, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, animation: 'ordFade .15s ease' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: 'var(--card,#fff)', borderRadius: 16, boxShadow: '0 24px 60px rgba(0,0,0,0.28)', padding: 22, animation: 'ordPop .18s cubic-bezier(.16,1,.3,1)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 10, background: `color-mix(in srgb, ${ACCENT} 14%, transparent)`, color: ACCENT }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+              </span>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Save this view</h3>
+            </div>
+            <p style={{ margin: '0 0 14px 44px', fontSize: 12.5, color: 'var(--slate)' }}>Give the current filters a name so you can jump back to them.</p>
+            <input autoFocus value={saveViewName} onChange={e => setSaveViewName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') confirmSaveView(); else if (e.key === 'Escape') setSaveViewName(null) }}
+              placeholder="e.g. Somerton — Backorder"
+              style={{ width: '100%', padding: '11px 13px', borderRadius: 11, border: `1.5px solid ${ACCENT}`, fontSize: 14, outline: 'none', boxSizing: 'border-box', color: 'var(--ink)', background: 'var(--card,#fff)' }} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9, marginTop: 18 }}>
+              <button type="button" onClick={() => setSaveViewName(null)} style={{ padding: '9px 18px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+              <button type="button" onClick={confirmSaveView} disabled={!saveViewName.trim()} style={{ padding: '9px 20px', borderRadius: 10, border: 'none', background: saveViewName.trim() ? ACCENT : 'var(--border)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: saveViewName.trim() ? 'pointer' : 'default' }}>Save view</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

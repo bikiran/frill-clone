@@ -31,6 +31,24 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
         const j = await res.json().catch(() => ({}))
         const byId = new Map<string, Order>((j.orders || []).map((o: Order) => [o.id, o]))
         rows = ids.map(id => byId.get(id)).filter(Boolean) as Order[]
+        // The customer's checkout note (order.customer_note) is only stored once
+        // V281 is applied and the order re-synced. Until then — and for older
+        // orders — pull it live from WooCommerce so it always prints. Bounded so a
+        // big bulk run doesn't fan out unboundedly.
+        const needNote = rows.filter((o: any) => !(o.customer_note || o.note) && o.external_order_id).slice(0, 40)
+        if (needNote.length) {
+          try {
+            const pairs = await Promise.all(needNote.map(async (o: any) => {
+              try {
+                const r = await fetch(`/api/orders/woo-notes?companyId=${encodeURIComponent(companyId)}&wooOrderId=${encodeURIComponent(String(o.external_order_id))}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+                const jj = await r.json().catch(() => ({}))
+                return [o.id, jj.customerNote || ''] as const
+              } catch { return [o.id, ''] as const }
+            }))
+            const noteMap = new Map(pairs)
+            rows = rows.map((o: any) => noteMap.get(o.id) ? { ...o, customer_note: o.customer_note || noteMap.get(o.id) } : o)
+          } catch {}
+        }
       } catch {}
       const [{ data: co }, { data: loc }, { data: items }, { data: ships }, { data: nts }] = await Promise.all([
         (supabase as any).from('companies').select('*').eq('id', companyId).maybeSingle(),
