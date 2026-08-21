@@ -84,6 +84,8 @@ export default function OrdersPage() {
   const [toast, setToast] = useState('')
 
   const [tab, setTab] = useState('all')
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false)
+  const [defaultStatus, setDefaultStatus] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [fStore, setFStore] = useState('all')
   const [defaultOutlet, setDefaultOutlet] = useState<string | null>(null)
@@ -194,6 +196,8 @@ export default function OrdersPage() {
           const j = await r.json()
           const dv = j?.prefs?.default_outlet
           if (dv?.id && (locs || []).some((l: any) => l.id === dv.id)) { setDefaultOutlet(dv.id); setFStore(dv.id) }
+          const ds = j?.prefs?.default_status?.key
+          if (ds && STATUS_TABS.some(t => t.key === ds)) { setDefaultStatus(ds); setTab(ds) }
           const vs = j?.prefs?.order_views?.views
           if (Array.isArray(vs)) setSavedViews(vs)
         } catch {}
@@ -320,6 +324,10 @@ export default function OrdersPage() {
   const setDefaultOutletPref = (id: string | null) => {
     setDefaultOutlet(id); setFStore(id || 'all')
     if (companyId && me.id) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
+  }
+  const setDefaultStatusPref = (key: string | null) => {
+    setDefaultStatus(key); if (key) setTab(key)
+    if (companyId && me.id) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'default_status', value: { key } }) }).catch(() => {})
   }
   // Saved views — a named combination of filters (like ShipStation).
   const persistViews = (views: { id: string; name: string; f: any }[]) => {
@@ -459,20 +467,52 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* Status tabs */}
-      <div style={{ display: 'flex', gap: 22, borderBottom: '1px solid var(--border)', marginBottom: 16, overflowX: 'auto' }}>
-        {STATUS_TABS.map(t => {
-          const n = t.key === 'all' ? counts.all : t.key === 'alerts' ? counts.alerts : (counts[t.match![0]] || 0)
-          const active = tab === t.key
-          return (
-            <button key={t.key} type="button" onClick={() => setTab(t.key)}
-              style={{ padding: '8px 2px', background: 'none', border: 'none', borderBottom: `2px solid ${active ? ACCENT : 'transparent'}`, color: active ? ACCENT : 'var(--slate)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 7 }}>
-              {t.label}
-              <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 20, background: active ? `color-mix(in srgb, ${ACCENT} 15%, transparent)` : 'var(--canvas)', color: active ? ACCENT : 'var(--slate)' }}>{n}</span>
+      {/* Status filter — collapsed into a Filters button + dropdown. Right-click
+          (or the ★) sets a status as the default, applied on next visit. */}
+      {(() => {
+        const countFor = (t: any) => t.key === 'all' ? counts.all : t.key === 'alerts' ? counts.alerts : (counts[t.match![0]] || 0)
+        const activeTab = STATUS_TABS.find(t => t.key === tab) || STATUS_TABS[0]
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16, position: 'relative' }}>
+            <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', marginRight: 2 }}>Filter</span>
+            <button type="button" onClick={() => setStatusMenuOpen(v => !v)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 20, border: `1px solid ${ACCENT}`, background: `color-mix(in srgb, ${ACCENT} 10%, transparent)`, color: ACCENT, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+              {activeTab.label}
+              <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 20, background: `color-mix(in srgb, ${ACCENT} 18%, transparent)` }}>{countFor(activeTab)}</span>
+              <span style={{ fontSize: 9, opacity: 0.8 }}>▾</span>
             </button>
-          )
-        })}
-      </div>
+            {defaultStatus && defaultStatus !== tab && (
+              <button type="button" onClick={() => setTab(defaultStatus)} title="Jump to your default filter" style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                Default: {STATUS_TABS.find(t => t.key === defaultStatus)?.label}
+              </button>
+            )}
+            {statusMenuOpen && (
+              <>
+                <div onClick={() => setStatusMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
+                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 44, zIndex: 4501, width: 268, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 40px rgba(0,0,0,0.16)', padding: 7 }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)', padding: '4px 8px 6px' }}>Order status · right-click to set default</div>
+                  {STATUS_TABS.map(t => {
+                    const active = tab === t.key; const isDefault = defaultStatus === t.key; const n = countFor(t)
+                    return (
+                      <div key={t.key} onContextMenu={e => { e.preventDefault(); setDefaultStatusPref(isDefault ? null : t.key) }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, borderRadius: 9, background: active ? `color-mix(in srgb, ${ACCENT} 12%, transparent)` : 'transparent' }} className="tag-opt">
+                        <button type="button" onClick={() => { setTab(t.key); setStatusMenuOpen(false) }}
+                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', color: active ? ACCENT : 'var(--ink)', fontSize: 13, fontWeight: 700 }}>
+                          <span>{t.label}</span>
+                          <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 20, background: 'var(--canvas)', color: 'var(--slate)' }}>{n}</span>
+                        </button>
+                        <button type="button" title={isDefault ? 'Clear default filter' : 'Set as my default filter'} onClick={() => setDefaultStatusPref(isDefault ? null : t.key)}
+                          style={{ background: 'none', border: 'none', padding: '0 8px', cursor: 'pointer', fontSize: 14, lineHeight: 1, color: isDefault ? '#f59e0b' : 'var(--slate)' }}>{isDefault ? '★' : '☆'}</button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Saved views — a named combination of filters (ShipStation-style) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
