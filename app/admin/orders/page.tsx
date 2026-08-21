@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
@@ -97,6 +97,9 @@ export default function OrdersPage() {
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const [defaultStatus, setDefaultStatus] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [searchTouched, setSearchTouched] = useState(false)
+  const itemIndexLoadedRef = useRef(false)
   const [fStore, setFStore] = useState('all')
   const [defaultOutlet, setDefaultOutlet] = useState<string | null>(null)
   const [savedViews, setSavedViews] = useState<{ id: string; name: string; f: any }[]>([])
@@ -166,25 +169,35 @@ export default function OrdersPage() {
   const loadOrders = useCallback(async (cid: string) => {
     // Read through the service-role API so the board shows rows regardless of RLS
     // state (a mis-applied policy can hide rows from the anon client with no error).
-    // Page through in chunks of 1000 (PostgREST's per-response cap) so a large
-    // store loads its whole book — the first page renders immediately and the
-    // rest fills in behind it, rather than being stuck at 1000.
+    // The FIRST page (the most recent 1000 orders) paints and drops the spinner
+    // immediately; the rest of a large book streams in behind it in the
+    // background, so the board is interactive in one round trip regardless of
+    // store size.
+    const PAGE = 1000
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined
-      const PAGE = 1000
-      let acc: any[] = []
-      for (let offset = 0; offset < 200000; offset += PAGE) {
+      const fetchPage = async (offset: number) => {
         const res = await fetch(`/api/orders?companyId=${encodeURIComponent(cid)}&offset=${offset}&limit=${PAGE}`, { headers })
         const d = await res.json().catch(() => ({}))
-        if (!res.ok || d.error) { if (!acc.length) { setToast(`Couldn’t load orders: ${d.error || res.status}`); setTimeout(() => setToast(''), 6000) } break }
-        const rows = Array.isArray(d.orders) ? d.orders : []
-        acc = offset === 0 ? rows : acc.concat(rows)
-        setOrders(acc.slice())
-        if (rows.length < PAGE || !d.hasMore) break
+        return { ok: res.ok && !d.error, err: d.error || res.status, rows: Array.isArray(d.orders) ? d.orders : [], hasMore: !!d.hasMore }
       }
-    } catch (e: any) { setToast(`Couldn’t load orders: ${e?.message || e}`); setTimeout(() => setToast(''), 6000) }
+      const first = await fetchPage(0)
+      if (!first.ok) { setToast(`Couldn’t load orders: ${first.err}`); setTimeout(() => setToast(''), 6000); setLoading(false); return }
+      let acc = first.rows
+      setOrders(acc.slice()); setLoading(false)
+      if (acc.length < PAGE || !first.hasMore) return
+      // Remaining pages — detached so they never block interaction.
+      ;(async () => {
+        for (let offset = PAGE; offset < 200000; offset += PAGE) {
+          const p = await fetchPage(offset)
+          if (!p.ok) break
+          acc = acc.concat(p.rows); setOrders(acc.slice())
+          if (p.rows.length < PAGE || !p.hasMore) break
+        }
+      })()
+    } catch (e: any) { setToast(`Couldn’t load orders: ${e?.message || e}`); setTimeout(() => setToast(''), 6000); setLoading(false) }
   }, [])
 
   // Build a per-order product search index (name + SKU) so the board search can
@@ -208,6 +221,19 @@ export default function OrdersPage() {
       setItemIndex(map)
     } catch {}
   }, [])
+  // Load the product index once, the first time the user actually reaches for
+  // search — it's the heaviest query (all line items) and most sessions never
+  // search by product, so it stays off the initial load entirely.
+  const ensureItemIndex = useCallback(() => {
+    setSearchTouched(true)
+    if (itemIndexLoadedRef.current || !companyId) return
+    itemIndexLoadedRef.current = true
+    loadItemIndex(companyId)
+  }, [companyId, loadItemIndex])
+
+  // Debounce the search term used for filtering so typing over a large book
+  // doesn't refilter on every keystroke.
+  useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search), 140); return () => clearTimeout(t) }, [search])
 
   const runSync = useCallback(async (cid: string) => {
     setSyncing(true)
@@ -228,6 +254,10 @@ export default function OrdersPage() {
       const cid = await getMyCompanyId()
       if (!cid) { setLoading(false); return }
       setCompanyId(cid)
+      // Kick the orders load off immediately, in parallel with the accent /
+      // locations / prefs / team setup below — the board no longer waits on any
+      // of that before its first paint.
+      loadOrders(cid)
       try { const { data: co } = await (supabase as any).from('companies').select('accent_color').eq('id', cid).maybeSingle(); if (co?.accent_color) setAccent(co.accent_color) } catch {}
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user) setMe({ id: session.user.id, name: session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'You' })
@@ -267,11 +297,9 @@ export default function OrdersPage() {
       setTeam(members)
 
       loadTagDefs(cid)
-      await loadOrders(cid)
-      setLoading(false)
-      loadItemIndex(cid)
-      // Bring the operational table up to date from the storefront in the
-      // background (idempotent), then refresh.
+      // Orders are already loading (kicked off above). Bring the operational
+      // table up to date from the storefront in the background (idempotent).
+      // The product-search index loads lazily on first search use, not here.
       runSync(cid)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -310,9 +338,22 @@ export default function OrdersPage() {
   const allTags = useMemo(() => Array.from(new Set(orders.flatMap((o: any) => Array.isArray(o.tags) ? o.tags : []))).filter(Boolean), [orders])
   const teamName = (id: string | null) => team.find(t => t.id === id)?.name || null
 
+  // Prebuilt per-order search string, computed once per data change instead of
+  // being rebuilt for every row on every keystroke.
+  const hayIndex = useMemo(() => {
+    const m = new Map<string, string>()
+    if (!searchTouched) return m // nobody's searching yet — skip the work during load
+    for (const o of orders) {
+      const a = o.shipping_address || {}
+      const addr = [a.address_1, a.address_2, a.city, a.state, a.postcode, a.country].filter(Boolean).join(' ')
+      m.set(o.id, `${o.order_number || ''} ${o.customer_name || ''} ${o.customer_email || ''} ${o.customer_phone || ''} ${addr} ${o.primary_sku || ''} ${Array.isArray(o.tags) ? o.tags.join(' ') : ''} ${itemIndex[o.id] || ''}`.toLowerCase())
+    }
+    return m
+  }, [orders, itemIndex, searchTouched])
+
   // ── Filter + sort ──────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
+    const q = debouncedSearch.trim().toLowerCase()
     const now = Date.now()
     let rows = orders.filter((o: any) => {
       const tabDef = STATUS_TABS.find(t => t.key === tab)
@@ -333,27 +374,25 @@ export default function OrdersPage() {
       if (saved === 'Click & Collect' && o.status !== 'click_and_collect') return false
       if (saved === 'Unassigned' && o.assignee_id) return false
       if (saved.startsWith('loc:') && o.store_location_id !== saved.slice(4)) return false
-      if (q) {
-        const a = o.shipping_address || {}
-        const addr = [a.address_1, a.address_2, a.city, a.state, a.postcode, a.country].filter(Boolean).join(' ')
-        const hay = `${o.order_number || ''} ${o.customer_name || ''} ${o.customer_email || ''} ${o.customer_phone || ''} ${addr} ${o.primary_sku || ''} ${(o.tags || []).join(' ')} ${itemIndex[o.id] || ''}`.toLowerCase()
-        if (!hay.includes(q)) return false
-      }
+      if (q) { if (!(hayIndex.get(o.id) || '').includes(q)) return false }
       return true
     })
     rows = rows.slice().sort((a: any, b: any) => {
       let av: any, bv: any
       if (sortCol === 'total') { av = Number(a.total) || 0; bv = Number(b.total) || 0 }
       else if (sortCol === 'order_number') { av = a.order_number || ''; bv = b.order_number || '' }
-      else { av = new Date(a.order_date || 0).getTime(); bv = new Date(b.order_date || 0).getTime() } // age & date sort by date
+      // age & date both sort by order_date. It's an ISO string, which sorts
+      // chronologically as-is — no per-comparison Date parsing (much faster on a
+      // large book).
+      else { av = a.order_date || ''; bv = b.order_date || '' }
       if (av < bv) return sortDir === 'asc' ? -1 : 1
       if (av > bv) return sortDir === 'asc' ? 1 : -1
       return 0
     })
     return rows
-  }, [orders, tab, search, fStore, fAssignee, fTag, fDate, saved, sortCol, sortDir, locMatch, itemIndex])
+  }, [orders, tab, debouncedSearch, fStore, fAssignee, fTag, fDate, saved, sortCol, sortDir, locMatch, hayIndex])
 
-  useEffect(() => { setPage(0); setSelected(new Set()) }, [tab, search, fStore, fAssignee, fTag, fDate, saved])
+  useEffect(() => { setPage(0); setSelected(new Set()) }, [tab, debouncedSearch, fStore, fAssignee, fTag, fDate, saved])
   const pageRows = filtered.slice(page * pageSize, page * pageSize + pageSize)
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
 
@@ -623,7 +662,7 @@ export default function OrdersPage() {
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Order #, name, phone, email, address, SKU, product…" style={{ ...ctrl, minWidth: 280, paddingRight: search ? 28 : 10, cursor: 'text', fontWeight: 500 }} />
+            <input value={search} onFocus={ensureItemIndex} onChange={e => { ensureItemIndex(); setSearch(e.target.value) }} placeholder="Order #, name, phone, email, address, SKU, product…" style={{ ...ctrl, minWidth: 280, paddingRight: search ? 28 : 10, cursor: 'text', fontWeight: 500 }} />
             {search && <button type="button" onClick={() => setSearch('')} title="Clear search" style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', fontSize: 15, lineHeight: 1, padding: 2 }}>×</button>}
           </div>
           <select value={fAssignee} onChange={e => setFAssignee(e.target.value)} style={ctrl}><option value="all">Any assignee</option><option value="none">Unassigned</option>{team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
