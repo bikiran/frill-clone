@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { TwilioService, twilioIdentity } from '@/lib/twilio-service'
+import { TwilioService, twilioIdentity, xmlEscape } from '@/lib/twilio-service'
 
 export const dynamic = 'force-dynamic'
 
@@ -119,8 +119,16 @@ export async function POST(req: NextRequest) {
     const fromCallerId = integ.phone_number || call.to_number || call.from_number
 
     const confName = call.conference_name || `colvy-${call.id}`
+    // Record the conference so audio AFTER the transfer (the colleague + customer)
+    // is captured — the original <Dial record> stops when the legs are moved in.
+    // The completed callback stores it as the call's conference recording, which
+    // the transcriber stitches onto the pre-transfer recording.
+    const recBase = (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
+    const recCb = `${recBase}/api/twilio/voice/recording?callRowId=${encodeURIComponent(call.id)}&companyId=${encodeURIComponent(companyId)}&conversationId=${encodeURIComponent(call.conversation_id || '')}&kind=conference`
     const conferenceTwiml = () =>
-      `<?xml version="1.0" encoding="UTF-8"?><Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false">${confName}</Conference></Dial></Response>`
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false" ` +
+      `record="record-from-start" recordingStatusCallback="${xmlEscape(recCb)}" recordingStatusCallbackEvent="completed" recordingStatusCallbackMethod="POST">` +
+      `${confName}</Conference></Dial></Response>`
 
     // Move both live legs into the conference, then resolve its SID. Mirrors the
     // SID into both conference_id (existing logic) and conference_sid (contract).

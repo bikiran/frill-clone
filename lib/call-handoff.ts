@@ -1,4 +1,4 @@
-import { TwilioService } from '@/lib/twilio-service'
+import { TwilioService, xmlEscape } from '@/lib/twilio-service'
 
 // A handoff request is only valid for a short window; after it the receiving
 // device can no longer self-join and the original leg is kept.
@@ -49,8 +49,18 @@ export async function ensureCallConference(
     return { confName, confSid: call.conference_sid || call.conference_id, agentLeg }
   }
 
+  // Record the conference from the moment the customer is moved in, so audio
+  // AFTER the promotion (the leg the call is handed to) is captured — the
+  // original <Dial record> stops the instant we redirect the customer leg. Only
+  // the first participant's recording settings take effect, and the customer is
+  // moved in first, so setting it here records the whole conference. The
+  // completed-recording callback stores it as the call's conference recording.
+  const base = (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
+  const recCb = `${base}/api/twilio/voice/recording?callRowId=${encodeURIComponent(call.id)}&companyId=${encodeURIComponent(call.company_id || '')}&conversationId=${encodeURIComponent(call.conversation_id || '')}&kind=conference`
   const conferenceTwiml =
-    `<?xml version="1.0" encoding="UTF-8"?><Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false">${confName}</Conference></Dial></Response>`
+    `<?xml version="1.0" encoding="UTF-8"?><Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false" ` +
+    `record="record-from-start" recordingStatusCallback="${xmlEscape(recCb)}" recordingStatusCallbackEvent="completed" recordingStatusCallbackMethod="POST">` +
+    `${confName}</Conference></Dial></Response>`
   try { await svc.updateCall(customerLeg, { twiml: conferenceTwiml }) }
   catch (e: any) { throw new Error(`Could not move the customer into a conference: ${e.message}`) }
   if (agentLeg) { try { await svc.updateCall(agentLeg, { twiml: conferenceTwiml }) } catch { /* agent may drop; the conference still holds the customer */ } }

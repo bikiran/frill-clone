@@ -258,14 +258,22 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
       )}
 
       {/* Recording */}
-      {call?.recording_url ? (
+      {(call?.recording_url || (call as any)?.conference_recording_url) ? (
         <div style={{ paddingTop: 12, borderTop: '1px solid #e3e9f2' }}>
           <p style={{ margin: '0 0 7px', fontSize: 12.5, fontWeight: 700, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 6 }}>
             <MicIcon /> {isVoicemail ? 'Voicemail' : 'Call Recording'}
           </p>
-          <audio controls src={call.recording_url} style={{ width: '100%', height: 34 }} />
+          {call?.recording_url && <audio controls src={call.recording_url} style={{ width: '100%', height: 34 }} />}
+          {/* A handed-over call (device switch / warm transfer) has a second
+              recording for the part after the handoff — play it too. */}
+          {(call as any)?.conference_recording_url && (
+            <>
+              {call?.recording_url && <p style={{ margin: '9px 0 5px', fontSize: 11, fontWeight: 600, color: 'var(--slate)' }}>After device switch / transfer</p>}
+              <audio controls src={(call as any).conference_recording_url} style={{ width: '100%', height: 34 }} />
+            </>
+          )}
           <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-            <a href={call.recording_url} download
+            <a href={call.recording_url || (call as any).conference_recording_url} download
               style={{ fontSize: 12, fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}>
               Download recording
             </a>
@@ -293,7 +301,7 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
 
       {/* No summary yet? Say why, and offer to run it — rather than an empty
           card that gives no clue whether it's still working or has failed. */}
-      {call?.recording_url && !summary && (
+      {(call?.recording_url || (call as any)?.conference_recording_url) && !summary && (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e3e9f2', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <button type="button" onClick={runTranscription} disabled={retrying}
             style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #c7d7f0', background: '#fff', color: '#2563eb', fontSize: 12, fontWeight: 700, cursor: retrying ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>

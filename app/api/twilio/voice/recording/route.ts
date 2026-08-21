@@ -43,7 +43,10 @@ export async function POST(req: NextRequest) {
         const svc = new TwilioService(integ.account_sid, integ.auth_token)
         const { bytes, contentType } = await svc.fetchMedia(`${recordingUrl}.mp3`)
         const sid = get('RecordingSid') || recordingUrl.split('/').pop() || Math.random().toString(36).slice(2)
-        const key = `${companyId}/${callRowId || sid}.mp3`
+        // A conference recording belongs to the SAME call row as its dial
+        // recording, so give it a distinct key or it would overwrite the
+        // pre-handoff recording in storage.
+        const key = `${companyId}/${callRowId || sid}${kind === 'conference' ? '_conf' : ''}.mp3`
         if (r2Configured()) {
           publicUrl = await uploadToR2(`call-recordings/${key}`, bytes, contentType || 'audio/mpeg')
         } else {
@@ -57,13 +60,32 @@ export async function POST(req: NextRequest) {
       } catch (e: any) { console.error('[twilio recording] rehost failed, storing raw url', e?.message || e) }
     }
 
-    // Locate the call row (by our id, else by Twilio Call SID).
+    // Locate the call row (by our id, else by Twilio Call SID, else the
+    // conference SID for a conference recording).
     let rowId = callRowId
     if (!rowId) {
       const sid = get('CallSid')
       if (sid) { const { data } = await db.from('calls').select('id').eq('twilio_call_sid', sid).maybeSingle(); rowId = data?.id || '' }
+      if (!rowId) {
+        const conf = get('ConferenceSid')
+        if (conf) { const { data } = await db.from('calls').select('id').eq('conference_sid', conf).maybeSingle(); rowId = data?.id || '' }
+      }
     }
     if (!rowId) return NextResponse.json({ ok: true })
+
+    // The conference recording captures the leg the call was handed to (device
+    // switch / warm transfer) — audio the original <Dial record> couldn't. Keep
+    // it as a SECOND recording; the transcriber stitches both together.
+    if (kind === 'conference') {
+      const dur = parseInt(get('RecordingDuration') || '0', 10)
+      await db.from('calls').update({ conference_recording_url: publicUrl, ...(dur ? { conference_recording_duration: dur } : {}) }).eq('id', rowId)
+      await ensureCallCard(db, rowId)
+      try {
+        const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
+        fetch(`${base}/api/telnyx/transcribe`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callId: rowId, companyId, conversationId: conversationId || null }) }).catch(() => {})
+      } catch {}
+      return NextResponse.json({ ok: true })
+    }
 
     if (kind === 'voicemail') {
       await db.from('calls').update({ recording_url: publicUrl, status: 'voicemail', is_voicemail: true, ended_at: new Date().toISOString() }).eq('id', rowId)
