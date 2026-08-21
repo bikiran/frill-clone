@@ -394,6 +394,30 @@ function LifecycleIcon({ kind }: { kind: string }) {
   }
 }
 
+// A call-type last message ("📞 Voicemail", "Missed call", "Call received · 0:44")
+// gets a colour-coded call glyph — matching the mobile app — instead of the plain
+// phone emoji: red missed, green received, slate outgoing/ended, purple voicemail.
+type CallKind = 'missed' | 'received' | 'outgoing' | 'voicemail'
+function callGlyphKind(text?: string | null): CallKind | null {
+  const s = String(text || '').toLowerCase()
+  if (!/📞|☎|voicemail|missed call|call received|incoming call|call ended|call answered|outgoing call|outbound call/.test(s)) return null
+  if (/voicemail/.test(s)) return 'voicemail'
+  if (/missed/.test(s)) return 'missed'
+  if (/received|incoming|answered/.test(s)) return 'received'
+  if (/ended|outgoing|outbound|made/.test(s)) return 'outgoing'
+  return 'received'
+}
+const stripCallEmoji = (t?: string | null) => String(t || '').replace(/^\s*(?:📞|☎️?|📵)\s*/, '')
+function CallGlyph({ kind }: { kind: CallKind }) {
+  const color = kind === 'missed' ? '#ef4444' : kind === 'received' ? '#16a34a' : kind === 'voicemail' ? '#8b5cf6' : '#6b7280'
+  const common = { width: 13, height: 13, viewBox: '0 0 24 24', fill: 'none', stroke: color, strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, style: { flexShrink: 0 } }
+  const handset = <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+  if (kind === 'voicemail') return <svg {...common}><circle cx="6" cy="14" r="4"/><circle cx="18" cy="14" r="4"/><line x1="6" y1="18" x2="18" y2="18"/></svg>
+  if (kind === 'outgoing') return <svg {...common}><polyline points="23 7 23 1 17 1"/><line x1="16" y1="8" x2="23" y2="1"/>{handset}</svg>
+  // missed (red) and received (green) both read as an incoming call; colour separates them.
+  return <svg {...common}><polyline points="16 2 16 8 22 8"/><line x1="23" y1="1" x2="16" y2="8"/>{handset}</svg>
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function InboxPage() {
   // Seed from the shared identity cache + the last conversation list we rendered
@@ -6842,8 +6866,11 @@ export default function InboxPage() {
                     {activeCall?.status === 'ringing' ? 'Calling…' : 'Call in progress'}
                   </p>
                 ) : (
-                <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <Highlight text={conv.last_message || 'No messages yet'} q={searchTerm} accent={accent} />
+                <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {(() => { const k = callGlyphKind(conv.last_message); return k ? <CallGlyph kind={k} /> : null })()}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <Highlight text={(callGlyphKind(conv.last_message) ? stripCallEmoji(conv.last_message) : conv.last_message) || 'No messages yet'} q={searchTerm} accent={accent} />
+                  </span>
                 </p>
                 )}
                 {conv.unread_count > 0 && (
