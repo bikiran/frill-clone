@@ -19,14 +19,19 @@ export default function OrdersPrintPage() {
   const [shipByOrder, setShipByOrder] = useState<Record<string, any>>({})
   const [company, setCompany] = useState<any>(null)
   const [fromAddr, setFromAddr] = useState<any>(null)
+  const [notesByOrder, setNotesByOrder] = useState<Record<string, any[]>>({})
   const [loading, setLoading] = useState(true)
   const [autoPrinted, setAutoPrinted] = useState(false)
+  // Embedded in the in-page print modal (iframe): show a preview, let the parent
+  // trigger printing — don't auto-print or show our own dark toolbar.
+  const [embed, setEmbed] = useState(false)
 
   useEffect(() => {
     (async () => {
       const p = new URLSearchParams(window.location.search)
       const d = (p.get('doc') as any) === 'label' ? 'label' : 'packing_slip'
       setDoc(d)
+      setEmbed(p.get('embed') === '1')
       const ids = (p.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean)
       let cid = p.get('company') || peekCompanyUser()?.companyId || null
       if (!cid || !ids.length) { setLoading(false); return }
@@ -43,11 +48,12 @@ export default function OrdersPrintPage() {
       } catch {}
       setOrders(rows)
 
-      const [{ data: co }, { data: loc }, { data: items }, { data: ships }] = await Promise.all([
+      const [{ data: co }, { data: loc }, { data: items }, { data: ships }, { data: nts }] = await Promise.all([
         (supabase as any).from('companies').select('*').eq('id', cid).maybeSingle(),
         (supabase as any).from('company_locations').select('*').eq('company_id', cid).order('is_primary', { ascending: false }).limit(1).maybeSingle(),
         (supabase as any).from('order_items').select('*').in('order_id', ids),
         (supabase as any).from('order_shipments').select('*').in('order_id', ids).order('created_at', { ascending: false }),
+        (supabase as any).from('order_notes').select('*').in('order_id', ids).order('created_at', { ascending: true }),
       ])
       setCompany(co || null)
       setFromAddr(loc || null)
@@ -57,18 +63,22 @@ export default function OrdersPrintPage() {
       const sb: Record<string, any> = {}
       for (const sh of ships || []) if (!sb[sh.order_id]) sb[sh.order_id] = sh // latest first
       setShipByOrder(sb)
+      const nb: Record<string, any[]> = {}
+      for (const n of nts || []) (nb[n.order_id] ||= []).push(n)
+      setNotesByOrder(nb)
       setLoading(false)
     })()
   }, [])
 
-  // Auto-open the print dialog once content is on screen.
+  // Auto-open the print dialog once content is on screen — except when embedded
+  // in the in-page modal, where the parent's Print button drives it.
   useEffect(() => {
-    if (!loading && orders.length && !autoPrinted) {
+    if (!embed && !loading && orders.length && !autoPrinted) {
       setAutoPrinted(true)
       const t = setTimeout(() => { try { window.print() } catch {} }, 350)
       return () => clearTimeout(t)
     }
-  }, [loading, orders, autoPrinted])
+  }, [embed, loading, orders, autoPrinted])
 
   const accent = company?.accent_color || '#0f172a'
   const senderName = company?.name || 'Warehouse'
@@ -77,7 +87,7 @@ export default function OrdersPrintPage() {
   if (!orders.length) return <div style={{ padding: 40, fontFamily: 'system-ui', color: '#64748b' }}>Nothing to print. Close this tab and try again from the Orders board.</div>
 
   return (
-    <div className="print-root" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif', color: '#0f172a', background: '#fff' }}>
+    <div className="print-root" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif', color: '#0f172a', background: '#fff', ...(embed ? { position: 'fixed', inset: 0, overflow: 'auto', zIndex: 2147483000 } : {}) }}>
       <style>{`
         @media print {
           @page { size: ${doc === 'label' ? '4in 6in' : 'A4'}; margin: ${doc === 'label' ? '0' : '14mm'}; }
@@ -91,19 +101,21 @@ export default function OrdersPrintPage() {
         .doc-page { box-sizing: border-box; }
       `}</style>
 
-      {/* Screen-only toolbar */}
-      <div className="no-print" style={{ position: 'sticky', top: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', background: '#0f172a', color: '#fff', zIndex: 10 }}>
-        <strong style={{ fontSize: 14 }}>{doc === 'label' ? 'Shipping Labels' : 'Packing Slips'}</strong>
-        <span style={{ fontSize: 12.5, opacity: 0.8 }}>{orders.length} document{orders.length === 1 ? '' : 's'}</span>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => window.print()} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Print</button>
-        <button onClick={() => window.close()} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Close</button>
-      </div>
+      {/* Screen-only toolbar (hidden when embedded in the in-page modal). */}
+      {!embed && (
+        <div className="no-print" style={{ position: 'sticky', top: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', background: '#0f172a', color: '#fff', zIndex: 10 }}>
+          <strong style={{ fontSize: 14 }}>{doc === 'label' ? 'Shipping Labels' : 'Packing Slips'}</strong>
+          <span style={{ fontSize: 12.5, opacity: 0.8 }}>{orders.length} document{orders.length === 1 ? '' : 's'}</span>
+          <div style={{ flex: 1 }} />
+          <button onClick={() => window.print()} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Print</button>
+          <button onClick={() => window.close()} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Close</button>
+        </div>
+      )}
 
       <div style={{ padding: doc === 'label' ? 0 : '10px 0' }}>
         {orders.map(o => doc === 'label'
           ? <LabelDoc key={o.id} order={o} ship={shipByOrder[o.id]} senderName={senderName} from={fromAddr} accent={accent} />
-          : <PackingSlip key={o.id} order={o} items={itemsByOrder[o.id] || []} company={company} from={fromAddr} accent={accent} />
+          : <PackingSlip key={o.id} order={o} items={itemsByOrder[o.id] || []} notes={notesByOrder[o.id] || []} company={company} from={fromAddr} accent={accent} />
         )}
       </div>
     </div>
@@ -120,9 +132,11 @@ function addrLines(a: any, name?: string | null): string[] {
   ].filter(Boolean) as string[]
 }
 
-function PackingSlip({ order, items, company, from, accent }: any) {
+function PackingSlip({ order, items, notes, company, from, accent }: any) {
   const ship = order.shipping_address || {}
   const total = items.reduce((s: number, it: any) => s + (Number(it.quantity) || 0), 0)
+  const customerNote = order.customer_note || order.note || ''
+  const internalNotes = (notes || []).filter((n: any) => (n.body || '').trim())
   const th: React.CSSProperties = { textAlign: 'left', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', padding: '8px 8px', borderBottom: '2px solid #0f172a' }
   const td: React.CSSProperties = { fontSize: 13, padding: '9px 8px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'top' }
   return (
@@ -169,7 +183,8 @@ function PackingSlip({ order, items, company, from, accent }: any) {
       <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 18 }}>
         <thead>
           <tr>
-            <th style={{ ...th, width: '55%' }}>Item</th>
+            <th style={{ ...th, width: 46 }}></th>
+            <th style={th}>Item</th>
             <th style={th}>SKU</th>
             <th style={{ ...th, textAlign: 'center' }}>Qty</th>
           </tr>
@@ -177,21 +192,53 @@ function PackingSlip({ order, items, company, from, accent }: any) {
         <tbody>
           {items.map((it: any) => (
             <tr key={it.id}>
+              <td style={{ ...td, width: 46 }}>
+                <span style={{ display: 'inline-flex', width: 38, height: 38, borderRadius: 6, overflow: 'hidden', background: '#f1f5f9', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0' }}>
+                  {it.image_url
+                    ? <img src={it.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e: any) => { e.currentTarget.style.display = 'none' }} />
+                    : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /></svg>}
+                </span>
+              </td>
               <td style={td}>{it.product_name || 'Item'}</td>
               <td style={{ ...td, color: '#475569', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{it.sku || '—'}</td>
               <td style={{ ...td, textAlign: 'center', fontWeight: 700 }}>{it.quantity}</td>
             </tr>
           ))}
-          {items.length === 0 && <tr><td colSpan={3} style={{ ...td, textAlign: 'center', color: '#94a3b8' }}>No items on this order.</td></tr>}
+          {items.length === 0 && <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: '#94a3b8' }}>No items on this order.</td></tr>}
         </tbody>
         <tfoot>
           <tr>
-            <td style={{ padding: '10px 8px', fontWeight: 700 }} />
+            <td style={{ padding: '10px 8px', fontWeight: 700 }} colSpan={2} />
             <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 700, color: '#64748b', fontSize: 12 }}>Total units</td>
             <td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 800, fontSize: 15 }}>{total}</td>
           </tr>
         </tfoot>
       </table>
+
+      {/* Notes — customer note (from checkout) + internal notes */}
+      {(customerNote || internalNotes.length > 0) && (
+        <div style={{ display: 'flex', gap: 24, marginTop: 20 }}>
+          {customerNote && (
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>Customer Note</div>
+              <div style={{ marginTop: 6, fontSize: 12.5, lineHeight: 1.5, color: '#0f172a', padding: '8px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, whiteSpace: 'pre-wrap' }}>{customerNote}</div>
+            </div>
+          )}
+          {internalNotes.length > 0 && (
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>Internal Notes</div>
+              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {internalNotes.map((n: any) => (
+                  <div key={n.id} style={{ fontSize: 12, lineHeight: 1.45, color: '#0f172a', padding: '7px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8 }}>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{n.body}</div>
+                    <div style={{ marginTop: 3, fontSize: 10, color: '#94a3b8' }}>{n.author_name || 'Staff'}{n.created_at ? ` · ${new Date(n.created_at).toLocaleDateString('en-AU')}` : ''}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ marginTop: 26, textAlign: 'center', fontSize: 11.5, color: '#94a3b8' }}>
         Thank you for your order{company?.website ? ` · ${company.website}` : ''}

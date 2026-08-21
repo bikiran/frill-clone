@@ -474,7 +474,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     }
     // Mirror into the operational Orders board so a new/updated order shows up
     // there immediately (and live, via realtime) — no manual sync needed.
-    try { await upsertWooOrder(db, companyId, { ...orderRow, id: sourceRowId }, contact?.id || null) } catch (e) { console.error('[orders mirror] failed', e) }
+    try { await upsertWooOrder(db, companyId, { ...orderRow, id: sourceRowId, customer_note: order.customer_note || null }, contact?.id || null) } catch (e) { console.error('[orders mirror] failed', e) }
   } catch (e) { console.error('[order attribution] failed', e) }
 
   // ── Auto review request on completion ─────────────────────────────────────

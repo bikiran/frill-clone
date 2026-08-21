@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import {
@@ -105,10 +105,14 @@ export default function OrdersPage() {
   const setSidebarPref = (v: boolean) => { setShowSidebar(v); try { localStorage.setItem('colvy-orders-sidebar', v ? '1' : '0') } catch {} }
   const openOrder = (id: string) => { if (showSidebar) setDrawerId(id); else window.location.href = `/admin/orders/${id}` }
 
-  // Open the print route (packing slips or labels) for a set of orders in a new tab.
+  const [printModal, setPrintModal] = useState<{ url: string; title: string } | null>(null)
+  // Open the print preview (packing slips or labels) as an in-page modal.
   const openPrint = useCallback((docType: 'packing_slip' | 'label', ids: string[]) => {
     if (!ids.length || !companyId) { flash('Select at least one order'); return }
-    window.open(`/admin/orders/print?doc=${docType}&company=${encodeURIComponent(companyId)}&ids=${ids.join(',')}`, '_blank')
+    setPrintModal({
+      url: `/admin/orders/print?doc=${docType}&company=${encodeURIComponent(companyId)}&ids=${ids.join(',')}&embed=1`,
+      title: docType === 'label' ? `Shipping Label${ids.length > 1 ? 's' : ''}` : `Packing Slip${ids.length > 1 ? 's' : ''}`,
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId])
 
@@ -492,6 +496,8 @@ export default function OrdersPage() {
         <ManageTagsModal companyId={companyId!} accent={ACCENT} tagDefs={tagDefs} setTagDefs={setTagDefs}
           orders={orders} setOrders={setOrders} onFlash={flash} onClose={() => setManageTagsOpen(false)} />
       )}
+
+      {printModal && <PrintModal url={printModal.url} title={printModal.title} accent={ACCENT} onClose={() => setPrintModal(null)} />}
     </div>
   )
 }
@@ -627,6 +633,27 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
           <button type="button" onClick={onClose} style={{ padding: '9px 16px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
           <button type="button" onClick={submit} disabled={busy} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: ACCENT, color: '#fff', fontSize: 13, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>{busy ? 'Creating…' : isLiveCarrier ? 'Buy Label' : 'Create & Print'}</button>
         </div>
+      </div>
+    </>
+  )
+}
+
+// ── In-page print preview modal — renders the print route in an iframe so the
+// packing slip / label pops up on the same page instead of a new tab. ─────────
+export function PrintModal({ url, title, accent, onClose }: { url: string; title: string; accent: string; onClose: () => void }) {
+  const ref = useRef<HTMLIFrameElement>(null)
+  const doPrint = () => { try { ref.current?.contentWindow?.focus(); ref.current?.contentWindow?.print() } catch {} }
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 4700 }} />
+      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 880, maxWidth: '96vw', height: '90vh', background: '#fff', borderRadius: 14, zIndex: 4701, boxShadow: '0 24px 60px rgba(0,0,0,0.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#0f172a', color: '#fff', flexShrink: 0 }}>
+          <strong style={{ fontSize: 14 }}>{title}</strong>
+          <div style={{ flex: 1 }} />
+          <button type="button" onClick={doPrint} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Print</button>
+          <button type="button" onClick={onClose} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Close</button>
+        </div>
+        <iframe ref={ref} src={url} title={title} style={{ flex: 1, border: 0, background: '#fff', width: '100%' }} />
       </div>
     </>
   )

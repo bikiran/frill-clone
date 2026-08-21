@@ -60,6 +60,7 @@ function sourceFields(companyId: string, o: any, contactId: string | null) {
     customer_name: name,
     customer_email: email || null,
     customer_phone: b.phone || null,
+    customer_note: o.customer_note || o.note || null,
     shipping_address: (o.shipping && Object.keys(o.shipping).length ? o.shipping : b) || null,
     // The woocommerce_orders row's order_date is already a proper timestamptz.
     // Do NOT fall back to created_at (the sync insert time) — that fabricated a
