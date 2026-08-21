@@ -1,10 +1,67 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { xmlEscape } from '@/lib/twilio-service'
+import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
+import { parseClientIdentity } from '@/lib/call-handoff'
 
 export const dynamic = 'force-dynamic'
 
 const twiml = (body: string) => new NextResponse(`<?xml version="1.0" encoding="UTF-8"?>${body}`, { headers: { 'Content-Type': 'text/xml' } })
+
+const dbAdmin = () => createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+)
+
+// A receiving device taking over a live call self-joins its conference. The
+// device calls device.connect({ params: { handoff:'1', handoffCallId,
+// handoffToken } }) with NO custom From — so Twilio's standard `From` here is
+// `client:<identity>`, which is bound to the device's access token and cannot be
+// spoofed. We verify that identity matches the handoff target's user (the
+// same-user security gate) before returning conference-join TwiML.
+async function handoffJoinTwiml(req: NextRequest, get: (k: string) => string): Promise<NextResponse> {
+  const callId = get('handoffCallId')
+  const handoffToken = get('handoffToken')
+  const fromIdentity = parseClientIdentity(get('From') || get('Caller'))
+  if (!callId || !handoffToken || !fromIdentity) return twiml('<Response><Say>Handoff is not available.</Say><Hangup/></Response>')
+
+  const db = dbAdmin()
+  const { data: call } = await db.from('calls').select('*').eq('id', callId).maybeSingle()
+  if (!call) return twiml('<Response><Say>That call could not be found.</Say><Hangup/></Response>')
+  if (String(call.handoff_status || '') !== 'joining' || call.handoff_token !== handoffToken) {
+    return twiml('<Response><Say>This handoff is no longer available.</Say><Hangup/></Response>')
+  }
+  if (call.handoff_expires_at && new Date(call.handoff_expires_at).getTime() < Date.now()) {
+    return twiml('<Response><Say>This handoff has expired.</Say><Hangup/></Response>')
+  }
+  // Same-user gate: the joining identity must equal the target device's user id.
+  const { data: dev } = await db.from('call_devices').select('user_id, company_id').eq('device_id', call.handoff_target_device_id).maybeSingle()
+  if (!dev) return twiml('<Response><Say>The target device is no longer available.</Say><Hangup/></Response>')
+  const expected = twilioIdentity(dev.user_id, String(dev.company_id))
+  if (fromIdentity !== expected) return twiml('<Response><Say>Not authorised.</Say><Hangup/></Response>')
+
+  const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
+  const confName = call.conference_name || `colvy-${callId}`
+  const confirmCb = `${base}/api/calls/${encodeURIComponent(callId)}/handoff/confirm`
+  // Join the SAME conference the customer is already in. statusCallbackEvent
+  // "join" fires /confirm with this leg's CallSid → it becomes the active leg and
+  // the old one is removed. No <Dial record> here: the recording belongs to the
+  // original customer leg (matching how warm transfer behaves today).
+  // endConferenceOnExit="true": once this device is the sole agent, hanging up
+  // ends the whole call (drops the customer) — the expected behaviour. During
+  // the brief overlap the old agent's leg has endConferenceOnExit="false", so
+  // removing it after confirm does NOT end the call.
+  return twiml(
+    `<Response>` +
+      `<Dial answerOnBridge="true">` +
+        `<Conference startConferenceOnEnter="true" endConferenceOnExit="true" beep="false" ` +
+          `statusCallback="${xmlEscape(confirmCb)}" statusCallbackEvent="join" statusCallbackMethod="POST">` +
+          `${xmlEscape(confName)}` +
+        `</Conference>` +
+      `</Dial>` +
+    `</Response>`
+  )
+}
 
 // TwiML for a browser-originated (SDK) outbound call. The Twilio Voice SDK hits
 // this via the company's TwiML App when the agent dials. Custom params from
@@ -17,6 +74,12 @@ const twiml = (body: string) => new NextResponse(`<?xml version="1.0" encoding="
 export async function POST(req: NextRequest) {
   const form = await req.formData()
   const get = (k: string) => { const v = form.get(k); return v == null ? '' : String(v) }
+
+  // Device handoff: a second device self-joining the live call's conference.
+  if (get('handoff') === '1') {
+    try { return await handoffJoinTwiml(req, get) }
+    catch { return twiml('<Response><Say>Could not join the call.</Say><Hangup/></Response>') }
+  }
 
   const to = get('To')
   const from = get('From')

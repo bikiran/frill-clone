@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getVoiceProvider } from '@/lib/voice-provider-client'
 import { setActiveCall, clearActiveCall } from '@/lib/active-call'
+import { listCallDevices, handoffFetch } from '@/lib/call-device'
 
 interface CallBarProps {
   companyId: string | null
@@ -78,6 +79,42 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   const micStreamRef = useRef<MediaStream | null>(null)
   const [recording, setRecording] = useState(false)
   const [recErr, setRecErr] = useState('')
+
+  // ── Device handoff (Switch device) ──────────────────────────────────────────
+  const [switchOpen, setSwitchOpen] = useState(false)
+  const [switchDevices, setSwitchDevices] = useState<Array<{ deviceId: string; deviceName: string; platform: string }>>([])
+  const [switchBusy, setSwitchBusy] = useState(false)
+  const [movedTo, setMovedTo] = useState<string | null>(null)
+
+  const openSwitch = async () => {
+    if (!companyId) return
+    setSwitchOpen(true); setSwitchDevices([])
+    const list = await listCallDevices(companyId)
+    setSwitchDevices(list)
+  }
+  const moveCallTo = async (deviceId: string, name: string) => {
+    if (!callRowId.current) return
+    setSwitchBusy(true)
+    try {
+      const res = await handoffFetch(`/api/calls/${callRowId.current}/handoff`, { targetDeviceId: deviceId })
+      if (!res.ok) { setErrorMsg(res.data?.error || 'Could not move the call'); setSwitchBusy(false); return }
+      // The other device now shows "Take over call". Once it joins, the server
+      // drops THIS leg — our Twilio call disconnects and the bar ends cleanly.
+      setMovedTo(name); setSwitchOpen(false)
+    } catch { setErrorMsg('Could not move the call') }
+    setSwitchBusy(false)
+  }
+  // If the target never accepts within the handoff window, the customer stays on
+  // THIS device — clear the "Moving…" label and cancel the pending handoff so the
+  // call carries on normally here.
+  useEffect(() => {
+    if (!movedTo) return
+    const t = setTimeout(() => {
+      setMovedTo(null)
+      if (callRowId.current) { handoffFetch(`/api/calls/${callRowId.current}/handoff/cancel`, { reason: 'cancelled' }).catch(() => {}) }
+    }, 33_000)
+    return () => clearTimeout(t)
+  }, [movedTo])
 
   // ── Call recording ────────────────────────────────────────────────────────
   // Telnyx records calls placed through Call Control, but a WebRTC/SIP-credential
@@ -550,8 +587,8 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
           {state === 'ringing' && 'Ringing…'}
           {state === 'active' && (
             <>
-              {fmtDuration(seconds)}
-              {recording && (
+              {movedTo ? `Moving to ${movedTo}…` : fmtDuration(seconds)}
+              {recording && !movedTo && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#f87171', fontWeight: 700 }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#dc2626', animation: 'recPulse 1.4s ease-in-out infinite' }} />
                   REC
@@ -563,6 +600,33 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
           {recErr && <span style={{ color: '#fca5a5' }}>{recErr}</span>}
         </p>
       </div>
+      {state === 'active' && providerRef.current === 'twilio' && !movedTo && (
+        <div style={{ position: 'relative' }}>
+          <button type="button" onClick={() => (switchOpen ? setSwitchOpen(false) : openSwitch())} title="Switch device"
+            style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: switchOpen ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.15)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {/* laptop + phone glyph */}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="14" height="9" rx="1"/><path d="M1 17h16"/><rect x="17" y="9" width="6" height="11" rx="1"/></svg>
+          </button>
+          {switchOpen && (
+            <div style={{ position: 'absolute', bottom: 44, right: 0, width: 244, background: 'var(--card, #fff)', color: 'var(--ink)', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.2)', padding: 8, zIndex: 3200 }}>
+              <p style={{ margin: '2px 8px 6px', fontSize: 11, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Continue call on</p>
+              {switchDevices.length === 0 ? (
+                <p style={{ margin: 0, padding: '8px 8px 10px', fontSize: 12.5, color: 'var(--slate)' }}>No other devices online. Open Colvy on your phone or another browser, then try again.</p>
+              ) : switchDevices.map(d => (
+                <button key={d.deviceId} type="button" disabled={switchBusy} onClick={() => moveCallTo(d.deviceId, d.deviceName)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 8px', borderRadius: 9, border: 'none', background: 'none', cursor: switchBusy ? 'default' : 'pointer', textAlign: 'left' }}>
+                  <span style={{ fontSize: 16 }}>{d.platform === 'web' ? '💻' : '📱'}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.deviceName}</span>
+                    <span style={{ display: 'block', fontSize: 11, color: 'var(--slate)' }}>Available</span>
+                  </span>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {state === 'active' && (
         <button type="button" onClick={toggleMute} title={muted ? 'Unmute' : 'Mute'}
           style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: muted ? '#dc2626' : 'rgba(255,255,255,0.15)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import IncomingCallListener from '@/components/IncomingCallListener'
+import CallHandoff from '@/components/CallHandoff'
 import { getActiveCall, subscribeActiveCall } from '@/lib/active-call'
 import AdminBanner from '@/components/AdminBanner'
 import ImpersonationBanner from '@/components/ImpersonationBanner'
@@ -476,6 +477,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           ("engaged"). Registering here means the agent can be reached from any
           admin page. */}
       <IncomingCallListener companyId={company?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
+      {/* Registers this browser as a call device and shows the "Take over call"
+          banner when a live call is handed to it from another device. */}
+      <CallHandoff companyId={company?.id || null} userId={user?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
       <style>{`
         @media (max-width: 860px) {
           .admin-sidebar { transform: translateX(-100%); transition: transform 0.25s ease; box-shadow: 0 0 0 transparent; }
