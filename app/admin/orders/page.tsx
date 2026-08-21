@@ -248,7 +248,8 @@ export default function OrdersPage() {
       const tabDef = STATUS_TABS.find(t => t.key === tab)
       if (tab === 'alerts') { if (!o.flagged) return false }
       else if (tabDef?.match) { if (!tabDef.match.includes(o.status)) return false }
-      if (fStore !== 'all' && o.store_location_id !== fStore) return false
+      if (fStore === 'unassigned') { if (o.store_location_id) return false }
+      else if (fStore !== 'all' && o.store_location_id !== fStore) return false
       if (fAssignee !== 'all') { if (fAssignee === 'none' ? o.assignee_id : o.assignee_id !== fAssignee) return false }
       if (fTag !== 'all' && !(Array.isArray(o.tags) && o.tags.includes(fTag))) return false
       if (fDate !== 'all' && o.order_date) {
@@ -383,6 +384,8 @@ export default function OrdersPage() {
       {locations.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', marginRight: 2 }}>Location</span>
+          <button type="button" onClick={() => setFStore('unassigned')} title="Orders not assigned to any outlet"
+            style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1px solid ${fStore === 'unassigned' ? '#d97706' : 'var(--border)'}`, background: fStore === 'unassigned' ? 'color-mix(in srgb, #d97706 12%, transparent)' : 'var(--card,#fff)', color: fStore === 'unassigned' ? '#b45309' : 'var(--slate)' }}>Unassigned</button>
           <button type="button" onClick={() => setFStore('all')}
             style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1px solid ${fStore === 'all' ? ACCENT : 'var(--border)'}`, background: fStore === 'all' ? `color-mix(in srgb, ${ACCENT} 12%, transparent)` : 'var(--card,#fff)', color: fStore === 'all' ? ACCENT : 'var(--slate)' }}>All Stores</button>
           {locations.map(l => {
