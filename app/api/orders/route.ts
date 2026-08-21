@@ -60,8 +60,12 @@ export async function GET(req: NextRequest) {
     // store loads fully across several small requests instead of one huge one.
     const offset = Math.max(0, parseInt(req.nextUrl.searchParams.get('offset') || '0') || 0)
     const limit = Math.min(1000, Math.max(1, parseInt(req.nextUrl.searchParams.get('limit') || '1000') || 1000))
-    const { data, error } = await db.from('orders').select('*')
-      .eq('company_id', companyId).order('order_date', { ascending: false }).range(offset, offset + limit - 1)
+    // Optional date-range filter (Reports only fetches the window it charts, so a
+    // 30-day report over a 50k-order store loads a few hundred rows, not the book).
+    const since = req.nextUrl.searchParams.get('since')
+    let q = db.from('orders').select('*').eq('company_id', companyId)
+    if (since) q = q.gte('order_date', since)
+    const { data, error } = await q.order('order_date', { ascending: false }).range(offset, offset + limit - 1)
     if (error) return NextResponse.json({ error: error.message, orders: [] }, { status: 500 })
     return NextResponse.json({ orders: data || [], hasMore: (data?.length || 0) === limit })
   } catch (e: any) {

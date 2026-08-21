@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import { statusMeta, channelMeta, fmtMoney, CARRIER_LABEL } from '@/lib/orders'
@@ -32,15 +32,39 @@ export default function OrdersReportsPage() {
     return null
   }
 
-  const load = useCallback(async (cid: string) => {
+  // Load only the orders inside the selected range — the report only charts that
+  // window, so a 30-day view never pulls the whole 50k-order book. Paginated
+  // (PostgREST caps a response at ~1000 rows); the first page renders instantly.
+  const load = useCallback(async (cid: string, rangeKey: string) => {
+    const days = RANGES.find(r => r.key === rangeKey)?.days ?? null
+    const sinceISO = days != null ? new Date(Date.now() - days * 864e5).toISOString() : null
+    const sinceQ = sinceISO ? `&since=${encodeURIComponent(sinceISO)}` : ''
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
-      const res = await fetch(`/api/orders?companyId=${encodeURIComponent(cid)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      const j = await res.json().catch(() => ({}))
-      setOrders(Array.isArray(j.orders) ? j.orders : [])
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined
+      const PAGE = 1000
+      let acc: any[] = []
+      for (let offset = 0; offset < 200000; offset += PAGE) {
+        const res = await fetch(`/api/orders?companyId=${encodeURIComponent(cid)}&offset=${offset}&limit=${PAGE}${sinceQ}`, { headers })
+        const j = await res.json().catch(() => ({}))
+        if (!res.ok || j.error) break
+        const rows = Array.isArray(j.orders) ? j.orders : []
+        acc = offset === 0 ? rows : acc.concat(rows)
+        setOrders(acc.slice())
+        setLoading(false) // first page in — show the report, rest streams behind
+        if (rows.length < PAGE || !j.hasMore) break
+      }
     } catch { setOrders([]) }
-    try { const { data: sh } = await (supabase as any).from('order_shipments').select('*').eq('company_id', cid).limit(5000); setShipments(sh || []) } catch { setShipments([]) }
+    setLoading(false)
+    // Shipments for the same window, in the background (never blocks the report).
+    ;(async () => {
+      try {
+        let sq = (supabase as any).from('order_shipments').select('*').eq('company_id', cid)
+        if (sinceISO) sq = sq.gte('created_at', sinceISO)
+        const { data: sh } = await sq.limit(5000); setShipments(sh || [])
+      } catch { setShipments([]) }
+    })()
   }, [])
 
   useEffect(() => {
@@ -48,12 +72,20 @@ export default function OrdersReportsPage() {
       const cid = await getMyCompanyId()
       if (!cid) { setLoading(false); return }
       setCompanyId(cid)
-      try { const { data: co } = await (supabase as any).from('companies').select('accent_color').eq('id', cid).maybeSingle(); if (co?.accent_color) setAccent(co.accent_color) } catch {}
-      await load(cid)
-      setLoading(false)
+      // Accent shouldn't gate the report — load it detached.
+      ;(async () => { try { const { data: co } = await (supabase as any).from('companies').select('accent_color').eq('id', cid).maybeSingle(); if (co?.accent_color) setAccent(co.accent_color) } catch {} })()
+      load(cid, range)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Refetch when the range changes (each window is small and bounded → fast).
+  const firstRangeRef = useRef(true)
+  useEffect(() => {
+    if (firstRangeRef.current) { firstRangeRef.current = false; return }
+    if (companyId) load(companyId, range)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range])
 
   const days = RANGES.find(r => r.key === range)?.days ?? null
   const since = days != null ? Date.now() - days * 864e5 : 0
