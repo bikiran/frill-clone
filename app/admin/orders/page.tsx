@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import {
@@ -8,6 +8,7 @@ import {
   CARRIERS, CARRIER_LABEL, CARRIER_SERVICES,
 } from '@/lib/orders'
 import SendTrackingModal from '@/components/SendTrackingModal'
+import OrderPrintDoc from '@/components/OrderPrintDoc'
 
 type Order = any
 
@@ -111,14 +112,11 @@ export default function OrdersPage() {
   const [drawerFull, setDrawerFull] = useState(false)
   const openOrder = (id: string) => { setDrawerId(id); setDrawerFull(!showSidebar) }
 
-  const [printModal, setPrintModal] = useState<{ url: string; title: string } | null>(null)
+  const [printModal, setPrintModal] = useState<{ doc: 'packing_slip' | 'label'; ids: string[]; title: string } | null>(null)
   // Open the print preview (packing slips or labels) as an in-page modal.
   const openPrint = useCallback((docType: 'packing_slip' | 'label', ids: string[]) => {
     if (!ids.length || !companyId) { flash('Select at least one order'); return }
-    setPrintModal({
-      url: `/admin/orders/print?doc=${docType}&company=${encodeURIComponent(companyId)}&ids=${ids.join(',')}&embed=1`,
-      title: docType === 'label' ? `Shipping Label${ids.length > 1 ? 's' : ''}` : `Packing Slip${ids.length > 1 ? 's' : ''}`,
-    })
+    setPrintModal({ doc: docType, ids, title: docType === 'label' ? `Shipping Label${ids.length > 1 ? 's' : ''}` : `Packing Slip${ids.length > 1 ? 's' : ''}` })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId])
 
@@ -566,7 +564,7 @@ export default function OrdersPage() {
           orders={orders} setOrders={setOrders} onFlash={flash} onClose={() => setManageTagsOpen(false)} />
       )}
 
-      {printModal && <PrintModal url={printModal.url} title={printModal.title} accent={ACCENT} onClose={() => setPrintModal(null)} />}
+      {printModal && <PrintModal doc={printModal.doc} companyId={companyId!} ids={printModal.ids} title={printModal.title} accent={ACCENT} onClose={() => setPrintModal(null)} />}
     </div>
   )
 }
@@ -707,22 +705,22 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
   )
 }
 
-// ── In-page print preview modal — renders the print route in an iframe so the
-// packing slip / label pops up on the same page instead of a new tab. ─────────
-export function PrintModal({ url, title, accent, onClose }: { url: string; title: string; accent: string; onClose: () => void }) {
-  const ref = useRef<HTMLIFrameElement>(null)
-  const doPrint = () => { try { ref.current?.contentWindow?.focus(); ref.current?.contentWindow?.print() } catch {} }
+// ── In-page print preview modal — renders the slip/label inline (no iframe, so
+// no app-shell flash) and prints via the scoped print CSS. ───────────────────
+export function PrintModal({ doc, companyId, ids, title, accent, onClose }: { doc: 'packing_slip' | 'label'; companyId: string; ids: string[]; title: string; accent: string; onClose: () => void }) {
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 4700 }} />
       <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 880, maxWidth: '96vw', height: '90vh', background: '#fff', borderRadius: 14, zIndex: 4701, boxShadow: '0 24px 60px rgba(0,0,0,0.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#0f172a', color: '#fff', flexShrink: 0 }}>
+        <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#0f172a', color: '#fff', flexShrink: 0 }}>
           <strong style={{ fontSize: 14 }}>{title}</strong>
           <div style={{ flex: 1 }} />
-          <button type="button" onClick={doPrint} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Print</button>
+          <button type="button" onClick={() => window.print()} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Print</button>
           <button type="button" onClick={onClose} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Close</button>
         </div>
-        <iframe ref={ref} src={url} title={title} style={{ flex: 1, border: 0, background: '#fff', width: '100%' }} />
+        <div style={{ flex: 1, overflow: 'auto', background: '#f1f5f9' }}>
+          <OrderPrintDoc doc={doc} companyId={companyId} ids={ids} />
+        </div>
       </div>
     </>
   )
@@ -1154,27 +1152,36 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             </div>}
           </div>
 
-          {/* WooCommerce order notes (live from the store) */}
-          {order.sales_channel === 'woocommerce' && (
-            <div style={sect}>
-              <p style={kick}>WooCommerce Notes</p>
-              {wooNotes === null && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Loading notes…</p>}
-              {wooNotes && wooNotes.length === 0 && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>No WooCommerce notes.</p>}
-              {wooNotes && wooNotes.length > 0 && (
+          {/* WooCommerce customer notes — the checkout note + notes-to-customer
+              (the private system/stock/payment logs are hidden). */}
+          {order.sales_channel === 'woocommerce' && (() => {
+            const customerWoo = (wooNotes || []).filter((n: any) => n.customer_note)
+            const hasCheckout = !!(order.customer_note || '').trim()
+            return (
+              <div style={sect}>
+                <p style={kick}>Customer Notes</p>
+                {wooNotes === null && !hasCheckout && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Loading notes…</p>}
+                {wooNotes !== null && customerWoo.length === 0 && !hasCheckout && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>No customer notes.</p>}
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {wooNotes.map((n: any) => (
-                    <div key={n.id} style={{ padding: '8px 11px', borderRadius: 10, background: n.customer_note ? '#eff6ff' : 'var(--canvas)', border: `1px solid ${n.customer_note ? '#bfdbfe' : 'var(--border)'}` }}>
+                  {hasCheckout && (
+                    <div style={{ padding: '8px 11px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
+                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{order.customer_note}</p>
+                      <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>Customer note at checkout</p>
+                    </div>
+                  )}
+                  {customerWoo.map((n: any) => (
+                    <div key={n.id} style={{ padding: '8px 11px', borderRadius: 10, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
                       <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: String(n.note || '').replace(/<script[\s\S]*?<\/script>/gi, '') }} />
                       <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {n.customer_note && <span style={{ fontSize: 9, fontWeight: 800, color: '#1d4ed8', background: '#dbeafe', padding: '1px 6px', borderRadius: 20 }}>TO CUSTOMER</span>}
+                        <span style={{ fontSize: 9, fontWeight: 800, color: '#1d4ed8', background: '#dbeafe', padding: '1px 6px', borderRadius: 20 }}>TO CUSTOMER</span>
                         {n.author || 'WooCommerce'}{n.date ? ` · ${new Date(n.date).toLocaleString('en-AU')}` : ''}
                       </p>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )
+          })()}
 
           {/* Timeline + notes */}
           <div style={{ ...sect, borderBottom: 'none' }}>

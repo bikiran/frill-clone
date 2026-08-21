@@ -31,7 +31,7 @@ export default function OrderDetailPage() {
   const [addingTag, setAddingTag] = useState(false)
   const [galleryIdx, setGalleryIdx] = useState<number | null>(null)
   const [showLabel, setShowLabel] = useState(false)
-  const [printModal, setPrintModal] = useState<{ url: string; title: string } | null>(null)
+  const [printModal, setPrintModal] = useState<{ doc: 'packing_slip' | 'label'; title: string } | null>(null)
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2400) }
   const orderId = typeof window !== 'undefined' ? decodeURIComponent(window.location.pathname.split('/').filter(Boolean).pop() || '') : ''
@@ -121,7 +121,7 @@ export default function OrderDetailPage() {
   }
   const addTag = (t: string) => { const tag = t.trim(); if (!tag) return; const next = Array.from(new Set([...(order.tags || []), tag])); patchOrder({ tags: next }); setAddingTag(false) }
   const removeTag = (t: string) => patchOrder({ tags: (order.tags || []).filter((x: string) => x !== t) })
-  const openPrint = (docType: 'packing_slip' | 'label') => { if (companyId) setPrintModal({ url: `/admin/orders/print?doc=${docType}&company=${encodeURIComponent(companyId)}&ids=${orderId}&embed=1`, title: docType === 'label' ? 'Shipping Label' : 'Packing Slip' }) }
+  const openPrint = (docType: 'packing_slip' | 'label') => { if (companyId) setPrintModal({ doc: docType, title: docType === 'label' ? 'Shipping Label' : 'Packing Slip' }) }
 
   const card: React.CSSProperties = { borderRadius: 14, border: '1px solid var(--border)', background: 'var(--card, #fff)', padding: 18 }
   const kick: React.CSSProperties = { margin: 0, fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }
@@ -314,7 +314,7 @@ export default function OrderDetailPage() {
 
       {showLabel && <CreateLabelModal order={order} companyId={companyId!} accent={ACCENT} onClose={() => setShowLabel(false)} onDone={(patch: any) => { patchOrder(patch); setShowLabel(false); loadRelated(orderId, companyId!) }} onFlash={flash} onPrintLabel={() => openPrint('label')} />}
 
-      {printModal && <PrintModal url={printModal.url} title={printModal.title} accent={ACCENT} onClose={() => setPrintModal(null)} />}
+      {printModal && <PrintModal doc={printModal.doc} companyId={companyId!} ids={[orderId]} title={printModal.title} accent={ACCENT} onClose={() => setPrintModal(null)} />}
 
       {/* Item gallery */}
       {galleryIdx != null && items[galleryIdx] && (() => {
