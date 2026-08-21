@@ -7,8 +7,8 @@ import {
   STATUS_TABS, statusMeta, channelMeta, orderAge, fmtMoney, SAVED_FILTERS,
   CARRIERS, CARRIER_LABEL, CARRIER_SERVICES,
 } from '@/lib/orders'
-import SendTrackingModal from '@/components/SendTrackingModal'
 import OrderPrintDoc from '@/components/OrderPrintDoc'
+import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 
 type Order = any
 
@@ -454,7 +454,10 @@ export default function OrdersPage() {
         </div>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search orders…" style={{ ...ctrl, minWidth: 200, cursor: 'text', fontWeight: 500 }} />
+          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search orders…" style={{ ...ctrl, minWidth: 200, paddingRight: search ? 28 : 10, cursor: 'text', fontWeight: 500 }} />
+            {search && <button type="button" onClick={() => setSearch('')} title="Clear search" style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', fontSize: 15, lineHeight: 1, padding: 2 }}>×</button>}
+          </div>
           <select value={fAssignee} onChange={e => setFAssignee(e.target.value)} style={ctrl}><option value="all">Any assignee</option><option value="none">Unassigned</option>{team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
           <div style={{ position: 'relative' }}>
             <button type="button" onClick={() => setTagFilterOpen(v => !v)} style={{ ...ctrl, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -881,10 +884,41 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const [addingTag, setAddingTag] = useState(false)
   const [galleryIdx, setGalleryIdx] = useState<number | null>(null)
   const [wooNotes, setWooNotes] = useState<any[] | null>(null)
+  const [wooCustomerNote, setWooCustomerNote] = useState<string | null>(null)
   const [showTracking, setShowTracking] = useState(false)
+  const [trkCarrier, setTrkCarrier] = useState('auspost')
+  const [trkNumber, setTrkNumber] = useState('')
+  const [trkCustomUrl, setTrkCustomUrl] = useState('')
+  const [trkSending, setTrkSending] = useState(false)
+
+  // Build a branded tracking short link + message, then deliver it (SMS/email).
+  const submitTracking = async () => {
+    const carrier = carrierByKey(trkCarrier)!
+    const isManual = trkCarrier === 'manual'
+    if (!trkNumber.trim()) { onFlash('Enter the tracking number'); return }
+    if (isManual && !trkCustomUrl.trim()) { onFlash('Enter the tracking URL'); return }
+    setTrkSending(true)
+    try {
+      const targetUrl = isManual ? trkCustomUrl.trim() : carrier.url(trkNumber.trim())
+      let shortUrl = ''
+      if (targetUrl) {
+        try {
+          const r = await fetch('/api/short-links/create', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, kind: 'redirect', url: targetUrl, label: `${carrier.label} tracking — order ${order.order_number}`, conversationId: order.conversation_id || undefined, sentBy: me.name }),
+          })
+          const d = await r.json(); if (r.ok && d.url) shortUrl = d.url
+        } catch {}
+      }
+      const lines = [`Your order ${order.order_number} has been dispatched.`, '', `${carrier.label} tracking: ${trkNumber.trim()}`]
+      if (shortUrl) lines.push('', shortUrl)
+      await sendTracking({ text: lines.join('\n'), url: shortUrl, carrierLabel: carrier.label, number: trkNumber.trim() })
+      setTrkNumber(''); setTrkCustomUrl(''); setShowTracking(false)
+    } catch (e: any) { onFlash(`Tracking error: ${e?.message || e}`) }
+    setTrkSending(false)
+  }
 
   const sendTracking = async (info: { text: string; url: string; carrierLabel: string; number: string }) => {
-    setShowTracking(false)
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
@@ -923,7 +957,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
         const token = data?.session?.access_token
         const res = await fetch(`/api/orders/woo-notes?companyId=${encodeURIComponent(companyId)}&wooOrderId=${encodeURIComponent(order.external_order_id)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
         const j = await res.json().catch(() => ({}))
-        if (!cancelled) setWooNotes(Array.isArray(j.notes) ? j.notes : [])
+        if (!cancelled) { setWooNotes(Array.isArray(j.notes) ? j.notes : []); setWooCustomerNote(j.customerNote || null) }
       } catch { if (!cancelled) setWooNotes([]) }
     })()
     return () => { cancelled = true }
@@ -1126,13 +1160,35 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             </div>
           </div>
 
-          {/* Send tracking — dispatch a tracking link to the customer (SMS/email) */}
+          {/* Send tracking — expands an inline box below (no popup) */}
           <div style={sect}>
-            <button type="button" onClick={() => setShowTracking(true)}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 12px', borderRadius: 11, border: `1px solid ${ACCENT}`, background: 'var(--card,#fff)', color: ACCENT, fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+            <button type="button" onClick={() => setShowTracking(v => !v)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 12px', borderRadius: 11, border: `1px solid ${ACCENT}`, background: showTracking ? `color-mix(in srgb, ${ACCENT} 8%, transparent)` : 'var(--card,#fff)', color: ACCENT, fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1" /><path d="M16 8h4l3 3v5h-7V8z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
               Send tracking
             </button>
+            {showTracking && (
+              <div style={{ marginTop: 10, padding: 12, borderRadius: 11, border: '1px solid var(--border)', background: 'var(--canvas)' }}>
+                <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 700, color: 'var(--slate)' }}>Carrier</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  {TRACK_CARRIERS.map((c: any) => {
+                    const on = trkCarrier === c.key
+                    return <button key={c.key} type="button" onClick={() => setTrkCarrier(c.key)}
+                      style={{ padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1px solid ${on ? ACCENT : 'var(--border)'}`, background: on ? `color-mix(in srgb, ${ACCENT} 12%, transparent)` : 'var(--card,#fff)', color: on ? ACCENT : 'var(--slate)' }}>{c.label}</button>
+                  })}
+                </div>
+                <p style={{ margin: '10px 0 6px', fontSize: 11, fontWeight: 700, color: 'var(--slate)' }}>Tracking number</p>
+                <input value={trkNumber} onChange={e => setTrkNumber(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitTracking() }} placeholder="e.g. 33ABC123456789" style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                {trkCarrier === 'manual' && (
+                  <input value={trkCustomUrl} onChange={e => setTrkCustomUrl(e.target.value)} placeholder="Tracking URL (https://…)" style={{ width: '100%', marginTop: 6, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                )}
+                {carrierByKey(trkCarrier)?.note && <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--slate)', lineHeight: 1.4 }}>{carrierByKey(trkCarrier)!.note}</p>}
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button type="button" onClick={() => setShowTracking(false)} style={{ flex: 1, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                  <button type="button" onClick={submitTracking} disabled={trkSending || !trkNumber.trim()} style={{ flex: 2, padding: '9px 12px', borderRadius: 9, border: 'none', background: (trkSending || !trkNumber.trim()) ? 'var(--border)' : ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: (trkSending || !trkNumber.trim()) ? 'default' : 'pointer' }}>{trkSending ? 'Sending…' : 'Send tracking'}</button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Tasks */}
@@ -1156,7 +1212,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
               (the private system/stock/payment logs are hidden). */}
           {order.sales_channel === 'woocommerce' && (() => {
             const customerWoo = (wooNotes || []).filter((n: any) => n.customer_note)
-            const hasCheckout = !!(order.customer_note || '').trim()
+            const checkoutNote = (order.customer_note || wooCustomerNote || '').trim()
+            const hasCheckout = !!checkoutNote
             return (
               <div style={sect}>
                 <p style={kick}>Customer Notes</p>
@@ -1165,7 +1222,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {hasCheckout && (
                     <div style={{ padding: '8px 11px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
-                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{order.customer_note}</p>
+                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{checkoutNote}</p>
                       <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>Customer note at checkout</p>
                     </div>
                   )}
@@ -1211,12 +1268,6 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           </div>
         </div>
       </div>
-
-      {showTracking && (
-        <SendTrackingModal companyId={companyId} conversationId={order.conversation_id || ''} contactId={order.contact_id || null}
-          orderNumber={order.order_number} senderName={me.name}
-          onClose={() => setShowTracking(false)} onSent={sendTracking} />
-      )}
 
       {/* Item gallery / lightbox */}
       {galleryIdx != null && items[galleryIdx] && (() => {

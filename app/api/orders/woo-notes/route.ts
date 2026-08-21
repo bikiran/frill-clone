@@ -38,8 +38,11 @@ export async function GET(req: NextRequest) {
     if (!(await isMember(db, req, companyId))) return NextResponse.json({ error: 'Not allowed', notes: [] }, { status: 403 })
     const svc = await createWooCommerceService(db, companyId).catch(() => null)
     if (!svc) return NextResponse.json({ notes: [], error: 'WooCommerce not connected' })
-    const notes = await svc.getOrderNotes(Number(wooOrderId))
-    return NextResponse.json({ notes })
+    const [notes, order] = await Promise.all([
+      svc.getOrderNotes(Number(wooOrderId)),
+      svc.getOrderByNumber(Number(wooOrderId)).catch(() => null),
+    ])
+    return NextResponse.json({ notes, customerNote: order?.customer_note || null })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e), notes: [] }, { status: 500 })
   }
