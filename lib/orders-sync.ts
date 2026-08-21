@@ -1,5 +1,36 @@
 import { mapWooStatus, mapWooPayment } from '@/lib/orders'
 
+// PostgREST reports an unknown column as "Could not find the 'X' column ... in
+// the schema cache". A schema that predates a newer optional column (e.g.
+// primary_sku) would otherwise fail the whole insert — so strip the offending
+// column and retry, a few times, instead of forcing another migration.
+const missingCol = (err: any): string | null => {
+  const m = String(err?.message || '').match(/Could not find the '([\w]+)' column/)
+  return m ? m[1] : null
+}
+async function insertResilient(db: any, table: string, rows: any[], select?: string): Promise<any[]> {
+  let cur = rows
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const q = db.from(table).insert(cur)
+    const { data, error } = select ? await q.select(select) : await q
+    if (!error) return data || []
+    const col = missingCol(error)
+    if (!col) throw new Error(`${table} insert failed: ${error.message}`)
+    cur = cur.map((r: any) => { const c = { ...r }; delete c[col]; return c })
+  }
+  throw new Error(`${table} insert failed: unresolved unknown columns`)
+}
+async function updateResilient(db: any, table: string, patch: any, id: string): Promise<void> {
+  let cur = patch
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { error } = await db.from(table).update(cur).eq('id', id)
+    if (!error) return
+    const col = missingCol(error)
+    if (!col) throw new Error(`${table} update failed: ${error.message}`)
+    const c = { ...cur }; delete c[col]; cur = c
+  }
+}
+
 // Maps a woocommerce_orders row into an operational `orders` row's source fields
 // (everything except the staff-owned operational fields: status, assignee, tags,
 // flagged). Channel-agnostic shape — WooCommerce is just the first source.
@@ -94,8 +125,7 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
     fulfilment_status: ['completed'].includes(String(o.status)) ? 'fulfilled' : 'unfulfilled',
     flagged: ['failed', 'on-hold'].includes(String(o.status)),
   }))
-  const { data: inserted, error: insErr } = await db.from('orders').insert(rows).select('id, external_order_id')
-  if (insErr) throw new Error(`orders insert failed: ${insErr.message || insErr.code || insErr}`)
+  const inserted = await insertResilient(db, 'orders', rows, 'id, external_order_id')
   const idByExt = new Map<string, string>((inserted || []).map((r: any) => [String(r.external_order_id), r.id]))
 
   // Bulk items + created events.
@@ -107,8 +137,8 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
     allItems.push(...itemRows(companyId, id, o))
     events.push({ order_id: id, company_id: companyId, type: 'created', detail: `Order imported from WooCommerce`, actor_name: 'Sync' })
   }
-  for (let i = 0; i < allItems.length; i += 500) { try { await db.from('order_items').insert(allItems.slice(i, i + 500)) } catch {} }
-  for (let i = 0; i < events.length; i += 500) { try { await db.from('order_events').insert(events.slice(i, i + 500)) } catch {} }
+  for (let i = 0; i < allItems.length; i += 500) { try { await insertResilient(db, 'order_items', allItems.slice(i, i + 500)) } catch {} }
+  for (let i = 0; i < events.length; i += 500) { try { await insertResilient(db, 'order_events', events.slice(i, i + 500)) } catch {} }
 
   return fresh.length
 }
@@ -131,22 +161,22 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
 
   let orderId: string
   if (prev?.id) {
-    await db.from('orders').update(src).eq('id', prev.id)
+    await updateResilient(db, 'orders', src, prev.id)
     orderId = prev.id
   } else {
-    const { data: ins } = await db.from('orders').insert({
+    const ins = await insertResilient(db, 'orders', [{
       ...src,
       status: mapWooStatus(o.status),
       fulfilment_status: ['completed'].includes(String(o.status)) ? 'fulfilled' : 'unfulfilled',
       flagged: ['failed', 'on-hold'].includes(String(o.status)),
-    }).select('id').maybeSingle()
-    if (!ins?.id) return
-    orderId = ins.id
-    try { await db.from('order_events').insert({ order_id: orderId, company_id: companyId, type: 'created', detail: 'Order imported from WooCommerce', actor_name: 'Sync' }) } catch {}
+    }], 'id')
+    if (!ins[0]?.id) return
+    orderId = ins[0].id
+    try { await insertResilient(db, 'order_events', [{ order_id: orderId, company_id: companyId, type: 'created', detail: 'Order imported from WooCommerce', actor_name: 'Sync' }]) } catch {}
   }
   try {
     await db.from('order_items').delete().eq('order_id', orderId)
     const its = itemRows(companyId, orderId, o)
-    if (its.length) await db.from('order_items').insert(its)
+    if (its.length) await insertResilient(db, 'order_items', its)
   } catch {}
 }
