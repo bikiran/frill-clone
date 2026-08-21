@@ -176,6 +176,7 @@ export async function POST(req: NextRequest) {
     let todos: string[] = []
     let sentiment: string | null = null
     let summaryError = ''
+    let extractedContact: any = null
 
     if (ANTHROPIC_KEY) {
       // Model names get retired. Rather than fail silently on a stale one, try
@@ -211,7 +212,9 @@ export async function POST(req: NextRequest) {
       const prompt = `You are summarising a phone call between a staff member at an aquarium business and ${otherParty}.${whoInitiated ? `\n\n${whoInitiated}` : ''}
 
 Respond ONLY with JSON, no preamble and no markdown fences:
-{"summary":"2-3 sentences, past tense, naming who called whom and what they wanted and how it was left","todos":["specific follow-up actions for the business, [] if none"],"sentiment":"positive|neutral|negative"}
+{"summary":"2-3 sentences, past tense, naming who called whom and what they wanted and how it was left","todos":["specific follow-up actions for the business, [] if none"],"sentiment":"positive|neutral|negative","contact":{"name":null,"email":null,"address":null,"city":null,"state":null,"postcode":null}}
+
+For "contact", extract details that ${them} (NOT the staff member) explicitly stated about THEMSELVES during the call — their full name, email, and delivery/postal address (street line in "address", plus city/state/postcode separately). Use null for anything not clearly and unambiguously stated; never guess or infer.
 
 Transcript:
 ${summarySource.slice(0, 12000)}`
@@ -245,6 +248,7 @@ ${summarySource.slice(0, 12000)}`
             const raw = String(parsed.sentiment || '').toLowerCase()
             sentiment = ['positive', 'neutral', 'negative'].includes(raw) ? raw : 'neutral'
           }
+          if (parsed.contact && typeof parsed.contact === 'object') extractedContact = parsed.contact
           summaryError = ''
           break
         } catch (e: any) {
@@ -260,6 +264,43 @@ ${summarySource.slice(0, 12000)}`
       // fall back to neutral so the badge always renders alongside a summary.
       sentiment: sentiment || (summary ? 'neutral' : null),
     }).eq('id', callId)
+
+    // Backfill the caller's contact from what they said on the call — a customer
+    // who rang in as an unknown "Visitor" and gave their name/address/email
+    // shouldn't stay blank. Only fill fields that are currently empty; never
+    // overwrite something the team already set. Best-effort.
+    if (extractedContact && call.contact_id) {
+      try {
+        const { data: ct } = await db.from('contacts').select('*').eq('id', call.contact_id).maybeSingle()
+        if (ct) {
+          const val = (v: any) => { const s = typeof v === 'string' ? v.trim() : ''; return s && s.toLowerCase() !== 'null' ? s : '' }
+          const nameBlank = !ct.name || /^\+?\d[\d\s-]*$/.test(String(ct.name)) || String(ct.name).toLowerCase() === 'visitor' || String(ct.name).trim() === String(ct.email || '').trim()
+          const addrLine = val(extractedContact.address)
+          const patch: any = {}
+          if (nameBlank && val(extractedContact.name)) patch.name = val(extractedContact.name)
+          if (!ct.email && val(extractedContact.email) && /@/.test(extractedContact.email)) patch.email = val(extractedContact.email)
+          if (!ct.address && addrLine) {
+            patch.address = addrLine
+            if (val(extractedContact.city)) patch.city = val(extractedContact.city)
+            if (val(extractedContact.state)) patch.state = val(extractedContact.state)
+            if (val(extractedContact.postcode)) patch.postcode = val(extractedContact.postcode)
+          }
+          if (Object.keys(patch).length) {
+            await db.from('contacts').update(patch).eq('id', call.contact_id)
+            // If the conversation was showing the bare number as its subject,
+            // give it the real name too so the inbox list stops saying "Visitor".
+            if (patch.name && conversationId) {
+              try {
+                const { data: cv } = await db.from('conversations').select('subject').eq('id', conversationId).maybeSingle()
+                if (!cv?.subject || /^\+?\d/.test(String(cv.subject)) || /visitor/i.test(String(cv.subject))) {
+                  await db.from('conversations').update({ subject: patch.name }).eq('id', conversationId)
+                }
+              } catch {}
+            }
+          }
+        }
+      } catch { /* enrichment is best-effort */ }
+    }
 
     // Transcribed, but no summary — say EXACTLY why.
     if (!summary) {
