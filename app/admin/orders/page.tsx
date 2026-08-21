@@ -27,6 +27,23 @@ export function ChannelIcon({ channel, size = 15 }: { channel?: string | null; s
   return <span style={{ fontSize: size + 1 }}>{channelMeta(channel).icon}</span>
 }
 
+// ── Colour-coded tags ─────────────────────────────────────────────────────────
+export const TAG_PALETTE = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0891b2', '#4b5563', '#e11d48', '#ca8a04']
+export function hashColor(name: string): string { let h = 0; for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return TAG_PALETTE[h % TAG_PALETTE.length] }
+export function readableText(hex?: string): string {
+  const h = (hex || '').replace('#', ''); if (h.length < 6) return '#fff'
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62 ? '#111827' : '#ffffff'
+}
+export function TagChip({ name, color, onRemove }: { name: string; color?: string; onRemove?: () => void }) {
+  const bg = color || hashColor(name); const fg = readableText(bg)
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 20, background: bg, color: fg, fontSize: 11.5, fontWeight: 700, letterSpacing: '0.01em' }}>
+      {name}{onRemove && <button type="button" onClick={e => { e.stopPropagation(); onRemove() }} title="Remove" style={{ background: 'none', border: 'none', color: fg, cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, opacity: 0.85 }}>×</button>}
+    </span>
+  )
+}
+
 export function CopyBtn({ onClick, title }: { onClick: () => void; title?: string }) {
   return (
     <button type="button" title={title || 'Copy'} onClick={e => { e.stopPropagation(); e.preventDefault(); onClick() }}
@@ -75,6 +92,12 @@ export default function OrdersPage() {
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [labelOrder, setLabelOrder] = useState<Order | null>(null)
+  const [tagDefs, setTagDefs] = useState<{ id: string; name: string; color: string }[]>([])
+  const [manageTagsOpen, setManageTagsOpen] = useState(false)
+  const tagColor = useCallback((name: string) => tagDefs.find(t => t.name.toLowerCase() === String(name).toLowerCase())?.color || hashColor(name), [tagDefs])
+  const loadTagDefs = useCallback(async (cid: string) => {
+    try { const { data } = await (supabase as any).from('order_tags').select('*').eq('company_id', cid).order('name'); setTagDefs((data || []).map((t: any) => ({ id: t.id, name: t.name, color: t.color || hashColor(t.name) }))) } catch {}
+  }, [])
   // Show Sidebar: ON → a row opens the slide-in drawer; OFF → it opens the full
   // order details page. Persisted per browser.
   const [showSidebar, setShowSidebar] = useState(true)
@@ -154,6 +177,7 @@ export default function OrdersPage() {
       if (uids.length) { try { const r = await fetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: uids }) }); names = (await r.json()).names || {} } catch {} }
       setTeam((tms || []).map((t: any) => ({ id: t.user_id, name: t.name || names[t.user_id]?.name || 'Teammate' })).filter((t: any) => t.id))
 
+      loadTagDefs(cid)
       await loadOrders(cid)
       setLoading(false)
       // Bring the operational table up to date from the storefront in the
@@ -244,6 +268,24 @@ export default function OrdersPage() {
   }
   const setStatus = (ids: string[], status: string) => patchOrder(ids, { status, ...(status === 'shipped' ? { shipped_at: new Date().toISOString() } : {}) }, { type: status === 'shipped' ? 'shipped' : status === 'packed' ? 'packed' : 'status_changed', detail: `Status set to ${statusMeta(status).label}` })
   const assign = (ids: string[], userId: string | null) => patchOrder(ids, { assignee_id: userId, assignee_name: teamName(userId) }, { type: 'assigned', detail: userId ? `Assigned to ${teamName(userId)}` : 'Unassigned' })
+  const outletName = (id: string | null) => locations.find(l => l.id === id)?.name || null
+  const assignOutlet = (ids: string[], locId: string | null) => patchOrder(ids, { store_location_id: locId }, { type: 'outlet', detail: locId ? `Assigned to ${outletName(locId)}` : 'Outlet cleared' })
+  // Apply or remove a tag across a set of orders (bulk Tag dropdown).
+  const applyTagToSelected = async (ids: string[], tag: string, on: boolean) => {
+    const t = tag.trim(); if (!t) return
+    for (const id of ids) {
+      const o = orders.find(x => x.id === id); if (!o) continue
+      const cur: string[] = Array.isArray(o.tags) ? o.tags : []
+      const next = on ? Array.from(new Set([...cur, t])) : cur.filter(x => x !== t)
+      if (next.length !== cur.length) await patchOrder([id], { tags: next })
+    }
+  }
+  // Ensure a tag exists in the registry (so it gets a colour + shows in Manage Tags).
+  const ensureTagDef = async (name: string, color?: string) => {
+    const n = name.trim(); if (!n || !companyId) return
+    if (tagDefs.some(t => t.name.toLowerCase() === n.toLowerCase())) return
+    try { const { data } = await (supabase as any).from('order_tags').insert({ company_id: companyId, name: n, color: color || hashColor(n) }).select().maybeSingle(); if (data) setTagDefs(d => [...d, { id: data.id, name: data.name, color: data.color }]) } catch {}
+  }
   const addTagTo = async (ids: string[], tag: string) => {
     const t = tag.trim(); if (!t) return
     for (const id of ids) {
@@ -329,11 +371,21 @@ export default function OrdersPage() {
             <option value="none">Unassign</option>
             {team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
+          {locations.length > 0 && (
+            <select value="" onChange={e => { if (e.target.value) { assignOutlet([...selected], e.target.value === 'none' ? null : e.target.value); setSelected(new Set()) } }} style={ctrl}>
+              <option value="">Outlet…</option>
+              <option value="none">No outlet</option>
+              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          )}
           <div style={{ position: 'relative' }}>
             <button type="button" onClick={() => setTagMenuOpen(v => !v)} style={{ ...ctrl, display: 'flex', alignItems: 'center', gap: 5 }}>Tag<span style={{ fontSize: 9, color: 'var(--slate)' }}>▾</span></button>
             {tagMenuOpen && (
-              <TagMenu tags={allTags} accent={ACCENT} onClose={() => setTagMenuOpen(false)}
-                onPick={t => { addTagTo([...selected], t); setSelected(new Set()); setTagMenuOpen(false) }} />
+              <TagApplyMenu tagDefs={tagDefs} selectedOrders={orders.filter(o => selected.has(o.id))} accent={ACCENT}
+                onClose={() => setTagMenuOpen(false)}
+                onToggle={(t, on) => applyTagToSelected([...selected], t, on)}
+                onCreate={async (name, color) => { await ensureTagDef(name, color); await applyTagToSelected([...selected], name, true) }}
+                onManage={() => { setTagMenuOpen(false); setManageTagsOpen(true) }} />
             )}
           </div>
           <select value="" onChange={e => { if (e.target.value) { setStatus([...selected], e.target.value); setSelected(new Set()) } }} style={ctrl}>
@@ -352,7 +404,7 @@ export default function OrdersPage() {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search orders…" style={{ ...ctrl, minWidth: 200, cursor: 'text', fontWeight: 500 }} />
           <select value={fStore} onChange={e => setFStore(e.target.value)} style={ctrl}><option value="all">All Stores</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
           <select value={fAssignee} onChange={e => setFAssignee(e.target.value)} style={ctrl}><option value="all">Any assignee</option><option value="none">Unassigned</option>{team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
-          <select value={fTag} onChange={e => setFTag(e.target.value)} style={ctrl}><option value="all">Any tag</option>{allTags.map(t => <option key={t} value={t}>{t}</option>)}</select>
+          <select value={fTag} onChange={e => setFTag(e.target.value)} style={ctrl}><option value="all">Any tag</option>{Array.from(new Set([...tagDefs.map(t => t.name), ...allTags])).map(t => <option key={t} value={t}>{t}</option>)}</select>
           <select value={fDate} onChange={e => setFDate(e.target.value)} style={ctrl}><option value="all">All time</option><option value="today">Today</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option></select>
           <select value={saved} onChange={e => setSaved(e.target.value)} style={{ ...ctrl, color: saved ? ACCENT : 'var(--ink)' }}><option value="">Saved Filters</option>{SAVED_FILTERS.map(s => <option key={s} value={s}>{s}</option>)}{locations.map(l => <option key={l.id} value={`loc:${l.id}`}>{l.name}</option>)}</select>
           <button type="button" onClick={() => runSync(companyId!)} disabled={syncing} style={{ ...ctrl, color: ACCENT }}>{syncing ? 'Syncing…' : 'Sync'}</button>
@@ -421,9 +473,10 @@ export default function OrdersPage() {
 
       {drawerOrder && (
         <OrderDrawer key={drawerOrder.id} order={drawerOrder} companyId={companyId!} me={me} team={team} locations={locations} accent={accent} allTags={allTags}
+          tagDefs={tagDefs} tagColor={tagColor} onEnsureTag={ensureTagDef} onManageTags={() => setManageTagsOpen(true)}
           onClose={() => setDrawerId(null)}
           onPatch={(patch, ev) => patchOrder([drawerOrder.id], patch, ev)}
-          onFlash={flash} teamName={teamName}
+          onFlash={flash} teamName={teamName} outletName={outletName}
           onLabel={(o: Order) => setLabelOrder(o)}
           onPrintSlip={(id: string) => openPrint('packing_slip', [id])} />
       )}
@@ -433,6 +486,11 @@ export default function OrdersPage() {
           onClose={() => setLabelOrder(null)}
           onDone={(patch: any) => { patchOrder([labelOrder.id], patch); setLabelOrder(null) }}
           onFlash={flash} onPrintLabel={(id: string) => openPrint('label', [id])} />
+      )}
+
+      {manageTagsOpen && (
+        <ManageTagsModal companyId={companyId!} accent={ACCENT} tagDefs={tagDefs} setTagDefs={setTagDefs}
+          orders={orders} setOrders={setOrders} onFlash={flash} onClose={() => setManageTagsOpen(false)} />
       )}
     </div>
   )
@@ -574,8 +632,133 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
   )
 }
 
+// ── Bulk Tag dropdown — apply/remove managed tags across selected orders ──────
+function TagApplyMenu({ tagDefs, selectedOrders, accent, onToggle, onCreate, onManage, onClose }: any) {
+  const [q, setQ] = useState('')
+  const query = q.trim()
+  const list = tagDefs.filter((t: any) => t.name.toLowerCase().includes(query.toLowerCase()))
+  const canCreate = !!query && !tagDefs.some((t: any) => t.name.toLowerCase() === query.toLowerCase())
+  const n = selectedOrders.length
+  const countWith = (name: string) => selectedOrders.filter((o: any) => (o.tags || []).includes(name)).length
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
+      <div style={{ position: 'absolute', top: 'calc(100% + 5px)', left: 0, zIndex: 4501, width: 260, background: 'var(--card, #fff)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 10px 30px rgba(0,0,0,0.16)', padding: 7 }}>
+        <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && canCreate) { onCreate(query); setQ('') } else if (e.key === 'Escape') onClose() }}
+          placeholder="Find or create tag…" style={{ width: '100%', padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, outline: 'none', boxSizing: 'border-box' }} />
+        <div style={{ maxHeight: 240, overflowY: 'auto', marginTop: 6, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {list.map((t: any) => {
+            const c = countWith(t.name); const all = n > 0 && c === n
+            return (
+              <button key={t.id} type="button" className="tag-opt" onClick={() => onToggle(t.name, !all)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 8, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                <input type="checkbox" readOnly checked={all} ref={el => { if (el) el.indeterminate = c > 0 && !all }} style={{ accentColor: accent, pointerEvents: 'none' }} />
+                <TagChip name={t.name} color={t.color} />
+              </button>
+            )
+          })}
+          {canCreate && (
+            <button type="button" className="tag-opt" onClick={() => { onCreate(query); setQ('') }}
+              style={{ textAlign: 'left', padding: '7px 8px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 700, color: accent, cursor: 'pointer' }}>+ Create “{query}”</button>
+          )}
+          {!list.length && !canCreate && <span style={{ padding: '7px 8px', fontSize: 12, color: 'var(--slate)' }}>No tags — type to create one</span>}
+        </div>
+        <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
+          <button type="button" onClick={onManage} style={{ width: '100%', textAlign: 'left', padding: '7px 8px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', cursor: 'pointer' }}>⚙ Manage Tags</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── Manage Tags dialog — create / rename / recolour / delete the palette ──────
+function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOrders, onFlash, onClose }: any) {
+  const PALETTE = Array.from(new Set([...TAG_PALETTE, '#111827', '#0ea5e9', '#22c55e', '#f59e0b', '#ec4899']))
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState(''); const [editColor, setEditColor] = useState('')
+  const [newName, setNewName] = useState(''); const [newColor, setNewColor] = useState(PALETTE[0])
+  const [busy, setBusy] = useState(false)
+
+  const rewriteOrders = async (from: string, to: string | null) => {
+    const affected = orders.filter((o: any) => (o.tags || []).includes(from))
+    setOrders((os: any[]) => os.map(o => (o.tags || []).includes(from) ? { ...o, tags: to ? (o.tags || []).map((x: string) => x === from ? to : x) : (o.tags || []).filter((x: string) => x !== from) } : o))
+    for (const o of affected) {
+      const next = to ? (o.tags || []).map((x: string) => x === from ? to : x) : (o.tags || []).filter((x: string) => x !== from)
+      try { await (supabase as any).from('orders').update({ tags: next }).eq('id', o.id) } catch {}
+    }
+  }
+  const create = async () => {
+    const n = newName.trim(); if (!n) return
+    if (tagDefs.some((t: any) => t.name.toLowerCase() === n.toLowerCase())) { onFlash('Tag already exists'); return }
+    setBusy(true)
+    try { const { data } = await (supabase as any).from('order_tags').insert({ company_id: companyId, name: n, color: newColor }).select().maybeSingle(); if (data) { setTagDefs((d: any[]) => [...d, { id: data.id, name: data.name, color: data.color }]); setNewName('') } } catch { onFlash('Could not create tag') }
+    setBusy(false)
+  }
+  const startEdit = (t: any) => { setEditingId(t.id); setEditName(t.name); setEditColor(t.color) }
+  const saveEdit = async (t: any) => {
+    const n = editName.trim() || t.name
+    setBusy(true)
+    try {
+      await (supabase as any).from('order_tags').update({ name: n, color: editColor }).eq('id', t.id)
+      if (n !== t.name) await rewriteOrders(t.name, n)
+      setTagDefs((d: any[]) => d.map(x => x.id === t.id ? { ...x, name: n, color: editColor } : x))
+    } catch { onFlash('Could not save tag') }
+    setEditingId(null); setBusy(false)
+  }
+  const del = async (t: any) => {
+    if (!window.confirm(`Delete tag “${t.name}”? It will be removed from all orders.`)) return
+    setBusy(true)
+    try { await (supabase as any).from('order_tags').delete().eq('id', t.id); await rewriteOrders(t.name, null); setTagDefs((d: any[]) => d.filter(x => x.id !== t.id)) } catch { onFlash('Could not delete tag') }
+    setBusy(false)
+  }
+  const Swatches = ({ value, onPick }: { value: string; onPick: (c: string) => void }) => (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+      {PALETTE.map(c => <button key={c} type="button" onClick={() => onPick(c)} title={c} style={{ width: 20, height: 20, borderRadius: 5, background: c, border: value === c ? '2px solid var(--ink)' : '2px solid transparent', cursor: 'pointer' }} />)}
+    </div>
+  )
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 4600 }} />
+      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 480, maxWidth: '94vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'var(--card,#fff)', borderRadius: 16, zIndex: 4601, boxShadow: '0 24px 60px rgba(0,0,0,0.28)' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Manage Tags</h2>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--slate)', cursor: 'pointer' }}>✕</button>
+        </div>
+        <div style={{ padding: '8px 20px', overflowY: 'auto', flex: 1 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', padding: '10px 0 6px' }}><span>Name</span><span>Actions</span></div>
+          {tagDefs.length === 0 && <p style={{ fontSize: 13, color: 'var(--slate)', padding: '8px 0' }}>No tags yet. Add one below.</p>}
+          {tagDefs.map((t: any) => (
+            <div key={t.id} style={{ padding: '10px 0', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              {editingId === t.id ? (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <input value={editName} onChange={e => setEditName(e.target.value)} style={{ padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
+                  <Swatches value={editColor} onPick={setEditColor} />
+                </div>
+              ) : <TagChip name={t.name} color={t.color} />}
+              <div style={{ display: 'flex', gap: 14, flexShrink: 0 }}>
+                {editingId === t.id
+                  ? <><button type="button" disabled={busy} onClick={() => saveEdit(t)} style={{ background: 'none', border: 'none', color: accent, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Save</button><button type="button" onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer' }}>Cancel</button></>
+                  : <><button type="button" onClick={() => startEdit(t)} style={{ background: 'none', border: 'none', color: accent, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Edit</button><button type="button" onClick={() => del(t)} style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Delete</button></>}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)' }}>
+          <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Add Tag</p>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') create() }} placeholder="Tag name…" style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
+            <button type="button" onClick={create} disabled={busy || !newName.trim()} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: newName.trim() ? accent : 'var(--border)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: newName.trim() ? 'pointer' : 'default' }}>Add</button>
+          </div>
+          <div style={{ marginTop: 8 }}><Swatches value={newColor} onPick={setNewColor} /></div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Right-side order drawer ───────────────────────────────────────────────────
-function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, teamName }: any) {
+function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, tagDefs, tagColor, onEnsureTag, onManageTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, teamName, outletName }: any) {
   const ACCENT = accent || 'var(--coral)'
   const [items, setItems] = useState<any[]>([])
   const [notes, setNotes] = useState<any[]>([])
@@ -628,6 +811,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, o
     const tag = t.trim(); if (!tag) return
     const next = Array.from(new Set([...(order.tags || []), tag]))
     onPatch({ tags: next }); order.tags = next; setTagInput(''); setAddingTag(false)
+    onEnsureTag?.(tag) // register in the palette so it gets a colour + appears in Manage Tags
   }
   const removeTag = (t: string) => { const next = (order.tags || []).filter((x: string) => x !== t); onPatch({ tags: next }); order.tags = next }
 
@@ -710,9 +894,19 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, o
           <div style={sect}>
             <p style={kick}>Order Summary</p>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {/* Outlet — assign the order to a fulfilment location. */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, alignItems: 'center' }}>
+                <span style={{ color: 'var(--slate)' }}>Outlet</span>
+                {locations && locations.length > 0
+                  ? <select value={order.store_location_id || ''} onChange={e => { const v = e.target.value || null; onPatch({ store_location_id: v }, { type: 'outlet', detail: v ? `Assigned to ${outletName?.(v) || 'outlet'}` : 'Outlet cleared' }); order.store_location_id = v }}
+                      style={{ fontWeight: 600, fontSize: 12.5, padding: '3px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', cursor: 'pointer', maxWidth: 170 }}>
+                      <option value="">No outlet</option>
+                      {locations.map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
+                  : <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{store || '—'}</span>}
+              </div>
               {([
                 ['Order Date', order.order_date ? new Date(order.order_date).toLocaleString('en-AU') : '—'],
-                ['Store', store || '—'],
                 ['Sales Channel', <span key="ch" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ChannelIcon channel={order.sales_channel} size={14} />{channelMeta(order.sales_channel).label}</span>],
                 ['Payment', order.payment_status || '—'],
                 ['Fulfilment', order.fulfilment_status || '—'],
@@ -756,19 +950,18 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, o
           <div style={sect}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <p style={kick}>Tags</p>
-              <div style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, position: 'relative' }}>
+                <button type="button" onClick={() => onManageTags?.()} style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>Manage</button>
                 <button type="button" onClick={() => setAddingTag(v => !v)} style={{ fontSize: 12, fontWeight: 700, color: ACCENT, background: 'none', border: 'none', cursor: 'pointer' }}>{addingTag ? 'Cancel' : '+ Add'}</button>
                 {addingTag && (
-                  <TagMenu tags={(allTags || []).filter((t: string) => !(order.tags || []).includes(t))} accent={ACCENT} align="right"
+                  <TagMenu tags={Array.from(new Set([...(tagDefs || []).map((t: any) => t.name), ...(allTags || [])])).filter((t: string) => !(order.tags || []).includes(t))} accent={ACCENT} align="right"
                     onClose={() => setAddingTag(false)} onPick={t => addTag(t)} />
                 )}
               </div>
             </div>
             <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {(order.tags || []).map((t: string) => (
-                <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 20, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)' }}>
-                  {t}<button type="button" onClick={() => removeTag(t)} style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
-                </span>
+                <TagChip key={t} name={t} color={tagColor?.(t)} onRemove={() => removeTag(t)} />
               ))}
               {(order.tags || []).length === 0 && !addingTag && <span style={{ fontSize: 12, color: 'var(--slate)' }}>No tags</span>}
             </div>

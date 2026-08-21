@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import { statusMeta, channelMeta, orderAge, fmtMoney } from '@/lib/orders'
-import { ChannelIcon, CopyBtn, copyToClipboard, TagMenu, CreateLabelModal } from '../page'
+import { ChannelIcon, CopyBtn, copyToClipboard, TagMenu, CreateLabelModal, TagChip, hashColor } from '../page'
 
 type Order = any
 
@@ -20,6 +20,9 @@ export default function OrderDetailPage() {
   const [events, setEvents] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
   const [allTags, setAllTags] = useState<string[]>([])
+  const [tagDefs, setTagDefs] = useState<{ id: string; name: string; color: string }[]>([])
+  const [locations, setLocations] = useState<{ id: string; name: string }[]>([])
+  const tagColor = (name: string) => tagDefs.find(t => t.name.toLowerCase() === String(name).toLowerCase())?.color || hashColor(name)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [toast, setToast] = useState('')
@@ -41,15 +44,19 @@ export default function OrderDetailPage() {
   }
 
   const loadRelated = useCallback(async (oid: string, cid: string) => {
-    const [it, nt, ev, tk, allO] = await Promise.all([
+    const [it, nt, ev, tk, allO, tg, loc] = await Promise.all([
       (supabase as any).from('order_items').select('*').eq('order_id', oid),
       (supabase as any).from('order_notes').select('*').eq('order_id', oid).order('created_at', { ascending: false }),
       (supabase as any).from('order_events').select('*').eq('order_id', oid).order('created_at', { ascending: false }),
       (supabase as any).from('conversation_tasks').select('*').eq('company_id', cid).eq('order_id', oid).order('created_at', { ascending: false }),
       (supabase as any).from('orders').select('tags').eq('company_id', cid).limit(2000),
+      (supabase as any).from('order_tags').select('*').eq('company_id', cid).order('name'),
+      (supabase as any).from('company_locations').select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false }),
     ])
     setItems(it.data || []); setNotes(nt.data || []); setEvents(ev.data || []); setTasks(tk.data || [])
     setAllTags(Array.from(new Set((allO.data || []).flatMap((o: any) => Array.isArray(o.tags) ? o.tags : []))).filter(Boolean) as string[])
+    setTagDefs((tg.data || []).map((t: any) => ({ id: t.id, name: t.name, color: t.color || hashColor(t.name) })))
+    setLocations((loc.data || []).map((l: any) => ({ id: l.id, name: l.label || l.suburb || 'Outlet' })))
   }, [])
 
   useEffect(() => {
@@ -209,6 +216,16 @@ export default function OrderDetailPage() {
           <div style={card}>
             <p style={kick}>Order Summary</p>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13, alignItems: 'center' }}>
+                <span style={{ color: 'var(--slate)' }}>Outlet</span>
+                {locations.length > 0
+                  ? <select value={order.store_location_id || ''} onChange={e => { const v = e.target.value || null; patchOrder({ store_location_id: v }, { type: 'outlet', detail: v ? `Assigned to ${locations.find(l => l.id === v)?.name || 'outlet'}` : 'Outlet cleared' }) }}
+                      style={{ fontWeight: 600, fontSize: 13, padding: '4px 7px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', cursor: 'pointer', maxWidth: 200 }}>
+                      <option value="">No outlet</option>
+                      {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
+                  : <span style={{ fontWeight: 600 }}>{locations.find(l => l.id === order.store_location_id)?.name || '—'}</span>}
+              </div>
               {([
                 ['Order Date', order.order_date ? new Date(order.order_date).toLocaleString('en-AU') : '—'],
                 ['Payment', order.payment_status || '—'],
@@ -234,15 +251,11 @@ export default function OrderDetailPage() {
               <p style={kick}>Tags</p>
               <div style={{ position: 'relative' }}>
                 <button type="button" onClick={() => setAddingTag(v => !v)} style={{ fontSize: 12.5, fontWeight: 700, color: ACCENT, background: 'none', border: 'none', cursor: 'pointer' }}>{addingTag ? 'Cancel' : '+ Add'}</button>
-                {addingTag && <TagMenu tags={allTags.filter(t => !(order.tags || []).includes(t))} accent={ACCENT} align="right" onClose={() => setAddingTag(false)} onPick={addTag} />}
+                {addingTag && <TagMenu tags={Array.from(new Set([...tagDefs.map(t => t.name), ...allTags])).filter(t => !(order.tags || []).includes(t))} accent={ACCENT} align="right" onClose={() => setAddingTag(false)} onPick={addTag} />}
               </div>
             </div>
             <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {(order.tags || []).map((t: string) => (
-                <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 20, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>
-                  {t}<button type="button" onClick={() => removeTag(t)} style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', padding: 0, fontSize: 14, lineHeight: 1 }}>×</button>
-                </span>
-              ))}
+              {(order.tags || []).map((t: string) => <TagChip key={t} name={t} color={tagColor(t)} onRemove={() => removeTag(t)} />)}
               {(order.tags || []).length === 0 && !addingTag && <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>No tags</span>}
             </div>
           </div>
