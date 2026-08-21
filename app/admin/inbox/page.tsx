@@ -8709,6 +8709,35 @@ export default function InboxPage() {
 
                 {showContactEdit ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {/* Fill blank fields from the linked WooCommerce order's
+                        billing — recovers name / phone / address when the order
+                        matched the contact only by email and left them empty. */}
+                    {(() => {
+                      const b = wooOrders.map((o: any) => o.billing).find((x: any) => x && (x.first_name || x.last_name || x.phone || x.address_1))
+                      if (!b) return null
+                      const billingName = `${b.first_name || ''} ${b.last_name || ''}`.trim()
+                      const billingAddr = [b.address_1, b.address_2].filter(Boolean).join(', ')
+                      const ec: any = editContact
+                      const canFill = (!ec.name && billingName) || (!ec.phone && b.phone) || (!ec.address && billingAddr) || (!ec.company_name && b.company)
+                      if (!canFill) return null
+                      return (
+                        <button type="button" onClick={() => setEditContact((c: any) => ({
+                          ...c,
+                          name: c.name || billingName || c.name,
+                          phone: c.phone || b.phone || c.phone,
+                          address: c.address || billingAddr || c.address,
+                          city: c.city || b.city || c.city,
+                          state: c.state || b.state || c.state,
+                          postcode: c.postcode || b.postcode || c.postcode,
+                          country: c.country || b.country || c.country,
+                          company_name: c.company_name || b.company || c.company_name,
+                        }))}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, border: '1px dashed var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          Fill from order
+                        </button>
+                      )
+                    })()}
                     {[['name', 'Name', 'text'], ['email', 'Email', 'email'], ['phone', 'Phone', 'tel'], ['suburb', 'Suburb', 'text'], ['address', 'Address', 'text'], ['city', 'City', 'text'], ['state', 'State', 'text'], ['postcode', 'Postcode', 'text'], ['country', 'Country', 'text']].map(([field, label, type]) => (
                       <div key={field}>
                         <label style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>{label}</label>
