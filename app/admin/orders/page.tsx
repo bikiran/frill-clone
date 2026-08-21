@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import {
   STATUS_TABS, statusMeta, channelMeta, orderAge, fmtMoney, SAVED_FILTERS,
-  CARRIERS, CARRIER_LABEL,
+  CARRIERS, CARRIER_LABEL, CARRIER_SERVICES,
 } from '@/lib/orders'
 
 type Order = any
@@ -38,6 +38,14 @@ export default function OrdersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
+  const [labelOrder, setLabelOrder] = useState<Order | null>(null)
+
+  // Open the print route (packing slips or labels) for a set of orders in a new tab.
+  const openPrint = useCallback((docType: 'packing_slip' | 'label', ids: string[]) => {
+    if (!ids.length || !companyId) { flash('Select at least one order'); return }
+    window.open(`/admin/orders/print?doc=${docType}&company=${encodeURIComponent(companyId)}&ids=${ids.join(',')}`, '_blank')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId])
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2400) }
 
@@ -272,9 +280,8 @@ export default function OrdersPage() {
       {selCount > 0 ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           <span style={{ fontSize: 12.5, fontWeight: 700, color: ACCENT }}>{selCount} selected</span>
-          <button type="button" onClick={() => flash('Label creation arrives with the shipping-carrier phase.')} style={{ ...ctrl, background: ACCENT, color: '#fff', border: 'none', fontWeight: 700 }}>Create Label</button>
-          <button type="button" onClick={() => flash('Live rates arrive with the carrier phase.')} style={ctrl}>Get Rate</button>
-          <button type="button" onClick={() => window.print()} style={ctrl}>Print</button>
+          <button type="button" onClick={() => openPrint('packing_slip', [...selected])} style={{ ...ctrl, background: ACCENT, color: '#fff', border: 'none', fontWeight: 700 }}>Packing Slips</button>
+          <button type="button" onClick={() => openPrint('label', [...selected])} style={ctrl}>Print Labels</button>
           <select value="" onChange={e => { if (e.target.value) { assign([...selected], e.target.value === 'none' ? null : e.target.value); setSelected(new Set()) } }} style={ctrl}>
             <option value="">Assign…</option>
             <option value="none">Unassign</option>
@@ -370,7 +377,16 @@ export default function OrdersPage() {
         <OrderDrawer key={drawerOrder.id} order={drawerOrder} companyId={companyId!} me={me} team={team} locations={locations} accent={accent} allTags={allTags}
           onClose={() => setDrawerId(null)}
           onPatch={(patch, ev) => patchOrder([drawerOrder.id], patch, ev)}
-          onFlash={flash} teamName={teamName} />
+          onFlash={flash} teamName={teamName}
+          onLabel={(o: Order) => setLabelOrder(o)}
+          onPrintSlip={(id: string) => openPrint('packing_slip', [id])} />
+      )}
+
+      {labelOrder && (
+        <CreateLabelModal order={labelOrder} companyId={companyId!} accent={ACCENT}
+          onClose={() => setLabelOrder(null)}
+          onDone={(patch: any) => { patchOrder([labelOrder.id], patch); setLabelOrder(null) }}
+          onFlash={flash} onPrintLabel={(id: string) => openPrint('label', [id])} />
       )}
     </div>
   )
@@ -410,8 +426,110 @@ function TagMenu({ tags, accent, align = 'left', onPick, onClose }: { tags: stri
   )
 }
 
+// ── Create-label modal — records a shipment, marks shipped, prints label ──────
+function CreateLabelModal({ order, companyId, accent, onClose, onDone, onFlash, onPrintLabel }: any) {
+  const ACCENT = accent || 'var(--coral)'
+  const [carrier, setCarrier] = useState<string>(order.carrier || 'australia_post')
+  const [service, setService] = useState<string>(CARRIER_SERVICES[order.carrier || 'australia_post']?.[0] || '')
+  const [weight, setWeight] = useState<string>('') // kg
+  const [dims, setDims] = useState({ length: '', width: '', height: '' })
+  const [markShipped, setMarkShipped] = useState(true)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => { setService(CARRIER_SERVICES[carrier]?.[0] || '') }, [carrier])
+
+  const submit = async () => {
+    setBusy(true)
+    try {
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token
+      const parcel = (dims.length || dims.width || dims.height)
+        ? { length: Number(dims.length) || undefined, width: Number(dims.width) || undefined, height: Number(dims.height) || undefined }
+        : null
+      const res = await fetch('/api/orders/label', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ companyId, orderId: order.id, carrier, service, weightGrams: weight ? Math.round(Number(weight) * 1000) : null, parcel, markShipped }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j.error) { onFlash(`Label failed: ${j.error || res.status}`); setBusy(false); return }
+      onDone(j.patch || {})
+      onFlash(j.live ? 'Label purchased' : 'Label created')
+      if (onPrintLabel) onPrintLabel(order.id)
+    } catch (e: any) { onFlash(`Label error: ${e?.message || e}`); setBusy(false) }
+  }
+
+  const field: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'var(--card,#fff)', color: 'var(--ink)' }
+  const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 5 }
+  const addr = order.shipping_address || {}
+  const hasAddr = addr.address_1 || addr.city
+  const isLiveCarrier = false // no carrier API wired yet — printable label path
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 4600 }} />
+      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 440, maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto', background: 'var(--card, #fff)', borderRadius: 16, zIndex: 4601, boxShadow: '0 24px 60px rgba(0,0,0,0.28)' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Create Label</h2>
+            <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Order {order.order_number} · {order.customer_name}</p>
+          </div>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--slate)', cursor: 'pointer' }}>✕</button>
+        </div>
+
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {!hasAddr && <div style={{ padding: '9px 12px', borderRadius: 9, background: '#fef3c7', color: '#92400e', fontSize: 12.5 }}>No shipping address on this order — the label will print without a delivery address.</div>}
+
+          <div>
+            <label style={lbl}>Carrier</label>
+            <select value={carrier} onChange={e => setCarrier(e.target.value)} style={field}>
+              {CARRIERS.map(c => <option key={c} value={c}>{CARRIER_LABEL[c] || c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Service</label>
+            <select value={service} onChange={e => setService(e.target.value)} style={field}>
+              {(CARRIER_SERVICES[carrier] || ['Standard']).map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <label style={lbl}>Weight (kg)</label>
+              <input type="number" min="0" step="0.01" value={weight} onChange={e => setWeight(e.target.value)} placeholder="0.50" style={field} />
+            </div>
+            <div style={{ flex: 2 }}>
+              <label style={lbl}>Dimensions (cm)</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {(['length', 'width', 'height'] as const).map(k => (
+                  <input key={k} type="number" min="0" value={(dims as any)[k]} onChange={e => setDims(d => ({ ...d, [k]: e.target.value }))} placeholder={k[0].toUpperCase()} style={{ ...field, padding: '8px 6px', textAlign: 'center' }} />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={markShipped} onChange={e => setMarkShipped(e.target.checked)} />
+            Mark order as Shipped after creating the label
+          </label>
+
+          <div style={{ padding: '9px 12px', borderRadius: 9, background: 'var(--canvas)', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>
+            {carrier === 'team_global_express'
+              ? 'Team Global Express: prints a scannable label now. Live consignment lodging switches on once TGE onboarding is complete and credentials are set.'
+              : 'Generates a scannable printable label and tracking number. Live carrier lodging switches on when that carrier’s account is connected.'}
+          </div>
+        </div>
+
+        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button type="button" onClick={onClose} style={{ padding: '9px 16px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+          <button type="button" onClick={submit} disabled={busy} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: ACCENT, color: '#fff', fontSize: 13, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>{busy ? 'Creating…' : isLiveCarrier ? 'Buy Label' : 'Create & Print'}</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Right-side order drawer ───────────────────────────────────────────────────
-function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, onClose, onPatch, onFlash, teamName }: any) {
+function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, teamName }: any) {
   const ACCENT = accent || 'var(--coral)'
   const [items, setItems] = useState<any[]>([])
   const [notes, setNotes] = useState<any[]>([])
@@ -502,9 +620,9 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, o
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {/* Quick actions */}
           <div style={{ ...sect, display: 'flex', gap: 8 }}>
-            {quick(<svg {...I}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /></svg>, 'Label', () => { const c = prompt(`Carrier (${CARRIERS.join(', ')})`, 'australia_post'); if (!c) return; const tn = prompt('Tracking number') || ''; onPatch({ carrier: c, tracking_number: tn }); order.carrier = c; order.tracking_number = tn; (supabase as any).from('shipments').insert({ order_id: order.id, company_id: companyId, carrier: c, tracking_number: tn, status: 'label_purchased', created_by: me.id }); logEvent('label_created', `Label created · ${CARRIER_LABEL[c] || c}${tn ? ` · ${tn}` : ''}`); onFlash('Label recorded') }, true)}
+            {quick(<svg {...I}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /></svg>, 'Label', () => onLabel(order), true)}
+            {quick(<svg {...I}><path d="M6 9V2h12v7" /><rect x="6" y="14" width="12" height="8" /><path d="M6 18H4a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2" /></svg>, 'Slip', () => onPrintSlip(order.id))}
             {quick(<svg {...I}><path d="M20 6 9 17l-5-5" /></svg>, 'Packed', () => { onPatch({ status: 'packed' }, { type: 'packed', detail: 'Marked packed' }); order.status = 'packed'; logEvent('packed', 'Marked packed') })}
-            {quick(<svg {...I}><path d="M22 2 11 13" /><path d="M22 2 15 22l-4-9-9-4 20-7z" /></svg>, 'Tracking', () => { if (!order.tracking_number) { onFlash('Add a tracking number first (Label).'); return } logEvent('tracking_sent', `Tracking sent to customer`); onFlash('Tracking event logged') })}
             {quick(<svg {...I}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>, 'Note', () => { (document.getElementById('ord-note') as HTMLTextAreaElement)?.focus() })}
             {quick(<svg {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>, 'Contact', () => { if (convHref) location.href = convHref; else onFlash('No linked conversation yet.') })}
           </div>
