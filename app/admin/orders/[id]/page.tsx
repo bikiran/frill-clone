@@ -178,7 +178,9 @@ export default function OrderDetailPage() {
           <button type="button" onClick={() => openPrint('packing_slip')} style={btn}>Packing Slip</button>
           <button type="button" onClick={() => { setPickMode(v => { const n = !v; if (n) { document.getElementById('ord-items-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); flash('Picking — click each item as you pick it') } return n }) }} style={pickMode ? { ...btn, background: ACCENT, color: '#fff', border: 'none' } : btn}>{pickMode ? 'Picking…' : 'Pick'}</button>
           <button type="button" onClick={() => openPrint('label')} style={btn}>Print Label</button>
-          {order.status !== 'packed' && order.status !== 'shipped' && <button type="button" onClick={() => patchOrder({ status: 'packed' }, { type: 'packed', detail: 'Marked packed' })} style={btn}>Mark Packed</button>}
+          {order.status !== 'shipped' && (order.status === 'packed'
+            ? <button type="button" onClick={() => patchOrder({ status: 'awaiting_shipment' }, { type: 'unpacked', detail: 'Marked unpacked' })} style={{ ...btn, background: ACCENT, color: '#fff', border: 'none' }}>✓ Packed — Unpack</button>
+            : <button type="button" onClick={() => patchOrder({ status: 'packed' }, { type: 'packed', detail: 'Marked packed' })} style={btn}>Mark Packed</button>)}
         </div>
       </div>
 

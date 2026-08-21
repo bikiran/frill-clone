@@ -1150,20 +1150,131 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
       const o = data.order || {}, co = data.company || {}
       const { jsPDF } = await import('jspdf')
       const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-      const money = (v: any) => `$${(parseFloat(v || 0)).toFixed(2)}`
-      let y = 20
-      doc.setFontSize(15); doc.setFont('helvetica', 'bold'); doc.text(String(co.name || 'Invoice'), 16, y)
-      doc.setFontSize(10); doc.setFont('helvetica', 'normal')
-      doc.text(`Tax Invoice — Order #${o.number || order.order_number}`, 16, y + 8)
-      doc.text(`Date: ${o.date_created ? new Date(o.date_created).toLocaleDateString('en-AU') : ''}`, 16, y + 13)
-      const b = o.billing || {}
-      y += 26; doc.setFont('helvetica', 'bold'); doc.text('Bill To', 16, y); doc.setFont('helvetica', 'normal')
-      doc.text(`${b.first_name || ''} ${b.last_name || ''}`.trim() || String(order.customer_name || ''), 16, y + 5);
-      [[b.address_1, b.address_2].filter(Boolean).join(', '), [b.city, b.state, b.postcode].filter(Boolean).join(' '), b.country].filter(Boolean).forEach((l: any, i: number) => doc.text(String(l), 16, y + 10 + i * 5))
-      y += 34; doc.setFont('helvetica', 'bold'); doc.text('Item', 16, y); doc.text('Qty', 150, y); doc.text('Total', 194, y, { align: 'right' }); doc.setFont('helvetica', 'normal'); y += 6
-      for (const li of (o.line_items || [])) { doc.text(String(li.name || 'Item').slice(0, 58), 16, y); doc.text(String(li.quantity), 150, y); doc.text(money(li.total), 194, y, { align: 'right' }); y += 6; if (y > 270) { doc.addPage(); y = 20 } }
-      y += 3; doc.line(16, y, 194, y); y += 6; doc.setFont('helvetica', 'bold')
-      doc.text('Total', 150, y); doc.text(`${money(o.total)} ${o.currency || order.currency || ''}`, 194, y, { align: 'right' })
+      const W = 210, L = 16, R = 194
+      const money = (v: any) => `$${(Number(v) || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      const hexToRgb = (hex: string): [number, number, number] => {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim())
+        if (!m) return [15, 23, 42]
+        const n = parseInt(m[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+      }
+      const accent = hexToRgb(co.accent_color || '#0f172a')
+      const ink: [number, number, number] = [15, 23, 42]
+      const slate: [number, number, number] = [100, 116, 139]
+      const line: [number, number, number] = [226, 232, 240]
+      // Try to embed the company logo (best-effort; CORS-tainted images fall back).
+      const loadLogo = (url: string) => new Promise<{ data: string; w: number; h: number } | null>(resolve => {
+        if (!url) return resolve(null)
+        const img = new Image(); img.crossOrigin = 'anonymous'
+        img.onload = () => {
+          try {
+            const cv = document.createElement('canvas'); cv.width = img.naturalWidth; cv.height = img.naturalHeight
+            const ctx = cv.getContext('2d'); if (!ctx) return resolve(null)
+            ctx.drawImage(img, 0, 0)
+            resolve({ data: cv.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight })
+          } catch { resolve(null) }
+        }
+        img.onerror = () => resolve(null)
+        img.src = url
+      })
+      const logo = await loadLogo(co.logo_url)
+
+      // ── Header ──────────────────────────────────────────────────────────────
+      let leftX = L
+      if (logo) {
+        const h = 16, w = Math.min(42, (logo.w / logo.h) * h)
+        try { doc.addImage(logo.data, 'PNG', L, 15, w, h) } catch {}
+        leftX = L + w + 5
+      } else {
+        doc.setFillColor(...accent); doc.roundedRect(L, 15, 16, 16, 2.5, 2.5, 'F')
+        doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(15)
+        doc.text(String(co.name || 'C')[0].toUpperCase(), L + 8, 26, { align: 'center' })
+        leftX = L + 21
+      }
+      doc.setTextColor(...ink); doc.setFont('helvetica', 'bold'); doc.setFontSize(15)
+      doc.text(String(co.name || 'Invoice'), leftX, 21)
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...slate)
+      const coLines = [
+        co.business_address || '',
+        [co.business_phone && `☎ ${co.business_phone}`, co.business_email && `✉ ${co.business_email}`].filter(Boolean).join('   '),
+        co.website || co.business_website || '',
+        co.abn_acn ? `ABN ${co.abn_acn}` : '',
+      ].filter(Boolean)
+      coLines.forEach((l: string, i: number) => doc.text(String(l), leftX, 26 + i * 4))
+
+      doc.setTextColor(...ink); doc.setFont('helvetica', 'bold'); doc.setFontSize(20)
+      doc.text('TAX INVOICE', R, 22, { align: 'right' })
+      doc.setFontSize(9.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...slate)
+      doc.text(`Order #${o.number || order.order_number}`, R, 28, { align: 'right' })
+      doc.text(`Date: ${o.date ? new Date(o.date).toLocaleDateString('en-AU') : new Date().toLocaleDateString('en-AU')}`, R, 32.5, { align: 'right' })
+      if (o.payment_method) doc.text(String(o.payment_method), R, 37, { align: 'right' })
+
+      // Accent divider
+      doc.setDrawColor(...accent); doc.setLineWidth(0.8); doc.line(L, 43, R, 43)
+
+      // ── Bill To / Ship To ───────────────────────────────────────────────────
+      const b = o.billing || {}, s = o.shipping || {}
+      const nameOf = (a: any) => `${a.first_name || ''} ${a.last_name || ''}`.trim() || String(order.customer_name || '')
+      const addrBlock = (a: any) => [nameOf(a), [a.address_1, a.address_2].filter(Boolean).join(', '), [a.city, (a.state || '').toUpperCase(), a.postcode].filter(Boolean).join(' '), a.country, a.email, a.phone].filter(Boolean)
+      let y = 52
+      doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...slate)
+      doc.text('BILL TO', L, y)
+      const hasShip = s && (s.address_1 || s.city)
+      if (hasShip) doc.text('SHIP TO', 110, y)
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(...ink); doc.setFontSize(10)
+      addrBlock(b).forEach((l, i) => doc.text(String(l), L, y + 6 + i * 4.6))
+      if (hasShip) addrBlock(s).forEach((l, i) => doc.text(String(l), 110, y + 6 + i * 4.6))
+      y += 6 + Math.max(addrBlock(b).length, hasShip ? addrBlock(s).length : 0) * 4.6 + 8
+
+      // ── Items table ─────────────────────────────────────────────────────────
+      const cols = { item: L, sku: 108, unit: 150, qty: 168, total: R }
+      doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...slate)
+      doc.text('ITEM', cols.item, y); doc.text('SKU', cols.sku, y)
+      doc.text('UNIT', cols.unit, y, { align: 'right' }); doc.text('QTY', cols.qty, y, { align: 'right' }); doc.text('TOTAL', cols.total, y, { align: 'right' })
+      y += 2; doc.setDrawColor(...ink); doc.setLineWidth(0.5); doc.line(L, y, R, y); y += 6
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(...ink); doc.setFontSize(9.5)
+      for (const li of (o.line_items || [])) {
+        const qty = Number(li.quantity) || 1
+        const lineTotal = Number(li.total) || 0
+        const unit = lineTotal / qty
+        const nameLines = doc.splitTextToSize(String(li.name || 'Item'), cols.sku - cols.item - 4)
+        doc.text(nameLines, cols.item, y)
+        doc.setTextColor(...slate); doc.setFontSize(8.5)
+        doc.text(String(li.sku || '—'), cols.sku, y)
+        doc.setTextColor(...ink); doc.setFontSize(9.5)
+        doc.text(money(unit), cols.unit, y, { align: 'right' })
+        doc.text(String(qty), cols.qty, y, { align: 'right' })
+        doc.setFont('helvetica', 'bold'); doc.text(money(lineTotal), cols.total, y, { align: 'right' }); doc.setFont('helvetica', 'normal')
+        const rows = Math.max(1, nameLines.length)
+        y += rows * 4.6 + 3
+        doc.setDrawColor(...line); doc.setLineWidth(0.2); doc.line(L, y - 1.5, R, y - 1.5)
+        if (y > 250) { doc.addPage(); y = 20 }
+      }
+
+      // ── Totals ──────────────────────────────────────────────────────────────
+      const subtotal = (o.line_items || []).reduce((n: number, li: any) => n + (Number(li.total) || 0), 0)
+      const tax = Number(o.total_tax) || 0
+      const shipping = Number(o.shipping_total) || 0
+      const discount = Number(o.discount_total) || 0
+      y += 4
+      const tX = 140, tV = R
+      const totRow = (label: string, val: string, strong = false) => {
+        doc.setFont('helvetica', strong ? 'bold' : 'normal'); doc.setFontSize(strong ? 11 : 9.5)
+        doc.setTextColor(...(strong ? ink : slate)); doc.text(label, tX, y)
+        doc.setTextColor(...ink); doc.text(val, tV, y, { align: 'right' }); y += strong ? 7 : 5.5
+      }
+      totRow('Subtotal', money(subtotal))
+      if (discount > 0) totRow('Discount', `-${money(discount)}`)
+      totRow('Tax (GST)', money(tax))
+      totRow('Shipping', shipping > 0 ? money(shipping) : 'Free')
+      doc.setDrawColor(...accent); doc.setLineWidth(0.6); doc.line(tX, y - 1, tV, y - 1); y += 4
+      totRow('Grand Total', `${money(o.total)} ${o.currency || order.currency || 'AUD'}`, true)
+
+      // ── Footer ──────────────────────────────────────────────────────────────
+      const footY = 285
+      doc.setDrawColor(...line); doc.setLineWidth(0.3); doc.line(L, footY - 6, R, footY - 6)
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...slate)
+      doc.text(String(co.invoice_footer || 'Thank you for your business.'), L, footY, { maxWidth: R - L })
+
       doc.save(`invoice-${o.number || order.order_number}.pdf`)
     } catch (e: any) { onFlash(`Invoice failed: ${e?.message || e}`) }
     setActBusy('')
@@ -1326,7 +1437,13 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             {quick(<svg {...I}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /></svg>, 'Label', () => onLabel(order), true)}
             {quick(<svg {...I}><path d="M6 9V2h12v7" /><rect x="6" y="14" width="12" height="8" /><path d="M6 18H4a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2" /></svg>, 'Slip', () => onPrintSlip(order.id))}
             {quick(<svg {...I}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3" /><path d="m9 14 2 2 4-4" /></svg>, 'Pick', () => { setPickMode(v => { const n = !v; if (n) { const el = document.getElementById('ord-items-panel'); el?.scrollIntoView({ behavior: 'smooth', block: 'start' }); onFlash('Picking — tap each item as you pick it') } return n }) }, pickMode)}
-            {quick(<svg {...I}><path d="M20 6 9 17l-5-5" /></svg>, 'Packed', () => { onPatch({ status: 'packed' }, { type: 'packed', detail: 'Marked packed' }); order.status = 'packed'; logEvent('packed', 'Marked packed') })}
+            {quick(<svg {...I}><path d="M20 6 9 17l-5-5" /></svg>, order.status === 'packed' ? 'Packed' : 'Pack', () => {
+              const wasPacked = order.status === 'packed'
+              const next = wasPacked ? 'awaiting_shipment' : 'packed'
+              onPatch({ status: next }, { type: wasPacked ? 'unpacked' : 'packed', detail: wasPacked ? 'Marked unpacked' : 'Marked packed' }); order.status = next
+              logEvent(wasPacked ? 'unpacked' : 'packed', wasPacked ? 'Marked unpacked' : 'Marked packed')
+              onFlash(wasPacked ? 'Order unpacked' : 'Order marked packed')
+            }, order.status === 'packed')}
             {quick(<svg {...I}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>, 'Note', () => { (document.getElementById('ord-note') as HTMLTextAreaElement)?.focus() })}
             {quick(<svg {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>, 'Contact', () => { if (convHref) location.href = convHref; else onFlash('No linked conversation yet.') })}
           </div>
