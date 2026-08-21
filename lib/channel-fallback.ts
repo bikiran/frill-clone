@@ -74,9 +74,15 @@ export async function deliverAutomatedMessage(params: {
   subject?: string
   origin: string
   force?: boolean
+  // Which channel to try first when the customer isn't on live chat. Defaults to
+  // SMS (highest read rate). Set 'email' for a conversation that isn't an SMS
+  // thread — e.g. an order/website/email enquiry — so an order confirmation goes
+  // out on the channel the customer is actually known on, not to a billing phone
+  // that was never captured on their contact.
+  preferChannel?: 'sms' | 'email'
   db?: any
 }): Promise<FallbackResult> {
-  const { companyId, conversationId, text, phone, email, senderName, subject, origin, force, db } = params
+  const { companyId, conversationId, text, phone, email, senderName, subject, origin, force, preferChannel, db } = params
 
   const onLiveChat = await isCustomerOnLiveChat(conversationId, db)
 
@@ -84,6 +90,30 @@ export async function deliverAutomatedMessage(params: {
   // message they can already see is enough.
   if (onLiveChat && !force) {
     return { onLiveChat: true, channel: 'live_chat', sent: true }
+  }
+
+  const sendEmail = async (): Promise<FallbackResult | null> => {
+    if (!email) return null
+    try {
+      const res = await fetch(`${origin}/api/email/send`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId, conversationId, to: email,
+          subject: subject || 'Update on your order',
+          text, skipChatMessage: true,
+        }),
+      })
+      if (res.ok) return { onLiveChat, channel: 'email', sent: true }
+    } catch { /* fall through */ }
+    return null
+  }
+
+  // Email-first when the conversation isn't an SMS thread — reach the customer on
+  // the channel we actually know them on.
+  if (preferChannel === 'email') {
+    const viaEmail = await sendEmail()
+    if (viaEmail) return viaEmail
+    // fall through to SMS as a backup
   }
 
   // SMS first: highest chance of being read.
@@ -103,19 +133,8 @@ export async function deliverAutomatedMessage(params: {
     } catch { /* fall through to email */ }
   }
 
-  if (email) {
-    try {
-      const res = await fetch(`${origin}/api/email/send`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId, conversationId, to: email,
-          subject: subject || 'Update on your order',
-          text, skipChatMessage: true,
-        }),
-      })
-      if (res.ok) return { onLiveChat, channel: 'email', sent: true }
-    } catch { /* nothing left to try */ }
-  }
+  const viaEmail = await sendEmail()
+  if (viaEmail) return viaEmail
 
   return {
     onLiveChat,

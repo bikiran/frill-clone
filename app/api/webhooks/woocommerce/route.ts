@@ -169,17 +169,28 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     }).select().maybeSingle()
     contact = created
   } else {
-    // Existing contact (e.g. created via chat/SMS before ordering) — backfill
-    // the address from this order's billing if it's currently missing, so the
-    // "New order" message doesn't leave the contact card blank.
+    // Existing contact (e.g. created via chat/SMS/website before ordering) —
+    // backfill whatever the order's billing can fill that's currently blank:
+    // name, phone AND address. Previously only the address was backfilled, so an
+    // email-only contact kept "Add name / Add phone" empty even though the order
+    // had both. Only fill blanks — never overwrite what the team has set. A name
+    // that's just the email (our own fallback) counts as blank.
     const b = order.billing || {}
+    const billingName = `${b.first_name || ''} ${b.last_name || ''}`.trim()
     const address = [b.address_1, b.address_2].filter(Boolean).join(', ') || null
+    const patch: any = {}
+    if (billingName && (!contact.name || contact.name === contact.email)) patch.name = billingName
+    if (b.phone && !contact.phone) patch.phone = b.phone
     if (address && !contact.address) {
-      await db.from('contacts').update({
-        address, city: b.city || contact.city || null, state: b.state || contact.state || null,
-        postcode: b.postcode || contact.postcode || null, country: b.country || contact.country || null,
-      }).eq('id', contact.id)
-      contact.address = address
+      patch.address = address
+      patch.city = b.city || contact.city || null
+      patch.state = b.state || contact.state || null
+      patch.postcode = b.postcode || contact.postcode || null
+      patch.country = b.country || contact.country || null
+    }
+    if (Object.keys(patch).length) {
+      await db.from('contacts').update(patch).eq('id', contact.id)
+      Object.assign(contact, patch)
     }
   }
 
@@ -371,6 +382,11 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       // phone is blank, so an SMS-only customer still gets reached.
       phone: phone || contact?.phone || null,
       email,
+      // Prefer the channel the customer is actually known on. An order/website
+      // thread (channel 'chat') goes by EMAIL — sending an SMS to a billing phone
+      // we never captured on their contact is what surprised the customer.
+      // Genuine SMS threads (or contacts with no email) still go by SMS.
+      preferChannel: (!email || conv?.channel === 'sms') ? 'sms' : 'email',
       senderName: businessName,
       subject: `Update on your order #${order.number || order.id}`,
       origin,
