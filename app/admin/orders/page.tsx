@@ -37,6 +37,7 @@ export default function OrdersPage() {
   const [pageSize, setPageSize] = useState(25)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [drawerId, setDrawerId] = useState<string | null>(null)
+  const [tagMenuOpen, setTagMenuOpen] = useState(false)
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2400) }
 
@@ -235,7 +236,7 @@ export default function OrdersPage() {
 
   return (
     <div style={{ padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      <style>{`@keyframes ospin{to{transform:rotate(360deg)}} .ord-row:hover{background:var(--canvas)}`}</style>
+      <style>{`@keyframes ospin{to{transform:rotate(360deg)}} .ord-row:hover{background:var(--canvas)} .tag-opt:hover{background:var(--canvas)}`}</style>
 
       {/* Header + KPIs */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
@@ -279,7 +280,13 @@ export default function OrdersPage() {
             <option value="none">Unassign</option>
             {team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-          <button type="button" onClick={() => { const t = prompt('Tag to add to selected orders'); if (t) { addTagTo([...selected], t); setSelected(new Set()) } }} style={ctrl}>Tag</button>
+          <div style={{ position: 'relative' }}>
+            <button type="button" onClick={() => setTagMenuOpen(v => !v)} style={{ ...ctrl, display: 'flex', alignItems: 'center', gap: 5 }}>Tag<span style={{ fontSize: 9, color: 'var(--slate)' }}>▾</span></button>
+            {tagMenuOpen && (
+              <TagMenu tags={allTags} accent={ACCENT} onClose={() => setTagMenuOpen(false)}
+                onPick={t => { addTagTo([...selected], t); setSelected(new Set()); setTagMenuOpen(false) }} />
+            )}
+          </div>
           <select value="" onChange={e => { if (e.target.value) { setStatus([...selected], e.target.value); setSelected(new Set()) } }} style={ctrl}>
             <option value="">Bulk Update…</option>
             <option value="awaiting_shipment">Awaiting Shipment</option>
@@ -360,7 +367,7 @@ export default function OrdersPage() {
       {toast && <div style={{ position: 'fixed', bottom: 22, left: '50%', transform: 'translateX(-50%)', background: 'var(--ink)', color: '#fff', padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 5000, boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>{toast}</div>}
 
       {drawerOrder && (
-        <OrderDrawer key={drawerOrder.id} order={drawerOrder} companyId={companyId!} me={me} team={team} locations={locations} accent={accent}
+        <OrderDrawer key={drawerOrder.id} order={drawerOrder} companyId={companyId!} me={me} team={team} locations={locations} accent={accent} allTags={allTags}
           onClose={() => setDrawerId(null)}
           onPatch={(patch, ev) => patchOrder([drawerOrder.id], patch, ev)}
           onFlash={flash} teamName={teamName} />
@@ -369,8 +376,42 @@ export default function OrdersPage() {
   )
 }
 
+// ── Tag combobox — type to filter existing tags or create one on the fly ──────
+function TagMenu({ tags, accent, align = 'left', onPick, onClose }: { tags: string[]; accent: string; align?: 'left' | 'right'; onPick: (tag: string) => void; onClose: () => void }) {
+  const [q, setQ] = useState('')
+  const query = q.trim()
+  const filtered = tags.filter(t => t.toLowerCase().includes(query.toLowerCase()))
+  const canCreate = !!query && !tags.some(t => t.toLowerCase() === query.toLowerCase())
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
+      <div style={{ position: 'absolute', top: 'calc(100% + 5px)', [align]: 0, zIndex: 4501, width: 224, background: 'var(--card, #fff)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 10px 30px rgba(0,0,0,0.16)', padding: 7 }}>
+        <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && query) { onPick(query); onClose() } else if (e.key === 'Escape') onClose() }}
+          placeholder="Find or create tag…"
+          style={{ width: '100%', padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, outline: 'none', boxSizing: 'border-box' }} />
+        <div style={{ maxHeight: 214, overflowY: 'auto', marginTop: 6, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {filtered.map(t => (
+            <button key={t} type="button" className="tag-opt" onClick={() => { onPick(t); onClose() }}
+              style={{ textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer' }}>
+              <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: accent, marginRight: 8, verticalAlign: 'middle' }} />{t}
+            </button>
+          ))}
+          {canCreate && (
+            <button type="button" className="tag-opt" onClick={() => { onPick(query); onClose() }}
+              style={{ textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 700, color: accent, cursor: 'pointer' }}>
+              + Create “{query}”
+            </button>
+          )}
+          {!filtered.length && !canCreate && <span style={{ padding: '7px 9px', fontSize: 12, color: 'var(--slate)' }}>No tags yet — type to create one</span>}
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Right-side order drawer ───────────────────────────────────────────────────
-function OrderDrawer({ order, companyId, me, team, locations, accent, onClose, onPatch, onFlash, teamName }: any) {
+function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, onClose, onPatch, onFlash, teamName }: any) {
   const ACCENT = accent || 'var(--coral)'
   const [items, setItems] = useState<any[]>([])
   const [notes, setNotes] = useState<any[]>([])
@@ -534,7 +575,13 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, onClose, o
           <div style={sect}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <p style={kick}>Tags</p>
-              <button type="button" onClick={() => setAddingTag(v => !v)} style={{ fontSize: 12, fontWeight: 700, color: ACCENT, background: 'none', border: 'none', cursor: 'pointer' }}>{addingTag ? 'Cancel' : '+ Add'}</button>
+              <div style={{ position: 'relative' }}>
+                <button type="button" onClick={() => setAddingTag(v => !v)} style={{ fontSize: 12, fontWeight: 700, color: ACCENT, background: 'none', border: 'none', cursor: 'pointer' }}>{addingTag ? 'Cancel' : '+ Add'}</button>
+                {addingTag && (
+                  <TagMenu tags={(allTags || []).filter((t: string) => !(order.tags || []).includes(t))} accent={ACCENT} align="right"
+                    onClose={() => setAddingTag(false)} onPick={t => addTag(t)} />
+                )}
+              </div>
             </div>
             <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {(order.tags || []).map((t: string) => (
@@ -544,12 +591,6 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, onClose, o
               ))}
               {(order.tags || []).length === 0 && !addingTag && <span style={{ fontSize: 12, color: 'var(--slate)' }}>No tags</span>}
             </div>
-            {addingTag && (
-              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                <input autoFocus value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTag(tagInput) }} placeholder="New tag…" style={{ flex: 1, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, outline: 'none' }} />
-                <button type="button" onClick={() => addTag(tagInput)} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Add</button>
-              </div>
-            )}
           </div>
 
           {/* Tasks */}
