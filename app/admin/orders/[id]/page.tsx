@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
-import { statusMeta, channelMeta, orderAge, fmtMoney } from '@/lib/orders'
+import { statusMeta, channelMeta, orderAge, fmtMoney, isClickCollect } from '@/lib/orders'
 import { ChannelIcon, CopyBtn, copyToClipboard, TagMenu, CreateLabelModal, TagChip, hashColor, PrintModal } from '../page'
 
 type Order = any
@@ -245,7 +245,7 @@ export default function OrderDetailPage() {
                 ['Payment', order.payment_status || '—'],
                 ['Fulfilment', order.fulfilment_status || '—'],
                 ['Subtotal', order.subtotal != null ? fmtMoney(order.subtotal, order.currency) : '—'],
-                ['Shipping', (Number(order.shipping_total) || 0) > 0 ? `${fmtMoney(order.shipping_total, order.currency)}${order.shipping_method ? ` · ${order.shipping_method}` : ''}` : (order.shipping_method || 'Free')],
+                ['Shipping', isClickCollect(order) ? `🏬 ${order.shipping_method || 'Click & Collect'}` : (Number(order.shipping_total) || 0) > 0 ? `${fmtMoney(order.shipping_total, order.currency)}${order.shipping_method ? ` · ${order.shipping_method}` : ''}` : (order.shipping_method || 'Free')],
                 ['Total', `${fmtMoney(order.total, order.currency)} ${order.currency || ''}`],
               ] as [string, string][]).map(([k, v]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13 }}>

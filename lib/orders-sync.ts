@@ -1,5 +1,17 @@
 import { mapWooStatus, mapWooPayment, wooDateToISO } from '@/lib/orders'
 
+// The shipping method name from a woocommerce_orders row or a raw Woo order.
+function shippingMethodOf(o: any): string | null {
+  const m = o.shipping_method || o.shipping_lines?.[0]?.method_title || null
+  return m ? String(m).replace(/&amp;/g, '&').trim() : null
+}
+// Operational status: a pickup/collect method makes an otherwise-awaiting order
+// Click & Collect (so it lands in that tab and is highlighted).
+function statusOf(o: any): string {
+  const mapped = mapWooStatus(o.status)
+  return mapped === 'awaiting_shipment' && /pickup|collect/i.test(String(shippingMethodOf(o) || '')) ? 'click_and_collect' : mapped
+}
+
 // PostgREST reports an unknown column as "Could not find the 'X' column ... in
 // the schema cache". A schema that predates a newer optional column (e.g.
 // primary_sku) would otherwise fail the whole insert — so strip the offending
@@ -50,7 +62,7 @@ function sourceFields(companyId: string, o: any, contactId: string | null) {
     order_number: o.order_number ? String(o.order_number) : String(o.woo_order_id),
     sales_channel: 'woocommerce',
     payment_status: mapWooPayment(o.status),
-    shipping_method: o.shipping_method || (parseFloat(o.shipping_total || 0) > 0 ? 'Flat Rate' : null),
+    shipping_method: shippingMethodOf(o) || (parseFloat(o.shipping_total || 0) > 0 ? 'Flat Rate' : null),
     primary_sku: items[0]?.sku || null,
     subtotal: subtotal || null,
     shipping_total: parseFloat(o.shipping_total || 0) || null,
@@ -143,7 +155,7 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
   // Bulk-insert the new orders, then map each back to its new id.
   const rows = fresh.map(o => ({
     ...sourceFields(companyId, o, contacts.get((o.customer_email || o.billing?.email || '').toLowerCase()) || null),
-    status: mapWooStatus(o.status),
+    status: statusOf(o),
     fulfilment_status: ['completed'].includes(String(o.status)) ? 'fulfilled' : 'unfulfilled',
     flagged: ['failed', 'on-hold'].includes(String(o.status)),
   }))
@@ -188,7 +200,7 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
   } else {
     const ins = await insertResilient(db, 'orders', [{
       ...src,
-      status: mapWooStatus(o.status),
+      status: statusOf(o),
       fulfilment_status: ['completed'].includes(String(o.status)) ? 'fulfilled' : 'unfulfilled',
       flagged: ['failed', 'on-hold'].includes(String(o.status)),
     }], 'id')

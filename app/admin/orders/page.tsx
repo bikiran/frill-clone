@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import {
   STATUS_TABS, statusMeta, channelMeta, orderAge, fmtMoney, SAVED_FILTERS,
-  CARRIERS, CARRIER_LABEL, CARRIER_SERVICES,
+  CARRIERS, CARRIER_LABEL, CARRIER_SERVICES, isClickCollect,
 } from '@/lib/orders'
 import OrderPrintDoc from '@/components/OrderPrintDoc'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
@@ -512,7 +512,7 @@ export default function OrdersPage() {
                 const age = orderAge(o.order_date)
                 const sel = selected.has(o.id)
                 return (
-                  <tr key={o.id} className="ord-row" onClick={() => openOrder(o.id)} style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: drawerId === o.id ? `color-mix(in srgb, ${ACCENT} 10%, transparent)` : sel ? `color-mix(in srgb, ${ACCENT} 5%, transparent)` : undefined }}>
+                  <tr key={o.id} className="ord-row" onClick={() => openOrder(o.id)} style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: drawerId === o.id ? `color-mix(in srgb, ${ACCENT} 10%, transparent)` : sel ? `color-mix(in srgb, ${ACCENT} 5%, transparent)` : isClickCollect(o) ? `color-mix(in srgb, ${ACCENT} 6%, transparent)` : undefined }}>
                     <td style={td} onClick={e => { e.stopPropagation(); toggleOne(o.id) }}><input type="checkbox" checked={sel} onChange={() => {}} /></td>
                     <td style={{ ...td, color: ACCENT, fontWeight: 700 }}>{o.order_number}</td>
                     <td style={{ ...td, fontWeight: 700, color: age.color }}>{age.label}</td>
@@ -520,7 +520,9 @@ export default function OrdersPage() {
                     <td style={{ ...td, fontWeight: 600 }}>{o.customer_name || '—'}</td>
                     <td style={td}>{o.item_count || 0}</td>
                     <td style={{ ...td, color: 'var(--slate)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.primary_sku || '—'}</td>
-                    <td style={{ ...td, color: 'var(--slate)' }}>{(Number(o.shipping_total) || 0) > 0 ? <span>{o.shipping_method || 'Shipping'} <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{fmtMoney(o.shipping_total, o.currency)}</span></span> : (o.shipping_method || '—')}</td>
+                    <td style={{ ...td, color: 'var(--slate)' }}>{isClickCollect(o)
+                      ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700, color: ACCENT }}><span style={{ fontSize: 13 }}>🏬</span>Click &amp; Collect</span>
+                      : (Number(o.shipping_total) || 0) > 0 ? <span>{o.shipping_method || 'Shipping'} <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{fmtMoney(o.shipping_total, o.currency)}</span></span> : (o.shipping_method || '—')}</td>
                     <td style={td}><span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span></td>
                     <td style={td}><Avatar name={o.assignee_name || teamName(o.assignee_id)} /></td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtMoney(o.total, o.currency)}</td>
@@ -1176,7 +1178,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                 ['Payment', order.payment_status || '—'],
                 ['Fulfilment', order.fulfilment_status || '—'],
                 ['Subtotal', order.subtotal != null ? fmtMoney(order.subtotal, order.currency) : '—'],
-                ['Shipping', (Number(order.shipping_total) || 0) > 0 ? `${fmtMoney(order.shipping_total, order.currency)}${order.shipping_method ? ` · ${order.shipping_method}` : ''}` : (order.shipping_method || 'Free')],
+                ['Shipping', isClickCollect(order) ? `🏬 ${order.shipping_method || 'Click & Collect'}` : (Number(order.shipping_total) || 0) > 0 ? `${fmtMoney(order.shipping_total, order.currency)}${order.shipping_method ? ` · ${order.shipping_method}` : ''}` : (order.shipping_method || 'Free')],
                 ['Total', `${fmtMoney(order.total, order.currency)} ${order.currency || ''}`],
               ] as [string, any][]).map(([k, v]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5 }}>

@@ -117,6 +117,12 @@ export function orderAge(orderDate?: string | null): { label: string; color: str
   return { label, color }
 }
 
+// A Click & Collect / local-pickup order — by status, or by a WooCommerce
+// shipping method whose name says pickup/collect (e.g. "Click & Collect -
+// Somerton Store", "Local pickup").
+export const isClickCollect = (o: any): boolean =>
+  o?.status === 'click_and_collect' || /pickup|collect/i.test(String(o?.shipping_method || ''))
+
 export const fmtMoney = (n: number | null | undefined, currency = 'AUD') =>
   `$${(Number(n) || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
