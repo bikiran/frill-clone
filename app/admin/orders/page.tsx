@@ -91,6 +91,9 @@ export default function OrdersPage() {
   const [defaultOutlet, setDefaultOutlet] = useState<string | null>(null)
   const [savedViews, setSavedViews] = useState<{ id: string; name: string; f: any }[]>([])
   const [activeView, setActiveView] = useState<string | null>(null)
+  // order_id → lowercased "product name + sku" text, so search can match by
+  // product even though the board rows only carry item_count/primary_sku.
+  const [itemIndex, setItemIndex] = useState<Record<string, string>>({})
   const [fAssignee, setFAssignee] = useState('all')
   const [fTag, setFTag] = useState('all')
   const [fDate, setFDate] = useState('all')
@@ -163,6 +166,28 @@ export default function OrdersPage() {
     } catch (e: any) { setToast(`Couldn’t load orders: ${e?.message || e}`); setTimeout(() => setToast(''), 6000) }
   }, [])
 
+  // Build a per-order product search index (name + SKU) so the board search can
+  // match by product, which the order rows themselves don't carry. Loaded in the
+  // background — search works on order#/name/email/phone/address immediately and
+  // gains product matching once this resolves.
+  const loadItemIndex = useCallback(async (cid: string) => {
+    try {
+      const map: Record<string, string> = {}
+      const page = 1000
+      for (let from = 0; ; from += page) {
+        const { data, error } = await (supabase as any).from('order_items')
+          .select('order_id, product_name, sku').eq('company_id', cid).range(from, from + page - 1)
+        if (error || !data?.length) break
+        for (const it of data) {
+          const s = `${it.product_name || ''} ${it.sku || ''}`.toLowerCase()
+          map[it.order_id] = map[it.order_id] ? `${map[it.order_id]} ${s}` : s
+        }
+        if (data.length < page) break
+      }
+      setItemIndex(map)
+    } catch {}
+  }, [])
+
   const runSync = useCallback(async (cid: string) => {
     setSyncing(true)
     try {
@@ -223,6 +248,7 @@ export default function OrdersPage() {
       loadTagDefs(cid)
       await loadOrders(cid)
       setLoading(false)
+      loadItemIndex(cid)
       // Bring the operational table up to date from the storefront in the
       // background (idempotent), then refresh.
       runSync(cid)
@@ -287,7 +313,9 @@ export default function OrdersPage() {
       if (saved === 'Unassigned' && o.assignee_id) return false
       if (saved.startsWith('loc:') && o.store_location_id !== saved.slice(4)) return false
       if (q) {
-        const hay = `${o.order_number || ''} ${o.customer_name || ''} ${o.customer_email || ''} ${(o.tags || []).join(' ')}`.toLowerCase()
+        const a = o.shipping_address || {}
+        const addr = [a.address_1, a.address_2, a.city, a.state, a.postcode, a.country].filter(Boolean).join(' ')
+        const hay = `${o.order_number || ''} ${o.customer_name || ''} ${o.customer_email || ''} ${o.customer_phone || ''} ${addr} ${o.primary_sku || ''} ${(o.tags || []).join(' ')} ${itemIndex[o.id] || ''}`.toLowerCase()
         if (!hay.includes(q)) return false
       }
       return true
@@ -302,7 +330,7 @@ export default function OrdersPage() {
       return 0
     })
     return rows
-  }, [orders, tab, search, fStore, fAssignee, fTag, fDate, saved, sortCol, sortDir, locMatch])
+  }, [orders, tab, search, fStore, fAssignee, fTag, fDate, saved, sortCol, sortDir, locMatch, itemIndex])
 
   useEffect(() => { setPage(0); setSelected(new Set()) }, [tab, search, fStore, fAssignee, fTag, fDate, saved])
   const pageRows = filtered.slice(page * pageSize, page * pageSize + pageSize)
@@ -573,7 +601,7 @@ export default function OrdersPage() {
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search orders…" style={{ ...ctrl, minWidth: 200, paddingRight: search ? 28 : 10, cursor: 'text', fontWeight: 500 }} />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Order #, name, phone, email, address, SKU, product…" style={{ ...ctrl, minWidth: 280, paddingRight: search ? 28 : 10, cursor: 'text', fontWeight: 500 }} />
             {search && <button type="button" onClick={() => setSearch('')} title="Clear search" style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', fontSize: 15, lineHeight: 1, padding: 2 }}>×</button>}
           </div>
           <select value={fAssignee} onChange={e => setFAssignee(e.target.value)} style={ctrl}><option value="all">Any assignee</option><option value="none">Unassigned</option>{team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
