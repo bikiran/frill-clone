@@ -6,6 +6,7 @@ import { attributeOrderToLinks } from '@/lib/link-attribution'
 import { WebhookService } from '@/lib/webhook-service'
 import { notifyCompany } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
+import { upsertWooOrder } from '@/lib/orders-sync'
 
 const DEFAULT_MESSAGES: Record<string, string> = {
   processing: 'Thank you for placing an order with {business}. We have received it. If you have any questions, feel free to reply here.',
@@ -463,11 +464,16 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     }
     const { data: existingOrder } = await db.from('woocommerce_orders')
       .select('id').eq('company_id', companyId).eq('woo_order_id', order.id).maybeSingle()
+    let sourceRowId = existingOrder?.id || null
     if (existingOrder?.id) {
       await db.from('woocommerce_orders').update(orderRow).eq('id', existingOrder.id)
     } else {
-      await db.from('woocommerce_orders').insert(orderRow)
+      const { data: insOrder } = await db.from('woocommerce_orders').insert(orderRow).select('id').maybeSingle()
+      sourceRowId = insOrder?.id || null
     }
+    // Mirror into the operational Orders board so a new/updated order shows up
+    // there immediately (and live, via realtime) — no manual sync needed.
+    try { await upsertWooOrder(db, companyId, { ...orderRow, id: sourceRowId }, contact?.id || null) } catch (e) { console.error('[orders mirror] failed', e) }
   } catch (e) { console.error('[order attribution] failed', e) }
 
   // ── Auto review request on completion ─────────────────────────────────────

@@ -8,12 +8,14 @@ import {
   CARRIERS, CARRIER_LABEL,
 } from '@/lib/orders'
 
-const ACCENT = '#2563eb'
-
 type Order = any
 
 export default function OrdersPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
+  // The company's own brand colour drives the accent (active tab, primary
+  // actions) — not a hard-coded blue. Falls back to Colvy's coral.
+  const [accent, setAccent] = useState<string>('var(--coral)')
+  const ACCENT = accent
   const [me, setMe] = useState<{ id: string | null; name: string }>({ id: null, name: 'You' })
   const [orders, setOrders] = useState<Order[]>([])
   const [locations, setLocations] = useState<{ id: string; name: string }[]>([])
@@ -78,6 +80,7 @@ export default function OrdersPage() {
       const cid = await getMyCompanyId()
       if (!cid) { setLoading(false); return }
       setCompanyId(cid)
+      try { const { data: co } = await (supabase as any).from('companies').select('accent_color').eq('id', cid).maybeSingle(); if (co?.accent_color) setAccent(co.accent_color) } catch {}
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user) setMe({ id: session.user.id, name: session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'You' })
 
@@ -98,6 +101,20 @@ export default function OrdersPage() {
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Live updates — a new or changed order (from the WooCommerce webhook) shows
+  // up here instantly, the same way new chats do. No polling.
+  useEffect(() => {
+    if (!companyId) return
+    const ch = (supabase as any).channel(`orders-${companyId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `company_id=eq.${companyId}` }, (p: any) => {
+        if (p.eventType === 'DELETE') { setOrders(os => os.filter(o => o.id !== p.old?.id)); return }
+        const row = p.new; if (!row) return
+        setOrders(os => { const i = os.findIndex(o => o.id === row.id); if (i >= 0) { const nx = os.slice(); nx[i] = { ...nx[i], ...row }; return nx } return [row, ...os] })
+      })
+      .subscribe()
+    return () => { try { (supabase as any).removeChannel(ch) } catch {} }
+  }, [companyId])
 
   // ── Counts for the tabs ────────────────────────────────────────────────────
   const counts = useMemo(() => {
@@ -234,7 +251,7 @@ export default function OrdersPage() {
             <button key={t.key} type="button" onClick={() => setTab(t.key)}
               style={{ padding: '8px 2px', background: 'none', border: 'none', borderBottom: `2px solid ${active ? ACCENT : 'transparent'}`, color: active ? ACCENT : 'var(--slate)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 7 }}>
               {t.label}
-              <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 20, background: active ? '#e0edff' : 'var(--canvas)', color: active ? ACCENT : 'var(--slate)' }}>{n}</span>
+              <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 20, background: active ? `color-mix(in srgb, ${ACCENT} 15%, transparent)` : 'var(--canvas)', color: active ? ACCENT : 'var(--slate)' }}>{n}</span>
             </button>
           )
         })}
@@ -299,7 +316,7 @@ export default function OrdersPage() {
                 const age = orderAge(o.order_date)
                 const sel = selected.has(o.id)
                 return (
-                  <tr key={o.id} className="ord-row" onClick={() => setDrawerId(o.id)} style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: drawerId === o.id ? '#eff5ff' : sel ? '#f7faff' : undefined }}>
+                  <tr key={o.id} className="ord-row" onClick={() => setDrawerId(o.id)} style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: drawerId === o.id ? `color-mix(in srgb, ${ACCENT} 10%, transparent)` : sel ? `color-mix(in srgb, ${ACCENT} 5%, transparent)` : undefined }}>
                     <td style={td} onClick={e => { e.stopPropagation(); toggleOne(o.id) }}><input type="checkbox" checked={sel} onChange={() => {}} /></td>
                     <td style={{ ...td, color: ACCENT, fontWeight: 700 }}>{o.order_number}</td>
                     <td style={{ ...td, fontWeight: 700, color: age.color }}>{age.label}</td>
@@ -333,7 +350,7 @@ export default function OrdersPage() {
       {toast && <div style={{ position: 'fixed', bottom: 22, left: '50%', transform: 'translateX(-50%)', background: 'var(--ink)', color: '#fff', padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 5000, boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>{toast}</div>}
 
       {drawerOrder && (
-        <OrderDrawer key={drawerOrder.id} order={drawerOrder} companyId={companyId!} me={me} team={team} locations={locations}
+        <OrderDrawer key={drawerOrder.id} order={drawerOrder} companyId={companyId!} me={me} team={team} locations={locations} accent={accent}
           onClose={() => setDrawerId(null)}
           onPatch={(patch, ev) => patchOrder([drawerOrder.id], patch, ev)}
           onFlash={flash} teamName={teamName} />
@@ -343,7 +360,8 @@ export default function OrdersPage() {
 }
 
 // ── Right-side order drawer ───────────────────────────────────────────────────
-function OrderDrawer({ order, companyId, me, team, locations, onClose, onPatch, onFlash, teamName }: any) {
+function OrderDrawer({ order, companyId, me, team, locations, accent, onClose, onPatch, onFlash, teamName }: any) {
+  const ACCENT = accent || 'var(--coral)'
   const [items, setItems] = useState<any[]>([])
   const [notes, setNotes] = useState<any[]>([])
   const [events, setEvents] = useState<any[]>([])
