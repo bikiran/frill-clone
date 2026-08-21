@@ -84,6 +84,8 @@ export default function OrdersPage() {
   const [search, setSearch] = useState('')
   const [fStore, setFStore] = useState('all')
   const [defaultOutlet, setDefaultOutlet] = useState<string | null>(null)
+  const [savedViews, setSavedViews] = useState<{ id: string; name: string; f: any }[]>([])
+  const [activeView, setActiveView] = useState<string | null>(null)
   const [fAssignee, setFAssignee] = useState('all')
   const [fTag, setFTag] = useState('all')
   const [fDate, setFDate] = useState('all')
@@ -187,6 +189,8 @@ export default function OrdersPage() {
           const j = await r.json()
           const dv = j?.prefs?.default_outlet
           if (dv?.id && (locs || []).some((l: any) => l.id === dv.id)) { setDefaultOutlet(dv.id); setFStore(dv.id) }
+          const vs = j?.prefs?.order_views?.views
+          if (Array.isArray(vs)) setSavedViews(vs)
         } catch {}
       }
 
@@ -312,6 +316,26 @@ export default function OrdersPage() {
     setDefaultOutlet(id); setFStore(id || 'all')
     if (companyId && me.id) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
   }
+  // Saved views — a named combination of filters (like ShipStation).
+  const persistViews = (views: { id: string; name: string; f: any }[]) => {
+    setSavedViews(views)
+    if (companyId && me.id) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'order_views', value: { views } }) }).catch(() => {})
+  }
+  const saveView = () => {
+    const name = (window.prompt('Name this view (e.g. Somerton — Backorder)') || '').trim()
+    if (!name) return
+    const f = { tab, fStore, fAssignee, fTag, fDate, saved, sortCol, sortDir }
+    const existing = savedViews.find(v => v.name.toLowerCase() === name.toLowerCase())
+    const v = { id: existing?.id || `v${Date.now()}`, name, f }
+    persistViews([...savedViews.filter(x => x.id !== v.id), v]); setActiveView(v.id); flash(`View “${name}” saved`)
+  }
+  const applyView = (v: { id: string; f: any }) => {
+    const f = v.f || {}
+    setTab(f.tab || 'all'); setFStore(f.fStore || 'all'); setFAssignee(f.fAssignee || 'all'); setFTag(f.fTag || 'all'); setFDate(f.fDate || 'all'); setSaved(f.saved || '')
+    if (f.sortCol) setSortCol(f.sortCol); if (f.sortDir) setSortDir(f.sortDir)
+    setActiveView(v.id)
+  }
+  const deleteView = (id: string) => { persistViews(savedViews.filter(v => v.id !== id)); if (activeView === id) setActiveView(null) }
   const assignOutlet = (ids: string[], locId: string | null) => patchOrder(ids, { store_location_id: locId }, { type: 'outlet', detail: locId ? `Assigned to ${outletName(locId)}` : 'Outlet cleared' })
   // Apply or remove a tag across a set of orders (bulk Tag dropdown).
   const applyTagToSelected = async (ids: string[], tag: string, on: boolean) => {
@@ -423,6 +447,22 @@ export default function OrdersPage() {
             </button>
           )
         })}
+      </div>
+
+      {/* Saved views — a named combination of filters (ShipStation-style) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', marginRight: 2 }}>Views</span>
+        {savedViews.length === 0 && <span style={{ fontSize: 12, color: 'var(--slate)' }}>No saved views yet</span>}
+        {savedViews.map(v => {
+          const on = activeView === v.id
+          return (
+            <span key={v.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '4px 6px 4px 12px', borderRadius: 20, border: `1px solid ${on ? ACCENT : 'var(--border)'}`, background: on ? `color-mix(in srgb, ${ACCENT} 12%, transparent)` : 'var(--card,#fff)' }}>
+              <button type="button" onClick={() => applyView(v)} style={{ background: 'none', border: 'none', padding: 0, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', color: on ? ACCENT : 'var(--slate)' }}>{v.name}</button>
+              <button type="button" title="Delete view" onClick={() => { if (window.confirm(`Delete view “${v.name}”?`)) deleteView(v.id) }} style={{ background: 'none', border: 'none', padding: '0 2px', cursor: 'pointer', color: 'var(--slate)', fontSize: 13, lineHeight: 1 }}>×</button>
+            </span>
+          )
+        })}
+        <button type="button" onClick={saveView} title="Save the current filters as a view" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 12px', borderRadius: 20, border: `1px dashed ${ACCENT}`, background: 'var(--card,#fff)', color: ACCENT, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>＋ Save view</button>
       </div>
 
       {/* Bulk toolbar OR filter row */}
