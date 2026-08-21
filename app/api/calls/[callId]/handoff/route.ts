@@ -42,8 +42,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
     if (!targetDeviceId) return NextResponse.json({ error: 'targetDeviceId is required' }, { status: 400 })
 
     // ── Load & validate the call ──────────────────────────────────────────────
-    const { data: call } = await db.from('calls').select('*').eq('id', callId).maybeSingle()
+    // The path segment is normally our calls-row id, but an inbound call surfaces
+    // in the browser with only its Twilio CallSid — so fall back to resolving the
+    // row by parent/child SID (mirrors call-transfer). Everything below keys off
+    // the resolved row's id.
+    let { data: call } = await db.from('calls').select('*').eq('id', callId).maybeSingle()
+    if (!call) {
+      const { data: bySid } = await db.from('calls').select('*')
+        .or(`twilio_call_sid.eq.${callId},twilio_child_call_sid.eq.${callId}`)
+        .order('created_at', { ascending: false }).limit(1)
+      call = bySid?.[0] || null
+    }
     if (!call) return NextResponse.json({ error: 'Call not found' }, { status: 404 })
+    const rowId = call.id
     if (call.provider && call.provider !== 'twilio') return NextResponse.json({ error: 'Device handoff is available on Twilio calls only' }, { status: 400 })
     if (call.ended_at || ['completed', 'failed', 'no-answer', 'busy', 'canceled'].includes(String(call.status || ''))) {
       return NextResponse.json({ error: 'This call has already ended' }, { status: 409 })
@@ -92,15 +103,52 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
       // The agent leg currently carrying the call — removed once the new one is
       // confirmed. Record it now so a later confirm knows which leg to drop.
       active_agent_call_sid: conf.agentLeg || call.active_agent_call_sid || call.twilio_child_call_sid || null,
-    }).eq('id', callId)
+    }).eq('id', rowId)
 
-    // (Inc 3) A backgrounded mobile target also gets a push so the user can
-    // reopen Colvy and accept — best-effort, added with the mobile client.
+    // A backgrounded mobile target also gets a push so the user can reopen Colvy
+    // and accept. Best-effort — the realtime banner is the primary path, this
+    // just wakes a phone whose app isn't foreground. Never blocks the handoff.
+    if (target.platform === 'ios' || target.platform === 'android') {
+      try { await pushTakeover(db, companyId, userId, call) } catch { /* push is best-effort */ }
+    }
 
     return NextResponse.json({ ok: true, status: 'requested', conferenceName: conf.confName, expiresAt })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
+}
+
+// Nudge the target user's phone(s) to continue the call there. Reuses the Expo
+// push_tokens registry (per user+company) — only phones register there, so this
+// naturally reaches the mobile devices and skips web sessions. Foregrounding the
+// app is enough: the mobile CallProvider's realtime subscription then raises the
+// "Continue call on this phone" banner for the requested handoff.
+async function pushTakeover(db: any, companyId: string, userId: string, call: any) {
+  const { data: tokens } = await db.from('push_tokens')
+    .select('expo_token').eq('company_id', companyId).eq('user_id', userId)
+  const seen = new Set<string>()
+  const to: string[] = (tokens || [])
+    .map((t: any) => t.expo_token)
+    .filter((x: string) => x && !seen.has(x) && (seen.add(x), true))
+  if (!to.length) return
+
+  const who = call.contact_name || call.caller_name ||
+    (call.direction === 'inbound' ? call.from_number : call.to_number) || 'a customer'
+  const messages = to.map((token: string) => ({
+    to: token,
+    sound: 'default',
+    title: 'Continue call on this phone',
+    body: `Tap to take over your call with ${who}.`,
+    data: { type: 'call', kind: 'call_handoff', route: '/(tabs)/inbox', callId: call.id, companyId },
+    priority: 'high',
+    channelId: 'calls',
+  }))
+
+  await fetch('https://exp.host/--/api/v2/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(messages),
+  })
 }
 
 // Is this user a member (or owner) of the company?

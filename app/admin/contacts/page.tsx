@@ -553,6 +553,26 @@ export default function ContactsPage() {
                     <input type={type} value={(editData as any)[field] || ''} onChange={e => setEditData(d => ({ ...d, [field]: e.target.value }))} style={inp} />
                   </div>
                 ))}
+                <div>
+                  <label style={labelStyle}>Relationship</label>
+                  <select
+                    value={(editData as any).relationship_type || 'customer'}
+                    onChange={e => {
+                      const rt = e.target.value
+                      // A non-customer (supplier/wholesaler/business) is excluded
+                      // from marketing by default — mirror the detail panel.
+                      setEditData(d => ({ ...d, relationship_type: rt, ...(rt === 'customer' ? {} : { subscribed_to_marketing: false }) }))
+                    }}
+                    style={{ ...inp, cursor: 'pointer' }}>
+                    <option value="customer">Customer</option>
+                    <option value="supplier">Supplier</option>
+                    <option value="wholesaler">Wholesaler</option>
+                    <option value="business">Business contact</option>
+                  </select>
+                  {(editData as any).relationship_type && (editData as any).relationship_type !== 'customer' && (
+                    <p style={{ margin: '5px 0 0', fontSize: 11, color: 'var(--slate)' }}>Excluded from marketing by default.</p>
+                  )}
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input type="checkbox" id="mkt" checked={!!(editData as any).subscribed_to_marketing} onChange={e => setEditData(d => ({ ...d, subscribed_to_marketing: e.target.checked }))} />
                   <label htmlFor="mkt" style={{ fontSize: 13 }}>Subscribed to marketing</label>
