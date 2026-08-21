@@ -59,10 +59,16 @@ export default function OrdersPage() {
   }
 
   const loadOrders = useCallback(async (cid: string) => {
-    const { data, error } = await (supabase as any).from('orders').select('*')
-      .eq('company_id', cid).order('order_date', { ascending: false }).limit(2000)
-    if (error) { setToast(`Couldn’t load orders: ${error.message}`); setTimeout(() => setToast(''), 6000) }
-    setOrders(data || [])
+    // Read through the service-role API so the board shows rows regardless of RLS
+    // state (a mis-applied policy can hide rows from the anon client with no error).
+    try {
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token
+      const res = await fetch(`/api/orders?companyId=${encodeURIComponent(cid)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.error) { setToast(`Couldn’t load orders: ${d.error || res.status}`); setTimeout(() => setToast(''), 6000) }
+      setOrders(Array.isArray(d.orders) ? d.orders : [])
+    } catch (e: any) { setToast(`Couldn’t load orders: ${e?.message || e}`); setTimeout(() => setToast(''), 6000) }
   }, [])
 
   const runSync = useCallback(async (cid: string) => {
