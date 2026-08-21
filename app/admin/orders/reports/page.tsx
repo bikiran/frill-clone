@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
-import { statusMeta, channelMeta, fmtMoney, CARRIER_LABEL } from '@/lib/orders'
+import { fmtMoney } from '@/lib/orders'
 
 type Order = any
 type Report = 'fulfillment' | 'shipping' | 'sales'
@@ -18,8 +18,7 @@ const RANGES: { key: string; label: string; days: number | null }[] = [
 export default function OrdersReportsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [accent, setAccent] = useState('var(--coral)')
-  const [orders, setOrders] = useState<Order[]>([])
-  const [shipments, setShipments] = useState<any[]>([])
+  const [summary, setSummary] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [report, setReport] = useState<Report>('fulfillment')
   const [range, setRange] = useState('30d')
@@ -32,41 +31,19 @@ export default function OrdersReportsPage() {
     return null
   }
 
-  // Load only the orders inside the selected range — the report only charts that
-  // window, so a 30-day view never pulls the whole 50k-order book. Paginated
-  // (PostgREST caps a response at ~1000 rows); the first page renders instantly.
+  // The aggregates are computed SERVER-SIDE — the page fetches a compact summary
+  // (a few KB) instead of every order row, so it's instant regardless of how many
+  // orders the window contains. A stale summary stays on screen while the new
+  // range loads, so switching ranges never blanks the report.
   const load = useCallback(async (cid: string, rangeKey: string) => {
-    const days = RANGES.find(r => r.key === rangeKey)?.days ?? null
-    const sinceISO = days != null ? new Date(Date.now() - days * 864e5).toISOString() : null
-    // Read orders directly via PostgREST (warm + index-served), scoped to the
-    // charted window — no serverless cold start, no per-request auth round trip.
-    const PAGE = 1000
-    const pageQ = (offset: number) => {
-      let q = (supabase as any).from('orders').select('*').eq('company_id', cid)
-      if (sinceISO) q = q.gte('order_date', sinceISO)
-      return q.order('order_date', { ascending: false }).range(offset, offset + PAGE - 1)
-    }
     try {
-      let acc: any[] = []
-      for (let offset = 0; offset < 200000; offset += PAGE) {
-        const { data, error } = await pageQ(offset)
-        if (error) break
-        const rows = data || []
-        acc = offset === 0 ? rows : acc.concat(rows)
-        setOrders(acc.slice())
-        setLoading(false) // first page in — show the report, rest streams behind
-        if (rows.length < PAGE) break
-      }
-    } catch { setOrders([]) }
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token
+      const res = await fetch(`/api/orders/reports?companyId=${encodeURIComponent(cid)}&range=${encodeURIComponent(rangeKey)}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined })
+      const j = await res.json().catch(() => ({}))
+      if (res.ok && !j.error) setSummary(j)
+    } catch {}
     setLoading(false)
-    // Shipments for the same window, in the background (never blocks the report).
-    ;(async () => {
-      try {
-        let sq = (supabase as any).from('order_shipments').select('*').eq('company_id', cid)
-        if (sinceISO) sq = sq.gte('created_at', sinceISO)
-        const { data: sh } = await sq.limit(5000); setShipments(sh || [])
-      } catch { setShipments([]) }
-    })()
   }, [])
 
   useEffect(() => {
@@ -81,7 +58,7 @@ export default function OrdersReportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Refetch when the range changes (each window is small and bounded → fast).
+  // Refetch when the range changes (server returns a tiny summary → fast).
   const firstRangeRef = useRef(true)
   useEffect(() => {
     if (firstRangeRef.current) { firstRangeRef.current = false; return }
@@ -90,16 +67,28 @@ export default function OrdersReportsPage() {
   }, [range])
 
   const days = RANGES.find(r => r.key === range)?.days ?? null
-  const since = days != null ? Date.now() - days * 864e5 : 0
-  const inRange = useMemo(() => orders.filter(o => !since || (o.order_date && new Date(o.order_date).getTime() >= since)), [orders, since])
-  const rangeIds = useMemo(() => new Set(inRange.map(o => o.id)), [inRange])
-  const shipsInRange = useMemo(() => shipments.filter(s => rangeIds.has(s.order_id) || (s.created_at && (!since || new Date(s.created_at).getTime() >= since))), [shipments, rangeIds, since])
+  const fulfil = summary?.fulfil || { total: 0, shipped: 0, cancelled: 0, awaiting: 0, onHold: 0, rate: 0, avgHrs: 0, buckets: { fresh: 0, mod: 0, late: 0 }, byStatus: [] }
+  const shippingR = summary?.shipping || { labels: 0, cost: 0, avg: 0, charged: 0, margin: 0, detail: [], carriers: [], services: [], track: [] }
+  const sales = summary?.sales || { revenue: 0, orderN: 0, aov: 0, units: 0, channels: [], topSku: [] }
 
   const ACCENT = accent
 
-  const exportCsv = () => {
+  // CSV pulls the raw rows for the window on demand (only when exporting), so the
+  // report itself never loads them.
+  const exportCsv = async () => {
+    if (!companyId) return
+    const sinceISO = days != null ? new Date(Date.now() - days * 864e5).toISOString() : null
+    const acc: any[] = []
+    for (let offset = 0; offset < 500000; offset += 1000) {
+      let q = (supabase as any).from('orders').select('order_number, order_date, customer_name, status, sales_channel, item_count, total, carrier, tracking_number').eq('company_id', companyId)
+      if (sinceISO) q = q.gte('order_date', sinceISO)
+      const { data, error } = await q.order('order_date', { ascending: false }).range(offset, offset + 999)
+      if (error || !data?.length) break
+      acc.push(...data)
+      if (data.length < 1000) break
+    }
     const rows = [['Order', 'Date', 'Customer', 'Status', 'Channel', 'Items', 'Total', 'Carrier', 'Tracking']]
-    for (const o of inRange) rows.push([o.order_number, o.order_date || '', o.customer_name || '', o.status || '', o.sales_channel || '', String(o.item_count || 0), String(o.total || 0), o.carrier || '', o.tracking_number || ''])
+    for (const o of acc) rows.push([o.order_number, o.order_date || '', o.customer_name || '', o.status || '', o.sales_channel || '', String(o.item_count || 0), String(o.total || 0), o.carrier || '', o.tracking_number || ''])
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
     const a = document.createElement('a'); a.href = url; a.download = `orders-${report}-${range}.csv`; a.click(); URL.revokeObjectURL(url)
@@ -151,74 +140,8 @@ export default function OrdersReportsPage() {
     )
   }
 
-  // ── Computations ────────────────────────────────────────────────────────────
-  const dailySeries = (valueOf: (o: Order) => number) => {
-    const n = days || 30
-    const out: { day: string; value: number }[] = []
-    const today = new Date(); today.setHours(0, 0, 0, 0)
-    const byDay: Record<string, number> = {}
-    for (const o of inRange) { if (!o.order_date) continue; const d = new Date(o.order_date); d.setHours(0, 0, 0, 0); const k = d.toISOString().slice(0, 10); byDay[k] = (byDay[k] || 0) + valueOf(o) }
-    for (let i = n - 1; i >= 0; i--) { const d = new Date(today.getTime() - i * 864e5); const k = d.toISOString().slice(0, 10); out.push({ day: d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' }), value: byDay[k] || 0 }) }
-    return out
-  }
-
-  const fulfil = useMemo(() => {
-    const total = inRange.length
-    const shipped = inRange.filter(o => o.status === 'shipped').length
-    const cancelled = inRange.filter(o => o.status === 'cancelled').length
-    const awaiting = inRange.filter(o => o.status === 'awaiting_shipment').length
-    const onHold = inRange.filter(o => o.status === 'on_hold').length
-    const rate = total - cancelled > 0 ? Math.round((shipped / (total - cancelled)) * 100) : 0
-    const shipTimes = inRange.filter(o => o.status === 'shipped' && o.shipped_at && o.order_date).map(o => new Date(o.shipped_at).getTime() - new Date(o.order_date).getTime()).filter(ms => ms > 0)
-    const avgHrs = shipTimes.length ? shipTimes.reduce((a, b) => a + b, 0) / shipTimes.length / 3600e3 : 0
-    const now = Date.now()
-    const unshipped = inRange.filter(o => !['shipped', 'cancelled'].includes(o.status))
-    const buckets = { fresh: 0, mod: 0, late: 0 }
-    for (const o of unshipped) { if (!o.order_date) continue; const h = (now - new Date(o.order_date).getTime()) / 3600e3; if (h < 12) buckets.fresh++; else if (h < 48) buckets.mod++; else buckets.late++ }
-    const statuses = ['awaiting_shipment', 'packed', 'on_hold', 'click_and_collect', 'shipped', 'cancelled']
-    const byStatus = statuses.map(s => ({ label: statusMeta(s).label, value: inRange.filter(o => o.status === s).length, color: statusMeta(s).fg })).filter(r => r.value > 0)
-    return { total, shipped, cancelled, awaiting, onHold, rate, avgHrs, buckets, byStatus }
-  }, [inRange, days])
-
-  const shippingR = useMemo(() => {
-    const labels = shipsInRange.length
-    const cost = shipsInRange.reduce((a, s) => a + (Number(s.cost) || 0), 0)
-    const avg = labels ? cost / labels : 0
-    // Charged = shipping the customer paid (order.shipping_total). Incurred = the
-    // real carrier cost per shipment (order_shipments.cost). Margin = charged − incurred.
-    const charged = inRange.reduce((a, o) => a + (Number(o.shipping_total) || 0), 0)
-    const margin = charged - cost
-    const orderById = new Map(inRange.map(o => [o.id, o]))
-    const detail = shipsInRange.map((s: any) => {
-      const o: any = orderById.get(s.order_id)
-      return { id: s.id, order: o?.order_number || '—', customer: o?.customer_name || '—', carrier: CARRIER_LABEL[s.carrier] || s.carrier || '—', tracking: s.tracking_number || '—', charged: Number(o?.shipping_total) || 0, incurred: Number(s.cost) || 0 }
-    }).sort((a, b) => b.charged - a.charged)
-    const byCarrier: Record<string, { n: number; cost: number }> = {}
-    for (const s of shipsInRange) { const k = s.carrier || 'custom'; (byCarrier[k] ||= { n: 0, cost: 0 }); byCarrier[k].n++; byCarrier[k].cost += Number(s.cost) || 0 }
-    const carriers = Object.entries(byCarrier).map(([k, v]) => ({ label: CARRIER_LABEL[k] || k, value: v.n, sub: String(v.n) })).sort((a, b) => b.value - a.value)
-    const byService: Record<string, number> = {}
-    for (const s of shipsInRange) { const k = s.service || 'Unspecified'; byService[k] = (byService[k] || 0) + 1 }
-    const services = Object.entries(byService).map(([k, v]) => ({ label: k, value: v })).sort((a, b) => b.value - a.value).slice(0, 8)
-    const byTrack: Record<string, number> = {}
-    for (const s of shipsInRange) { const k = s.status || 'created'; byTrack[k] = (byTrack[k] || 0) + 1 }
-    const track = Object.entries(byTrack).map(([k, v]) => ({ label: k.replace(/_/g, ' '), value: v }))
-    return { labels, cost, avg, charged, margin, detail, carriers, services, track }
-  }, [shipsInRange, inRange])
-
-  const sales = useMemo(() => {
-    const nonCancelled = inRange.filter(o => o.status !== 'cancelled')
-    const revenue = nonCancelled.reduce((a, o) => a + (Number(o.total) || 0), 0)
-    const orderN = nonCancelled.length
-    const aov = orderN ? revenue / orderN : 0
-    const units = nonCancelled.reduce((a, o) => a + (Number(o.item_count) || 0), 0)
-    const byChannel: Record<string, { n: number; rev: number }> = {}
-    for (const o of nonCancelled) { const k = o.sales_channel || 'other'; (byChannel[k] ||= { n: 0, rev: 0 }); byChannel[k].n++; byChannel[k].rev += Number(o.total) || 0 }
-    const channels = Object.entries(byChannel).map(([k, v]) => ({ label: `${channelMeta(k).icon} ${channelMeta(k).label}`, value: v.rev, sub: fmtMoney(v.rev) })).sort((a, b) => b.value - a.value)
-    const bySku: Record<string, number> = {}
-    for (const o of nonCancelled) { const k = o.primary_sku; if (!k) continue; bySku[k] = (bySku[k] || 0) + 1 }
-    const topSku = Object.entries(bySku).map(([k, v]) => ({ label: k, value: v, sub: `${v} orders` })).sort((a, b) => b.value - a.value).slice(0, 8)
-    return { revenue, orderN, aov, units, channels, topSku }
-  }, [inRange])
+  const dailyOrders = summary?.dailyOrders || []
+  const dailyRevenue = summary?.dailyRevenue || []
 
   if (loading) return <div style={{ padding: 24, color: 'var(--slate)' }}>Loading reports…</div>
 
@@ -271,7 +194,7 @@ export default function OrdersReportsPage() {
           </div>
           <div style={{ ...card, padding: 18 }}>
             <p style={kick}>Orders per Day</p>
-            <DailyChart series={dailySeries(() => 1)} />
+            <DailyChart series={dailyOrders} />
           </div>
         </div>
       )}
@@ -342,7 +265,7 @@ export default function OrdersReportsPage() {
           </div>
           <div style={{ ...card, padding: 18 }}>
             <p style={kick}>Revenue per Day</p>
-            <DailyChart series={dailySeries(o => o.status === 'cancelled' ? 0 : (Number(o.total) || 0))} color="#16a34a" money />
+            <DailyChart series={dailyRevenue} color="#16a34a" money />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
             <div style={{ ...card, padding: 18 }}>
