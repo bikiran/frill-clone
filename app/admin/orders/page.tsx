@@ -167,34 +167,28 @@ export default function OrdersPage() {
   }
 
   const loadOrders = useCallback(async (cid: string) => {
-    // Read through the service-role API so the board shows rows regardless of RLS
-    // state (a mis-applied policy can hide rows from the anon client with no error).
-    // The FIRST page (the most recent 1000 orders) paints and drops the spinner
-    // immediately; the rest of a large book streams in behind it in the
-    // background, so the board is interactive in one round trip regardless of
-    // store size.
+    // Read the orders table DIRECTLY via PostgREST (always warm, index-served on
+    // (company_id, order_date)) instead of the serverless /api/orders — that
+    // route cold-starts and re-validates the auth token on every request, which
+    // is the bulk of the load time. The orders table's RLS is permissive, so the
+    // anon client reads it fine. The FIRST page paints and drops the spinner
+    // immediately; the rest streams in behind it.
     const PAGE = 1000
+    const pageQ = (offset: number) => (supabase as any).from('orders').select('*')
+      .eq('company_id', cid).order('order_date', { ascending: false }).range(offset, offset + PAGE - 1)
     try {
-      const { data } = await supabase.auth.getSession()
-      const token = data?.session?.access_token
-      const headers = token ? { Authorization: `Bearer ${token}` } : undefined
-      const fetchPage = async (offset: number) => {
-        const res = await fetch(`/api/orders?companyId=${encodeURIComponent(cid)}&offset=${offset}&limit=${PAGE}`, { headers })
-        const d = await res.json().catch(() => ({}))
-        return { ok: res.ok && !d.error, err: d.error || res.status, rows: Array.isArray(d.orders) ? d.orders : [], hasMore: !!d.hasMore }
-      }
-      const first = await fetchPage(0)
-      if (!first.ok) { setToast(`Couldn’t load orders: ${first.err}`); setTimeout(() => setToast(''), 6000); setLoading(false); return }
-      let acc = first.rows
+      const first = await pageQ(0)
+      if (first.error) { setToast(`Couldn’t load orders: ${first.error.message}`); setTimeout(() => setToast(''), 6000); setLoading(false); return }
+      let acc: any[] = first.data || []
       setOrders(acc.slice()); setLoading(false)
-      if (acc.length < PAGE || !first.hasMore) return
+      if (acc.length < PAGE) return
       // Remaining pages — detached so they never block interaction.
       ;(async () => {
         for (let offset = PAGE; offset < 200000; offset += PAGE) {
-          const p = await fetchPage(offset)
-          if (!p.ok) break
-          acc = acc.concat(p.rows); setOrders(acc.slice())
-          if (p.rows.length < PAGE || !p.hasMore) break
+          const { data, error } = await pageQ(offset)
+          if (error || !data?.length) break
+          acc = acc.concat(data); setOrders(acc.slice())
+          if (data.length < PAGE) break
         }
       })()
     } catch (e: any) { setToast(`Couldn’t load orders: ${e?.message || e}`); setTimeout(() => setToast(''), 6000); setLoading(false) }
@@ -235,18 +229,25 @@ export default function OrdersPage() {
   // doesn't refilter on every keystroke.
   useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search), 140); return () => clearTimeout(t) }, [search])
 
-  const runSync = useCallback(async (cid: string) => {
-    setSyncing(true)
+  // full=false (automatic, on open): light pass over recent orders, silent — must
+  // not slow the board. full=true (manual button): full-book backfill + reload.
+  const runSync = useCallback(async (cid: string, full = false) => {
+    if (full) setSyncing(true)
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
-      const res = await fetch('/api/orders/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ companyId: cid }) })
+      const res = await fetch('/api/orders/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ companyId: cid, full }) })
       const d = await res.json().catch(() => ({}))
-      if (!res.ok || d.error) { setToast(`Sync failed: ${d.error || res.status}`); setTimeout(() => setToast(''), 8000) }
-      else if (typeof d.synced === 'number') { setToast(d.synced > 0 ? `Synced ${d.synced} new orders` : 'Orders are up to date'); setTimeout(() => setToast(''), 3000) }
-      await loadOrders(cid)
-    } catch (e: any) { setToast(`Sync error: ${e?.message || e}`); setTimeout(() => setToast(''), 8000) }
-    setSyncing(false)
+      if (full) {
+        if (!res.ok || d.error) { setToast(`Sync failed: ${d.error || res.status}`); setTimeout(() => setToast(''), 8000) }
+        else if (typeof d.synced === 'number') { setToast(d.synced > 0 ? `Synced ${d.synced} new orders` : 'Orders are up to date'); setTimeout(() => setToast(''), 3000) }
+        await loadOrders(cid)
+      } else if (typeof d.synced === 'number' && d.synced > 0) {
+        // Light pass found new orders — refresh quietly.
+        loadOrders(cid)
+      }
+    } catch (e: any) { if (full) { setToast(`Sync error: ${e?.message || e}`); setTimeout(() => setToast(''), 8000) } }
+    if (full) setSyncing(false)
   }, [loadOrders])
 
   useEffect(() => {
@@ -686,7 +687,7 @@ export default function OrdersPage() {
             )}
           </div>
           <select value={fDate} onChange={e => setFDate(e.target.value)} style={ctrl}><option value="all">All time</option><option value="today">Today</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option></select>
-          <button type="button" onClick={() => runSync(companyId!)} disabled={syncing} style={{ ...ctrl, color: ACCENT }}>{syncing ? 'Syncing…' : 'Sync'}</button>
+          <button type="button" onClick={() => runSync(companyId!, true)} disabled={syncing} title="Backfill every order from the store" style={{ ...ctrl, color: ACCENT }}>{syncing ? 'Syncing…' : 'Sync'}</button>
           <button type="button" onClick={() => setManageTagsOpen(true)} title="Create, rename, recolour or delete order tags" style={ctrl}>⚙ Tags</button>
           <label title="On: rows open the side drawer. Off: rows open the full order page." style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', cursor: 'pointer' }}>
             <input type="checkbox" checked={showSidebar} onChange={e => setSidebarPref(e.target.checked)} style={{ accentColor: ACCENT }} />

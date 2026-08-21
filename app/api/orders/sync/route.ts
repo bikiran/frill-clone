@@ -34,25 +34,26 @@ async function isMember(db: any, req: NextRequest, companyId: string): Promise<b
  */
 export async function POST(req: NextRequest) {
   try {
-    const { companyId } = await req.json().catch(() => ({}))
+    const { companyId, full } = await req.json().catch(() => ({}))
     if (!companyId) return NextResponse.json({ error: 'companyId required' }, { status: 400 })
 
     const db = admin()
     if (!(await isMember(db, req, companyId))) return NextResponse.json({ error: 'Not allowed' }, { status: 403 })
 
-    // Page through the WHOLE woocommerce_orders book, not just the first page.
-    // PostgREST caps a single response at ~1000 rows regardless of .limit(), so a
-    // flat .limit(2000) silently backfilled only the 1000 most-recent orders and
-    // left everything older (e.g. an order from months ago) missing from the
-    // board entirely. Sync each page (syncWooOrders only inserts the new ones).
+    // Default (automatic, on board open) is a LIGHT pass over just the most
+    // recent page — the webhook keeps the board live, so this only mops up
+    // anything it missed, and it must not do a 50k-row scan on every open.
+    // `full: true` (the manual Sync button) pages through the WHOLE
+    // woocommerce_orders book to backfill older orders. syncWooOrders only ever
+    // inserts the new ones, so both are idempotent.
     const PAGE = 1000
     let synced = 0
-    for (let from = 0; from < 500000; from += PAGE) {
+    for (let from = 0; from < (full ? 500000 : PAGE); from += PAGE) {
       const { data: woo } = await db.from('woocommerce_orders')
         .select('*').eq('company_id', companyId).order('order_date', { ascending: false }).range(from, from + PAGE - 1)
       if (!woo?.length) break
       synced += await syncWooOrders(db, companyId, woo)
-      if (woo.length < PAGE) break
+      if (woo.length < PAGE || !full) break
     }
     return NextResponse.json({ ok: true, synced })
   } catch (e: any) {

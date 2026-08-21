@@ -38,22 +38,24 @@ export default function OrdersReportsPage() {
   const load = useCallback(async (cid: string, rangeKey: string) => {
     const days = RANGES.find(r => r.key === rangeKey)?.days ?? null
     const sinceISO = days != null ? new Date(Date.now() - days * 864e5).toISOString() : null
-    const sinceQ = sinceISO ? `&since=${encodeURIComponent(sinceISO)}` : ''
+    // Read orders directly via PostgREST (warm + index-served), scoped to the
+    // charted window — no serverless cold start, no per-request auth round trip.
+    const PAGE = 1000
+    const pageQ = (offset: number) => {
+      let q = (supabase as any).from('orders').select('*').eq('company_id', cid)
+      if (sinceISO) q = q.gte('order_date', sinceISO)
+      return q.order('order_date', { ascending: false }).range(offset, offset + PAGE - 1)
+    }
     try {
-      const { data } = await supabase.auth.getSession()
-      const token = data?.session?.access_token
-      const headers = token ? { Authorization: `Bearer ${token}` } : undefined
-      const PAGE = 1000
       let acc: any[] = []
       for (let offset = 0; offset < 200000; offset += PAGE) {
-        const res = await fetch(`/api/orders?companyId=${encodeURIComponent(cid)}&offset=${offset}&limit=${PAGE}${sinceQ}`, { headers })
-        const j = await res.json().catch(() => ({}))
-        if (!res.ok || j.error) break
-        const rows = Array.isArray(j.orders) ? j.orders : []
+        const { data, error } = await pageQ(offset)
+        if (error) break
+        const rows = data || []
         acc = offset === 0 ? rows : acc.concat(rows)
         setOrders(acc.slice())
         setLoading(false) // first page in — show the report, rest streams behind
-        if (rows.length < PAGE || !j.hasMore) break
+        if (rows.length < PAGE) break
       }
     } catch { setOrders([]) }
     setLoading(false)
