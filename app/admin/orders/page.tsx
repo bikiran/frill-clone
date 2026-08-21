@@ -361,7 +361,7 @@ export default function OrdersPage() {
 
   return (
     <div style={{ padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      <style>{`@keyframes ospin{to{transform:rotate(360deg)}} .ord-row:hover{background:var(--canvas)} .tag-opt:hover{background:var(--canvas)} .ord-item:hover{background:var(--canvas)}`}</style>
+      <style>{`@keyframes ospin{to{transform:rotate(360deg)}} .ord-row:hover{background:var(--canvas)} .tag-opt:hover{background:var(--canvas)} .ord-item:hover{background:var(--canvas)} .ord-note-actions{opacity:0;transition:opacity .12s} .ord-note:hover .ord-note-actions{opacity:1}`}</style>
 
       {/* Header + KPIs */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
@@ -885,6 +885,10 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const [galleryIdx, setGalleryIdx] = useState<number | null>(null)
   const [wooNotes, setWooNotes] = useState<any[] | null>(null)
   const [wooCustomerNote, setWooCustomerNote] = useState<string | null>(null)
+  const [wooStoreUrl, setWooStoreUrl] = useState<string | null>(null)
+  const [actBusy, setActBusy] = useState('')
+  const [editNoteId, setEditNoteId] = useState<string | null>(null)
+  const [editNoteText, setEditNoteText] = useState('')
   const [showTracking, setShowTracking] = useState(false)
   const [trkCarrier, setTrkCarrier] = useState('auspost')
   const [trkNumber, setTrkNumber] = useState('')
@@ -917,6 +921,62 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     } catch (e: any) { onFlash(`Tracking error: ${e?.message || e}`) }
     setTrkSending(false)
   }
+
+  // ── WooCommerce order actions ─────────────────────────────────────────────
+  const markCompleted = async () => {
+    if (!window.confirm(`Mark order ${order.order_number} as completed in WooCommerce?`)) return
+    setActBusy('done')
+    try {
+      const res = await fetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: order.external_order_id, status: 'completed', conversationId: order.conversation_id || undefined }) })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j.error) onFlash(`Failed: ${j.error || res.status}`)
+      else { onPatch({ status: 'shipped', fulfilment_status: 'fulfilled' }, { type: 'status_changed', detail: 'Marked completed in WooCommerce' }); order.status = 'shipped'; onFlash('Order marked completed') }
+    } catch (e: any) { onFlash(`Error: ${e?.message || e}`) }
+    setActBusy('')
+  }
+  const issueRefund = async () => {
+    const amtStr = window.prompt(`Refund amount for order ${order.order_number} (${order.currency || 'AUD'}). Leave blank for a full refund.`, String(order.total || ''))
+    if (amtStr === null) return
+    const amount = amtStr.trim() ? Number(amtStr) : undefined
+    if (amtStr.trim() && (isNaN(amount!) || amount! <= 0)) { onFlash('Enter a valid amount'); return }
+    if (!window.confirm(`Refund ${amount ? `$${amount.toFixed(2)}` : 'the full amount'} for order ${order.order_number}? This returns money through the payment gateway and cannot be undone.`)) return
+    setActBusy('refund')
+    try {
+      const res = await fetch('/api/orders/refund', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: order.external_order_id, amount, reason: 'Refund from Orders board', conversationId: order.conversation_id || undefined }) })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j.error) onFlash(`Refund failed: ${j.error || res.status}`)
+      else { onFlash(`Refunded${j.amount ? ` $${Number(j.amount).toFixed(2)}` : ''}`); onPatch({ payment_status: 'refunded' }, { type: 'refunded', detail: `Refund issued${j.amount ? ` · $${Number(j.amount).toFixed(2)}` : ''}` }) }
+    } catch (e: any) { onFlash(`Refund error: ${e?.message || e}`) }
+    setActBusy('')
+  }
+  const genInvoice = async () => {
+    setActBusy('invoice')
+    try {
+      const res = await fetch(`/api/orders/details?companyId=${companyId}&orderId=${order.external_order_id}`)
+      const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Could not load order')
+      const o = data.order || {}, co = data.company || {}
+      const { jsPDF } = await import('jspdf')
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+      const money = (v: any) => `$${(parseFloat(v || 0)).toFixed(2)}`
+      let y = 20
+      doc.setFontSize(15); doc.setFont('helvetica', 'bold'); doc.text(String(co.name || 'Invoice'), 16, y)
+      doc.setFontSize(10); doc.setFont('helvetica', 'normal')
+      doc.text(`Tax Invoice — Order #${o.number || order.order_number}`, 16, y + 8)
+      doc.text(`Date: ${o.date_created ? new Date(o.date_created).toLocaleDateString('en-AU') : ''}`, 16, y + 13)
+      const b = o.billing || {}
+      y += 26; doc.setFont('helvetica', 'bold'); doc.text('Bill To', 16, y); doc.setFont('helvetica', 'normal')
+      doc.text(`${b.first_name || ''} ${b.last_name || ''}`.trim() || String(order.customer_name || ''), 16, y + 5);
+      [[b.address_1, b.address_2].filter(Boolean).join(', '), [b.city, b.state, b.postcode].filter(Boolean).join(' '), b.country].filter(Boolean).forEach((l: any, i: number) => doc.text(String(l), 16, y + 10 + i * 5))
+      y += 34; doc.setFont('helvetica', 'bold'); doc.text('Item', 16, y); doc.text('Qty', 150, y); doc.text('Total', 194, y, { align: 'right' }); doc.setFont('helvetica', 'normal'); y += 6
+      for (const li of (o.line_items || [])) { doc.text(String(li.name || 'Item').slice(0, 58), 16, y); doc.text(String(li.quantity), 150, y); doc.text(money(li.total), 194, y, { align: 'right' }); y += 6; if (y > 270) { doc.addPage(); y = 20 } }
+      y += 3; doc.line(16, y, 194, y); y += 6; doc.setFont('helvetica', 'bold')
+      doc.text('Total', 150, y); doc.text(`${money(o.total)} ${o.currency || order.currency || ''}`, 194, y, { align: 'right' })
+      doc.save(`invoice-${o.number || order.order_number}.pdf`)
+    } catch (e: any) { onFlash(`Invoice failed: ${e?.message || e}`) }
+    setActBusy('')
+  }
+  const copyOrderLink = () => copyToClipboard(`${window.location.origin}/admin/orders/${order.id}`, onFlash)
+  const editInWoo = () => { if (wooStoreUrl && order.external_order_id) window.open(`${wooStoreUrl.replace(/\/$/, '')}/wp-admin/post.php?post=${order.external_order_id}&action=edit`, '_blank'); else onFlash('WooCommerce store link unavailable') }
 
   const sendTracking = async (info: { text: string; url: string; carrierLabel: string; number: string }) => {
     try {
@@ -957,7 +1017,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
         const token = data?.session?.access_token
         const res = await fetch(`/api/orders/woo-notes?companyId=${encodeURIComponent(companyId)}&wooOrderId=${encodeURIComponent(order.external_order_id)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
         const j = await res.json().catch(() => ({}))
-        if (!cancelled) { setWooNotes(Array.isArray(j.notes) ? j.notes : []); setWooCustomerNote(j.customerNote || null) }
+        if (!cancelled) { setWooNotes(Array.isArray(j.notes) ? j.notes : []); setWooCustomerNote(j.customerNote || null); setWooStoreUrl(j.storeUrl || null) }
       } catch { if (!cancelled) setWooNotes([]) }
     })()
     return () => { cancelled = true }
@@ -972,12 +1032,34 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     const mentions = Array.from(body.matchAll(/@(\w[\w.-]*)/g)).map(m => m[1])
     const row = { order_id: order.id, company_id: companyId, author_id: me.id, author_name: me.name, body, mentions }
     try { const { data } = await (supabase as any).from('order_notes').insert(row).select().maybeSingle(); if (data) { setNotes(n => [data, ...n]); logEvent('note_added', 'Internal note added') } } catch {}
-    // Mirror the note onto the linked conversation so it also shows in the inbox
-    // Notes section (right sidebar).
-    if (order.conversation_id) {
-      try { await (supabase as any).from('conversation_notes').insert({ conversation_id: order.conversation_id, company_id: companyId, author_name: me.name, content: `[Order ${order.order_number}] ${body}` }) } catch {}
-    }
+    // One-way link: mirror the note into the inbox chat so it also shows in the
+    // conversation's Notes section. Prefer the order's / contact's existing chat;
+    // create one only if the customer has none yet.
+    try {
+      let convId: string | null = order.conversation_id || null
+      if (!convId && order.contact_id) {
+        const { data: c } = await (supabase as any).from('conversations').select('id').eq('company_id', companyId).eq('contact_id', order.contact_id).order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+        if (c?.id) convId = c.id
+      }
+      if (!convId) {
+        const { data: nc } = await (supabase as any).from('conversations').insert({ company_id: companyId, contact_id: order.contact_id || null, status: 'open', channel: order.customer_phone ? 'sms' : 'email', sms_number: order.customer_phone || null, subject: `Order ${order.order_number}`, last_message: 'Order note', last_message_at: new Date().toISOString() }).select('id').maybeSingle()
+        convId = nc?.id || null
+      }
+      if (convId && convId !== order.conversation_id) { order.conversation_id = convId; onPatch({ conversation_id: convId }) }
+      if (convId) await (supabase as any).from('conversation_notes').insert({ conversation_id: convId, company_id: companyId, author_name: me.name, content: `[Order ${order.order_number}] ${body}` })
+    } catch {}
     setNoteBody('')
+  }
+  const saveNoteEdit = async (n: any) => {
+    const t = editNoteText.trim(); if (!t) { setEditNoteId(null); return }
+    setNotes(ns => ns.map(x => x.id === n.id ? { ...x, body: t } : x))
+    try { await (supabase as any).from('order_notes').update({ body: t }).eq('id', n.id) } catch {}
+    setEditNoteId(null)
+  }
+  const deleteNote = async (n: any) => {
+    if (!window.confirm('Delete this note?')) return
+    setNotes(ns => ns.filter(x => x.id !== n.id))
+    try { await (supabase as any).from('order_notes').delete().eq('id', n.id) } catch {}
   }
   const addTask = async () => {
     const text = taskText.trim(); if (!text) return
@@ -1087,18 +1169,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           <div style={sect}>
             <p style={kick}>Order Summary</p>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {/* Outlet — assign the order to a fulfilment location. */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, alignItems: 'center' }}>
-                <span style={{ color: 'var(--slate)' }}>Outlet</span>
-                {locations && locations.length > 0
-                  ? <select value={order.store_location_id || ''} onChange={e => { const v = e.target.value || null; onPatch({ store_location_id: v }, { type: 'outlet', detail: v ? `Assigned to ${outletName?.(v) || 'outlet'}` : 'Outlet cleared' }); order.store_location_id = v }}
-                      style={{ fontWeight: 600, fontSize: 12.5, padding: '3px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', cursor: 'pointer', maxWidth: 170 }}>
-                      <option value="">No outlet</option>
-                      {locations.map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                    </select>
-                  : <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{store || '—'}</span>}
-              </div>
               {([
+                ['Outlet', store || 'No outlet'],
                 ['Order Date', order.order_date ? new Date(order.order_date).toLocaleString('en-AU') : '—'],
                 ['Sales Channel', <span key="ch" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ChannelIcon channel={order.sales_channel} size={14} />{channelMeta(order.sales_channel).label}</span>],
                 ['Payment', order.payment_status || '—'],
@@ -1160,6 +1232,18 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             </div>
           </div>
 
+          {/* Assign Outlet */}
+          {locations && locations.length > 0 && (
+            <div style={sect}>
+              <p style={kick}>Assign Outlet</p>
+              <select value={order.store_location_id || ''} onChange={e => { const v = e.target.value || null; onPatch({ store_location_id: v }, { type: 'outlet', detail: v ? `Assigned to ${outletName?.(v) || 'outlet'}` : 'Outlet cleared' }); order.store_location_id = v }}
+                style={{ width: '100%', marginTop: 8, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer', outline: 'none' }}>
+                <option value="">No outlet</option>
+                {locations.map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </div>
+          )}
+
           {/* Send tracking — expands an inline box below (no popup) */}
           <div style={sect}>
             <button type="button" onClick={() => setShowTracking(v => !v)}
@@ -1189,6 +1273,23 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Order actions */}
+          <div style={sect}>
+            <p style={kick}>Order Actions</p>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+              {(() => { const b = (color: string): React.CSSProperties => ({ fontSize: 12, fontWeight: 700, color, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', cursor: 'pointer' })
+                const isWoo = order.sales_channel === 'woocommerce'
+                return <>
+                  {isWoo && wooStoreUrl && <button type="button" onClick={editInWoo} style={b(ACCENT)}>Edit</button>}
+                  {isWoo && !['shipped', 'cancelled'].includes(order.status) && <button type="button" disabled={actBusy === 'done'} onClick={markCompleted} style={b('#15803d')}>{actBusy === 'done' ? '…' : 'Mark completed'}</button>}
+                  {isWoo && <button type="button" disabled={actBusy === 'refund'} onClick={issueRefund} style={b('#b45309')}>{actBusy === 'refund' ? '…' : 'Issue refund'}</button>}
+                  <button type="button" disabled={actBusy === 'invoice'} onClick={genInvoice} style={b('var(--ink)')}>{actBusy === 'invoice' ? '…' : 'Invoice'}</button>
+                  <button type="button" onClick={copyOrderLink} style={b('var(--slate)')}>Copy link</button>
+                </>
+              })()}
+            </div>
           </div>
 
           {/* Tasks */}
@@ -1221,18 +1322,20 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                 {wooNotes !== null && customerWoo.length === 0 && !hasCheckout && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>No customer notes.</p>}
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {hasCheckout && (
-                    <div style={{ padding: '8px 11px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
-                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{checkoutNote}</p>
+                    <div className="ord-note" style={{ position: 'relative', padding: '8px 11px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
+                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5, paddingRight: 24 }}>{checkoutNote}</p>
                       <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>Customer note at checkout</p>
+                      <div className="ord-note-actions" style={{ position: 'absolute', top: 6, right: 8 }}><CopyBtn title="Copy note" onClick={() => copyToClipboard(checkoutNote, onFlash)} /></div>
                     </div>
                   )}
                   {customerWoo.map((n: any) => (
-                    <div key={n.id} style={{ padding: '8px 11px', borderRadius: 10, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
-                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: String(n.note || '').replace(/<script[\s\S]*?<\/script>/gi, '') }} />
+                    <div key={n.id} className="ord-note" style={{ position: 'relative', padding: '8px 11px', borderRadius: 10, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5, paddingRight: 24 }} dangerouslySetInnerHTML={{ __html: String(n.note || '').replace(/<script[\s\S]*?<\/script>/gi, '') }} />
                       <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ fontSize: 9, fontWeight: 800, color: '#1d4ed8', background: '#dbeafe', padding: '1px 6px', borderRadius: 20 }}>TO CUSTOMER</span>
                         {n.author || 'WooCommerce'}{n.date ? ` · ${new Date(n.date).toLocaleString('en-AU')}` : ''}
                       </p>
+                      <div className="ord-note-actions" style={{ position: 'absolute', top: 6, right: 8 }}><CopyBtn title="Copy note" onClick={() => copyToClipboard(String(n.note || '').replace(/<[^>]+>/g, ''), onFlash)} /></div>
                     </div>
                   ))}
                 </div>
@@ -1249,9 +1352,26 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 4 }}>
               {notes.map((n: any) => (
-                <div key={n.id} style={{ padding: '8px 11px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
-                  <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{n.body}</p>
-                  <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>{n.author_name || 'Someone'} · {n.created_at ? new Date(n.created_at).toLocaleString('en-AU') : ''}</p>
+                <div key={n.id} className="ord-note" style={{ position: 'relative', padding: '8px 11px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
+                  {editNoteId === n.id ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <textarea autoFocus value={editNoteText} onChange={e => setEditNoteText(e.target.value)} rows={2} style={{ width: '100%', padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, resize: 'vertical', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <button type="button" onClick={() => setEditNoteId(null)} style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                        <button type="button" onClick={() => saveNoteEdit(n)} style={{ background: 'none', border: 'none', color: ACCENT, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Save</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5, paddingRight: 60 }}>{n.body}</p>
+                      <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>{n.author_name || 'Someone'} · {n.created_at ? new Date(n.created_at).toLocaleString('en-AU') : ''}</p>
+                      <div className="ord-note-actions" style={{ position: 'absolute', top: 6, right: 8, display: 'flex', gap: 4 }}>
+                        <button type="button" title="Copy" onClick={() => copyToClipboard(n.body, onFlash)} style={{ background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 6, padding: 4, cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg></button>
+                        <button type="button" title="Edit" onClick={() => { setEditNoteId(n.id); setEditNoteText(n.body || '') }} style={{ background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 6, padding: 4, cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg></button>
+                        <button type="button" title="Delete" onClick={() => deleteNote(n)} style={{ background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 6, padding: 4, cursor: 'pointer', color: '#dc2626', display: 'inline-flex' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg></button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
               {events.map((ev: any) => (

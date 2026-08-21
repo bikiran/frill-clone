@@ -42,7 +42,9 @@ export async function GET(req: NextRequest) {
       svc.getOrderNotes(Number(wooOrderId)),
       svc.getOrderByNumber(Number(wooOrderId)).catch(() => null),
     ])
-    return NextResponse.json({ notes, customerNote: order?.customer_note || null })
+    let storeUrl: string | null = null
+    try { const { data: integ } = await db.from('woocommerce_integrations').select('store_url').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1).maybeSingle(); storeUrl = integ?.store_url || null } catch {}
+    return NextResponse.json({ notes, customerNote: order?.customer_note || null, storeUrl })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e), notes: [] }, { status: 500 })
   }

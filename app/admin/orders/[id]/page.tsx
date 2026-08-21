@@ -99,9 +99,19 @@ export default function OrderDetailPage() {
     const mentions = Array.from(body.matchAll(/@(\w[\w.-]*)/g)).map(m => m[1])
     const row = { order_id: orderId, company_id: companyId, author_id: me.id, author_name: me.name, body, mentions }
     try { const { data } = await (supabase as any).from('order_notes').insert(row).select().maybeSingle(); if (data) setNotes(n => [data, ...n]) } catch {}
-    if (order.conversation_id) {
-      try { await (supabase as any).from('conversation_notes').insert({ conversation_id: order.conversation_id, company_id: companyId, author_name: me.name, content: `[Order ${order.order_number}] ${body}` }) } catch {}
-    }
+    try {
+      let convId: string | null = order.conversation_id || null
+      if (!convId && order.contact_id) {
+        const { data: c } = await (supabase as any).from('conversations').select('id').eq('company_id', companyId).eq('contact_id', order.contact_id).order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+        if (c?.id) convId = c.id
+      }
+      if (!convId) {
+        const { data: nc } = await (supabase as any).from('conversations').insert({ company_id: companyId, contact_id: order.contact_id || null, status: 'open', channel: order.customer_phone ? 'sms' : 'email', sms_number: order.customer_phone || null, subject: `Order ${order.order_number}`, last_message: 'Order note', last_message_at: new Date().toISOString() }).select('id').maybeSingle()
+        convId = nc?.id || null
+      }
+      if (convId && convId !== order.conversation_id) { setOrder((o: Order) => ({ ...o, conversation_id: convId })); try { await (supabase as any).from('orders').update({ conversation_id: convId }).eq('id', orderId) } catch {} }
+      if (convId) await (supabase as any).from('conversation_notes').insert({ conversation_id: convId, company_id: companyId, author_name: me.name, content: `[Order ${order.order_number}] ${body}` })
+    } catch {}
     setNoteBody('')
   }
   const addTask = async () => {
