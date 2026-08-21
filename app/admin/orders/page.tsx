@@ -438,7 +438,7 @@ export default function OrdersPage() {
             Create Order
           </button>
           {kpi('All Orders', counts.all, 'var(--ink)')}
-          {kpi('Awaiting', counts.awaiting_shipment || 0, ACCENT)}
+          {kpi('Awaiting', (counts.awaiting_shipment || 0) + (counts.packed || 0), ACCENT)}
           {kpi('On Hold', counts.on_hold || 0, '#d97706')}
           {kpi('Shipped', counts.shipped || 0, '#16a34a')}
           {kpi('Alerts', counts.alerts || 0, '#dc2626')}
@@ -470,7 +470,7 @@ export default function OrdersPage() {
       {/* Status filter — collapsed into a Filters button + dropdown. Right-click
           (or the ★) sets a status as the default, applied on next visit. */}
       {(() => {
-        const countFor = (t: any) => t.key === 'all' ? counts.all : t.key === 'alerts' ? counts.alerts : (counts[t.match![0]] || 0)
+        const countFor = (t: any) => t.key === 'all' ? counts.all : t.key === 'alerts' ? counts.alerts : (t.match as string[]).reduce((n: number, s: string) => n + (counts[s] || 0), 0)
         const activeTab = STATUS_TABS.find(t => t.key === tab) || STATUS_TABS[0]
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16, position: 'relative' }}>

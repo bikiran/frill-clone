@@ -22,7 +22,9 @@ export const statusMeta = (s?: string | null) => STATUS_META[String(s || '')] ||
 // "Order Alerts" are computed specially by the caller.
 export const STATUS_TABS: { key: string; label: string; match?: OrderStatus[] }[] = [
   { key: 'all', label: 'All Orders' },
-  { key: 'awaiting_shipment', label: 'Awaiting Shipment', match: ['awaiting_shipment'] },
+  // Packed is a sub-state of awaiting fulfilment (packed but not yet shipped),
+  // so packed orders stay in this tab until they're actually shipped.
+  { key: 'awaiting_shipment', label: 'Awaiting Shipment', match: ['awaiting_shipment', 'packed'] },
   { key: 'on_hold', label: 'On Hold', match: ['on_hold'] },
   { key: 'manual', label: 'Manual Orders', match: ['manual'] },
   { key: 'shipped', label: 'Shipped', match: ['shipped'] },
