@@ -8802,19 +8802,10 @@ export default function InboxPage() {
                           // street line here and splits city/state/postcode/
                           // country into their own fields, so nothing is stored
                           // twice.
-                          <AddressAutocomplete
-                            value={(editContact as any).address || ''}
-                            onChange={(v) => setEditContact(c => ({ ...c, address: v }))}
-                            onSelect={(parts) => setEditContact(c => ({
-                              ...c,
-                              address: parts.line1 || parts.formatted,
-                              city: parts.city || c.city,
-                              state: parts.state || (c as any).state,
-                              postcode: parts.postcode || (c as any).postcode,
-                              country: parts.country || c.country,
-                            }))}
-                            style={{ ...inp, fontSize: 12 } as any}
-                          />
+                          // A plain, always-typeable input — the Google Places
+                          // widget was intermittently blocking input here.
+                          <input type="text" value={(editContact as any).address || ''} onChange={e => setEditContact(c => ({ ...c, address: e.target.value }))}
+                            style={{ ...inp, fontSize: 12 }} />
                         ) : (
                           <input type={type} value={(editContact as any)[field] || ''} onChange={e => setEditContact(c => ({ ...c, [field]: e.target.value }))}
                             style={{ ...inp, fontSize: 12 }} />
@@ -8928,25 +8919,9 @@ export default function InboxPage() {
                           </p>
                           {editField === field ? (
                             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                              {field === 'address' ? (
-                                <AddressAutocomplete
-                                  value={editFieldValue}
-                                  onChange={setEditFieldValue}
-                                  onSelect={(parts) => {
-                                    // Save the verified address, and split city/
-                                    // state/country into their own fields.
-                                    setEditFieldValue(parts.formatted)
-                                    saveSingleField('address', parts.line1 || parts.formatted)
-                                    if (parts.city) saveSingleField('city', parts.city)
-                                    if (parts.country) saveSingleField('country', parts.country)
-                                  }}
-                                  style={{ ...inp, fontSize: 12, padding: '5px 8px' } as any}
-                                />
-                              ) : (
                               <input autoFocus value={editFieldValue} onChange={e => setEditFieldValue(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') saveSingleField(field, editFieldValue); if (e.key === 'Escape') setEditField(null) }}
                                 style={{ ...inp, fontSize: 12, padding: '5px 8px' }} />
-                              )}
                               <button type="button" onClick={() => saveSingleField(field, editFieldValue)} style={fieldBtn('#059669')} title="Save">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                               </button>

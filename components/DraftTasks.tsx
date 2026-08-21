@@ -55,6 +55,9 @@ export default function DraftTasks({
   const [closed, setClosed] = useState(false)
   const [creating, setCreating] = useState(false)
   const [remindOpen, setRemindOpen] = useState<Set<number>>(new Set())
+  // Combine mode: merge the checked action items into ONE task instead of one
+  // task each (the items become the task's checklist / description).
+  const [combine, setCombine] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -76,11 +79,47 @@ export default function DraftTasks({
   const patch = (i: number, p: Partial<Draft>) => setDrafts(prev => prev.map((d, di) => di === i ? { ...d, ...p } : d))
   const toggleRemind = (i: number) => setRemindOpen(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n })
 
+  // Insert with the `source` tag, then without it, then (for combined tasks)
+  // without the `description` column — so a task is never dropped on a database
+  // that hasn't migrated one of those optional columns.
+  const insertWithFallback = async (rows: any[]) => {
+    let { error } = await (supabase as any).from('conversation_tasks').insert(rows.map(r => ({ ...r, source })))
+    if (error) { ({ error } = await (supabase as any).from('conversation_tasks').insert(rows)) }
+    if (error && rows.some(r => 'description' in r)) {
+      ({ error } = await (supabase as any).from('conversation_tasks').insert(rows.map(({ description, ...r }: any) => r)))
+    }
+    if (error) throw error
+  }
+
   const createTasks = async () => {
     const chosen = drafts.filter(d => d.include && d.text.trim())
     if (!chosen.length || !conversationId || !companyId) return
     setCreating(true)
     try {
+      // ── Combine into a single task ─────────────────────────────────────────
+      if (combine && chosen.length > 1) {
+        const first = chosen[0]
+        const m = teamMembers.find(x => x.id === first.assigneeId)
+        const uid = m ? (m.user_id || m.id) : null
+        const loc = first.locationId || null
+        const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        const items = chosen.map(c => c.text.trim())
+        const combined = {
+          conversation_id: conversationId, company_id: companyId,
+          text: items.join('; '), title: items[0].slice(0, 120),
+          done: false, priority: first.priority,
+          created_by: actor?.name || null, created_by_id: actor?.id || null,
+          assigned_to: m?.name || null, assigned_to_id: uid,
+          assignees: m ? [{ id: uid, name: m.name }] : [],
+          location_id: loc, location_ids: loc ? [loc] : [],
+          due_date: first.remindAt ? new Date(first.remindAt).toISOString() : null,
+          description: `<ul>${items.map(t => `<li>${esc(t)}</li>`).join('')}</ul>`,
+        }
+        await insertWithFallback([combined])
+        close(); onCreated?.()
+        return
+      }
+
       const base = chosen.map(d => {
         const m = teamMembers.find(x => x.id === d.assigneeId)
         const uid = m ? (m.user_id || m.id) : null
@@ -95,11 +134,7 @@ export default function DraftTasks({
           due_date: d.remindAt ? new Date(d.remindAt).toISOString() : null,
         }
       })
-      // Tag the origin when the column exists; otherwise insert without it so
-      // tasks are never dropped on an un-migrated database.
-      let { error } = await (supabase as any).from('conversation_tasks').insert(base.map(r => ({ ...r, source })))
-      if (error) { ({ error } = await (supabase as any).from('conversation_tasks').insert(base)) }
-      if (error) throw error
+      await insertWithFallback(base)
       close()
       onCreated?.()
     } catch (e) {
@@ -178,9 +213,16 @@ export default function DraftTasks({
           Source · {source === 'call_summary' ? 'Call summary' : 'Chat summary'}
         </span>
         <span style={{ flex: 1 }} />
+        {chosenCount > 1 && (
+          <button type="button" onClick={() => setCombine(c => !c)} title="Merge the selected items into one task"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 9, cursor: 'pointer', fontSize: 12, fontWeight: 700, border: `1px solid ${combine ? '#7c3aed' : '#ede9fe'}`, background: combine ? '#f3e8ff' : '#fff', color: '#7c3aed' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M7 8l-4 4 4 4"/><path d="M17 8l4 4-4 4"/><path d="M3 12h6"/><path d="M15 12h6"/></svg>
+            Combine
+          </button>
+        )}
         <button type="button" onClick={createTasks} disabled={creating || chosenCount === 0}
           style={{ padding: '7px 14px', borderRadius: 9, border: 'none', background: chosenCount ? '#7c3aed' : '#c4b5fd', color: '#fff', fontSize: 12, fontWeight: 700, cursor: creating || !chosenCount ? 'default' : 'pointer' }}>
-          {creating ? 'Creating…' : `Create ${chosenCount} task${chosenCount === 1 ? '' : 's'}`}
+          {creating ? 'Creating…' : (combine && chosenCount > 1) ? 'Create 1 Task' : `Create ${chosenCount} task${chosenCount === 1 ? '' : 's'}`}
         </button>
       </div>
     </div>
