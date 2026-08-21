@@ -42,8 +42,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
     if (!targetDeviceId) return NextResponse.json({ error: 'targetDeviceId is required' }, { status: 400 })
 
     // ── Load & validate the call ──────────────────────────────────────────────
-    const { data: call } = await db.from('calls').select('*').eq('id', callId).maybeSingle()
+    // The path segment is normally our calls-row id, but an inbound call surfaces
+    // in the browser with only its Twilio CallSid — so fall back to resolving the
+    // row by parent/child SID (mirrors call-transfer). Everything below keys off
+    // the resolved row's id.
+    let { data: call } = await db.from('calls').select('*').eq('id', callId).maybeSingle()
+    if (!call) {
+      const { data: bySid } = await db.from('calls').select('*')
+        .or(`twilio_call_sid.eq.${callId},twilio_child_call_sid.eq.${callId}`)
+        .order('created_at', { ascending: false }).limit(1)
+      call = bySid?.[0] || null
+    }
     if (!call) return NextResponse.json({ error: 'Call not found' }, { status: 404 })
+    const rowId = call.id
     if (call.provider && call.provider !== 'twilio') return NextResponse.json({ error: 'Device handoff is available on Twilio calls only' }, { status: 400 })
     if (call.ended_at || ['completed', 'failed', 'no-answer', 'busy', 'canceled'].includes(String(call.status || ''))) {
       return NextResponse.json({ error: 'This call has already ended' }, { status: 409 })
@@ -92,7 +103,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
       // The agent leg currently carrying the call — removed once the new one is
       // confirmed. Record it now so a later confirm knows which leg to drop.
       active_agent_call_sid: conf.agentLeg || call.active_agent_call_sid || call.twilio_child_call_sid || null,
-    }).eq('id', callId)
+    }).eq('id', rowId)
 
     // A backgrounded mobile target also gets a push so the user can reopen Colvy
     // and accept. Best-effort — the realtime banner is the primary path, this
