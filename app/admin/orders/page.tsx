@@ -10,6 +10,42 @@ import {
 
 type Order = any
 
+// WooCommerce brand mark — a white "W" on the WooCommerce purple, instead of a
+// plain purple dot.
+function WooLogo({ size = 16 }: { size?: number }) {
+  const box = size + 6
+  return (
+    <span title="WooCommerce" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: box, height: box, borderRadius: 6, background: '#7f54b3', flexShrink: 0 }}>
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <path d="M4 8.6c.15-.5.5-.85 1.05-.85.5 0 .82.3 1 .82l1.35 4.1 1.5-3.85c.2-.5.5-.85 1.02-.85.5 0 .82.32 1 .85l1.5 3.85 1.35-4.1c.18-.52.5-.82 1-.82.55 0 .9.35 1.05.85.05.2.03.4-.05.62l-2.35 6.35c-.2.55-.56.9-1.08.9-.5 0-.86-.35-1.06-.9L11 12.2l-1.28 3.75c-.2.55-.56.9-1.06.9-.52 0-.88-.35-1.08-.9L5.23 9.6c-.08-.22-.1-.42-.05-.62z" fill="#fff" />
+      </svg>
+    </span>
+  )
+}
+function ChannelIcon({ channel, size = 15 }: { channel?: string | null; size?: number }) {
+  if (channel === 'woocommerce') return <WooLogo size={size} />
+  return <span style={{ fontSize: size + 1 }}>{channelMeta(channel).icon}</span>
+}
+
+function CopyBtn({ onClick, title }: { onClick: () => void; title?: string }) {
+  return (
+    <button type="button" title={title || 'Copy'} onClick={e => { e.stopPropagation(); e.preventDefault(); onClick() }}
+      style={{ background: 'none', border: 'none', padding: 2, cursor: 'copy', color: 'var(--slate)', display: 'inline-flex', lineHeight: 0, borderRadius: 4, flexShrink: 0 }}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+    </button>
+  )
+}
+
+async function copyToClipboard(text: string, flash?: (m: string) => void) {
+  const t = (text || '').trim()
+  if (!t) return
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(t)
+    else { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove() }
+    flash?.('Copied to clipboard')
+  } catch { flash?.('Copy failed') }
+}
+
 export default function OrdersPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   // The company's own brand colour drives the accent (active tab, primary
@@ -244,7 +280,7 @@ export default function OrdersPage() {
 
   return (
     <div style={{ padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      <style>{`@keyframes ospin{to{transform:rotate(360deg)}} .ord-row:hover{background:var(--canvas)} .tag-opt:hover{background:var(--canvas)}`}</style>
+      <style>{`@keyframes ospin{to{transform:rotate(360deg)}} .ord-row:hover{background:var(--canvas)} .tag-opt:hover{background:var(--canvas)} .ord-item:hover{background:var(--canvas)}`}</style>
 
       {/* Header + KPIs */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
@@ -352,7 +388,7 @@ export default function OrdersPage() {
                     <td style={td}><span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span></td>
                     <td style={td}><Avatar name={o.assignee_name || teamName(o.assignee_id)} /></td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtMoney(o.total, o.currency)}</td>
-                    <td style={td}><span style={{ fontSize: 14 }}>{channelMeta(o.sales_channel).icon}</span></td>
+                    <td style={td}><ChannelIcon channel={o.sales_channel} /></td>
                   </tr>
                 )
               })}
@@ -539,6 +575,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, o
   const [taskText, setTaskText] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [addingTag, setAddingTag] = useState(false)
+  const [galleryIdx, setGalleryIdx] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     const [it, nt, ev, tk] = await Promise.all([
@@ -608,7 +645,10 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, o
         {/* Header */}
         <div style={{ ...sect, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>Order {order.order_number}</h2>
+            <h2 onClick={() => copyToClipboard(String(order.order_number), onFlash)} title="Click to copy order number" style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--ink)', cursor: 'copy', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              Order {order.order_number}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+            </h2>
             <p style={{ margin: '5px 0 0', fontSize: 12, display: 'flex', alignItems: 'center', gap: 7 }}>
               <span style={{ fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span>
               <span style={{ color: age.color, fontWeight: 700 }}>{age.label} old</span>
@@ -632,18 +672,22 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, o
             <p style={kick}>Customer</p>
             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               {contactHref ? <a href={contactHref} style={{ fontSize: 15, fontWeight: 700, color: ACCENT, textDecoration: 'none' }}>{order.customer_name}</a> : <span style={{ fontSize: 15, fontWeight: 700 }}>{order.customer_name}</span>}
+              {order.customer_name && <CopyBtn onClick={() => copyToClipboard(order.customer_name, onFlash)} title="Copy name" />}
               {(order.tags || []).includes('VIP') && <span style={{ fontSize: 10, fontWeight: 800, color: '#15803d', background: '#dcfce7', padding: '1px 7px', borderRadius: 20 }}>VIP</span>}
             </div>
-            {order.customer_email && <p style={{ margin: '5px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>{order.customer_email}</p>}
-            {order.customer_phone && <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>{order.customer_phone}</p>}
+            {order.customer_email && <p onClick={() => copyToClipboard(order.customer_email, onFlash)} title="Click to copy email" style={{ margin: '5px 0 0', fontSize: 12.5, color: 'var(--slate)', cursor: 'copy', display: 'inline-flex', alignItems: 'center', gap: 5 }}>{order.customer_email}<CopyBtn onClick={() => copyToClipboard(order.customer_email, onFlash)} title="Copy email" /></p>}
+            {order.customer_phone && <p onClick={() => copyToClipboard(order.customer_phone, onFlash)} title="Click to copy phone" style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--slate)', cursor: 'copy', display: 'inline-flex', alignItems: 'center', gap: 5 }}>{order.customer_phone}<CopyBtn onClick={() => copyToClipboard(order.customer_phone, onFlash)} title="Copy phone" /></p>}
             {convHref && <a href={convHref} style={{ display: 'inline-block', marginTop: 8, fontSize: 12.5, fontWeight: 700, color: ACCENT, textDecoration: 'none' }}>Open conversation →</a>}
           </div>
 
           {/* Shipping address */}
           {(addr.address_1 || addr.city) && (
             <div style={sect}>
-              <p style={kick}>Shipping Address</p>
-              <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--ink)', lineHeight: 1.6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <p style={kick}>Shipping Address</p>
+                <CopyBtn title="Copy address" onClick={() => copyToClipboard([order.customer_name, [addr.address_1, addr.address_2].filter(Boolean).join(', '), [addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' '), addr.country].filter(Boolean).join('\n'), onFlash)} />
+              </div>
+              <p onClick={() => copyToClipboard([order.customer_name, [addr.address_1, addr.address_2].filter(Boolean).join(', '), [addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' '), addr.country].filter(Boolean).join('\n'), onFlash)} title="Click to copy address" style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--ink)', lineHeight: 1.6, cursor: 'copy' }}>
                 {order.customer_name}<br />
                 {[addr.address_1, addr.address_2].filter(Boolean).join(', ')}<br />
                 {[addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' ')}<br />
@@ -656,7 +700,16 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, o
           <div style={sect}>
             <p style={kick}>Order Summary</p>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {([['Order Date', order.order_date ? new Date(order.order_date).toLocaleString('en-AU') : '—'], ['Store', store || '—'], ['Sales Channel', `${channelMeta(order.sales_channel).icon} ${channelMeta(order.sales_channel).label}`], ['Payment', order.payment_status || '—'], ['Fulfilment', order.fulfilment_status || '—'], ['Total', `${fmtMoney(order.total, order.currency)} ${order.currency || ''}`]] as [string, string][]).map(([k, v]) => (
+              {([
+                ['Order Date', order.order_date ? new Date(order.order_date).toLocaleString('en-AU') : '—'],
+                ['Store', store || '—'],
+                ['Sales Channel', <span key="ch" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ChannelIcon channel={order.sales_channel} size={14} />{channelMeta(order.sales_channel).label}</span>],
+                ['Payment', order.payment_status || '—'],
+                ['Fulfilment', order.fulfilment_status || '—'],
+                ['Subtotal', order.subtotal != null ? fmtMoney(order.subtotal, order.currency) : '—'],
+                ['Shipping', (Number(order.shipping_total) || 0) > 0 ? `${fmtMoney(order.shipping_total, order.currency)}${order.shipping_method ? ` · ${order.shipping_method}` : ''}` : (order.shipping_method || 'Free')],
+                ['Total', `${fmtMoney(order.total, order.currency)} ${order.currency || ''}`],
+              ] as [string, any][]).map(([k, v]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5 }}>
                   <span style={{ color: 'var(--slate)' }}>{k}</span>
                   <span style={{ fontWeight: k === 'Total' ? 800 : 600, color: 'var(--ink)', textAlign: 'right', textTransform: k === 'Payment' || k === 'Fulfilment' ? 'capitalize' : 'none' }}>{v}</span>
@@ -669,8 +722,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, o
           <div style={sect}>
             <p style={kick}>Items ({items.length})</p>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {items.map((it: any) => (
-                <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {items.map((it: any, idx: number) => (
+                <div key={it.id} className="ord-item" onClick={() => setGalleryIdx(idx)} title="Click to view" style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', borderRadius: 9, padding: 4, margin: -4 }}>
                   <span style={{ position: 'relative', width: 40, height: 40, borderRadius: 8, flexShrink: 0, overflow: 'hidden', background: 'var(--peach)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /></svg>
                     {it.image_url && <img src={it.image_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e: any) => { e.currentTarget.style.display = 'none' }} />}
@@ -756,6 +809,41 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, o
           </div>
         </div>
       </div>
+
+      {/* Item gallery / lightbox */}
+      {galleryIdx != null && items[galleryIdx] && (() => {
+        const it = items[galleryIdx]
+        const multi = items.length > 1
+        const go = (d: number) => setGalleryIdx(i => { const n = ((i as number) + d + items.length) % items.length; return n })
+        return (
+          <div onClick={() => setGalleryIdx(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 4700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card,#fff)', borderRadius: 16, width: 460, maxWidth: '94vw', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
+              <div style={{ position: 'relative', width: '100%', height: 320, background: 'var(--peach)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {it.image_url
+                  ? <img src={it.image_url} alt={it.product_name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} onError={(e: any) => { e.currentTarget.style.display = 'none' }} />
+                  : <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /></svg>}
+                <button type="button" onClick={() => setGalleryIdx(null)} style={{ position: 'absolute', top: 10, right: 10, width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.5)', color: '#fff', fontSize: 16, cursor: 'pointer' }}>✕</button>
+                {multi && <>
+                  <button type="button" onClick={() => go(-1)} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.5)', color: '#fff', fontSize: 18, cursor: 'pointer' }}>‹</button>
+                  <button type="button" onClick={() => go(1)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.5)', color: '#fff', fontSize: 18, cursor: 'pointer' }}>›</button>
+                </>}
+              </div>
+              <div style={{ padding: '16px 20px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.35 }}>{it.product_name}</h3>
+                  <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink)', whiteSpace: 'nowrap' }}>{fmtMoney(it.total_price ?? it.unit_price, order.currency)}</span>
+                </div>
+                <div style={{ marginTop: 8, display: 'flex', gap: 16, fontSize: 12.5, color: 'var(--slate)', flexWrap: 'wrap' }}>
+                  {it.sku && <span>SKU: <strong style={{ color: 'var(--ink)' }}>{it.sku}</strong></span>}
+                  <span>Qty: <strong style={{ color: 'var(--ink)' }}>{it.quantity}</strong></span>
+                  {it.unit_price != null && <span>Unit: <strong style={{ color: 'var(--ink)' }}>{fmtMoney(it.unit_price, order.currency)}</strong></span>}
+                  {multi && <span style={{ marginLeft: 'auto' }}>{(galleryIdx as number) + 1} / {items.length}</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </>
   )
 }

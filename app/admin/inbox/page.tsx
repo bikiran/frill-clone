@@ -1523,7 +1523,11 @@ export default function InboxPage() {
     writeCache(cacheKey, convs)
     // On first load (desktop), OPEN the top conversation — including its messages
     // and contact — instead of just highlighting it (which left the pane blank).
-    if (data && data.length > 0 && !selectedRef.current && typeof window !== 'undefined' && window.innerWidth >= 768) {
+    // BUT not when we arrived via ?conversation=<id>: the deep-link handler will
+    // open that specific thread (even if it's in another folder), so don't flash
+    // the wrong (top) conversation first.
+    const hasDeepLink = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('conversation')
+    if (data && data.length > 0 && !selectedRef.current && !hasDeepLink && typeof window !== 'undefined' && window.innerWidth >= 768) {
       selectConversation(data[0])
     }
     } finally { convLoadingRef.current = false }
@@ -1542,16 +1546,32 @@ export default function InboxPage() {
   useEffect(() => { loadConversationsRef.current = loadConversations }, [loadConversations])
   useEffect(() => { loadWooDataRef.current = loadWooData })
 
-  // Deep-link: open a conversation from ?conversation=<id> (copy chat link)
+  // Deep-link: open a conversation from ?conversation=<id> (copy chat link, or
+  // "Open conversation" from the Orders board). The target may be closed/resolved
+  // or otherwise outside the current folder, so it won't be in the loaded list —
+  // fetch it directly and open it rather than silently doing nothing (which left
+  // the top thread showing, i.e. the wrong conversation).
+  const deepLinkedRef = useRef<string | null>(null)
   useEffect(() => {
-    if (conversations.length === 0 || selected) return
+    if (selected) return
     if (typeof window === 'undefined') return
     const convId = new URLSearchParams(window.location.search).get('conversation')
-    if (convId) {
-      const found = conversations.find(c => c.id === convId)
-      if (found) selectConversation(found)
-    }
-  }, [conversations])
+    if (!convId || deepLinkedRef.current === convId) return
+    const found = conversations.find(c => c.id === convId)
+    if (found) { deepLinkedRef.current = convId; selectConversation(found); return }
+    // Not in the current folder — load it on its own and open it.
+    ;(async () => {
+      deepLinkedRef.current = convId
+      const { data: conv } = await (supabase as any).from('conversations').select('*').eq('id', convId).maybeSingle()
+      if (!conv) { deepLinkedRef.current = null; return }
+      if (conv.contact_id) {
+        const { data: ct } = await (supabase as any).from('contacts').select('id, name, email, phone, relationship_type, prexty_customer_id').eq('id', conv.contact_id).maybeSingle()
+        if (ct) (conv as any).contacts = ct
+      }
+      setConversations(prev => prev.some(c => c.id === conv.id) ? prev : [conv, ...prev])
+      selectConversation(conv)
+    })()
+  }, [conversations, selected])
 
   // Close the assign dropdown / actions menu when clicking elsewhere
   useEffect(() => {
@@ -7972,7 +7992,15 @@ export default function InboxPage() {
               {/* AI-detected action items for this chat → draft tasks, inline in
                   the thread (same panel as the call card, and mirrored in the
                   Timeline tab). Only when the AI summary found action items. */}
-              {aiTodos.length > 0 && (
+              {aiTodos.length > 0 && !tasks.some((tk: any) => {
+                // Server-backed suppression: once these action items have been
+                // turned into tasks (or the panel was created/dismissed before),
+                // don't nag again — on any device, not just this browser.
+                if (tk.source === 'ai_summary' || tk.source === 'call_summary') return true
+                const tx = String(tk.text || tk.title || '').trim().toLowerCase()
+                if (!tx) return false
+                return aiTodos.some((td: any) => { const s = String(td.text || '').trim().toLowerCase(); return !!s && (tx === s || tx.includes(s) || s.includes(tx)) })
+              }) && (
                 <div style={{ maxWidth: 560, width: '100%', margin: '4px auto 0', background: '#faf5ff', border: '1px solid #ede9fe', borderRadius: 14, padding: '4px 14px 14px' }}>
                   <DraftTasks
                     todos={aiTodos.map((t: any) => t.text).filter(Boolean)}
