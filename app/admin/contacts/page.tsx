@@ -109,6 +109,33 @@ export default function ContactsPage() {
   const [editData, setEditData] = useState<Partial<Contact>>({})
   const [saving, setSaving] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
+  // The linked WooCommerce order's billing, for the "Fill from order" backfill.
+  const [orderBilling, setOrderBilling] = useState<any>(null)
+  useEffect(() => {
+    setOrderBilling(null)
+    if (!editMode || !companyId) return
+    const email = String((editData as any).email || selected?.email || '').trim()
+    const phone = String((editData as any).phone || selected?.phone || '')
+    const norm = (p: string) => (p || '').replace(/\D/g, '').slice(-9)
+    const hasBilling = (o: any) => o?.billing && (o.billing.first_name || o.billing.last_name || o.billing.phone || o.billing.address_1)
+    ;(async () => {
+      let order: any = null
+      if (email) {
+        const { data } = await (supabase as any).from('woocommerce_orders')
+          .select('billing, order_date').eq('company_id', companyId).ilike('customer_email', email)
+          .order('order_date', { ascending: false }).limit(10)
+        order = (data || []).find(hasBilling)
+      }
+      if (!order && norm(phone).length >= 8) {
+        const { data } = await (supabase as any).from('woocommerce_orders')
+          .select('billing, order_date').eq('company_id', companyId).eq('billing_phone_norm', norm(phone))
+          .order('order_date', { ascending: false }).limit(10)
+        order = (data || []).find(hasBilling)
+      }
+      setOrderBilling(order?.billing || null)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode, selected?.id, companyId])
 
   useEffect(() => {
     const init = async () => {
@@ -547,6 +574,30 @@ export default function ContactsPage() {
           <div style={{ flex: 1, overflowY: 'auto', padding: '18px' }}>
             {editMode ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {(() => {
+                  const b = orderBilling
+                  if (!b) return null
+                  const billingName = `${b.first_name || ''} ${b.last_name || ''}`.trim()
+                  const billingAddr = [b.address_1, b.address_2].filter(Boolean).join(', ')
+                  const ed: any = editData
+                  const canFill = (!ed.name && billingName) || (!ed.phone && b.phone) || (!ed.address && billingAddr) || (!ed.company_name && b.company)
+                  if (!canFill) return null
+                  return (
+                    <button type="button" onClick={() => setEditData((d: any) => ({
+                      ...d,
+                      name: d.name || billingName || d.name,
+                      phone: d.phone || b.phone || d.phone,
+                      address: d.address || billingAddr || d.address,
+                      city: d.city || b.city || d.city,
+                      country: d.country || b.country || d.country,
+                      company_name: d.company_name || b.company || d.company_name,
+                    }))}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 9, border: '1px dashed var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      Fill from order
+                    </button>
+                  )
+                })()}
                 {[['name', 'Full Name', 'text'], ['email', 'Email', 'email'], ['phone', 'Phone', 'tel'], ['address', 'Address', 'text'], ['city', 'City', 'text'], ['country', 'Country', 'text']].map(([field, label, type]) => (
                   <div key={field}>
                     <label style={labelStyle}>{label}</label>

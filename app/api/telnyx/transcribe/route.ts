@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
 
     const db = admin()
     const { data: call } = await db.from('calls').select('*').eq('id', callId).maybeSingle()
-    if (!call?.recording_url) {
+    if (!call?.recording_url && !call?.conference_recording_url) {
       return NextResponse.json({ ok: false, reason: 'No recording for this call.' })
     }
 
@@ -127,19 +127,31 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Pull the audio back down.
-    const audioRes = await fetchWithTimeout(call.recording_url, {}, 30000)
-    if (!audioRes.ok) return NextResponse.json({ ok: false, reason: 'Could not read the recording.' })
-    const audio = await audioRes.arrayBuffer()
+    // A call can have TWO recordings: the pre-handoff dial recording, then the
+    // conference recording of the leg it was handed to (device switch / warm
+    // transfer). Transcribe each in order and stitch them so the transcript +
+    // summary cover the WHOLE call, not just the part before the handoff.
+    const recordings: string[] = Array.from(new Set([call.recording_url, call.conference_recording_url].filter(Boolean))) as string[]
+    const parts: { text: string; segments: any[]; lang: string | null }[] = []
+    for (const url of recordings) {
+      try {
+        const audioRes = await fetchWithTimeout(url, {}, 30000)
+        if (!audioRes.ok) continue
+        const audio = await audioRes.arrayBuffer()
+        const p = DEEPGRAM ? await transcribeDeepgram(audio, DEEPGRAM) : await transcribeWhisper(audio, OPENAI!)
+        if (p.text.trim()) parts.push(p)
+      } catch { /* skip a segment we couldn't read/transcribe */ }
+    }
 
-    const { text, segments, lang } = DEEPGRAM
-      ? await transcribeDeepgram(audio, DEEPGRAM)
-      : await transcribeWhisper(audio, OPENAI!)
-
-    if (!text.trim()) {
+    if (parts.length === 0) {
       await db.from('calls').update({ transcription: '' }).eq('id', callId)
       return NextResponse.json({ ok: false, reason: 'Nothing audible in the recording.' })
     }
+
+    const DIVIDER = '\n\n— call continued on another device —\n\n'
+    const text = parts.map(p => p.text.trim()).join(DIVIDER)
+    const segments = parts.flatMap(p => p.segments || [])
+    const lang = parts[0].lang
 
     const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 
