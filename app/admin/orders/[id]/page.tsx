@@ -185,14 +185,6 @@ export default function OrderDetailPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
         {/* Left column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Order barcode — scannable Code128 of the order number */}
-          {order.order_number && (
-            <div style={{ ...card, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-              <div title={`Order ${order.order_number}`} style={{ width: '100%', maxWidth: 360, display: 'flex', justifyContent: 'center' }}
-                dangerouslySetInnerHTML={{ __html: barcodeSVG(String(order.order_number), { moduleWidth: 2, height: 58 }) }} />
-              <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.16em', color: 'var(--ink)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{order.order_number}</span>
-            </div>
-          )}
           {/* Customer */}
           <div style={card}>
             <p style={kick}>Customer</p>
@@ -257,6 +249,15 @@ export default function OrderDetailPage() {
               ))}
             </div>
           </div>
+
+          {/* Order barcode — scannable Code128 of the order number, under the order details */}
+          {order.order_number && (
+            <div style={{ ...card, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              <div title={`Order ${order.order_number}`} style={{ width: '100%', maxWidth: 360, display: 'flex', justifyContent: 'center' }}
+                dangerouslySetInnerHTML={{ __html: barcodeSVG(String(order.order_number), { moduleWidth: 2, height: 58 }) }} />
+              <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.16em', color: 'var(--ink)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{order.order_number}</span>
+            </div>
+          )}
         </div>
 
         {/* Right column */}

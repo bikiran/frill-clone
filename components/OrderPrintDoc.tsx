@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { fmtMoney, CARRIER_LABEL, carrierTrackUrl, isClickCollect } from '@/lib/orders'
+import { fmtMoney, CARRIER_LABEL, carrierTrackUrl, isClickCollect, buildOrderLineKeys } from '@/lib/orders'
 import { barcodeSVG } from '@/lib/barcode'
 
 type Order = any
@@ -15,6 +15,7 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
   const [itemsByOrder, setItemsByOrder] = useState<Record<string, any[]>>({})
   const [shipByOrder, setShipByOrder] = useState<Record<string, any>>({})
   const [notesByOrder, setNotesByOrder] = useState<Record<string, any[]>>({})
+  const [fulByOrder, setFulByOrder] = useState<Record<string, Record<string, boolean>>>({})
   const [company, setCompany] = useState<any>(null)
   const [fromAddr, setFromAddr] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -50,18 +51,22 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
           } catch {}
         }
       } catch {}
-      const [{ data: co }, { data: loc }, { data: items }, { data: ships }, { data: nts }] = await Promise.all([
+      const [{ data: co }, { data: loc }, { data: items }, { data: ships }, { data: nts }, ful] = await Promise.all([
         (supabase as any).from('companies').select('*').eq('id', companyId).maybeSingle(),
         (supabase as any).from('company_locations').select('*').eq('company_id', companyId).order('is_primary', { ascending: false }).limit(1).maybeSingle(),
         (supabase as any).from('order_items').select('*').in('order_id', ids),
         (supabase as any).from('order_shipments').select('*').in('order_id', ids).order('created_at', { ascending: false }),
         (supabase as any).from('order_notes').select('*').in('order_id', ids).order('created_at', { ascending: true }),
+        // Per-line fulfilment — which items are already sent. Absent table
+        // (migration pending) just resolves to no sent flags.
+        (supabase as any).from('order_fulfillments').select('order_id, line_key, sent').in('order_id', ids).then((r: any) => r, () => ({ data: [] })),
       ])
       if (cancelled) return
       setOrders(rows); setCompany(co || null); setFromAddr(loc || null)
       const ib: Record<string, any[]> = {}; for (const it of items || []) (ib[it.order_id] ||= []).push(it); setItemsByOrder(ib)
       const sb: Record<string, any> = {}; for (const sh of ships || []) if (!sb[sh.order_id]) sb[sh.order_id] = sh; setShipByOrder(sb)
       const nb: Record<string, any[]> = {}; for (const n of nts || []) (nb[n.order_id] ||= []).push(n); setNotesByOrder(nb)
+      const fb: Record<string, Record<string, boolean>> = {}; for (const f of (ful?.data || [])) { (fb[f.order_id] ||= {})[f.line_key] = !!f.sent } setFulByOrder(fb)
       setLoading(false); onLoaded?.()
     })()
     return () => { cancelled = true }
@@ -89,7 +94,7 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
       <div style={{ padding: doc === 'label' ? 0 : '10px 0' }}>
         {orders.map(o => doc === 'label'
           ? <LabelDoc key={o.id} order={o} ship={shipByOrder[o.id]} senderName={senderName} from={fromAddr} accent={accent} />
-          : <PackingSlip key={o.id} order={o} items={itemsByOrder[o.id] || []} notes={notesByOrder[o.id] || []} company={company} from={fromAddr} accent={accent} />
+          : <PackingSlip key={o.id} order={o} items={itemsByOrder[o.id] || []} notes={notesByOrder[o.id] || []} sentByKey={fulByOrder[o.id] || {}} company={company} from={fromAddr} accent={accent} />
         )}
       </div>
     </div>
@@ -118,9 +123,14 @@ function contactLines(company: any, from: any): { label: string; value: string }
   return out
 }
 
-function PackingSlip({ order, items, notes, company, from, accent }: any) {
+function PackingSlip({ order, items, notes, sentByKey, company, from, accent }: any) {
   const ship = order.shipping_address || {}
   const total = items.reduce((s: number, it: any) => s + (Number(it.quantity) || 0), 0)
+  // Which lines are already sent (partial fulfilment) — cross them out so the
+  // packer knows not to pack them again.
+  const lineKeys = buildOrderLineKeys(items)
+  const isSent = (it: any) => !!(sentByKey && sentByKey[lineKeys.get(it.id) || ''])
+  const anySent = items.some(isSent)
   const barcode = useMemo(() => barcodeSVG(String(order.order_number || ''), { moduleWidth: 1.5, height: 52 }), [order.order_number])
   const subtotal = order.subtotal != null ? Number(order.subtotal) : items.reduce((s: number, it: any) => s + (Number(it.total_price) || 0), 0)
   const shipping = Number(order.shipping_total) || 0
@@ -175,6 +185,13 @@ function PackingSlip({ order, items, notes, company, from, accent }: any) {
         </div>
       </div>
 
+      {/* Partial-fulfilment notice for the packer */}
+      {anySent && (
+        <div style={{ marginTop: 16, padding: '8px 12px', borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12, fontWeight: 700 }}>
+          ✕ Partially fulfilled — crossed-out items have already been sent. Do not pack them again.
+        </div>
+      )}
+
       {/* Items */}
       <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 18 }}>
         <thead>
@@ -192,20 +209,30 @@ function PackingSlip({ order, items, notes, company, from, accent }: any) {
             const qty = Number(it.quantity) || 1
             const line = it.total_price != null ? Number(it.total_price) : (Number(it.unit_price) || 0) * qty
             const unit = it.unit_price != null ? Number(it.unit_price) : line / qty
+            const sent = isSent(it)
+            const strike: React.CSSProperties = sent ? { textDecoration: 'line-through', color: '#94a3b8' } : {}
             return (
-              <tr key={it.id}>
+              <tr key={it.id} style={sent ? { background: '#f8fafc' } : undefined}>
                 <td style={{ ...td, width: 46 }}>
-                  <span style={{ display: 'inline-flex', width: 38, height: 38, borderRadius: 6, overflow: 'hidden', background: '#f1f5f9', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0' }}>
+                  <span style={{ position: 'relative', display: 'inline-flex', width: 38, height: 38, borderRadius: 6, overflow: 'hidden', background: '#f1f5f9', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0' }}>
                     {it.image_url
-                      ? <img src={it.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e: any) => { e.currentTarget.style.display = 'none' }} />
+                      ? <img src={it.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: sent ? 0.5 : 1 }} onError={(e: any) => { e.currentTarget.style.display = 'none' }} />
                       : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /></svg>}
+                    {sent && (
+                      <svg viewBox="0 0 38 38" width="38" height="38" style={{ position: 'absolute', inset: 0 }} stroke="#dc2626" strokeWidth="3" strokeLinecap="round">
+                        <line x1="6" y1="6" x2="32" y2="32" /><line x1="32" y1="6" x2="6" y2="32" />
+                      </svg>
+                    )}
                   </span>
                 </td>
-                <td style={td}>{it.product_name || 'Item'}</td>
-                <td style={{ ...td, color: '#475569', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{it.sku || '—'}</td>
-                <td style={{ ...td, textAlign: 'right' }}>{fmtMoney(unit, order.currency)}</td>
-                <td style={{ ...td, textAlign: 'center', fontWeight: 700 }}>{qty}</td>
-                <td style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{fmtMoney(line, order.currency)}</td>
+                <td style={td}>
+                  <span style={strike}>{it.product_name || 'Item'}</span>
+                  {sent && <span style={{ marginLeft: 8, display: 'inline-block', fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', color: '#dc2626', border: '1.5px solid #dc2626', borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle' }}>✕ ALREADY SENT</span>}
+                </td>
+                <td style={{ ...td, color: '#475569', fontFamily: 'ui-monospace, monospace', fontSize: 12, ...strike }}>{it.sku || '—'}</td>
+                <td style={{ ...td, textAlign: 'right', ...strike }}>{fmtMoney(unit, order.currency)}</td>
+                <td style={{ ...td, textAlign: 'center', fontWeight: 700, ...strike }}>{qty}</td>
+                <td style={{ ...td, textAlign: 'right', fontWeight: 600, ...strike }}>{fmtMoney(line, order.currency)}</td>
               </tr>
             )
           })}

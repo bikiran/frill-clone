@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { fmtMoney } from '@/lib/orders'
+import { fmtMoney, buildOrderLineKeys } from '@/lib/orders'
 
 /**
  * Per-line-item fulfilment + ShipStation-style split shipments.
@@ -16,23 +16,6 @@ import { fmtMoney } from '@/lib/orders'
  */
 
 type Ful = { line_key: string; sent: boolean; sent_at: string | null; ship_group: number; picked: boolean; picked_at: string | null }
-
-// Stable, re-sync-proof key for a line item. Prefers the WooCommerce line id;
-// otherwise product|sku|occurrence (nth identical line), computed from the
-// pre-sorted list so it does not depend on the regenerated order_items.id.
-function buildLineKeys(items: any[]): Map<string, string> {
-  const seen = new Map<string, number>()
-  const out = new Map<string, string>()
-  for (const it of items) {
-    const wl = it?.metadata?.woo_line_id
-    if (wl != null && wl !== '') { out.set(it.id, `w:${wl}`); continue }
-    const base = `${it.product_id || ''}|${it.sku || ''}`
-    const n = seen.get(base) || 0
-    seen.set(base, n + 1)
-    out.set(it.id, `k:${base}|${n}`)
-  }
-  return out
-}
 
 export default function OrderItemsPanel({
   order, companyId, items, accent, onLog, onFlash, onOpenItem, pickMode = false, onExitPick,
@@ -57,7 +40,7 @@ export default function OrderItemsPanel({
   // Deterministic order so occurrence-based keys are stable, and grouping is
   // predictable. Sort by the stored id only as a final tiebreak.
   const ordered = useMemo(() => items.map((it, i) => ({ it, idx: i })), [items])
-  const lineKeys = useMemo(() => buildLineKeys(items), [items])
+  const lineKeys = useMemo(() => buildOrderLineKeys(items), [items])
   const keyOf = useCallback((it: any) => lineKeys.get(it.id) || `id:${it.id}`, [lineKeys])
 
   const load = useCallback(async () => {

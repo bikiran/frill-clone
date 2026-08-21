@@ -128,3 +128,24 @@ export const fmtMoney = (n: number | null | undefined, currency = 'AUD') =>
 
 // Saved filters offered in the UI (client resolves them against the row set).
 export const SAVED_FILTERS = ['Today', 'Overdue', 'High Priority', 'Click & Collect', 'Unassigned'] as const
+
+// ── Line-item fulfilment keys ────────────────────────────────────────────────
+// Stable, re-sync-proof key for an order_items row. Prefers the WooCommerce
+// line id (stored in metadata.woo_line_id by the sync); otherwise
+// product|sku|occurrence (nth identical line), computed from the list order so
+// it does not depend on order_items.id (which the webhook regenerates on every
+// order update). Shared by the fulfilment panel and the packing slip so a
+// "sent" flag maps to the same line in both.
+export function buildOrderLineKeys(items: any[]): Map<string, string> {
+  const seen = new Map<string, number>()
+  const out = new Map<string, string>()
+  for (const it of items || []) {
+    const wl = it?.metadata?.woo_line_id
+    if (wl != null && wl !== '') { out.set(it.id, `w:${wl}`); continue }
+    const base = `${it.product_id || ''}|${it.sku || ''}`
+    const n = seen.get(base) || 0
+    seen.set(base, n + 1)
+    out.set(it.id, `k:${base}|${n}`)
+  }
+  return out
+}

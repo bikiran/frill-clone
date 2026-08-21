@@ -429,14 +429,14 @@ export default function OrdersPage() {
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.02em' }}>Orders</h1>
             <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--slate)' }}>Manage and fulfil customer orders{syncing ? ' · syncing…' : ''}</p>
           </div>
-          <button type="button" onClick={() => setShowCreateOrder(true)} className="ord-create-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 17px', borderRadius: 11, border: '1.5px solid var(--border)', background: '#fff', color: '#0f172a', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '-0.01em' }}>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button type="button" onClick={() => setShowCreateOrder(true)} className="ord-create-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 11, border: 'none', background: ACCENT, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '-0.01em' }}>
             <span className="ord-plus" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18 }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             </span>
             Create Order
           </button>
-        </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {kpi('All Orders', counts.all, 'var(--ink)')}
           {kpi('Awaiting', counts.awaiting_shipment || 0, ACCENT)}
           {kpi('On Hold', counts.on_hold || 0, '#d97706')}
@@ -1260,7 +1260,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const kick: React.CSSProperties = { margin: 0, fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }
   const quick = (icon: React.ReactNode, label: string, onClick: () => void, primary = false) => (
     <button type="button" onClick={onClick} title={label}
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '9px 6px', borderRadius: 11, border: `1px solid ${primary ? ACCENT : 'var(--border)'}`, background: primary ? ACCENT : 'var(--card, #fff)', color: primary ? '#fff' : 'var(--ink)', cursor: 'pointer', flex: 1, minWidth: 64 }}>
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '9px 6px', borderRadius: 11, border: `1px solid ${primary ? ACCENT : 'var(--border)'}`, background: primary ? ACCENT : 'var(--card, #fff)', color: primary ? '#fff' : 'var(--ink)', cursor: 'pointer', flex: '0 0 auto', width: 72 }}>
       {icon}<span style={{ fontSize: 10.5, fontWeight: 700 }}>{label}</span>
     </button>
   )
@@ -1292,8 +1292,9 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', ...(fullScreen ? { maxWidth: 980, width: '100%', margin: '0 auto', background: 'var(--card,#fff)' } : {}) }}>
-          {/* Quick actions */}
-          <div style={{ ...sect, display: 'flex', gap: 8 }}>
+          {/* Quick actions — horizontally scrollable so every action stays reachable
+              in the narrow side drawer instead of the last one being clipped. */}
+          <div style={{ ...sect, display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'thin' }}>
             {quick(<svg {...I}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /></svg>, 'Label', () => onLabel(order), true)}
             {quick(<svg {...I}><path d="M6 9V2h12v7" /><rect x="6" y="14" width="12" height="8" /><path d="M6 18H4a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2" /></svg>, 'Slip', () => onPrintSlip(order.id))}
             {quick(<svg {...I}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3" /><path d="m9 14 2 2 4-4" /></svg>, 'Pick', () => { setPickMode(v => { const n = !v; if (n) { const el = document.getElementById('ord-items-panel'); el?.scrollIntoView({ behavior: 'smooth', block: 'start' }); onFlash('Picking — tap each item as you pick it') } return n }) }, pickMode)}
@@ -1301,15 +1302,6 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             {quick(<svg {...I}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>, 'Note', () => { (document.getElementById('ord-note') as HTMLTextAreaElement)?.focus() })}
             {quick(<svg {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>, 'Contact', () => { if (convHref) location.href = convHref; else onFlash('No linked conversation yet.') })}
           </div>
-
-          {/* Order barcode — scannable Code128 of the order number */}
-          {order.order_number && (
-            <div style={{ ...sect, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-              <div title={`Order ${order.order_number}`} style={{ width: '100%', maxWidth: 320, display: 'flex', justifyContent: 'center' }}
-                dangerouslySetInnerHTML={{ __html: barcodeSVG(String(order.order_number), { moduleWidth: 2, height: 54 }) }} />
-              <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--ink)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{order.order_number}</span>
-            </div>
-          )}
 
           {/* Customer */}
           <div style={sect}>
@@ -1361,6 +1353,15 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
               ))}
             </div>
           </div>
+
+          {/* Order barcode — scannable Code128 of the order number, under the order details */}
+          {order.order_number && (
+            <div style={{ ...sect, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              <div title={`Order ${order.order_number}`} style={{ width: '100%', maxWidth: 320, display: 'flex', justifyContent: 'center' }}
+                dangerouslySetInnerHTML={{ __html: barcodeSVG(String(order.order_number), { moduleWidth: 2, height: 54 }) }} />
+              <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--ink)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{order.order_number}</span>
+            </div>
+          )}
 
           {/* Items */}
           <div style={sect} id="ord-items-panel">
