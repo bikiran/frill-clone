@@ -91,6 +91,7 @@ export default function OrdersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
+  const [tagFilterOpen, setTagFilterOpen] = useState(false)
   const [labelOrder, setLabelOrder] = useState<Order | null>(null)
   const [tagDefs, setTagDefs] = useState<{ id: string; name: string; color: string }[]>([])
   const [manageTagsOpen, setManageTagsOpen] = useState(false)
@@ -103,7 +104,10 @@ export default function OrdersPage() {
   const [showSidebar, setShowSidebar] = useState(true)
   useEffect(() => { try { const v = localStorage.getItem('colvy-orders-sidebar'); if (v != null) setShowSidebar(v === '1') } catch {} }, [])
   const setSidebarPref = (v: boolean) => { setShowSidebar(v); try { localStorage.setItem('colvy-orders-sidebar', v ? '1' : '0') } catch {} }
-  const openOrder = (id: string) => { if (showSidebar) setDrawerId(id); else window.location.href = `/admin/orders/${id}` }
+  // Show Sidebar ON → 420px side drawer. OFF → full-screen slide-up sheet in the
+  // SAME tab (not a new tab, not a route change).
+  const [drawerFull, setDrawerFull] = useState(false)
+  const openOrder = (id: string) => { setDrawerId(id); setDrawerFull(!showSidebar) }
 
   const [printModal, setPrintModal] = useState<{ url: string; title: string } | null>(null)
   // Open the print preview (packing slips or labels) as an in-page modal.
@@ -419,7 +423,25 @@ export default function OrdersPage() {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search orders…" style={{ ...ctrl, minWidth: 200, cursor: 'text', fontWeight: 500 }} />
           <select value={fStore} onChange={e => setFStore(e.target.value)} style={ctrl}><option value="all">All Stores</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
           <select value={fAssignee} onChange={e => setFAssignee(e.target.value)} style={ctrl}><option value="all">Any assignee</option><option value="none">Unassigned</option>{team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
-          <select value={fTag} onChange={e => setFTag(e.target.value)} style={ctrl}><option value="all">Any tag</option>{Array.from(new Set([...tagDefs.map(t => t.name), ...allTags])).map(t => <option key={t} value={t}>{t}</option>)}</select>
+          <div style={{ position: 'relative' }}>
+            <button type="button" onClick={() => setTagFilterOpen(v => !v)} style={{ ...ctrl, display: 'flex', alignItems: 'center', gap: 6 }}>
+              {fTag === 'all' ? 'Any tag' : <TagChip name={fTag} color={tagColor(fTag)} />}
+              <span style={{ fontSize: 9, color: 'var(--slate)' }}>▾</span>
+            </button>
+            {tagFilterOpen && (
+              <>
+                <div onClick={() => setTagFilterOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
+                <div style={{ position: 'absolute', top: 'calc(100% + 5px)', left: 0, zIndex: 4501, minWidth: 210, maxHeight: 300, overflowY: 'auto', background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 10px 30px rgba(0,0,0,0.16)', padding: 6 }}>
+                  <button type="button" className="tag-opt" onClick={() => { setFTag('all'); setTagFilterOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer' }}>{fTag === 'all' ? '✓' : ' '} Any tag</button>
+                  {Array.from(new Set([...tagDefs.map(t => t.name), ...allTags])).map(t => (
+                    <button key={t} type="button" className="tag-opt" onClick={() => { setFTag(t); setTagFilterOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', cursor: 'pointer' }}>
+                      <span style={{ width: 12, color: accent }}>{fTag === t ? '✓' : ''}</span><TagChip name={t} color={tagColor(t)} />
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <select value={fDate} onChange={e => setFDate(e.target.value)} style={ctrl}><option value="all">All time</option><option value="today">Today</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option></select>
           <select value={saved} onChange={e => setSaved(e.target.value)} style={{ ...ctrl, color: saved ? ACCENT : 'var(--ink)' }}><option value="">Saved Filters</option>{SAVED_FILTERS.map(s => <option key={s} value={s}>{s}</option>)}{locations.map(l => <option key={l.id} value={`loc:${l.id}`}>{l.name}</option>)}</select>
           <button type="button" onClick={() => runSync(companyId!)} disabled={syncing} style={{ ...ctrl, color: ACCENT }}>{syncing ? 'Syncing…' : 'Sync'}</button>
@@ -492,7 +514,7 @@ export default function OrdersPage() {
           tagDefs={tagDefs} tagColor={tagColor} onEnsureTag={ensureTagDef} onManageTags={() => setManageTagsOpen(true)}
           onClose={() => setDrawerId(null)}
           onPatch={(patch, ev) => patchOrder([drawerOrder.id], patch, ev)}
-          onFlash={flash} teamName={teamName} outletName={outletName}
+          onFlash={flash} teamName={teamName} outletName={outletName} fullScreen={drawerFull}
           onLabel={(o: Order) => setLabelOrder(o)}
           onPrintSlip={(id: string) => openPrint('packing_slip', [id])} />
       )}
@@ -814,7 +836,7 @@ function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOr
 }
 
 // ── Right-side order drawer ───────────────────────────────────────────────────
-function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, tagDefs, tagColor, onEnsureTag, onManageTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, teamName, outletName }: any) {
+function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, tagDefs, tagColor, onEnsureTag, onManageTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, teamName, outletName, fullScreen = false }: any) {
   const ACCENT = accent || 'var(--coral)'
   const [items, setItems] = useState<any[]>([])
   const [notes, setNotes] = useState<any[]>([])
@@ -888,12 +910,18 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   )
   const I = { width: 17, height: 17, fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, viewBox: '0 0 24 24' }
 
+  // Full-screen mode slides up over the whole viewport (same tab); side mode is
+  // the 420px right drawer.
+  const panelStyle: React.CSSProperties = fullScreen
+    ? { position: 'fixed', inset: 0, background: 'var(--canvas, #f6f7f9)', zIndex: 4001, display: 'flex', flexDirection: 'column', animation: 'ordSlideUp .28s cubic-bezier(.16,.84,.44,1)' }
+    : { position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, maxWidth: '94vw', background: 'var(--card, #fff)', zIndex: 4001, boxShadow: '-12px 0 40px rgba(0,0,0,0.16)', display: 'flex', flexDirection: 'column' }
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 4000 }} />
-      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, maxWidth: '94vw', background: 'var(--card, #fff)', zIndex: 4001, boxShadow: '-12px 0 40px rgba(0,0,0,0.16)', display: 'flex', flexDirection: 'column' }}>
+      <style>{`@keyframes ordSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
+      {!fullScreen && <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 4000 }} />}
+      <div style={panelStyle}>
         {/* Header */}
-        <div style={{ ...sect, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ ...sect, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, maxWidth: fullScreen ? 980 : undefined, width: '100%', margin: fullScreen ? '0 auto' : undefined, boxSizing: 'border-box' }}>
           <div>
             <h2 onClick={() => copyToClipboard(String(order.order_number), onFlash)} title="Click to copy order number" style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--ink)', cursor: 'copy', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               Order {order.order_number}
@@ -907,7 +935,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--slate)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto', ...(fullScreen ? { maxWidth: 980, width: '100%', margin: '0 auto', background: 'var(--card,#fff)' } : {}) }}>
           {/* Quick actions */}
           <div style={{ ...sect, display: 'flex', gap: 8 }}>
             {quick(<svg {...I}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /></svg>, 'Label', () => onLabel(order), true)}
