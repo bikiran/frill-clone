@@ -6566,14 +6566,18 @@ export default function InboxPage() {
               only when it overflows, dimming at each end. */}
           {(() => {
             const showArrows = assignArrows.l || assignArrows.r
-            const arrowBtn = (dir: 'l' | 'r', enabled: boolean) => (
+            const unreadN = conversations.filter(c => c.is_unread && !['closed', 'resolved'].includes(c.status)).length
+            const arrowBtn = (dir: 'l' | 'r', enabled: boolean, dot = false) => (
               <button type="button" aria-label={dir === 'l' ? 'Scroll left' : 'Scroll right'}
                 onClick={() => assignScrollRef.current?.scrollBy({ left: dir === 'l' ? -150 : 150, behavior: 'smooth' })}
                 disabled={!enabled}
-                style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'opacity 0.12s' }}>
+                style={{ position: 'relative', flexShrink: 0, width: 26, height: 26, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'opacity 0.12s' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points={dir === 'l' ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} />
                 </svg>
+                {/* Orange "new" dot: unread conversations live on a tab scrolled
+                    out of view in this direction. */}
+                {dot && <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', border: '1.5px solid #fff' }} />}
               </button>
             )
             return (
@@ -6601,7 +6605,7 @@ export default function InboxPage() {
                     )
                   })}
                 </div>
-                {showArrows && arrowBtn('r', assignArrows.r)}
+                {showArrows && arrowBtn('r', assignArrows.r, unreadN > 0 && assignArrows.r && assignFilter !== 'unread')}
               </div>
             )
           })()}

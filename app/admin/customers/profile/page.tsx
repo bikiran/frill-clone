@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useSearchParams } from 'next/navigation'
 import { SegmentationService } from '@/lib/segmentation-service'
@@ -17,6 +17,23 @@ export default function CustomerProfilePage() {
   const [error, setError] = useState('')
   const [productSearch, setProductSearch] = useState('')
   const [expandedProducts, setExpandedProducts] = useState<Set<number>>(new Set())
+
+  // Contact-centric data (relationship / tags / address / notes / tasks live on
+  // the contact + its conversation, not on the woo customer record).
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [contactId, setContactId] = useState<string | null>(null)
+  const [contactRow, setContactRow] = useState<any>(null)
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [me, setMe] = useState<{ id: string | null; name: string }>({ id: null, name: 'You' })
+  const [notes, setNotes] = useState<any[]>([])
+  const [tasks, setTasks] = useState<any[]>([])
+  const [noteBody, setNoteBody] = useState('')
+  const [savingNote, setSavingNote] = useState(false)
+  const [taskText, setTaskText] = useState('')
+  const [taskDue, setTaskDue] = useState('')
+  const [savingTask, setSavingTask] = useState(false)
+  const noteRef = useRef<HTMLTextAreaElement | null>(null)
+  const taskRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     const init = async () => {
@@ -143,9 +160,44 @@ export default function CustomerProfilePage() {
           }
         } catch { setOrders([]) }
 
+        // Resolve the linked CONTACT (relationship / tags / address / notes /
+        // tasks all live on the contact + its conversation, not the woo row).
+        let cid: string | null = customerData.is_contact_only ? customerData.id : (customerData.contact_id || null)
+        let contactRecord: any = null
+        try {
+          if (cid) {
+            const { data } = await (supabase as any).from('contacts').select('*').eq('id', cid).maybeSingle()
+            contactRecord = data
+          }
+          if (!contactRecord && customerData.email) {
+            const { data } = await (supabase as any).from('contacts').select('*')
+              .eq('company_id', resolvedCompanyId).ilike('email', customerData.email).maybeSingle()
+            if (data) { contactRecord = data; cid = data.id }
+          }
+        } catch {}
+        setContactId(cid); setContactRow(contactRecord); setCompanyId(resolvedCompanyId)
+
+        // Who's viewing — for note/task authorship.
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.user) setMe({ id: session.user.id, name: session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'You' })
+        } catch {}
+
+        // The contact's conversation, so notes/tasks anchor to the same thread
+        // the inbox uses.
+        let convId: string | null = null
+        try {
+          if (cid) {
+            const { data: conv } = await (supabase as any).from('conversations').select('id')
+              .eq('company_id', resolvedCompanyId).eq('contact_id', cid)
+              .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+            convId = conv?.id || null
+            setConversationId(convId)
+          }
+        } catch {}
+
         // Load call history for this contact
         try {
-          const cid = customerData.is_contact_only ? customerData.id : customerData.contact_id
           if (cid) {
             const { data: callData } = await (supabase as any)
               .from('calls').select('*')
@@ -155,6 +207,30 @@ export default function CustomerProfilePage() {
             setCalls(callData || [])
           }
         } catch { setCalls([]) }
+
+        // Notes — a real woo customer has its own customer_notes store; a
+        // contact's notes live on its conversation.
+        try {
+          if (!customerData.is_contact_only && customerData.id) {
+            const { data } = await (supabase as any).from('customer_notes').select('*')
+              .eq('customer_id', customerData.id).eq('company_id', resolvedCompanyId)
+              .order('created_at', { ascending: false })
+            setNotes((data || []).map((n: any) => ({ id: n.id, content: n.content, author: n.author_name || null, created_at: n.created_at })))
+          } else if (convId) {
+            const { data } = await (supabase as any).from('conversation_notes').select('*')
+              .eq('conversation_id', convId).order('created_at', { ascending: false })
+            setNotes((data || []).map((n: any) => ({ id: n.id, content: n.content, author: n.author_name || null, created_at: n.created_at })))
+          }
+        } catch {}
+
+        // Tasks — conversation_tasks anchored to this contact's thread.
+        try {
+          if (convId) {
+            const { data } = await (supabase as any).from('conversation_tasks').select('*')
+              .eq('conversation_id', convId).order('created_at', { ascending: false })
+            setTasks(data || [])
+          }
+        } catch {}
       } catch (err: any) {
         setError(err.message || 'Failed to load customer')
       } finally {
@@ -265,9 +341,124 @@ export default function CustomerProfilePage() {
   const tags: string[] = Array.isArray((customer as any).tags) ? (customer as any).tags.filter(Boolean) : []
   const fmtMoney = (n: number) => `$${n.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+  // A real woo customer keeps its own customer_notes; a contact-only record uses
+  // the conversation store.
+  const wooCustomerId = customer && !customer.is_contact_only ? customer.id : null
+  const RELATIONSHIPS: [string, string][] = [['customer', 'Customer'], ['supplier', 'Supplier'], ['wholesaler', 'Wholesaler'], ['business', 'Business contact']]
+  const relationship = contactRow?.relationship_type || 'customer'
+
+  // Contact address (flat text columns) as a fallback to the woo nested address.
+  const contactAddrStr = contactRow
+    ? [contactRow.address, contactRow.suburb || contactRow.city, (contactRow.state || '').toUpperCase(), contactRow.postcode, contactRow.country].filter(Boolean).join(', ')
+    : ''
+  const hasWooAddr = !!(addr.address_1 || addr.city)
+  const allTags: string[] = Array.from(new Set([
+    ...(Array.isArray((customer as any).tags) ? (customer as any).tags : []),
+    ...(Array.isArray(contactRow?.tags) ? contactRow.tags : []),
+  ].filter(Boolean)))
+
+  // Recent Activity — no contact timeline table exists, so synthesise one from
+  // orders + calls + notes + tasks + the contact's creation.
+  const activity = [
+    ...orders.map((o: any) => ({ t: o.order_date, icon: '🛒', label: `Order #${o.woo_order_id} ${o.status || 'placed'}` })),
+    ...calls.map((c: any) => ({ t: c.created_at, icon: c.direction === 'inbound' ? '📥' : '📤', label: `${c.direction === 'inbound' ? 'Incoming' : 'Outgoing'} call${c.status ? ` · ${c.status}` : ''}` })),
+    ...notes.map((n: any) => ({ t: n.created_at, icon: '📝', label: 'Note added' })),
+    ...tasks.map((t: any) => ({ t: t.created_at, icon: '✅', label: `Task: ${t.title || t.text || ''}`.trim() })),
+    ...(contactRow?.created_at ? [{ t: contactRow.created_at, icon: '👤', label: 'Contact created' }] : []),
+  ].filter(a => a.t).sort((a, b) => new Date(b.t).getTime() - new Date(a.t).getTime()).slice(0, 8)
+
+  const relTime = (v: string) => {
+    const d = new Date(v).getTime(); if (isNaN(d)) return ''
+    const mins = Math.floor((Date.now() - d) / 60000)
+    if (mins < 1) return 'just now'
+    if (mins < 60) return `${mins}m ago`
+    const hrs = Math.floor(mins / 60); if (hrs < 24) return `${hrs}h ago`
+    const days = Math.floor(hrs / 24); if (days < 30) return `${days}d ago`
+    return new Date(v).toLocaleDateString()
+  }
+
+  // Anchor notes/tasks to the contact's conversation (create one lazily if the
+  // contact has never had a thread) so they show in the inbox too.
+  const ensureConversationId = async (): Promise<string | null> => {
+    if (conversationId) return conversationId
+    if (!companyId || !contactId) return null
+    try {
+      const { data } = await (supabase as any).from('conversations')
+        .insert({ company_id: companyId, contact_id: contactId, channel: 'note', status: 'open', last_message_at: new Date().toISOString() })
+        .select('id').maybeSingle()
+      if (data?.id) { setConversationId(data.id); return data.id }
+    } catch {}
+    return null
+  }
+
+  const addNote = async () => {
+    const body = noteBody.trim()
+    if (!body || !companyId || savingNote) return
+    setSavingNote(true)
+    try {
+      if (wooCustomerId) {
+        const { data } = await (supabase as any).from('customer_notes')
+          .insert({ customer_id: wooCustomerId, company_id: companyId, created_by: me.id, content: body }).select().maybeSingle()
+        setNotes(ns => [{ id: data?.id || `tmp-${Date.now()}`, content: body, author: me.name, created_at: data?.created_at || new Date().toISOString() }, ...ns])
+      } else {
+        const convId = await ensureConversationId()
+        if (!convId) return
+        const { data } = await (supabase as any).from('conversation_notes')
+          .insert({ conversation_id: convId, company_id: companyId, author_name: me.name, content: body }).select().maybeSingle()
+        setNotes(ns => [{ id: data?.id || `tmp-${Date.now()}`, content: body, author: me.name, created_at: data?.created_at || new Date().toISOString() }, ...ns])
+      }
+      setNoteBody('')
+    } catch {} finally { setSavingNote(false) }
+  }
+
+  const addTask = async () => {
+    const text = taskText.trim()
+    if (!text || !companyId || savingTask) return
+    setSavingTask(true)
+    try {
+      const due = taskDue ? new Date(taskDue).toISOString() : null
+      const convId = contactId ? await ensureConversationId() : null
+      const full: any = {
+        company_id: companyId, text, title: text, done: false, status: 'todo', priority: 'normal',
+        created_by: me.name, created_by_id: me.id, assignees: [], mentions: [], order_customer: fullName,
+        ...(convId ? { conversation_id: convId } : {}), ...(due ? { due_date: due } : {}),
+      }
+      let inserted: any = null
+      const { data, error } = await (supabase as any).from('conversation_tasks').insert(full).select().maybeSingle()
+      if (error) {
+        // Retry with only core columns for an un-migrated DB.
+        const { data: d2 } = await (supabase as any).from('conversation_tasks')
+          .insert({ company_id: companyId, text, done: false, ...(convId ? { conversation_id: convId } : {}), ...(due ? { due_date: due } : {}) }).select().maybeSingle()
+        inserted = d2
+      } else inserted = data
+      if (inserted) setTasks(ts => [inserted, ...ts])
+      setTaskText(''); setTaskDue('')
+    } catch {} finally { setSavingTask(false) }
+  }
+
+  const toggleTask = async (t: any) => {
+    const done = !(t.done || t.status === 'done')
+    setTasks(ts => ts.map(x => x.id === t.id ? { ...x, done, status: done ? 'done' : 'todo' } : x))
+    try {
+      await (supabase as any).from('conversation_tasks')
+        .update({ done, status: done ? 'done' : 'todo', completed_at: done ? new Date().toISOString() : null, completed_by: done ? me.name : null })
+        .eq('id', t.id)
+    } catch {}
+  }
+
+  const updateRelationship = async (rt: string) => {
+    if (!contactId) return
+    setContactRow((c: any) => ({ ...(c || {}), relationship_type: rt }))
+    try { await (supabase as any).from('contacts').update({ relationship_type: rt, ...(rt === 'customer' ? {} : { subscribed_to_marketing: false }) }).eq('id', contactId) } catch {}
+  }
+
+  const focusNote = () => { noteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => noteRef.current?.focus(), 300) }
+  const focusTask = () => { taskRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => taskRef.current?.focus(), 300) }
+
   const card: React.CSSProperties = { borderRadius: 14, border: '1px solid var(--border)', background: 'var(--card, #fff)', padding: 18 }
   const cardTitle: React.CSSProperties = { margin: '0 0 14px', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }
   const kicker: React.CSSProperties = { margin: '0 0 4px', fontSize: 10.5, color: 'var(--slate)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }
+  const ghostBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card, #fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, textDecoration: 'none', cursor: 'pointer' }
 
   // Compact icon-topped stat card.
   const statCard = (icon: React.ReactNode, label: string, value: string, sub?: string, accent = 'var(--coral)') => (
@@ -302,17 +493,31 @@ export default function CustomerProfilePage() {
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {customer.phone && (
-                <a href={`tel:${customer.phone}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card, #fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
+                <a href={`tel:${customer.phone}`} style={ghostBtn}>
                   <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                   Call
                 </a>
               )}
+              {conversationId && (
+                <a href={`/admin/inbox?conversation=${conversationId}`} style={ghostBtn}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  Message
+                </a>
+              )}
               {customer.email && (
-                <a href={`mailto:${customer.email}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+                <a href={`mailto:${customer.email}`} style={ghostBtn}>
                   <svg width="15" height="15" viewBox="0 0 24 24" {...I}><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
                   Email
                 </a>
               )}
+              <button type="button" onClick={focusNote} style={ghostBtn}>
+                <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                Add note
+              </button>
+              <button type="button" onClick={focusTask} style={{ ...ghostBtn, border: 'none', background: 'var(--coral)', color: '#fff' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                Create task
+              </button>
             </div>
           </div>
 
@@ -338,7 +543,7 @@ export default function CustomerProfilePage() {
                   <a href={`tel:${customer.phone}`} style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', textDecoration: 'none' }}>{customer.phone}</a>
                 </div>
               )}
-              {(addr.address_1 || addr.city) && (
+              {hasWooAddr ? (
                 <div style={{ minWidth: 0 }}>
                   <p style={kicker}>Address</p>
                   <p style={{ margin: 0, fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.5 }}>
@@ -349,6 +554,11 @@ export default function CustomerProfilePage() {
                     {addr.country}
                   </p>
                 </div>
+              ) : contactAddrStr && (
+                <div style={{ minWidth: 0 }}>
+                  <p style={kicker}>Address</p>
+                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.5 }}>{contactAddrStr}</p>
+                </div>
               )}
               {firstOrderDate && (
                 <div style={{ minWidth: 0 }}>
@@ -356,12 +566,26 @@ export default function CustomerProfilePage() {
                   <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{firstOrderDate.toLocaleDateString()}</p>
                 </div>
               )}
+              <div style={{ minWidth: 0 }}>
+                <p style={kicker}>Relationship</p>
+                {contactId ? (
+                  <select value={relationship} onChange={e => updateRelationship(e.target.value)}
+                    style={{ fontSize: 13, fontWeight: 600, padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card, #fff)', color: 'var(--ink)', cursor: 'pointer' }}>
+                    {RELATIONSHIPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                ) : (
+                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', textTransform: 'capitalize' }}>{relationship}</p>
+                )}
+              </div>
             </div>
-            {tags.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 14 }}>
-                {tags.map((t, i) => (
-                  <span key={i} style={{ padding: '3px 10px', borderRadius: 20, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)' }}>{t}</span>
-                ))}
+            {allTags.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <p style={kicker}>Tags</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {allTags.map((t, i) => (
+                    <span key={i} style={{ padding: '3px 10px', borderRadius: 20, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)' }}>{t}</span>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -489,6 +713,16 @@ export default function CustomerProfilePage() {
                       ✨ Generate AI summary
                     </button>
                   )}
+                  <div style={{ display: 'flex', gap: 16, marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                    <button type="button" onClick={focusNote} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: 'var(--slate)', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" {...I}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                      Add note
+                    </button>
+                    <button type="button" onClick={focusTask} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: 'var(--slate)', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" {...I}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                      Create task
+                    </button>
+                  </div>
                 </div>
               )
             })}
@@ -579,6 +813,71 @@ export default function CustomerProfilePage() {
 
         {/* ── SIDEBAR ─────────────────────────────────────────────────── */}
         <div style={{ flex: '0 1 300px', minWidth: 260, display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+          {/* Notes */}
+          <div style={card}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <h3 style={{ ...cardTitle, margin: 0 }}>Notes{notes.length ? ` (${notes.length})` : ''}</h3>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <textarea ref={noteRef} value={noteBody} onChange={e => setNoteBody(e.target.value)}
+                placeholder="Add a note…" rows={2}
+                style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, resize: 'vertical', outline: 'none', fontFamily: 'inherit' }} />
+              <button type="button" onClick={addNote} disabled={savingNote || !noteBody.trim()}
+                style={{ alignSelf: 'flex-start', padding: '7px 14px', borderRadius: 9, border: 'none', background: noteBody.trim() ? 'var(--coral)' : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: noteBody.trim() ? 'pointer' : 'default' }}>
+                {savingNote ? 'Saving…' : 'Add note'}
+              </button>
+            </div>
+            {notes.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                {notes.map((n: any) => (
+                  <div key={n.id} style={{ padding: '9px 11px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
+                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{n.content}</p>
+                    <p style={{ margin: '5px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>{n.author ? `${n.author} · ` : ''}{n.created_at ? relTime(n.created_at) : ''}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Tasks */}
+          <div style={card}>
+            <h3 style={cardTitle}>Tasks{tasks.length ? ` (${tasks.length})` : ''}</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <input ref={taskRef} value={taskText} onChange={e => setTaskText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addTask() }}
+                placeholder="Add a task…"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input type="datetime-local" value={taskDue} onChange={e => setTaskDue(e.target.value)}
+                  style={{ flex: 1, minWidth: 0, padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 12, color: 'var(--slate)', outline: 'none' }} />
+                <button type="button" onClick={addTask} disabled={savingTask || !taskText.trim()}
+                  style={{ padding: '7px 14px', borderRadius: 9, border: 'none', background: taskText.trim() ? 'var(--coral)' : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: taskText.trim() ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
+                  {savingTask ? '…' : 'Add'}
+                </button>
+              </div>
+            </div>
+            {tasks.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+                {tasks.map((t: any) => {
+                  const done = t.done || t.status === 'done'
+                  return (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '8px 10px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
+                      <button type="button" onClick={() => toggleTask(t)}
+                        style={{ marginTop: 1, width: 16, height: 16, flexShrink: 0, borderRadius: 5, border: `1.5px solid ${done ? 'var(--coral)' : 'var(--slate)'}`, background: done ? 'var(--coral)' : 'transparent', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                        {done && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                      </button>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: 12.5, color: done ? 'var(--slate)' : 'var(--ink)', textDecoration: done ? 'line-through' : 'none', lineHeight: 1.4 }}>{t.title || t.text}</p>
+                        {t.due_date && <p style={{ margin: '3px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>Due {new Date(t.due_date).toLocaleDateString()}</p>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
           <div style={card}>
             <h3 style={cardTitle}>Customer Value</h3>
             {([
@@ -617,6 +916,24 @@ export default function CustomerProfilePage() {
               RFM score <strong style={{ color: 'var(--ink)' }}>{rfmScore}/9</strong> — recency, frequency &amp; monetary value across this customer&rsquo;s order history.
             </p>
           </div>
+
+          {/* Recent Activity — synthesised from orders, calls, notes & tasks */}
+          {activity.length > 0 && (
+            <div style={card}>
+              <h3 style={cardTitle}>Recent Activity</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {activity.map((a, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 14, lineHeight: '18px', flexShrink: 0 }}>{a.icon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.label}</p>
+                      <p style={{ margin: '2px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>{relTime(a.t)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>{/* flex wrapper */}
     </div>
