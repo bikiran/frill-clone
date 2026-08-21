@@ -24,12 +24,18 @@ CREATE TABLE IF NOT EXISTS order_fulfillments (
   line_key     TEXT NOT NULL,
   sent         BOOLEAN NOT NULL DEFAULT false,
   sent_at      TIMESTAMPTZ,
+  picked       BOOLEAN NOT NULL DEFAULT false,   -- warehouse pick step (before packing)
+  picked_at    TIMESTAMPTZ,
   ship_group   SMALLINT NOT NULL DEFAULT 1,
   updated_at   TIMESTAMPTZ DEFAULT now(),
   UNIQUE (order_id, line_key)
 );
 CREATE INDEX IF NOT EXISTS idx_order_fulfillments_order ON order_fulfillments (order_id);
 CREATE INDEX IF NOT EXISTS idx_order_fulfillments_company ON order_fulfillments (company_id);
+
+-- Upgrade an already-created table (idempotent — safe if the columns exist).
+ALTER TABLE order_fulfillments ADD COLUMN IF NOT EXISTS picked BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE order_fulfillments ADD COLUMN IF NOT EXISTS picked_at TIMESTAMPTZ;
 
 -- Permissive RLS (company-scoped in queries — matches the other operational tables).
 DO $$

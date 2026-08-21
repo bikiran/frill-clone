@@ -12,6 +12,7 @@ import OrderPrintDoc from '@/components/OrderPrintDoc'
 import OrderItemsPanel from '@/components/OrderItemsPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
+import { barcodeSVG } from '@/lib/barcode'
 
 type Order = any
 
@@ -998,6 +999,7 @@ function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOr
 function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, tagDefs, tagColor, onEnsureTag, onManageTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, teamName, outletName, fullScreen = false }: any) {
   const ACCENT = accent || 'var(--coral)'
   const [items, setItems] = useState<any[]>([])
+  const [pickMode, setPickMode] = useState(false)
   const [notes, setNotes] = useState<any[]>([])
   const [events, setEvents] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
@@ -1254,10 +1256,20 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           <div style={{ ...sect, display: 'flex', gap: 8 }}>
             {quick(<svg {...I}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /></svg>, 'Label', () => onLabel(order), true)}
             {quick(<svg {...I}><path d="M6 9V2h12v7" /><rect x="6" y="14" width="12" height="8" /><path d="M6 18H4a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2" /></svg>, 'Slip', () => onPrintSlip(order.id))}
+            {quick(<svg {...I}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3" /><path d="m9 14 2 2 4-4" /></svg>, 'Pick', () => { setPickMode(v => { const n = !v; if (n) { const el = document.getElementById('ord-items-panel'); el?.scrollIntoView({ behavior: 'smooth', block: 'start' }); onFlash('Picking — tap each item as you pick it') } return n }) }, pickMode)}
             {quick(<svg {...I}><path d="M20 6 9 17l-5-5" /></svg>, 'Packed', () => { onPatch({ status: 'packed' }, { type: 'packed', detail: 'Marked packed' }); order.status = 'packed'; logEvent('packed', 'Marked packed') })}
             {quick(<svg {...I}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>, 'Note', () => { (document.getElementById('ord-note') as HTMLTextAreaElement)?.focus() })}
             {quick(<svg {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>, 'Contact', () => { if (convHref) location.href = convHref; else onFlash('No linked conversation yet.') })}
           </div>
+
+          {/* Order barcode — scannable Code128 of the order number */}
+          {order.order_number && (
+            <div style={{ ...sect, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              <div title={`Order ${order.order_number}`} style={{ width: '100%', maxWidth: 320, display: 'flex', justifyContent: 'center' }}
+                dangerouslySetInnerHTML={{ __html: barcodeSVG(String(order.order_number), { moduleWidth: 2, height: 54 }) }} />
+              <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--ink)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{order.order_number}</span>
+            </div>
+          )}
 
           {/* Customer */}
           <div style={sect}>
@@ -1311,8 +1323,9 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           </div>
 
           {/* Items */}
-          <div style={sect}>
+          <div style={sect} id="ord-items-panel">
             <OrderItemsPanel order={order} companyId={companyId} items={items} accent={ACCENT}
+              pickMode={pickMode} onExitPick={() => setPickMode(false)}
               onLog={logEvent} onFlash={onFlash} onOpenItem={(idx: number) => setGalleryIdx(idx)} />
           </div>
 

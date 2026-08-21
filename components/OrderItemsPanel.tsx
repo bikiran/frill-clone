@@ -15,7 +15,7 @@ import { fmtMoney } from '@/lib/orders'
  * so legacy rows still match across a re-sync.
  */
 
-type Ful = { line_key: string; sent: boolean; sent_at: string | null; ship_group: number }
+type Ful = { line_key: string; sent: boolean; sent_at: string | null; ship_group: number; picked: boolean; picked_at: string | null }
 
 // Stable, re-sync-proof key for a line item. Prefers the WooCommerce line id;
 // otherwise product|sku|occurrence (nth identical line), computed from the
@@ -35,7 +35,7 @@ function buildLineKeys(items: any[]): Map<string, string> {
 }
 
 export default function OrderItemsPanel({
-  order, companyId, items, accent, onLog, onFlash, onOpenItem,
+  order, companyId, items, accent, onLog, onFlash, onOpenItem, pickMode = false, onExitPick,
 }: {
   order: any
   companyId: string
@@ -44,6 +44,8 @@ export default function OrderItemsPanel({
   onLog?: (type: string, detail: string) => void
   onFlash?: (msg: string) => void
   onOpenItem?: (index: number) => void
+  pickMode?: boolean
+  onExitPick?: () => void
 }) {
   const ACCENT = accent || 'var(--coral)'
   const currency = order?.currency || 'AUD'
@@ -62,9 +64,9 @@ export default function OrderItemsPanel({
     if (!order?.id) return
     try {
       const { data } = await (supabase as any)
-        .from('order_fulfillments').select('line_key, sent, sent_at, ship_group').eq('order_id', order.id)
+        .from('order_fulfillments').select('line_key, sent, sent_at, ship_group, picked, picked_at').eq('order_id', order.id)
       const m = new Map<string, Ful>()
-      for (const r of data || []) m.set(r.line_key, { line_key: r.line_key, sent: !!r.sent, sent_at: r.sent_at, ship_group: Number(r.ship_group) || 1 })
+      for (const r of data || []) m.set(r.line_key, { line_key: r.line_key, sent: !!r.sent, sent_at: r.sent_at, ship_group: Number(r.ship_group) || 1, picked: !!r.picked, picked_at: r.picked_at })
       setFul(m)
     } catch { /* table may not exist yet (migration pending) — treat as none */ }
   }, [order?.id])
@@ -72,21 +74,22 @@ export default function OrderItemsPanel({
 
   const stateOf = (it: any): Ful => {
     const k = keyOf(it)
-    return ful.get(k) || { line_key: k, sent: false, sent_at: null, ship_group: 1 }
+    return ful.get(k) || { line_key: k, sent: false, sent_at: null, ship_group: 1, picked: false, picked_at: null }
   }
   const groupOf = (it: any) => stateOf(it).ship_group || 1
   const sentOf = (it: any) => stateOf(it).sent
+  const pickedOf = (it: any) => stateOf(it).picked
 
   // Persist one line's fulfilment, merging with whatever we already hold so a
   // "mark sent" keeps its shipment and vice-versa.
   const write = async (it: any, patch: Partial<Ful>) => {
     const k = keyOf(it)
-    const cur = ful.get(k) || { line_key: k, sent: false, sent_at: null, ship_group: 1 }
+    const cur = ful.get(k) || { line_key: k, sent: false, sent_at: null, ship_group: 1, picked: false, picked_at: null }
     const next: Ful = { ...cur, ...patch, line_key: k }
     setFul(prev => { const m = new Map(prev); m.set(k, next); return m })
     try {
       await (supabase as any).from('order_fulfillments').upsert(
-        { company_id: companyId, order_id: order.id, line_key: k, sent: next.sent, sent_at: next.sent_at, ship_group: next.ship_group, updated_at: new Date().toISOString() },
+        { company_id: companyId, order_id: order.id, line_key: k, sent: next.sent, sent_at: next.sent_at, ship_group: next.ship_group, picked: next.picked, picked_at: next.picked_at, updated_at: new Date().toISOString() },
         { onConflict: 'order_id,line_key' },
       )
     } catch { onFlash?.('Saved locally — apply the fulfilments migration to persist') }
@@ -98,6 +101,12 @@ export default function OrderItemsPanel({
     await write(it, { sent: now, sent_at: now ? new Date().toISOString() : null })
     onLog?.(now ? 'item_sent' : 'item_unsent', `${now ? 'Marked sent' : 'Unmarked sent'}: ${it.product_name}${it.quantity ? ` ×${it.quantity}` : ''}`)
     onFlash?.(now ? 'Item marked sent' : 'Item marked unsent')
+  }
+
+  const togglePicked = async (it: any) => {
+    const now = !pickedOf(it)
+    await write(it, { picked: now, picked_at: now ? new Date().toISOString() : null })
+    onLog?.(now ? 'item_picked' : 'item_unpicked', `${now ? 'Picked' : 'Un-picked'}: ${it.product_name}${it.quantity ? ` ×${it.quantity}` : ''}`)
   }
 
   // Reflect overall progress on the order row (unfulfilled / partial / fulfilled)
@@ -141,34 +150,53 @@ export default function OrderItemsPanel({
 
   const kick: any = { margin: 0, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--slate)' }
   const sentTotal = items.reduce((n, it) => n + (sentOf(it) ? 1 : 0), 0)
+  const pickedTotal = items.reduce((n, it) => n + (pickedOf(it) ? 1 : 0), 0)
+  const allPicked = items.length > 0 && pickedTotal >= items.length
 
   const renderItem = (it: any, idx: number) => {
     const sent = sentOf(it)
+    const picked = pickedOf(it)
     const checked = sel.has(it.id)
+    const rowClick = pickMode ? () => togglePicked(it) : () => onOpenItem?.(idx)
     return (
       <div key={it.id} className="ord-item"
-        title={sent ? 'Item sent' : 'Click to view'}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, borderRadius: 9, padding: 4, margin: -4, opacity: sent ? 0.5 : 1, transition: 'opacity .15s' }}>
+        onClick={pickMode ? () => togglePicked(it) : undefined}
+        title={pickMode ? (picked ? 'Picked — tap to undo' : 'Tap to mark picked') : (sent ? 'Item sent' : 'Click to view')}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, borderRadius: 9, padding: pickMode ? 8 : 4, margin: pickMode ? 0 : -4, opacity: sent && !pickMode ? 0.5 : 1, transition: 'opacity .15s, background .15s, box-shadow .15s',
+          cursor: pickMode ? 'pointer' : 'default',
+          background: pickMode && picked ? 'color-mix(in srgb, #059669 10%, transparent)' : 'transparent',
+          boxShadow: pickMode ? `inset 0 0 0 1.5px ${picked ? '#059669' : 'var(--border)'}` : 'none' }}>
         {splitMode && (
           <input type="checkbox" checked={checked} onChange={() => setSel(s => { const n = new Set(s); n.has(it.id) ? n.delete(it.id) : n.add(it.id); return n })}
             style={{ width: 16, height: 16, accentColor: ACCENT, cursor: 'pointer', flexShrink: 0 }} />
         )}
-        <span onClick={() => onOpenItem?.(idx)} style={{ position: 'relative', width: 40, height: 40, borderRadius: 8, flexShrink: 0, overflow: 'hidden', background: 'var(--peach)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <span onClick={rowClick} style={{ position: 'relative', width: 40, height: 40, borderRadius: 8, flexShrink: 0, overflow: 'hidden', background: 'var(--peach)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /></svg>
           {it.image_url && <img src={it.image_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e: any) => { e.currentTarget.style.display = 'none' }} />}
+          {pickMode && picked && (
+            <span style={{ position: 'absolute', inset: 0, background: 'rgba(5,150,105,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+            </span>
+          )}
         </span>
-        <div onClick={() => onOpenItem?.(idx)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: sent ? 'line-through' : 'none' }}>{it.product_name}</p>
-          <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div onClick={rowClick} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: sent && !pickMode ? 'line-through' : 'none' }}>{it.product_name}</p>
+          <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {it.sku ? <span>SKU: {it.sku}</span> : null}
-            {sent && <span style={{ color: '#059669', fontWeight: 700 }}>✓ Sent</span>}
+            {sent && !pickMode && <span style={{ color: '#059669', fontWeight: 700 }}>✓ Sent</span>}
+            {picked && !pickMode && <span style={{ color: '#059669', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>✓ Picked</span>}
           </p>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
           <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>Qty {it.quantity}</p>
           <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{fmtMoney(it.total_price ?? it.unit_price, currency)}</p>
         </div>
-        {multi && !splitMode && (
+        {pickMode && (
+          <span aria-hidden style={{ flexShrink: 0, width: 24, height: 24, borderRadius: '50%', border: `2px solid ${picked ? '#059669' : 'var(--border)'}`, background: picked ? '#059669' : 'transparent', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+            {picked && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+          </span>
+        )}
+        {!pickMode && multi && !splitMode && (
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <button type="button" title="Move to another shipment" onClick={() => setReassign(r => r === it.id ? null : it.id)}
               style={{ width: 24, height: 24, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', cursor: 'pointer', fontSize: 12 }}>⇄</button>
@@ -182,20 +210,32 @@ export default function OrderItemsPanel({
             )}
           </div>
         )}
-        <button type="button" onClick={() => toggleSent(it)} title={sent ? 'Mark as not sent' : 'Mark item sent'}
-          style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 9px', borderRadius: 8, border: `1px solid ${sent ? '#059669' : 'var(--border)'}`, background: sent ? '#059669' : 'var(--card,#fff)', color: sent ? '#fff' : 'var(--slate)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-          {sent ? 'Sent' : 'Send'}
-        </button>
+        {!pickMode && (
+          <button type="button" onClick={() => toggleSent(it)} title={sent ? 'Mark as not sent' : 'Mark item sent'}
+            style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 9px', borderRadius: 8, border: `1px solid ${sent ? '#059669' : 'var(--border)'}`, background: sent ? '#059669' : 'var(--card,#fff)', color: sent ? '#fff' : 'var(--slate)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+            {sent ? 'Sent' : 'Send'}
+          </button>
+        )}
       </div>
     )
   }
 
   return (
     <div>
+      {pickMode && (
+        <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 11, background: allPicked ? 'color-mix(in srgb, #059669 12%, transparent)' : `color-mix(in srgb, ${ACCENT} 10%, transparent)`, border: `1px solid ${allPicked ? '#059669' : `color-mix(in srgb, ${ACCENT} 40%, transparent)`}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 800, color: allPicked ? '#047857' : 'var(--ink)' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3" /><path d="m9 14 2 2 4-4" /></svg>
+            {allPicked ? 'All items picked' : `Picking · ${pickedTotal}/${items.length}`}
+          </span>
+          <button type="button" onClick={() => onExitPick?.()} style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: allPicked ? '#059669' : ACCENT, border: 'none', borderRadius: 8, padding: '6px 14px', cursor: 'pointer' }}>Done</button>
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <p style={kick}>Items ({items.length}{items.length ? ` · ${sentTotal} sent` : ''})</p>
-        {items.length > 1 && (
+        <p style={kick}>Items ({items.length}{items.length ? ` · ${sentTotal} sent` : ''}{pickedTotal ? ` · ${pickedTotal} picked` : ''})</p>
+        {!pickMode && items.length > 1 && (
           splitMode ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button type="button" onClick={moveToNewShipment} disabled={!sel.size}

@@ -6,6 +6,7 @@ import { peekCompanyUser } from '@/lib/client-cache'
 import { statusMeta, channelMeta, orderAge, fmtMoney, isClickCollect } from '@/lib/orders'
 import { ChannelIcon, CopyBtn, copyToClipboard, TagMenu, CreateLabelModal, TagChip, hashColor, PrintModal } from '../page'
 import OrderItemsPanel from '@/components/OrderItemsPanel'
+import { barcodeSVG } from '@/lib/barcode'
 
 type Order = any
 
@@ -17,6 +18,7 @@ export default function OrderDetailPage() {
   const [me, setMe] = useState<{ id: string | null; name: string }>({ id: null, name: 'You' })
   const [order, setOrder] = useState<Order | null>(null)
   const [items, setItems] = useState<any[]>([])
+  const [pickMode, setPickMode] = useState(false)
   const [notes, setNotes] = useState<any[]>([])
   const [events, setEvents] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
@@ -174,6 +176,7 @@ export default function OrderDetailPage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" onClick={() => setShowLabel(true)} style={{ ...btn, background: ACCENT, color: '#fff', border: 'none' }}>Create Label</button>
           <button type="button" onClick={() => openPrint('packing_slip')} style={btn}>Packing Slip</button>
+          <button type="button" onClick={() => { setPickMode(v => { const n = !v; if (n) { document.getElementById('ord-items-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); flash('Picking — click each item as you pick it') } return n }) }} style={pickMode ? { ...btn, background: ACCENT, color: '#fff', border: 'none' } : btn}>{pickMode ? 'Picking…' : 'Pick'}</button>
           <button type="button" onClick={() => openPrint('label')} style={btn}>Print Label</button>
           {order.status !== 'packed' && order.status !== 'shipped' && <button type="button" onClick={() => patchOrder({ status: 'packed' }, { type: 'packed', detail: 'Marked packed' })} style={btn}>Mark Packed</button>}
         </div>
@@ -182,6 +185,14 @@ export default function OrderDetailPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
         {/* Left column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Order barcode — scannable Code128 of the order number */}
+          {order.order_number && (
+            <div style={{ ...card, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              <div title={`Order ${order.order_number}`} style={{ width: '100%', maxWidth: 360, display: 'flex', justifyContent: 'center' }}
+                dangerouslySetInnerHTML={{ __html: barcodeSVG(String(order.order_number), { moduleWidth: 2, height: 58 }) }} />
+              <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.16em', color: 'var(--ink)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{order.order_number}</span>
+            </div>
+          )}
           {/* Customer */}
           <div style={card}>
             <p style={kick}>Customer</p>
@@ -211,8 +222,9 @@ export default function OrderDetailPage() {
           )}
 
           {/* Items */}
-          <div style={card}>
+          <div style={card} id="ord-items-panel">
             <OrderItemsPanel order={order} companyId={companyId} items={items} accent={ACCENT}
+              pickMode={pickMode} onExitPick={() => setPickMode(false)}
               onLog={logItemEvent} onFlash={flash} onOpenItem={(idx: number) => setGalleryIdx(idx)} />
           </div>
 
