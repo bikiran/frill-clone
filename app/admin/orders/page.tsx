@@ -32,6 +32,16 @@ export function ChannelIcon({ channel, size = 15 }: { channel?: string | null; s
   if (channel === 'woocommerce') return <WooLogo size={size} />
   return <span style={{ fontSize: size + 1 }}>{channelMeta(channel).icon}</span>
 }
+// Click & Collect — a storefront/shopping bag with a check, in place of the 🏬 emoji.
+export function ClickCollectIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+      <path d="M3 6h18" />
+      <path d="m9 13 2 2 4-4" />
+    </svg>
+  )
+}
 
 // ── Colour-coded tags ─────────────────────────────────────────────────────────
 export const TAG_PALETTE = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0891b2', '#4b5563', '#e11d48', '#ca8a04']
@@ -678,7 +688,7 @@ export default function OrdersPage() {
                     <td style={td}>{o.item_count || 0}</td>
                     <td style={{ ...td, color: 'var(--slate)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.primary_sku || '—'}</td>
                     <td style={{ ...td, color: 'var(--slate)' }}>{isClickCollect(o)
-                      ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700, color: '#2563eb' }}><span style={{ fontSize: 13 }}>🏬</span>Click &amp; Collect</span>
+                      ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700, color: '#2563eb' }}><ClickCollectIcon size={14} />Click &amp; Collect</span>
                       : (Number(o.shipping_total) || 0) > 0 ? <span>{o.shipping_method || 'Shipping'} <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{fmtMoney(o.shipping_total, o.currency)}</span></span> : (o.shipping_method || '—')}</td>
                     <td style={td}><span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span></td>
                     <td style={td}><Avatar name={o.assignee_name || teamName(o.assignee_id)} /></td>
@@ -1280,18 +1290,22 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
         const lineTotal = Number(li.total) || 0
         const unit = lineTotal / qty
         const nameLines = doc.splitTextToSize(String(li.name || 'Item'), cols.sku - cols.item - 4)
-        doc.text(nameLines, cols.item, y)
+        const rowH = Math.max(1, nameLines.length) * 4.6 + 4
+        // Draw every cell top-aligned (baseline:'top' → y is the TOP of the glyphs)
+        // so the row separator below can never cut through a wrapped item name.
+        doc.setTextColor(...ink); doc.setFontSize(9.5); doc.setFont('helvetica', 'normal')
+        doc.text(nameLines, cols.item, y + 1, { baseline: 'top' })
         doc.setTextColor(...slate); doc.setFontSize(8.5)
-        doc.text(String(li.sku || '—'), cols.sku, y)
+        doc.text(String(li.sku || '—'), cols.sku, y + 1, { baseline: 'top' })
         doc.setTextColor(...ink); doc.setFontSize(9.5)
-        doc.text(money(unit), cols.unit, y, { align: 'right' })
-        doc.text(String(qty), cols.qty, y, { align: 'right' })
-        doc.setFont('helvetica', 'bold'); doc.text(money(lineTotal), cols.total, y, { align: 'right' }); doc.setFont('helvetica', 'normal')
-        const rows = Math.max(1, nameLines.length)
-        y += rows * 4.6 + 3
-        doc.setDrawColor(...line); doc.setLineWidth(0.2); doc.line(L, y - 1.5, R, y - 1.5)
+        doc.text(money(unit), cols.unit, y + 1, { align: 'right', baseline: 'top' })
+        doc.text(String(qty), cols.qty, y + 1, { align: 'right', baseline: 'top' })
+        doc.setFont('helvetica', 'bold'); doc.text(money(lineTotal), cols.total, y + 1, { align: 'right', baseline: 'top' }); doc.setFont('helvetica', 'normal')
+        y += rowH
+        doc.setDrawColor(...line); doc.setLineWidth(0.2); doc.line(L, y, R, y)
         if (y > 250) { doc.addPage(); y = 20 }
       }
+      y += 2
 
       // ── Totals ──────────────────────────────────────────────────────────────
       const subtotal = (o.line_items || []).reduce((n: number, li: any) => n + (Number(li.total) || 0), 0)
@@ -1533,7 +1547,9 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                 ['Payment', order.payment_status || '—'],
                 ['Fulfilment', order.fulfilment_status || '—'],
                 ['Subtotal', order.subtotal != null ? fmtMoney(order.subtotal, order.currency) : '—'],
-                ['Shipping', isClickCollect(order) ? `🏬 ${order.shipping_method || 'Click & Collect'}` : (Number(order.shipping_total) || 0) > 0 ? `${fmtMoney(order.shipping_total, order.currency)}${order.shipping_method ? ` · ${order.shipping_method}` : ''}` : (order.shipping_method || 'Free')],
+                ['Shipping', isClickCollect(order)
+                  ? <span key="cc" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#2563eb', fontWeight: 700 }}><ClickCollectIcon size={13} />{order.shipping_method || 'Click & Collect'}</span>
+                  : (Number(order.shipping_total) || 0) > 0 ? `${fmtMoney(order.shipping_total, order.currency)}${order.shipping_method ? ` · ${order.shipping_method}` : ''}` : (order.shipping_method || 'Free')],
                 ['Total', `${fmtMoney(order.total, order.currency)} ${order.currency || ''}`],
               ] as [string, any][]).map(([k, v]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5 }}>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { fmtMoney, buildOrderLineKeys } from '@/lib/orders'
+import { fmtMoney, buildOrderLineKeys, gstInclFactor } from '@/lib/orders'
 
 /**
  * Per-line-item fulfilment + ShipStation-style split shipments.
@@ -32,6 +32,10 @@ export default function OrderItemsPanel({
 }) {
   const ACCENT = accent || 'var(--coral)'
   const currency = order?.currency || 'AUD'
+  // Show GST-inclusive line prices (the ex-GST figures confused packers vs the
+  // order total). Factor derived from the order's own totals.
+  const gstF = gstInclFactor(order)
+  const priceIncl = (v: any) => fmtMoney((Number(v) || 0) * gstF, currency)
   const [ful, setFul] = useState<Map<string, Ful>>(new Map())
   const [splitMode, setSplitMode] = useState(false)
   const [sel, setSel] = useState<Set<string>>(new Set())
@@ -172,7 +176,7 @@ export default function OrderItemsPanel({
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
           <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>Qty {it.quantity}</p>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{fmtMoney(it.total_price ?? it.unit_price, currency)}</p>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{priceIncl(it.total_price ?? it.unit_price)}</p>
         </div>
         {pickMode && (
           <span aria-hidden style={{ flexShrink: 0, width: 24, height: 24, borderRadius: '50%', border: `2px solid ${picked ? '#059669' : 'var(--border)'}`, background: picked ? '#059669' : 'transparent', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
@@ -217,7 +221,7 @@ export default function OrderItemsPanel({
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <p style={kick}>Items ({items.length}{items.length ? ` · ${sentTotal} sent` : ''}{pickedTotal ? ` · ${pickedTotal} picked` : ''})</p>
+        <p style={kick}>Items ({items.length}{items.length ? ` · ${sentTotal} sent` : ''}{pickedTotal ? ` · ${pickedTotal} picked` : ''}){gstF > 1 ? <span style={{ textTransform: 'none', fontWeight: 600, color: 'var(--slate)' }}> · incl GST</span> : null}</p>
         {!pickMode && items.length > 1 && (
           splitMode ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
