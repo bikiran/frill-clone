@@ -61,11 +61,10 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
       <style>{`
         @media print {
           @page { size: ${doc === 'label' ? '4in 6in' : 'A4'}; margin: ${doc === 'label' ? '0' : '14mm'}; }
-          body * { visibility: hidden; }
-          .order-print-root, .order-print-root * { visibility: visible; }
-          .order-print-root { position: absolute; left: 0; top: 0; width: 100%; }
-          .doc-page { page-break-after: always; }
-          .doc-page:last-child { page-break-after: auto; }
+          .order-print-root { position: static !important; }
+          /* Each order on its own page. */
+          .doc-page { page-break-after: always; break-after: page; break-inside: avoid; }
+          .doc-page:last-child { page-break-after: auto; break-after: auto; }
         }
         .doc-page { box-sizing: border-box; }
       `}</style>
@@ -104,6 +103,7 @@ function contactLines(company: any, from: any): { label: string; value: string }
 function PackingSlip({ order, items, notes, company, from, accent }: any) {
   const ship = order.shipping_address || {}
   const total = items.reduce((s: number, it: any) => s + (Number(it.quantity) || 0), 0)
+  const barcode = useMemo(() => barcodeSVG(String(order.order_number || ''), { moduleWidth: 1.5, height: 52 }), [order.order_number])
   const customerNote = order.customer_note || order.note || ''
   const internalNotes = (notes || []).filter((n: any) => (n.body || '').trim())
   const contacts = contactLines(company, from)
@@ -211,7 +211,13 @@ function PackingSlip({ order, items, notes, company, from, accent }: any) {
         </div>
       )}
 
-      <div style={{ marginTop: 26, textAlign: 'center', fontSize: 11.5, color: '#94a3b8' }}>
+      {/* Order barcode (Code128 of the order number) */}
+      <div style={{ marginTop: 24, textAlign: 'center' }}>
+        <div style={{ display: 'inline-block', maxWidth: 360, width: '60%' }} dangerouslySetInnerHTML={{ __html: barcode.replace('<svg ', '<svg style="width:100%;height:52px" ') }} />
+        <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, fontWeight: 700, letterSpacing: '0.16em', marginTop: 2, color: '#0f172a' }}>{order.order_number}</div>
+      </div>
+
+      <div style={{ marginTop: 20, textAlign: 'center', fontSize: 11.5, color: '#94a3b8' }}>
         Thank you for your order{company?.website ? ` · ${String(company.website).replace(/^https?:\/\//, '')}` : ''}
       </div>
     </div>

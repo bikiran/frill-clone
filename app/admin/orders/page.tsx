@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import {
@@ -716,21 +717,37 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
 // ── In-page print preview modal — renders the slip/label inline (no iframe, so
 // no app-shell flash) and prints via the scoped print CSS. ───────────────────
 export function PrintModal({ doc, companyId, ids, title, accent, onClose }: { doc: 'packing_slip' | 'label'; companyId: string; ids: string[]; title: string; accent: string; onClose: () => void }) {
-  return (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 4700 }} />
-      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 880, maxWidth: '96vw', height: '90vh', background: '#fff', borderRadius: 14, zIndex: 4701, boxShadow: '0 24px 60px rgba(0,0,0,0.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+  if (!mounted || typeof document === 'undefined') return null
+  // Rendered through a portal at <body> so that when printing we can hide every
+  // other body child and let each order's .doc-page break onto its own page
+  // (page-break-after fails inside a fixed/absolute-positioned modal).
+  return createPortal(
+    <div className="order-print-portal">
+      <style>{`
+        @media print {
+          html, body { background: #fff !important; }
+          body > *:not(.order-print-portal) { display: none !important; }
+          .order-print-portal .no-print, .order-print-backdrop { display: none !important; }
+          .order-print-modal { position: static !important; inset: auto !important; transform: none !important; width: auto !important; max-width: none !important; height: auto !important; max-height: none !important; box-shadow: none !important; border-radius: 0 !important; overflow: visible !important; background: #fff !important; }
+          .order-print-scroll { overflow: visible !important; height: auto !important; background: #fff !important; }
+        }
+      `}</style>
+      <div className="order-print-backdrop" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 4700 }} />
+      <div className="order-print-modal" style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 880, maxWidth: '96vw', height: '90vh', background: '#fff', borderRadius: 14, zIndex: 4701, boxShadow: '0 24px 60px rgba(0,0,0,0.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#0f172a', color: '#fff', flexShrink: 0 }}>
           <strong style={{ fontSize: 14 }}>{title}</strong>
           <div style={{ flex: 1 }} />
           <button type="button" onClick={() => window.print()} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Print</button>
           <button type="button" onClick={onClose} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Close</button>
         </div>
-        <div style={{ flex: 1, overflow: 'auto', background: '#f1f5f9' }}>
+        <div className="order-print-scroll" style={{ flex: 1, overflow: 'auto', background: '#f1f5f9' }}>
           <OrderPrintDoc doc={doc} companyId={companyId} ids={ids} />
         </div>
       </div>
-    </>
+    </div>,
+    document.body
   )
 }
 
