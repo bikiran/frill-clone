@@ -150,6 +150,15 @@ export default function OrdersReportsPage() {
     const labels = shipsInRange.length
     const cost = shipsInRange.reduce((a, s) => a + (Number(s.cost) || 0), 0)
     const avg = labels ? cost / labels : 0
+    // Charged = shipping the customer paid (order.shipping_total). Incurred = the
+    // real carrier cost per shipment (order_shipments.cost). Margin = charged − incurred.
+    const charged = inRange.reduce((a, o) => a + (Number(o.shipping_total) || 0), 0)
+    const margin = charged - cost
+    const orderById = new Map(inRange.map(o => [o.id, o]))
+    const detail = shipsInRange.map((s: any) => {
+      const o: any = orderById.get(s.order_id)
+      return { id: s.id, order: o?.order_number || '—', customer: o?.customer_name || '—', carrier: CARRIER_LABEL[s.carrier] || s.carrier || '—', tracking: s.tracking_number || '—', charged: Number(o?.shipping_total) || 0, incurred: Number(s.cost) || 0 }
+    }).sort((a, b) => b.charged - a.charged)
     const byCarrier: Record<string, { n: number; cost: number }> = {}
     for (const s of shipsInRange) { const k = s.carrier || 'custom'; (byCarrier[k] ||= { n: 0, cost: 0 }); byCarrier[k].n++; byCarrier[k].cost += Number(s.cost) || 0 }
     const carriers = Object.entries(byCarrier).map(([k, v]) => ({ label: CARRIER_LABEL[k] || k, value: v.n, sub: String(v.n) })).sort((a, b) => b.value - a.value)
@@ -159,8 +168,8 @@ export default function OrdersReportsPage() {
     const byTrack: Record<string, number> = {}
     for (const s of shipsInRange) { const k = s.status || 'created'; byTrack[k] = (byTrack[k] || 0) + 1 }
     const track = Object.entries(byTrack).map(([k, v]) => ({ label: k.replace(/_/g, ' '), value: v }))
-    return { labels, cost, avg, carriers, services, track }
-  }, [shipsInRange])
+    return { labels, cost, avg, charged, margin, detail, carriers, services, track }
+  }, [shipsInRange, inRange])
 
   const sales = useMemo(() => {
     const nonCancelled = inRange.filter(o => o.status !== 'cancelled')
@@ -236,10 +245,40 @@ export default function OrdersReportsPage() {
       {report === 'shipping' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <Kpi label="Charged to Customer" value={fmtMoney(shippingR.charged)} color="#16a34a" />
+            <Kpi label="Actual Cost (incurred)" value={fmtMoney(shippingR.cost)} color="#dc2626" />
+            <Kpi label="Margin" value={fmtMoney(shippingR.margin)} color={shippingR.margin >= 0 ? '#16a34a' : '#dc2626'} />
             <Kpi label="Labels Created" value={String(shippingR.labels)} />
-            <Kpi label="Shipped Orders" value={String(fulfil.shipped)} color="#16a34a" />
-            <Kpi label="Shipping Cost" value={fmtMoney(shippingR.cost)} />
             <Kpi label="Avg Cost / Label" value={fmtMoney(shippingR.avg)} />
+          </div>
+
+          {/* Per tracking / per customer: charged vs actual */}
+          <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+            <p style={{ ...kick, padding: '16px 18px 0' }}>Shipping — Charged vs Actual (per tracking)</p>
+            <div style={{ overflowX: 'auto', marginTop: 10 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+                <thead>
+                  <tr>{['Order', 'Customer', 'Carrier', 'Tracking', 'Charged', 'Actual', 'Margin'].map((h, i) => (
+                    <th key={h} style={{ padding: '9px 14px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', textAlign: i >= 4 ? 'right' : 'left', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}</tr>
+                </thead>
+                <tbody>
+                  {shippingR.detail.length === 0 && <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>No shipments in this range. Charged-to-customer totals above still reflect what customers paid for shipping.</td></tr>}
+                  {shippingR.detail.slice(0, 200).map((r: any) => { const m = r.charged - r.incurred; return (
+                    <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ padding: '9px 14px', fontSize: 12.5, fontWeight: 700, color: ACCENT }}>{r.order}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12.5 }}>{r.customer}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12.5, color: 'var(--slate)' }}>{r.carrier}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--slate)', fontFamily: 'ui-monospace, monospace' }}>{r.tracking}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12.5, textAlign: 'right', fontWeight: 600 }}>{fmtMoney(r.charged)}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12.5, textAlign: 'right', color: r.incurred ? 'var(--ink)' : 'var(--slate)' }}>{r.incurred ? fmtMoney(r.incurred) : '—'}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12.5, textAlign: 'right', fontWeight: 700, color: m >= 0 ? '#16a34a' : '#dc2626' }}>{fmtMoney(m)}</td>
+                    </tr>
+                  )})}
+                </tbody>
+              </table>
+            </div>
+            {shippingR.detail.length > 200 && <p style={{ padding: '10px 18px', fontSize: 11.5, color: 'var(--slate)' }}>Showing first 200 of {shippingR.detail.length}. Export CSV for the full list.</p>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
             <div style={{ ...card, padding: 18 }}>
