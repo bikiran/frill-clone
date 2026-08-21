@@ -231,12 +231,21 @@ export default function OrdersPage() {
     return () => { try { (supabase as any).removeChannel(ch) } catch {} }
   }, [companyId])
 
-  // ── Counts for the tabs ────────────────────────────────────────────────────
+  // Location scope — the same rule the table uses for the Location chips, so the
+  // tab counts match what the Location filter actually shows.
+  const locMatch = useCallback((o: any) => {
+    if (fStore === 'unassigned') return !o.store_location_id && !(Array.isArray(o.tags) && o.tags.length > 0)
+    if (fStore !== 'all') return o.store_location_id === fStore
+    return true
+  }, [fStore])
+
+  // ── Counts for the tabs (scoped to the current Location filter) ─────────────
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: orders.length, alerts: 0, awaiting_shipment: 0, on_hold: 0, manual: 0, shipped: 0, cancelled: 0, packed: 0, click_and_collect: 0 }
-    for (const o of orders) { c[o.status] = (c[o.status] || 0) + 1; if (o.flagged) c.alerts++ }
+    const scoped = orders.filter(locMatch)
+    const c: Record<string, number> = { all: scoped.length, alerts: 0, awaiting_shipment: 0, on_hold: 0, manual: 0, shipped: 0, cancelled: 0, packed: 0, click_and_collect: 0 }
+    for (const o of scoped) { c[o.status] = (c[o.status] || 0) + 1; if (o.flagged) c.alerts++ }
     return c
-  }, [orders])
+  }, [orders, locMatch])
 
   const allTags = useMemo(() => Array.from(new Set(orders.flatMap((o: any) => Array.isArray(o.tags) ? o.tags : []))).filter(Boolean), [orders])
   const teamName = (id: string | null) => team.find(t => t.id === id)?.name || null
@@ -249,8 +258,7 @@ export default function OrdersPage() {
       const tabDef = STATUS_TABS.find(t => t.key === tab)
       if (tab === 'alerts') { if (!o.flagged) return false }
       else if (tabDef?.match) { if (!tabDef.match.includes(o.status)) return false }
-      if (fStore === 'unassigned') { if (o.store_location_id || (Array.isArray(o.tags) && o.tags.length > 0)) return false }
-      else if (fStore !== 'all' && o.store_location_id !== fStore) return false
+      if (!locMatch(o)) return false
       if (fAssignee !== 'all') { if (fAssignee === 'none' ? o.assignee_id : o.assignee_id !== fAssignee) return false }
       if (fTag !== 'all' && !(Array.isArray(o.tags) && o.tags.includes(fTag))) return false
       if (fDate !== 'all' && o.order_date) {
@@ -281,7 +289,7 @@ export default function OrdersPage() {
       return 0
     })
     return rows
-  }, [orders, tab, search, fStore, fAssignee, fTag, fDate, saved, sortCol, sortDir])
+  }, [orders, tab, search, fStore, fAssignee, fTag, fDate, saved, sortCol, sortDir, locMatch])
 
   useEffect(() => { setPage(0); setSelected(new Set()) }, [tab, search, fStore, fAssignee, fTag, fDate, saved])
   const pageRows = filtered.slice(page * pageSize, page * pageSize + pageSize)
