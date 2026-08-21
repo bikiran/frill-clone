@@ -1,4 +1,4 @@
-import { mapWooStatus, mapWooPayment } from '@/lib/orders'
+import { mapWooStatus, mapWooPayment, wooDateToISO } from '@/lib/orders'
 
 // PostgREST reports an unknown column as "Could not find the 'X' column ... in
 // the schema cache". A schema that predates a newer optional column (e.g.
@@ -61,7 +61,10 @@ function sourceFields(companyId: string, o: any, contactId: string | null) {
     customer_email: email || null,
     customer_phone: b.phone || null,
     shipping_address: (o.shipping && Object.keys(o.shipping).length ? o.shipping : b) || null,
-    order_date: o.order_date || o.created_at || null,
+    // The woocommerce_orders row's order_date is already a proper timestamptz.
+    // Do NOT fall back to created_at (the sync insert time) — that fabricated a
+    // "now" date and made every order look 1 minute old.
+    order_date: wooDateToISO(o) || o.order_date || null,
     updated_at: new Date().toISOString(),
   }
 }
@@ -107,12 +110,30 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
   if (!wooRows.length) return 0
 
   const extIds = wooRows.map(o => String(o.woo_order_id)).filter(Boolean)
-  const existing = new Set<string>()
+  const existing = new Map<string, { id: string; order_date: string | null }>()
   for (let i = 0; i < extIds.length; i += 300) {
-    const { data } = await db.from('orders').select('external_order_id')
+    const { data } = await db.from('orders').select('id, external_order_id, order_date')
       .eq('company_id', companyId).eq('sales_channel', 'woocommerce').in('external_order_id', extIds.slice(i, i + 300))
-    for (const r of data || []) existing.add(String(r.external_order_id))
+    for (const r of data || []) existing.set(String(r.external_order_id), { id: r.id, order_date: r.order_date })
   }
+
+  // Reconcile existing orders' dates: earlier syncs stored a wrong order_date
+  // (WooCommerce local time parsed as UTC). Now that the source is corrected,
+  // fix any stored date that no longer matches — bounded so a big catalogue
+  // converges over a couple of runs rather than doing thousands of writes at once.
+  let fixed = 0
+  for (const o of wooRows) {
+    if (fixed >= 800) break
+    const prev = existing.get(String(o.woo_order_id))
+    if (!prev) continue
+    const want = wooDateToISO(o) || o.order_date || null
+    if (!want) continue
+    const cur = prev.order_date ? new Date(prev.order_date).getTime() : 0
+    if (Math.abs(new Date(want).getTime() - cur) > 1000) {
+      try { await db.from('orders').update({ order_date: want }).eq('id', prev.id); fixed++ } catch {}
+    }
+  }
+
   const fresh = wooRows.filter(o => !existing.has(String(o.woo_order_id)))
   if (!fresh.length) return 0
 

@@ -22,12 +22,12 @@ function WooLogo({ size = 16 }: { size?: number }) {
     </span>
   )
 }
-function ChannelIcon({ channel, size = 15 }: { channel?: string | null; size?: number }) {
+export function ChannelIcon({ channel, size = 15 }: { channel?: string | null; size?: number }) {
   if (channel === 'woocommerce') return <WooLogo size={size} />
   return <span style={{ fontSize: size + 1 }}>{channelMeta(channel).icon}</span>
 }
 
-function CopyBtn({ onClick, title }: { onClick: () => void; title?: string }) {
+export function CopyBtn({ onClick, title }: { onClick: () => void; title?: string }) {
   return (
     <button type="button" title={title || 'Copy'} onClick={e => { e.stopPropagation(); e.preventDefault(); onClick() }}
       style={{ background: 'none', border: 'none', padding: 2, cursor: 'copy', color: 'var(--slate)', display: 'inline-flex', lineHeight: 0, borderRadius: 4, flexShrink: 0 }}>
@@ -36,7 +36,7 @@ function CopyBtn({ onClick, title }: { onClick: () => void; title?: string }) {
   )
 }
 
-async function copyToClipboard(text: string, flash?: (m: string) => void) {
+export async function copyToClipboard(text: string, flash?: (m: string) => void) {
   const t = (text || '').trim()
   if (!t) return
   try {
@@ -75,6 +75,12 @@ export default function OrdersPage() {
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [labelOrder, setLabelOrder] = useState<Order | null>(null)
+  // Show Sidebar: ON → a row opens the slide-in drawer; OFF → it opens the full
+  // order details page. Persisted per browser.
+  const [showSidebar, setShowSidebar] = useState(true)
+  useEffect(() => { try { const v = localStorage.getItem('colvy-orders-sidebar'); if (v != null) setShowSidebar(v === '1') } catch {} }, [])
+  const setSidebarPref = (v: boolean) => { setShowSidebar(v); try { localStorage.setItem('colvy-orders-sidebar', v ? '1' : '0') } catch {} }
+  const openOrder = (id: string) => { if (showSidebar) setDrawerId(id); else window.location.href = `/admin/orders/${id}` }
 
   // Open the print route (packing slips or labels) for a set of orders in a new tab.
   const openPrint = useCallback((docType: 'packing_slip' | 'label', ids: string[]) => {
@@ -350,6 +356,10 @@ export default function OrdersPage() {
           <select value={fDate} onChange={e => setFDate(e.target.value)} style={ctrl}><option value="all">All time</option><option value="today">Today</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option></select>
           <select value={saved} onChange={e => setSaved(e.target.value)} style={{ ...ctrl, color: saved ? ACCENT : 'var(--ink)' }}><option value="">Saved Filters</option>{SAVED_FILTERS.map(s => <option key={s} value={s}>{s}</option>)}{locations.map(l => <option key={l.id} value={`loc:${l.id}`}>{l.name}</option>)}</select>
           <button type="button" onClick={() => runSync(companyId!)} disabled={syncing} style={{ ...ctrl, color: ACCENT }}>{syncing ? 'Syncing…' : 'Sync'}</button>
+          <label title="On: rows open the side drawer. Off: rows open the full order page." style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={showSidebar} onChange={e => setSidebarPref(e.target.checked)} style={{ accentColor: ACCENT }} />
+            Show Sidebar
+          </label>
         </div>
       )}
 
@@ -376,7 +386,7 @@ export default function OrdersPage() {
                 const age = orderAge(o.order_date)
                 const sel = selected.has(o.id)
                 return (
-                  <tr key={o.id} className="ord-row" onClick={() => setDrawerId(o.id)} style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: drawerId === o.id ? `color-mix(in srgb, ${ACCENT} 10%, transparent)` : sel ? `color-mix(in srgb, ${ACCENT} 5%, transparent)` : undefined }}>
+                  <tr key={o.id} className="ord-row" onClick={() => openOrder(o.id)} style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: drawerId === o.id ? `color-mix(in srgb, ${ACCENT} 10%, transparent)` : sel ? `color-mix(in srgb, ${ACCENT} 5%, transparent)` : undefined }}>
                     <td style={td} onClick={e => { e.stopPropagation(); toggleOne(o.id) }}><input type="checkbox" checked={sel} onChange={() => {}} /></td>
                     <td style={{ ...td, color: ACCENT, fontWeight: 700 }}>{o.order_number}</td>
                     <td style={{ ...td, fontWeight: 700, color: age.color }}>{age.label}</td>
@@ -384,7 +394,7 @@ export default function OrdersPage() {
                     <td style={{ ...td, fontWeight: 600 }}>{o.customer_name || '—'}</td>
                     <td style={td}>{o.item_count || 0}</td>
                     <td style={{ ...td, color: 'var(--slate)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.primary_sku || '—'}</td>
-                    <td style={{ ...td, color: 'var(--slate)' }}>{o.shipping_method || '—'}</td>
+                    <td style={{ ...td, color: 'var(--slate)' }}>{(Number(o.shipping_total) || 0) > 0 ? <span>{o.shipping_method || 'Shipping'} <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{fmtMoney(o.shipping_total, o.currency)}</span></span> : (o.shipping_method || '—')}</td>
                     <td style={td}><span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span></td>
                     <td style={td}><Avatar name={o.assignee_name || teamName(o.assignee_id)} /></td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtMoney(o.total, o.currency)}</td>
@@ -429,7 +439,7 @@ export default function OrdersPage() {
 }
 
 // ── Tag combobox — type to filter existing tags or create one on the fly ──────
-function TagMenu({ tags, accent, align = 'left', onPick, onClose }: { tags: string[]; accent: string; align?: 'left' | 'right'; onPick: (tag: string) => void; onClose: () => void }) {
+export function TagMenu({ tags, accent, align = 'left', onPick, onClose }: { tags: string[]; accent: string; align?: 'left' | 'right'; onPick: (tag: string) => void; onClose: () => void }) {
   const [q, setQ] = useState('')
   const query = q.trim()
   const filtered = tags.filter(t => t.toLowerCase().includes(query.toLowerCase()))
@@ -463,7 +473,7 @@ function TagMenu({ tags, accent, align = 'left', onPick, onClose }: { tags: stri
 }
 
 // ── Create-label modal — records a shipment, marks shipped, prints label ──────
-function CreateLabelModal({ order, companyId, accent, onClose, onDone, onFlash, onPrintLabel }: any) {
+export function CreateLabelModal({ order, companyId, accent, onClose, onDone, onFlash, onPrintLabel }: any) {
   const ACCENT = accent || 'var(--coral)'
   const [carrier, setCarrier] = useState<string>(order.carrier || 'australia_post')
   const [service, setService] = useState<string>(CARRIER_SERVICES[order.carrier || 'australia_post']?.[0] || '')

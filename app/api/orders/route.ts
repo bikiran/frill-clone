@@ -36,6 +36,15 @@ export async function GET(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'companyId required', orders: [] }, { status: 400 })
     const db = admin()
     if (!(await isMember(db, req, companyId))) return NextResponse.json({ error: 'Not allowed', orders: [] }, { status: 403 })
+
+    // Single order (for the full order details page).
+    const id = req.nextUrl.searchParams.get('id')
+    if (id) {
+      const { data, error } = await db.from('orders').select('*').eq('company_id', companyId).eq('id', id).maybeSingle()
+      if (error) return NextResponse.json({ error: error.message, order: null }, { status: 500 })
+      return NextResponse.json({ order: data || null })
+    }
+
     const { data, error } = await db.from('orders').select('*')
       .eq('company_id', companyId).order('order_date', { ascending: false }).limit(2000)
     if (error) return NextResponse.json({ error: error.message, orders: [] }, { status: 500 })

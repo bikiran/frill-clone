@@ -40,7 +40,7 @@ export default function OrdersReportsPage() {
       const j = await res.json().catch(() => ({}))
       setOrders(Array.isArray(j.orders) ? j.orders : [])
     } catch { setOrders([]) }
-    try { const { data: sh } = await (supabase as any).from('shipments').select('*').eq('company_id', cid).limit(5000); setShipments(sh || []) } catch { setShipments([]) }
+    try { const { data: sh } = await (supabase as any).from('order_shipments').select('*').eq('company_id', cid).limit(5000); setShipments(sh || []) } catch { setShipments([]) }
   }, [])
 
   useEffect(() => {

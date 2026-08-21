@@ -30,6 +30,18 @@ export const STATUS_TABS: { key: string; label: string; match?: OrderStatus[] }[
   { key: 'alerts', label: 'Order Alerts' },
 ]
 
+// WooCommerce sends both `date_created` (the store's LOCAL time, no offset) and
+// `date_created_gmt` (UTC, no offset). Passing the local one to `new Date()`
+// treats it as UTC, shifting every recent order into the future — which is why
+// fresh orders all showed "1 min" old. Prefer the GMT field and mark it UTC.
+export function wooDateToISO(o: any): string | null {
+  const gmt = o?.date_created_gmt || o?.date_paid_gmt || o?.date_modified_gmt
+  if (gmt) { const s = String(gmt); const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z'); if (!isNaN(d.getTime())) return d.toISOString() }
+  const local = o?.date_created || o?.order_date || o?.date_paid
+  if (local) { const d = new Date(local); if (!isNaN(d.getTime())) return d.toISOString() }
+  return null
+}
+
 // WooCommerce status → operational status / payment.
 export function mapWooStatus(woo?: string | null): OrderStatus {
   const s = String(woo || '').toLowerCase()

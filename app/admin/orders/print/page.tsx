@@ -44,10 +44,10 @@ export default function OrdersPrintPage() {
       setOrders(rows)
 
       const [{ data: co }, { data: loc }, { data: items }, { data: ships }] = await Promise.all([
-        (supabase as any).from('companies').select('name, logo_url, accent_color, email, phone, website').eq('id', cid).maybeSingle(),
+        (supabase as any).from('companies').select('*').eq('id', cid).maybeSingle(),
         (supabase as any).from('company_locations').select('*').eq('company_id', cid).order('is_primary', { ascending: false }).limit(1).maybeSingle(),
         (supabase as any).from('order_items').select('*').in('order_id', ids),
-        (supabase as any).from('shipments').select('*').in('order_id', ids).order('created_at', { ascending: false }),
+        (supabase as any).from('order_shipments').select('*').in('order_id', ids).order('created_at', { ascending: false }),
       ])
       setCompany(co || null)
       setFromAddr(loc || null)
