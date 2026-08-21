@@ -175,11 +175,22 @@ export default function OrdersPage() {
       const { data: locs } = await (supabase as any).from('company_locations').select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })
       setLocations((locs || []).map((l: any) => ({ id: l.id, name: l.label || l.suburb || 'Outlet' })))
 
-      const { data: tms } = await (supabase as any).from('team_members').select('user_id, name').eq('company_id', cid)
-      const uids = Array.from(new Set((tms || []).map((t: any) => t.user_id).filter(Boolean)))
-      let names: Record<string, any> = {}
-      if (uids.length) { try { const r = await fetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: uids }) }); names = (await r.json()).names || {} } catch {} }
-      setTeam((tms || []).map((t: any) => ({ id: t.user_id, name: t.name || names[t.user_id]?.name || 'Teammate' })).filter((t: any) => t.id))
+      // Team — mirror the inbox: include the company owner, and don't filter
+      // team_members by company_id (invited members can have a null company_id;
+      // RLS already scopes them). Filtering by company_id hid everyone.
+      const members: { id: string; name: string }[] = []
+      const { data: coRow } = await (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle()
+      if (coRow?.owner_id) members.push({ id: coRow.owner_id, name: coRow.name ? `${coRow.name} (Owner)` : 'Owner' })
+      const { data: tms } = await (supabase as any).from('team_members').select('*')
+      for (const m of tms || []) {
+        if (m.company_id && m.company_id !== cid) continue
+        const uid = m.user_id || m.id
+        if (!uid || members.some(x => x.id === uid)) continue
+        members.push({ id: uid, name: m.name || m.display_name || m.email?.split('@')[0] || 'Teammate' })
+      }
+      const needIds = members.filter(m => !m.name || m.name === 'Teammate').map(m => m.id)
+      if (needIds.length) { try { const r = await fetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: needIds }) }); const names = (await r.json()).names || {}; for (const m of members) if (names[m.id]?.name) m.name = names[m.id].name } catch {} }
+      setTeam(members)
 
       loadTagDefs(cid)
       await loadOrders(cid)
@@ -412,6 +423,7 @@ export default function OrdersPage() {
           <select value={fDate} onChange={e => setFDate(e.target.value)} style={ctrl}><option value="all">All time</option><option value="today">Today</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option></select>
           <select value={saved} onChange={e => setSaved(e.target.value)} style={{ ...ctrl, color: saved ? ACCENT : 'var(--ink)' }}><option value="">Saved Filters</option>{SAVED_FILTERS.map(s => <option key={s} value={s}>{s}</option>)}{locations.map(l => <option key={l.id} value={`loc:${l.id}`}>{l.name}</option>)}</select>
           <button type="button" onClick={() => runSync(companyId!)} disabled={syncing} style={{ ...ctrl, color: ACCENT }}>{syncing ? 'Syncing…' : 'Sync'}</button>
+          <button type="button" onClick={() => setManageTagsOpen(true)} title="Create, rename, recolour or delete order tags" style={ctrl}>⚙ Tags</button>
           <label title="On: rows open the side drawer. Off: rows open the full order page." style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', cursor: 'pointer' }}>
             <input type="checkbox" checked={showSidebar} onChange={e => setSidebarPref(e.target.checked)} style={{ accentColor: ACCENT }} />
             Show Sidebar
@@ -702,10 +714,19 @@ function TagApplyMenu({ tagDefs, selectedOrders, accent, onToggle, onCreate, onM
 // ── Manage Tags dialog — create / rename / recolour / delete the palette ──────
 function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOrders, onFlash, onClose }: any) {
   const PALETTE = Array.from(new Set([...TAG_PALETTE, '#111827', '#0ea5e9', '#22c55e', '#f59e0b', '#ec4899']))
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editName, setEditName] = useState(''); const [editColor, setEditColor] = useState('')
   const [newName, setNewName] = useState(''); const [newColor, setNewColor] = useState(PALETTE[0])
   const [busy, setBusy] = useState(false)
+
+  // Show every tag: the managed palette PLUS any tag already applied to orders
+  // that isn't in the palette yet (e.g. created before tags were managed).
+  const rowKey = (t: any) => t.id || `n:${String(t.name).toLowerCase()}`
+  const applied: string[] = Array.from(new Set((orders || []).flatMap((o: any) => Array.isArray(o.tags) ? o.tags : []))).filter(Boolean) as string[]
+  const rows = [
+    ...tagDefs.map((t: any) => ({ ...t, unregistered: false })),
+    ...applied.filter(a => !tagDefs.some((t: any) => t.name.toLowerCase() === a.toLowerCase())).map(name => ({ id: null, name, color: hashColor(name), unregistered: true })),
+  ]
 
   const rewriteOrders = async (from: string, to: string | null) => {
     const affected = orders.filter((o: any) => (o.tags || []).includes(from))
@@ -722,21 +743,27 @@ function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOr
     try { const { data } = await (supabase as any).from('order_tags').insert({ company_id: companyId, name: n, color: newColor }).select().maybeSingle(); if (data) { setTagDefs((d: any[]) => [...d, { id: data.id, name: data.name, color: data.color }]); setNewName('') } } catch { onFlash('Could not create tag') }
     setBusy(false)
   }
-  const startEdit = (t: any) => { setEditingId(t.id); setEditName(t.name); setEditColor(t.color) }
+  const startEdit = (t: any) => { setEditingKey(rowKey(t)); setEditName(t.name); setEditColor(t.color) }
   const saveEdit = async (t: any) => {
     const n = editName.trim() || t.name
     setBusy(true)
     try {
-      await (supabase as any).from('order_tags').update({ name: n, color: editColor }).eq('id', t.id)
+      if (t.id) {
+        await (supabase as any).from('order_tags').update({ name: n, color: editColor }).eq('id', t.id)
+        setTagDefs((d: any[]) => d.map(x => x.id === t.id ? { ...x, name: n, color: editColor } : x))
+      } else {
+        // Unregistered (applied-only) tag → register it now with the chosen colour.
+        const { data } = await (supabase as any).from('order_tags').insert({ company_id: companyId, name: n, color: editColor }).select().maybeSingle()
+        if (data) setTagDefs((d: any[]) => [...d, { id: data.id, name: data.name, color: data.color }])
+      }
       if (n !== t.name) await rewriteOrders(t.name, n)
-      setTagDefs((d: any[]) => d.map(x => x.id === t.id ? { ...x, name: n, color: editColor } : x))
     } catch { onFlash('Could not save tag') }
-    setEditingId(null); setBusy(false)
+    setEditingKey(null); setBusy(false)
   }
   const del = async (t: any) => {
     if (!window.confirm(`Delete tag “${t.name}”? It will be removed from all orders.`)) return
     setBusy(true)
-    try { await (supabase as any).from('order_tags').delete().eq('id', t.id); await rewriteOrders(t.name, null); setTagDefs((d: any[]) => d.filter(x => x.id !== t.id)) } catch { onFlash('Could not delete tag') }
+    try { if (t.id) await (supabase as any).from('order_tags').delete().eq('id', t.id); await rewriteOrders(t.name, null); setTagDefs((d: any[]) => d.filter(x => x.id !== t.id)) } catch { onFlash('Could not delete tag') }
     setBusy(false)
   }
   const Swatches = ({ value, onPick }: { value: string; onPick: (c: string) => void }) => (
@@ -754,22 +781,24 @@ function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOr
         </div>
         <div style={{ padding: '8px 20px', overflowY: 'auto', flex: 1 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', padding: '10px 0 6px' }}><span>Name</span><span>Actions</span></div>
-          {tagDefs.length === 0 && <p style={{ fontSize: 13, color: 'var(--slate)', padding: '8px 0' }}>No tags yet. Add one below.</p>}
-          {tagDefs.map((t: any) => (
-            <div key={t.id} style={{ padding: '10px 0', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              {editingId === t.id ? (
+          {rows.length === 0 && <p style={{ fontSize: 13, color: 'var(--slate)', padding: '8px 0' }}>No tags yet. Add one below.</p>}
+          {rows.map((t: any) => {
+            const editing = editingKey === rowKey(t)
+            return (
+            <div key={rowKey(t)} style={{ padding: '10px 0', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              {editing ? (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <input value={editName} onChange={e => setEditName(e.target.value)} style={{ padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
                   <Swatches value={editColor} onPick={setEditColor} />
                 </div>
               ) : <TagChip name={t.name} color={t.color} />}
               <div style={{ display: 'flex', gap: 14, flexShrink: 0 }}>
-                {editingId === t.id
-                  ? <><button type="button" disabled={busy} onClick={() => saveEdit(t)} style={{ background: 'none', border: 'none', color: accent, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Save</button><button type="button" onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer' }}>Cancel</button></>
+                {editing
+                  ? <><button type="button" disabled={busy} onClick={() => saveEdit(t)} style={{ background: 'none', border: 'none', color: accent, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Save</button><button type="button" onClick={() => setEditingKey(null)} style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer' }}>Cancel</button></>
                   : <><button type="button" onClick={() => startEdit(t)} style={{ background: 'none', border: 'none', color: accent, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Edit</button><button type="button" onClick={() => del(t)} style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Delete</button></>}
               </div>
             </div>
-          ))}
+          )})}
         </div>
         <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)' }}>
           <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Add Tag</p>
