@@ -9,6 +9,7 @@ import {
   CARRIERS, CARRIER_LABEL, CARRIER_SERVICES, isClickCollect,
 } from '@/lib/orders'
 import OrderPrintDoc from '@/components/OrderPrintDoc'
+import CreateOrderPanel from '@/components/CreateOrderPanel'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 
 type Order = any
@@ -98,6 +99,7 @@ export default function OrdersPage() {
   const [drawerId, setDrawerId] = useState<string | null>(null)
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [tagFilterOpen, setTagFilterOpen] = useState(false)
+  const [showCreateOrder, setShowCreateOrder] = useState(false)
   const [labelOrder, setLabelOrder] = useState<Order | null>(null)
   const [tagDefs, setTagDefs] = useState<{ id: string; name: string; color: string }[]>([])
   const [manageTagsOpen, setManageTagsOpen] = useState(false)
@@ -336,7 +338,10 @@ export default function OrdersPage() {
     setActiveView(v.id)
   }
   const deleteView = (id: string) => { persistViews(savedViews.filter(v => v.id !== id)); if (activeView === id) setActiveView(null) }
-  const assignOutlet = (ids: string[], locId: string | null) => patchOrder(ids, { store_location_id: locId }, { type: 'outlet', detail: locId ? `Assigned to ${outletName(locId)}` : 'Outlet cleared' })
+  const assignOutlet = (ids: string[], locId: string | null) => {
+    patchOrder(ids, { store_location_id: locId }, { type: 'outlet', detail: locId ? `Assigned to ${outletName(locId)}` : 'Outlet cleared' })
+    flash(locId ? `Assigned ${ids.length} order${ids.length === 1 ? '' : 's'} to ${outletName(locId)}` : 'Outlet cleared')
+  }
   // Apply or remove a tag across a set of orders (bulk Tag dropdown).
   const applyTagToSelected = async (ids: string[], tag: string, on: boolean) => {
     const t = tag.trim(); if (!t) return
@@ -399,9 +404,14 @@ export default function OrdersPage() {
 
       {/* Header + KPIs */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.02em' }}>Orders</h1>
-          <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--slate)' }}>Manage and fulfil customer orders{syncing ? ' · syncing…' : ''}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.02em' }}>Orders</h1>
+            <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--slate)' }}>Manage and fulfil customer orders{syncing ? ' · syncing…' : ''}</p>
+          </div>
+          <button type="button" onClick={() => setShowCreateOrder(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+            <span style={{ fontSize: 15, lineHeight: 1 }}>＋</span> Create Order
+          </button>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {kpi('All Orders', counts.all, 'var(--ink)')}
@@ -478,7 +488,8 @@ export default function OrdersPage() {
           </select>
           {locations.length > 0 && (
             <select value="" onChange={e => { if (e.target.value) { assignOutlet([...selected], e.target.value === 'none' ? null : e.target.value); setSelected(new Set()) } }} style={ctrl}>
-              <option value="">Outlet…</option>
+              <option value="">{locations.find(l => l.id === fStore) ? `Outlet: ${locations.find(l => l.id === fStore)!.name}` : 'Assign outlet…'}</option>
+              {locations.find(l => l.id === fStore) && <option value={fStore}>✓ Assign to {locations.find(l => l.id === fStore)!.name}</option>}
               <option value="none">No outlet</option>
               {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
@@ -622,6 +633,12 @@ export default function OrdersPage() {
       )}
 
       {printModal && <PrintModal doc={printModal.doc} companyId={companyId!} ids={printModal.ids} title={printModal.title} accent={ACCENT} onClose={() => setPrintModal(null)} />}
+
+      {showCreateOrder && companyId && (
+        <CreateOrderPanel companyId={companyId} staffName={me.name} staffId={me.id || undefined}
+          onClose={() => setShowCreateOrder(false)}
+          onCreated={() => { flash('Order created'); runSync(companyId) }} />
+      )}
     </div>
   )
 }
