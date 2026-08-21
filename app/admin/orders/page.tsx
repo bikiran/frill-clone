@@ -156,13 +156,24 @@ export default function OrdersPage() {
   const loadOrders = useCallback(async (cid: string) => {
     // Read through the service-role API so the board shows rows regardless of RLS
     // state (a mis-applied policy can hide rows from the anon client with no error).
+    // Page through in chunks of 1000 (PostgREST's per-response cap) so a large
+    // store loads its whole book — the first page renders immediately and the
+    // rest fills in behind it, rather than being stuck at 1000.
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
-      const res = await fetch(`/api/orders?companyId=${encodeURIComponent(cid)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      const d = await res.json().catch(() => ({}))
-      if (!res.ok || d.error) { setToast(`Couldn’t load orders: ${d.error || res.status}`); setTimeout(() => setToast(''), 6000) }
-      setOrders(Array.isArray(d.orders) ? d.orders : [])
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined
+      const PAGE = 1000
+      let acc: any[] = []
+      for (let offset = 0; offset < 200000; offset += PAGE) {
+        const res = await fetch(`/api/orders?companyId=${encodeURIComponent(cid)}&offset=${offset}&limit=${PAGE}`, { headers })
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok || d.error) { if (!acc.length) { setToast(`Couldn’t load orders: ${d.error || res.status}`); setTimeout(() => setToast(''), 6000) } break }
+        const rows = Array.isArray(d.orders) ? d.orders : []
+        acc = offset === 0 ? rows : acc.concat(rows)
+        setOrders(acc.slice())
+        if (rows.length < PAGE || !d.hasMore) break
+      }
     } catch (e: any) { setToast(`Couldn’t load orders: ${e?.message || e}`); setTimeout(() => setToast(''), 6000) }
   }, [])
 
@@ -473,10 +484,10 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* Location filters — a row of outlet chips; star sets a default that
-          pre-filters the board (shared with Tasks/Calendar). */}
-      {locations.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+      {/* Location filters (left) + status filter (right) share one row. */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+      {locations.length > 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', marginRight: 2 }}>Location</span>
           <button type="button" onClick={() => setFStore('unassigned')} title="Orders not assigned to any outlet"
             style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1px solid ${fStore === 'unassigned' ? '#d97706' : 'var(--border)'}`, background: fStore === 'unassigned' ? 'color-mix(in srgb, #d97706 12%, transparent)' : 'var(--card,#fff)', color: fStore === 'unassigned' ? '#b45309' : 'var(--slate)' }}>Unassigned</button>
@@ -493,7 +504,7 @@ export default function OrdersPage() {
             )
           })}
         </div>
-      )}
+      ) : <div />}
 
       {/* Status filter — collapsed into a Filters button + dropdown. Right-click
           (or the ★) sets a status as the default, applied on next visit. */}
@@ -501,7 +512,7 @@ export default function OrdersPage() {
         const countFor = (t: any) => t.key === 'all' ? counts.all : t.key === 'alerts' ? counts.alerts : (t.match as string[]).reduce((n: number, s: string) => n + (counts[s] || 0), 0)
         const activeTab = STATUS_TABS.find(t => t.key === tab) || STATUS_TABS[0]
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16, position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', position: 'relative' }}>
             <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', marginRight: 2 }}>Filter</span>
             <button type="button" onClick={() => setStatusMenuOpen(v => !v)}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 20, border: `1px solid ${ACCENT}`, background: `color-mix(in srgb, ${ACCENT} 10%, transparent)`, color: ACCENT, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
@@ -518,7 +529,7 @@ export default function OrdersPage() {
             {statusMenuOpen && (
               <>
                 <div onClick={() => setStatusMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
-                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 44, zIndex: 4501, width: 268, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 40px rgba(0,0,0,0.16)', padding: 7 }}>
+                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 4501, width: 268, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 40px rgba(0,0,0,0.16)', padding: 7 }}>
                   <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)', padding: '4px 8px 6px' }}>Order status · right-click to set default</div>
                   {STATUS_TABS.map(t => {
                     const active = tab === t.key; const isDefault = defaultStatus === t.key; const n = countFor(t)
@@ -541,6 +552,7 @@ export default function OrdersPage() {
           </div>
         )
       })()}
+      </div>
 
       {/* Saved views — a named combination of filters (ShipStation-style) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>

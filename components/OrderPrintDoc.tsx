@@ -28,7 +28,7 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
       try {
         const { data: s } = await supabase.auth.getSession()
         const token = s?.session?.access_token
-        const res = await fetch(`/api/orders?companyId=${encodeURIComponent(companyId)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+        const res = await fetch(`/api/orders?companyId=${encodeURIComponent(companyId)}&ids=${encodeURIComponent(ids.join(','))}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
         const j = await res.json().catch(() => ({}))
         const byId = new Map<string, Order>((j.orders || []).map((o: Order) => [o.id, o]))
         rows = ids.map(id => byId.get(id)).filter(Boolean) as Order[]

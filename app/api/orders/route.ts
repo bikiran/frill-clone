@@ -45,10 +45,25 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ order: data || null })
     }
 
+    // Specific orders by id (e.g. printing a set of slips) — avoids pulling the
+    // whole book just to render a handful.
+    const idsParam = req.nextUrl.searchParams.get('ids')
+    if (idsParam) {
+      const ids = idsParam.split(',').map(s => s.trim()).filter(Boolean).slice(0, 500)
+      const { data, error } = await db.from('orders').select('*').eq('company_id', companyId).in('id', ids)
+      if (error) return NextResponse.json({ error: error.message, orders: [] }, { status: 500 })
+      return NextResponse.json({ orders: data || [] })
+    }
+
+    // One page of the book. The board pages through with offset/limit (PostgREST
+    // caps a single response at ~1000 rows regardless of .limit()), so a 50k-order
+    // store loads fully across several small requests instead of one huge one.
+    const offset = Math.max(0, parseInt(req.nextUrl.searchParams.get('offset') || '0') || 0)
+    const limit = Math.min(1000, Math.max(1, parseInt(req.nextUrl.searchParams.get('limit') || '1000') || 1000))
     const { data, error } = await db.from('orders').select('*')
-      .eq('company_id', companyId).order('order_date', { ascending: false }).limit(2000)
+      .eq('company_id', companyId).order('order_date', { ascending: false }).range(offset, offset + limit - 1)
     if (error) return NextResponse.json({ error: error.message, orders: [] }, { status: 500 })
-    return NextResponse.json({ orders: data || [] })
+    return NextResponse.json({ orders: data || [], hasMore: (data?.length || 0) === limit })
   } catch (e: any) {
     return NextResponse.json({ error: e.message, orders: [] }, { status: 500 })
   }
