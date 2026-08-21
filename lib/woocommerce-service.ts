@@ -383,6 +383,21 @@ export class WooCommerceService {
     } catch { return false }
   }
 
+  // Read an order's WooCommerce notes (the note history shown in WC admin —
+  // system notes, staff private notes, and notes-to-customer).
+  async getOrderNotes(orderId: number): Promise<any[]> {
+    try {
+      const res = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders/${orderId}/notes?per_page=50`, { headers: this.wcHeaders() })
+      if (!res.ok) return []
+      const notes = await res.json()
+      return (notes || []).map((n: any) => ({
+        id: n.id, note: n.note, author: n.author || 'WooCommerce',
+        date: n.date_created_gmt ? `${n.date_created_gmt}Z` : n.date_created,
+        customer_note: !!n.customer_note,
+      }))
+    } catch { return [] }
+  }
+
   // All orders for an email (covers guest orders + Colvy-created orders that
   // may not have synced into our local table yet). Returns live from WooCommerce.
   async getOrdersByEmail(email: string, limit = 25): Promise<any[]> {

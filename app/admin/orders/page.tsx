@@ -80,6 +80,7 @@ export default function OrdersPage() {
   const [tab, setTab] = useState('all')
   const [search, setSearch] = useState('')
   const [fStore, setFStore] = useState('all')
+  const [defaultOutlet, setDefaultOutlet] = useState<string | null>(null)
   const [fAssignee, setFAssignee] = useState('all')
   const [fTag, setFTag] = useState('all')
   const [fDate, setFDate] = useState('all')
@@ -178,6 +179,16 @@ export default function OrdersPage() {
 
       const { data: locs } = await (supabase as any).from('company_locations').select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false })
       setLocations((locs || []).map((l: any) => ({ id: l.id, name: l.label || l.suburb || 'Outlet' })))
+
+      // Default outlet — shared with the Tasks/Calendar pages. Pre-filters the board.
+      if (session?.user) {
+        try {
+          const r = await fetch(`/api/user-prefs?userId=${session.user.id}&companyId=${cid}`)
+          const j = await r.json()
+          const dv = j?.prefs?.default_outlet
+          if (dv?.id && (locs || []).some((l: any) => l.id === dv.id)) { setDefaultOutlet(dv.id); setFStore(dv.id) }
+        } catch {}
+      }
 
       // Team — mirror the inbox: include the company owner, and don't filter
       // team_members by company_id (invited members can have a null company_id;
@@ -288,6 +299,10 @@ export default function OrdersPage() {
   const setStatus = (ids: string[], status: string) => patchOrder(ids, { status, ...(status === 'shipped' ? { shipped_at: new Date().toISOString() } : {}) }, { type: status === 'shipped' ? 'shipped' : status === 'packed' ? 'packed' : 'status_changed', detail: `Status set to ${statusMeta(status).label}` })
   const assign = (ids: string[], userId: string | null) => patchOrder(ids, { assignee_id: userId, assignee_name: teamName(userId) }, { type: 'assigned', detail: userId ? `Assigned to ${teamName(userId)}` : 'Unassigned' })
   const outletName = (id: string | null) => locations.find(l => l.id === id)?.name || null
+  const setDefaultOutletPref = (id: string | null) => {
+    setDefaultOutlet(id); setFStore(id || 'all')
+    if (companyId && me.id) fetch('/api/user-prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: me.id, companyId, key: 'default_outlet', value: { id } }) }).catch(() => {})
+  }
   const assignOutlet = (ids: string[], locId: string | null) => patchOrder(ids, { store_location_id: locId }, { type: 'outlet', detail: locId ? `Assigned to ${outletName(locId)}` : 'Outlet cleared' })
   // Apply or remove a tag across a set of orders (bulk Tag dropdown).
   const applyTagToSelected = async (ids: string[], tag: string, on: boolean) => {
@@ -364,6 +379,26 @@ export default function OrdersPage() {
         </div>
       </div>
 
+      {/* Location filters — a row of outlet chips; star sets a default that
+          pre-filters the board (shared with Tasks/Calendar). */}
+      {locations.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', marginRight: 2 }}>Location</span>
+          <button type="button" onClick={() => setFStore('all')}
+            style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1px solid ${fStore === 'all' ? ACCENT : 'var(--border)'}`, background: fStore === 'all' ? `color-mix(in srgb, ${ACCENT} 12%, transparent)` : 'var(--card,#fff)', color: fStore === 'all' ? ACCENT : 'var(--slate)' }}>All Stores</button>
+          {locations.map(l => {
+            const active = fStore === l.id; const isDefault = defaultOutlet === l.id
+            return (
+              <span key={l.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '4px 6px 4px 12px', borderRadius: 20, border: `1px solid ${active ? ACCENT : 'var(--border)'}`, background: active ? `color-mix(in srgb, ${ACCENT} 12%, transparent)` : 'var(--card,#fff)' }}>
+                <button type="button" onClick={() => setFStore(active ? 'all' : l.id)} style={{ background: 'none', border: 'none', padding: 0, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', color: active ? ACCENT : 'var(--slate)' }}>{l.name}</button>
+                <button type="button" title={isDefault ? 'Clear default outlet' : 'Set as my default outlet'} onClick={() => setDefaultOutletPref(isDefault ? null : l.id)}
+                  style={{ background: 'none', border: 'none', padding: '0 2px', cursor: 'pointer', fontSize: 13, lineHeight: 1, color: isDefault ? '#f59e0b' : 'var(--slate)' }}>{isDefault ? '★' : '☆'}</button>
+              </span>
+            )
+          })}
+        </div>
+      )}
+
       {/* Status tabs */}
       <div style={{ display: 'flex', gap: 22, borderBottom: '1px solid var(--border)', marginBottom: 16, overflowX: 'auto' }}>
         {STATUS_TABS.map(t => {
@@ -421,7 +456,6 @@ export default function OrdersPage() {
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search orders…" style={{ ...ctrl, minWidth: 200, cursor: 'text', fontWeight: 500 }} />
-          <select value={fStore} onChange={e => setFStore(e.target.value)} style={ctrl}><option value="all">All Stores</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
           <select value={fAssignee} onChange={e => setFAssignee(e.target.value)} style={ctrl}><option value="all">Any assignee</option><option value="none">Unassigned</option>{team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
           <div style={{ position: 'relative' }}>
             <button type="button" onClick={() => setTagFilterOpen(v => !v)} style={{ ...ctrl, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -847,6 +881,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const [tagInput, setTagInput] = useState('')
   const [addingTag, setAddingTag] = useState(false)
   const [galleryIdx, setGalleryIdx] = useState<number | null>(null)
+  const [wooNotes, setWooNotes] = useState<any[] | null>(null)
 
   const load = useCallback(async () => {
     const [it, nt, ev, tk] = await Promise.all([
@@ -858,6 +893,24 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     setItems(it.data || []); setNotes(nt.data || []); setEvents(ev.data || []); setTasks(tk.data || [])
   }, [order.id, companyId])
   useEffect(() => { load() }, [load])
+
+  // WooCommerce order-note history (system + staff + customer notes), fetched
+  // live from the store for WooCommerce orders.
+  useEffect(() => {
+    let cancelled = false
+    if (order.sales_channel !== 'woocommerce' || !order.external_order_id) { setWooNotes([]); return }
+    setWooNotes(null)
+    ;(async () => {
+      try {
+        const { data } = await supabase.auth.getSession()
+        const token = data?.session?.access_token
+        const res = await fetch(`/api/orders/woo-notes?companyId=${encodeURIComponent(companyId)}&wooOrderId=${encodeURIComponent(order.external_order_id)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+        const j = await res.json().catch(() => ({}))
+        if (!cancelled) setWooNotes(Array.isArray(j.notes) ? j.notes : [])
+      } catch { if (!cancelled) setWooNotes([]) }
+    })()
+    return () => { cancelled = true }
+  }, [order.id, order.external_order_id, order.sales_channel, companyId])
 
   const logEvent = async (type: string, detail: string) => {
     const row = { order_id: order.id, company_id: companyId, type, detail, actor_id: me.id, actor_name: me.name }
@@ -1067,6 +1120,28 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
               ) })}
             </div>}
           </div>
+
+          {/* WooCommerce order notes (live from the store) */}
+          {order.sales_channel === 'woocommerce' && (
+            <div style={sect}>
+              <p style={kick}>WooCommerce Notes</p>
+              {wooNotes === null && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Loading notes…</p>}
+              {wooNotes && wooNotes.length === 0 && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>No WooCommerce notes.</p>}
+              {wooNotes && wooNotes.length > 0 && (
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {wooNotes.map((n: any) => (
+                    <div key={n.id} style={{ padding: '8px 11px', borderRadius: 10, background: n.customer_note ? '#eff6ff' : 'var(--canvas)', border: `1px solid ${n.customer_note ? '#bfdbfe' : 'var(--border)'}` }}>
+                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: String(n.note || '').replace(/<script[\s\S]*?<\/script>/gi, '') }} />
+                      <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {n.customer_note && <span style={{ fontSize: 9, fontWeight: 800, color: '#1d4ed8', background: '#dbeafe', padding: '1px 6px', borderRadius: 20 }}>TO CUSTOMER</span>}
+                        {n.author || 'WooCommerce'}{n.date ? ` · ${new Date(n.date).toLocaleString('en-AU')}` : ''}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Timeline + notes */}
           <div style={{ ...sect, borderBottom: 'none' }}>
