@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import {
-  STATUS_TABS, statusMeta, channelMeta, orderAge, fmtMoney, SAVED_FILTERS,
+  STATUS_TABS, statusMeta, channelMeta, orderAge, fmtMoney,
   CARRIERS, CARRIER_LABEL, CARRIER_SERVICES, isClickCollect,
 } from '@/lib/orders'
 import OrderPrintDoc from '@/components/OrderPrintDoc'
@@ -637,7 +637,6 @@ export default function OrdersPage() {
             )}
           </div>
           <select value={fDate} onChange={e => setFDate(e.target.value)} style={ctrl}><option value="all">All time</option><option value="today">Today</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option></select>
-          <select value={saved} onChange={e => setSaved(e.target.value)} style={{ ...ctrl, color: saved ? ACCENT : 'var(--ink)' }}><option value="">Saved Filters</option>{SAVED_FILTERS.map(s => <option key={s} value={s}>{s}</option>)}{locations.map(l => <option key={l.id} value={`loc:${l.id}`}>{l.name}</option>)}</select>
           <button type="button" onClick={() => runSync(companyId!)} disabled={syncing} style={{ ...ctrl, color: ACCENT }}>{syncing ? 'Syncing…' : 'Sync'}</button>
           <button type="button" onClick={() => setManageTagsOpen(true)} title="Create, rename, recolour or delete order tags" style={ctrl}>⚙ Tags</button>
           <label title="On: rows open the side drawer. Off: rows open the full order page." style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', cursor: 'pointer' }}>
@@ -670,7 +669,7 @@ export default function OrdersPage() {
                 const age = orderAge(o.order_date)
                 const sel = selected.has(o.id)
                 return (
-                  <tr key={o.id} className="ord-row" onClick={() => openOrder(o.id)} style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: drawerId === o.id ? `color-mix(in srgb, ${ACCENT} 10%, transparent)` : sel ? `color-mix(in srgb, ${ACCENT} 5%, transparent)` : isClickCollect(o) ? `color-mix(in srgb, ${ACCENT} 6%, transparent)` : undefined }}>
+                  <tr key={o.id} className="ord-row" onClick={() => openOrder(o.id)} style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: drawerId === o.id ? `color-mix(in srgb, ${ACCENT} 10%, transparent)` : sel ? `color-mix(in srgb, ${ACCENT} 5%, transparent)` : isClickCollect(o) ? 'color-mix(in srgb, #3b82f6 9%, transparent)' : undefined }}>
                     <td style={td} onClick={e => { e.stopPropagation(); toggleOne(o.id) }}><input type="checkbox" checked={sel} onChange={() => {}} /></td>
                     <td style={{ ...td, color: ACCENT, fontWeight: 700 }}>{o.order_number}</td>
                     <td style={{ ...td, fontWeight: 700, color: age.color }}>{age.label}</td>
@@ -679,7 +678,7 @@ export default function OrdersPage() {
                     <td style={td}>{o.item_count || 0}</td>
                     <td style={{ ...td, color: 'var(--slate)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.primary_sku || '—'}</td>
                     <td style={{ ...td, color: 'var(--slate)' }}>{isClickCollect(o)
-                      ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700, color: ACCENT }}><span style={{ fontSize: 13 }}>🏬</span>Click &amp; Collect</span>
+                      ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700, color: '#2563eb' }}><span style={{ fontSize: 13 }}>🏬</span>Click &amp; Collect</span>
                       : (Number(o.shipping_total) || 0) > 0 ? <span>{o.shipping_method || 'Shipping'} <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{fmtMoney(o.shipping_total, o.currency)}</span></span> : (o.shipping_method || '—')}</td>
                     <td style={td}><span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span></td>
                     <td style={td}><Avatar name={o.assignee_name || teamName(o.assignee_id)} /></td>
@@ -1139,6 +1138,34 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     } catch (e: any) { onFlash(`Error: ${e?.message || e}`) }
     setActBusy('')
   }
+  // ── Click & Collect actions ───────────────────────────────────────────────
+  const notifyPickup = async () => {
+    setActBusy('notify')
+    try {
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token
+      const where = outletName ? ` at ${outletName}` : ''
+      const text = [
+        `Hi ${order.customer_name || 'there'},`, '',
+        `Your order ${order.order_number} is ready for collection${where}.`,
+        'Please bring your order number or ID when you come to pick it up. Thank you!',
+      ].join('\n')
+      const res = await fetch('/api/orders/send-tracking', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ companyId, orderId: order.id, text, senderName: me.name }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j.error) onFlash(`Notify failed: ${j.error || res.status}`)
+      else { onFlash(j.channel === 'email' ? 'Pickup notice emailed' : 'Pickup notice sent'); logEvent('pickup_notified', 'Customer notified — order ready for collection') }
+    } catch (e: any) { onFlash(`Notify error: ${e?.message || e}`) }
+    setActBusy('')
+  }
+  const markCollected = async () => {
+    if (!window.confirm(`Mark order ${order.order_number} as collected by the customer?`)) return
+    onPatch({ status: 'shipped', fulfilment_status: 'fulfilled' }, { type: 'collected', detail: 'Collected by customer' }); order.status = 'shipped'
+    logEvent('collected', 'Order collected by customer')
+    onFlash('Marked collected')
+  }
   const issueRefund = async () => {
     const amtStr = window.prompt(`Refund amount for order ${order.order_number} (${order.currency || 'AUD'}). Leave blank for a full refund.`, String(order.total || ''))
     if (amtStr === null) return
@@ -1176,16 +1203,20 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
       // Try to embed the company logo (best-effort; CORS-tainted images fall back).
       const loadLogo = (url: string) => new Promise<{ data: string; w: number; h: number } | null>(resolve => {
         if (!url) return resolve(null)
+        let done = false
+        const finish = (v: any) => { if (!done) { done = true; resolve(v) } }
+        // Never let a slow/hung image download stall the whole invoice.
+        setTimeout(() => finish(null), 4000)
         const img = new Image(); img.crossOrigin = 'anonymous'
         img.onload = () => {
           try {
             const cv = document.createElement('canvas'); cv.width = img.naturalWidth; cv.height = img.naturalHeight
-            const ctx = cv.getContext('2d'); if (!ctx) return resolve(null)
+            const ctx = cv.getContext('2d'); if (!ctx) return finish(null)
             ctx.drawImage(img, 0, 0)
-            resolve({ data: cv.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight })
-          } catch { resolve(null) }
+            finish({ data: cv.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight })
+          } catch { finish(null) }
         }
-        img.onerror = () => resolve(null)
+        img.onerror = () => finish(null)
         img.src = url
       })
       const logo = await loadLogo(co.logo_url)
@@ -1458,6 +1489,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             }, order.status === 'packed')}
             {quick(<svg {...I}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>, 'Note', () => { (document.getElementById('ord-note') as HTMLTextAreaElement)?.focus() })}
             {quick(<svg {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>, 'Contact', () => { if (convHref) location.href = convHref; else onFlash('No linked conversation yet.') })}
+            {isClickCollect(order) && quick(<svg {...I}><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></svg>, actBusy === 'notify' ? '…' : 'Notify', notifyPickup)}
+            {isClickCollect(order) && quick(<svg {...I}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><path d="M3 6h18" /><path d="m9 12 2 2 4-4" /></svg>, 'Collected', markCollected, order.status === 'shipped')}
           </div>
 
           {/* Customer */}
