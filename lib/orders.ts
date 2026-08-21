@@ -61,10 +61,34 @@ export const CHANNEL_META: Record<string, { label: string; icon: string }> = {
 }
 export const channelMeta = (c?: string | null) => CHANNEL_META[String(c || '')] || { label: c || 'Order', icon: '📦' }
 
-export const CARRIERS = ['australia_post', 'startrack', 'sendle', 'aramex', 'dhl', 'custom'] as const
+export const CARRIERS = ['australia_post', 'startrack', 'team_global_express', 'sendle', 'aramex', 'dhl', 'custom'] as const
 export const CARRIER_LABEL: Record<string, string> = {
-  australia_post: 'Australia Post', startrack: 'StarTrack', sendle: 'Sendle',
-  aramex: 'Aramex', dhl: 'DHL', custom: 'Custom carrier',
+  australia_post: 'Australia Post', startrack: 'StarTrack', team_global_express: 'Team Global Express',
+  sendle: 'Sendle', aramex: 'Aramex', dhl: 'DHL', custom: 'Custom carrier',
+}
+// The services each carrier offers (drives the label form's service dropdown).
+export const CARRIER_SERVICES: Record<string, string[]> = {
+  australia_post: ['Parcel Post', 'Express Post', 'Parcel Post Signature', 'Express Post Signature'],
+  startrack: ['Road Express', 'Premium (Next Day)', 'Fixed Price Premium'],
+  team_global_express: ['Road Express', 'Priority (Overnight)', 'Sensitive Express'],
+  sendle: ['Standard', 'Express'],
+  aramex: ['Road', 'Express', 'Next Flight'],
+  dhl: ['Express Worldwide', 'Express 12:00', 'Economy Select'],
+  custom: ['Standard'],
+}
+// Public tracking-page templates ({tn} → tracking number).
+export const CARRIER_TRACK_URL: Record<string, string> = {
+  australia_post: 'https://auspost.com.au/mypost/track/#/details/{tn}',
+  startrack: 'https://startrack.com.au/track/search?id={tn}',
+  team_global_express: 'https://www.mytoll.com/?searchIds={tn}&pageType=track',
+  sendle: 'https://track.sendle.com/tracking?ref={tn}',
+  aramex: 'https://www.aramex.com/us/en/track/results?ShipmentNumber={tn}',
+  dhl: 'https://www.dhl.com/au-en/home/tracking.html?tracking-id={tn}',
+  custom: '',
+}
+export const carrierTrackUrl = (carrier?: string | null, tn?: string | null): string | null => {
+  const tpl = CARRIER_TRACK_URL[String(carrier || '')] || ''
+  return tpl && tn ? tpl.replace('{tn}', encodeURIComponent(tn)) : null
 }
 
 // Order age — highly visible, warning-coloured as it gets older.

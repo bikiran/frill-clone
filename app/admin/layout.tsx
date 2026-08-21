@@ -90,6 +90,7 @@ const NAV_GROUPS = [
     label: 'Orders & Fulfillment',
     items: [
       { label: 'Orders', href: '/admin/orders', icon: 'orders' },
+      { label: 'Reports', href: '/admin/orders/reports', icon: 'analytics' },
     ],
   },
   {
