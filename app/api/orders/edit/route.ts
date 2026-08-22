@@ -31,12 +31,22 @@ export async function POST(req: NextRequest) {
     const auth = `Basic ${Buffer.from(`${integ.consumer_key}:${integ.consumer_secret}`).toString('base64')}`
 
     // Build the line_items update. WooCommerce updates a line by its id; setting
-    // quantity 0 removes it. New/changed quantities recalculate totals server-side.
+    // quantity 0 removes it. A line WITHOUT an id but WITH a product_id is added
+    // as a new line. subtotal/total override the price. New/changed quantities
+    // recalculate totals server-side.
     const payload: any = {}
     if (Array.isArray(items) && items.length) {
-      payload.line_items = items.map((it: any) => it.quantity === 0
-        ? { id: it.id, quantity: 0 }
-        : { id: it.id, quantity: it.quantity })
+      payload.line_items = items.map((it: any) => {
+        if (it.id && (it.quantity === 0 || it.remove)) return { id: it.id, quantity: 0 }
+        const li: any = { quantity: it.quantity }
+        if (it.id) li.id = it.id
+        else if (it.product_id) { li.product_id = Number(it.product_id); if (it.variation_id) li.variation_id = Number(it.variation_id) }
+        if (it.custom_price != null && it.custom_price !== '') {
+          const t = (parseFloat(it.custom_price) * it.quantity).toFixed(2)
+          li.subtotal = t; li.total = t
+        }
+        return li
+      })
     }
     if (status) payload.status = status
     if (customerNote) payload.customer_note = customerNote
