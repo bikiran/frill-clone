@@ -109,7 +109,20 @@ export async function getRates(opts: {
   parcel?: { length?: number; width?: number; height?: number } | null
   currency?: string
 }): Promise<StarshipitRate[]> {
-  if (!starshipitConfigured()) return []
+  return (await getRatesDetailed(opts)).rates
+}
+
+// Same as getRates but also returns the raw Starshipit response + the request
+// body, so a diagnostic can show exactly what the provider said when a parcel
+// gets zero rates (the common cause is an account-side origin/courier gap that
+// Starshipit reports as success:true with an empty rates array).
+export async function getRatesDetailed(opts: {
+  to: ShipAddress
+  weightGrams?: number | null
+  parcel?: { length?: number; width?: number; height?: number } | null
+  currency?: string
+}): Promise<{ rates: StarshipitRate[]; raw: any; request: any }> {
+  if (!starshipitConfigured()) return { rates: [], raw: null, request: null }
   const body = {
     destination: destination(opts.to),
     packages: [packageFrom(opts.weightGrams, opts.parcel)],
@@ -124,7 +137,7 @@ export async function getRates(opts: {
     throw new Error(e?.details || e?.message || 'Starshipit returned no rates for this parcel')
   }
   const rates: any[] = Array.isArray(json?.rates) ? json.rates : []
-  return rates.map(r => ({
+  const mapped = rates.map(r => ({
     carrier: r.carrier || r.carrier_name || null,
     service: r.service_name || r.service || r.description || null,
     serviceCode: r.service_code || r.carrier_service_code || null,
@@ -132,6 +145,7 @@ export async function getRates(opts: {
     currency: r.currency || opts.currency || 'AUD',
     eta: r.delivery_time || r.eta || r.transit_time || null,
   })).filter(r => r.price != null)
+  return { rates: mapped, raw: json, request: body }
 }
 
 export type StarshipitLabel = {

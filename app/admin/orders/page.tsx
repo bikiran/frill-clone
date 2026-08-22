@@ -913,6 +913,8 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
   const [ratesError, setRatesError] = useState<string>('')
   const [loadingRates, setLoadingRates] = useState(false)
   const [selRate, setSelRate] = useState<number>(-1)
+  const [diag, setDiag] = useState<any>(null)
+  const [diagBusy, setDiagBusy] = useState(false)
   // Manual fallback (no Starshipit).
   const [carrier, setCarrier] = useState<string>(order.carrier || 'australia_post')
   const [service, setService] = useState<string>(CARRIER_SERVICES[order.carrier || 'australia_post']?.[0] || '')
@@ -968,6 +970,24 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
     const t = setTimeout(() => { fetchRates() }, 550)
     return () => clearTimeout(t)
   }, [weightGrams, JSON.stringify(parcel)]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pull the raw Starshipit response so the operator can see exactly what the
+  // provider returned when a parcel gets zero rates.
+  const runDiag = async () => {
+    setDiagBusy(true)
+    try {
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token
+      const res = await fetch('/api/orders/rates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ companyId, orderId: order.id, weightGrams, parcel, debug: true }),
+      })
+      const j = await res.json().catch(() => ({}))
+      setDiag({ providerRaw: j.providerRaw ?? null, providerRequest: j.providerRequest ?? null, error: j.error ?? null })
+    } catch (e: any) { setDiag({ error: e?.message || String(e) }) }
+    finally { setDiagBusy(false) }
+  }
 
   // Remember the entered weight + parcel on the order, so it's prefilled next
   // time this order's shipment is configured. Debounced; best-effort.
@@ -1112,6 +1132,14 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
                     ? <><strong>Starshipit:</strong> {ratesError}</>
                     : 'No rates returned for this parcel.'}
                   <div style={{ marginTop: 6, fontSize: 11.5, color: '#a16207' }}>In Starshipit, check: a <strong>sender/origin address</strong> is set (Settings → Locations), at least one <strong>carrier is connected</strong> (Settings → Couriers), and the destination has a valid postcode.</div>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <button type="button" onClick={runDiag} disabled={diagBusy} style={{ background: 'none', border: 'none', color: ACCENT, fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>{diagBusy ? 'Checking…' : 'Show Starshipit response ▾'}</button>
+                  {diag && (
+                    <pre style={{ marginTop: 8, padding: '10px 12px', borderRadius: 9, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 11, lineHeight: 1.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflowY: 'auto' }}>
+{JSON.stringify({ sent: diag.providerRequest, received: diag.providerRaw, error: diag.error }, null, 2)}
+                    </pre>
+                  )}
                 </div>
                 <div style={{ fontSize: 11.5, color: 'var(--slate)', marginBottom: 6 }}>Pick a carrier manually to print a label now:</div>
                 <select value={carrier} onChange={e => setCarrier(e.target.value)} style={{ ...field, marginBottom: 8 }}>
