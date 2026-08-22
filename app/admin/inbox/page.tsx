@@ -4397,12 +4397,17 @@ export default function InboxPage() {
     // replies update — so sending two messages in a row made the visitor look
     // online and the reply went into a live chat nobody was watching.
     const visitorOnline = isOnPageNow
-    const activeChannel = (selected as any).active_channel || null
+    // NB: named differently from the component-scope `activeChannel` (useMemo) on
+    // purpose — a local `const activeChannel` here would shadow it across the
+    // WHOLE function, putting the earlier attachment-send reference (which passes
+    // metaCh: activeChannel) into the temporal dead zone and throwing a
+    // ReferenceError mid-send (attachment stuck on "Sending…", no error shown).
+    const convActiveChannel = (selected as any).active_channel || null
     const shouldSms = sendChannel === 'sms'
       ? !!smsNumber
       : sendChannel === 'chat'
         ? false
-        : !!smsNumber && (activeChannel === 'sms' || !visitorOnline)
+        : !!smsNumber && (convActiveChannel === 'sms' || !visitorOnline)
 
     // If we can't use SMS and the visitor isn't sitting in the widget, fall back
     // to email rather than dropping the reply into a chat nobody is watching.
