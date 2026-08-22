@@ -186,10 +186,11 @@ export async function uploadAttachment(
     return data.url as string
   }
 
-  // Big files (videos especially) can't go through the serverless function
-  // (~4.5MB cap). Upload those straight to R2 with a presigned URL; small
-  // compressed images keep the simple server path.
-  const isLarge = prepared.type.startsWith('video/') || prepared.size > 4 * 1024 * 1024
+  // Big files (videos, and un-compressible docs like PDFs) can't go through the
+  // serverless function (~4.5MB request cap — a larger one comes back as a plain
+  // 413 and the upload fails). Send anything near that cap straight to storage
+  // with a presigned URL; small compressed images keep the simple server path.
+  const isLarge = prepared.type.startsWith('video/') || prepared.size > 3.5 * 1024 * 1024
   const url = isLarge
     ? (await uploadDirect(prepared, prefix, prepared.name, p => onProgress?.(0.35 + p * 0.55))) || (await putViaServer(prepared, prefix))
     : await putViaServer(prepared, prefix)

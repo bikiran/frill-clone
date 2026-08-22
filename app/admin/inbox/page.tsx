@@ -2677,7 +2677,7 @@ export default function InboxPage() {
         mediaFiles,
         { companyId, conversationId: convId },
         async (attachments, failed) => {
-          if (failed.length) showToast(`${failed.length} file${failed.length === 1 ? '' : 's'} failed to upload.`)
+          if (failed.length) showToast(`Upload failed: ${failed[0].error || 'unknown error'}${failed.length > 1 ? ` (+${failed.length - 1} more)` : ''}`)
           if (!attachments.length) return
           // If the agent has since moved to another conversation, staging into
           // the current view would be wrong — deliver to the original thread
@@ -2711,7 +2711,7 @@ export default function InboxPage() {
         docFiles,
         { companyId, conversationId: convId },
         async (attachments, failed) => {
-          if (failed.length) showToast(`${failed.length} file${failed.length === 1 ? '' : 's'} failed to upload.`)
+          if (failed.length) showToast(`Upload failed: ${failed[0].error || 'unknown error'}${failed.length > 1 ? ` (+${failed.length - 1} more)` : ''}`)
           if (attachments.length === 0) return
           // Agent moved on before the upload settled — deliver to the original
           // thread rather than staging into the wrong conversation.
