@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { holidaySet, wallClock, isBlockedDay, nextOpenSlot } from '@/lib/holidays'
+import { assessReviewSentiment } from '@/lib/review-sentiment'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,19 +71,43 @@ async function run(req: NextRequest) {
         const quietEnd = typeof cfg.quiet_end === 'number' ? cfg.quiet_end : 9          // 9am
         const tz = cfg.timezone || 'Australia/Melbourne'
         const quietOn = cfg.quiet_hours_enabled !== false
-        const skipDays = cfg.skip_closed_days !== false   // Sundays + public holidays
+        const dayRules = { skipWeekends: cfg.skip_weekends !== false, skipHolidays: cfg.skip_holidays !== false }
         const holidays = holidaySet(cfg.public_holidays)
         const wc = wallClock(tz)
         const inQuiet = quietOn && (quietStart > quietEnd
           ? (wc.h >= quietStart || wc.h < quietEnd)   // window wraps midnight, e.g. 21..9
           : (wc.h >= quietStart && wc.h < quietEnd))
-        const dayBlocked = skipDays && isBlockedDay(tz, holidays)
+        const dayBlocked = isBlockedDay(tz, holidays, dayRules)
         if (inQuiet || dayBlocked) {
           const openHour = quietOn ? quietEnd : 9
-          const deferred = nextOpenSlot(tz, openHour, holidays, skipDays)
+          const deferred = nextOpenSlot(tz, openHour, holidays, dayRules)
           await db.from('review_requests').update({ send_after: deferred.toISOString() }).eq('id', rr.id)
           results.push({ id: rr.id, deferred: deferred.toISOString(), reason: dayBlocked ? 'closed day' : 'quiet hours' })
           continue
+        }
+
+        // Sentiment gate — don't ask an unhappy customer for a public review.
+        // Reads the conversation and blocks the request if the customer likely
+        // had a bad experience. Best-effort; a classifier failure allows the send.
+        if (cfg.block_negative_sentiment !== false && rr.conversation_id) {
+          const { data: msgs } = await db.from('messages')
+            .select('sender_type, content').eq('conversation_id', rr.conversation_id)
+            .order('created_at', { ascending: false }).limit(40)
+          const transcript = (msgs || []).reverse()
+            .map((m: any) => {
+              const who = ['agent', 'system', 'bot'].includes(String(m.sender_type)) ? 'Business' : 'Customer'
+              const body = String(m.content || '').trim().slice(0, 500)
+              return body ? `${who}: ${body}` : ''
+            })
+            .filter(Boolean).join('\n').slice(0, 6000)
+          if (transcript) {
+            const s = await assessReviewSentiment(transcript)
+            if (s.block) {
+              await db.from('review_requests').update({ status: 'skipped', error: `Negative sentiment — ${s.reason || 'bad experience'}` }).eq('id', rr.id)
+              results.push({ id: rr.id, skipped: 'negative sentiment', reason: s.reason })
+              continue
+            }
+          }
         }
 
         // The link customers click to leave the review. We send a TRACKED link

@@ -302,6 +302,27 @@ export default function GoogleReviewsPage() {
               A request that comes due overnight is held and sent the next morning instead. Times are in {rr.timezone || 'Australia/Melbourne'}.
             </p>
 
+            {/* Smart rules — each defaults ON. */}
+            <label style={{ ...L, marginTop: 4 }}>Smart rules</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16, padding: '12px 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas, #f8fafc)' }}>
+              {([
+                { key: 'block_negative_sentiment', title: 'Skip unhappy customers (sentiment)', desc: 'AI reads the conversation and won’t ask for a review if the customer seems upset or had a bad experience.' },
+                { key: 'suppress_after_click', title: 'Don’t ask repeat customers again', desc: 'Once a customer has opened a review link, stop asking after every future order.' },
+                { key: 'skip_weekends', title: 'Skip weekends', desc: 'Never send on Saturdays or Sundays — held to the next business day.' },
+                { key: 'skip_holidays', title: 'Skip public holidays', desc: 'Never send on Victorian public holidays.' },
+              ] as const).map(opt => (
+                <label key={opt.key} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={(rr as any)[opt.key] !== false}
+                    onChange={e => setRr({ ...rr, [opt.key]: e.target.checked })}
+                    style={{ width: 16, height: 16, marginTop: 2, accentColor: 'var(--coral)', flexShrink: 0 }} />
+                  <span>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{opt.title}</span>
+                    <span style={{ display: 'block', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.45 }}>{opt.desc}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+
             <label style={L}>Send via</label>
             <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
               {(['chat', 'sms', 'email'] as const).map(ch => (

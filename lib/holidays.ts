@@ -58,16 +58,22 @@ export function wallClock(tz: string, at: Date = new Date()): { y: number; m: nu
   return { y, m, d, h, dow, ymd }
 }
 
-// A day we never send on: Sunday (dow 0) or a public holiday.
-export function isBlockedDay(tz: string, holidays: Set<string>, at: Date = new Date()): boolean {
+export type DayRules = { skipWeekends?: boolean; skipHolidays?: boolean }
+
+// A day we never send on, per the business's rules: weekend (Sat/Sun) and/or a
+// public holiday. Both default on when the flags are omitted.
+export function isBlockedDay(tz: string, holidays: Set<string>, rules: DayRules = {}, at: Date = new Date()): boolean {
+  const { skipWeekends = true, skipHolidays = true } = rules
   const wc = wallClock(tz, at)
-  return wc.dow === 0 || holidays.has(wc.ymd)
+  if (skipWeekends && (wc.dow === 0 || wc.dow === 6)) return true
+  if (skipHolidays && holidays.has(wc.ymd)) return true
+  return false
 }
 
 // The next instant at `openHour` (business-day start) in `tz` that is in the
 // future and — when skipDays is on — not a Sunday or public holiday. Used to
 // defer a message that comes due at a disallowed time to the next good slot.
-export function nextOpenSlot(tz: string, openHour: number, holidays: Set<string>, skipDays: boolean, from: Date = new Date()): Date {
+export function nextOpenSlot(tz: string, openHour: number, holidays: Set<string>, rules: DayRules = {}, from: Date = new Date()): Date {
   // Reliable tz offset: diff the same instant formatted in the tz vs UTC.
   const tzNow = new Date(from.toLocaleString('en-US', { timeZone: tz }))
   const utcNow = new Date(from.toLocaleString('en-US', { timeZone: 'UTC' }))
@@ -76,7 +82,7 @@ export function nextOpenSlot(tz: string, openHour: number, holidays: Set<string>
   for (let add = 0; add <= 21; add++) {
     const cand = new Date(Date.UTC(y, m, d + add, openHour, 0, 0) - offsetMs)
     if (cand.getTime() <= from.getTime()) continue
-    if (skipDays && isBlockedDay(tz, holidays, cand)) continue
+    if (isBlockedDay(tz, holidays, rules, cand)) continue
     return cand
   }
   return new Date(from.getTime() + 24 * 3600 * 1000)

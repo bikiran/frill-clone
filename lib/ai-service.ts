@@ -16,7 +16,7 @@ export type AIProvider = 'claude' | 'openai' | 'gemini'
 export type AITask = 'improve_writing' | 'summarize' | 'fix_formatting' | 'suggest_tags' | 'write_help_article' | 'build_form' | 'create_poll' | 'create_survey'
 
 interface AIServiceConfig {
-  provider: AIProvider
+  provider?: AIProvider
   apiKey?: string
   model?: string
 }
@@ -73,6 +73,27 @@ export class AIService {
     })
 
     return message.content[0].type === 'text' ? message.content[0].text : ''
+  }
+
+  // Decide whether to send an automated review request based on how the
+  // customer's conversation went. Blocks when there's a real chance they'd
+  // leave a negative review (complaints, damage/DOA, disputes, frustration).
+  async reviewSentiment(conversation: string): Promise<{ sentiment: 'positive' | 'neutral' | 'negative'; block: boolean; reason: string }> {
+    this.ensureAvailable()
+    const message = await this.anthropic.messages.create({
+      model: this.model,
+      max_tokens: 200,
+      messages: [{
+        role: 'user',
+        content: `You are deciding whether to send an automated "please leave us a Google review" message to a customer after their order. Read the support conversation and judge whether the customer likely had a BAD experience — complaints, anger, damaged / wrong / missing / dead-on-arrival items, late delivery, refund or payment disputes, or unresolved frustration. If there is a meaningful chance they would leave a negative review, block it.\n\nRespond with ONLY a JSON object, no prose:\n{"sentiment":"positive|neutral|negative","block":true|false,"reason":"<=8 words"}\n\nConversation:\n${conversation}`,
+      }],
+    })
+    const raw = message.content?.[0]?.type === 'text' ? message.content[0].text : ''
+    try {
+      const m = raw.match(/\{[\s\S]*\}/)
+      const j = m ? JSON.parse(m[0]) : {}
+      return { sentiment: j.sentiment || 'neutral', block: !!j.block, reason: String(j.reason || '') }
+    } catch { return { sentiment: 'neutral', block: false, reason: '' } }
   }
 
   async summarize(text: string, maxLength: number = 150): Promise<string> {
