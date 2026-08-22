@@ -49,19 +49,43 @@ export async function POST(req: NextRequest) {
         // companyId + from let the device's Reply action call /api/telnyx/sms/send
         // straight from the notification, and Mark-read call /api/inbox/mark-read.
         const data = { conversationId: conversationId || null, route: route || null, companyId, from: from || null }
+        const heading = title || 'New message'
 
-        // A real NOTIFICATION push (title/body at the top level) so the OS shows
-        // it whether the app is foregrounded, backgrounded, or KILLED. We used to
-        // send message notifications data-only on Android to attach Reply/Mark-read
-        // via a local presentation — but a data-only push needs the app process
-        // alive, and Samsung kills it after a while, so inbound messages produced
-        // no notification and no badge at all. categoryId still carries the
-        // Reply/Mark-read actions; reliable delivery wins over the richer path
-        // that only worked while the app happened to be running.
+        // ANDROID message pushes: send data-only so the app presents the
+        // notification itself, which is the ONLY way the inline Reply / Mark-read
+        // actions attach on Android — an OS-drawn notification can't carry them.
+        // The app's @react-native-firebase background handler (added for VoIP)
+        // presents it locally when it sees colvyLocal:'1', and that headless
+        // handler runs even when the app is killed — so delivery stays reliable,
+        // which is why we can send data-only again. (Non-message Android pushes,
+        // and all iOS pushes, keep the notification form below.)
+        if (t.platform === 'android' && category === 'message') {
+          return {
+            to: t.expo_token,
+            // No top-level title/body → Expo delivers this as a data-only FCM
+            // message. The device reads the fields off `data` to present it.
+            data: {
+              ...data,
+              colvyLocal: '1',
+              type: 'message',
+              title: heading,
+              body: text,
+              senderName: heading,
+            },
+            priority: 'high',
+            channelId: channelId || 'messages',
+          }
+        }
+
+        // iOS (and non-message pushes): a real NOTIFICATION push (title/body at
+        // the top level) so the OS shows it whether the app is foregrounded,
+        // backgrounded, or KILLED. iOS attaches the category's Reply / Mark-read
+        // actions to remote notifications natively, so no local presentation is
+        // needed there.
         return {
           to: t.expo_token,
           sound: 'default',
-          title: title || 'New message',
+          title: heading,
           // Android expands long text when the shade is pulled down, so there's
           // no reason to truncate this hard.
           body: text,
