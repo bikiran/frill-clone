@@ -173,6 +173,28 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
     if (!ins[0]?.id) return
     orderId = ins[0].id
     try { await insertResilient(db, 'order_events', [{ order_id: orderId, company_id: companyId, type: 'created', detail: 'Order imported from WooCommerce', actor_name: 'Sync' }]) } catch {}
+
+    // A brand-new order just landed — ping the team's phones the way a new chat
+    // does, so the Orders tab badge and a push both fire. Best-effort; never
+    // block the sync on it. (Only on INSERT, so a status refresh doesn't re-alert.)
+    try {
+      const base = String(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
+      if (base) {
+        const num = src.order_number ? `#${src.order_number}` : ''
+        const money = src.total != null ? ` · ${new Intl.NumberFormat('en-AU', { style: 'currency', currency: src.currency || 'AUD' }).format(Number(src.total))}` : ''
+        void fetch(`${base}/api/push/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId,
+            title: 'New order',
+            body: `${num ? num + ' · ' : ''}${src.customer_name || 'A customer'}${money}`,
+            channelId: 'orders',
+            route: '/orders',
+          }),
+        }).catch(() => {})
+      }
+    } catch {}
   }
   try {
     await db.from('order_items').delete().eq('order_id', orderId)
