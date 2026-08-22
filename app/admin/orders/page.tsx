@@ -750,7 +750,7 @@ export default function OrdersPage() {
                     <td style={{ ...td, color: 'var(--slate)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.primary_sku || '—'}</td>
                     <td style={{ ...td, color: 'var(--slate)' }}>{isClickCollect(o)
                       ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700, color: '#2563eb' }}><ClickCollectIcon size={14} />Click &amp; Collect</span>
-                      : (Number(o.shipping_total) || 0) > 0 ? <span>{o.shipping_method || 'Shipping'} <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{fmtMoney(o.shipping_total, o.currency)}</span></span> : (o.shipping_method || '—')}</td>
+                      : (Number(o.shipping_total) || 0) > 0 ? <span>{o.shipping_method || 'Shipping'} <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{fmtMoney(o.shipping_total, o.currency)}</span></span> : (o.shipping_method || 'Free')}</td>
                     <td style={td}><span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span></td>
                     <td style={td}><Avatar name={o.assignee_name || teamName(o.assignee_id)} /></td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtMoney(o.total, o.currency)}</td>
