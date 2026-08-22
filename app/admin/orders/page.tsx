@@ -910,6 +910,7 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
   // Rates.
   const [rates, setRates] = useState<any[]>([])
   const [ratesConfigured, setRatesConfigured] = useState<boolean | null>(null)
+  const [provider, setProvider] = useState<string>('')
   const [ratesError, setRatesError] = useState<string>('')
   const [loadingRates, setLoadingRates] = useState(false)
   const [selRate, setSelRate] = useState<number>(-1)
@@ -953,10 +954,11 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
       const res = await fetch('/api/orders/rates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ companyId, orderId: order.id, weightGrams, parcel }),
+        body: JSON.stringify({ companyId, orderId: order.id, weightGrams, parcel, fromLocationId: fromLocationId || undefined }),
       })
       const j = await res.json().catch(() => ({}))
       setRatesConfigured(!!j.configured)
+      if (j.provider) setProvider(String(j.provider))
       setRates(Array.isArray(j.rates) ? j.rates : [])
       setSelRate(j.rates?.length ? 0 : -1)  // cheapest (API sorts ascending)
       if (j.error) setRatesError(String(j.error))
@@ -981,9 +983,10 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
       const res = await fetch('/api/orders/rates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ companyId, orderId: order.id, weightGrams, parcel, debug: true }),
+        body: JSON.stringify({ companyId, orderId: order.id, weightGrams, parcel, fromLocationId: fromLocationId || undefined, debug: true }),
       })
       const j = await res.json().catch(() => ({}))
+      if (j.provider) setProvider(String(j.provider))
       setDiag({ providerRaw: j.providerRaw ?? null, providerRequest: j.providerRequest ?? null, error: j.error ?? null })
     } catch (e: any) { setDiag({ error: e?.message || String(e) }) }
     finally { setDiagBusy(false) }
@@ -1018,6 +1021,7 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
         payload.carrier = guessCarrierKey(chosen.carrier)
         payload.service = chosen.service || null
         payload.serviceCode = chosen.serviceCode || null
+        payload.rateId = chosen.rateId || null
         payload.cost = chosen.price ?? null
       } else {
         payload.carrier = carrier
@@ -1042,7 +1046,8 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
   const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 5 }
   const addr = order.shipping_address || {}
   const hasAddr = addr.address_1 || addr.city
-  const noRates = ratesConfigured === false // Starshipit not connected → manual picker
+  const noRates = ratesConfigured === false // no rate provider connected → manual picker
+  const providerName = provider === 'shipstation' ? 'ShipStation' : provider === 'starshipit' ? 'Starshipit' : 'your carrier account'
 
   return (
     <>
@@ -1119,7 +1124,7 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
                 <select value={service} onChange={e => setService(e.target.value)} style={field}>
                   {(CARRIER_SERVICES[carrier] || ['Standard']).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-                <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>Connect Starshipit to see live prices from every carrier. Until then this prints a scannable label with a tracking number.</p>
+                <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>Connect ShipStation to see live prices from every carrier. Until then this prints a scannable label with a tracking number.</p>
               </>
             ) : weightGrams <= 0 ? (
               <div style={{ padding: '12px', borderRadius: 9, background: 'var(--canvas)', fontSize: 12.5, color: 'var(--slate)', textAlign: 'center' }}>Enter a weight to see live rates.</div>
@@ -1129,12 +1134,12 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
               <>
                 <div style={{ padding: '12px', borderRadius: 9, background: '#fef3c7', color: '#92400e', fontSize: 12.5, lineHeight: 1.5, marginBottom: 10 }}>
                   {ratesError
-                    ? <><strong>Starshipit:</strong> {ratesError}</>
+                    ? <><strong>{providerName}:</strong> {ratesError}</>
                     : 'No rates returned for this parcel.'}
-                  <div style={{ marginTop: 6, fontSize: 11.5, color: '#a16207' }}>In Starshipit, check: a <strong>sender/origin address</strong> is set (Settings → Locations), at least one <strong>carrier is connected</strong> (Settings → Couriers), and the destination has a valid postcode.</div>
+                  <div style={{ marginTop: 6, fontSize: 11.5, color: '#a16207' }}>In {providerName}, check that at least one <strong>carrier is connected</strong> to your account, the <strong>ship-from address</strong> is set, and the destination has a valid postcode.</div>
                 </div>
                 <div style={{ marginBottom: 10 }}>
-                  <button type="button" onClick={runDiag} disabled={diagBusy} style={{ background: 'none', border: 'none', color: ACCENT, fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>{diagBusy ? 'Checking…' : 'Show Starshipit response ▾'}</button>
+                  <button type="button" onClick={runDiag} disabled={diagBusy} style={{ background: 'none', border: 'none', color: ACCENT, fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>{diagBusy ? 'Checking…' : `Show ${providerName} response ▾`}</button>
                   {diag && (
                     <pre style={{ marginTop: 8, padding: '10px 12px', borderRadius: 9, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 11, lineHeight: 1.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflowY: 'auto' }}>
 {JSON.stringify({ sent: diag.providerRequest, received: diag.providerRaw, error: diag.error }, null, 2)}
