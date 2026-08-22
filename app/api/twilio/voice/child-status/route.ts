@@ -83,12 +83,15 @@ export async function POST(req: NextRequest) {
       // older cached TwiML — we skip the filter and keep the prior behaviour.)
       let claimed = false
       let convId: string | null = null
+      let caller = ''
       try {
         let q = db.from('calls').update(patch).eq('id', callRowId)
         if (userId) q = q.is('answered_by_user_id', null)
-        const { data: updated } = await q.select('id, conversation_id')
+        const { data: updated } = await q.select('id, conversation_id, contact_name, caller_name, from_number')
         claimed = Array.isArray(updated) && updated.length > 0
         convId = (updated as any)?.[0]?.conversation_id || null
+        const row = (updated as any)?.[0] || {}
+        caller = String(row.contact_name || row.caller_name || row.from_number || '').trim()
       } catch {}
 
       // Reflect the answer in the inbox list — once, for the winning agent.
@@ -106,7 +109,7 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({
               companyId,
               title: 'Call answered',
-              body: `${name} received the call`,
+              body: `${name} received the call${caller ? ` from ${caller}` : ''}`,
               excludeUserId: userId,
               channelId: 'calls',
               ...(callRowId ? { route: `/call-detail/${callRowId}` } : {}),
