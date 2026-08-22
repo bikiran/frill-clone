@@ -62,8 +62,14 @@ export async function POST(req: NextRequest) {
         if (t.platform === 'android' && category === 'message') {
           return {
             to: t.expo_token,
-            // No top-level title/body → Expo delivers this as a data-only FCM
-            // message. The device reads the fields off `data` to present it.
+            // DATA-ONLY: keep this to `to`/`priority`/`data` only. Expo treats a
+            // push carrying ANY top-level notification field — title/body/sound
+            // AND channelId — as a notification and attaches an FCM `notification`
+            // block, which Android then renders as a second, EMPTY heads-up
+            // alongside the one the app presents locally. So channelId lives in
+            // `data`; presentMessageNotification applies the channel when it
+            // presents the notification itself.
+            priority: 'high',
             data: {
               ...data,
               colvyLocal: '1',
@@ -71,9 +77,8 @@ export async function POST(req: NextRequest) {
               title: heading,
               body: text,
               senderName: heading,
+              channelId: channelId || 'messages',
             },
-            priority: 'high',
-            channelId: channelId || 'messages',
           }
         }
 
