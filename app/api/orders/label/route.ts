@@ -100,6 +100,7 @@ export async function POST(req: NextRequest) {
       carrier: body.carrier || 'custom',
       service: body.service || null,
       serviceCode: body.serviceCode || null,
+      rateId: body.rateId || null,
       weightGrams: Number(body.weightGrams) || null,
       parcel: body.parcel || null,
       reference: order.order_number || null,

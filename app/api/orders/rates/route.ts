@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getRatesDetailed, starshipitConfigured, type ShipAddress } from '@/lib/starshipit'
+import { getRatesDetailed, shippingConfigured, activeProvider, type ShipAddress } from '@/lib/shipping'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     const db = admin()
     if (!(await member(db, req, companyId))) return NextResponse.json({ error: 'Not allowed' }, { status: 403 })
 
-    if (!starshipitConfigured()) return NextResponse.json({ configured: false, rates: [] })
+    if (!shippingConfigured()) return NextResponse.json({ configured: false, rates: [] })
 
     const { data: order } = await db.from('orders').select('*').eq('id', orderId).eq('company_id', companyId).maybeSingle()
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
@@ -83,8 +83,8 @@ export async function POST(req: NextRequest) {
     // only thing that explains why — include it (and the request we sent) so the
     // panel's diagnostic can show it. Only on request, to keep the normal payload lean.
     const diag = body.debug ? { providerRaw: raw, providerRequest: request } : {}
-    return NextResponse.json({ configured: true, rates, ...diag })
+    return NextResponse.json({ configured: true, provider: activeProvider(), rates, ...diag })
   } catch (e: any) {
-    return NextResponse.json({ configured: starshipitConfigured(), rates: [], error: e?.message || String(e) }, { status: 200 })
+    return NextResponse.json({ configured: shippingConfigured(), provider: activeProvider(), rates: [], error: e?.message || String(e) }, { status: 200 })
   }
 }

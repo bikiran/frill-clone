@@ -61,6 +61,7 @@ export type StarshipitRate = {
   carrier: string | null
   service: string | null
   serviceCode: string | null
+  rateId?: string | null    // provider rate id used to buy a label (ShipStation)
   price: number | null
   currency: string
   eta: string | null        // human delivery estimate, e.g. "1-2 business days"
