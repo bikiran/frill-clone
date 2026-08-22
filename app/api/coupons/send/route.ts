@@ -19,7 +19,7 @@ function genCode(prefix = 'SAVE') {
 // big copyable coupon card.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, integrationId, conversationId, contactId, email, amount, discountType, code, oneTime, expiryDays, createdByName } = await req.json()
+    const { companyId, integrationId, conversationId, contactId, email, amount, discountType, code, oneTime, expiryDays, createdByName, deliver } = await req.json()
     if (!companyId || !conversationId || !amount) return NextResponse.json({ error: 'Missing companyId, conversationId or amount' }, { status: 400 })
 
     const db = admin()
@@ -84,6 +84,31 @@ export async function POST(req: NextRequest) {
       },
     })
     await db.from('conversations').update({ last_message: `🎟️ Coupon ${finalCode} sent`, last_message_at: new Date().toISOString() }).eq('id', conversationId)
+
+    // Deliver the coupon to the customer over their channel. The card above is
+    // only the in-Colvy record — on SMS/email the customer sees nothing unless we
+    // dispatch it. The web inbox does this client-side (deliverToCustomer); mobile
+    // (and any caller) opts in with `deliver: true` so we handle it here without
+    // double-sending on the web. Best-effort: a delivery failure never undoes the
+    // coupon that was already created.
+    if (deliver) {
+      try {
+        const { data: conv } = await db.from('conversations').select('channel, sms_number').eq('id', conversationId).maybeSingle()
+        const channel = String(conv?.channel || '').toLowerCase()
+        const base = String(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
+        if (base && (channel === 'sms' || (!!conv?.sms_number && channel !== 'email'))) {
+          await fetch(`${base}/api/telnyx/sms/send`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, conversationId, to: conv?.sms_number, text: content, senderName: createdByName || 'Support', skipChatMessage: true }),
+          })
+        } else if (base && channel === 'email' && email) {
+          await fetch(`${base}/api/email/reply`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversationId, content, to: email, subject: 'Your coupon', agentName: createdByName || 'Support' }),
+          })
+        }
+      } catch { /* delivery is best-effort; the coupon is already created */ }
+    }
 
     return NextResponse.json({ ok: true, code: finalCode, coupon: { id: coupon.id, amount, discount_type: dt } })
   } catch (err: any) {
