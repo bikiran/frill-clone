@@ -1855,8 +1855,15 @@ export default function InboxPage() {
     markMessagesRead(conv.id, msgs || [])
     // Load contact
     setShowDoa(false); setDoaMatch(false)
+    // Captured so we can hand the resolved email/phone straight to loadWooData
+    // below — it otherwise refetches the contact we already have here, adding a
+    // needless round trip to the Order History panel's critical path.
+    let resolvedEmail: string | null = null
+    let resolvedPhone: string | null = null
     if (conv.contact_id) {
       const { data: c } = await (supabase as any).from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
+      resolvedEmail = c?.email || null
+      resolvedPhone = c?.phone || null
       setContact(c || null)
       setEditContact(c || {})
       // Source of truth for the AI badge is the contact's ai_saved_fields column
@@ -1867,15 +1874,20 @@ export default function InboxPage() {
         setAiSavedFields(new Set([...(c?.ai_saved_fields || []), ...local]))
       } catch { setAiSavedFields(new Set(c?.ai_saved_fields || [])) }
       // Does this contact match a WooCommerce order? If so, offer the DOA shortcut.
+      // Fire-and-forget: this must NOT sit on the critical path before
+      // loadWooData below, or the Order History panel waits on this whole
+      // network round trip before it even starts loading.
       if (c && (c.email || c.phone) && companyId) {
-        try {
-          const params = new URLSearchParams({ companyId })
-          if (c.email) params.set('email', c.email)
-          if (c.phone) params.set('phone', c.phone)
-          const res = await fetch(`/api/doa/match?${params.toString()}`)
-          const data = await res.json()
-          if (data.match) setDoaMatch(true)
-        } catch {}
+        ;(async () => {
+          try {
+            const params = new URLSearchParams({ companyId })
+            if (c.email) params.set('email', c.email)
+            if (c.phone) params.set('phone', c.phone)
+            const res = await fetch(`/api/doa/match?${params.toString()}`)
+            const data = await res.json()
+            if (data.match) setDoaMatch(true)
+          } catch {}
+        })()
       }
     } else {
       // No linked contact — try to match one added after the thread started, by
@@ -1888,20 +1900,25 @@ export default function InboxPage() {
         matched = (cand || []).find((ct: any) => ct.phone && dig(ct.phone).endsWith(tail)) || null
       }
       if (matched) {
+        resolvedEmail = matched.email || null
+        resolvedPhone = matched.phone || null
         setContact(matched); setEditContact(matched)
         try { await (supabase as any).from('conversations').update({ contact_id: matched.id }).eq('id', conv.id) } catch {}
         ;(conv as any).contact_id = matched.id
         setSelected(s => (s && s.id === conv.id ? ({ ...s, contact_id: matched.id } as any) : s))
         setConversations(prev => prev.map(c => c.id === conv.id ? ({ ...c, contact_id: matched.id, contacts: matched } as any) : c))
         if ((matched.email || matched.phone)) {
-          try {
-            const params = new URLSearchParams({ companyId })
-            if (matched.email) params.set('email', matched.email)
-            if (matched.phone) params.set('phone', matched.phone)
-            const res = await fetch(`/api/doa/match?${params.toString()}`)
-            const data = await res.json()
-            if (data.match) setDoaMatch(true)
-          } catch {}
+          // Fire-and-forget — keep it off the Order History panel's critical path.
+          ;(async () => {
+            try {
+              const params = new URLSearchParams({ companyId })
+              if (matched.email) params.set('email', matched.email)
+              if (matched.phone) params.set('phone', matched.phone)
+              const res = await fetch(`/api/doa/match?${params.toString()}`)
+              const data = await res.json()
+              if (data.match) setDoaMatch(true)
+            } catch {}
+          })()
         }
       } else {
         setContact(null)
@@ -1910,8 +1927,10 @@ export default function InboxPage() {
     }
     // Load timeline events, notes, tasks
     loadConversationExtras(conv.id)
-    // Load WooCommerce data if the contact's email matches an order
-    loadWooData((conv as any).contact_id)
+    // Load WooCommerce data if the contact's email matches an order. Hand over
+    // the email/phone we already resolved above so the panel skips a redundant
+    // contacts lookup on its critical path.
+    loadWooData((conv as any).contact_id, resolvedEmail, resolvedPhone)
     // Scan messages for AI-detected info — only real visitor text, never
     // system/interactive/payment messages (those contain UUIDs/JSON).
     setTimeout(() => {
@@ -2658,7 +2677,7 @@ export default function InboxPage() {
         mediaFiles,
         { companyId, conversationId: convId },
         async (attachments, failed) => {
-          if (failed.length) showToast(`${failed.length} file${failed.length === 1 ? '' : 's'} failed to upload.`)
+          if (failed.length) showToast(`Upload failed: ${failed[0].error || 'unknown error'}${failed.length > 1 ? ` (+${failed.length - 1} more)` : ''}`)
           if (!attachments.length) return
           // If the agent has since moved to another conversation, staging into
           // the current view would be wrong — deliver to the original thread
@@ -2692,7 +2711,7 @@ export default function InboxPage() {
         docFiles,
         { companyId, conversationId: convId },
         async (attachments, failed) => {
-          if (failed.length) showToast(`${failed.length} file${failed.length === 1 ? '' : 's'} failed to upload.`)
+          if (failed.length) showToast(`Upload failed: ${failed[0].error || 'unknown error'}${failed.length > 1 ? ` (+${failed.length - 1} more)` : ''}`)
           if (attachments.length === 0) return
           // Agent moved on before the upload settled — deliver to the original
           // thread rather than staging into the wrong conversation.
@@ -4378,12 +4397,17 @@ export default function InboxPage() {
     // replies update — so sending two messages in a row made the visitor look
     // online and the reply went into a live chat nobody was watching.
     const visitorOnline = isOnPageNow
-    const activeChannel = (selected as any).active_channel || null
+    // NB: named differently from the component-scope `activeChannel` (useMemo) on
+    // purpose — a local `const activeChannel` here would shadow it across the
+    // WHOLE function, putting the earlier attachment-send reference (which passes
+    // metaCh: activeChannel) into the temporal dead zone and throwing a
+    // ReferenceError mid-send (attachment stuck on "Sending…", no error shown).
+    const convActiveChannel = (selected as any).active_channel || null
     const shouldSms = sendChannel === 'sms'
       ? !!smsNumber
       : sendChannel === 'chat'
         ? false
-        : !!smsNumber && (activeChannel === 'sms' || !visitorOnline)
+        : !!smsNumber && (convActiveChannel === 'sms' || !visitorOnline)
 
     // If we can't use SMS and the visitor isn't sitting in the widget, fall back
     // to email rather than dropping the reply into a chat nobody is watching.

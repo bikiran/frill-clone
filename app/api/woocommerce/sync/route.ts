@@ -2,6 +2,7 @@ import { decodeEntities } from '@/lib/decode-entities'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
+import { wooDateToISO } from '@/lib/orders'
 
 // Runs a Supabase upsert with a few retries when Postgres reports a transient
 // "deadlock detected" (code 40P01), which can happen when two syncs — or a sync
@@ -193,7 +194,7 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         total: parseFloat(o.total || '0') || 0,
         shipping_total: parseFloat(o.shipping_total || '0') || 0,
         currency: o.currency || 'AUD',
-        order_date: o.date_created,
+        order_date: wooDateToISO(o) || o.date_created,
         line_items: (o.line_items || []).map((li: any) => ({
           product_id: li.product_id,
           name: decodeEntities(li.name),

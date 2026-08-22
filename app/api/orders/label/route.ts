@@ -32,7 +32,8 @@ const missingCol = (err: any): string | null => {
 }
 async function insertResilient(db: any, table: string, row: any, select?: string): Promise<any> {
   let cur = { ...row }
-  for (let i = 0; i < 6; i++) {
+  const maxTries = Object.keys(cur).length + 2
+  for (let i = 0; i < maxTries; i++) {
     const q = db.from(table).insert(cur)
     const { data, error } = select ? await q.select(select).maybeSingle() : await q
     if (!error) return data ?? null
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
     })
 
     // Record the shipment (resilient to optional columns).
-    const shipment = await insertResilient(db, 'shipments', {
+    const shipment = await insertResilient(db, 'order_shipments', {
       order_id: orderId, company_id: companyId,
       carrier: label.carrier, service: label.service,
       tracking_number: label.trackingNumber, tracking_url: label.trackingUrl,

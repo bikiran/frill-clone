@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
 
     // Company details for the invoice header
-    const { data: company } = await db.from('companies').select('name, business_email, business_address, business_phone, business_mobile, abn_acn, invoice_footer, logo_url').eq('id', companyId).maybeSingle()
+    const { data: company } = await db.from('companies').select('*').eq('id', companyId).maybeSingle()
 
     return NextResponse.json({
       order: {

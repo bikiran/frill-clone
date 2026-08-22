@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
-import { statusMeta, channelMeta, fmtMoney, CARRIER_LABEL } from '@/lib/orders'
+import { fmtMoney } from '@/lib/orders'
 
 type Order = any
 type Report = 'fulfillment' | 'shipping' | 'sales'
@@ -18,8 +18,7 @@ const RANGES: { key: string; label: string; days: number | null }[] = [
 export default function OrdersReportsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [accent, setAccent] = useState('var(--coral)')
-  const [orders, setOrders] = useState<Order[]>([])
-  const [shipments, setShipments] = useState<any[]>([])
+  const [summary, setSummary] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [report, setReport] = useState<Report>('fulfillment')
   const [range, setRange] = useState('30d')
@@ -32,15 +31,19 @@ export default function OrdersReportsPage() {
     return null
   }
 
-  const load = useCallback(async (cid: string) => {
+  // The aggregates are computed SERVER-SIDE — the page fetches a compact summary
+  // (a few KB) instead of every order row, so it's instant regardless of how many
+  // orders the window contains. A stale summary stays on screen while the new
+  // range loads, so switching ranges never blanks the report.
+  const load = useCallback(async (cid: string, rangeKey: string) => {
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
-      const res = await fetch(`/api/orders?companyId=${encodeURIComponent(cid)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      const res = await fetch(`/api/orders/reports?companyId=${encodeURIComponent(cid)}&range=${encodeURIComponent(rangeKey)}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined })
       const j = await res.json().catch(() => ({}))
-      setOrders(Array.isArray(j.orders) ? j.orders : [])
-    } catch { setOrders([]) }
-    try { const { data: sh } = await (supabase as any).from('shipments').select('*').eq('company_id', cid).limit(5000); setShipments(sh || []) } catch { setShipments([]) }
+      if (res.ok && !j.error) setSummary(j)
+    } catch {}
+    setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -48,24 +51,44 @@ export default function OrdersReportsPage() {
       const cid = await getMyCompanyId()
       if (!cid) { setLoading(false); return }
       setCompanyId(cid)
-      try { const { data: co } = await (supabase as any).from('companies').select('accent_color').eq('id', cid).maybeSingle(); if (co?.accent_color) setAccent(co.accent_color) } catch {}
-      await load(cid)
-      setLoading(false)
+      // Accent shouldn't gate the report — load it detached.
+      ;(async () => { try { const { data: co } = await (supabase as any).from('companies').select('accent_color').eq('id', cid).maybeSingle(); if (co?.accent_color) setAccent(co.accent_color) } catch {} })()
+      load(cid, range)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Refetch when the range changes (server returns a tiny summary → fast).
+  const firstRangeRef = useRef(true)
+  useEffect(() => {
+    if (firstRangeRef.current) { firstRangeRef.current = false; return }
+    if (companyId) load(companyId, range)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range])
+
   const days = RANGES.find(r => r.key === range)?.days ?? null
-  const since = days != null ? Date.now() - days * 864e5 : 0
-  const inRange = useMemo(() => orders.filter(o => !since || (o.order_date && new Date(o.order_date).getTime() >= since)), [orders, since])
-  const rangeIds = useMemo(() => new Set(inRange.map(o => o.id)), [inRange])
-  const shipsInRange = useMemo(() => shipments.filter(s => rangeIds.has(s.order_id) || (s.created_at && (!since || new Date(s.created_at).getTime() >= since))), [shipments, rangeIds, since])
+  const fulfil = summary?.fulfil || { total: 0, shipped: 0, cancelled: 0, awaiting: 0, onHold: 0, rate: 0, avgHrs: 0, buckets: { fresh: 0, mod: 0, late: 0 }, byStatus: [] }
+  const shippingR = summary?.shipping || { labels: 0, cost: 0, avg: 0, charged: 0, margin: 0, detail: [], carriers: [], services: [], track: [] }
+  const sales = summary?.sales || { revenue: 0, orderN: 0, aov: 0, units: 0, channels: [], topSku: [] }
 
   const ACCENT = accent
 
-  const exportCsv = () => {
+  // CSV pulls the raw rows for the window on demand (only when exporting), so the
+  // report itself never loads them.
+  const exportCsv = async () => {
+    if (!companyId) return
+    const sinceISO = days != null ? new Date(Date.now() - days * 864e5).toISOString() : null
+    const acc: any[] = []
+    for (let offset = 0; offset < 500000; offset += 1000) {
+      let q = (supabase as any).from('orders').select('order_number, order_date, customer_name, status, sales_channel, item_count, total, carrier, tracking_number').eq('company_id', companyId)
+      if (sinceISO) q = q.gte('order_date', sinceISO)
+      const { data, error } = await q.order('order_date', { ascending: false }).range(offset, offset + 999)
+      if (error || !data?.length) break
+      acc.push(...data)
+      if (data.length < 1000) break
+    }
     const rows = [['Order', 'Date', 'Customer', 'Status', 'Channel', 'Items', 'Total', 'Carrier', 'Tracking']]
-    for (const o of inRange) rows.push([o.order_number, o.order_date || '', o.customer_name || '', o.status || '', o.sales_channel || '', String(o.item_count || 0), String(o.total || 0), o.carrier || '', o.tracking_number || ''])
+    for (const o of acc) rows.push([o.order_number, o.order_date || '', o.customer_name || '', o.status || '', o.sales_channel || '', String(o.item_count || 0), String(o.total || 0), o.carrier || '', o.tracking_number || ''])
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
     const a = document.createElement('a'); a.href = url; a.download = `orders-${report}-${range}.csv`; a.click(); URL.revokeObjectURL(url)
@@ -117,65 +140,8 @@ export default function OrdersReportsPage() {
     )
   }
 
-  // ── Computations ────────────────────────────────────────────────────────────
-  const dailySeries = (valueOf: (o: Order) => number) => {
-    const n = days || 30
-    const out: { day: string; value: number }[] = []
-    const today = new Date(); today.setHours(0, 0, 0, 0)
-    const byDay: Record<string, number> = {}
-    for (const o of inRange) { if (!o.order_date) continue; const d = new Date(o.order_date); d.setHours(0, 0, 0, 0); const k = d.toISOString().slice(0, 10); byDay[k] = (byDay[k] || 0) + valueOf(o) }
-    for (let i = n - 1; i >= 0; i--) { const d = new Date(today.getTime() - i * 864e5); const k = d.toISOString().slice(0, 10); out.push({ day: d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' }), value: byDay[k] || 0 }) }
-    return out
-  }
-
-  const fulfil = useMemo(() => {
-    const total = inRange.length
-    const shipped = inRange.filter(o => o.status === 'shipped').length
-    const cancelled = inRange.filter(o => o.status === 'cancelled').length
-    const awaiting = inRange.filter(o => o.status === 'awaiting_shipment').length
-    const onHold = inRange.filter(o => o.status === 'on_hold').length
-    const rate = total - cancelled > 0 ? Math.round((shipped / (total - cancelled)) * 100) : 0
-    const shipTimes = inRange.filter(o => o.status === 'shipped' && o.shipped_at && o.order_date).map(o => new Date(o.shipped_at).getTime() - new Date(o.order_date).getTime()).filter(ms => ms > 0)
-    const avgHrs = shipTimes.length ? shipTimes.reduce((a, b) => a + b, 0) / shipTimes.length / 3600e3 : 0
-    const now = Date.now()
-    const unshipped = inRange.filter(o => !['shipped', 'cancelled'].includes(o.status))
-    const buckets = { fresh: 0, mod: 0, late: 0 }
-    for (const o of unshipped) { if (!o.order_date) continue; const h = (now - new Date(o.order_date).getTime()) / 3600e3; if (h < 12) buckets.fresh++; else if (h < 48) buckets.mod++; else buckets.late++ }
-    const statuses = ['awaiting_shipment', 'packed', 'on_hold', 'click_and_collect', 'shipped', 'cancelled']
-    const byStatus = statuses.map(s => ({ label: statusMeta(s).label, value: inRange.filter(o => o.status === s).length, color: statusMeta(s).fg })).filter(r => r.value > 0)
-    return { total, shipped, cancelled, awaiting, onHold, rate, avgHrs, buckets, byStatus }
-  }, [inRange, days])
-
-  const shippingR = useMemo(() => {
-    const labels = shipsInRange.length
-    const cost = shipsInRange.reduce((a, s) => a + (Number(s.cost) || 0), 0)
-    const avg = labels ? cost / labels : 0
-    const byCarrier: Record<string, { n: number; cost: number }> = {}
-    for (const s of shipsInRange) { const k = s.carrier || 'custom'; (byCarrier[k] ||= { n: 0, cost: 0 }); byCarrier[k].n++; byCarrier[k].cost += Number(s.cost) || 0 }
-    const carriers = Object.entries(byCarrier).map(([k, v]) => ({ label: CARRIER_LABEL[k] || k, value: v.n, sub: String(v.n) })).sort((a, b) => b.value - a.value)
-    const byService: Record<string, number> = {}
-    for (const s of shipsInRange) { const k = s.service || 'Unspecified'; byService[k] = (byService[k] || 0) + 1 }
-    const services = Object.entries(byService).map(([k, v]) => ({ label: k, value: v })).sort((a, b) => b.value - a.value).slice(0, 8)
-    const byTrack: Record<string, number> = {}
-    for (const s of shipsInRange) { const k = s.status || 'created'; byTrack[k] = (byTrack[k] || 0) + 1 }
-    const track = Object.entries(byTrack).map(([k, v]) => ({ label: k.replace(/_/g, ' '), value: v }))
-    return { labels, cost, avg, carriers, services, track }
-  }, [shipsInRange])
-
-  const sales = useMemo(() => {
-    const nonCancelled = inRange.filter(o => o.status !== 'cancelled')
-    const revenue = nonCancelled.reduce((a, o) => a + (Number(o.total) || 0), 0)
-    const orderN = nonCancelled.length
-    const aov = orderN ? revenue / orderN : 0
-    const units = nonCancelled.reduce((a, o) => a + (Number(o.item_count) || 0), 0)
-    const byChannel: Record<string, { n: number; rev: number }> = {}
-    for (const o of nonCancelled) { const k = o.sales_channel || 'other'; (byChannel[k] ||= { n: 0, rev: 0 }); byChannel[k].n++; byChannel[k].rev += Number(o.total) || 0 }
-    const channels = Object.entries(byChannel).map(([k, v]) => ({ label: `${channelMeta(k).icon} ${channelMeta(k).label}`, value: v.rev, sub: fmtMoney(v.rev) })).sort((a, b) => b.value - a.value)
-    const bySku: Record<string, number> = {}
-    for (const o of nonCancelled) { const k = o.primary_sku; if (!k) continue; bySku[k] = (bySku[k] || 0) + 1 }
-    const topSku = Object.entries(bySku).map(([k, v]) => ({ label: k, value: v, sub: `${v} orders` })).sort((a, b) => b.value - a.value).slice(0, 8)
-    return { revenue, orderN, aov, units, channels, topSku }
-  }, [inRange])
+  const dailyOrders = summary?.dailyOrders || []
+  const dailyRevenue = summary?.dailyRevenue || []
 
   if (loading) return <div style={{ padding: 24, color: 'var(--slate)' }}>Loading reports…</div>
 
@@ -228,7 +194,7 @@ export default function OrdersReportsPage() {
           </div>
           <div style={{ ...card, padding: 18 }}>
             <p style={kick}>Orders per Day</p>
-            <DailyChart series={dailySeries(() => 1)} />
+            <DailyChart series={dailyOrders} />
           </div>
         </div>
       )}
@@ -236,10 +202,40 @@ export default function OrdersReportsPage() {
       {report === 'shipping' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <Kpi label="Charged to Customer" value={fmtMoney(shippingR.charged)} color="#16a34a" />
+            <Kpi label="Actual Cost (incurred)" value={fmtMoney(shippingR.cost)} color="#dc2626" />
+            <Kpi label="Margin" value={fmtMoney(shippingR.margin)} color={shippingR.margin >= 0 ? '#16a34a' : '#dc2626'} />
             <Kpi label="Labels Created" value={String(shippingR.labels)} />
-            <Kpi label="Shipped Orders" value={String(fulfil.shipped)} color="#16a34a" />
-            <Kpi label="Shipping Cost" value={fmtMoney(shippingR.cost)} />
             <Kpi label="Avg Cost / Label" value={fmtMoney(shippingR.avg)} />
+          </div>
+
+          {/* Per tracking / per customer: charged vs actual */}
+          <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+            <p style={{ ...kick, padding: '16px 18px 0' }}>Shipping — Charged vs Actual (per tracking)</p>
+            <div style={{ overflowX: 'auto', marginTop: 10 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+                <thead>
+                  <tr>{['Order', 'Customer', 'Carrier', 'Tracking', 'Charged', 'Actual', 'Margin'].map((h, i) => (
+                    <th key={h} style={{ padding: '9px 14px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', textAlign: i >= 4 ? 'right' : 'left', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}</tr>
+                </thead>
+                <tbody>
+                  {shippingR.detail.length === 0 && <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>No shipments in this range. Charged-to-customer totals above still reflect what customers paid for shipping.</td></tr>}
+                  {shippingR.detail.slice(0, 200).map((r: any) => { const m = r.charged - r.incurred; return (
+                    <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ padding: '9px 14px', fontSize: 12.5, fontWeight: 700, color: ACCENT }}>{r.order}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12.5 }}>{r.customer}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12.5, color: 'var(--slate)' }}>{r.carrier}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--slate)', fontFamily: 'ui-monospace, monospace' }}>{r.tracking}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12.5, textAlign: 'right', fontWeight: 600 }}>{fmtMoney(r.charged)}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12.5, textAlign: 'right', color: r.incurred ? 'var(--ink)' : 'var(--slate)' }}>{r.incurred ? fmtMoney(r.incurred) : '—'}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12.5, textAlign: 'right', fontWeight: 700, color: m >= 0 ? '#16a34a' : '#dc2626' }}>{fmtMoney(m)}</td>
+                    </tr>
+                  )})}
+                </tbody>
+              </table>
+            </div>
+            {shippingR.detail.length > 200 && <p style={{ padding: '10px 18px', fontSize: 11.5, color: 'var(--slate)' }}>Showing first 200 of {shippingR.detail.length}. Export CSV for the full list.</p>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
             <div style={{ ...card, padding: 18 }}>
@@ -269,7 +265,7 @@ export default function OrdersReportsPage() {
           </div>
           <div style={{ ...card, padding: 18 }}>
             <p style={kick}>Revenue per Day</p>
-            <DailyChart series={dailySeries(o => o.status === 'cancelled' ? 0 : (Number(o.total) || 0))} color="#16a34a" money />
+            <DailyChart series={dailyRevenue} color="#16a34a" money />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
             <div style={{ ...card, padding: 18 }}>

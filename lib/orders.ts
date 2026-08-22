@@ -22,13 +22,27 @@ export const statusMeta = (s?: string | null) => STATUS_META[String(s || '')] ||
 // "Order Alerts" are computed specially by the caller.
 export const STATUS_TABS: { key: string; label: string; match?: OrderStatus[] }[] = [
   { key: 'all', label: 'All Orders' },
-  { key: 'awaiting_shipment', label: 'Awaiting Shipment', match: ['awaiting_shipment'] },
+  // Packed is a sub-state of awaiting fulfilment (packed but not yet shipped),
+  // so packed orders stay in this tab until they're actually shipped.
+  { key: 'awaiting_shipment', label: 'Awaiting Shipment', match: ['awaiting_shipment', 'packed'] },
   { key: 'on_hold', label: 'On Hold', match: ['on_hold'] },
   { key: 'manual', label: 'Manual Orders', match: ['manual'] },
   { key: 'shipped', label: 'Shipped', match: ['shipped'] },
   { key: 'cancelled', label: 'Cancelled', match: ['cancelled'] },
   { key: 'alerts', label: 'Order Alerts' },
 ]
+
+// WooCommerce sends both `date_created` (the store's LOCAL time, no offset) and
+// `date_created_gmt` (UTC, no offset). Passing the local one to `new Date()`
+// treats it as UTC, shifting every recent order into the future — which is why
+// fresh orders all showed "1 min" old. Prefer the GMT field and mark it UTC.
+export function wooDateToISO(o: any): string | null {
+  const gmt = o?.date_created_gmt || o?.date_paid_gmt || o?.date_modified_gmt
+  if (gmt) { const s = String(gmt); const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z'); if (!isNaN(d.getTime())) return d.toISOString() }
+  const local = o?.date_created || o?.order_date || o?.date_paid
+  if (local) { const d = new Date(local); if (!isNaN(d.getTime())) return d.toISOString() }
+  return null
+}
 
 // WooCommerce status → operational status / payment.
 export function mapWooStatus(woo?: string | null): OrderStatus {
@@ -105,8 +119,50 @@ export function orderAge(orderDate?: string | null): { label: string; color: str
   return { label, color }
 }
 
+// A Click & Collect / local-pickup order — by status, or by a WooCommerce
+// shipping method whose name says pickup/collect (e.g. "Click & Collect -
+// Somerton Store", "Local pickup").
+export const isClickCollect = (o: any): boolean =>
+  o?.status === 'click_and_collect' || /pickup|collect/i.test(String(o?.shipping_method || ''))
+
 export const fmtMoney = (n: number | null | undefined, currency = 'AUD') =>
   `$${(Number(n) || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 // Saved filters offered in the UI (client resolves them against the row set).
 export const SAVED_FILTERS = ['Today', 'Overdue', 'High Priority', 'Click & Collect', 'Unassigned'] as const
+
+// ── Line-item fulfilment keys ────────────────────────────────────────────────
+// Stable, re-sync-proof key for an order_items row. Prefers the WooCommerce
+// line id (stored in metadata.woo_line_id by the sync); otherwise
+// product|sku|occurrence (nth identical line), computed from the list order so
+// it does not depend on order_items.id (which the webhook regenerates on every
+// order update). Shared by the fulfilment panel and the packing slip so a
+// "sent" flag maps to the same line in both.
+export function buildOrderLineKeys(items: any[]): Map<string, string> {
+  const seen = new Map<string, number>()
+  const out = new Map<string, string>()
+  for (const it of items || []) {
+    const wl = it?.metadata?.woo_line_id
+    if (wl != null && wl !== '') { out.set(it.id, `w:${wl}`); continue }
+    const base = `${it.product_id || ''}|${it.sku || ''}`
+    const n = seen.get(base) || 0
+    seen.set(base, n + 1)
+    out.set(it.id, `k:${base}|${n}`)
+  }
+  return out
+}
+
+// A multiplier that turns an ex-GST line price into a GST-inclusive one, derived
+// from the order's own totals so it matches whatever tax the store actually
+// charged (no assumption of a fixed 10%). Returns 1 when there's no usable tax
+// signal, and is clamped to a sane GST range so odd data never distorts prices.
+export function gstInclFactor(o: any): number {
+  const sub = Number(o?.subtotal) || 0
+  if (sub <= 0) return 1
+  const shipping = Number(o?.shipping_total) || 0
+  const total = Number(o?.total) || 0
+  const goodsIncl = total - shipping // goods incl GST (approx; ignores any shipping GST)
+  if (goodsIncl <= 0) return 1
+  const f = goodsIncl / sub
+  return f > 1.001 && f < 1.2 ? f : 1
+}

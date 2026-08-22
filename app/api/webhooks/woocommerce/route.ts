@@ -7,6 +7,7 @@ import { WebhookService } from '@/lib/webhook-service'
 import { notifyCompany } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { upsertWooOrder } from '@/lib/orders-sync'
+import { wooDateToISO } from '@/lib/orders'
 
 const DEFAULT_MESSAGES: Record<string, string> = {
   processing: 'Thank you for placing an order with {business}. We have received it. If you have any questions, feel free to reply here.',
@@ -455,7 +456,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       total: parseFloat(order.total) || 0,
       shipping_total: parseFloat(order.shipping_total || '0') || 0,
       currency: order.currency || 'AUD',
-      order_date: order.date_created ? new Date(order.date_created).toISOString() : new Date().toISOString(),
+      order_date: wooDateToISO(order) || new Date().toISOString(),
       line_items: order.line_items || [],
       billing: order.billing || {},
       conversation_id: conv?.id || null,
@@ -473,7 +474,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     }
     // Mirror into the operational Orders board so a new/updated order shows up
     // there immediately (and live, via realtime) — no manual sync needed.
-    try { await upsertWooOrder(db, companyId, { ...orderRow, id: sourceRowId }, contact?.id || null) } catch (e) { console.error('[orders mirror] failed', e) }
+    try { await upsertWooOrder(db, companyId, { ...orderRow, id: sourceRowId, customer_note: order.customer_note || null, shipping_method: order.shipping_lines?.[0]?.method_title || null }, contact?.id || null) } catch (e) { console.error('[orders mirror] failed', e) }
   } catch (e) { console.error('[order attribution] failed', e) }
 
   // ── Auto review request on completion ─────────────────────────────────────

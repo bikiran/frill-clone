@@ -1,4 +1,16 @@
-import { mapWooStatus, mapWooPayment } from '@/lib/orders'
+import { mapWooStatus, mapWooPayment, wooDateToISO } from '@/lib/orders'
+
+// The shipping method name from a woocommerce_orders row or a raw Woo order.
+function shippingMethodOf(o: any): string | null {
+  const m = o.shipping_method || o.shipping_lines?.[0]?.method_title || null
+  return m ? String(m).replace(/&amp;/g, '&').trim() : null
+}
+// Operational status: a pickup/collect method makes an otherwise-awaiting order
+// Click & Collect (so it lands in that tab and is highlighted).
+function statusOf(o: any): string {
+  const mapped = mapWooStatus(o.status)
+  return mapped === 'awaiting_shipment' && /pickup|collect/i.test(String(shippingMethodOf(o) || '')) ? 'click_and_collect' : mapped
+}
 
 // PostgREST reports an unknown column as "Could not find the 'X' column ... in
 // the schema cache". A schema that predates a newer optional column (e.g.
@@ -50,7 +62,7 @@ function sourceFields(companyId: string, o: any, contactId: string | null) {
     order_number: o.order_number ? String(o.order_number) : String(o.woo_order_id),
     sales_channel: 'woocommerce',
     payment_status: mapWooPayment(o.status),
-    shipping_method: o.shipping_method || (parseFloat(o.shipping_total || 0) > 0 ? 'Flat Rate' : null),
+    shipping_method: shippingMethodOf(o) || (parseFloat(o.shipping_total || 0) > 0 ? 'Flat Rate' : null),
     primary_sku: items[0]?.sku || null,
     subtotal: subtotal || null,
     shipping_total: parseFloat(o.shipping_total || 0) || null,
@@ -60,8 +72,12 @@ function sourceFields(companyId: string, o: any, contactId: string | null) {
     customer_name: name,
     customer_email: email || null,
     customer_phone: b.phone || null,
+    customer_note: o.customer_note || o.note || null,
     shipping_address: (o.shipping && Object.keys(o.shipping).length ? o.shipping : b) || null,
-    order_date: o.order_date || o.created_at || null,
+    // The woocommerce_orders row's order_date is already a proper timestamptz.
+    // Do NOT fall back to created_at (the sync insert time) — that fabricated a
+    // "now" date and made every order look 1 minute old.
+    order_date: wooDateToISO(o) || o.order_date || null,
     updated_at: new Date().toISOString(),
   }
 }
@@ -80,7 +96,10 @@ function itemRows(companyId: string, orderId: string, o: any) {
       unit_price: parseFloat(li.price ?? (li.total ? li.total / qty : 0)) || null,
       total_price: parseFloat(li.total ?? li.subtotal ?? 0) || null,
       image_url: typeof img === 'string' ? img : null,
-      metadata: {},
+      // Stash the WooCommerce line id so per-line fulfilment (order_fulfillments)
+      // has a stable key that survives this order's items being deleted and
+      // re-inserted on the next webhook update.
+      metadata: { woo_line_id: li.id != null ? String(li.id) : null },
     }
   })
 }
@@ -107,12 +126,30 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
   if (!wooRows.length) return 0
 
   const extIds = wooRows.map(o => String(o.woo_order_id)).filter(Boolean)
-  const existing = new Set<string>()
+  const existing = new Map<string, { id: string; order_date: string | null }>()
   for (let i = 0; i < extIds.length; i += 300) {
-    const { data } = await db.from('orders').select('external_order_id')
+    const { data } = await db.from('orders').select('id, external_order_id, order_date')
       .eq('company_id', companyId).eq('sales_channel', 'woocommerce').in('external_order_id', extIds.slice(i, i + 300))
-    for (const r of data || []) existing.add(String(r.external_order_id))
+    for (const r of data || []) existing.set(String(r.external_order_id), { id: r.id, order_date: r.order_date })
   }
+
+  // Reconcile existing orders' dates: earlier syncs stored a wrong order_date
+  // (WooCommerce local time parsed as UTC). Now that the source is corrected,
+  // fix any stored date that no longer matches — bounded so a big catalogue
+  // converges over a couple of runs rather than doing thousands of writes at once.
+  let fixed = 0
+  for (const o of wooRows) {
+    if (fixed >= 800) break
+    const prev = existing.get(String(o.woo_order_id))
+    if (!prev) continue
+    const want = wooDateToISO(o) || o.order_date || null
+    if (!want) continue
+    const cur = prev.order_date ? new Date(prev.order_date).getTime() : 0
+    if (Math.abs(new Date(want).getTime() - cur) > 1000) {
+      try { await db.from('orders').update({ order_date: want }).eq('id', prev.id); fixed++ } catch {}
+    }
+  }
+
   const fresh = wooRows.filter(o => !existing.has(String(o.woo_order_id)))
   if (!fresh.length) return 0
 
@@ -121,7 +158,7 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
   // Bulk-insert the new orders, then map each back to its new id.
   const rows = fresh.map(o => ({
     ...sourceFields(companyId, o, contacts.get((o.customer_email || o.billing?.email || '').toLowerCase()) || null),
-    status: mapWooStatus(o.status),
+    status: statusOf(o),
     fulfilment_status: ['completed'].includes(String(o.status)) ? 'fulfilled' : 'unfulfilled',
     flagged: ['failed', 'on-hold'].includes(String(o.status)),
   }))
@@ -166,7 +203,7 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
   } else {
     const ins = await insertResilient(db, 'orders', [{
       ...src,
-      status: mapWooStatus(o.status),
+      status: statusOf(o),
       fulfilment_status: ['completed'].includes(String(o.status)) ? 'fulfilled' : 'unfulfilled',
       flagged: ['failed', 'on-hold'].includes(String(o.status)),
     }], 'id')

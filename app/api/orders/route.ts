@@ -36,10 +36,38 @@ export async function GET(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'companyId required', orders: [] }, { status: 400 })
     const db = admin()
     if (!(await isMember(db, req, companyId))) return NextResponse.json({ error: 'Not allowed', orders: [] }, { status: 403 })
-    const { data, error } = await db.from('orders').select('*')
-      .eq('company_id', companyId).order('order_date', { ascending: false }).limit(2000)
+
+    // Single order (for the full order details page).
+    const id = req.nextUrl.searchParams.get('id')
+    if (id) {
+      const { data, error } = await db.from('orders').select('*').eq('company_id', companyId).eq('id', id).maybeSingle()
+      if (error) return NextResponse.json({ error: error.message, order: null }, { status: 500 })
+      return NextResponse.json({ order: data || null })
+    }
+
+    // Specific orders by id (e.g. printing a set of slips) — avoids pulling the
+    // whole book just to render a handful.
+    const idsParam = req.nextUrl.searchParams.get('ids')
+    if (idsParam) {
+      const ids = idsParam.split(',').map(s => s.trim()).filter(Boolean).slice(0, 500)
+      const { data, error } = await db.from('orders').select('*').eq('company_id', companyId).in('id', ids)
+      if (error) return NextResponse.json({ error: error.message, orders: [] }, { status: 500 })
+      return NextResponse.json({ orders: data || [] })
+    }
+
+    // One page of the book. The board pages through with offset/limit (PostgREST
+    // caps a single response at ~1000 rows regardless of .limit()), so a 50k-order
+    // store loads fully across several small requests instead of one huge one.
+    const offset = Math.max(0, parseInt(req.nextUrl.searchParams.get('offset') || '0') || 0)
+    const limit = Math.min(1000, Math.max(1, parseInt(req.nextUrl.searchParams.get('limit') || '1000') || 1000))
+    // Optional date-range filter (Reports only fetches the window it charts, so a
+    // 30-day report over a 50k-order store loads a few hundred rows, not the book).
+    const since = req.nextUrl.searchParams.get('since')
+    let q = db.from('orders').select('*').eq('company_id', companyId)
+    if (since) q = q.gte('order_date', since)
+    const { data, error } = await q.order('order_date', { ascending: false }).range(offset, offset + limit - 1)
     if (error) return NextResponse.json({ error: error.message, orders: [] }, { status: 500 })
-    return NextResponse.json({ orders: data || [] })
+    return NextResponse.json({ orders: data || [], hasMore: (data?.length || 0) === limit })
   } catch (e: any) {
     return NextResponse.json({ error: e.message, orders: [] }, { status: 500 })
   }
