@@ -65,9 +65,17 @@ export async function POST(req: NextRequest) {
     const { data: order } = await db.from('orders').select('*').eq('id', orderId).eq('company_id', companyId).maybeSingle()
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
 
-    // Sender = the company's primary location (falls back to the company name).
+    // Sender = the chosen ship-from location, else the company's primary one.
     const { data: co } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
-    const { data: loc } = await db.from('company_locations').select('*').eq('company_id', companyId).order('is_primary', { ascending: false }).limit(1).maybeSingle()
+    let loc: any = null
+    if (body.fromLocationId) {
+      const r = await db.from('company_locations').select('*').eq('id', body.fromLocationId).eq('company_id', companyId).maybeSingle()
+      loc = r.data
+    }
+    if (!loc) {
+      const r = await db.from('company_locations').select('*').eq('company_id', companyId).order('is_primary', { ascending: false }).limit(1).maybeSingle()
+      loc = r.data
+    }
     const from: Address = {
       name: loc?.label || co?.name || 'Warehouse', company: co?.name || null,
       address_1: loc?.address_1 || loc?.street || null, address_2: loc?.address_2 || null,
@@ -81,13 +89,21 @@ export async function POST(req: NextRequest) {
       country: a.country || 'AU', phone: order.customer_phone || a.phone || null, email: order.customer_email || null,
     }
 
+    // Line items — passed to Starshipit so the consignment carries contents.
+    let items: { description?: string | null; sku?: string | null; quantity?: number; value?: number }[] = []
+    try {
+      const { data: its } = await db.from('order_items').select('product_name, sku, quantity, total_price').eq('order_id', orderId)
+      items = (its || []).map((it: any) => ({ description: it.product_name, sku: it.sku, quantity: Number(it.quantity) || 1, value: Number(it.total_price) || 0 }))
+    } catch {}
+
     const label = await createLabel({
       carrier: body.carrier || 'custom',
       service: body.service || null,
+      serviceCode: body.serviceCode || null,
       weightGrams: Number(body.weightGrams) || null,
       parcel: body.parcel || null,
       reference: order.order_number || null,
-      from, to,
+      from, to, items,
     })
 
     // Record the shipment (resilient to optional columns).
@@ -96,7 +112,7 @@ export async function POST(req: NextRequest) {
       carrier: label.carrier, service: label.service,
       tracking_number: label.trackingNumber, tracking_url: label.trackingUrl,
       label_url: label.labelUrl, status: 'label_purchased',
-      cost: label.cost, currency: label.currency,
+      cost: label.cost ?? (body.cost != null ? Number(body.cost) : null), currency: label.currency,
       weight_grams: Number(body.weightGrams) || null,
       parcel: body.parcel || null,
       provider_ref: label.providerRef, created_by: uid,

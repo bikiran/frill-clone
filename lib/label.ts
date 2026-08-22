@@ -11,6 +11,7 @@
 // this file is specifically about creating/lodging a shipment + label.)
 
 import { CARRIER_LABEL, CARRIER_SERVICES, carrierTrackUrl } from '@/lib/orders'
+import { starshipitConfigured, createShipment as starshipitCreateShipment } from '@/lib/starshipit'
 
 export type Address = {
   name?: string | null
@@ -28,11 +29,13 @@ export type Address = {
 export type LabelRequest = {
   carrier: string
   service?: string | null
+  serviceCode?: string | null         // Starshipit rate service_code (when a live rate was chosen)
   weightGrams?: number | null
   parcel?: { length?: number; width?: number; height?: number } | null
   reference?: string | null           // usually the order number
   from: Address
   to: Address
+  items?: { description?: string | null; sku?: string | null; quantity?: number; value?: number }[]
 }
 
 export type LabelResult = {
@@ -67,12 +70,23 @@ function genTracking(carrier: string): string {
  * credentials are set (TGE_API_KEY / TGE_ACCOUNT).
  */
 export function carrierIsLive(carrier: string): boolean {
+  // Starshipit is a multi-carrier aggregator: once it's connected, every carrier
+  // it fronts can lodge a real consignment + label, so any carrier is "live".
+  if (starshipitConfigured()) return true
   switch (carrier) {
     case 'team_global_express':
       return !!(process.env.TGE_API_KEY && process.env.TGE_ACCOUNT)
     default:
       return false
   }
+}
+
+// A Starshipit carrier code from our internal carrier key (best-effort; when the
+// store's Starshipit account names carriers differently, the account's default
+// routing still applies).
+const STARSHIPIT_CARRIER: Record<string, string> = {
+  australia_post: 'AusPost', startrack: 'StarTrack', team_global_express: 'TeamGlobalExpress',
+  sendle: 'Sendle', aramex: 'Aramex', dhl: 'DHLExpress',
 }
 
 // ── Team Global Express (TGE Connect) — scaffold ────────────────────────────
@@ -98,6 +112,40 @@ async function tgeCreateLabel(_req: LabelRequest): Promise<LabelResult | null> {
 export async function createLabel(req: LabelRequest): Promise<LabelResult> {
   const carrier = req.carrier || 'custom'
   const service = req.service || CARRIER_SERVICES[carrier]?.[0] || null
+
+  // Starshipit (multi-carrier) — the primary live path when connected. Prints a
+  // real label PDF and issues the carrier's own tracking number.
+  if (starshipitConfigured()) {
+    try {
+      const s = await starshipitCreateShipment({
+        orderNumber: req.reference || '',
+        to: req.to,
+        from: req.from,
+        weightGrams: req.weightGrams,
+        parcel: req.parcel,
+        carrier: STARSHIPIT_CARRIER[carrier] || undefined,
+        serviceCode: req.serviceCode || undefined,
+        items: req.items,
+      })
+      if (s && (s.trackingNumber || s.labelUrl)) {
+        return {
+          carrier,
+          carrierLabel: s.carrier || CARRIER_LABEL[carrier] || carrier,
+          service: s.service || service,
+          trackingNumber: s.trackingNumber || genTracking(carrier),
+          trackingUrl: s.trackingUrl || carrierTrackUrl(carrier, s.trackingNumber || ''),
+          labelUrl: s.labelUrl,
+          cost: s.cost,
+          currency: s.currency || 'AUD',
+          providerRef: s.providerRef,
+          live: true,
+        }
+      }
+    } catch (e) {
+      // Fall through to the printable path — never block shipping on the API.
+      console.error('[label] Starshipit label failed, using printable fallback:', (e as any)?.message || e)
+    }
+  }
 
   // Live adapters (only TGE scaffolded so far).
   if (carrier === 'team_global_express') {
