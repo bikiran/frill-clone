@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getRates, starshipitConfigured, type ShipAddress } from '@/lib/starshipit'
+import { getRatesDetailed, starshipitConfigured, type ShipAddress } from '@/lib/starshipit'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       phone: order.customer_phone || a.phone || null, email: order.customer_email || null,
     }
 
-    const rates = await getRates({
+    const { rates, raw, request } = await getRatesDetailed({
       to,
       weightGrams: Number(body.weightGrams) || null,
       parcel: body.parcel || null,
@@ -64,7 +64,11 @@ export async function POST(req: NextRequest) {
     })
     // Cheapest first — that's the choice a packer wants by default.
     rates.sort((x, y) => (x.price ?? Infinity) - (y.price ?? Infinity))
-    return NextResponse.json({ configured: true, rates })
+    // When zero rates come back with no error, the provider's own response is the
+    // only thing that explains why — include it (and the request we sent) so the
+    // panel's diagnostic can show it. Only on request, to keep the normal payload lean.
+    const diag = body.debug ? { providerRaw: raw, providerRequest: request } : {}
+    return NextResponse.json({ configured: true, rates, ...diag })
   } catch (e: any) {
     return NextResponse.json({ configured: starshipitConfigured(), rates: [], error: e?.message || String(e) }, { status: 200 })
   }
