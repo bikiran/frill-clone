@@ -116,6 +116,13 @@ export async function getRates(opts: {
     currency: opts.currency || 'AUD',
   }
   const json = await call('/api/rates', 'POST', body)
+  // Starshipit often returns HTTP 200 with success:false + an errors array
+  // (e.g. "no origin address", "carrier not connected"). Surface that so the UI
+  // can tell the operator what to fix instead of a blank "no rates".
+  if (json && json.success === false) {
+    const e = Array.isArray(json.errors) ? json.errors[0] : null
+    throw new Error(e?.details || e?.message || 'Starshipit returned no rates for this parcel')
+  }
   const rates: any[] = Array.isArray(json?.rates) ? json.rates : []
   return rates.map(r => ({
     carrier: r.carrier || r.carrier_name || null,
