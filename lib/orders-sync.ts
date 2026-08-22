@@ -12,6 +12,24 @@ function statusOf(o: any): string {
   return mapped === 'awaiting_shipment' && /pickup|collect/i.test(String(shippingMethodOf(o) || '')) ? 'click_and_collect' : mapped
 }
 
+// Match a Click & Collect order to the outlet it's collected from, by looking
+// for the outlet's distinctive name/suburb inside the pickup shipping method
+// (e.g. "Click & Collect - Somerton Store" → the Somerton location). Generic
+// words are ignored so "Roxy Aquarium" alone never matches.
+const OUTLET_STOPWORDS = new Set(['roxy', 'aquarium', 'store', 'shop', 'pickup', 'click', 'collect', 'local', 'the', 'and', 'shipping'])
+export function matchOutletId(locations: { id: string; label?: string | null; suburb?: string | null }[], text: string | null | undefined): string | null {
+  const h = String(text || '').toLowerCase()
+  if (!h || !locations?.length) return null
+  for (const l of locations) {
+    const words = `${l.label || ''} ${l.suburb || ''}`.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4 && !OUTLET_STOPWORDS.has(w))
+    if (words.some(w => h.includes(w))) return l.id
+  }
+  return null
+}
+async function loadLocations(db: any, companyId: string): Promise<{ id: string; label?: string | null; suburb?: string | null }[]> {
+  try { const { data } = await db.from('company_locations').select('id, label, suburb').eq('company_id', companyId); return data || [] } catch { return [] }
+}
+
 // PostgREST reports an unknown column as "Could not find the 'X' column ... in
 // the schema cache". A schema that predates a newer optional column (e.g.
 // primary_sku) would otherwise fail the whole insert — so strip the offending
@@ -126,12 +144,13 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
   if (!wooRows.length) return 0
 
   const extIds = wooRows.map(o => String(o.woo_order_id)).filter(Boolean)
-  const existing = new Map<string, { id: string; order_date: string | null }>()
+  const existing = new Map<string, { id: string; order_date: string | null; status: string | null; store_location_id: string | null; shipping_method: string | null }>()
   for (let i = 0; i < extIds.length; i += 300) {
-    const { data } = await db.from('orders').select('id, external_order_id, order_date')
+    const { data } = await db.from('orders').select('id, external_order_id, order_date, status, store_location_id, shipping_method')
       .eq('company_id', companyId).eq('sales_channel', 'woocommerce').in('external_order_id', extIds.slice(i, i + 300))
-    for (const r of data || []) existing.set(String(r.external_order_id), { id: r.id, order_date: r.order_date })
+    for (const r of data || []) existing.set(String(r.external_order_id), { id: r.id, order_date: r.order_date, status: r.status, store_location_id: r.store_location_id, shipping_method: r.shipping_method })
   }
+  const locations = await loadLocations(db, companyId)
 
   // Reconcile existing orders' dates: earlier syncs stored a wrong order_date
   // (WooCommerce local time parsed as UTC). Now that the source is corrected,
@@ -150,18 +169,40 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
     }
   }
 
+  // Backfill the pickup outlet on already-synced Click & Collect orders that were
+  // imported before outlet mapping existed (store_location_id null). Match on the
+  // order's stored shipping_method — the only place the pickup location name is
+  // kept (woocommerce_orders doesn't retain it). Never clobbers a manual
+  // assignment, and bounded so a big catalogue converges over a couple of runs.
+  let mapped = 0
+  if (locations.length) {
+    for (const [, prev] of existing) {
+      if (mapped >= 400) break
+      if (prev.status !== 'click_and_collect' || prev.store_location_id) continue
+      const outletId = matchOutletId(locations, prev.shipping_method)
+      if (!outletId) continue
+      try { await db.from('orders').update({ store_location_id: outletId }).eq('id', prev.id); mapped++ } catch {}
+    }
+  }
+
   const fresh = wooRows.filter(o => !existing.has(String(o.woo_order_id)))
   if (!fresh.length) return 0
 
   const contacts = await resolveContacts(db, companyId, fresh)
 
   // Bulk-insert the new orders, then map each back to its new id.
-  const rows = fresh.map(o => ({
-    ...sourceFields(companyId, o, contacts.get((o.customer_email || o.billing?.email || '').toLowerCase()) || null),
-    status: statusOf(o),
-    fulfilment_status: ['completed'].includes(String(o.status)) ? 'fulfilled' : 'unfulfilled',
-    flagged: ['failed', 'on-hold'].includes(String(o.status)),
-  }))
+  const rows = fresh.map(o => {
+    const src = sourceFields(companyId, o, contacts.get((o.customer_email || o.billing?.email || '').toLowerCase()) || null)
+    const status = statusOf(o)
+    const outletId = status === 'click_and_collect' ? matchOutletId(locations, shippingMethodOf(o) || src.shipping_method) : null
+    return {
+      ...src,
+      status,
+      ...(outletId ? { store_location_id: outletId } : {}),
+      fulfilment_status: ['completed'].includes(String(o.status)) ? 'fulfilled' : 'unfulfilled',
+      flagged: ['failed', 'on-hold'].includes(String(o.status)),
+    }
+  })
   const inserted = await insertResilient(db, 'orders', rows, 'id, external_order_id')
   const idByExt = new Map<string, string>((inserted || []).map((r: any) => [String(r.external_order_id), r.id]))
 
@@ -201,9 +242,15 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
     await updateResilient(db, 'orders', src, prev.id)
     orderId = prev.id
   } else {
+    const st = statusOf(o)
+    // Auto-assign a Click & Collect order to its pickup outlet (staff can still
+    // change it). Only on INSERT, so a manual reassignment is never clobbered.
+    let outletId: string | null = null
+    if (st === 'click_and_collect') { outletId = matchOutletId(await loadLocations(db, companyId), shippingMethodOf(o)) }
     const ins = await insertResilient(db, 'orders', [{
       ...src,
-      status: statusOf(o),
+      status: st,
+      ...(outletId ? { store_location_id: outletId } : {}),
       fulfilment_status: ['completed'].includes(String(o.status)) ? 'fulfilled' : 'unfulfilled',
       flagged: ['failed', 'on-hold'].includes(String(o.status)),
     }], 'id')
