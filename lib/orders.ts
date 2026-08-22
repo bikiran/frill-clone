@@ -22,9 +22,10 @@ export const statusMeta = (s?: string | null) => STATUS_META[String(s || '')] ||
 // "Order Alerts" are computed specially by the caller.
 export const STATUS_TABS: { key: string; label: string; match?: OrderStatus[] }[] = [
   { key: 'all', label: 'All Orders' },
-  // Packed is a sub-state of awaiting fulfilment (packed but not yet shipped),
-  // so packed orders stay in this tab until they're actually shipped.
-  { key: 'awaiting_shipment', label: 'Awaiting Shipment', match: ['awaiting_shipment', 'packed'] },
+  // Packed and Click & Collect are both sub-states of awaiting fulfilment
+  // (packed-but-not-shipped, or waiting for the customer to collect), so they
+  // stay in this tab — otherwise a C&C order would vanish from the default view.
+  { key: 'awaiting_shipment', label: 'Awaiting Shipment', match: ['awaiting_shipment', 'packed', 'click_and_collect'] },
   { key: 'on_hold', label: 'On Hold', match: ['on_hold'] },
   { key: 'manual', label: 'Manual Orders', match: ['manual'] },
   { key: 'shipped', label: 'Shipped', match: ['shipped'] },
