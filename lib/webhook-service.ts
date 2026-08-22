@@ -5,6 +5,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from './woocommerce-service'
+import { wooDateToISO } from './orders'
 
 interface WebhookPayload {
   event: string
@@ -203,7 +204,12 @@ export class WebhookService {
         total: parseFloat(order.total) || 0,
         shipping_total: parseFloat(order.shipping_total || '0') || 0,
         currency: order.currency || 'AUD',
-        order_date: order.date_created ? new Date(order.date_created).toISOString() : new Date().toISOString(),
+        // Use date_created_gmt (UTC) via wooDateToISO, NOT date_created — the
+        // latter is the store's LOCAL time with no offset, so new Date(...) on
+        // the UTC server mislabels it as UTC (order shows +10h, e.g. 4:52pm →
+        // 2:52am next day, and its "age" is wrong). Fall back to now only if the
+        // payload truly has no date.
+        order_date: wooDateToISO(order) || new Date().toISOString(),
         line_items: order.line_items || [],
         billing: order.billing || {},
       }
