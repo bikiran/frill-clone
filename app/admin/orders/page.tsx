@@ -236,7 +236,23 @@ export default function OrdersPage() {
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
-      const res = await fetch('/api/orders/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ companyId: cid, full }) })
+      const authH = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+      // Manual Sync: first pull recently-changed orders straight from the
+      // WooCommerce REST API so their AUTHORITATIVE dates land in
+      // woocommerce_orders (webhook payloads used to store a wrong date). The
+      // Orders Sync reconcile below then rewrites the operational order_date from
+      // that corrected source. Bounded to recent orders (all the affected ones).
+      if (full) {
+        try {
+          const since = new Date(Date.now() - 60 * 864e5).toISOString()
+          for (let page = 1; page <= 30; page++) {
+            const wr = await fetch('/api/woocommerce/sync', { method: 'POST', headers: authH, body: JSON.stringify({ companyId: cid, mode: 'orders', page, modifiedAfter: since }) })
+            const wd = await wr.json().catch(() => ({}))
+            if (!wr.ok || wd.error || wd.done) break
+          }
+        } catch {}
+      }
+      const res = await fetch('/api/orders/sync', { method: 'POST', headers: authH, body: JSON.stringify({ companyId: cid, full }) })
       const d = await res.json().catch(() => ({}))
       if (full) {
         if (!res.ok || d.error) { setToast(`Sync failed: ${d.error || res.status}`); setTimeout(() => setToast(''), 8000) }

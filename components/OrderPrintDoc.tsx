@@ -28,17 +28,18 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
       try {
         const { data: s } = await supabase.auth.getSession()
         const token = s?.session?.access_token
-        const res = await fetch(`/api/orders?companyId=${encodeURIComponent(companyId)}&ids=${encodeURIComponent(ids.join(','))}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-        const j = await res.json().catch(() => ({}))
-        const byId = new Map<string, Order>((j.orders || []).map((o: Order) => [o.id, o]))
+        // Read the orders directly (RLS-permissive, index-served) instead of the
+        // serverless /api/orders — no cold start on the print path.
+        const { data: ord } = await (supabase as any).from('orders').select('*').eq('company_id', companyId).in('id', ids)
+        const byId = new Map<string, Order>((ord || []).map((o: Order) => [o.id, o]))
         rows = ids.map(id => byId.get(id)).filter(Boolean) as Order[]
-        // The customer's checkout note (order.customer_note) is only stored once
-        // V281 is applied and the order re-synced. Until then — and for older
-        // orders — pull it live from WooCommerce so it always prints. Bounded so a
-        // big bulk run doesn't fan out unboundedly.
-        const needNote = rows.filter((o: any) => !(o.customer_note || o.note) && o.external_order_id).slice(0, 40)
+        // The customer's checkout note is normally already stored (webhook/V281).
+        // Only for orders still missing it do we pull it live from WooCommerce —
+        // and that whole enrichment is time-boxed so a slow store API can't stall
+        // the slip; the slip prints with whatever's stored if the note is slow.
+        const needNote = rows.filter((o: any) => !(o.customer_note || o.note) && o.external_order_id).slice(0, 20)
         if (needNote.length) {
-          try {
+          const enrich = (async () => {
             const pairs = await Promise.all(needNote.map(async (o: any) => {
               try {
                 const r = await fetch(`/api/orders/woo-notes?companyId=${encodeURIComponent(companyId)}&wooOrderId=${encodeURIComponent(String(o.external_order_id))}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
@@ -46,9 +47,13 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
                 return [o.id, jj.customerNote || ''] as const
               } catch { return [o.id, ''] as const }
             }))
-            const noteMap = new Map(pairs)
-            rows = rows.map((o: any) => noteMap.get(o.id) ? { ...o, customer_note: o.customer_note || noteMap.get(o.id) } : o)
-          } catch {}
+            return new Map(pairs)
+          })()
+          const noteMap = await Promise.race([
+            enrich,
+            new Promise<Map<string, string>>(res => setTimeout(() => res(new Map()), 1800)),
+          ])
+          if (noteMap.size) rows = rows.map((o: any) => noteMap.get(o.id) ? { ...o, customer_note: o.customer_note || noteMap.get(o.id) } : o)
         }
       } catch {}
       const [{ data: co }, { data: loc }, { data: items }, { data: ships }, { data: nts }, ful] = await Promise.all([
