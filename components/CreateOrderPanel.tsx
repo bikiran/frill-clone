@@ -195,7 +195,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
     } catch (e: any) { setCouponError(e.message) }
   }
 
-  const create = async (withPaymentLink: boolean, ignoreStock = false) => {
+  const create = async (withPaymentLink: boolean, ignoreStock = false, statusOverride?: string) => {
     if (items.length === 0) { setError('Add at least one product.'); return }
     setCreating(true); setError(''); setStockWarnings([])
     try {
@@ -217,7 +217,7 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
           },
           isQuote,
           customerNote, internalNote,
-          status: isQuote ? 'draft' : (withPaymentLink ? 'pending' : status),
+          status: statusOverride || (isQuote ? 'draft' : (withPaymentLink ? 'pending' : status)),
           setPaid: false,
           createdByName: staffName, staffId,
           ignoreStockWarnings: ignoreStock,
@@ -539,6 +539,11 @@ export default function CreateOrderPanel({ companyId, conversationId, contactId,
                 <button onClick={() => create(true)} disabled={creating || items.length === 0}
                   style={{ padding: '12px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
                   Create & send payment link
+                </button>
+                <button onClick={() => create(false, false, 'draft')} disabled={creating || items.length === 0}
+                  title="Save as a draft order — nothing is charged; you can finish it later"
+                  style={{ padding: '12px', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px dashed var(--border)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  Save as draft
                 </button>
               </div>
               <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 10, lineHeight: 1.5 }}>

@@ -36,11 +36,20 @@ export const STATUS_TABS: { key: string; label: string; match?: OrderStatus[] }[
 // `date_created_gmt` (UTC, no offset). Passing the local one to `new Date()`
 // treats it as UTC, shifting every recent order into the future — which is why
 // fresh orders all showed "1 min" old. Prefer the GMT field and mark it UTC.
+//
+// The REST API sends these as strings ("2026-08-22T10:53:19"), but the WEBHOOK
+// serialises the WC_DateTime object as { date: "2026-08-22 10:53:19.000000",
+// timezone: "UTC" }. The old code did `String(obj)` → "[object Object]" → no
+// valid date → callers fell back to now(), so webhook-synced orders showed a
+// bogus "1 min" age. Handle both shapes, the space separator and any fractional
+// seconds.
 export function wooDateToISO(o: any): string | null {
-  const gmt = o?.date_created_gmt || o?.date_paid_gmt || o?.date_modified_gmt
-  if (gmt) { const s = String(gmt); const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z'); if (!isNaN(d.getTime())) return d.toISOString() }
-  const local = o?.date_created || o?.order_date || o?.date_paid
-  if (local) { const d = new Date(local); if (!isNaN(d.getTime())) return d.toISOString() }
+  const pick = (v: any): string | null => (v && typeof v === 'object' ? (v.date || null) : (v || null))
+  const norm = (s: string) => String(s).trim().replace(' ', 'T').replace(/\.\d+/, '')
+  const gmt = pick(o?.date_created_gmt) || pick(o?.date_paid_gmt) || pick(o?.date_modified_gmt)
+  if (gmt) { const s = norm(gmt); const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z'); if (!isNaN(d.getTime())) return d.toISOString() }
+  const local = pick(o?.date_created) || pick(o?.order_date) || pick(o?.date_paid)
+  if (local) { const s = norm(local); const d = new Date(s); if (!isNaN(d.getTime())) return d.toISOString() }
   return null
 }
 

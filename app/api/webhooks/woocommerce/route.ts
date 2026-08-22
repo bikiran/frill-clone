@@ -456,7 +456,10 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       total: parseFloat(order.total) || 0,
       shipping_total: parseFloat(order.shipping_total || '0') || 0,
       currency: order.currency || 'AUD',
-      order_date: wooDateToISO(order) || new Date().toISOString(),
+      // Never fabricate now() — a missing/parse-failed date used to make orders
+      // look 1-minute-old. Leave it null; a WooCommerce Sync backfills the real
+      // date from the REST API.
+      order_date: wooDateToISO(order) || null,
       line_items: order.line_items || [],
       billing: order.billing || {},
       conversation_id: conv?.id || null,
