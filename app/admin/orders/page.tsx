@@ -953,7 +953,7 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
       const res = await fetch('/api/orders/rates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ companyId, orderId: order.id, weightGrams, parcel }),
+        body: JSON.stringify({ companyId, orderId: order.id, weightGrams, parcel, fromLocationId: fromLocationId || undefined }),
       })
       const j = await res.json().catch(() => ({}))
       setRatesConfigured(!!j.configured)
@@ -981,7 +981,7 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
       const res = await fetch('/api/orders/rates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ companyId, orderId: order.id, weightGrams, parcel, debug: true }),
+        body: JSON.stringify({ companyId, orderId: order.id, weightGrams, parcel, fromLocationId: fromLocationId || undefined, debug: true }),
       })
       const j = await res.json().catch(() => ({}))
       setDiag({ providerRaw: j.providerRaw ?? null, providerRequest: j.providerRequest ?? null, error: j.error ?? null })

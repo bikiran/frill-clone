@@ -118,12 +118,18 @@ export async function getRates(opts: {
 // Starshipit reports as success:true with an empty rates array).
 export async function getRatesDetailed(opts: {
   to: ShipAddress
+  from?: ShipAddress | null
   weightGrams?: number | null
   parcel?: { length?: number; width?: number; height?: number } | null
   currency?: string
 }): Promise<{ rates: StarshipitRate[]; raw: any; request: any }> {
   if (!starshipitConfigured()) return { rates: [], raw: null, request: null }
-  const body = {
+  // Send the origin explicitly when we have one — otherwise Starshipit falls
+  // back to the account's default sender, and an unset/unmatched default is a
+  // common cause of an empty rates list.
+  const hasFrom = opts.from && (opts.from.postcode || opts.from.city)
+  const body: any = {
+    ...(hasFrom ? { sender: destination(opts.from!) } : {}),
     destination: destination(opts.to),
     packages: [packageFrom(opts.weightGrams, opts.parcel)],
     currency: opts.currency || 'AUD',

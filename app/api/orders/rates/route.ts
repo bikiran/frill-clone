@@ -56,8 +56,23 @@ export async function POST(req: NextRequest) {
       phone: order.customer_phone || a.phone || null, email: order.customer_email || null,
     }
 
+    // Ship-from = the chosen location, else the company's primary one.
+    let loc: any = null
+    if (body.fromLocationId) {
+      const r = await db.from('company_locations').select('*').eq('id', body.fromLocationId).eq('company_id', companyId).maybeSingle()
+      loc = r.data
+    }
+    if (!loc) {
+      const r = await db.from('company_locations').select('*').eq('company_id', companyId).order('is_primary', { ascending: false }).limit(1).maybeSingle()
+      loc = r.data
+    }
+    const from: ShipAddress | null = loc ? {
+      name: loc.label || null, address_1: loc.street_address || loc.address_1 || null, address_2: loc.unit || loc.address_2 || null,
+      city: loc.suburb || loc.city || null, state: loc.state || null, postcode: loc.postcode || null, country: loc.country || 'AU', phone: loc.phone || null,
+    } : null
+
     const { rates, raw, request } = await getRatesDetailed({
-      to,
+      to, from,
       weightGrams: Number(body.weightGrams) || null,
       parcel: body.parcel || null,
       currency: order.currency || 'AUD',
