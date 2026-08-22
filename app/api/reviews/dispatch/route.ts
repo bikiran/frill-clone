@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { holidaySet, wallClock, isBlockedDay, nextOpenSlot } from '@/lib/holidays'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,26 +9,6 @@ const admin = () => createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
-
-// Returns the next moment at `targetHour` (0-23) in the given timezone that is
-// in the future — i.e. "defer this until 9am their time".
-function nextAllowedTime(tz: string, targetHour: number): Date {
-  const now = new Date()
-  // Reliable timezone offset: format the same instant in the target tz and in
-  // UTC, and diff them.
-  const tzNow = new Date(now.toLocaleString('en-US', { timeZone: tz }))
-  const utcNow = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }))
-  const offsetMs = tzNow.getTime() - utcNow.getTime()   // tz = UTC + offsetMs
-
-  // Wall-clock time in the target tz.
-  const y = tzNow.getFullYear(), m = tzNow.getMonth(), d = tzNow.getDate(), h = tzNow.getHours()
-  // Target local wall-clock: today at targetHour, or tomorrow if already past.
-  const dayShift = h >= targetHour ? 1 : 0
-  // Build the UTC instant that corresponds to that local wall-clock.
-  const targetLocalMs = Date.UTC(y, m, d + dayShift, targetHour, 0, 0)
-  const result = new Date(targetLocalMs - offsetMs)
-  return result.getTime() > now.getTime() ? result : new Date(now.getTime() + 3600000)
-}
 
 // Sends any review requests whose delay has elapsed. Call this on a schedule
 // (Vercel Cron: /api/reviews/dispatch every 15 min, or hourly).
@@ -67,31 +48,48 @@ async function run(req: NextRequest) {
           continue
         }
 
-        // Quiet hours — never message a customer in the middle of the night.
-        // The business sets a window (e.g. 21:00–09:00) and a timezone; a
-        // request that comes due inside it is deferred to the next allowed
-        // start time rather than sent. Defaults to 9am–9pm Melbourne if unset.
-        const quietStart = typeof cfg.quiet_start === 'number' ? cfg.quiet_start : 21   // 9pm
-        const quietEnd = typeof cfg.quiet_end === 'number' ? cfg.quiet_end : 9          // 9am
-        const tz = cfg.timezone || 'Australia/Melbourne'
-        if (cfg.quiet_hours_enabled !== false) {
-          // Current hour in the business's timezone.
-          const tzNow = new Date(new Date().toLocaleString('en-US', { timeZone: tz }))
-          const hour = tzNow.getHours()
-          // Is `hour` inside the quiet window? The window can wrap past midnight.
-          const inQuiet = quietStart > quietEnd
-            ? (hour >= quietStart || hour < quietEnd)   // e.g. 21..24 or 0..9
-            : (hour >= quietStart && hour < quietEnd)
-          if (inQuiet) {
-            // Defer to the next quietEnd (e.g. 9am) in the business timezone.
-            const deferred = nextAllowedTime(tz, quietEnd)
-            await db.from('review_requests').update({ send_after: deferred.toISOString() }).eq('id', rr.id)
-            results.push({ id: rr.id, deferred: deferred.toISOString() })
+        // Smart suppression — don't pester a customer who has already engaged
+        // with a review request. Once a contact has clicked ANY review link
+        // before (tracked via the /r/<id> redirect), skip future automatic
+        // requests for them instead of asking after every order. First-time
+        // buyers and returning customers who never clicked still get asked.
+        if (cfg.suppress_after_click !== false && rr.contact_id) {
+          const { data: c } = await db.from('contacts').select('review_clicked_at').eq('id', rr.contact_id).maybeSingle()
+          if (c?.review_clicked_at) {
+            await db.from('review_requests').update({ status: 'skipped', error: 'Customer already engaged with a review request' }).eq('id', rr.id)
+            results.push({ id: rr.id, skipped: 'already reviewed' })
             continue
           }
         }
 
-        // The link customers click to leave the review.
+        // Timing rules — never message in quiet hours, on Sundays, or on public
+        // holidays. A request that comes due at a disallowed time is deferred to
+        // the next good slot (business-day start) rather than sent. Defaults to a
+        // 9am–9pm Melbourne window, Sundays + VIC public holidays skipped.
+        const quietStart = typeof cfg.quiet_start === 'number' ? cfg.quiet_start : 21   // 9pm
+        const quietEnd = typeof cfg.quiet_end === 'number' ? cfg.quiet_end : 9          // 9am
+        const tz = cfg.timezone || 'Australia/Melbourne'
+        const quietOn = cfg.quiet_hours_enabled !== false
+        const skipDays = cfg.skip_closed_days !== false   // Sundays + public holidays
+        const holidays = holidaySet(cfg.public_holidays)
+        const wc = wallClock(tz)
+        const inQuiet = quietOn && (quietStart > quietEnd
+          ? (wc.h >= quietStart || wc.h < quietEnd)   // window wraps midnight, e.g. 21..9
+          : (wc.h >= quietStart && wc.h < quietEnd))
+        const dayBlocked = skipDays && isBlockedDay(tz, holidays)
+        if (inQuiet || dayBlocked) {
+          const openHour = quietOn ? quietEnd : 9
+          const deferred = nextOpenSlot(tz, openHour, holidays, skipDays)
+          await db.from('review_requests').update({ send_after: deferred.toISOString() }).eq('id', rr.id)
+          results.push({ id: rr.id, deferred: deferred.toISOString(), reason: dayBlocked ? 'closed day' : 'quiet hours' })
+          continue
+        }
+
+        // The link customers click to leave the review. We send a TRACKED link
+        // (/r/<request id>) that records the click on the contact before
+        // redirecting to Google — that click is what lets us stop asking a
+        // customer who has already engaged. Falls back to the raw link if the
+        // site URL isn't configured.
         const { data: gbp } = await db.from('google_business_accounts')
           .select('review_link').eq('company_id', rr.company_id).maybeSingle()
         const link = cfg.review_link || gbp?.review_link
@@ -99,6 +97,8 @@ async function run(req: NextRequest) {
           await db.from('review_requests').update({ status: 'failed', error: 'No Google review link configured' }).eq('id', rr.id)
           continue
         }
+        const siteBase = String(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
+        const trackedLink = siteBase ? `${siteBase}/r/${rr.id}` : link
 
         // Atomically claim this request BEFORE sending, so two overlapping cron
         // runs (or a retry) can't each send it: flip pending → sending and only
@@ -126,7 +126,7 @@ async function run(req: NextRequest) {
         const text = template
           .replace(/\{name\}/g, name)
           .replace(/\{business\}/g, business)
-          .replace(/\{link\}/g, link)
+          .replace(/\{link\}/g, trackedLink)
 
         const channels = cfg.channels || { chat: true }
 

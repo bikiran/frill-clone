@@ -7295,6 +7295,32 @@ export default function InboxPage() {
 
             {/* Messages */}
             <div ref={messagesScrollRef} className="inbox-messages" style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14, scrollBehavior: 'auto' }}>
+              {/* AI-detected action items → draft tasks. Pinned to the TOP of the
+                  thread (sticky) so it never sits over the newest messages at the
+                  bottom, and stays visible as you scroll. Mirrored in Timeline. */}
+              {aiTodos.length > 0 && !tasks.some((tk: any) => {
+                // Server-backed suppression: once these action items have been
+                // turned into tasks (or the panel was created/dismissed before),
+                // don't nag again — on any device, not just this browser.
+                if (tk.source === 'ai_summary' || tk.source === 'call_summary') return true
+                const tx = String(tk.text || tk.title || '').trim().toLowerCase()
+                if (!tx) return false
+                return aiTodos.some((td: any) => { const s = String(td.text || '').trim().toLowerCase(); return !!s && (tx === s || tx.includes(s) || s.includes(tx)) })
+              }) && (
+                <div style={{ position: 'sticky', top: 0, zIndex: 6, maxWidth: 560, width: '100%', margin: '0 auto 4px', alignSelf: 'center', background: '#faf5ff', border: '1px solid #ede9fe', borderRadius: 14, padding: '4px 14px 14px', boxShadow: '0 6px 16px rgba(76,29,149,0.12)' }}>
+                  <DraftTasks
+                    todos={aiTodos.map((t: any) => t.text).filter(Boolean)}
+                    source="ai_summary" storageKey={`colvy-conv-tasks-${selected.id}`}
+                    conversationId={selected.id} companyId={companyId || undefined}
+                    teamMembers={teamMembers} outlets={outlets}
+                    defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null}
+                    actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }}
+                    onCreated={() => { if (selected) loadConversationExtras(selected.id) }}
+                    onClosedChange={setChatDraftsClosed}
+                    bare
+                  />
+                </div>
+              )}
               {(() => {
                 const list = msgSearch ? messages.filter(m => (m.content || '').toLowerCase().includes(msgSearch.toLowerCase())) : messages
                 // Flat list of all images/videos in the thread (for the gallery),
@@ -8013,32 +8039,6 @@ export default function InboxPage() {
                 )
               })]
               })()}
-              {/* AI-detected action items for this chat → draft tasks, inline in
-                  the thread (same panel as the call card, and mirrored in the
-                  Timeline tab). Only when the AI summary found action items. */}
-              {aiTodos.length > 0 && !tasks.some((tk: any) => {
-                // Server-backed suppression: once these action items have been
-                // turned into tasks (or the panel was created/dismissed before),
-                // don't nag again — on any device, not just this browser.
-                if (tk.source === 'ai_summary' || tk.source === 'call_summary') return true
-                const tx = String(tk.text || tk.title || '').trim().toLowerCase()
-                if (!tx) return false
-                return aiTodos.some((td: any) => { const s = String(td.text || '').trim().toLowerCase(); return !!s && (tx === s || tx.includes(s) || s.includes(tx)) })
-              }) && (
-                <div style={{ maxWidth: 560, width: '100%', margin: '4px auto 0', background: '#faf5ff', border: '1px solid #ede9fe', borderRadius: 14, padding: '4px 14px 14px' }}>
-                  <DraftTasks
-                    todos={aiTodos.map((t: any) => t.text).filter(Boolean)}
-                    source="ai_summary" storageKey={`colvy-conv-tasks-${selected.id}`}
-                    conversationId={selected.id} companyId={companyId || undefined}
-                    teamMembers={teamMembers} outlets={outlets}
-                    defaultLocationId={(selected as any)?.assigned_location_id || (selected as any)?.location_id || null}
-                    actor={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent' }}
-                    onCreated={() => { if (selected) loadConversationExtras(selected.id) }}
-                    onClosedChange={setChatDraftsClosed}
-                    bare
-                  />
-                </div>
-              )}
               <div ref={messagesEndRef} />
             </div>
 
