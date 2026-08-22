@@ -543,7 +543,7 @@ export default function OrdersPage() {
             Create Order
           </button>
           {kpi('All Orders', counts.all, 'var(--ink)')}
-          {kpi('Awaiting', (counts.awaiting_shipment || 0) + (counts.packed || 0), ACCENT)}
+          {kpi('Awaiting', (counts.awaiting_shipment || 0) + (counts.packed || 0) + (counts.click_and_collect || 0), ACCENT)}
           {kpi('On Hold', counts.on_hold || 0, '#d97706')}
           {kpi('Shipped', counts.shipped || 0, '#16a34a')}
           {kpi('Alerts', counts.alerts || 0, '#dc2626')}
@@ -895,14 +895,22 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
   // Ship-from locations.
   const [locations, setLocations] = useState<any[]>([])
   const [fromLocationId, setFromLocationId] = useState<string>('')
-  // Weight (kg + g) and parcel.
-  const [kg, setKg] = useState<string>('')
-  const [g, setG] = useState<string>('')
+  // Weight (kg + g) and parcel — prefilled from a previously saved value.
+  const savedMeta = order.metadata || {}
+  const savedG: number = Number(savedMeta.ship_weight_grams) || 0
+  const savedParcel = savedMeta.ship_parcel || null
+  const [kg, setKg] = useState<string>(savedG ? String(Math.floor(savedG / 1000)) : '')
+  const [g, setG] = useState<string>(savedG ? String(savedG % 1000) : '')
   const [pkgPreset, setPkgPreset] = useState<string>('custom')
-  const [dims, setDims] = useState({ length: '', width: '', height: '' })
+  const [dims, setDims] = useState({
+    length: savedParcel?.length ? String(savedParcel.length) : '',
+    width: savedParcel?.width ? String(savedParcel.width) : '',
+    height: savedParcel?.height ? String(savedParcel.height) : '',
+  })
   // Rates.
   const [rates, setRates] = useState<any[]>([])
   const [ratesConfigured, setRatesConfigured] = useState<boolean | null>(null)
+  const [ratesError, setRatesError] = useState<string>('')
   const [loadingRates, setLoadingRates] = useState(false)
   const [selRate, setSelRate] = useState<number>(-1)
   // Manual fallback (no Starshipit).
@@ -936,7 +944,7 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
 
   const fetchRates = useCallback(async () => {
     if (weightGrams <= 0) { setRates([]); setSelRate(-1); return }
-    setLoadingRates(true)
+    setLoadingRates(true); setRatesError('')
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
@@ -949,8 +957,8 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
       setRatesConfigured(!!j.configured)
       setRates(Array.isArray(j.rates) ? j.rates : [])
       setSelRate(j.rates?.length ? 0 : -1)  // cheapest (API sorts ascending)
-      if (j.configured && !j.rates?.length && j.error) onFlash(`Rates: ${j.error}`)
-    } catch (e: any) { onFlash(`Rates error: ${e?.message || e}`) }
+      if (j.error) setRatesError(String(j.error))
+    } catch (e: any) { setRatesError(e?.message || String(e)) }
     finally { setLoadingRates(false) }
   }, [companyId, order.id, weightGrams, JSON.stringify(parcel)])
 
@@ -958,6 +966,20 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
   useEffect(() => {
     if (weightGrams <= 0) { setRates([]); setSelRate(-1); return }
     const t = setTimeout(() => { fetchRates() }, 550)
+    return () => clearTimeout(t)
+  }, [weightGrams, JSON.stringify(parcel)]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Remember the entered weight + parcel on the order, so it's prefilled next
+  // time this order's shipment is configured. Debounced; best-effort.
+  useEffect(() => {
+    if (weightGrams <= 0) return
+    const t = setTimeout(async () => {
+      try {
+        const meta = { ...(order.metadata || {}), ship_weight_grams: weightGrams, ship_parcel: parcel }
+        await (supabase.from('orders') as any).update({ metadata: meta }).eq('id', order.id)
+        order.metadata = meta // keep the in-memory row in sync for this session
+      } catch {}
+    }, 900)
     return () => clearTimeout(t)
   }, [weightGrams, JSON.stringify(parcel)]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1084,7 +1106,21 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
             ) : loadingRates ? (
               <div style={{ padding: '12px', borderRadius: 9, background: 'var(--canvas)', fontSize: 12.5, color: 'var(--slate)', textAlign: 'center' }}>Fetching live rates…</div>
             ) : rates.length === 0 ? (
-              <div style={{ padding: '12px', borderRadius: 9, background: '#fef3c7', color: '#92400e', fontSize: 12.5 }}>No rates returned for this parcel. Check the destination address and weight, or connect the carrier in Starshipit.</div>
+              <>
+                <div style={{ padding: '12px', borderRadius: 9, background: '#fef3c7', color: '#92400e', fontSize: 12.5, lineHeight: 1.5, marginBottom: 10 }}>
+                  {ratesError
+                    ? <><strong>Starshipit:</strong> {ratesError}</>
+                    : 'No rates returned for this parcel.'}
+                  <div style={{ marginTop: 6, fontSize: 11.5, color: '#a16207' }}>In Starshipit, check: a <strong>sender/origin address</strong> is set (Settings → Locations), at least one <strong>carrier is connected</strong> (Settings → Couriers), and the destination has a valid postcode.</div>
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--slate)', marginBottom: 6 }}>Pick a carrier manually to print a label now:</div>
+                <select value={carrier} onChange={e => setCarrier(e.target.value)} style={{ ...field, marginBottom: 8 }}>
+                  {CARRIERS.map(c => <option key={c} value={c}>{CARRIER_LABEL[c] || c}</option>)}
+                </select>
+                <select value={service} onChange={e => setService(e.target.value)} style={field}>
+                  {(CARRIER_SERVICES[carrier] || ['Standard']).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 220, overflowY: 'auto' }}>
                 {rates.map((r, i) => (
