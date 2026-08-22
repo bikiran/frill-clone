@@ -865,101 +865,266 @@ export function TagMenu({ tags, accent, align = 'left', onPick, onClose }: { tag
 }
 
 // ── Create-label modal — records a shipment, marks shipped, prints label ──────
+// Parcel presets so a packer picks a box instead of typing three numbers. Sizes
+// in cm — the common Australia Post satchels/boxes plus a Custom escape hatch.
+const PACKAGE_PRESETS: { key: string; label: string; dims: { length: number; width: number; height: number } | null }[] = [
+  { key: 'custom', label: 'Custom size', dims: null },
+  { key: 'satchel_s', label: 'Satchel — Small (DL)', dims: { length: 22, width: 12, height: 4 } },
+  { key: 'satchel_m', label: 'Satchel — Medium (A4)', dims: { length: 32, width: 24, height: 5 } },
+  { key: 'satchel_l', label: 'Satchel — Large (A3)', dims: { length: 40, width: 30, height: 6 } },
+  { key: 'box_s', label: 'Box — Small', dims: { length: 22, width: 16, height: 10 } },
+  { key: 'box_m', label: 'Box — Medium', dims: { length: 35, width: 25, height: 20 } },
+  { key: 'box_l', label: 'Box — Large', dims: { length: 45, width: 35, height: 30 } },
+]
+
+// Guess our internal carrier key from a Starshipit rate's carrier display name,
+// so a chosen live rate still stores a clean carrier + tracking link.
+function guessCarrierKey(name?: string | null): string {
+  const s = String(name || '').toLowerCase()
+  if (s.includes('startrack') || s.includes('star track')) return 'startrack'
+  if (s.includes('aus') || s.includes('auspost') || (s.includes('post') && !s.includes('star'))) return 'australia_post'
+  if (s.includes('global') || s.includes('tge') || s.includes('team')) return 'team_global_express'
+  if (s.includes('sendle')) return 'sendle'
+  if (s.includes('aramex')) return 'aramex'
+  if (s.includes('dhl')) return 'dhl'
+  return 'custom'
+}
+
 export function CreateLabelModal({ order, companyId, accent, onClose, onDone, onFlash, onPrintLabel }: any) {
   const ACCENT = accent || 'var(--coral)'
+  // Ship-from locations.
+  const [locations, setLocations] = useState<any[]>([])
+  const [fromLocationId, setFromLocationId] = useState<string>('')
+  // Weight (kg + g) and parcel.
+  const [kg, setKg] = useState<string>('')
+  const [g, setG] = useState<string>('')
+  const [pkgPreset, setPkgPreset] = useState<string>('custom')
+  const [dims, setDims] = useState({ length: '', width: '', height: '' })
+  // Rates.
+  const [rates, setRates] = useState<any[]>([])
+  const [ratesConfigured, setRatesConfigured] = useState<boolean | null>(null)
+  const [loadingRates, setLoadingRates] = useState(false)
+  const [selRate, setSelRate] = useState<number>(-1)
+  // Manual fallback (no Starshipit).
   const [carrier, setCarrier] = useState<string>(order.carrier || 'australia_post')
   const [service, setService] = useState<string>(CARRIER_SERVICES[order.carrier || 'australia_post']?.[0] || '')
-  const [weight, setWeight] = useState<string>('') // kg
-  const [dims, setDims] = useState({ length: '', width: '', height: '' })
   const [markShipped, setMarkShipped] = useState(true)
   const [busy, setBusy] = useState(false)
 
+  const weightGrams = Math.round((Number(kg) || 0) * 1000 + (Number(g) || 0))
+  const parcel = (dims.length || dims.width || dims.height)
+    ? { length: Number(dims.length) || undefined, width: Number(dims.width) || undefined, height: Number(dims.height) || undefined }
+    : null
+
   useEffect(() => { setService(CARRIER_SERVICES[carrier]?.[0] || '') }, [carrier])
 
+  // Load ship-from locations (primary first).
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from('company_locations').select('id, label, suburb, state, is_primary').eq('company_id', companyId).order('is_primary', { ascending: false })
+      const locs = (data as any[]) || []
+      setLocations(locs)
+      if (locs.length) setFromLocationId(String(order.store_location_id || locs[0].id))
+    })()
+  }, [companyId, order.store_location_id])
+
+  const applyPreset = (key: string) => {
+    setPkgPreset(key)
+    const p = PACKAGE_PRESETS.find(x => x.key === key)
+    if (p?.dims) setDims({ length: String(p.dims.length), width: String(p.dims.width), height: String(p.dims.height) })
+  }
+
+  const fetchRates = useCallback(async () => {
+    if (weightGrams <= 0) { setRates([]); setSelRate(-1); return }
+    setLoadingRates(true)
+    try {
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token
+      const res = await fetch('/api/orders/rates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ companyId, orderId: order.id, weightGrams, parcel }),
+      })
+      const j = await res.json().catch(() => ({}))
+      setRatesConfigured(!!j.configured)
+      setRates(Array.isArray(j.rates) ? j.rates : [])
+      setSelRate(j.rates?.length ? 0 : -1)  // cheapest (API sorts ascending)
+      if (j.configured && !j.rates?.length && j.error) onFlash(`Rates: ${j.error}`)
+    } catch (e: any) { onFlash(`Rates error: ${e?.message || e}`) }
+    finally { setLoadingRates(false) }
+  }, [companyId, order.id, weightGrams, JSON.stringify(parcel)])
+
+  // Auto-fetch rates shortly after weight/parcel settle.
+  useEffect(() => {
+    if (weightGrams <= 0) { setRates([]); setSelRate(-1); return }
+    const t = setTimeout(() => { fetchRates() }, 550)
+    return () => clearTimeout(t)
+  }, [weightGrams, JSON.stringify(parcel)]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const chosen = selRate >= 0 ? rates[selRate] : null
+  const costLabel = chosen?.price != null ? `$${Number(chosen.price).toFixed(2)}` : '$—'
+  const etaLabel = chosen?.eta || '—'
+
   const submit = async () => {
+    if (weightGrams <= 0) { onFlash('Please enter a weight.'); return }
     setBusy(true)
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
-      const parcel = (dims.length || dims.width || dims.height)
-        ? { length: Number(dims.length) || undefined, width: Number(dims.width) || undefined, height: Number(dims.height) || undefined }
-        : null
+      const payload: any = { companyId, orderId: order.id, weightGrams, parcel, markShipped, fromLocationId: fromLocationId || undefined }
+      if (chosen) {
+        payload.carrier = guessCarrierKey(chosen.carrier)
+        payload.service = chosen.service || null
+        payload.serviceCode = chosen.serviceCode || null
+        payload.cost = chosen.price ?? null
+      } else {
+        payload.carrier = carrier
+        payload.service = service
+      }
       const res = await fetch('/api/orders/label', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ companyId, orderId: order.id, carrier, service, weightGrams: weight ? Math.round(Number(weight) * 1000) : null, parcel, markShipped }),
+        body: JSON.stringify(payload),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok || j.error) { onFlash(`Label failed: ${j.error || res.status}`); setBusy(false); return }
       onDone(j.patch || {})
       onFlash(j.live ? 'Label purchased' : 'Label created')
-      if (onPrintLabel) onPrintLabel(order.id)
+      // Live carriers return a real PDF — open it directly; otherwise our print route.
+      if (j.label?.labelUrl) { try { window.open(j.label.labelUrl, '_blank') } catch {} }
+      else if (onPrintLabel) onPrintLabel(order.id)
     } catch (e: any) { onFlash(`Label error: ${e?.message || e}`); setBusy(false) }
   }
 
-  const field: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'var(--card,#fff)', color: 'var(--ink)' }
+  const field: React.CSSProperties = { width: '100%', padding: '9px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'var(--card,#fff)', color: 'var(--ink)' }
   const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 5 }
   const addr = order.shipping_address || {}
   const hasAddr = addr.address_1 || addr.city
-  const isLiveCarrier = false // no carrier API wired yet — printable label path
+  const noRates = ratesConfigured === false // Starshipit not connected → manual picker
 
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 4600 }} />
-      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 440, maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto', background: 'var(--card, #fff)', borderRadius: 16, zIndex: 4601, boxShadow: '0 24px 60px rgba(0,0,0,0.28)' }}>
-        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 470, maxWidth: '94vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column', background: 'var(--card, #fff)', borderRadius: 16, zIndex: 4601, boxShadow: '0 24px 60px rgba(0,0,0,0.28)' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flex: '0 0 auto' }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Create Label</h2>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Configure Shipment</h2>
             <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Order {order.order_number} · {order.customer_name}</p>
           </div>
           <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--slate)', cursor: 'pointer' }}>✕</button>
         </div>
 
-        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', flex: '1 1 auto' }}>
           {!hasAddr && <div style={{ padding: '9px 12px', borderRadius: 9, background: '#fef3c7', color: '#92400e', fontSize: 12.5 }}>No shipping address on this order — the label will print without a delivery address.</div>}
 
+          {/* Ship From */}
           <div>
-            <label style={lbl}>Carrier</label>
-            <select value={carrier} onChange={e => setCarrier(e.target.value)} style={field}>
-              {CARRIERS.map(c => <option key={c} value={c}>{CARRIER_LABEL[c] || c}</option>)}
-            </select>
+            <label style={lbl}>Ship From</label>
+            {locations.length > 1 ? (
+              <select value={fromLocationId} onChange={e => setFromLocationId(e.target.value)} style={field}>
+                {locations.map(l => <option key={l.id} value={l.id}>{l.label || l.suburb || 'Location'}{l.suburb ? ` · ${l.suburb}` : ''}</option>)}
+              </select>
+            ) : (
+              <div style={{ ...field, display: 'flex', alignItems: 'center', color: 'var(--ink)' }}>{locations[0]?.label || locations[0]?.suburb || 'Primary location'}</div>
+            )}
           </div>
+
+          {/* Weight */}
           <div>
-            <label style={lbl}>Service</label>
-            <select value={service} onChange={e => setService(e.target.value)} style={field}>
-              {(CARRIER_SERVICES[carrier] || ['Standard']).map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ flex: 1 }}>
-              <label style={lbl}>Weight (kg)</label>
-              <input type="number" min="0" step="0.01" value={weight} onChange={e => setWeight(e.target.value)} placeholder="0.50" style={field} />
-            </div>
-            <div style={{ flex: 2 }}>
-              <label style={lbl}>Dimensions (cm)</label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {(['length', 'width', 'height'] as const).map(k => (
-                  <input key={k} type="number" min="0" value={(dims as any)[k]} onChange={e => setDims(d => ({ ...d, [k]: e.target.value }))} placeholder={k[0].toUpperCase()} style={{ ...field, padding: '8px 6px', textAlign: 'center' }} />
-                ))}
+            <label style={lbl}>Weight</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <input type="number" min="0" step="0.1" value={kg} onChange={e => setKg(e.target.value)} placeholder="0" style={{ ...field, paddingRight: 30 }} />
+                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--slate)', pointerEvents: 'none' }}>kg</span>
+              </div>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <input type="number" min="0" step="1" value={g} onChange={e => setG(e.target.value)} placeholder="0" style={{ ...field, paddingRight: 26 }} />
+                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--slate)', pointerEvents: 'none' }}>g</span>
               </div>
             </div>
+          </div>
+
+          {/* Package + size */}
+          <div>
+            <label style={lbl}>Package</label>
+            <select value={pkgPreset} onChange={e => applyPreset(e.target.value)} style={field}>
+              {PACKAGE_PRESETS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Size (cm)</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(['length', 'width', 'height'] as const).map(k => (
+                <div key={k} style={{ position: 'relative', flex: 1 }}>
+                  <input type="number" min="0" value={(dims as any)[k]} onChange={e => { setPkgPreset('custom'); setDims(d => ({ ...d, [k]: e.target.value })) }} placeholder={k[0].toUpperCase()} style={{ ...field, padding: '9px 6px', textAlign: 'center' }} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Service / live rates */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+              <label style={{ ...lbl, marginBottom: 0 }}>Service</label>
+              {!noRates && <button type="button" onClick={fetchRates} disabled={weightGrams <= 0 || loadingRates} style={{ background: 'none', border: 'none', color: ACCENT, fontSize: 12, fontWeight: 700, cursor: weightGrams <= 0 ? 'default' : 'pointer', opacity: weightGrams <= 0 ? 0.5 : 1 }}>{loadingRates ? 'Fetching…' : 'Browse rates ↻'}</button>}
+            </div>
+
+            {noRates ? (
+              <>
+                <select value={carrier} onChange={e => setCarrier(e.target.value)} style={{ ...field, marginBottom: 8 }}>
+                  {CARRIERS.map(c => <option key={c} value={c}>{CARRIER_LABEL[c] || c}</option>)}
+                </select>
+                <select value={service} onChange={e => setService(e.target.value)} style={field}>
+                  {(CARRIER_SERVICES[carrier] || ['Standard']).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>Connect Starshipit to see live prices from every carrier. Until then this prints a scannable label with a tracking number.</p>
+              </>
+            ) : weightGrams <= 0 ? (
+              <div style={{ padding: '12px', borderRadius: 9, background: 'var(--canvas)', fontSize: 12.5, color: 'var(--slate)', textAlign: 'center' }}>Enter a weight to see live rates.</div>
+            ) : loadingRates ? (
+              <div style={{ padding: '12px', borderRadius: 9, background: 'var(--canvas)', fontSize: 12.5, color: 'var(--slate)', textAlign: 'center' }}>Fetching live rates…</div>
+            ) : rates.length === 0 ? (
+              <div style={{ padding: '12px', borderRadius: 9, background: '#fef3c7', color: '#92400e', fontSize: 12.5 }}>No rates returned for this parcel. Check the destination address and weight, or connect the carrier in Starshipit.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 220, overflowY: 'auto' }}>
+                {rates.map((r, i) => (
+                  <button type="button" key={i} onClick={() => setSelRate(i)} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                    border: `1.5px solid ${selRate === i ? ACCENT : 'var(--border)'}`, background: selRate === i ? 'color-mix(in srgb, var(--accent, #2563eb) 7%, transparent)' : 'var(--card,#fff)',
+                  }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.service || r.carrier || 'Service'}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{[r.carrier, r.eta].filter(Boolean).join(' · ') || '—'}</div>
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink)', whiteSpace: 'nowrap' }}>{r.price != null ? `$${Number(r.price).toFixed(2)}` : '—'}</div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)', cursor: 'pointer' }}>
             <input type="checkbox" checked={markShipped} onChange={e => setMarkShipped(e.target.checked)} />
             Mark order as Shipped after creating the label
           </label>
-
-          <div style={{ padding: '9px 12px', borderRadius: 9, background: 'var(--canvas)', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>
-            {carrier === 'team_global_express'
-              ? 'Team Global Express: prints a scannable label now. Live consignment lodging switches on once TGE onboarding is complete and credentials are set.'
-              : 'Generates a scannable printable label and tracking number. Live carrier lodging switches on when that carrier’s account is connected.'}
-          </div>
         </div>
 
-        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" onClick={onClose} style={{ padding: '9px 16px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-          <button type="button" onClick={submit} disabled={busy} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: ACCENT, color: '#fff', fontSize: 13, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>{busy ? 'Creating…' : isLiveCarrier ? 'Buy Label' : 'Create & Print'}</button>
+        {/* Cost review + action */}
+        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', flex: '0 0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Cost review</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.1 }}>{costLabel}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Est. arrival</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{etaLabel}</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button type="button" onClick={onClose} style={{ padding: '11px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+            <button type="button" onClick={submit} disabled={busy} style={{ flex: 1, padding: '11px 18px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 13.5, fontWeight: 800, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>{busy ? 'Creating…' : 'Create + Print Label'}</button>
+          </div>
         </div>
       </div>
     </>
