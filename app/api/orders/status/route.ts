@@ -46,14 +46,22 @@ export async function POST(req: NextRequest) {
 
     if (!result.ok || !result.order) return NextResponse.json({ error: result.error }, { status: 502 })
 
-    // Post a system note in the conversation
+    // Post a system note in the conversation — but only once. A double-click or a
+    // retriggered status change was inserting the same pill twice, so skip it if
+    // an identical system line already landed on this thread in the last 10 min.
     if (conversationId) {
       try {
         const label = status === 'cancelled' ? 'cancelled' : status === 'completed' ? 'marked paid & completed' : `set to ${status}`
-        await db.from('messages').insert({
-          conversation_id: conversationId, company_id: companyId, sender_type: 'system',
-          content: `🛒 Order #${result.order.number || orderId} ${label}.`, is_read: true,
-        })
+        const content = `🛒 Order #${result.order.number || orderId} ${label}.`
+        const { data: dup } = await db.from('messages').select('id')
+          .eq('conversation_id', conversationId).eq('sender_type', 'system').eq('content', content)
+          .gte('created_at', new Date(Date.now() - 10 * 60 * 1000).toISOString()).limit(1)
+        if (!dup || dup.length === 0) {
+          await db.from('messages').insert({
+            conversation_id: conversationId, company_id: companyId, sender_type: 'system',
+            content, is_read: true,
+          })
+        }
       } catch {}
     }
 
