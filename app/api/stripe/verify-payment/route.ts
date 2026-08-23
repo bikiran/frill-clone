@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
+import { confirmChatPayment } from '@/lib/chat-payment-confirm'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,30 +52,15 @@ export async function POST(req: NextRequest) {
 
         if (!isPaid) { results.push({ id: pay.id, status: session?.payment_status || 'unpaid' }); continue }
 
-        // Mark paid + post the confirmation into the chat (same as the webhook).
-        await db.from('chat_payments').update({
-          status: 'paid', paid_at: new Date().toISOString(),
-        }).eq('id', pay.id)
+        // Mark paid + flip the card + post confirmation + push — shared with the
+        // webhook so the two paths confirm exactly once (whichever wins the race).
+        const res = await confirmChatPayment(db, {
+          id: pay.id, company_id: pay.company_id, conversation_id: pay.conversation_id,
+          message_id: pay.message_id, amount_cents: pay.amount_cents,
+        }, { receiptUrl: session?.receipt_url || null, paymentIntent: (session?.payment_intent as string) || null })
 
-        if (pay.message_id) {
-          const { data: m } = await db.from('messages').select('message_payload').eq('id', pay.message_id).maybeSingle()
-          await db.from('messages').update({
-            message_payload: { ...((m as any)?.message_payload || {}), status: 'paid' },
-          }).eq('id', pay.message_id)
-        }
-
-        if (pay.conversation_id) {
-          await db.from('messages').insert({
-            conversation_id: pay.conversation_id,
-            company_id: pay.company_id,
-            sender_type: 'system',
-            content: `✅ Payment received${pay.amount_cents ? ` — $${(pay.amount_cents / 100).toFixed(2)} AUD` : ''}.`,
-            metadata: { payment_confirmed: true, payment_id: pay.id },
-          })
-        }
-
-        updated++
-        results.push({ id: pay.id, status: 'paid' })
+        if (res.confirmed) updated++
+        results.push({ id: pay.id, status: res.confirmed ? 'paid' : 'already-confirmed' })
       } catch (e: any) {
         results.push({ id: pay.id, error: e.message })
       }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logWebhookEvent } from '@/lib/webhook-log'
+import { confirmChatPayment } from '@/lib/chat-payment-confirm'
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || ''
 
@@ -88,19 +89,21 @@ export async function POST(req: NextRequest) {
         // In-chat payment (on a connected account) — mark paid + confirm in chat
         if (meta.kind === 'chat_payment' && meta.conversationId) {
           const receiptUrl = session.receipt_url || null
-          await (supabase as any).from('chat_payments').update({
-            status: 'paid', paid_at: new Date().toISOString(),
-            stripe_payment_intent: session.payment_intent || null,
-            receipt_url: receiptUrl,
-          }).eq('stripe_session_id', session.id)
-          // Update the payment message's payload to 'paid'
-          const { data: pay } = await (supabase as any).from('chat_payments').select('message_id, amount_cents').eq('stripe_session_id', session.id).maybeSingle()
+          // Load the row, then confirm through the shared helper (claims the
+          // pending→paid transition once, flips the card, posts the confirmation
+          // and pushes a notification). If verify-payment already confirmed it,
+          // confirmChatPayment returns confirmed:false and we skip the rest.
+          const { data: pay } = await (supabase as any).from('chat_payments')
+            .select('id, company_id, conversation_id, message_id, amount_cents').eq('stripe_session_id', session.id).maybeSingle()
           let checkoutUrl = ''
           if (pay?.message_id) {
             const { data: m } = await (supabase as any).from('messages').select('message_payload').eq('id', pay.message_id).maybeSingle()
             checkoutUrl = m?.message_payload?.checkout_url || ''
-            await (supabase as any).from('messages').update({ message_payload: { ...(m?.message_payload || {}), status: 'paid' } }).eq('id', pay.message_id)
           }
+          const confirmRes = pay
+            ? await confirmChatPayment(supabase, pay, { receiptUrl, paymentIntent: session.payment_intent || null })
+            : { confirmed: false }
+          if (!confirmRes.confirmed) break
           // If this payment was for a WooCommerce order, mark it processing.
           if (meta.orderId) {
             try {
@@ -122,12 +125,8 @@ export async function POST(req: NextRequest) {
               }
             } catch {}
           }
-          // Post a confirmation system message
-          await (supabase as any).from('messages').insert({
-            conversation_id: meta.conversationId, company_id: meta.companyId,
-            sender_type: 'system',
-            content: `✅ Payment received${pay?.amount_cents ? ` — $${(pay.amount_cents / 100).toFixed(2)} AUD` : ''}. A receipt has been emailed to the customer.`,
-          })
+          // (Card flip, confirmation message and push notification are handled
+          // by confirmChatPayment above.)
 
           // Credit this payment link in Link Reports. The link WAS the payment,
           // so the revenue is directly attributable — not merely "influenced".
