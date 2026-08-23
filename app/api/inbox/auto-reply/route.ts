@@ -23,6 +23,24 @@ export async function POST(req: NextRequest) {
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     if (conv.auto_replied) return NextResponse.json({ ok: true, skipped: 'already replied' })
 
+    // Don't fire the "Thank you for contacting us" auto-reply when a human has
+    // ALREADY texted the customer in this thread (e.g. the agent proactively
+    // reached out, or this is a returning customer we've spoken to before). It
+    // reads as a robotic non-sequitur after a real reply. Auto messages
+    // (metadata.auto) don't count — only a genuine agent message suppresses it.
+    try {
+      const { data: priorAgent } = await db.from('messages')
+        .select('metadata')
+        .eq('conversation_id', conversationId)
+        .eq('sender_type', 'agent')
+        .limit(30)
+      const humanReplied = (priorAgent || []).some((m: any) => !(m?.metadata && m.metadata.auto === true))
+      if (humanReplied) {
+        await db.from('conversations').update({ auto_replied: true }).eq('id', conversationId)
+        return NextResponse.json({ ok: true, skipped: 'agent already replied' })
+      }
+    } catch { /* best-effort — fall through to the normal auto-reply */ }
+
     const { data: company } = await db.from('companies').select('*').eq('id', conv.company_id).maybeSingle()
     const businessName = company?.name || 'us'
 
