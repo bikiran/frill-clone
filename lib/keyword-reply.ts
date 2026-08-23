@@ -54,6 +54,58 @@ function keywordScore(keyword: string, msgExpanded: string, msgWords: string[]):
 }
 
 /**
+ * Intent gate: a keyword can appear in a message without the customer actually
+ * ASKING the question the rule answers (e.g. "move my order to you vs elsewhere,
+ * mostly bulk filter supplies" mentions nothing about our address, yet a loose
+ * "location" keyword could still fire). Before sending an automated reply, ask
+ * the model whether the customer is genuinely requesting/needing this info.
+ *
+ * Fail-open: if there's no API key or the check errors, we fall back to the
+ * lexical match (preserving the existing behaviour) rather than silently
+ * dropping a legitimate auto-reply.
+ */
+async function intentAllows(text: string, keywords: string[], reply: string): Promise<boolean> {
+  const key = process.env.ANTHROPIC_API_KEY
+  if (!key) return true
+  const topic = (keywords || []).filter(Boolean).join(', ')
+  const system =
+    'You gate an automated FAQ auto-reply. A business auto-reply rule fires on keywords, ' +
+    'but a keyword can appear in a message without the customer actually asking that question. ' +
+    'Given the customer\'s message, the rule\'s keywords, and the canned answer it would send, ' +
+    'decide whether the customer is genuinely ASKING FOR or NEEDS this information right now. ' +
+    'Answer with ONLY "YES" or "NO". Answer NO when the topic is merely mentioned in passing, ' +
+    'is part of a different request, or the canned answer would not actually address what they said.'
+  const user =
+    `Rule keywords: ${topic || '(none)'}\n` +
+    `Canned answer it would send:\n"""${String(reply || '').slice(0, 600)}"""\n\n` +
+    `Customer message:\n"""${String(text || '').slice(0, 1500)}"""\n\n` +
+    'Should we send this auto-reply? Answer YES or NO.'
+  try {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 6000)
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: 5,
+        system,
+        messages: [{ role: 'user', content: user }],
+      }),
+      signal: ctrl.signal,
+    })
+    clearTimeout(t)
+    if (!res.ok) return true
+    const data = await res.json()
+    const out = (data.content || []).filter((c: any) => c.type === 'text').map((c: any) => c.text).join('').trim().toLowerCase()
+    if (!out) return true
+    return out.startsWith('y')
+  } catch {
+    return true
+  }
+}
+
+/**
  * Answer a common question automatically, if the customer's message matches a
  * keyword rule the business configured.
  *
@@ -111,8 +163,14 @@ export async function runKeywordReply(opts: {
     if (hit) return { matched: false, reason: 'already answered in this conversation' }
   }
 
-  const { data: company } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
   const reply: string = best.reply
+
+  // AI context check: only send if the customer is actually asking for what this
+  // rule answers — a lexical keyword hit alone isn't enough.
+  const allowed = await intentAllows(text, best.keywords || [], reply)
+  if (!allowed) return { matched: false, reason: 'keyword present but not asked in context' }
+
+  const { data: company } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
 
   await db.from('messages').insert({
     conversation_id: conversationId,
