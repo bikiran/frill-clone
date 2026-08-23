@@ -129,12 +129,17 @@ export async function captureContactFromSms(params: {
   // ── Existing contact: fill only empty fields, mark them as AI-added ─────────
   if (contactId) {
     try {
-      const { data: c } = await db.from('contacts').select('name, phone, suburb, email, ai_saved_fields').eq('id', contactId).maybeSingle()
+      const { data: c } = await db.from('contacts').select('name, phone, suburb, email, ai_saved_fields, ai_rejected').eq('id', contactId).maybeSingle()
       const patch: Record<string, any> = {}
       const marks = new Set<string>((c?.ai_saved_fields as string[]) || [])
-      if (!c?.name && details.name) { patch.name = details.name; marks.add('name') }
-      if (!c?.suburb && details.suburb) { patch.suburb = details.suburb; marks.add('suburb') }
-      if (!c?.email && details.email) { patch.email = details.email; marks.add('email') }
+      // Values a human already cleared/corrected for this field — never re-fill
+      // the same wrong value again (a DIFFERENT value is still allowed).
+      const rejected = (c?.ai_rejected && typeof c.ai_rejected === 'object') ? (c.ai_rejected as Record<string, any>) : {}
+      const isRejected = (field: string, val: string) =>
+        Array.isArray(rejected[field]) && rejected[field].some((v: any) => String(v).trim().toLowerCase() === val.trim().toLowerCase())
+      if (!c?.name && details.name && !isRejected('name', details.name)) { patch.name = details.name; marks.add('name') }
+      if (!c?.suburb && details.suburb && !isRejected('suburb', details.suburb)) { patch.suburb = details.suburb; marks.add('suburb') }
+      if (!c?.email && details.email && !isRejected('email', details.email)) { patch.email = details.email; marks.add('email') }
       if (!c?.phone && fromDigits) { patch.phone = from }
       if (Object.keys(patch).length) {
         patch.ai_saved_fields = Array.from(marks)
