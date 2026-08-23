@@ -166,7 +166,7 @@ export async function ingestInboundSms(params: {
   // Keyword auto-reply — texted back over whichever provider owns this company.
   try {
     await runKeywordReply({
-      conversationId: conv.id, text, companyId,
+      conversationId: conv.id, text, companyId, channel: 'sms',
       deliver: async (reply) => {
         const sender = await resolveSmsSender(db, companyId)
         if (sender) await sender.send({ to: from, text: reply })

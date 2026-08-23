@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
     try {
       const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
       await runKeywordReply({
-        conversationId: conv.id, text: content, companyId,
+        conversationId: conv.id, text: content, companyId, channel: 'email',
         deliver: async (reply) => {
           if (!process.env.RESEND_API_KEY) return
           const fromAddress = channel.from_address || channel.inbound_address
