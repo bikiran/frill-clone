@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createLabel, type Address } from '@/lib/label'
+import { getLabelUrl, voidLabel } from '@/lib/shipping'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,6 +65,42 @@ export async function POST(req: NextRequest) {
 
     const { data: order } = await db.from('orders').select('*').eq('id', orderId).eq('company_id', companyId).maybeSingle()
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+
+    // ── Reprint / Void an existing label ──────────────────────────────────────
+    if (body.action === 'reprint' || body.action === 'void') {
+      const { data: ship } = await db.from('order_shipments')
+        .select('*').eq('order_id', orderId).eq('company_id', companyId)
+        .neq('status', 'voided').order('created_at', { ascending: false }).limit(1).maybeSingle()
+      if (!ship) return NextResponse.json({ error: 'No label found for this order' }, { status: 404 })
+
+      if (body.action === 'reprint') {
+        // Prefer the stored PDF; fall back to fetching it from the provider.
+        let url: string | null = ship.label_url || null
+        if (!url && ship.provider_ref) { try { url = await getLabelUrl(ship.provider_ref) } catch {} }
+        if (!url) return NextResponse.json({ error: 'No printable label on file — use the packing-slip label instead', printable: true }, { status: 200 })
+        return NextResponse.json({ labelUrl: url })
+      }
+
+      // Void: cancel at the provider (best-effort), then revert the order.
+      let voided = true, message = 'Label voided'
+      if (ship.provider_ref) { const v = await voidLabel(ship.provider_ref); voided = v.voided; message = v.message }
+      // Even if the carrier can't confirm the void, mark it locally so the order
+      // can be re-labelled; surface the provider message to the operator.
+      try { await db.from('order_shipments').update({ status: 'voided', updated_at: new Date().toISOString() }).eq('id', ship.id) } catch {}
+      const patch: any = {
+        status: 'awaiting_shipment', fulfilment_status: 'unfulfilled',
+        tracking_number: null, tracking_url: null, shipped_at: null,
+        updated_at: new Date().toISOString(),
+      }
+      try { await db.from('orders').update(patch).eq('id', orderId) } catch {}
+      try {
+        await db.from('order_events').insert({
+          order_id: orderId, company_id: companyId, type: 'label_voided', actor_id: uid,
+          detail: `Label voided · ${ship.carrier || ''} ${ship.tracking_number || ''}`.trim(),
+        })
+      } catch {}
+      return NextResponse.json({ voided, message, patch })
+    }
 
     // Sender = the chosen ship-from location, else the company's primary one.
     const { data: co } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()

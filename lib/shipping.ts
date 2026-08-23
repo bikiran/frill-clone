@@ -57,3 +57,17 @@ export async function createShipment(opts: ShipmentOpts): Promise<ShipLabel | nu
   if (p === 'starshipit') return starshipit.createShipment(opts)
   return null
 }
+
+// Reprint: the label PDF URL for an existing provider label id.
+export async function getLabelUrl(providerRef: string): Promise<string | null> {
+  const p = activeProvider()
+  if (p === 'shipstation') return shipstation.getLabelUrl(providerRef)
+  return null
+}
+
+// Void (cancel) a purchased label at the provider.
+export async function voidLabel(providerRef: string): Promise<{ voided: boolean; message: string }> {
+  const p = activeProvider()
+  if (p === 'shipstation') return shipstation.voidLabel(providerRef)
+  return { voided: false, message: 'Voiding not supported for this provider' }
+}

@@ -21,7 +21,7 @@ function headers(): Record<string, string> {
   return { 'Content-Type': 'application/json', 'API-Key': process.env.SHIPSTATION_API_KEY || '' }
 }
 
-async function call(path: string, method: 'GET' | 'POST', body?: any): Promise<any> {
+async function call(path: string, method: 'GET' | 'POST' | 'PUT', body?: any): Promise<any> {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: headers(),
@@ -73,12 +73,16 @@ function packageOf(weightGrams?: number | null, parcel?: { length?: number; widt
   return pkg
 }
 
-// The account's connected carrier ids — required by /v2/rates. Cached briefly so
-// a burst of rate requests doesn't re-list every time.
+// The account's connected carrier ids — required by /v2/rates. The list rarely
+// changes, so cache it for the lifetime of a warm instance (6h) to keep rate
+// requests to a single ShipStation round trip. Setting SHIPSTATION_CARRIER_IDS
+// (comma-separated) skips the /carriers call entirely — the fastest path.
 let carrierCache: { ids: string[]; at: number } | null = null
 async function carrierIds(): Promise<string[]> {
+  const envIds = String(process.env.SHIPSTATION_CARRIER_IDS || '').split(',').map(s => s.trim()).filter(Boolean)
+  if (envIds.length) return envIds
   const now = Date.now()
-  if (carrierCache && now - carrierCache.at < 10 * 60 * 1000) return carrierCache.ids
+  if (carrierCache && now - carrierCache.at < 6 * 60 * 60 * 1000) return carrierCache.ids
   const json = await call('/carriers', 'GET')
   const ids = (Array.isArray(json?.carriers) ? json.carriers : []).map((c: any) => c.carrier_id).filter(Boolean)
   carrierCache = { ids, at: now }
@@ -176,5 +180,29 @@ export async function createShipment(opts: {
     cost: label.shipment_cost?.amount != null ? Number(label.shipment_cost.amount) : null,
     currency: label.shipment_cost?.currency ? String(label.shipment_cost.currency).toUpperCase() : (opts.currency || 'AUD'),
     providerRef: label.label_id || null,
+  }
+}
+
+// The label PDF URL for an existing label (reprint). ShipStation label PDFs are
+// stable, so the stored label_url is usually enough — this is the fallback when
+// it wasn't captured.
+export async function getLabelUrl(labelId: string): Promise<string | null> {
+  if (!shipstationConfigured() || !labelId) return null
+  try {
+    const j = await call(`/labels/${encodeURIComponent(labelId)}`, 'GET')
+    return j?.label_download?.pdf || j?.label_download?.href || null
+  } catch { return null }
+}
+
+// Void (cancel) a purchased label. ShipStation returns { approved, message }.
+export async function voidLabel(labelId: string): Promise<{ voided: boolean; message: string }> {
+  if (!shipstationConfigured()) return { voided: false, message: 'ShipStation not configured' }
+  if (!labelId) return { voided: false, message: 'No label id on this shipment' }
+  try {
+    const j = await call(`/labels/${encodeURIComponent(labelId)}/void`, 'PUT')
+    const approved = j?.approved === true || j?.status === 'voided'
+    return { voided: approved, message: j?.message || (approved ? 'Label voided' : 'Void not approved by carrier') }
+  } catch (e: any) {
+    return { voided: false, message: e?.message || 'Void failed' }
   }
 }
