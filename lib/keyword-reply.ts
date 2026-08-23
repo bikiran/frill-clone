@@ -122,6 +122,9 @@ export async function runKeywordReply(opts: {
   conversationId: string
   text: string
   companyId?: string
+  // The channel the reply is actually delivered on, so the thread record is
+  // labelled correctly (SMS/email/chat) instead of defaulting to Live Chat.
+  channel?: string
   deliver?: (reply: string) => Promise<void>
 }): Promise<KeywordReplyResult> {
   const { conversationId, text } = opts
@@ -179,6 +182,7 @@ export async function runKeywordReply(opts: {
     sender_name: company?.name || 'Support',
     content: reply,
     message_type: 'text',
+    delivery_channel: opts.channel || 'chat',
     metadata: { auto: true, keyword_reply: true, rule_id: best.id },
   })
 

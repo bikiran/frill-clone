@@ -1014,6 +1014,14 @@ export default function InboxPage() {
 
   const isWebChat = ['widget', 'chat'].includes(activeChannel)
 
+  // The name shown in the conversation header. On SMS/phone the "subject" is
+  // often a stale auto-detected name (e.g. from an AI guess), so clearing the
+  // contact's name left the wrong name stuck in the header. Don't use the
+  // subject as a person's name on those channels — fall back to Visitor, matching
+  // the info panel. Web/email subjects are real titles, so keep them there.
+  const nameFromSubject = ['sms', 'phone', 'voice'].includes(activeChannel) ? null : (selected as any)?.subject
+  const headerName = contact?.name || nameFromSubject || 'Visitor'
+
   // Is a payment in this thread still awaiting settlement?
   const hasPendingPayment = useMemo(
     () => messages.some((m: any) => m.message_type === 'payment' && m.message_payload?.status && m.message_payload.status !== 'paid'),
@@ -6989,7 +6997,7 @@ export default function InboxPage() {
               {/* Contact avatar — real profile photo (from Messenger/Instagram)
                   when we have it, initials otherwise. */}
               {(() => {
-                const nm = contact?.name || selected.subject || 'Visitor'
+                const nm = headerName
                 const av = (contact as any)?.avatar_url
                 return av ? (
                   <img src={av} alt={nm} referrerPolicy="no-referrer"
@@ -7004,7 +7012,7 @@ export default function InboxPage() {
               <div className="inbox-header-name" style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-                    {contact?.name || selected.subject || 'Visitor'}
+                    {headerName}
                   </span>
                   {contact?.id && (
                     <a href={`/admin/customers/profile?id=${contact.id}`}
@@ -9008,7 +9016,7 @@ export default function InboxPage() {
                             {aiFilled && (
                               <span className="ai-spark" title="" style={{ position: 'relative', display: 'inline-flex', flexShrink: 0, color: '#8b5cf6' }}>
                                 <AiSparkIcon size={13} />
-                                <span className="ai-tip" style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', background: '#1a1a1a', color: '#fff', fontSize: 11, fontWeight: 600, padding: '5px 9px', borderRadius: 7, opacity: 0, pointerEvents: 'none', transition: 'opacity 0.12s', zIndex: 20 }}>
+                                <span className="ai-tip" style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, whiteSpace: 'nowrap', background: '#1a1a1a', color: '#fff', fontSize: 11, fontWeight: 600, padding: '5px 9px', borderRadius: 7, opacity: 0, pointerEvents: 'none', transition: 'opacity 0.12s', zIndex: 20 }}>
                                   Colvy AI saved this {label.toLowerCase()}
                                 </span>
                               </span>

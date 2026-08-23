@@ -318,7 +318,7 @@ export async function POST(req: NextRequest) {
             .eq('company_id', companyId).maybeSingle()
 
           await runKeywordReply({
-            conversationId: conv.id, text, companyId,
+            conversationId: conv.id, text, companyId, channel: 'sms',
             deliver: async (reply) => {
               if (!integ?.api_key || !integ.phone_number) return
               const svc = new TelnyxService(integ.api_key)
