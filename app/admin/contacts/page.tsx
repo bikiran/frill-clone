@@ -182,25 +182,33 @@ export default function ContactsPage() {
       // Escape PostgREST's reserved characters so odd input can't break the query.
       const clean = (s: string) => s.replace(/[,()%\\]/g, ' ').trim()
       const cq = clean(q)
-      // A phone query and the way numbers are STORED rarely match character for
-      // character: someone types "0405 123 456" but the row holds "+61405123456".
-      // The Add-contact dedup already normalises to the last 9 digits — the list
-      // search must do the same, or it says "already exists" for a contact you
-      // genuinely can't find here. So when the query is essentially a number,
-      // match on its digit fragment instead of the literal typed text.
-      const digitsAll = cq.replace(/\D/g, '')
-      const looksLikePhone = digitsAll.length >= 6 && !/[a-zA-Z]/.test(cq)
-      if (looksLikePhone) {
-        const frag = digitsAll.slice(-9)   // last 9 digits — carrier-significant part
-        query = query.or(`phone.ilike.%${frag}%,phone.ilike.%${digitsAll}%`)
-      } else {
-        // Match each word of the query against name/email/phone, so searching a
-        // last name ("Wongyarit") or a full name ("Panadda Wongyarit") both work.
-        const words = cq.split(/\s+/).filter(Boolean)
-        for (const w of words) {
-          query = query.or(`name.ilike.%${w}%,email.ilike.%${w}%,phone.ilike.%${w}%`)
-        }
+
+      // IMPORTANT: build ONE `.or()` covering every field and every word.
+      // Chaining `.or()` per word (the old approach) AND-combines the groups in
+      // PostgREST, so "Panadda Wongyarit" required BOTH words to match — a record
+      // stored as just "Panadda", or a search that mixed a name with an email,
+      // returned nothing. That's exactly the "search can't find a contact that
+      // clearly exists" bug. A single or() with OR semantics is forgiving: any
+      // word matching any field surfaces the row.
+      const conds: string[] = []
+      // Whole query against name/email — handles multi-word names contiguously.
+      conds.push(`name.ilike.%${cq}%`, `email.ilike.%${cq}%`)
+      // Each word against name/email too, so partial or reordered names still hit.
+      for (const w of cq.split(/\s+/).filter(Boolean)) {
+        conds.push(`name.ilike.%${w}%`, `email.ilike.%${w}%`)
       }
+      // Phone: numbers are stored in varying formats ("+61405123456" vs
+      // "0405 123 456"), so match on the digit fragment the same way the
+      // Add-contact dedup does — otherwise the list says "already exists" for a
+      // contact you genuinely can't find here.
+      const digitsAll = cq.replace(/\D/g, '')
+      if (digitsAll.length >= 4) {
+        conds.push(`phone.ilike.%${digitsAll.slice(-9)}%`)
+      } else {
+        conds.push(`phone.ilike.%${cq}%`)
+      }
+      // De-dupe identical conditions to keep the URL compact.
+      query = query.or(Array.from(new Set(conds)).join(','))
     }
     // Paginated: Supabase caps a response at 1000 rows anyway, and loading
     // 12,000 contacts into the browser at once is slow and unusable. Range gives
