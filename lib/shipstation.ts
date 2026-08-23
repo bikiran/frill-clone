@@ -94,15 +94,31 @@ function shipFrom(from?: ShipAddress | null): ShipAddress {
   return from || { country: 'AU' }
 }
 
+// The account's carriers, for the Shipping settings page.
+export type ShipStationCarrier = { id: string; name: string; code: string | null; services: number; balance: number | null; currency: string | null }
+export async function listCarriers(): Promise<ShipStationCarrier[]> {
+  if (!shipstationConfigured()) return []
+  const json = await call('/carriers', 'GET')
+  return (Array.isArray(json?.carriers) ? json.carriers : []).map((c: any) => ({
+    id: c.carrier_id,
+    name: c.friendly_name || c.nickname || c.carrier_code || c.carrier_id,
+    code: c.carrier_code || null,
+    services: Array.isArray(c.services) ? c.services.length : 0,
+    balance: c.balance != null ? Number(c.balance) : null,
+    currency: c.balance_currency || null,
+  })).filter((c: ShipStationCarrier) => c.id)
+}
+
 export async function getRatesDetailed(opts: {
   to: ShipAddress
   from?: ShipAddress | null
   weightGrams?: number | null
   parcel?: { length?: number; width?: number; height?: number } | null
   currency?: string
+  carrierIds?: string[] | null   // restrict the quote to these carriers (from settings)
 }): Promise<{ rates: StarshipitRate[]; raw: any; request: any }> {
   if (!shipstationConfigured()) return { rates: [], raw: null, request: null }
-  const ids = await carrierIds()
+  const ids = (opts.carrierIds && opts.carrierIds.length) ? opts.carrierIds : await carrierIds()
   const body: any = {
     rate_options: { carrier_ids: ids },
     shipment: {

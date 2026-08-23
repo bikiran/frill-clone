@@ -71,11 +71,16 @@ export async function POST(req: NextRequest) {
       city: loc.suburb || loc.city || null, state: loc.state || null, postcode: loc.postcode || null, country: loc.country || 'AU', phone: loc.phone || null,
     } : null
 
+    // Restrict the quote to the carriers the business enabled in Shipping settings.
+    const { data: co2 } = await db.from('companies').select('shipping_settings').eq('id', companyId).maybeSingle()
+    const carrierIds: string[] = Array.isArray(co2?.shipping_settings?.enabled_carrier_ids) ? co2!.shipping_settings.enabled_carrier_ids : []
+
     const { rates, raw, request } = await getRatesDetailed({
       to, from,
       weightGrams: Number(body.weightGrams) || null,
       parcel: body.parcel || null,
       currency: order.currency || 'AUD',
+      carrierIds: carrierIds.length ? carrierIds : null,
     })
     // Cheapest first — that's the choice a packer wants by default.
     rates.sort((x, y) => (x.price ?? Infinity) - (y.price ?? Infinity))
