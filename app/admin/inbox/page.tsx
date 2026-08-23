@@ -4553,6 +4553,7 @@ export default function InboxPage() {
   // ── Assign ─────────────────────────────────────────────────────────────────
   const assignTo = async (member: TeamMember | null) => {
     if (!selected) return
+    const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'A team member'
     await (supabase as any).from('conversations').update({
       assigned_to: member?.user_id || null,
       assigned_name: member?.name || null,
@@ -4560,8 +4561,11 @@ export default function InboxPage() {
     }).eq('id', selected.id)
     setSelected(s => s ? { ...s, assigned_to: member?.user_id || null, assigned_name: member?.name || null, status: member ? 'assigned' : 'open' } : s)
     setShowAssignMenu(false)
-    if (member) logEvent('assigned', `Conversation assigned to ${member.name}`)
-    else logEvent('assigned', 'Conversation unassigned')
+    if (member) {
+      logEvent('assigned', member.user_id && member.user_id === user?.id
+        ? `${me} self-assigned this conversation`
+        : `${me} assigned this conversation to ${member.name}`)
+    } else logEvent('assigned', `${me} unassigned this conversation`)
     loadConversations()
   }
 
