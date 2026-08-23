@@ -145,12 +145,12 @@ export default function AddContactModal({
         let dupe: any = null
         if (em) {
           const { data } = await (supabase as any).from('contacts')
-            .select('id, name, email, phone, source').eq('company_id', companyId).ilike('email', em).limit(1)
+            .select('*').eq('company_id', companyId).ilike('email', em).limit(1)
           if (data?.length) dupe = data[0]
         }
         if (!dupe && digits.length >= 8) {
           const { data } = await (supabase as any).from('contacts')
-            .select('id, name, email, phone, source').eq('company_id', companyId).ilike('phone', `%${digits.slice(-9)}%`).limit(1)
+            .select('*').eq('company_id', companyId).ilike('phone', `%${digits.slice(-9)}%`).limit(1)
           if (data?.length) dupe = data[0]
         }
         if (dupe) {

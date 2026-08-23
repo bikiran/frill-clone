@@ -11,6 +11,10 @@ interface Props {
   companyId: string | null
   agentName?: string
   onClose: () => void
+  // When opened from a contact's "Call" button elsewhere in the app, the target
+  // is known up-front — jump straight to the call bar for that number instead of
+  // making the agent search or key it in again.
+  initialTarget?: { number: string; name?: string; contactId?: string } | null
 }
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#']
@@ -21,13 +25,15 @@ const KEY_TONE: Record<string, number> = {
   '7': 1477, '8': 1633, '9': 800, '*': 941, '0': 1336, '#': 1477,
 }
 
-export default function Dialer({ companyId, agentName, onClose }: Props) {
+export default function Dialer({ companyId, agentName, onClose, initialTarget }: Props) {
   const [tab, setTab] = useState<'dialer' | 'recent'>('dialer')
   const [digits, setDigits] = useState('')
   const [search, setSearch] = useState('')
   const [contacts, setContacts] = useState<any[]>([])
   const [recent, setRecent] = useState<any[]>([])
-  const [dialing, setDialing] = useState<{ number: string; name?: string; contactId?: string } | null>(null)
+  const [dialing, setDialing] = useState<{ number: string; name?: string; contactId?: string } | null>(
+    initialTarget?.number ? { number: initialTarget.number, name: initialTarget.name, contactId: initialTarget.contactId } : null,
+  )
   const ctxRef = useRef<any>(null)
 
   // Contact search (only once they've typed — no point loading everyone).

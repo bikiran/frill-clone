@@ -1590,6 +1590,53 @@ export default function InboxPage() {
     })()
   }, [conversations, selected])
 
+  // Deep-link: open (or start) a thread with a specific contact from
+  // ?contact=<id>&channel=<sms|email|chat>. This is what the "Message" / "Email"
+  // buttons on the Contacts list and customer profile use so those actions stay
+  // inside Colvy instead of firing an `sms:` / `mailto:` link that hands off to
+  // the device's own apps. Find the contact's most recent conversation, or create
+  // an empty one, then open it with the compose channel pre-selected.
+  const deepContactRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!companyId || !user) return
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const contactId = params.get('contact')
+    if (!contactId || deepContactRef.current === contactId) return
+    const wantCh = params.get('channel')   // 'sms' | 'email' | 'chat' | null
+    deepContactRef.current = contactId
+    ;(async () => {
+      try {
+        const { data: ct } = await (supabase as any).from('contacts')
+          .select('id, name, email, phone, relationship_type, prexty_customer_id').eq('id', contactId).maybeSingle()
+        if (!ct) { deepContactRef.current = null; return }
+        // Find-or-create a conversation for this contact.
+        const { data: existing } = await (supabase as any).from('conversations')
+          .select('*').eq('company_id', companyId).eq('contact_id', contactId)
+          .order('last_message_at', { ascending: false }).limit(1)
+        let conv: any = existing?.[0] || null
+        if (!conv) {
+          const chan = wantCh === 'email' ? 'email' : wantCh === 'sms' ? 'sms' : 'chat'
+          const { data: created } = await (supabase as any).from('conversations').insert({
+            company_id: companyId, channel: chan, contact_id: contactId,
+            subject: ct.name || ct.email || ct.phone || 'New conversation',
+            status: 'open', is_unread: false,
+            last_message: '', last_message_at: new Date().toISOString(),
+          }).select('*').maybeSingle()
+          conv = created || null
+        }
+        if (!conv) { deepContactRef.current = null; return }
+        conv.contacts = ct
+        setConversations(prev => prev.some(c => c.id === conv.id) ? prev : [conv, ...prev])
+        selectConversation(conv)
+        if (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') setSendChannel(wantCh)
+        // Strip the params so a refresh doesn't re-open / re-create anything.
+        try { window.history.replaceState(null, '', '/admin/inbox') } catch {}
+      } catch { deepContactRef.current = null }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, user])
+
   // Close the assign dropdown / actions menu when clicking elsewhere
   useEffect(() => {
     if (!showAssignMenu && !showActions && !showCardAssign && !showCardMore) return
