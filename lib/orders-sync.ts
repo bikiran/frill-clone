@@ -100,6 +100,29 @@ function sourceFields(companyId: string, o: any, contactId: string | null) {
   }
 }
 
+// Ping the team's phones about a genuinely-new order (Orders tab badge + push).
+// Fire-and-forget; never blocks or throws the sync. Shared by the webhook
+// (upsertWooOrder) and the periodic bulk sync so both paths notify.
+function notifyNewOrder(companyId: string, src: any): void {
+  try {
+    const base = String(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
+    if (!base) return
+    const num = src.order_number ? `#${src.order_number}` : ''
+    const money = src.total != null ? ` · ${new Intl.NumberFormat('en-AU', { style: 'currency', currency: src.currency || 'AUD' }).format(Number(src.total))}` : ''
+    void fetch(`${base}/api/push/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        companyId,
+        title: 'New order',
+        body: `${num ? num + ' · ' : ''}${src.customer_name || 'A customer'}${money}`,
+        channelId: 'orders',
+        route: '/orders',
+      }),
+    }).catch(() => {})
+  } catch {}
+}
+
 function itemRows(companyId: string, orderId: string, o: any) {
   const items: any[] = Array.isArray(o.line_items) ? o.line_items : []
   return items.map((li: any) => {
@@ -218,6 +241,26 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
   for (let i = 0; i < allItems.length; i += 500) { try { await insertResilient(db, 'order_items', allItems.slice(i, i + 500)) } catch {} }
   for (let i = 0; i < events.length; i += 500) { try { await insertResilient(db, 'order_events', events.slice(i, i + 500)) } catch {} }
 
+  // Notify the team about genuinely-new orders picked up by the poll (the Woo
+  // webhook may be down — this path is why a "New order" push still fires).
+  // Guards so a first-time connect or a long-offline catch-up can't spam:
+  //  • skip entirely when there were no prior orders (initial history import),
+  //  • only recent orders (last 24h) — a backfill of old orders stays silent,
+  //  • cap the burst.
+  if (existing.size > 0) {
+    const RECENT_MS = 24 * 60 * 60 * 1000
+    const now = Date.now()
+    let sent = 0
+    for (let i = 0; i < fresh.length && sent < 10; i++) {
+      if (!idByExt.get(String(fresh[i].woo_order_id))) continue
+      const src = rows[i]
+      const t = src.order_date ? new Date(src.order_date).getTime() : 0
+      if (!t || now - t > RECENT_MS) continue
+      notifyNewOrder(companyId, src)
+      sent++
+    }
+  }
+
   return fresh.length
 }
 
@@ -261,24 +304,7 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
     // A brand-new order just landed — ping the team's phones the way a new chat
     // does, so the Orders tab badge and a push both fire. Best-effort; never
     // block the sync on it. (Only on INSERT, so a status refresh doesn't re-alert.)
-    try {
-      const base = String(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
-      if (base) {
-        const num = src.order_number ? `#${src.order_number}` : ''
-        const money = src.total != null ? ` · ${new Intl.NumberFormat('en-AU', { style: 'currency', currency: src.currency || 'AUD' }).format(Number(src.total))}` : ''
-        void fetch(`${base}/api/push/send`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            companyId,
-            title: 'New order',
-            body: `${num ? num + ' · ' : ''}${src.customer_name || 'A customer'}${money}`,
-            channelId: 'orders',
-            route: '/orders',
-          }),
-        }).catch(() => {})
-      }
-    } catch {}
+    notifyNewOrder(companyId, src)
   }
   try {
     await db.from('order_items').delete().eq('order_id', orderId)
