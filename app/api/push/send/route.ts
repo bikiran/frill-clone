@@ -40,6 +40,21 @@ export async function POST(req: NextRequest) {
     const category = categoryId || (conversationId ? 'message' : undefined)
     const text = body.slice(0, 500)
 
+    // The sender's avatar, so the mobile app (notifee) can show their photo as
+    // the notification's large icon. Best-effort: resolve the conversation's
+    // contact avatar once for the whole batch.
+    let avatar: string | null = null
+    if (conversationId) {
+      try {
+        const { data: conv } = await db.from('conversations').select('contact_id, avatar_url').eq('id', conversationId).maybeSingle()
+        avatar = (conv as any)?.avatar_url || null
+        if (!avatar && conv?.contact_id) {
+          const { data: ct } = await db.from('contacts').select('avatar_url').eq('id', conv.contact_id).maybeSingle()
+          avatar = (ct as any)?.avatar_url || null
+        }
+      } catch {}
+    }
+
     // De-dupe and optionally skip the person who sent the message
     const seen = new Set<string>()
     const messages = tokens
@@ -78,6 +93,7 @@ export async function POST(req: NextRequest) {
               body: text,
               senderName: heading,
               channelId: channelId || 'messages',
+              ...(avatar ? { avatar } : {}),
             },
           }
         }
