@@ -782,7 +782,8 @@ export default function OrdersPage() {
           onPatch={(patch, ev) => patchOrder([drawerOrder.id], patch, ev)}
           onFlash={flash} teamName={teamName} outletName={outletName} fullScreen={drawerFull}
           onLabel={(o: Order) => setLabelOrder(o)}
-          onPrintSlip={(id: string) => openPrint('packing_slip', [id])} />
+          onPrintSlip={(id: string) => openPrint('packing_slip', [id])}
+          onPrintLabel={(id: string) => openPrint('label', [id])} />
       )}
 
       {labelOrder && (
@@ -969,7 +970,7 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
   // Auto-fetch rates shortly after weight/parcel settle.
   useEffect(() => {
     if (weightGrams <= 0) { setRates([]); setSelRate(-1); return }
-    const t = setTimeout(() => { fetchRates() }, 550)
+    const t = setTimeout(() => { fetchRates() }, 300)
     return () => clearTimeout(t)
   }, [weightGrams, JSON.stringify(parcel)]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1380,7 +1381,7 @@ function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOr
 }
 
 // ── Right-side order drawer ───────────────────────────────────────────────────
-function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, tagDefs, tagColor, onEnsureTag, onManageTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, teamName, outletName, fullScreen = false }: any) {
+function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, tagDefs, tagColor, onEnsureTag, onManageTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, onPrintLabel, teamName, outletName, fullScreen = false }: any) {
   const ACCENT = accent || 'var(--coral)'
   const [items, setItems] = useState<any[]>([])
   const [pickMode, setPickMode] = useState(false)
@@ -1757,6 +1758,34 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   )
   const I = { width: 17, height: 17, fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, viewBox: '0 0 24 24' }
 
+  // Reprint or void the order's existing label. Reprint opens the carrier PDF
+  // (or the printable-label route as a fallback); void cancels at the carrier
+  // and returns the order to Awaiting Shipment so it can be re-labelled.
+  const labelAction = async (action: 'reprint' | 'void') => {
+    if (action === 'void' && !confirm('Void this shipping label? The order goes back to Awaiting Shipment.')) return
+    try {
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token
+      const res = await fetch('/api/orders/label', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ companyId, orderId: order.id, action }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (action === 'reprint') {
+        if (j.labelUrl) { try { window.open(j.labelUrl, '_blank') } catch {} }
+        else if (onPrintLabel) onPrintLabel(order.id)   // printable-label fallback
+        else onFlash(`Reprint failed: ${j.error || res.status}`)
+        return
+      }
+      // void
+      if (!res.ok || j.error) { onFlash(`Void failed: ${j.error || res.status}`); return }
+      onPatch(j.patch || {}, { type: 'label_voided', detail: 'Label voided' })
+      Object.assign(order, j.patch || {})
+      onFlash(j.voided ? 'Label voided' : `Voided here — carrier could not confirm (${j.message || 'unknown'})`)
+    } catch (e: any) { onFlash(`Error: ${e?.message || e}`) }
+  }
+
   // Full-screen mode slides up over the whole viewport (same tab); side mode is
   // the 420px right drawer.
   const panelStyle: React.CSSProperties = fullScreen
@@ -1787,6 +1816,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
               in the narrow side drawer instead of the last one being clipped. */}
           <div style={{ ...sect, display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'thin' }}>
             {quick(<svg {...I}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /></svg>, 'Label', () => onLabel(order), true)}
+            {order.tracking_number && quick(<svg {...I}><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>, 'Reprint', () => labelAction('reprint'))}
+            {order.tracking_number && quick(<svg {...I}><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>, 'Void', () => labelAction('void'))}
             {quick(<svg {...I}><path d="M6 9V2h12v7" /><rect x="6" y="14" width="12" height="8" /><path d="M6 18H4a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2" /></svg>, 'Slip', () => onPrintSlip(order.id))}
             {quick(<svg {...I}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3" /><path d="m9 14 2 2 4-4" /></svg>, 'Pick', () => { setPickMode(v => { const n = !v; if (n) { const el = document.getElementById('ord-items-panel'); el?.scrollIntoView({ behavior: 'smooth', block: 'start' }); onFlash('Picking — tap each item as you pick it') } return n }) }, pickMode)}
             {quick(<svg {...I}><path d="M20 6 9 17l-5-5" /></svg>, order.status === 'packed' ? 'Packed' : 'Pack', () => {
