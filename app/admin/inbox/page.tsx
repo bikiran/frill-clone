@@ -7397,9 +7397,22 @@ export default function InboxPage() {
                   )
                 }
                 if (item.__event) {
+                  const ev = item
+                  // A task finished on the Tasks page announces itself here as a
+                  // green completion pill (and shows in the Timeline tab too).
+                  if (ev.event_type === 'task_completed') {
+                    return (
+                      <div key={`ev-${ev.id}`} style={{ textAlign: 'center', padding: '4px 0' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#dcfce7', color: '#15803d', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, maxWidth: 420 }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12" /></svg>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.detail || 'Task completed'}</span>
+                          {ev.created_at && <span style={{ color: '#4d9e6a', fontWeight: 500 }}> · {fmtTime(ev.created_at)}</span>}
+                        </span>
+                      </div>
+                    )
+                  }
                   // Inline timeline event: "Conversation assigned to X",
                   // "Now chatting through SMS", "Enquiry moved to …"
-                  const ev = item
                   const isPageView = ev.event_type === 'page_view'
                   return (
                     <div key={`ev-${ev.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0' }}>
