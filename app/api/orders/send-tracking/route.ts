@@ -72,6 +72,23 @@ export async function POST(req: NextRequest) {
       db,
     })
 
+    // Record the message in the thread so it shows in the inbox. deliverAutomated-
+    // Message sends the SMS/email with skipChatMessage:true (to avoid a duplicate),
+    // so nothing was being written here — the tracking looked unsent on the board
+    // and staff re-sent it from the inbox, double-messaging the customer.
+    try {
+      await db.from('messages').insert({
+        conversation_id: conversationId, company_id: companyId,
+        sender_type: 'agent', sender_name: body.senderName || 'Team',
+        content: text, message_type: 'text', is_read: true,
+        delivery_channel: result?.channel === 'email' ? 'email' : result?.channel === 'sms' ? 'sms' : 'chat',
+        metadata: { auto: true, tracking: true },
+      })
+      await db.from('conversations').update({
+        last_message: text.slice(0, 200), last_message_at: new Date().toISOString(),
+      }).eq('id', conversationId)
+    } catch {}
+
     // Record tracking fields + a timeline event.
     const patch: any = { updated_at: new Date().toISOString() }
     if (body.trackingNumber) patch.tracking_number = body.trackingNumber
