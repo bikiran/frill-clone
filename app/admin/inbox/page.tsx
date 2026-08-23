@@ -9067,6 +9067,31 @@ export default function InboxPage() {
                       })
                     })()}
 
+                    {/* ── Preferred agent ───────────────────────────────────
+                        When this customer calls, ring this team member first;
+                        on no answer the call still rings everyone else. */}
+                    {contact && (
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 5 }}>Preferred agent</label>
+                        <select
+                          value={(contact as any).preferred_agent_user_id || ''}
+                          onChange={async (e) => {
+                            const uid = e.target.value || null
+                            const nm = uid ? (teamMembers.find((m: any) => m.user_id === uid)?.name || null) : null
+                            setContact((c: any) => ({ ...c, preferred_agent_user_id: uid, preferred_agent_name: nm }))
+                            try {
+                              await (supabase as any).from('contacts').update({ preferred_agent_user_id: uid, preferred_agent_name: nm }).eq('id', contact.id)
+                              showToast(uid ? `${nm} will ring first for this customer` : 'Preferred agent cleared')
+                            } catch { showToast('Could not save preferred agent') }
+                          }}
+                          style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, background: '#fff', color: 'var(--ink)', outline: 'none' }}>
+                          <option value="">No preference — ring everyone</option>
+                          {teamMembers.map((m: any) => (<option key={m.user_id} value={m.user_id}>{m.name}</option>))}
+                        </select>
+                        <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--slate)', lineHeight: 1.5 }}>On an incoming call from this customer, this person rings first; if they don’t pick up, everyone else rings.</p>
+                      </div>
+                    )}
+
                     {/* ── Notes ─────────────────────────────────────────────
                         The same conversation_notes shown in the Timeline tab —
                         one store, two locations, with @mention + edit/copy/delete
