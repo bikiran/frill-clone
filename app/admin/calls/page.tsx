@@ -17,7 +17,12 @@ type Call = {
   is_voicemail: boolean | null
   caller_name?: string | null
   agent_name: string | null
+  answered_by?: string | null
   contact_id: string | null
+  contact_name?: string | null
+  transfer_state?: string | null
+  transferred_at?: string | null
+  transcript_en?: string | null
   created_at: string
 }
 
@@ -64,6 +69,11 @@ export default function CallsPage() {
   const [loading, setLoading] = useState(!seededCalls)
   const [filter, setFilter] = useState<'all' | 'inbound' | 'outbound' | 'missed' | 'voicemail'>('all')
   const [search, setSearch] = useState('')
+  // Advanced filters (all default to '' = any). Applied on top of the direction tab.
+  const emptyAdv = { outcome: '', agent: '', date: '', from: '', to: '', duration: '', number: '', contact: '', recording: '', transcription: '', summary: '', sentiment: '', transferred: '' }
+  const [adv, setAdv] = useState<Record<string, string>>(emptyAdv)
+  const [advOpen, setAdvOpen] = useState(false)
+  const activeAdvCount = Object.values(adv).filter(Boolean).length
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [contact, setContact] = useState<any>(null)
   const [convId, setConvId] = useState<string | null>(null)
@@ -177,6 +187,48 @@ export default function CallsPage() {
     voicemail: calls.filter(isVoicemail).length,
   }
 
+  // ── Advanced-filter helpers ─────────────────────────────────────────────────
+  const agentOf = (c: Call) => (c.agent_name || c.answered_by || '').trim()
+  const businessNumberOf = (c: Call) => (c.direction === 'inbound' ? c.to_number : c.from_number) || ''
+  const outcomeOf = (c: Call): string => {
+    if (isVoicemail(c)) return 'voicemail'
+    if (c.status === 'busy') return 'busy'
+    if (c.status === 'failed') return 'failed'
+    if (['answered', 'completed'].includes(c.status) || (c.duration_seconds || 0) > 0) return 'answered'
+    return c.direction === 'inbound' ? 'missed' : 'no_answer'
+  }
+  const durationBucket = (c: Call): string => {
+    const d = c.duration_seconds || 0
+    return d < 30 ? 'lt30' : d < 120 ? '30_120' : d < 300 ? '120_300' : 'gt300'
+  }
+  const agentOptions = useMemo(() => Array.from(new Set(calls.map(agentOf).filter(Boolean))).sort(), [calls])
+  const numberOptions = useMemo(() => Array.from(new Set(calls.map(businessNumberOf).filter(Boolean))).sort(), [calls])
+
+  const passesAdv = (c: Call): boolean => {
+    if (adv.outcome && outcomeOf(c) !== adv.outcome) return false
+    if (adv.agent) { const a = agentOf(c); if (adv.agent === '__unassigned' ? !!a : a !== adv.agent) return false }
+    if (adv.number && businessNumberOf(c) !== adv.number) return false
+    if (adv.duration && durationBucket(c) !== adv.duration) return false
+    if (adv.contact) { const known = !!c.contact_id; if (adv.contact === 'known' ? !known : known) return false }
+    if (adv.recording) { const has = !!c.recording_url; if (adv.recording === 'yes' ? !has : has) return false }
+    if (adv.transcription) { const has = !!(c.transcription || c.transcript_en); if (adv.transcription === 'yes' ? !has : has) return false }
+    if (adv.summary) { const has = !!c.ai_summary; if (adv.summary === 'yes' ? !has : has) return false }
+    if (adv.sentiment && (c.sentiment || '') !== adv.sentiment) return false
+    if (adv.transferred) { const t = !!c.transferred_at || (!!c.transfer_state && c.transfer_state !== 'none'); if (adv.transferred === 'yes' ? !t : t) return false }
+    if (adv.date || adv.from || adv.to) {
+      const t = +new Date(c.created_at)
+      const now = Date.now()
+      const sod = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime()
+      if (adv.date === 'today' && t < sod) return false
+      if (adv.date === 'yesterday' && (t < sod - 86400000 || t >= sod)) return false
+      if (adv.date === '7d' && t < now - 7 * 86400000) return false
+      if (adv.date === '30d' && t < now - 30 * 86400000) return false
+      if (adv.from && t < +new Date(adv.from)) return false
+      if (adv.to && t > +new Date(adv.to) + 86400000) return false
+    }
+    return true
+  }
+
   const groups = useMemo(() => {
     const passesTab = (c: Call) =>
       filter === 'all' ? true :
@@ -187,6 +239,7 @@ export default function CallsPage() {
     const map = new Map<string, Call[]>()
     for (const c of calls) {
       if (!passesTab(c)) continue
+      if (!passesAdv(c)) continue
       const key = otherParty(c)
       const resolvedName = contactsByTail[tailOf(key)]?.name || ''
       if (q && !key.toLowerCase().includes(q) && !(c.caller_name || '').toLowerCase().includes(q) && !resolvedName.toLowerCase().includes(q)) continue
@@ -206,7 +259,7 @@ export default function CallsPage() {
     })
     out.sort((a, b) => +new Date(b.latest.created_at) - +new Date(a.latest.created_at))
     return out
-  }, [calls, filter, search, contactsByTail])
+  }, [calls, filter, search, contactsByTail, adv]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isMobile) return
@@ -276,6 +329,51 @@ export default function CallsPage() {
                 </button>
               ))}
             </div>
+            {/* Advanced filters */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+              <button onClick={() => setAdvOpen(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (activeAdvCount ? 'var(--coral)' : 'var(--border)'), background: activeAdvCount ? 'var(--peach)' : '#fff', color: activeAdvCount ? 'var(--coral)' : 'var(--slate)' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                Filters{activeAdvCount ? ` · ${activeAdvCount}` : ''}
+              </button>
+              {activeAdvCount > 0 && (
+                <button onClick={() => setAdv(emptyAdv)} style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
+              )}
+            </div>
+            {advOpen && (() => {
+              const AF: { key: string; label: string; opts: [string, string][] }[] = [
+                { key: 'outcome', label: 'Outcome', opts: [['', 'Any'], ['answered', 'Answered'], ['missed', 'Missed'], ['voicemail', 'Voicemail'], ['failed', 'Failed'], ['busy', 'Busy'], ['no_answer', 'No answer']] },
+                { key: 'agent', label: 'Taken by', opts: [['', 'Anyone'], ['__unassigned', 'Unassigned'], ...agentOptions.map(a => [a, a] as [string, string])] },
+                { key: 'date', label: 'Date', opts: [['', 'Any time'], ['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['custom', 'Custom…']] },
+                { key: 'duration', label: 'Duration', opts: [['', 'Any'], ['lt30', 'Under 30s'], ['30_120', '30s–2m'], ['120_300', '2–5m'], ['gt300', '5m+']] },
+                { key: 'number', label: 'Business number', opts: [['', 'Any'], ...numberOptions.map(n => [n, n] as [string, string])] },
+                { key: 'contact', label: 'Contact', opts: [['', 'Any'], ['known', 'Known contact'], ['unknown', 'Unknown number']] },
+                { key: 'sentiment', label: 'Sentiment', opts: [['', 'Any'], ['positive', 'Positive'], ['neutral', 'Neutral'], ['negative', 'Negative']] },
+                { key: 'recording', label: 'Recording', opts: [['', 'Any'], ['yes', 'Has recording'], ['no', 'No recording']] },
+                { key: 'transcription', label: 'Transcription', opts: [['', 'Any'], ['yes', 'Has transcription'], ['no', 'None']] },
+                { key: 'summary', label: 'AI summary', opts: [['', 'Any'], ['yes', 'Has summary'], ['no', 'None']] },
+                { key: 'transferred', label: 'Transferred', opts: [['', 'Any'], ['yes', 'Transferred'], ['no', 'Not transferred']] },
+              ]
+              const sel: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, background: '#fff', color: 'var(--ink)', outline: 'none' }
+              const lab: React.CSSProperties = { fontSize: 10, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 3 }
+              return (
+                <div style={{ marginTop: 10, padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas, #f8fafc)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+                  {AF.map(f => (
+                    <div key={f.key}>
+                      <label style={lab}>{f.label}</label>
+                      <select value={adv[f.key]} onChange={e => setAdv(a => ({ ...a, [f.key]: e.target.value }))} style={sel}>
+                        {f.opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                  {adv.date === 'custom' && (
+                    <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 9 }}>
+                      <div style={{ flex: 1 }}><label style={lab}>From</label><input type="date" value={adv.from} onChange={e => setAdv(a => ({ ...a, from: e.target.value }))} style={sel} /></div>
+                      <div style={{ flex: 1 }}><label style={lab}>To</label><input type="date" value={adv.to} onChange={e => setAdv(a => ({ ...a, to: e.target.value }))} style={sel} /></div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {groups.length === 0 ? (
