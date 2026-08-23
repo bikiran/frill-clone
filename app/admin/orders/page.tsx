@@ -1054,7 +1054,7 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
   const addr = order.shipping_address || {}
   const hasAddr = addr.address_1 || addr.city
   const noRates = ratesConfigured === false // no rate provider connected → manual picker
-  const providerName = provider === 'shipstation' ? 'ShipStation' : provider === 'starshipit' ? 'Starshipit' : 'your carrier account'
+  const providerName = 'your carrier account'
 
   return (
     <>
@@ -1131,7 +1131,7 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
                 <select value={service} onChange={e => setService(e.target.value)} style={field}>
                   {(CARRIER_SERVICES[carrier] || ['Standard']).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-                <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>Connect ShipStation to see live prices from every carrier. Until then this prints a scannable label with a tracking number.</p>
+                <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>Connect a shipping carrier to see live prices. Until then this prints a scannable label with a tracking number.</p>
               </>
             ) : weightGrams <= 0 ? (
               <div style={{ padding: '12px', borderRadius: 9, background: 'var(--canvas)', fontSize: 12.5, color: 'var(--slate)', textAlign: 'center' }}>Enter a weight to see live rates.</div>
@@ -1141,12 +1141,12 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
               <>
                 <div style={{ padding: '12px', borderRadius: 9, background: '#fef3c7', color: '#92400e', fontSize: 12.5, lineHeight: 1.5, marginBottom: 10 }}>
                   {ratesError
-                    ? <><strong>{providerName}:</strong> {ratesError}</>
+                    ? <><strong>Carrier:</strong> {ratesError}</>
                     : 'No rates returned for this parcel.'}
-                  <div style={{ marginTop: 6, fontSize: 11.5, color: '#a16207' }}>In {providerName}, check that at least one <strong>carrier is connected</strong> to your account, the <strong>ship-from address</strong> is set, and the destination has a valid postcode.</div>
+                  <div style={{ marginTop: 6, fontSize: 11.5, color: '#a16207' }}>Check that at least one <strong>carrier is connected</strong> in {providerName}, the <strong>ship-from address</strong> is set, and the destination has a valid postcode.</div>
                 </div>
                 <div style={{ marginBottom: 10 }}>
-                  <button type="button" onClick={runDiag} disabled={diagBusy} style={{ background: 'none', border: 'none', color: ACCENT, fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>{diagBusy ? 'Checking…' : `Show ${providerName} response ▾`}</button>
+                  <button type="button" onClick={runDiag} disabled={diagBusy} style={{ background: 'none', border: 'none', color: ACCENT, fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>{diagBusy ? 'Checking…' : 'Show carrier response ▾'}</button>
                   {diag && (
                     <pre style={{ marginTop: 8, padding: '10px 12px', borderRadius: 9, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 11, lineHeight: 1.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflowY: 'auto' }}>
 {JSON.stringify({ sent: diag.providerRequest, received: diag.providerRaw, error: diag.error }, null, 2)}
