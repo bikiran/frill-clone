@@ -206,6 +206,25 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
     }
   }
 
+  // Reconcile TERMINAL WooCommerce statuses onto already-synced orders — so an
+  // order completed/cancelled in the store (whose webhook may have been missed)
+  // advances on the board at the next Sync. Non-terminal statuses are left alone,
+  // and a shipped/cancelled order is never downgraded. Bounded per run.
+  let statusFixed = 0
+  for (const o of wooRows) {
+    if (statusFixed >= 400) break
+    const prev = existing.get(String(o.woo_order_id))
+    if (!prev) continue
+    const wl = String(o.status || '').toLowerCase()
+    let patch: any = null
+    if (wl === 'completed' && prev.status !== 'shipped' && prev.status !== 'cancelled') {
+      patch = { status: 'shipped', fulfilment_status: 'fulfilled', shipped_at: new Date().toISOString() }
+    } else if (['cancelled', 'refunded', 'failed', 'trash'].includes(wl) && prev.status !== 'cancelled') {
+      patch = { status: 'cancelled' }
+    }
+    if (patch) { try { await db.from('orders').update(patch).eq('id', prev.id); statusFixed++ } catch {} }
+  }
+
   // Backfill the pickup outlet on already-synced Click & Collect orders that were
   // imported before outlet mapping existed (store_location_id null). Match on the
   // order's stored shipping_method — the only place the pickup location name is
@@ -291,12 +310,24 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
   const cid = contactId ?? (await resolveContacts(db, companyId, [o])).get((o.customer_email || o.billing?.email || '').toLowerCase()) ?? null
   const src = sourceFields(companyId, o, cid)
 
-  const { data: prev } = await db.from('orders').select('id')
+  const { data: prev } = await db.from('orders').select('id, status, shipped_at')
     .eq('company_id', companyId).eq('sales_channel', 'woocommerce').eq('external_order_id', ext).maybeSingle()
 
   let orderId: string
   if (prev?.id) {
-    await updateResilient(db, 'orders', src, prev.id)
+    // Reconcile the board status when WooCommerce reaches a TERMINAL state, so a
+    // store-side completion/cancellation is reflected here. Non-terminal Woo
+    // statuses (processing/pending/on-hold) leave the staff-owned status alone,
+    // and we never downgrade an order that's already shipped or cancelled.
+    const patch: any = { ...src }
+    const wl = String(o.status || '').toLowerCase()
+    if (wl === 'completed' && prev.status !== 'shipped' && prev.status !== 'cancelled') {
+      patch.status = 'shipped'; patch.fulfilment_status = 'fulfilled'
+      if (!prev.shipped_at) patch.shipped_at = new Date().toISOString()
+    } else if (['cancelled', 'refunded', 'failed', 'trash'].includes(wl) && prev.status !== 'cancelled') {
+      patch.status = 'cancelled'
+    }
+    await updateResilient(db, 'orders', patch, prev.id)
     orderId = prev.id
   } else {
     const st = statusOf(o)

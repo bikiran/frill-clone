@@ -81,7 +81,6 @@ export default function ShippingSettingsPage() {
     setSaving(false)
   }
 
-  const providerName = provider === 'shipstation' ? 'ShipStation' : provider === 'starshipit' ? 'Starshipit' : 'your carrier provider'
   const card: React.CSSProperties = { background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 14, padding: 20 }
 
   return (
@@ -95,12 +94,11 @@ export default function ShippingSettingsPage() {
         <div style={{ ...card }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#dc2626' }} />
-            <strong style={{ fontSize: 15, color: 'var(--ink)' }}>No shipping provider connected</strong>
+            <strong style={{ fontSize: 15, color: 'var(--ink)' }}>Shipping not connected</strong>
           </div>
-          <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.6 }}>
-            Add your ShipStation V2 API key as <code style={{ background: 'var(--canvas,#f1f5f9)', padding: '1px 5px', borderRadius: 5 }}>SHIPSTATION_API_KEY</code> in the deployment environment, then connect your carriers inside ShipStation. Rates and labels turn on automatically once it's set.
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)', lineHeight: 1.6 }}>
+            Shipping rates and labels aren't set up yet. Contact support to connect your carrier accounts, then rates and labels turn on automatically on the Orders board.
           </p>
-          <a href="https://ship.shipstation.com/settings/carriers" target="_blank" rel="noreferrer" style={{ color: accent, fontSize: 13, fontWeight: 700 }}>Open ShipStation carriers →</a>
         </div>
       ) : (
         <>
@@ -108,12 +106,11 @@ export default function ShippingSettingsPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#16a34a' }} />
-                <strong style={{ fontSize: 15, color: 'var(--ink)' }}>{providerName} connected</strong>
+                <strong style={{ fontSize: 15, color: 'var(--ink)' }}>Shipping connected</strong>
               </div>
-              <a href="https://ship.shipstation.com/settings/carriers" target="_blank" rel="noreferrer" style={{ color: accent, fontSize: 12.5, fontWeight: 700 }}>Manage in {providerName} →</a>
             </div>
             <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.6 }}>
-              Add, remove, and configure carrier accounts in {providerName}. Below, choose which of them Colvy uses when quoting rates on an order.
+              Your carrier accounts are connected. Below, choose which of them Colvy uses when quoting rates on an order.
             </p>
           </div>
 
@@ -126,7 +123,7 @@ export default function ShippingSettingsPage() {
             {err && <div style={{ padding: '9px 12px', borderRadius: 9, background: '#fef3c7', color: '#92400e', fontSize: 12.5, marginBottom: 12 }}>{err}</div>}
 
             {carriers.length === 0 ? (
-              <p style={{ fontSize: 13, color: 'var(--slate)', margin: 0 }}>No carriers connected in {providerName} yet. Add one there, then refresh.</p>
+              <p style={{ fontSize: 13, color: 'var(--slate)', margin: 0 }}>No carriers connected yet. Contact support to add a carrier, then refresh.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {carriers.map(c => (
