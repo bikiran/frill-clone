@@ -41,27 +41,66 @@ export async function confirmChatPayment(
   if (!claimed) return { confirmed: false }
 
   const amountStr = pay.amount_cents ? `$${(pay.amount_cents / 100).toFixed(2)} AUD` : ''
+  const base = String(process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
 
-  // ── 2. Flip the in-chat payment card to paid.
+  // ── 2. Flip the in-chat payment card to paid, and learn the channel it was
+  // sent on (so the customer-facing confirmation goes back the same way).
+  let paidChannel = ''
   if (pay.message_id) {
     try {
-      const { data: m } = await db.from('messages').select('message_payload').eq('id', pay.message_id).maybeSingle()
+      const { data: m } = await db.from('messages').select('message_payload, delivery_channel').eq('id', pay.message_id).maybeSingle()
+      paidChannel = String((m as any)?.delivery_channel || '').toLowerCase()
       await db.from('messages').update({
         message_payload: { ...((m as any)?.message_payload || {}), status: 'paid' },
       }).eq('id', pay.message_id)
     } catch {}
   }
 
-  // ── 3. Post the confirmation into the thread.
+  // Look up the conversation + contact once — used for the pill, the timeline,
+  // the customer reply, and the team push.
+  let company = '', who = '', channel = paidChannel, phone = '', email = '', subject = ''
+  if (pay.conversation_id) {
+    try {
+      const { data: conv } = await db.from('conversations').select('subject, contact_id, channel, sms_number').eq('id', pay.conversation_id).maybeSingle()
+      subject = String(conv?.subject || '').trim()
+      if (!channel) channel = String(conv?.channel || '').toLowerCase()
+      phone = String(conv?.sms_number || '')
+      if (conv?.contact_id) {
+        const { data: ct } = await db.from('contacts').select('name, phone, email').eq('id', conv.contact_id).maybeSingle()
+        who = String(ct?.name || '').trim()
+        if (!phone) phone = String(ct?.phone || '')
+        email = String(ct?.email || '')
+      }
+    } catch {}
+  }
+  try {
+    const { data: co } = await db.from('companies').select('name').eq('id', pay.company_id).maybeSingle()
+    company = String(co?.name || '').trim()
+  } catch {}
+  if (!who) who = subject
+
+  // ── 3. Post the in-chat "Payment received" PILL (system event) + timeline.
   if (pay.conversation_id) {
     try {
       await db.from('messages').insert({
         conversation_id: pay.conversation_id,
         company_id: pay.company_id,
         sender_type: 'system',
-        content: `✅ Payment received${amountStr ? ` — ${amountStr}` : ''}. A receipt has been emailed to the customer.`,
-        metadata: { payment_confirmed: true, payment_id: pay.id },
+        content: `✅ Payment received${amountStr ? ` — ${amountStr}` : ''}`,
+        metadata: { payment_confirmed: true, payment_id: pay.id, kind: 'payment_received', amount_cents: pay.amount_cents || null },
       })
+    } catch {}
+    // Timeline pill (mirrors close/reopen/order events).
+    try {
+      await db.from('conversation_events').insert({
+        conversation_id: pay.conversation_id,
+        company_id: pay.company_id,
+        event_type: 'payment_received',
+        actor_name: who || null,
+        detail: `Payment received${amountStr ? ` — ${amountStr}` : ''}`,
+      })
+    } catch {}
+    try {
       await db.from('conversations').update({
         last_message: `✅ Payment received${amountStr ? ` — ${amountStr}` : ''}`,
         last_message_at: new Date().toISOString(),
@@ -69,19 +108,40 @@ export async function confirmChatPayment(
     } catch {}
   }
 
-  // ── 4. Push a phone notification to the team.
-  try {
-    // Name the payer so the notification reads "…from Jessica Hastings".
-    let who = ''
-    if (pay.conversation_id) {
-      const { data: conv } = await db.from('conversations').select('subject, contact_id').eq('id', pay.conversation_id).maybeSingle()
-      if (conv?.contact_id) {
-        const { data: ct } = await db.from('contacts').select('name').eq('id', conv.contact_id).maybeSingle()
-        who = String(ct?.name || '').trim()
+  // ── 4. Send the customer a confirmation over their own channel, so it lands
+  // in the thread as a sent message AND reaches them by SMS/email/DM.
+  if (pay.conversation_id) {
+    const custMsg = `Your payment of ${amountStr || 'the requested amount'} has been received. Thank you!`
+    const senderName = company || 'Support'
+    try {
+      if (channel === 'email' && email) {
+        await fetch(`${base}/api/email/send`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId: pay.company_id, conversationId: pay.conversation_id, to: email, subject: subject || 'Payment received', text: custMsg, senderName }),
+        })
+      } else if (['facebook', 'instagram', 'messenger'].includes(channel)) {
+        await fetch(`${base}/api/meta/send`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: pay.conversation_id, content: custMsg, agentName: senderName }),
+        })
+      } else if (phone) {
+        // SMS (and the default). The send route logs the outbound bubble itself.
+        await fetch(`${base}/api/telnyx/sms/send`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId: pay.company_id, conversationId: pay.conversation_id, to: phone, text: custMsg, senderName }),
+        })
+      } else {
+        // Live-chat / unknown channel — just log it so the widget shows it.
+        await db.from('messages').insert({
+          conversation_id: pay.conversation_id, company_id: pay.company_id,
+          sender_type: 'agent', sender_name: senderName, content: custMsg,
+        })
       }
-      if (!who) who = String(conv?.subject || '').trim()
-    }
-    const base = String(process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
+    } catch { /* delivery is best-effort — the pill + timeline still recorded it */ }
+  }
+
+  // ── 5. Push a phone notification to the team.
+  try {
     await fetch(`${base}/api/push/send`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
