@@ -4436,15 +4436,23 @@ export default function InboxPage() {
       && !!emailTo
 
     if (shouldEmail) {
-      const prevChannel = (selected as any).active_channel || 'chat'
+      // Same guard as SMS: only announce a switch when the thread is genuinely
+      // moving to email, judged from the real current channel — not the possibly
+      // -null active_channel column (which made a different agent's reply on an
+      // already-email thread log a bogus "Now replying by email").
+      const wasEmail = activeChannel === 'email'
+        || (selected as any).active_channel === 'email'
+        || String((selected as any).channel || '').toLowerCase() === 'email'
       try {
-        if (prevChannel !== 'email') {
+        if (!wasEmail) {
           await (supabase as any).from('conversations').update({ active_channel: 'email' }).eq('id', selected.id)
           await (supabase as any).from('conversation_events').insert({
             conversation_id: selected.id, company_id: companyId,
             event_type: 'channel_switch', actor_name: senderName,
             detail: 'Now replying by email',
           })
+        } else if ((selected as any).active_channel !== 'email') {
+          await (supabase as any).from('conversations').update({ active_channel: 'email' }).eq('id', selected.id)
         }
         const res = await fetch('/api/email/reply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4466,9 +4474,15 @@ export default function InboxPage() {
     }
 
     if (shouldSms) {
-      // Tell the agent (and the record) that the conversation moved to SMS.
-      const prevChannel = (selected as any).active_channel || 'chat'
-      if (prevChannel !== 'sms') {
+      // Only announce a channel switch when the conversation is GENUINELY moving
+      // to SMS. Use the real current channel (from the message history), not just
+      // the active_channel column — that can be null on an already-SMS thread, so
+      // relying on it made a different agent's reply log a bogus "Now chatting
+      // through SMS" on a thread that was SMS all along.
+      const wasSms = activeChannel === 'sms'
+        || (selected as any).active_channel === 'sms'
+        || String((selected as any).channel || '').toLowerCase() === 'sms'
+      if (!wasSms) {
         try {
           await (supabase as any).from('conversations').update({ active_channel: 'sms' }).eq('id', selected.id)
           await (supabase as any).from('conversation_events').insert({
@@ -4477,6 +4491,9 @@ export default function InboxPage() {
             detail: 'Now chatting through SMS',
           })
         } catch {}
+      } else if ((selected as any).active_channel !== 'sms') {
+        // Keep the column in step without announcing anything.
+        try { await (supabase as any).from('conversations').update({ active_channel: 'sms' }).eq('id', selected.id) } catch {}
       }
       try {
         const res = await fetch('/api/telnyx/sms/send', {
