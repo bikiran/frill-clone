@@ -738,6 +738,20 @@ export default function TasksPage() {
       })))
     } catch { /* table may not be migrated */ }
   }
+  // A task that came from a conversation announces its completion back on that
+  // conversation — a system event that shows as a pill in the chat stream and a
+  // row in the Timeline tab, so the inbox reflects work finished on the Tasks page.
+  const announceCompletion = async (task: any) => {
+    if (!task?.conversation_id || !companyId) return
+    const label = String(task.title || task.text || 'Task').trim().slice(0, 200)
+    try {
+      await (supabase as any).from('conversation_events').insert({
+        conversation_id: task.conversation_id, company_id: companyId,
+        event_type: 'task_completed', actor_name: me || 'Someone',
+        detail: `Task completed: ${label}`,
+      })
+    } catch { /* table/columns may lag a migration — non-critical */ }
+  }
   const ACT_LABEL: Record<string, string> = { todo: 'To do', in_progress: 'In progress', done: 'Done' }
   const cap = (s: string) => (s || '').charAt(0).toUpperCase() + (s || '').slice(1)
   const fmtDueShort = (v: any) => { const d = parseTs(v); return d ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '' }
@@ -773,6 +787,7 @@ export default function TasksPage() {
     setTasks(cur => cur.map(t => t.id === id ? { ...t, ...fields } : t))
     await writeTaskFields(id, fields)
     logActivity(id, diffActivity(prev, fields))
+    if (fields.status === 'done' && prev && statusOf(prev) !== 'done') announceCompletion(prev)
   }
   const setStatus = (t: any, status: string) =>
     patchTask(t.id, { status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null })
@@ -818,6 +833,7 @@ export default function TasksPage() {
     if (!ids.length) return
     try { await (supabase as any).from('conversation_tasks').update({ status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null }).in('id', ids) } catch (e: any) { alert('Could not update: ' + e.message); return }
     ids.forEach(id => logActivity(id, [{ kind: 'status', detail: status === 'done' ? 'completed this task' : `moved this to ${ACT_LABEL[status] || status}` }]))
+    if (status === 'done') ids.forEach(id => { const t = tasks.find(x => x.id === id); if (t && statusOf(t) !== 'done') announceCompletion(t) })
     exitSelect()
     if (companyId) loadTasks(companyId)
   }
@@ -873,6 +889,7 @@ export default function TasksPage() {
             !(scope === 'following' && parseTs(t.due_date) && parseTs(task.due_date) && (parseTs(t.due_date)! < parseTs(task.due_date)!))
           ).map(t => t.id)
           affected.forEach(id => logActivity(id, entries))
+          if (fields.status === 'done') affected.forEach(id => { const t = tasks.find(x => x.id === id); if (t && statusOf(t) !== 'done') announceCompletion(t) })
         }
       }
     } catch (e) { console.error('[task scoped update] threw', e); if (companyId) loadTasks(companyId) }
