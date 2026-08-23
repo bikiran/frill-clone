@@ -100,11 +100,25 @@ function sourceFields(companyId: string, o: any, contactId: string | null) {
   }
 }
 
+// A row is only "new" for notification purposes if it was CREATED recently.
+// An INSERT into orders means "first time Colvy has seen this order" — which is
+// NOT the same as "just placed": an old order can be inserted for the first time
+// when it's finally marked completed (its completion is the first webhook we
+// receive, or the first sync that catches it). Pushing "New order" then is wrong
+// — the customer placed it weeks ago. Gate on the order's own creation date.
+const NEW_ORDER_MAX_AGE_MS = 24 * 60 * 60 * 1000
+function isRecentOrder(src: any): boolean {
+  const t = src?.order_date ? new Date(src.order_date).getTime() : 0
+  return !!t && (Date.now() - t) <= NEW_ORDER_MAX_AGE_MS
+}
+
 // Ping the team's phones about a genuinely-new order (Orders tab badge + push).
 // Fire-and-forget; never blocks or throws the sync. Shared by the webhook
 // (upsertWooOrder) and the periodic bulk sync so both paths notify.
 function notifyNewOrder(companyId: string, src: any): void {
   try {
+    // Only a genuinely-new order — never an old order first seen on completion.
+    if (!isRecentOrder(src)) return
     const base = String(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
     if (!base) return
     const num = src.order_number ? `#${src.order_number}` : ''
