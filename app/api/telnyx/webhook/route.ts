@@ -597,19 +597,41 @@ export async function POST(req: NextRequest) {
               const ring = Number(integ.ring_seconds || 25)
               const dialConnectionId = eventConnectionId || (integ as any).voice_api_application_id || integ.connection_id
 
-              // Dial every registered identity as a sibling child leg. Whichever
-              // answers first gets bridged; the rest are hung up (see
-              // call.answered). No artificial "primary vs fan-out" split — that
-              // asymmetry is what let a stale shared credential veto the whole
-              // ring.
+              // Preferred-agent priority ring: if the caller's contact has a
+              // preferred agent who is reachable now, ring ONLY them first (a
+              // short window); on no answer the call.hangup handler fans out to
+              // everyone else. If anything is unset, we fall straight through to
+              // the normal ring-everyone below — never worse than today.
+              let stage1Targets = sipTargets
+              let fanoutTargets: string[] = []
+              let priorityRing = ring
+              try {
+                if (contactId) {
+                  const { data: cRow } = await db.from('contacts').select('preferred_agent_user_id').eq('id', contactId).maybeSingle()
+                  const prefUid = cRow?.preferred_agent_user_id || null
+                  if (prefUid) {
+                    const prefCred = (userCreds || []).find((c: any) => c.user_id === prefUid && !busyUsers.has(c.user_id))
+                    const prefSip = prefCred?.sip_username ? `sip:${prefCred.sip_username}@sip.telnyx.com` : null
+                    if (prefSip && sipTargets.includes(prefSip) && sipTargets.length > 1) {
+                      stage1Targets = [prefSip]
+                      fanoutTargets = sipTargets.filter(t => t !== prefSip)
+                      priorityRing = Math.min(ring, 15)
+                      log.info('[telnyx inbound] priority ring — preferred agent first', { prefSip, fanout: fanoutTargets.length, priorityRing })
+                    }
+                  }
+                }
+              } catch (e: any) { console.error('[telnyx inbound] preferred-agent lookup failed', e?.message || e) }
+
+              // Dial the stage-1 targets as sibling child legs. Whichever answers
+              // first gets bridged; the rest are hung up (see call.answered).
               const legIds: string[] = []
-              for (const sipTarget of sipTargets) {
+              for (const sipTarget of stage1Targets) {
                 try {
                   const child = await svc.createChildCall({
                     connection_id: dialConnectionId,
                     to: sipTarget,
                     from: fromNum,
-                    timeout_secs: ring,
+                    timeout_secs: priorityRing,
                     link_to: callControlId,
                     webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
                   })
@@ -625,17 +647,17 @@ export async function POST(req: NextRequest) {
                 // agent_call_control_id keeps the first leg for backwards-compat
                 // with the bridge's primary lookup; ringing_leg_ids holds ALL of
                 // them so any leg that answers can be matched and the losers
-                // cancelled.
-                const { error: updErr } = await db.from('calls')
-                  .update({
-                    status: 'ringing_agents',
-                    transcription: `[ringing ${legIds.length} device(s)]`,
-                    agent_call_control_id: legIds[0],
-                    ringing_leg_ids: legIds,
-                  })
-                  .eq('telnyx_call_control_id', callControlId)
+                // cancelled. routing_state carries the fan-out for stage 2.
+                const upd: any = {
+                  status: 'ringing_agents',
+                  transcription: `[ringing ${legIds.length} device(s)]`,
+                  agent_call_control_id: legIds[0],
+                  ringing_leg_ids: legIds,
+                }
+                if (fanoutTargets.length) upd.routing_state = { pending: true, targets: fanoutTargets, ring, connId: dialConnectionId, from: fromNum }
+                const { error: updErr } = await db.from('calls').update(upd).eq('telnyx_call_control_id', callControlId)
                 if (updErr) console.error('[telnyx inbound] could not store ringing legs', updErr.message)
-                log.info('[telnyx inbound] ringing devices', { count: legIds.length })
+                log.info('[telnyx inbound] ringing devices', { count: legIds.length, priority: fanoutTargets.length > 0 })
               } else {
                 // Every dial attempt failed — fall back to voicemail so the
                 // caller isn't left hanging on dead air.
@@ -954,6 +976,41 @@ export async function POST(req: NextRequest) {
             const { data: integ3 } = await db.from('telnyx_integrations').select('*').eq('company_id', parentRow.company_id).maybeSingle()
             if (integ3?.api_key && parentRow.telnyx_call_control_id) {
               const svc = new TelnyxService(integ3.api_key)
+
+              // Stage 2 of the priority ring: the preferred agent didn't answer,
+              // so fan out to everyone else BEFORE falling back to voicemail. Only
+              // while the call is still ringing (not bridged) and a fan-out is
+              // pending — otherwise this is a normal no-answer → voicemail.
+              const rs: any = (parentRow as any).routing_state
+              if (rs?.pending && parentRow.status === 'ringing_agents' && Array.isArray(rs.targets) && rs.targets.length) {
+                const newLegs: string[] = []
+                for (const sipTarget of rs.targets) {
+                  try {
+                    const child = await svc.createChildCall({
+                      connection_id: rs.connId,
+                      to: sipTarget,
+                      from: rs.from || parentRow.from_number,
+                      timeout_secs: Number(rs.ring) || 25,
+                      link_to: parentRow.telnyx_call_control_id,
+                      webhook_url: `${new URL(req.url).origin}/api/telnyx/webhook`,
+                    })
+                    const legId = (child as any)?.data?.call_control_id || null
+                    if (legId) newLegs.push(legId)
+                  } catch (e: any) { console.error('[telnyx priority fanout] dial failed', sipTarget, e?.message || e) }
+                }
+                // Clear the flag either way so this only fans out once.
+                if (newLegs.length) {
+                  const existingLegs: string[] = Array.isArray(parentRow.ringing_leg_ids) ? parentRow.ringing_leg_ids : []
+                  await db.from('calls').update({
+                    ringing_leg_ids: Array.from(new Set([...existingLegs, ...newLegs])),
+                    routing_state: { ...rs, pending: false },
+                  }).eq('id', parentRow.id)
+                  log.info('[telnyx priority fanout] rang remaining agents', { count: newLegs.length })
+                  return NextResponse.json({ ok: true })
+                }
+                try { await db.from('calls').update({ routing_state: { ...rs, pending: false } }).eq('id', parentRow.id) } catch {}
+              }
+
               if (integ3.voicemail_enabled !== false) {
                 await svc.speak(parentRow.telnyx_call_control_id, integ3.voicemail_greeting || 'Please leave a message after the tone.')
                 await db.from('calls').update({ status: 'voicemail_greeting', is_voicemail: true }).eq('id', parentRow.id)
