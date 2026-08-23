@@ -217,6 +217,15 @@ function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: st
   // Show the channel on BOTH sides — an agent needs to know a reply went by SMS.
   return `${label} ${time} | ${date}${chan ? ` | ${chan}` : ''}`
 }
+// Two-letter initials from a name — first + last (e.g. "Bikiran Simkhada" → "BS")
+// so team members whose first names share a letter stay distinguishable. A
+// single-word name uses its first two letters.
+function initialsOf(name?: string | null): string {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
 // Interleave conversation events (assignments, channel switches, moves) into the
 // message list in chronological order, so the thread reads like a real timeline.
 function mergeEvents(msgs: any[], events: any[], calls: any[] = []) {
@@ -2193,7 +2202,7 @@ export default function InboxPage() {
 
   const markMessagesRead = async (convId: string, msgs: Message[]) => {
     const me = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
-    const initial = me[0]?.toUpperCase() || 'A'
+    const initial = initialsOf(me)
     const avatar = user?.user_metadata?.avatar_url || null   // show a real photo on the read receipt
     // Stamp read_by on every message this agent has now seen — including other
     // agents' replies. "Did my colleague see this?" is the question people
@@ -7295,9 +7304,9 @@ export default function InboxPage() {
 
             {/* Messages */}
             <div ref={messagesScrollRef} className="inbox-messages" style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14, scrollBehavior: 'auto' }}>
-              {/* AI-detected action items → draft tasks. Pinned to the TOP of the
-                  thread (sticky) so it never sits over the newest messages at the
-                  bottom, and stays visible as you scroll. Mirrored in Timeline. */}
+              {/* AI-detected action items → draft tasks. Sits inline at the top of
+                  the thread and scrolls with the conversation (not sticky/floating),
+                  so it never covers the newest messages. Mirrored in Timeline. */}
               {aiTodos.length > 0 && !tasks.some((tk: any) => {
                 // Server-backed suppression: once these action items have been
                 // turned into tasks (or the panel was created/dismissed before),
@@ -7307,7 +7316,7 @@ export default function InboxPage() {
                 if (!tx) return false
                 return aiTodos.some((td: any) => { const s = String(td.text || '').trim().toLowerCase(); return !!s && (tx === s || tx.includes(s) || s.includes(tx)) })
               }) && (
-                <div style={{ position: 'sticky', top: 0, zIndex: 6, maxWidth: 560, width: '100%', margin: '0 auto 4px', alignSelf: 'center', background: '#faf5ff', border: '1px solid #ede9fe', borderRadius: 14, padding: '4px 14px 14px', boxShadow: '0 6px 16px rgba(76,29,149,0.12)' }}>
+                <div style={{ maxWidth: 560, width: '100%', margin: '0 auto 4px', alignSelf: 'center', background: '#faf5ff', border: '1px solid #ede9fe', borderRadius: 14, padding: '4px 14px 14px' }}>
                   <DraftTasks
                     todos={aiTodos.map((t: any) => t.text).filter(Boolean)}
                     source="ai_summary" storageKey={`colvy-conv-tasks-${selected.id}`}
@@ -8003,8 +8012,8 @@ export default function InboxPage() {
                                     style={{ width: 15, height: 15, borderRadius: '50%', objectFit: 'cover', display: 'inline-block' }} />
                                 ) : (
                                   <span key={ri} title={tip}
-                                    style={{ width: 15, height: 15, borderRadius: '50%', background: companyInfo?.accent_color || 'var(--coral)', color: '#fff', fontSize: 8, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    {r.initial}
+                                    style={{ width: 16, height: 16, borderRadius: '50%', background: companyInfo?.accent_color || 'var(--coral)', color: '#fff', fontSize: 7.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {r.name ? initialsOf(r.name) : (r.initial || '?')}
                                   </span>
                                 )
                               })}

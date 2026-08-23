@@ -29,6 +29,14 @@ type RatesOpts = {
   weightGrams?: number | null
   parcel?: { length?: number; width?: number; height?: number } | null
   currency?: string
+  carrierIds?: string[] | null
+}
+
+// The provider account's carriers (Shipping settings page). Empty when the
+// active provider doesn't expose a carrier list.
+export async function listCarriers(): Promise<{ id: string; name: string; code: string | null; services: number; balance: number | null; currency: string | null }[]> {
+  if (activeProvider() === 'shipstation') return shipstation.listCarriers()
+  return []
 }
 
 export async function getRatesDetailed(opts: RatesOpts): Promise<{ rates: ShipRate[]; raw: any; request: any; provider: Provider | null }> {

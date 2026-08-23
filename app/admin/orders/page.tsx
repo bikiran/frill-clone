@@ -122,6 +122,7 @@ export default function OrdersPage() {
   const [showCreateOrder, setShowCreateOrder] = useState(false)
   const [saveViewName, setSaveViewName] = useState<string | null>(null)
   const [labelOrder, setLabelOrder] = useState<Order | null>(null)
+  const [labelPdf, setLabelPdf] = useState<string | null>(null)
   const [tagDefs, setTagDefs] = useState<{ id: string; name: string; color: string }[]>([])
   const [manageTagsOpen, setManageTagsOpen] = useState(false)
   const tagColor = useCallback((name: string) => tagDefs.find(t => t.name.toLowerCase() === String(name).toLowerCase())?.color || hashColor(name), [tagDefs])
@@ -783,14 +784,16 @@ export default function OrdersPage() {
           onFlash={flash} teamName={teamName} outletName={outletName} fullScreen={drawerFull}
           onLabel={(o: Order) => setLabelOrder(o)}
           onPrintSlip={(id: string) => openPrint('packing_slip', [id])}
-          onPrintLabel={(id: string) => openPrint('label', [id])} />
+          onPrintLabel={(id: string) => openPrint('label', [id])}
+          onLabelPdf={(url: string) => setLabelPdf(url)} />
       )}
 
       {labelOrder && (
         <CreateLabelModal order={labelOrder} companyId={companyId!} accent={ACCENT}
           onClose={() => setLabelOrder(null)}
           onDone={(patch: any) => { patchOrder([labelOrder.id], patch); setLabelOrder(null) }}
-          onFlash={flash} onPrintLabel={(id: string) => openPrint('label', [id])} />
+          onFlash={flash} onPrintLabel={(id: string) => openPrint('label', [id])}
+          onLabelPdf={(url: string) => setLabelPdf(url)} />
       )}
 
       {manageTagsOpen && (
@@ -799,6 +802,8 @@ export default function OrdersPage() {
       )}
 
       {printModal && <PrintModal doc={printModal.doc} companyId={companyId!} ids={printModal.ids} title={printModal.title} accent={ACCENT} onClose={() => setPrintModal(null)} />}
+
+      {labelPdf && <LabelPdfModal url={labelPdf} accent={ACCENT} onClose={() => setLabelPdf(null)} />}
 
       {showCreateOrder && companyId && (
         <CreateOrderPanel companyId={companyId} staffName={me.name} staffId={me.id || undefined}
@@ -891,7 +896,7 @@ function guessCarrierKey(name?: string | null): string {
   return 'custom'
 }
 
-export function CreateLabelModal({ order, companyId, accent, onClose, onDone, onFlash, onPrintLabel }: any) {
+export function CreateLabelModal({ order, companyId, accent, onClose, onDone, onFlash, onPrintLabel, onLabelPdf }: any) {
   const ACCENT = accent || 'var(--coral)'
   // Ship-from locations.
   const [locations, setLocations] = useState<any[]>([])
@@ -1037,8 +1042,9 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
       if (!res.ok || j.error) { onFlash(`Label failed: ${j.error || res.status}`); setBusy(false); return }
       onDone(j.patch || {})
       onFlash(j.live ? 'Label purchased' : 'Label created')
-      // Live carriers return a real PDF — open it directly; otherwise our print route.
-      if (j.label?.labelUrl) { try { window.open(j.label.labelUrl, '_blank') } catch {} }
+      // Live carriers return a real PDF — show it in-app (a popup-blocker eats a
+      // window.open after this await); otherwise our printable-label route.
+      if (j.label?.labelUrl && onLabelPdf) onLabelPdf(j.label.labelUrl)
       else if (onPrintLabel) onPrintLabel(order.id)
     } catch (e: any) { onFlash(`Label error: ${e?.message || e}`); setBusy(false) }
   }
@@ -1238,6 +1244,33 @@ export function PrintModal({ doc, companyId, ids, title, accent, onClose }: { do
   )
 }
 
+// A carrier's real label PDF shown in-app (no popup — the pop-up blocker eats a
+// window.open fired after an await). Embeds the PDF and offers Print plus an
+// "Open in new tab" link that IS a direct user gesture, so it's never blocked.
+export function LabelPdfModal({ url, accent, onClose }: { url: string; accent: string; onClose: () => void }) {
+  const [mounted, setMounted] = useState(false)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  useEffect(() => { setMounted(true) }, [])
+  if (!mounted || typeof document === 'undefined') return null
+  const print = () => { try { iframeRef.current?.contentWindow?.focus(); iframeRef.current?.contentWindow?.print() } catch {} }
+  return createPortal(
+    <div>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 4700 }} />
+      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 720, maxWidth: '96vw', height: '90vh', background: '#fff', borderRadius: 14, zIndex: 4701, boxShadow: '0 24px 60px rgba(0,0,0,0.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#0f172a', color: '#fff', flexShrink: 0 }}>
+          <strong style={{ fontSize: 14 }}>Shipping Label</strong>
+          <div style={{ flex: 1 }} />
+          <a href={url} target="_blank" rel="noreferrer" style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>Open in new tab</a>
+          <button type="button" onClick={print} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Print</button>
+          <button type="button" onClick={onClose} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.3)', background: 'transparent', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Close</button>
+        </div>
+        <iframe ref={iframeRef} src={url} title="Shipping Label" style={{ flex: 1, border: 'none', background: '#f1f5f9', width: '100%' }} />
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 // ── Bulk Tag dropdown — apply/remove managed tags across selected orders ──────
 function TagApplyMenu({ tagDefs, selectedOrders, accent, onToggle, onCreate, onManage, onClose }: any) {
   const [q, setQ] = useState('')
@@ -1381,7 +1414,7 @@ function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOr
 }
 
 // ── Right-side order drawer ───────────────────────────────────────────────────
-function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, tagDefs, tagColor, onEnsureTag, onManageTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, onPrintLabel, teamName, outletName, fullScreen = false }: any) {
+function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, tagDefs, tagColor, onEnsureTag, onManageTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, onPrintLabel, onLabelPdf, teamName, outletName, fullScreen = false }: any) {
   const ACCENT = accent || 'var(--coral)'
   const [items, setItems] = useState<any[]>([])
   const [pickMode, setPickMode] = useState(false)
@@ -1773,7 +1806,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
       })
       const j = await res.json().catch(() => ({}))
       if (action === 'reprint') {
-        if (j.labelUrl) { try { window.open(j.labelUrl, '_blank') } catch {} }
+        if (j.labelUrl && onLabelPdf) onLabelPdf(j.labelUrl)
+        else if (j.labelUrl) { try { window.open(j.labelUrl, '_blank') } catch {} }
         else if (onPrintLabel) onPrintLabel(order.id)   // printable-label fallback
         else onFlash(`Reprint failed: ${j.error || res.status}`)
         return
