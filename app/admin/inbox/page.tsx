@@ -6989,10 +6989,10 @@ export default function InboxPage() {
               </span>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {callMatches(activeCall, { conversationId: c.id, contactId: c.contact_id, phone: contact.phone || c.sms_number }) ? (
+                {callMatches(activeCall, { conversationId: c.id, contactId: c.contact_id, phone: contact.phone || c.sms_number || (conv as any).subject || (typeof displayName === 'string' ? displayName : '') }) ? (
                   <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: '#059669', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
-                    {activeCall?.status === 'ringing' ? 'Calling…' : 'Call in progress'}
+                    {activeCall?.status === 'ringing' ? 'Calling…' : 'Ongoing call'}
                   </p>
                 ) : (
                 <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>

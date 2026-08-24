@@ -73,6 +73,8 @@ export default function PaymentsPage() {
   const router = useRouter()
   const seededCid = peekCompanyUser()?.companyId ?? null
   const [companyId, setCompanyId] = useState<string | null>(seededCid)
+  const [companyName, setCompanyName] = useState('')
+  const [receiptModal, setReceiptModal] = useState<Payment | null>(null)
   const [senderName, setSenderName] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [payments, setPayments] = useState<Payment[]>([])
@@ -143,6 +145,7 @@ export default function PaymentsPage() {
         }
         if (!cid) { setLoading(false); return }
         setCompanyId(cid)
+        try { const { data: co } = await (supabase as any).from('companies').select('name').eq('id', cid).maybeSingle(); setCompanyName(co?.name || '') } catch {}
         await load(cid, range)
       } finally { setLoading(false) }
     })()
@@ -275,6 +278,23 @@ export default function PaymentsPage() {
       setDetails(j?.details || null)
     } catch { setDetails(null) }
     finally { setDetailsLoading(false) }
+  }
+
+  // Print the receipt via a hidden iframe (no popup, no blocker).
+  const printReceipt = () => {
+    const node = document.getElementById('rcpt-print')
+    if (!node) return
+    const frame = document.createElement('iframe')
+    frame.style.position = 'fixed'; frame.style.right = '0'; frame.style.bottom = '0'
+    frame.style.width = '0'; frame.style.height = '0'; frame.style.border = '0'
+    document.body.appendChild(frame)
+    const doc = frame.contentWindow?.document
+    if (!doc) { frame.remove(); return }
+    doc.open()
+    doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receipt</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:24px;color:#111}</style></head><body>${node.innerHTML}</body></html>`)
+    doc.close()
+    frame.contentWindow?.focus()
+    setTimeout(() => { try { frame.contentWindow?.print() } catch {} setTimeout(() => frame.remove(), 500) }, 200)
   }
 
   const exportCsv = () => {
@@ -553,7 +573,7 @@ export default function PaymentsPage() {
                   {canRefund && <button type="button" disabled={isBusy} onClick={() => doRefund(p)} style={{ padding: '10px 12px', borderRadius: 9, border: '1px solid #f4b4bf', background: 'var(--card,#fff)', color: '#e11d48', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Refund payment</button>}
                   {c.conv?.id && <button type="button" onClick={() => router.push(`/admin/inbox?conversation=${c.conv.id}`)} style={{ padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Open in inbox</button>}
                   {p.checkout_url && <button type="button" onClick={() => copyLink(p)} style={{ padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Copy payment link</button>}
-                  {(details?.receiptUrl || p.receipt_url) && <a href={details?.receiptUrl || p.receipt_url || undefined} target="_blank" rel="noopener noreferrer" style={{ padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, textAlign: 'center', textDecoration: 'none' }}>View receipt</a>}
+                  {p.status !== 'pending' && <button type="button" onClick={() => setReceiptModal(p)} style={{ padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>View receipt</button>}
                 </div>
 
                 {/* Activity */}
@@ -570,6 +590,67 @@ export default function PaymentsPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Receipt pop-up (in-app, no new tab) */}
+      {receiptModal && (() => {
+        const p = receiptModal
+        const c = customerOf(p)
+        const sm = statusMeta(p.status)
+        const refunded = p.refunded_cents || 0
+        const kept = (p.amount_cents || 0) - refunded
+        const line: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', fontSize: 13 }
+        return (
+          <div onClick={() => setReceiptModal(null)} style={{ position: 'fixed', inset: 0, zIndex: 6300, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', background: 'var(--card,#fff)', borderRadius: 16, boxShadow: '0 30px 80px rgba(0,0,0,0.3)' }}>
+              <div id="rcpt-print" style={{ padding: '26px 26px 8px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>{companyName || 'Receipt'}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--slate)' }}>Payment receipt</p>
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '4px 11px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{p.status === 'refunded' ? 'REFUNDED' : 'PAID'}</span>
+                </div>
+
+                <div style={{ marginTop: 18, display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 12.5, color: 'var(--slate)' }}>
+                  <div>
+                    <p style={{ margin: 0, fontWeight: 700, color: 'var(--ink)' }}>Billed to</p>
+                    <p style={{ margin: '3px 0 0' }}>{c.name}</p>
+                    {c.phone && <p style={{ margin: 0 }}>{c.phone}</p>}
+                    {c.email2 && <p style={{ margin: 0 }}>{c.email2}</p>}
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ margin: 0 }}>Receipt {payNumber(p.id)}</p>
+                    <p style={{ margin: '3px 0 0' }}>{fmtDate(p.paid_at || p.created_at)}</p>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '6px 0' }}>
+                  <div style={line}><span style={{ color: 'var(--ink)' }}>{p.description || 'Payment'}</span><span style={{ fontWeight: 700 }}>{money(p.amount_cents, p.currency || 'AUD')}</span></div>
+                </div>
+                <div style={{ padding: '8px 0' }}>
+                  <div style={line}><span style={{ color: 'var(--slate)' }}>Total</span><span style={{ fontWeight: 800 }}>{money(p.amount_cents, p.currency || 'AUD')}</span></div>
+                  {refunded > 0 && <div style={line}><span style={{ color: '#e11d48' }}>Refunded</span><span style={{ fontWeight: 700, color: '#e11d48' }}>−{money(refunded, p.currency || 'AUD')}</span></div>}
+                  {refunded > 0 && <div style={line}><span style={{ color: 'var(--slate)' }}>Amount kept</span><span style={{ fontWeight: 700 }}>{money(kept, p.currency || 'AUD')}</span></div>}
+                </div>
+
+                <div style={{ marginTop: 4, fontSize: 12, color: 'var(--slate)' }}>
+                  <p style={{ margin: 0 }}>Paid with {p.card_brand ? `${p.card_brand.toUpperCase()} •••• ${p.card_last4 || '••••'}` : 'card'}</p>
+                  {(p.stripe_payment_intent) && <p style={{ margin: '2px 0 0', fontSize: 10.5, wordBreak: 'break-all' }}>Ref: {p.stripe_payment_intent}</p>}
+                </div>
+                <p style={{ margin: '16px 0 0', fontSize: 11, color: 'var(--slate)', textAlign: 'center' }}>Thank you for your payment.</p>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, padding: '10px 20px 18px' }}>
+                <button type="button" onClick={printReceipt} style={{ flex: 1, padding: '10px 12px', borderRadius: 9, border: 'none', background: CORAL, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Print</button>
+                {(details?.receiptUrl || p.receipt_url) && (
+                  <a href={details?.receiptUrl || p.receipt_url || undefined} target="_blank" rel="noopener noreferrer" style={{ flex: 1, textAlign: 'center', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Stripe receipt</a>
+                )}
+                <button type="button" onClick={() => setReceiptModal(null)} style={{ flex: 1, padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Close</button>
               </div>
             </div>
           </div>
