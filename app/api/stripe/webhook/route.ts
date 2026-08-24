@@ -95,13 +95,8 @@ export async function POST(req: NextRequest) {
           // confirmChatPayment returns confirmed:false and we skip the rest.
           const { data: pay } = await (supabase as any).from('chat_payments')
             .select('id, company_id, conversation_id, message_id, amount_cents').eq('stripe_session_id', session.id).maybeSingle()
-          let checkoutUrl = ''
-          if (pay?.message_id) {
-            const { data: m } = await (supabase as any).from('messages').select('message_payload').eq('id', pay.message_id).maybeSingle()
-            checkoutUrl = m?.message_payload?.checkout_url || ''
-          }
           const confirmRes = pay
-            ? await confirmChatPayment(supabase, pay, { receiptUrl, paymentIntent: session.payment_intent || null })
+            ? await confirmChatPayment(supabase, pay, { receiptUrl, paymentIntent: session.payment_intent || null, orderId: meta.orderId || null, orderNumber: meta.orderId ? String(meta.orderId) : null })
             : { confirmed: false }
           if (!confirmRes.confirmed) break
           // If this payment was for a WooCommerce order, mark it processing.
@@ -125,30 +120,10 @@ export async function POST(req: NextRequest) {
               }
             } catch {}
           }
-          // (Card flip, confirmation message and push notification are handled
-          // by confirmChatPayment above.)
-
-          // Credit this payment link in Link Reports. The link WAS the payment,
-          // so the revenue is directly attributable — not merely "influenced".
-          // Without this, revenue paid through a payment link never showed up as
-          // an order or revenue in the report.
-          try {
-            const code = (checkoutUrl.match(/\/l\/([A-Za-z0-9_-]+)/) || [])[1]
-            if (code) {
-              const { data: link } = await (supabase as any).from('short_links')
-                .select('id, contact_id').eq('code', code).maybeSingle()
-              if (link?.id) {
-                await (supabase as any).from('link_conversions').upsert({
-                  company_id: meta.companyId, link_id: link.id, contact_id: link.contact_id || null,
-                  order_id: meta.orderId ? String(meta.orderId) : session.id,
-                  order_number: meta.orderId ? String(meta.orderId) : null,
-                  stage: 'paid',
-                  revenue: (pay?.amount_cents || 0) / 100, currency: 'aud',
-                  clicked_at: new Date().toISOString(), converted_at: new Date().toISOString(),
-                }, { onConflict: 'link_id,order_id,stage' })
-              }
-            }
-          } catch { /* analytics only — never affect payment processing */ }
+          // (Card flip, confirmation message, push notification AND the Link
+          // Reports revenue credit are all handled by confirmChatPayment above,
+          // so both this webhook and the verify-payment poll attribute the
+          // payment identically — whichever confirms it first.)
           break
         }
         const { userId, tier } = meta
