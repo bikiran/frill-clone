@@ -4455,31 +4455,37 @@ export default function InboxPage() {
     //      if the widget isn't currently active, deliver over SMS so they
     //      actually receive it.
     const smsNumber = smsDestination()
-    // Is the visitor actually sitting in the widget? Use ONLY the widget's own
-    // heartbeat (page_seen_at, refreshed every 60s while their tab is open).
-    // This previously fell back to last_message_at — which the AGENT'S own
-    // replies update — so sending two messages in a row made the visitor look
-    // online and the reply went into a live chat nobody was watching.
-    const visitorOnline = isOnPageNow
-    // NB: named differently from the component-scope `activeChannel` (useMemo) on
-    // purpose — a local `const activeChannel` here would shadow it across the
-    // WHOLE function, putting the earlier attachment-send reference (which passes
-    // metaCh: activeChannel) into the temporal dead zone and throwing a
-    // ReferenceError mid-send (attachment stuck on "Sending…", no error shown).
-    const convActiveChannel = (selected as any).active_channel || null
+    // "Is the customer still on live chat?" Prefer the live chat WHILE they're
+    // actually there; only fall back to SMS (then email) once they've left. Two
+    // signals, either is enough:
+    //   • the widget heartbeat (page_seen_at < 2 min), and
+    //   • a very recent inbound message that arrived over the chat/widget channel
+    //     (a strong "they're typing here right now" signal even if a heartbeat
+    //     was missed).
+    // If their most recent inbound came in by SMS instead, they're on SMS, so we
+    // continue there. This stops replies going out by SMS while the customer is
+    // sitting in the widget.
+    const lastIn = [...messages].reverse().find((m: any) => m.sender_type !== 'agent' && m.sender_type !== 'system')
+    const lastInCh = String((lastIn as any)?.delivery_channel || '').toLowerCase()
+    const lastInAt = (lastIn as any)?.created_at ? parseTs((lastIn as any).created_at) : null
+    const lastInRecent = !!lastInAt && (Date.now() - lastInAt.getTime()) < 180000
+    const lastInIsChat = ['chat', 'widget', 'live_chat', ''].includes(lastInCh)
+    const visitorOnLiveChat = isOnPageNow || (lastInRecent && lastInIsChat)
+
     const shouldSms = sendChannel === 'sms'
       ? !!smsNumber
       : sendChannel === 'chat'
         ? false
-        : !!smsNumber && (convActiveChannel === 'sms' || !visitorOnline)
+        // Auto: SMS only when the customer is NOT currently on live chat.
+        : (!!smsNumber && !visitorOnLiveChat)
 
-    // If we can't use SMS and the visitor isn't sitting in the widget, fall back
-    // to email rather than dropping the reply into a chat nobody is watching.
-    // Order of preference: continue the last-used channel → SMS → email → chat.
+    // If we can't use SMS and the visitor isn't on live chat, fall back to email
+    // rather than dropping the reply into a chat nobody is watching.
+    // Order of preference: live chat (if they're on it) → SMS → email → chat.
     const emailTo = contact?.email || (selected as any).customer_email || null
     const shouldEmail = sendChannel === 'auto'
       && !shouldSms
-      && !visitorOnline
+      && !visitorOnLiveChat
       && !!emailTo
 
     if (shouldEmail) {
