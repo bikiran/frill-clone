@@ -334,7 +334,7 @@ export default function PaymentsPage() {
   const I = (p: any) => ({ width: 20, height: 20, fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, viewBox: '0 0 24 24', ...p })
 
   return (
-    <div style={{ padding: 24, maxWidth: 1320, margin: '0 auto' }}>
+    <div style={{ padding: 24 }}>
       <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: 'var(--ink)' }}>Payments</h1>
       <p style={{ margin: '3px 0 18px', fontSize: 13, color: 'var(--slate)' }}>Track payments, refunds, and payment links across Colvy.</p>
 

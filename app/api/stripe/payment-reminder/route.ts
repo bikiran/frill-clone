@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { shortenUrl } from '@/lib/short-link'
 
 function admin() {
   return createClient(
@@ -21,9 +22,24 @@ export async function POST(req: NextRequest) {
     const { data: pay } = await db.from('chat_payments').select('*').eq('id', paymentId).eq('company_id', companyId).maybeSingle()
     if (!pay) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     if (pay.status !== 'pending') return NextResponse.json({ error: 'Only pending payments can be reminded' }, { status: 400 })
-    const payLink = pay.checkout_url
-    if (!payLink) return NextResponse.json({ error: 'No payment link on this record' }, { status: 400 })
     if (!pay.conversation_id) return NextResponse.json({ error: 'No conversation to send through' }, { status: 400 })
+
+    // Use the SHORT colvy.com/l/<code> link, never the raw (very long, spammy)
+    // Stripe checkout URL. The short link was created when the request was first
+    // sent and lives on the payment message's payload; fall back to shortening
+    // the stored Stripe URL if it's missing.
+    let payLink = pay.checkout_url
+    if (pay.message_id) {
+      try {
+        const { data: m } = await db.from('messages').select('message_payload').eq('id', pay.message_id).maybeSingle()
+        const cu = m?.message_payload?.checkout_url
+        if (cu) payLink = cu
+      } catch {}
+    }
+    if (!payLink) return NextResponse.json({ error: 'No payment link on this record' }, { status: 400 })
+    if (!/\/l\//.test(payLink)) {
+      try { const short = await shortenUrl(payLink, { companyId, kind: 'payment', conversationId: pay.conversation_id }); if (short) payLink = short } catch {}
+    }
 
     const { data: conv } = await db.from('conversations').select('channel, sms_number, subject, contact_id').eq('id', pay.conversation_id).maybeSingle()
     let phone = String(conv?.sms_number || ''), email = '', channel = String(conv?.channel || '').toLowerCase()
