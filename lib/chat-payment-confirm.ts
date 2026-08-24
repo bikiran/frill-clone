@@ -19,13 +19,15 @@ export interface ChatPaymentRow {
 export async function confirmChatPayment(
   db: any,
   pay: ChatPaymentRow,
-  opts?: { receiptUrl?: string | null; paymentIntent?: string | null },
+  opts?: { receiptUrl?: string | null; paymentIntent?: string | null; orderId?: string | number | null; orderNumber?: string | null; cardBrand?: string | null; cardLast4?: string | null },
 ): Promise<{ confirmed: boolean }> {
   // ── 1. Claim the transition. Only proceeds if the row is still pending, so a
   // webhook and a verify-payment poll racing each other confirm exactly once.
   const patch: any = { status: 'paid', paid_at: new Date().toISOString() }
   if (opts?.receiptUrl) patch.receipt_url = opts.receiptUrl
   if (opts?.paymentIntent) patch.stripe_payment_intent = opts.paymentIntent
+  if (opts?.cardBrand) patch.card_brand = opts.cardBrand
+  if (opts?.cardLast4) patch.card_last4 = opts.cardLast4
   let claimed = false
   try {
     const { data } = await db.from('chat_payments').update(patch).eq('id', pay.id).eq('status', 'pending').select('id')
@@ -46,10 +48,12 @@ export async function confirmChatPayment(
   // ── 2. Flip the in-chat payment card to paid, and learn the channel it was
   // sent on (so the customer-facing confirmation goes back the same way).
   let paidChannel = ''
+  let checkoutUrl = ''
   if (pay.message_id) {
     try {
       const { data: m } = await db.from('messages').select('message_payload, delivery_channel').eq('id', pay.message_id).maybeSingle()
       paidChannel = String((m as any)?.delivery_channel || '').toLowerCase()
+      checkoutUrl = String((m as any)?.message_payload?.checkout_url || '')
       await db.from('messages').update({
         message_payload: { ...((m as any)?.message_payload || {}), status: 'paid' },
       }).eq('id', pay.message_id)
@@ -153,6 +157,31 @@ export async function confirmChatPayment(
       }),
     })
   } catch { /* notification is best-effort */ }
+
+  // ── 6. Credit this payment link in Link Reports. The payment link WAS the
+  // click, so its revenue is directly attributable — not merely "influenced".
+  // This lives here (not in the caller) so it runs no matter WHICH path
+  // confirmed the payment — the Stripe webhook OR the verify-payment poll —
+  // and exactly once, because we only reach this line when THIS call claimed
+  // the pending→paid transition. (Previously it lived only in the webhook, so
+  // a payment confirmed by verify-payment showed Revenue "—" in the report.)
+  try {
+    const code = (checkoutUrl.match(/\/l\/([A-Za-z0-9_-]+)/) || [])[1]
+    if (code) {
+      const { data: link } = await db.from('short_links').select('id, contact_id').eq('code', code).maybeSingle()
+      if (link?.id) {
+        const orderId = opts?.orderId ? String(opts.orderId) : (opts?.paymentIntent || `pay_${pay.id}`)
+        await db.from('link_conversions').upsert({
+          company_id: pay.company_id, link_id: link.id, contact_id: link.contact_id || null,
+          order_id: orderId,
+          order_number: opts?.orderNumber || (opts?.orderId ? String(opts.orderId) : null),
+          stage: 'paid',
+          revenue: (pay.amount_cents || 0) / 100, currency: 'aud',
+          clicked_at: new Date().toISOString(), converted_at: new Date().toISOString(),
+        }, { onConflict: 'link_id,order_id,stage' })
+      }
+    }
+  } catch { /* analytics only — never affect payment processing */ }
 
   return { confirmed: true }
 }

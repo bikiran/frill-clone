@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
@@ -14,6 +15,7 @@ type Contact = { id: string; name: string | null; email: string | null; phone: s
 const SOURCE_COLORS: Record<string, string> = { widget: '#dbeafe', woocommerce: '#ede9fe', import: '#dcfce7', manual: '#fef9c3', email: '#ffedd5' }
 
 export default function ContactsPage() {
+  const router = useRouter()
   // Seed the company from the shared identity cache so a revisit resolves it
   // synchronously and skips the extra companies lookup.
   const seededCid = peekCompanyUser()?.companyId ?? null
@@ -177,14 +179,36 @@ export default function ContactsPage() {
     let query = (supabase as any).from('contacts').select('*', { count: 'exact' }).eq('company_id', id)
     if (locationFilter !== 'all') query = query.eq('location_id', locationFilter)
     if (q && q.trim()) {
-      // Match each word of the query against name/email/phone, so searching a
-      // last name ("Wongyarit") or a full name ("Panadda Wongyarit") both work.
       // Escape PostgREST's reserved characters so odd input can't break the query.
       const clean = (s: string) => s.replace(/[,()%\\]/g, ' ').trim()
-      const words = clean(q).split(/\s+/).filter(Boolean)
-      for (const w of words) {
-        query = query.or(`name.ilike.%${w}%,email.ilike.%${w}%,phone.ilike.%${w}%`)
+      const cq = clean(q)
+
+      // IMPORTANT: build ONE `.or()` covering every field and every word.
+      // Chaining `.or()` per word (the old approach) AND-combines the groups in
+      // PostgREST, so "Panadda Wongyarit" required BOTH words to match — a record
+      // stored as just "Panadda", or a search that mixed a name with an email,
+      // returned nothing. That's exactly the "search can't find a contact that
+      // clearly exists" bug. A single or() with OR semantics is forgiving: any
+      // word matching any field surfaces the row.
+      const conds: string[] = []
+      // Whole query against name/email — handles multi-word names contiguously.
+      conds.push(`name.ilike.%${cq}%`, `email.ilike.%${cq}%`)
+      // Each word against name/email too, so partial or reordered names still hit.
+      for (const w of cq.split(/\s+/).filter(Boolean)) {
+        conds.push(`name.ilike.%${w}%`, `email.ilike.%${w}%`)
       }
+      // Phone: numbers are stored in varying formats ("+61405123456" vs
+      // "0405 123 456"), so match on the digit fragment the same way the
+      // Add-contact dedup does — otherwise the list says "already exists" for a
+      // contact you genuinely can't find here.
+      const digitsAll = cq.replace(/\D/g, '')
+      if (digitsAll.length >= 4) {
+        conds.push(`phone.ilike.%${digitsAll.slice(-9)}%`)
+      } else {
+        conds.push(`phone.ilike.%${cq}%`)
+      }
+      // De-dupe identical conditions to keep the URL compact.
+      query = query.or(Array.from(new Set(conds)).join(','))
     }
     // Paginated: Supabase caps a response at 1000 rows anyway, and loading
     // 12,000 contacts into the browser at once is slow and unusable. Range gives
@@ -491,28 +515,31 @@ export default function ContactsPage() {
                     <td style={{ padding: '11px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={e => e.stopPropagation()}>
                         {c.phone && (
-                          <a href={`tel:${c.phone}`} title={`Call ${c.phone}`} aria-label="Call"
-                            style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
+                          <button type="button" title={`Call ${c.phone}`} aria-label="Call"
+                            onClick={() => window.dispatchEvent(new CustomEvent('colvy:dial', { detail: { number: c.phone, name: c.name, contactId: c.id } }))}
+                            style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
                             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z"/></svg>
-                          </a>
+                          </button>
                         )}
                         {c.phone && (
-                          <a href={`sms:${c.phone}`} title={`Message ${c.phone}`} aria-label="Message"
-                            style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
+                          <button type="button" title={`Message ${c.phone} in Colvy`} aria-label="Message"
+                            onClick={() => router.push(`/admin/inbox?contact=${c.id}&channel=sms`)}
+                            style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
                             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                          </a>
+                          </button>
                         )}
                         {c.email && (
-                          <a href={`mailto:${c.email}`} title={`Email ${c.email}`} aria-label="Email"
-                            style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
+                          <button type="button" title={`Email ${c.email} in Colvy`} aria-label="Email"
+                            onClick={() => router.push(`/admin/inbox?contact=${c.id}&channel=email`)}
+                            style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
                             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
-                          </a>
+                          </button>
                         )}
                         <button onClick={e => { e.stopPropagation(); setSelected(c); setEditData(c); setEditMode(true) }}
                           style={{ fontSize: 12, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, marginLeft: 2 }}>Edit</button>

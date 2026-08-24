@@ -11,6 +11,7 @@ import {
 import OrderPrintDoc from '@/components/OrderPrintDoc'
 import OrderItemsPanel from '@/components/OrderItemsPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
+import OutOfStockModal from '@/components/OutOfStockModal'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 import { barcodeSVG } from '@/lib/barcode'
 
@@ -120,6 +121,7 @@ export default function OrdersPage() {
   const [tagMenuOpen, setTagMenuOpen] = useState(false)
   const [tagFilterOpen, setTagFilterOpen] = useState(false)
   const [showCreateOrder, setShowCreateOrder] = useState(false)
+  const [showOOS, setShowOOS] = useState(false)
   const [saveViewName, setSaveViewName] = useState<string | null>(null)
   const [labelOrder, setLabelOrder] = useState<Order | null>(null)
   const [labelPdf, setLabelPdf] = useState<string | null>(null)
@@ -683,6 +685,11 @@ export default function OrdersPage() {
             <input value={search} onFocus={ensureItemIndex} onChange={e => { ensureItemIndex(); setSearch(e.target.value) }} placeholder="Order #, name, phone, email, address, SKU, product…" style={{ ...ctrl, minWidth: 280, paddingRight: search ? 28 : 10, cursor: 'text', fontWeight: 500 }} />
             {search && <button type="button" onClick={() => setSearch('')} title="Clear search" style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', fontSize: 15, lineHeight: 1, padding: 2 }}>×</button>}
           </div>
+          <button type="button" onClick={() => setShowOOS(true)} title="Items flagged out of stock across all orders"
+            style={{ ...ctrl, display: 'inline-flex', alignItems: 'center', gap: 6, borderColor: '#f0a5a5', color: '#dc2626', fontWeight: 700 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+            Out of Stock List
+          </button>
           <select value={fAssignee} onChange={e => setFAssignee(e.target.value)} style={ctrl}><option value="all">Any assignee</option><option value="none">Unassigned</option>{team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
           <div style={{ position: 'relative' }}>
             <button type="button" onClick={() => setTagFilterOpen(v => !v)} style={{ ...ctrl, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -809,6 +816,12 @@ export default function OrdersPage() {
         <CreateOrderPanel companyId={companyId} staffName={me.name} staffId={me.id || undefined}
           onClose={() => setShowCreateOrder(false)}
           onCreated={() => { flash('Order created'); runSync(companyId) }} />
+      )}
+
+      {showOOS && companyId && (
+        <OutOfStockModal companyId={companyId} accent={ACCENT} locations={locations}
+          onClose={() => setShowOOS(false)}
+          onOpenOrder={(id: string) => openOrder(id)} />
       )}
 
       {saveViewName !== null && (

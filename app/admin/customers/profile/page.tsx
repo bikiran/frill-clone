@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { SegmentationService } from '@/lib/segmentation-service'
 
 export default function CustomerProfilePage() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const customerId = searchParams.get('id')
   const slug = searchParams.get('slug')
 
@@ -507,7 +508,7 @@ export default function CustomerProfilePage() {
   const I = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
 
   return (
-    <div style={{ maxWidth: 1180, margin: '0 auto', padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div style={{ padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -526,22 +527,25 @@ export default function CustomerProfilePage() {
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {customer.phone && (
-                <a href={`tel:${customer.phone}`} style={ghostBtn}>
+                <button type="button" style={ghostBtn}
+                  onClick={() => window.dispatchEvent(new CustomEvent('colvy:dial', { detail: { number: customer.phone, name: fullName, contactId: contactId || undefined } }))}>
                   <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                   Call
-                </a>
+                </button>
               )}
-              {conversationId && (
-                <a href={`/admin/inbox?conversation=${conversationId}`} style={ghostBtn}>
+              {(conversationId || contactId) && (
+                <button type="button" style={ghostBtn}
+                  onClick={() => router.push(conversationId ? `/admin/inbox?conversation=${conversationId}` : `/admin/inbox?contact=${contactId}&channel=sms`)}>
                   <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                   Message
-                </a>
+                </button>
               )}
               {customer.email && (
-                <a href={`mailto:${customer.email}`} style={ghostBtn}>
+                <button type="button" style={ghostBtn}
+                  onClick={() => router.push(contactId ? `/admin/inbox?contact=${contactId}&channel=email` : conversationId ? `/admin/inbox?conversation=${conversationId}` : '/admin/inbox')}>
                   <svg width="15" height="15" viewBox="0 0 24 24" {...I}><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
                   Email
-                </a>
+                </button>
               )}
               <button type="button" onClick={focusNote} style={ghostBtn}>
                 <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -568,12 +572,20 @@ export default function CustomerProfilePage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
               <div style={{ minWidth: 0 }}>
                 <p style={kicker}>Email</p>
-                <a href={`mailto:${customer.email}`} style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--coral)', textDecoration: 'none', overflowWrap: 'anywhere' }}>{customer.email}</a>
+                {customer.email ? (
+                  <button type="button"
+                    onClick={() => router.push(contactId ? `/admin/inbox?contact=${contactId}&channel=email` : conversationId ? `/admin/inbox?conversation=${conversationId}` : '/admin/inbox')}
+                    title="Email in Colvy"
+                    style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--coral)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', overflowWrap: 'anywhere' }}>{customer.email}</button>
+                ) : <span style={{ fontSize: 13.5, color: 'var(--slate)' }}>—</span>}
               </div>
               {customer.phone && (
                 <div style={{ minWidth: 0 }}>
                   <p style={kicker}>Phone</p>
-                  <a href={`tel:${customer.phone}`} style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', textDecoration: 'none' }}>{customer.phone}</a>
+                  <button type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('colvy:dial', { detail: { number: customer.phone, name: fullName, contactId: contactId || undefined } }))}
+                    title="Call in Colvy"
+                    style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>{customer.phone}</button>
                 </div>
               )}
               {hasWooAddr ? (

@@ -47,17 +47,24 @@ export async function POST(req: NextRequest) {
         const sessionId = pay.stripe_session_id || pay.session_id
         if (!sessionId) { results.push({ id: pay.id, error: 'No Stripe session id stored' }); continue }
 
-        const session: any = await s.checkout.sessions.retrieve(sessionId, opts)
+        const session: any = await s.checkout.sessions.retrieve(sessionId, { expand: ['payment_intent.latest_charge'] } as any, opts)
         const isPaid = session?.payment_status === 'paid' || session?.status === 'complete'
 
         if (!isPaid) { results.push({ id: pay.id, status: session?.payment_status || 'unpaid' }); continue }
+
+        // Card brand + last-4 for the Payments list, captured once at confirm.
+        const card = session?.payment_intent?.latest_charge?.payment_method_details?.card || null
 
         // Mark paid + flip the card + post confirmation + push — shared with the
         // webhook so the two paths confirm exactly once (whichever wins the race).
         const res = await confirmChatPayment(db, {
           id: pay.id, company_id: pay.company_id, conversation_id: pay.conversation_id,
           message_id: pay.message_id, amount_cents: pay.amount_cents,
-        }, { receiptUrl: session?.receipt_url || null, paymentIntent: (session?.payment_intent as string) || null })
+        }, {
+          receiptUrl: session?.receipt_url || null,
+          paymentIntent: (typeof session?.payment_intent === 'string' ? session.payment_intent : session?.payment_intent?.id) || null,
+          cardBrand: card?.brand || null, cardLast4: card?.last4 || null,
+        })
 
         if (res.confirmed) updated++
         results.push({ id: pay.id, status: res.confirmed ? 'paid' : 'already-confirmed' })
