@@ -142,14 +142,19 @@ export async function ingestInboundSms(params: {
     unread_count: (conv.unread_count || 0) + 1, updated_at: new Date().toISOString(),
   }).eq('id', conv.id)
 
-  // Alert agents' phones + run smart triggers. Prefer the saved contact's name
-  // over the raw number in the title; fall back to the number when unknown.
-  let senderLabel = matchedContactName || conv.subject || null
-  if (!senderLabel && matchedContactId) {
-    try {
-      const { data: c } = await db.from('contacts').select('name').eq('id', matchedContactId).eq('company_id', companyId).maybeSingle()
-      senderLabel = c?.name || null
-    } catch {}
+  // Alert agents' phones + run smart triggers. The sender name is the PERSON —
+  // their saved contact name, else the raw number. Never the conversation
+  // subject: that's a system label (e.g. "Abandoned cart", "Cart recovered"), so
+  // using it produced nonsense like "New SMS from Abandoned cart".
+  let senderLabel = matchedContactName || null
+  if (!senderLabel) {
+    const cid = conv.contact_id || matchedContactId
+    if (cid) {
+      try {
+        const { data: c } = await db.from('contacts').select('name').eq('id', cid).eq('company_id', companyId).maybeSingle()
+        senderLabel = c?.name || null
+      } catch {}
+    }
   }
   if (!senderLabel || /^\+?\d[\d\s-]*$/.test(senderLabel)) senderLabel = from
   try {
