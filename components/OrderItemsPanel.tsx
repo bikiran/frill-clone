@@ -80,24 +80,49 @@ export default function OrderItemsPanel({
     const k = keyOf(it)
     const now = !oos.has(k)
     setOos(prev => { const n = new Set(prev); now ? n.add(k) : n.delete(k); return n })
-    try {
-      if (now) {
-        await (supabase as any).from('order_stock_alerts').upsert({
-          company_id: companyId, order_id: order.id, order_number: order.order_number,
-          order_date: order.order_date || order.created_at || null, customer_name: order.customer_name,
-          customer_phone: order.customer_phone || null, customer_email: order.customer_email || null,
-          store_location_id: order.store_location_id || null, line_key: k,
-          product_name: it.product_name, sku: it.sku || null, image_url: it.image_url || null, quantity: it.quantity || 1,
-          status: 'pending', resolved_at: null, created_by_name: null, updated_at: new Date().toISOString(),
-        }, { onConflict: 'order_id,line_key' })
+    if (now) {
+      // Full row (denormalised). If a newer optional column (image_url) is
+      // missing because an older V286 was applied, the insert would fail as a
+      // whole — so retry without the optional columns rather than lose the flag.
+      const full: any = {
+        company_id: companyId, order_id: order.id, order_number: order.order_number,
+        order_date: order.order_date || order.created_at || null, customer_name: order.customer_name,
+        customer_phone: order.customer_phone || null, customer_email: order.customer_email || null,
+        store_location_id: order.store_location_id || null, line_key: k,
+        product_name: it.product_name, sku: it.sku || null, image_url: it.image_url || null, quantity: it.quantity || 1,
+        status: 'pending', resolved_at: null, created_by_name: null, updated_at: new Date().toISOString(),
+      }
+      const minimal: any = {
+        company_id: companyId, order_id: order.id, order_number: order.order_number,
+        customer_name: order.customer_name, line_key: k,
+        product_name: it.product_name, sku: it.sku || null, quantity: it.quantity || 1, status: 'pending',
+      }
+      let saved = false
+      try {
+        const { error } = await (supabase as any).from('order_stock_alerts').upsert(full, { onConflict: 'order_id,line_key' })
+        if (error) throw error
+        saved = true
+      } catch {
+        try {
+          const { error } = await (supabase as any).from('order_stock_alerts').upsert(minimal, { onConflict: 'order_id,line_key' })
+          if (!error) saved = true
+        } catch {}
+      }
+      if (saved) {
         onLog?.('item_out_of_stock', `Flagged out of stock: ${it.product_name}${it.quantity ? ` ×${it.quantity}` : ''}`)
         onFlash?.('Marked out of stock')
       } else {
+        // Roll the optimistic flag back so the UI matches reality.
+        setOos(prev => { const n = new Set(prev); n.delete(k); return n })
+        onFlash?.('Could not save — apply the Out of Stock migration (COLVY_V286) and try again')
+      }
+    } else {
+      try {
         await (supabase as any).from('order_stock_alerts').delete().eq('order_id', order.id).eq('line_key', k)
         onLog?.('item_in_stock', `Cleared out-of-stock flag: ${it.product_name}`)
         onFlash?.('Out-of-stock cleared')
-      }
-    } catch { onFlash?.('Saved locally — apply the out-of-stock migration to persist') }
+      } catch { onFlash?.('Could not clear — try again') }
+    }
   }
 
   const stateOf = (it: any): Ful => {
