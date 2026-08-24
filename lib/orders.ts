@@ -3,7 +3,7 @@
 
 export type OrderStatus =
   | 'awaiting_shipment' | 'packed' | 'on_hold' | 'click_and_collect'
-  | 'shipped' | 'cancelled' | 'manual' | 'alert'
+  | 'shipped' | 'cancelled' | 'refunded' | 'manual' | 'alert'
 
 // Colvy status styling — restrained, token-driven, no ShipStation green theme.
 export const STATUS_META: Record<string, { label: string; bg: string; fg: string }> = {
@@ -13,6 +13,7 @@ export const STATUS_META: Record<string, { label: string; bg: string; fg: string
   click_and_collect: { label: 'Click & Collect', bg: '#f3e8ff', fg: '#7c3aed' },
   shipped: { label: 'Shipped', bg: '#dcfce7', fg: '#15803d' },
   cancelled: { label: 'Cancelled', bg: '#f3f4f6', fg: '#6b7280' },
+  refunded: { label: 'Refunded', bg: '#fef2f2', fg: '#dc2626' },
   manual: { label: 'Manual', bg: '#e0edff', fg: '#1d4ed8' },
   alert: { label: 'Alert', bg: '#fee2e2', fg: '#dc2626' },
 }
@@ -30,6 +31,7 @@ export const STATUS_TABS: { key: string; label: string; match?: OrderStatus[] }[
   { key: 'manual', label: 'Manual Orders', match: ['manual'] },
   { key: 'shipped', label: 'Shipped', match: ['shipped'] },
   { key: 'cancelled', label: 'Cancelled', match: ['cancelled'] },
+  { key: 'refunded', label: 'Refunded', match: ['refunded'] },
   { key: 'alerts', label: 'Order Alerts' },
 ]
 
@@ -60,7 +62,8 @@ export function mapWooStatus(woo?: string | null): OrderStatus {
   if (['processing', 'pending'].includes(s)) return 'awaiting_shipment'
   if (s === 'on-hold') return 'on_hold'
   if (['completed'].includes(s)) return 'shipped'
-  if (['cancelled', 'refunded', 'failed', 'trash'].includes(s)) return 'cancelled'
+  if (s === 'refunded') return 'refunded'
+  if (['cancelled', 'failed', 'trash'].includes(s)) return 'cancelled'
   return 'awaiting_shipment'
 }
 export function mapWooPayment(woo?: string | null): string {

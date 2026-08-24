@@ -187,6 +187,15 @@ export async function POST(req: NextRequest) {
         }
         if (!conv) continue
 
+        // Idempotency: Meta redelivers webhook events (retries + at-least-once
+        // delivery), which would insert the same message twice and fire a second
+        // push. Skip if we've already ingested this message id.
+        if (event.message?.mid) {
+          const { data: dupe } = await db.from('messages').select('id')
+            .eq('conversation_id', conv.id).eq('meta_message_id', event.message.mid).limit(1).maybeSingle()
+          if (dupe) continue
+        }
+
         const { data: insertedMsg } = await db.from('messages').insert({
           conversation_id: conv.id, company_id: companyId,
           sender_type: 'visitor',
