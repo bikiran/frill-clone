@@ -40,6 +40,9 @@ export default function OrderItemsPanel({
   const [splitMode, setSplitMode] = useState(false)
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [reassign, setReassign] = useState<string | null>(null)
+  // Line keys currently flagged out of stock (status='pending'). Lives in its
+  // own table so the "Out of Stock List" view is one cheap denormalised query.
+  const [oos, setOos] = useState<Set<string>>(new Set())
 
   // Deterministic order so occurrence-based keys are stable, and grouping is
   // predictable. Sort by the stored id only as a final tiebreak.
@@ -58,6 +61,44 @@ export default function OrderItemsPanel({
     } catch { /* table may not exist yet (migration pending) — treat as none */ }
   }, [order?.id])
   useEffect(() => { load() }, [load])
+
+  const loadOos = useCallback(async () => {
+    if (!order?.id) return
+    try {
+      const { data } = await (supabase as any)
+        .from('order_stock_alerts').select('line_key, status').eq('order_id', order.id).eq('status', 'pending')
+      setOos(new Set((data || []).map((r: any) => r.line_key)))
+    } catch { /* table may not exist yet (migration pending) */ }
+  }, [order?.id])
+  useEffect(() => { loadOos() }, [loadOos])
+
+  const oosOf = (it: any) => oos.has(keyOf(it))
+
+  // Flag / clear an out-of-stock line. Denormalises the order + customer +
+  // product detail so the list view needs no joins. Clearing deletes the row.
+  const toggleOos = async (it: any) => {
+    const k = keyOf(it)
+    const now = !oos.has(k)
+    setOos(prev => { const n = new Set(prev); now ? n.add(k) : n.delete(k); return n })
+    try {
+      if (now) {
+        await (supabase as any).from('order_stock_alerts').upsert({
+          company_id: companyId, order_id: order.id, order_number: order.order_number,
+          order_date: order.order_date || order.created_at || null, customer_name: order.customer_name,
+          customer_phone: order.customer_phone || null, customer_email: order.customer_email || null,
+          store_location_id: order.store_location_id || null, line_key: k,
+          product_name: it.product_name, sku: it.sku || null, quantity: it.quantity || 1,
+          status: 'pending', resolved_at: null, created_by_name: null, updated_at: new Date().toISOString(),
+        }, { onConflict: 'order_id,line_key' })
+        onLog?.('item_out_of_stock', `Flagged out of stock: ${it.product_name}${it.quantity ? ` ×${it.quantity}` : ''}`)
+        onFlash?.('Marked out of stock')
+      } else {
+        await (supabase as any).from('order_stock_alerts').delete().eq('order_id', order.id).eq('line_key', k)
+        onLog?.('item_in_stock', `Cleared out-of-stock flag: ${it.product_name}`)
+        onFlash?.('Out-of-stock cleared')
+      }
+    } catch { onFlash?.('Saved locally — apply the out-of-stock migration to persist') }
+  }
 
   const stateOf = (it: any): Ful => {
     const k = keyOf(it)
@@ -86,6 +127,12 @@ export default function OrderItemsPanel({
   const toggleSent = async (it: any) => {
     const now = !sentOf(it)
     await write(it, { sent: now, sent_at: now ? new Date().toISOString() : null })
+    // Sending a line resolves any out-of-stock flag on it — the customer got it,
+    // so it should drop off the Out of Stock List (shown struck through there).
+    if (now && oos.has(keyOf(it))) {
+      setOos(prev => { const n = new Set(prev); n.delete(keyOf(it)); return n })
+      try { await (supabase as any).from('order_stock_alerts').update({ status: 'resolved', resolved_at: new Date().toISOString() }).eq('order_id', order.id).eq('line_key', keyOf(it)).eq('status', 'pending') } catch {}
+    }
     onLog?.(now ? 'item_sent' : 'item_unsent', `${now ? 'Marked sent' : 'Unmarked sent'}: ${it.product_name}${it.quantity ? ` ×${it.quantity}` : ''}`)
     onFlash?.(now ? 'Item marked sent' : 'Item marked unsent')
   }
@@ -143,16 +190,17 @@ export default function OrderItemsPanel({
   const renderItem = (it: any, idx: number) => {
     const sent = sentOf(it)
     const picked = pickedOf(it)
+    const oosFlag = oosOf(it)
     const checked = sel.has(it.id)
     const rowClick = pickMode ? () => togglePicked(it) : () => onOpenItem?.(idx)
     return (
       <div key={it.id} className="ord-item"
         onClick={pickMode ? () => togglePicked(it) : undefined}
         title={pickMode ? (picked ? 'Picked — tap to undo' : 'Tap to mark picked') : (sent ? 'Item sent' : 'Click to view')}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, borderRadius: 9, padding: pickMode ? 8 : 4, margin: pickMode ? 0 : -4, opacity: sent && !pickMode ? 0.5 : 1, transition: 'opacity .15s, background .15s, box-shadow .15s',
+        style={{ display: 'flex', alignItems: 'center', gap: 10, borderRadius: 9, padding: pickMode ? 8 : oosFlag ? 8 : 4, margin: pickMode ? 0 : oosFlag ? 0 : -4, opacity: sent && !pickMode ? 0.5 : 1, transition: 'opacity .15s, background .15s, box-shadow .15s',
           cursor: pickMode ? 'pointer' : 'default',
-          background: pickMode && picked ? 'color-mix(in srgb, #059669 10%, transparent)' : 'transparent',
-          boxShadow: pickMode ? `inset 0 0 0 1.5px ${picked ? '#059669' : 'var(--border)'}` : 'none' }}>
+          background: pickMode && picked ? 'color-mix(in srgb, #059669 10%, transparent)' : oosFlag ? 'color-mix(in srgb, #dc2626 7%, transparent)' : 'transparent',
+          boxShadow: pickMode ? `inset 0 0 0 1.5px ${picked ? '#059669' : 'var(--border)'}` : oosFlag ? 'inset 0 0 0 1.5px #f4b4b4' : 'none' }}>
         {splitMode && (
           <input type="checkbox" checked={checked} onChange={() => setSel(s => { const n = new Set(s); n.has(it.id) ? n.delete(it.id) : n.add(it.id); return n })}
             style={{ width: 16, height: 16, accentColor: ACCENT, cursor: 'pointer', flexShrink: 0 }} />
@@ -170,6 +218,7 @@ export default function OrderItemsPanel({
           <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: sent && !pickMode ? 'line-through' : 'none' }}>{it.product_name}</p>
           <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {it.sku ? <span>SKU: {it.sku}</span> : null}
+            {oosFlag && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 20, background: '#fee2e2', color: '#b91c1c', fontWeight: 800, fontSize: 10, letterSpacing: '0.02em' }}>⚠ OUT OF STOCK</span>}
             {sent && !pickMode && <span style={{ color: '#059669', fontWeight: 700 }}>✓ Sent</span>}
             {picked && !pickMode && <span style={{ color: '#059669', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>✓ Picked</span>}
           </p>
@@ -196,6 +245,13 @@ export default function OrderItemsPanel({
               </div>
             )}
           </div>
+        )}
+        {!pickMode && !splitMode && (
+          <button type="button" onClick={() => toggleOos(it)} title={oosFlag ? 'In stock — clear flag' : 'Flag as out of stock'}
+            style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 8px', borderRadius: 8, border: `1px solid ${oosFlag ? '#dc2626' : 'var(--border)'}`, background: oosFlag ? '#dc2626' : 'var(--card,#fff)', color: oosFlag ? '#fff' : 'var(--slate)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+            {oosFlag ? 'Out of stock' : 'OOS'}
+          </button>
         )}
         {!pickMode && (
           <button type="button" onClick={() => toggleSent(it)} title={sent ? 'Mark as not sent' : 'Mark item sent'}
