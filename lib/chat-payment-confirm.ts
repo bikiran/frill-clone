@@ -19,13 +19,15 @@ export interface ChatPaymentRow {
 export async function confirmChatPayment(
   db: any,
   pay: ChatPaymentRow,
-  opts?: { receiptUrl?: string | null; paymentIntent?: string | null; orderId?: string | number | null; orderNumber?: string | null },
+  opts?: { receiptUrl?: string | null; paymentIntent?: string | null; orderId?: string | number | null; orderNumber?: string | null; cardBrand?: string | null; cardLast4?: string | null },
 ): Promise<{ confirmed: boolean }> {
   // ── 1. Claim the transition. Only proceeds if the row is still pending, so a
   // webhook and a verify-payment poll racing each other confirm exactly once.
   const patch: any = { status: 'paid', paid_at: new Date().toISOString() }
   if (opts?.receiptUrl) patch.receipt_url = opts.receiptUrl
   if (opts?.paymentIntent) patch.stripe_payment_intent = opts.paymentIntent
+  if (opts?.cardBrand) patch.card_brand = opts.cardBrand
+  if (opts?.cardLast4) patch.card_last4 = opts.cardLast4
   let claimed = false
   try {
     const { data } = await db.from('chat_payments').update(patch).eq('id', pay.id).eq('status', 'pending').select('id')

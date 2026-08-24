@@ -95,8 +95,20 @@ export async function POST(req: NextRequest) {
           // confirmChatPayment returns confirmed:false and we skip the rest.
           const { data: pay } = await (supabase as any).from('chat_payments')
             .select('id, company_id, conversation_id, message_id, amount_cents').eq('stripe_session_id', session.id).maybeSingle()
+          // Card brand + last-4 for the Payments list (best-effort). Connected
+          // accounts need the account context on the retrieve.
+          let cardBrand: string | null = null, cardLast4: string | null = null
+          try {
+            const piId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id
+            if (piId) {
+              const acctOpt: any = event.account ? { stripeAccount: event.account } : undefined
+              const pi: any = await stripe.paymentIntents.retrieve(piId, { expand: ['latest_charge'] }, acctOpt)
+              const card = pi?.latest_charge?.payment_method_details?.card || null
+              cardBrand = card?.brand || null; cardLast4 = card?.last4 || null
+            }
+          } catch {}
           const confirmRes = pay
-            ? await confirmChatPayment(supabase, pay, { receiptUrl, paymentIntent: session.payment_intent || null, orderId: meta.orderId || null, orderNumber: meta.orderId ? String(meta.orderId) : null })
+            ? await confirmChatPayment(supabase, pay, { receiptUrl, paymentIntent: (typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id) || null, orderId: meta.orderId || null, orderNumber: meta.orderId ? String(meta.orderId) : null, cardBrand, cardLast4 })
             : { confirmed: false }
           if (!confirmRes.confirmed) break
           // If this payment was for a WooCommerce order, mark it processing.
