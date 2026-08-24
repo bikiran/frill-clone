@@ -132,6 +132,17 @@ export async function GET(req: NextRequest) {
     const charged = orders.reduce((a, o) => a + (Number(o.shipping_total) || 0), 0)
     const margin = charged - cost
     const orderById = new Map(orders.map(o => [o.id, o]))
+    // A shipment created in-window can belong to an order OUTSIDE the window
+    // (an older order whose label was only bought recently). Fetch those orders
+    // so the per-tracking table shows the order #, customer and charged amount
+    // instead of "—".
+    const missingOrderIds = Array.from(new Set(shipsInRange.map((s: any) => s.order_id).filter((id: any) => id && !orderById.has(id))))
+    if (missingOrderIds.length) {
+      try {
+        const { data: extra } = await db.from('orders').select('id, order_number, customer_name, shipping_total').in('id', missingOrderIds)
+        for (const o of extra || []) orderById.set(o.id, o)
+      } catch {}
+    }
     const detail = shipsInRange.map((s: any) => {
       const o: any = orderById.get(s.order_id)
       return { id: s.id, order: o?.order_number || '—', customer: o?.customer_name || '—', carrier: CARRIER_LABEL[s.carrier] || s.carrier || '—', tracking: s.tracking_number || '—', charged: Number(o?.shipping_total) || 0, incurred: Number(s.cost) || 0 }
