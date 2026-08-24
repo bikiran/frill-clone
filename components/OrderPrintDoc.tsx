@@ -16,6 +16,7 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
   const [shipByOrder, setShipByOrder] = useState<Record<string, any>>({})
   const [notesByOrder, setNotesByOrder] = useState<Record<string, any[]>>({})
   const [fulByOrder, setFulByOrder] = useState<Record<string, Record<string, boolean>>>({})
+  const [oosByOrder, setOosByOrder] = useState<Record<string, Record<string, boolean>>>({})
   const [company, setCompany] = useState<any>(null)
   const [fromAddr, setFromAddr] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -56,7 +57,7 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
           if (noteMap.size) rows = rows.map((o: any) => noteMap.get(o.id) ? { ...o, customer_note: o.customer_note || noteMap.get(o.id) } : o)
         }
       } catch {}
-      const [{ data: co }, { data: loc }, { data: items }, { data: ships }, { data: nts }, ful] = await Promise.all([
+      const [{ data: co }, { data: loc }, { data: items }, { data: ships }, { data: nts }, ful, oos] = await Promise.all([
         (supabase as any).from('companies').select('*').eq('id', companyId).maybeSingle(),
         (supabase as any).from('company_locations').select('*').eq('company_id', companyId).order('is_primary', { ascending: false }).limit(1).maybeSingle(),
         (supabase as any).from('order_items').select('*').in('order_id', ids),
@@ -65,6 +66,9 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
         // Per-line fulfilment — which items are already sent. Absent table
         // (migration pending) just resolves to no sent flags.
         (supabase as any).from('order_fulfillments').select('order_id, line_key, sent').in('order_id', ids).then((r: any) => r, () => ({ data: [] })),
+        // Out-of-stock flags (pending) so the slip shows what the packer can't
+        // fulfil yet. Absent table just resolves to none.
+        (supabase as any).from('order_stock_alerts').select('order_id, line_key, status').in('order_id', ids).eq('status', 'pending').then((r: any) => r, () => ({ data: [] })),
       ])
       if (cancelled) return
       setOrders(rows); setCompany(co || null); setFromAddr(loc || null)
@@ -72,6 +76,7 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
       const sb: Record<string, any> = {}; for (const sh of ships || []) if (!sb[sh.order_id]) sb[sh.order_id] = sh; setShipByOrder(sb)
       const nb: Record<string, any[]> = {}; for (const n of nts || []) (nb[n.order_id] ||= []).push(n); setNotesByOrder(nb)
       const fb: Record<string, Record<string, boolean>> = {}; for (const f of (ful?.data || [])) { (fb[f.order_id] ||= {})[f.line_key] = !!f.sent } setFulByOrder(fb)
+      const ob: Record<string, Record<string, boolean>> = {}; for (const a of (oos?.data || [])) { (ob[a.order_id] ||= {})[a.line_key] = true } setOosByOrder(ob)
       setLoading(false); onLoaded?.()
     })()
     return () => { cancelled = true }
@@ -93,14 +98,26 @@ export default function OrderPrintDoc({ doc, companyId, ids, onLoaded }: { doc: 
           /* Each order on its own page. */
           .doc-page { page-break-after: always; break-after: page; break-inside: avoid; }
           .doc-page:last-child { page-break-after: auto; break-after: auto; }
+          .doc-sheet-tab { display: none !important; }
         }
         .doc-page { box-sizing: border-box; }
+        /* On screen, show each order as a distinct "sheet" so a multi-order
+           print reads as separate pages in the preview (it was one long scroll). */
+        @media screen {
+          .order-print-root { background: #eef1f5; }
+          .doc-sheet { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 8px 24px rgba(15,23,42,0.10); margin: 0 auto 26px; max-width: ${doc === 'label' ? 'max-content' : '764px'}; overflow: hidden; }
+          .doc-sheet-tab { display: flex; justify-content: space-between; align-items: center; padding: 7px 16px; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; color: #64748b; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+        }
       `}</style>
-      <div style={{ padding: doc === 'label' ? 0 : '10px 0' }}>
-        {orders.map(o => doc === 'label'
-          ? <LabelDoc key={o.id} order={o} ship={shipByOrder[o.id]} senderName={senderName} from={fromAddr} accent={accent} />
-          : <PackingSlip key={o.id} order={o} items={itemsByOrder[o.id] || []} notes={notesByOrder[o.id] || []} sentByKey={fulByOrder[o.id] || {}} company={company} from={fromAddr} accent={accent} />
-        )}
+      <div style={{ padding: doc === 'label' ? '16px 0' : '16px 0' }}>
+        {orders.map((o, idx) => (
+          <div className="doc-sheet" key={o.id}>
+            <div className="doc-sheet-tab"><span>Order #{o.order_number}</span><span>Page {idx + 1} of {orders.length}</span></div>
+            {doc === 'label'
+              ? <LabelDoc order={o} ship={shipByOrder[o.id]} senderName={senderName} from={fromAddr} accent={accent} />
+              : <PackingSlip order={o} items={itemsByOrder[o.id] || []} notes={notesByOrder[o.id] || []} sentByKey={fulByOrder[o.id] || {}} oosByKey={oosByOrder[o.id] || {}} company={company} from={fromAddr} accent={accent} />}
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -128,14 +145,16 @@ function contactLines(company: any, from: any): { label: string; value: string }
   return out
 }
 
-function PackingSlip({ order, items, notes, sentByKey, company, from, accent }: any) {
+function PackingSlip({ order, items, notes, sentByKey, oosByKey, company, from, accent }: any) {
   const ship = order.shipping_address || {}
   const total = items.reduce((s: number, it: any) => s + (Number(it.quantity) || 0), 0)
   // Which lines are already sent (partial fulfilment) — cross them out so the
   // packer knows not to pack them again.
   const lineKeys = buildOrderLineKeys(items)
   const isSent = (it: any) => !!(sentByKey && sentByKey[lineKeys.get(it.id) || ''])
+  const isOos = (it: any) => !!(oosByKey && oosByKey[lineKeys.get(it.id) || ''])
   const anySent = items.some(isSent)
+  const anyOos = items.some(isOos)
   const barcode = useMemo(() => barcodeSVG(String(order.order_number || ''), { moduleWidth: 1.5, height: 52 }), [order.order_number])
   const subtotal = order.subtotal != null ? Number(order.subtotal) : items.reduce((s: number, it: any) => s + (Number(it.total_price) || 0), 0)
   const shipping = Number(order.shipping_total) || 0
@@ -196,6 +215,12 @@ function PackingSlip({ order, items, notes, sentByKey, company, from, accent }: 
           ✕ Partially fulfilled — crossed-out items have already been sent. Do not pack them again.
         </div>
       )}
+      {/* Out-of-stock notice */}
+      {anyOos && (
+        <div style={{ marginTop: anySent ? 8 : 16, padding: '8px 12px', borderRadius: 8, background: '#fff7ed', border: '1px solid #fed7aa', color: '#c2410c', fontSize: 12, fontWeight: 700 }}>
+          ⚠ Out of stock — items marked OUT OF STOCK below cannot be fulfilled yet.
+        </div>
+      )}
 
       {/* Items */}
       <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 18 }}>
@@ -215,9 +240,10 @@ function PackingSlip({ order, items, notes, sentByKey, company, from, accent }: 
             const line = it.total_price != null ? Number(it.total_price) : (Number(it.unit_price) || 0) * qty
             const unit = it.unit_price != null ? Number(it.unit_price) : line / qty
             const sent = isSent(it)
+            const oos = !sent && isOos(it)
             const strike: React.CSSProperties = sent ? { textDecoration: 'line-through', color: '#94a3b8' } : {}
             return (
-              <tr key={it.id} style={sent ? { background: '#f8fafc' } : undefined}>
+              <tr key={it.id} style={sent ? { background: '#f8fafc' } : oos ? { background: '#fff7ed' } : undefined}>
                 <td style={{ ...td, width: 46 }}>
                   <span style={{ position: 'relative', display: 'inline-flex', width: 38, height: 38, borderRadius: 6, overflow: 'hidden', background: '#f1f5f9', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0' }}>
                     {it.image_url
@@ -233,6 +259,7 @@ function PackingSlip({ order, items, notes, sentByKey, company, from, accent }: 
                 <td style={td}>
                   <span style={strike}>{it.product_name || 'Item'}</span>
                   {sent && <span style={{ marginLeft: 8, display: 'inline-block', fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', color: '#dc2626', border: '1.5px solid #dc2626', borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle' }}>✕ ALREADY SENT</span>}
+                  {oos && <span style={{ marginLeft: 8, display: 'inline-block', fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', color: '#c2410c', border: '1.5px solid #f97316', borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle' }}>⚠ OUT OF STOCK</span>}
                 </td>
                 <td style={{ ...td, color: '#475569', fontFamily: 'ui-monospace, monospace', fontSize: 12, ...strike }}>{it.sku || '—'}</td>
                 <td style={{ ...td, textAlign: 'right', ...strike }}>{fmtMoney(unit, order.currency)}</td>
