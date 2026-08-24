@@ -45,9 +45,29 @@ export async function POST(req: NextRequest) {
         if (soloUser && dialStatus === 'completed' && durSecs > 0) {
           try {
             const name = await resolveAgentName(db, soloUser, companyId)
-            await db.from('calls')
+            const { data: claimed } = await db.from('calls')
               .update({ answered_by_user_id: soloUser, answered_by: name, agent_name: name })
               .eq('id', callRowId).is('answered_by_user_id', null)
+              .select('id, contact_name, caller_name, from_number')
+            // Notify the rest of the team who took it — once (claim-guarded, so it
+            // never double-fires with the per-<Client> callback).
+            if (Array.isArray(claimed) && claimed.length) {
+              const row = claimed[0] as any
+              const caller = String(row.contact_name || row.caller_name || row.from_number || '').trim()
+              try {
+                await fetch(`${base}/api/push/send`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    companyId,
+                    title: 'Call answered',
+                    body: `${name} received the call${caller ? ` from ${caller}` : ''}`,
+                    excludeUserId: soloUser,
+                    channelId: 'calls',
+                    ...(callRowId ? { route: `/call-detail/${callRowId}` } : {}),
+                  }),
+                })
+              } catch {}
+            }
           } catch {}
         }
       }
