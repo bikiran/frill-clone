@@ -205,7 +205,7 @@ export async function ingestInboundSms(params: {
     } catch (e) { console.error('[inbound-sms media attempt auto-reply]', e) }
   }
 
-  try { await notifyCompany({ db, companyId, type: 'sms', message: `New SMS from ${from}: ${summary.slice(0, 80)}`, actorName: from }) } catch {}
+  try { await notifyCompany({ db, companyId, type: 'sms', message: `New SMS from ${from}: ${summary.slice(0, 80)}`, actorName: from, conversationId: conv.id }) } catch {}
 
   return { conversationId: conv.id }
 }

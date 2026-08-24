@@ -8,12 +8,32 @@ import { fmtMoney, channelMeta } from '@/lib/orders'
 type Order = any
 type Report = 'fulfillment' | 'shipping' | 'sales'
 
-const RANGES: { key: string; label: string; days: number | null }[] = [
-  { key: '7d', label: 'Last 7 days', days: 7 },
-  { key: '30d', label: 'Last 30 days', days: 30 },
-  { key: '90d', label: 'Last 90 days', days: 90 },
-  { key: 'all', label: 'All time', days: null },
+const RANGES: { key: string; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: '7d', label: 'Last 7 days' },
+  { key: '30d', label: 'Last 30 days' },
+  { key: 'this_month', label: 'This month' },
+  { key: 'last_month', label: 'Last month' },
+  { key: 'all', label: 'All time' },
+  { key: 'custom', label: 'Custom range' },
 ]
+
+// Resolve a preset (or a custom from/to) to an explicit {from,to} ISO window.
+// `to` is the END of the day so same-day ranges (Today) include everything.
+function windowFor(key: string, cf?: string, ct?: string): { from: string | null; to: string | null } {
+  const start = (d: Date) => { d.setHours(0, 0, 0, 0); return d.toISOString() }
+  const end = (d: Date) => { d.setHours(23, 59, 59, 999); return d.toISOString() }
+  const now = new Date()
+  if (key === 'today') return { from: start(new Date()), to: end(new Date()) }
+  if (key === 'yesterday') { const y = new Date(now.getTime() - 864e5); return { from: start(new Date(y)), to: end(new Date(y)) } }
+  if (key === '7d') return { from: start(new Date(now.getTime() - 6 * 864e5)), to: end(new Date()) }
+  if (key === '30d') return { from: start(new Date(now.getTime() - 29 * 864e5)), to: end(new Date()) }
+  if (key === 'this_month') return { from: start(new Date(now.getFullYear(), now.getMonth(), 1)), to: end(new Date()) }
+  if (key === 'last_month') return { from: start(new Date(now.getFullYear(), now.getMonth() - 1, 1)), to: end(new Date(now.getFullYear(), now.getMonth(), 0)) }
+  if (key === 'custom') return { from: cf ? start(new Date(cf)) : null, to: ct ? end(new Date(ct)) : end(new Date()) }
+  return { from: null, to: null } // all
+}
 
 export default function OrdersReportsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -22,6 +42,8 @@ export default function OrdersReportsPage() {
   const [loading, setLoading] = useState(true)
   const [report, setReport] = useState<Report>('fulfillment')
   const [range, setRange] = useState('30d')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
   const [outlets, setOutlets] = useState<{ id: string; name: string }[]>([])
   const [location, setLocation] = useState('all')
   const [channel, setChannel] = useState('all')
@@ -38,11 +60,14 @@ export default function OrdersReportsPage() {
   // (a few KB) instead of every order row, so it's instant regardless of how many
   // orders the window contains. A stale summary stays on screen while the new
   // range loads, so switching ranges never blanks the report.
-  const load = useCallback(async (cid: string, rangeKey: string, loc: string, chan: string) => {
+  const load = useCallback(async (cid: string, rangeKey: string, loc: string, chan: string, cf: string, ct: string) => {
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
       const params = new URLSearchParams({ companyId: cid, range: rangeKey })
+      const win = windowFor(rangeKey, cf, ct)
+      if (win.from) params.set('from', win.from)
+      if (win.to) params.set('to', win.to)
       if (loc && loc !== 'all') params.set('location', loc)
       if (chan && chan !== 'all') params.set('channel', chan)
       const res = await fetch(`/api/orders/reports?${params.toString()}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined })
@@ -61,20 +86,20 @@ export default function OrdersReportsPage() {
       ;(async () => { try { const { data: co } = await (supabase as any).from('companies').select('accent_color').eq('id', cid).maybeSingle(); if (co?.accent_color) setAccent(co.accent_color) } catch {} })()
       // Outlets for the location filter.
       ;(async () => { try { const { data } = await (supabase as any).from('company_locations').select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false }); setOutlets((data || []).map((l: any) => ({ id: l.id, name: l.label || l.suburb || 'Outlet' }))) } catch {} })()
-      load(cid, range, location, channel)
+      load(cid, range, location, channel, customFrom, customTo)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Refetch when the range or a filter changes (server returns a tiny summary).
+  // For a custom range, only refetch once both dates are set.
   const firstRangeRef = useRef(true)
   useEffect(() => {
     if (firstRangeRef.current) { firstRangeRef.current = false; return }
-    if (companyId) load(companyId, range, location, channel)
+    if (range === 'custom' && (!customFrom || !customTo)) return
+    if (companyId) load(companyId, range, location, channel, customFrom, customTo)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, location, channel])
-
-  const days = RANGES.find(r => r.key === range)?.days ?? null
+  }, [range, location, channel, customFrom, customTo])
   const fulfil = summary?.fulfil || { total: 0, shipped: 0, cancelled: 0, awaiting: 0, onHold: 0, rate: 0, avgHrs: 0, buckets: { fresh: 0, mod: 0, late: 0 }, byStatus: [] }
   const shippingR = summary?.shipping || { labels: 0, cost: 0, avg: 0, charged: 0, margin: 0, detail: [], carriers: [], services: [], track: [] }
   const sales = summary?.sales || { revenue: 0, orderN: 0, aov: 0, units: 0, channels: [], topSku: [] }
@@ -85,11 +110,12 @@ export default function OrdersReportsPage() {
   // report itself never loads them.
   const exportCsv = async () => {
     if (!companyId) return
-    const sinceISO = days != null ? new Date(Date.now() - days * 864e5).toISOString() : null
+    const win = windowFor(range, customFrom, customTo)
     const acc: any[] = []
     for (let offset = 0; offset < 500000; offset += 1000) {
       let q = (supabase as any).from('orders').select('order_number, order_date, customer_name, status, sales_channel, item_count, total, carrier, tracking_number').eq('company_id', companyId)
-      if (sinceISO) q = q.gte('order_date', sinceISO)
+      if (win.from) q = q.gte('order_date', win.from)
+      if (win.to) q = q.lte('order_date', win.to)
       if (location !== 'all') q = location === 'unassigned' ? q.is('store_location_id', null) : q.eq('store_location_id', location)
       if (channel !== 'all') q = q.eq('sales_channel', channel)
       const { data, error } = await q.order('order_date', { ascending: false }).range(offset, offset + 999)
@@ -176,6 +202,13 @@ export default function OrdersReportsPage() {
             {(summary?.channelsAll || []).map((c: string) => <option key={c} value={c}>{channelMeta(c).label}</option>)}
           </select>
           <select value={range} onChange={e => setRange(e.target.value)} style={ctrl}>{RANGES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}</select>
+          {range === 'custom' && (
+            <>
+              <input type="date" value={customFrom} max={customTo || undefined} onChange={e => setCustomFrom(e.target.value)} style={ctrl} title="From" />
+              <span style={{ alignSelf: 'center', fontSize: 12.5, color: 'var(--slate)' }}>→</span>
+              <input type="date" value={customTo} min={customFrom || undefined} onChange={e => setCustomTo(e.target.value)} style={ctrl} title="To" />
+            </>
+          )}
           {(location !== 'all' || channel !== 'all') && (
             <button type="button" onClick={() => { setLocation('all'); setChannel('all') }} style={{ ...ctrl, color: ACCENT }}>Clear filters</button>
           )}

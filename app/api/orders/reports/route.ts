@@ -43,7 +43,13 @@ export async function GET(req: NextRequest) {
 
     const rangeKey = req.nextUrl.searchParams.get('range') || '30d'
     const days = rangeKey in RANGE_DAYS ? RANGE_DAYS[rangeKey] : 30
-    const sinceISO = days != null ? new Date(Date.now() - days * 864e5).toISOString() : null
+    // Explicit window (from/to ISO) takes precedence over the range preset, so
+    // the page can offer Today / Yesterday / This month / Last month / Custom.
+    const fromParam = req.nextUrl.searchParams.get('from') || ''
+    const toParam = req.nextUrl.searchParams.get('to') || ''
+    const startISO = fromParam || (days != null ? new Date(Date.now() - days * 864e5).toISOString() : null)
+    const endISO = toParam || null
+    const sinceISO = startISO   // lower bound for the orders query
     // Optional filters: outlet (store_location_id) and sales channel.
     const locationFilter = req.nextUrl.searchParams.get('location') || ''
     const channelFilter = req.nextUrl.searchParams.get('channel') || ''
@@ -57,6 +63,7 @@ export async function GET(req: NextRequest) {
         .select('id, order_number, customer_name, status, order_date, shipped_at, shipping_total, total, item_count, sales_channel, primary_sku, store_location_id')
         .eq('company_id', companyId)
       if (sinceISO) q = q.gte('order_date', sinceISO)
+      if (endISO) q = q.lte('order_date', endISO)
       if (locationFilter && locationFilter !== 'all') {
         q = locationFilter === 'unassigned' ? q.is('store_location_id', null) : q.eq('store_location_id', locationFilter)
       }
@@ -69,10 +76,14 @@ export async function GET(req: NextRequest) {
     // Distinct channels present (before the channel filter) — drives the page's
     // channel dropdown so it only offers channels that actually have orders.
     const channelsAll = Array.from(new Set(orders.map(o => o.sales_channel || 'other'))).sort()
-    // Apply the channel filter in memory so channelsAll stays complete.
-    let ordersF = orders
-    if (channelFilter && channelFilter !== 'all') ordersF = orders.filter(o => (o.sales_channel || 'other') === channelFilter)
-    orders.length = 0; orders.push(...ordersF)
+    // Apply the channel filter in memory so channelsAll stays complete. Only
+    // mutate `orders` when actually filtering — `filter()` returns a NEW array,
+    // whereas assigning `orders` to itself and then clearing it would wipe the
+    // data (that emptied "All channels" while a specific channel still worked).
+    if (channelFilter && channelFilter !== 'all') {
+      const ordersF = orders.filter(o => (o.sales_channel || 'other') === channelFilter)
+      orders.length = 0; orders.push(...ordersF)
+    }
     const rangeIds = new Set(orders.map(o => o.id))
 
     const shipments: any[] = []
@@ -148,8 +159,8 @@ export async function GET(req: NextRequest) {
     for (const o of nonCancelled) { const k = o.primary_sku; if (!k) continue; bySku[k] = (bySku[k] || 0) + 1 }
     const topSku = Object.entries(bySku).map(([k, v]) => ({ label: k, value: v, sub: `${v} orders` })).sort((a, b) => b.value - a.value).slice(0, 8)
 
-    // ── Daily series (last n days) ──────────────────────────────────────────────
-    const n = days || 30
+    // ── Daily series spanning the selected window ───────────────────────────────
+    const dayMs = 864e5
     const byDayCount: Record<string, number> = {}
     const byDayRev: Record<string, number> = {}
     for (const o of orders) {
@@ -158,11 +169,16 @@ export async function GET(req: NextRequest) {
       byDayCount[k] = (byDayCount[k] || 0) + 1
       byDayRev[k] = (byDayRev[k] || 0) + (o.status === 'cancelled' ? 0 : (Number(o.total) || 0))
     }
-    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const seriesEnd = endISO ? new Date(endISO) : new Date(); seriesEnd.setHours(0, 0, 0, 0)
+    let seriesStart = startISO ? new Date(startISO) : new Date(seriesEnd.getTime() - ((days || 30) - 1) * dayMs)
+    seriesStart.setHours(0, 0, 0, 0)
+    let dayCount = Math.floor((seriesEnd.getTime() - seriesStart.getTime()) / dayMs) + 1
+    if (dayCount < 1) dayCount = 1
+    if (dayCount > 180) { seriesStart = new Date(seriesEnd.getTime() - 179 * dayMs); dayCount = 180 }   // keep the chart legible
     const dailyOrders: { day: string; value: number }[] = []
     const dailyRevenue: { day: string; value: number }[] = []
-    for (let i = n - 1; i >= 0; i--) {
-      const d = new Date(today.getTime() - i * 864e5); const k = d.toISOString().slice(0, 10)
+    for (let i = 0; i < dayCount; i++) {
+      const d = new Date(seriesStart.getTime() + i * dayMs); const k = d.toISOString().slice(0, 10)
       const label = d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' })
       dailyOrders.push({ day: label, value: byDayCount[k] || 0 })
       dailyRevenue.push({ day: label, value: byDayRev[k] || 0 })

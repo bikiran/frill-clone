@@ -694,7 +694,23 @@ export default function RootLayout({
     } else if (['chat', 'sms', 'order', 'ticket', 'cart', 'activity'].includes(notification.type)) {
       // CRM activity — go to the inbox (open the specific conversation if known).
       setShowNotifications(false)
-      const convId = notification.conversation_id || notification.conversationId
+      let convId = notification.conversation_id || notification.conversationId
+      // Older SMS notifications didn't store a conversation id — resolve it from
+      // the sender's phone number so the click still lands on the right thread.
+      if (!convId) {
+        const raw = String(notification.actor_name || '') + ' ' + String(notification.message || '')
+        const phone = raw.match(/\+?\d[\d ]{6,}\d/)?.[0]
+        if (phone) {
+          try {
+            const digits = phone.replace(/\D/g, '').slice(-9)
+            if (digits.length >= 8) {
+              const { data } = await (supabase as any).from('conversations')
+                .select('id').ilike('sms_number', `%${digits}%`).order('last_message_at', { ascending: false }).limit(1)
+              if (data?.[0]?.id) convId = data[0].id
+            }
+          } catch {}
+        }
+      }
       router.push(convId ? `/admin/inbox?conversation=${convId}` : '/admin/inbox')
     } else {
       // Fallback: any unrecognised type with a conversation goes to the inbox.
