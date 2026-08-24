@@ -12,6 +12,7 @@ import OrderPrintDoc from '@/components/OrderPrintDoc'
 import OrderItemsPanel from '@/components/OrderItemsPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
 import OutOfStockModal from '@/components/OutOfStockModal'
+import RefundOrderModal from '@/components/RefundOrderModal'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 import { barcodeSVG } from '@/lib/barcode'
 
@@ -1431,6 +1432,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const ACCENT = accent || 'var(--coral)'
   const [items, setItems] = useState<any[]>([])
   const [pickMode, setPickMode] = useState(false)
+  const [showRefund, setShowRefund] = useState(false)
   const [notes, setNotes] = useState<any[]>([])
   const [events, setEvents] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
@@ -1518,21 +1520,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     logEvent('collected', 'Order collected by customer')
     onFlash('Marked collected')
   }
-  const issueRefund = async () => {
-    const amtStr = window.prompt(`Refund amount for order ${order.order_number} (${order.currency || 'AUD'}). Leave blank for a full refund.`, String(order.total || ''))
-    if (amtStr === null) return
-    const amount = amtStr.trim() ? Number(amtStr) : undefined
-    if (amtStr.trim() && (isNaN(amount!) || amount! <= 0)) { onFlash('Enter a valid amount'); return }
-    if (!window.confirm(`Refund ${amount ? `$${amount.toFixed(2)}` : 'the full amount'} for order ${order.order_number}? This returns money through the payment gateway and cannot be undone.`)) return
-    setActBusy('refund')
-    try {
-      const res = await fetch('/api/orders/refund', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: order.external_order_id, amount, reason: 'Refund from Orders board', conversationId: order.conversation_id || undefined }) })
-      const j = await res.json().catch(() => ({}))
-      if (!res.ok || j.error) onFlash(`Refund failed: ${j.error || res.status}`)
-      else { onFlash(`Refunded${j.amount ? ` $${Number(j.amount).toFixed(2)}` : ''}`); onPatch({ payment_status: 'refunded' }, { type: 'refunded', detail: `Refund issued${j.amount ? ` · $${Number(j.amount).toFixed(2)}` : ''}` }) }
-    } catch (e: any) { onFlash(`Refund error: ${e?.message || e}`) }
-    setActBusy('')
-  }
+  // Full, itemised refund — opens the rich modal (same capability as the inbox).
+  const issueRefund = () => setShowRefund(true)
   const genInvoice = async () => {
     setActBusy('invoice')
     try {
@@ -2126,6 +2115,22 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           </div>
         </div>
       </div>
+
+      {/* Full itemised refund (WooCommerce) */}
+      {showRefund && companyId && (
+        <RefundOrderModal companyId={companyId} order={order} accent={ACCENT}
+          onClose={() => setShowRefund(false)}
+          onDone={(amount: number) => {
+            onFlash(`Refunded${amount ? ` $${amount.toFixed(2)}` : ''}`)
+            // Only flip to "refunded" when the whole order is now refunded;
+            // a partial refund leaves the payment status as-is.
+            const totalRefunded = (Number(order.total_refunded) || 0) + (amount || 0)
+            const full = totalRefunded + 0.005 >= (Number(order.total) || 0)
+            order.total_refunded = totalRefunded
+            if (full) onPatch({ payment_status: 'refunded' }, { type: 'refunded', detail: `Refund issued · $${amount.toFixed(2)}` })
+            else logEvent('refunded', `Partial refund · $${amount.toFixed(2)}`)
+          }} />
+      )}
 
       {/* Item gallery / lightbox */}
       {galleryIdx != null && items[galleryIdx] && (() => {
