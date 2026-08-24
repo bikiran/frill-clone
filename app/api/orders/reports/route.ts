@@ -44,6 +44,9 @@ export async function GET(req: NextRequest) {
     const rangeKey = req.nextUrl.searchParams.get('range') || '30d'
     const days = rangeKey in RANGE_DAYS ? RANGE_DAYS[rangeKey] : 30
     const sinceISO = days != null ? new Date(Date.now() - days * 864e5).toISOString() : null
+    // Optional filters: outlet (store_location_id) and sales channel.
+    const locationFilter = req.nextUrl.searchParams.get('location') || ''
+    const channelFilter = req.nextUrl.searchParams.get('channel') || ''
 
     // Load the range's orders (only the columns the aggregates need) + shipments,
     // paginating past PostgREST's per-response cap.
@@ -51,15 +54,25 @@ export async function GET(req: NextRequest) {
     const orders: any[] = []
     for (let from = 0; from < 500000; from += PAGE) {
       let q = db.from('orders')
-        .select('id, order_number, customer_name, status, order_date, shipped_at, shipping_total, total, item_count, sales_channel, primary_sku')
+        .select('id, order_number, customer_name, status, order_date, shipped_at, shipping_total, total, item_count, sales_channel, primary_sku, store_location_id')
         .eq('company_id', companyId)
       if (sinceISO) q = q.gte('order_date', sinceISO)
+      if (locationFilter && locationFilter !== 'all') {
+        q = locationFilter === 'unassigned' ? q.is('store_location_id', null) : q.eq('store_location_id', locationFilter)
+      }
       const { data, error } = await q.order('order_date', { ascending: false }).range(from, from + PAGE - 1)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       if (!data?.length) break
       orders.push(...data)
       if (data.length < PAGE) break
     }
+    // Distinct channels present (before the channel filter) — drives the page's
+    // channel dropdown so it only offers channels that actually have orders.
+    const channelsAll = Array.from(new Set(orders.map(o => o.sales_channel || 'other'))).sort()
+    // Apply the channel filter in memory so channelsAll stays complete.
+    let ordersF = orders
+    if (channelFilter && channelFilter !== 'all') ordersF = orders.filter(o => (o.sales_channel || 'other') === channelFilter)
+    orders.length = 0; orders.push(...ordersF)
     const rangeIds = new Set(orders.map(o => o.id))
 
     const shipments: any[] = []
@@ -72,7 +85,13 @@ export async function GET(req: NextRequest) {
       shipments.push(...data)
       if (data.length < PAGE) break
     }
-    const shipsInRange = shipments.filter(s => rangeIds.has(s.order_id) || s.created_at)
+    // Only shipments whose order is in the (filtered) set — so an outlet/channel
+    // filter flows through to the shipping report too. Falls back to date-in-range
+    // shipments when no order-level filter is active so nothing is lost.
+    const hasOrderFilter = (locationFilter && locationFilter !== 'all') || (channelFilter && channelFilter !== 'all')
+    const shipsInRange = hasOrderFilter
+      ? shipments.filter(s => rangeIds.has(s.order_id))
+      : shipments.filter(s => rangeIds.has(s.order_id) || s.created_at)
 
     // ── Fulfilment ────────────────────────────────────────────────────────────
     const countBy = (pred: (o: any) => boolean) => orders.reduce((n, o) => n + (pred(o) ? 1 : 0), 0)
@@ -154,6 +173,7 @@ export async function GET(req: NextRequest) {
       shipping: { labels, cost, avg, charged, margin, detail, carriers, services, track },
       sales: { revenue, orderN, aov, units, channels, topSku },
       dailyOrders, dailyRevenue,
+      channelsAll,
     })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 })
