@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS order_stock_alerts (
   line_key          TEXT NOT NULL,
   product_name      TEXT,
   sku               TEXT,
+  image_url         TEXT,
   quantity          INTEGER DEFAULT 1,
   status            TEXT NOT NULL DEFAULT 'pending',   -- 'pending' | 'resolved'
   note              TEXT,
@@ -38,6 +39,9 @@ CREATE TABLE IF NOT EXISTS order_stock_alerts (
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (order_id, line_key)
 );
+
+-- Upgrade path for anyone who created the table before image_url existed.
+ALTER TABLE order_stock_alerts ADD COLUMN IF NOT EXISTS image_url TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_stock_alerts_company_status ON order_stock_alerts (company_id, status);
 CREATE INDEX IF NOT EXISTS idx_stock_alerts_order ON order_stock_alerts (order_id);

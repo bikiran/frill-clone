@@ -87,7 +87,7 @@ export default function OrderItemsPanel({
           order_date: order.order_date || order.created_at || null, customer_name: order.customer_name,
           customer_phone: order.customer_phone || null, customer_email: order.customer_email || null,
           store_location_id: order.store_location_id || null, line_key: k,
-          product_name: it.product_name, sku: it.sku || null, quantity: it.quantity || 1,
+          product_name: it.product_name, sku: it.sku || null, image_url: it.image_url || null, quantity: it.quantity || 1,
           status: 'pending', resolved_at: null, created_by_name: null, updated_at: new Date().toISOString(),
         }, { onConflict: 'order_id,line_key' })
         onLog?.('item_out_of_stock', `Flagged out of stock: ${it.product_name}${it.quantity ? ` ×${it.quantity}` : ''}`)
@@ -218,7 +218,7 @@ export default function OrderItemsPanel({
           <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: sent && !pickMode ? 'line-through' : 'none' }}>{it.product_name}</p>
           <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {it.sku ? <span>SKU: {it.sku}</span> : null}
-            {oosFlag && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 20, background: '#fee2e2', color: '#b91c1c', fontWeight: 800, fontSize: 10, letterSpacing: '0.02em' }}>⚠ OUT OF STOCK</span>}
+            {oosFlag && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 20, background: '#fee2e2', color: '#b91c1c', fontWeight: 800, fontSize: 10, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>⚠ OUT OF STOCK</span>}
             {sent && !pickMode && <span style={{ color: '#059669', fontWeight: 700 }}>✓ Sent</span>}
             {picked && !pickMode && <span style={{ color: '#059669', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>✓ Picked</span>}
           </p>
@@ -247,10 +247,9 @@ export default function OrderItemsPanel({
           </div>
         )}
         {!pickMode && !splitMode && (
-          <button type="button" onClick={() => toggleOos(it)} title={oosFlag ? 'In stock — clear flag' : 'Flag as out of stock'}
-            style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 8px', borderRadius: 8, border: `1px solid ${oosFlag ? '#dc2626' : 'var(--border)'}`, background: oosFlag ? '#dc2626' : 'var(--card,#fff)', color: oosFlag ? '#fff' : 'var(--slate)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-            {oosFlag ? 'Out of stock' : 'OOS'}
+          <button type="button" onClick={() => toggleOos(it)} title={oosFlag ? 'In stock — clear out-of-stock flag' : 'Flag as out of stock'} aria-label={oosFlag ? 'Clear out-of-stock flag' : 'Flag as out of stock'}
+            style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, border: `1px solid ${oosFlag ? '#dc2626' : 'var(--border)'}`, background: oosFlag ? '#dc2626' : 'var(--card,#fff)', color: oosFlag ? '#fff' : 'var(--slate)', cursor: 'pointer' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
           </button>
         )}
         {!pickMode && (

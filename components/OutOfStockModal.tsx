@@ -27,6 +27,7 @@ type Alert = {
   line_key: string
   product_name: string | null
   sku: string | null
+  image_url: string | null
   quantity: number | null
   status: string
   resolved_at: string | null
@@ -209,6 +210,10 @@ export default function OutOfStockModal({
                     return (
                       <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderTop: '1px solid var(--border)' }}>
                         <span style={{ flexShrink: 0, width: 8, height: 8, borderRadius: '50%', background: done ? '#9ca3af' : '#dc2626' }} />
+                        <span style={{ position: 'relative', flexShrink: 0, width: 40, height: 40, borderRadius: 8, overflow: 'hidden', background: 'var(--peach)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', opacity: done ? 0.55 : 1 }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /></svg>
+                          {a.image_url && <img src={a.image_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e: any) => { e.currentTarget.style.display = 'none' }} />}
+                        </span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: done ? 'var(--slate)' : 'var(--ink)', textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.product_name || 'Item'}</p>
                           {a.sku && <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)', textDecoration: done ? 'line-through' : 'none' }}>SKU: {a.sku}</p>}
