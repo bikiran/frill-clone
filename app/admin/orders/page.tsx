@@ -2011,6 +2011,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                 return <>
                   {isWoo && wooStoreUrl && <button type="button" onClick={editInWoo} style={b(ACCENT)}>Edit</button>}
                   {isWoo && !['shipped', 'cancelled'].includes(order.status) && <button type="button" disabled={actBusy === 'done'} onClick={markCompleted} style={b('#15803d')}>{actBusy === 'done' ? '…' : 'Mark completed'}</button>}
+                  {isClickCollect(order) && order.status !== 'shipped' && order.status !== 'cancelled' && <button type="button" disabled={actBusy === 'notify'} onClick={notifyPickup} style={b('#2563eb')}>{actBusy === 'notify' ? '…' : 'Ready for pickup'}</button>}
                   {isWoo && <button type="button" disabled={actBusy === 'refund'} onClick={issueRefund} style={b('#b45309')}>{actBusy === 'refund' ? '…' : 'Issue refund'}</button>}
                   <button type="button" disabled={actBusy === 'invoice'} onClick={genInvoice} style={b('var(--ink)')}>{actBusy === 'invoice' ? '…' : 'Invoice'}</button>
                   <button type="button" onClick={copyOrderLink} style={b('var(--slate)')}>Copy link</button>
