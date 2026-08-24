@@ -31,6 +31,10 @@ export async function POST(req: NextRequest) {
 
     const dialStatus = (get('DialCallStatus') || '').toLowerCase()
     const durSecs = parseInt(get('DialCallDuration') || '0', 10) || 0
+    // The SID of the child leg that actually answered (this callback ALWAYS
+    // fires, unlike the per-<Client> "answered" callback). Map it back to the
+    // agent via call_legs.
+    const dialSid = get('DialCallSid')
     const db = admin()
     const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
 
@@ -38,37 +42,48 @@ export async function POST(req: NextRequest) {
     if (dialStatus === 'completed' || dialStatus === 'answered') {
       if (callRowId) {
         try { await db.from('calls').update({ status: 'completed', answered_at: new Date().toISOString(), ended_at: new Date().toISOString(), ...(durSecs ? { duration_seconds: durSecs } : {}) }).eq('id', callRowId) } catch {}
-        // Record WHO answered when it wasn't already captured by the per-<Client>
-        // status callback. Only safe to infer here when a single agent was rung
-        // (unambiguous). Claim only if still unattributed, so we never overwrite a
-        // real answerer or double-fire.
-        if (soloUser && dialStatus === 'completed' && durSecs > 0) {
-          try {
-            const name = await resolveAgentName(db, soloUser, companyId)
-            const { data: claimed } = await db.from('calls')
-              .update({ answered_by_user_id: soloUser, answered_by: name, agent_name: name })
-              .eq('id', callRowId).is('answered_by_user_id', null)
-              .select('id, contact_name, caller_name, from_number')
-            // Notify the rest of the team who took it — once (claim-guarded, so it
-            // never double-fires with the per-<Client> callback).
-            if (Array.isArray(claimed) && claimed.length) {
-              const row = claimed[0] as any
-              const caller = String(row.contact_name || row.caller_name || row.from_number || '').trim()
-              try {
-                await fetch(`${base}/api/push/send`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    companyId,
-                    title: 'Call answered',
-                    body: `${name} received the call${caller ? ` from ${caller}` : ''}`,
-                    excludeUserId: soloUser,
-                    channelId: 'calls',
-                    ...(callRowId ? { route: `/call-detail/${callRowId}` } : {}),
-                  }),
-                })
-              } catch {}
-            }
-          } catch {}
+        // Record WHO answered when the per-<Client> callback didn't. Prefer the
+        // exact answering leg (call_legs mapping by DialCallSid — works even in a
+        // simultaneous multi-agent ring); fall back to the solo-ring user id when
+        // only one agent was rung. Claim only if still unattributed, so we never
+        // overwrite a real answerer or double-fire.
+        if (dialStatus === 'completed' && durSecs > 0) {
+          let answerUser = ''
+          if (dialSid) {
+            try {
+              const { data: leg } = await db.from('call_legs').select('user_id').eq('child_sid', dialSid).maybeSingle()
+              answerUser = (leg as any)?.user_id || ''
+            } catch {}
+          }
+          if (!answerUser && soloUser) answerUser = soloUser
+          if (answerUser) {
+            try {
+              const name = await resolveAgentName(db, answerUser, companyId)
+              const { data: claimed } = await db.from('calls')
+                .update({ answered_by_user_id: answerUser, answered_by: name, agent_name: name })
+                .eq('id', callRowId).is('answered_by_user_id', null)
+                .select('id, contact_name, caller_name, from_number')
+              // Notify the rest of the team who took it — once (claim-guarded, so
+              // it never double-fires with the per-<Client> callback).
+              if (Array.isArray(claimed) && claimed.length) {
+                const row = claimed[0] as any
+                const caller = String(row.contact_name || row.caller_name || row.from_number || '').trim()
+                try {
+                  await fetch(`${base}/api/push/send`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      companyId,
+                      title: 'Call answered',
+                      body: `${name} received the call${caller ? ` from ${caller}` : ''}`,
+                      excludeUserId: answerUser,
+                      channelId: 'calls',
+                      ...(callRowId ? { route: `/call-detail/${callRowId}` } : {}),
+                    }),
+                  })
+                } catch {}
+              }
+            } catch {}
+          }
         }
       }
       // The call is over — show the outcome (with duration when we have it).

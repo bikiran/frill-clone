@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
       const id = twilioIdentity(uid, companyId)
       const childCb = `${base}/api/twilio/voice/child-status?callRowId=${encodeURIComponent(callRowId || '')}&companyId=${encodeURIComponent(companyId)}&userId=${encodeURIComponent(uid)}`
       return (
-        `<Client statusCallback="${xmlEscape(childCb)}" statusCallbackEvent="answered" statusCallbackMethod="POST">` +
+        `<Client statusCallback="${xmlEscape(childCb)}" statusCallbackEvent="initiated ringing answered" statusCallbackMethod="POST">` +
           `<Identity>${xmlEscape(id)}</Identity>` +
           `<Parameter name="callRowId" value="${xmlEscape(callRowId || '')}"/>` +
         `</Client>`

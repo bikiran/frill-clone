@@ -61,6 +61,19 @@ export async function POST(req: NextRequest) {
     const childSid = get('CallSid')
     const status = (get('CallStatus') || '').toLowerCase()
 
+    // Record childSid → user_id for EVERY leg event (initiated/ringing/answered),
+    // so the Dial action callback can resolve who answered from the answered
+    // leg's DialCallSid even in a multi-agent ring where the "answered" callback
+    // for the winning leg didn't reach us. Upsert on the SID keeps it idempotent.
+    if (callRowId && childSid && userId) {
+      try {
+        await admin().from('call_legs').upsert(
+          { call_id: callRowId, company_id: companyId || null, child_sid: childSid, user_id: userId },
+          { onConflict: 'child_sid' },
+        )
+      } catch {}
+    }
+
     if (callRowId && childSid && (status === 'in-progress' || status === 'answered')) {
       const db = admin()
 
