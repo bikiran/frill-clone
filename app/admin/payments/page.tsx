@@ -60,6 +60,10 @@ export default function PaymentsPage() {
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [toast, setToast] = useState('')
+  const [selected, setSelected] = useState<Payment | null>(null)
+  const [details, setDetails] = useState<any>(null)
+  const [detailsLoading, setDetailsLoading] = useState(false)
+  const [refundAmt, setRefundAmt] = useState('')
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 3500); return () => clearTimeout(t) }, [toast])
 
   const load = useCallback(async (cid: string, r: string) => {
@@ -145,21 +149,40 @@ export default function PaymentsPage() {
   const paidCount = payments.filter(p => p.status === 'paid').length
   const pendingCount = payments.filter(p => p.status === 'pending').length
 
-  const doRefund = async (p: Payment) => {
-    const full = money(p.amount_cents, p.currency || 'AUD')
-    if (!window.confirm(`Refund ${full} to ${customerOf(p).name}? This cannot be undone.`)) return
+  // Refund `amount` dollars, or the whole remaining balance when amount is null.
+  const doRefund = async (p: Payment, amount?: number | null) => {
+    const remainingCents = (p.amount_cents || 0) - (p.refunded_cents || 0)
+    const askCents = amount != null ? Math.round(amount * 100) : remainingCents
+    const label = money(askCents, p.currency || 'AUD')
+    if (!window.confirm(`Refund ${label} to ${customerOf(p).name}? This cannot be undone.`)) return
     setBusy(p.id)
     try {
       const res = await fetch('/api/stripe/refund', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, paymentId: p.id }),
+        body: JSON.stringify({ companyId, paymentId: p.id, amount: amount != null ? amount : undefined }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok || j.error) { setToast(`Refund failed: ${j.error || res.status}`); return }
-      setPayments(ps => ps.map(x => x.id === p.id ? { ...x, status: 'refunded', refunded_cents: j.refundedCents ?? x.amount_cents } : x))
-      setToast('Refund issued')
+      const patch = { status: j.full ? 'refunded' : 'paid', refunded_cents: j.totalRefunded ?? j.refundedCents ?? p.amount_cents }
+      setPayments(ps => ps.map(x => x.id === p.id ? { ...x, ...patch } : x))
+      setSelected(s => s && s.id === p.id ? { ...s, ...patch } : s)
+      setRefundAmt('')
+      setToast(j.full ? 'Payment fully refunded' : `Refunded ${money(j.refundedCents, p.currency || 'AUD')}`)
     } catch (e: any) { setToast(`Refund failed: ${e?.message || e}`) }
     finally { setBusy(null) }
+  }
+
+  const openDrawer = async (p: Payment) => {
+    setSelected(p); setDetails(null); setRefundAmt(''); setDetailsLoading(true)
+    try {
+      const res = await fetch('/api/stripe/payment-details', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, paymentId: p.id }),
+      })
+      const j = await res.json().catch(() => ({}))
+      setDetails(j?.details || null)
+    } catch { setDetails(null) }
+    finally { setDetailsLoading(false) }
   }
 
   const doResend = async (p: Payment) => {
@@ -238,7 +261,7 @@ export default function PaymentsPage() {
                   const sm = statusMeta(p.status)
                   const isBusy = busy === p.id
                   return (
-                    <tr key={p.id}>
+                    <tr key={p.id} onClick={() => openDrawer(p)} className="pay-row" style={{ cursor: 'pointer' }}>
                       <td style={{ ...td, fontWeight: 700 }}>{c.name}</td>
                       <td style={{ ...td, color: 'var(--slate)' }}>{c.contact || '—'}</td>
                       <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
@@ -248,7 +271,7 @@ export default function PaymentsPage() {
                       <td style={{ ...td, color: 'var(--slate)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.description || '—'}</td>
                       <td style={td}><span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span></td>
                       <td style={{ ...td, color: 'var(--slate)', whiteSpace: 'nowrap' }}>{fmtDate(p.paid_at || p.created_at)}</td>
-                      <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
                           {p.receipt_url && (
                             <a href={p.receipt_url} target="_blank" rel="noopener noreferrer" title="View Stripe receipt"
@@ -280,6 +303,107 @@ export default function PaymentsPage() {
       </div>
 
       {!loading && <p style={{ margin: '10px 2px 0', fontSize: 12, color: 'var(--slate)' }}>{filtered.length} payment{filtered.length === 1 ? '' : 's'}</p>}
+
+      <style>{`.pay-row:hover td { background: color-mix(in srgb, var(--coral) 5%, transparent); }`}</style>
+
+      {/* Detail drawer */}
+      {selected && (() => {
+        const p = selected
+        const c = customerOf(p)
+        const sm = statusMeta(p.status)
+        const remaining = (p.amount_cents || 0) - (p.refunded_cents || 0)
+        const canRefund = p.status === 'paid' && remaining > 0
+        const isBusy = busy === p.id
+        const kick: React.CSSProperties = { margin: 0, fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }
+        const row = (label: string, val: React.ReactNode) => (
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
+            <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>{label}</span>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', textAlign: 'right', wordBreak: 'break-all' }}>{val}</span>
+          </div>
+        )
+        return (
+          <div onClick={() => setSelected(null)} style={{ position: 'fixed', inset: 0, zIndex: 5600, background: 'rgba(15,23,42,0.45)', display: 'flex', justifyContent: 'flex-end' }}>
+            <div onClick={e => e.stopPropagation()} style={{ width: 460, maxWidth: '96vw', height: '100%', background: 'var(--card,#fff)', boxShadow: '-20px 0 60px rgba(0,0,0,0.25)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+              {/* Header */}
+              <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>{money(p.amount_cents, p.currency || 'AUD')}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span>
+                  </div>
+                  <p style={{ margin: '4px 0 0', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{c.name}</p>
+                  {p.refunded_cents ? <p style={{ margin: '2px 0 0', fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{money(p.refunded_cents, p.currency || 'AUD')} refunded{remaining > 0 ? ` · ${money(remaining, p.currency || 'AUD')} remaining` : ''}</p> : null}
+                </div>
+                <button type="button" onClick={() => setSelected(null)} title="Close" style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
+
+              <div style={{ padding: '8px 20px 20px' }}>
+                {/* Details */}
+                <p style={{ ...kick, margin: '12px 0 2px' }}>Details</p>
+                {row('Contact', c.contact || '—')}
+                {row('Description', p.description || '—')}
+                {row('Date', fmtDate(p.paid_at || p.created_at))}
+                {row('Currency', String(p.currency || 'AUD').toUpperCase())}
+                {row('Payment card', detailsLoading ? 'Loading…' : (details?.brand ? `${details.brand.toUpperCase()} •••• ${details.last4}${details.wallet ? ` · ${details.wallet}` : ''}` : '—'))}
+                {row('Stripe payment', details?.paymentIntentId || p.stripe_payment_intent || '—')}
+                {details?.chargeId ? row('Charge', details.chargeId) : null}
+
+                {/* Refunds already issued */}
+                {details?.refunds?.length > 0 && (
+                  <>
+                    <p style={{ ...kick, margin: '18px 0 6px' }}>Refunds</p>
+                    {details.refunds.map((r: any) => (
+                      <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+                        <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>{r.created ? new Date(r.created * 1000).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '—'}{r.reason ? ` · ${r.reason}` : ''}</span>
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#dc2626' }}>−{money(r.amount, r.currency || p.currency || 'AUD')}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {/* Actions */}
+                <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {canRefund && (
+                    <div style={{ padding: 14, borderRadius: 12, border: '1px solid var(--border)', background: 'color-mix(in srgb, var(--slate) 3%, transparent)' }}>
+                      <p style={{ ...kick, margin: '0 0 8px' }}>Refund</p>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                          <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--slate)' }}>$</span>
+                          <input value={refundAmt} onChange={e => setRefundAmt(e.target.value.replace(/[^\d.]/g, ''))}
+                            placeholder={`${(remaining / 100).toFixed(2)} (full remaining)`}
+                            style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px 9px 22px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
+                        </div>
+                        <button type="button" disabled={isBusy}
+                          onClick={() => doRefund(p, refundAmt.trim() ? parseFloat(refundAmt) : null)}
+                          style={{ padding: '9px 16px', borderRadius: 9, border: 'none', background: '#dc2626', color: '#fff', fontSize: 13, fontWeight: 700, cursor: isBusy ? 'default' : 'pointer', opacity: isBusy ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+                          {refundAmt.trim() ? `Refund $${refundAmt.trim()}` : 'Refund full'}
+                        </button>
+                      </div>
+                      <p style={{ margin: '7px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>Leave blank to refund the full remaining {money(remaining, p.currency || 'AUD')}.</p>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {p.status === 'paid' && (
+                      <button type="button" disabled={isBusy} onClick={() => doResend(p)}
+                        style={{ flex: 1, minWidth: 130, padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: isBusy ? 'default' : 'pointer', opacity: isBusy ? 0.6 : 1 }}>Resend receipt</button>
+                    )}
+                    {(details?.receiptUrl || p.receipt_url) && (
+                      <a href={details?.receiptUrl || p.receipt_url} target="_blank" rel="noopener noreferrer"
+                        style={{ flex: 1, minWidth: 130, textAlign: 'center', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>View receipt</a>
+                    )}
+                    {c.conv?.id && (
+                      <button type="button" onClick={() => router.push(`/admin/inbox?conversation=${c.conv.id}`)}
+                        style={{ flex: 1, minWidth: 130, padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Open conversation</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 6000, padding: '11px 18px', borderRadius: 11, background: '#111827', color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}>{toast}</div>

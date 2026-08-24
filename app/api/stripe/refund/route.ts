@@ -41,27 +41,33 @@ export async function POST(req: NextRequest) {
     }
     if (!paymentIntent) return NextResponse.json({ error: 'No Stripe payment reference on this record' }, { status: 400 })
 
-    const refundArgs: any = { payment_intent: paymentIntent }
-    // Partial refund: a dollar amount less than the full charge.
-    const cents = amount != null ? Math.round(parseFloat(String(amount)) * 100) : null
-    const full = !cents || cents >= (pay.amount_cents || 0)
-    if (cents && !full) refundArgs.amount = cents
+    // Refunds accumulate: how much is still refundable on this charge.
+    const alreadyRefunded = pay.refunded_cents || 0
+    const remaining = (pay.amount_cents || 0) - alreadyRefunded
+    if (remaining <= 0) return NextResponse.json({ error: 'Nothing left to refund' }, { status: 400 })
 
-    const refund = await s.refunds.create(refundArgs, acct)
+    // A dollar amount refunds that much; omitted refunds the whole remaining balance.
+    let cents = amount != null ? Math.round(parseFloat(String(amount)) * 100) : remaining
+    if (!cents || cents < 1) return NextResponse.json({ error: 'Refund amount must be at least $0.01' }, { status: 400 })
+    if (cents > remaining) return NextResponse.json({ error: `Only ${(remaining / 100).toFixed(2)} left to refund` }, { status: 400 })
 
-    const refundedCents = full ? (pay.amount_cents || 0) : cents!
-    // Mark the record. A partial refund keeps 'paid' but records the refunded
-    // amount; a full refund flips to 'refunded'.
+    const refund = await s.refunds.create({ payment_intent: paymentIntent, amount: cents }, acct)
+
+    const totalRefunded = alreadyRefunded + cents
+    const full = totalRefunded >= (pay.amount_cents || 0)
+    // A partial refund keeps 'paid' but records the running refunded total; a
+    // full (or fully-accumulated) refund flips to 'refunded'.
     try {
       await db.from('chat_payments').update({
         status: full ? 'refunded' : 'paid',
-        refunded_cents: refundedCents,
+        refunded_cents: totalRefunded,
         refunded_at: new Date().toISOString(),
       }).eq('id', pay.id)
     } catch {
       // Older schema without the refund columns — at least flip the status.
       try { await db.from('chat_payments').update({ status: full ? 'refunded' : 'paid' }).eq('id', pay.id) } catch {}
     }
+    const refundedCents = cents
 
     // Reverse the Link Reports revenue credit for a full refund so the report
     // reflects money actually kept.
@@ -90,7 +96,7 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
-    return NextResponse.json({ ok: true, refundId: refund.id, refundedCents, full })
+    return NextResponse.json({ ok: true, refundId: refund.id, refundedCents, totalRefunded, full })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Refund failed' }, { status: 500 })
   }
