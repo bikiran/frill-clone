@@ -180,7 +180,11 @@ export async function POST(req: NextRequest) {
 
     const ring = Number(integ.ring_seconds || 25)
     const recordingCb = `${base}/api/twilio/voice/recording?${cbQuery}`
-    const actionCb = `${base}/api/twilio/voice/inbound-status?${cbQuery}`
+    // When exactly ONE agent is rung, whoever answers is unambiguous — pass that
+    // user id to the Dial action callback so it can record the answerer reliably
+    // even if the per-<Client> "answered" status callback doesn't fire.
+    const soloQuery = ringUsers.length === 1 ? `&soloUser=${encodeURIComponent(ringUsers[0])}` : ''
+    const actionCb = `${base}/api/twilio/voice/inbound-status?${cbQuery}${soloQuery}`
     // Pass the calls-row id straight to the browser as a custom parameter, so
     // warm transfer can identify the exact call without guessing from CallSids
     // (the client leg's SID doesn't match the parent row). Each <Client> gets a

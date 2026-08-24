@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { xmlEscape } from '@/lib/twilio-service'
 import { setCallPreview } from '@/lib/call-card'
+import { resolveAgentName } from '@/lib/agent-name'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest) {
     const callRowId = sp.get('callRowId') || ''
     const companyId = sp.get('companyId') || ''
     const conversationId = sp.get('conversationId') || ''
+    const soloUser = sp.get('soloUser') || ''
 
     const dialStatus = (get('DialCallStatus') || '').toLowerCase()
     const durSecs = parseInt(get('DialCallDuration') || '0', 10) || 0
@@ -36,6 +38,18 @@ export async function POST(req: NextRequest) {
     if (dialStatus === 'completed' || dialStatus === 'answered') {
       if (callRowId) {
         try { await db.from('calls').update({ status: 'completed', answered_at: new Date().toISOString(), ended_at: new Date().toISOString(), ...(durSecs ? { duration_seconds: durSecs } : {}) }).eq('id', callRowId) } catch {}
+        // Record WHO answered when it wasn't already captured by the per-<Client>
+        // status callback. Only safe to infer here when a single agent was rung
+        // (unambiguous). Claim only if still unattributed, so we never overwrite a
+        // real answerer or double-fire.
+        if (soloUser && dialStatus === 'completed' && durSecs > 0) {
+          try {
+            const name = await resolveAgentName(db, soloUser, companyId)
+            await db.from('calls')
+              .update({ answered_by_user_id: soloUser, answered_by: name, agent_name: name })
+              .eq('id', callRowId).is('answered_by_user_id', null)
+          } catch {}
+        }
       }
       // The call is over — show the outcome (with duration when we have it).
       try { await setCallPreview(db as any, conversationId, durSecs ? `📞 Call ended · ${Math.floor(durSecs / 60)}:${String(durSecs % 60).padStart(2, '0')}` : '📞 Call ended') } catch {}
