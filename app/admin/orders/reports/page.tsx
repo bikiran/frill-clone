@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
-import { fmtMoney } from '@/lib/orders'
+import { fmtMoney, channelMeta } from '@/lib/orders'
 
 type Order = any
 type Report = 'fulfillment' | 'shipping' | 'sales'
@@ -22,6 +22,9 @@ export default function OrdersReportsPage() {
   const [loading, setLoading] = useState(true)
   const [report, setReport] = useState<Report>('fulfillment')
   const [range, setRange] = useState('30d')
+  const [outlets, setOutlets] = useState<{ id: string; name: string }[]>([])
+  const [location, setLocation] = useState('all')
+  const [channel, setChannel] = useState('all')
 
   const getMyCompanyId = async (): Promise<string | null> => {
     const peeked = peekCompanyUser()?.companyId
@@ -35,11 +38,14 @@ export default function OrdersReportsPage() {
   // (a few KB) instead of every order row, so it's instant regardless of how many
   // orders the window contains. A stale summary stays on screen while the new
   // range loads, so switching ranges never blanks the report.
-  const load = useCallback(async (cid: string, rangeKey: string) => {
+  const load = useCallback(async (cid: string, rangeKey: string, loc: string, chan: string) => {
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
-      const res = await fetch(`/api/orders/reports?companyId=${encodeURIComponent(cid)}&range=${encodeURIComponent(rangeKey)}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined })
+      const params = new URLSearchParams({ companyId: cid, range: rangeKey })
+      if (loc && loc !== 'all') params.set('location', loc)
+      if (chan && chan !== 'all') params.set('channel', chan)
+      const res = await fetch(`/api/orders/reports?${params.toString()}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined })
       const j = await res.json().catch(() => ({}))
       if (res.ok && !j.error) setSummary(j)
     } catch {}
@@ -53,18 +59,20 @@ export default function OrdersReportsPage() {
       setCompanyId(cid)
       // Accent shouldn't gate the report — load it detached.
       ;(async () => { try { const { data: co } = await (supabase as any).from('companies').select('accent_color').eq('id', cid).maybeSingle(); if (co?.accent_color) setAccent(co.accent_color) } catch {} })()
-      load(cid, range)
+      // Outlets for the location filter.
+      ;(async () => { try { const { data } = await (supabase as any).from('company_locations').select('id, label, suburb, is_primary').eq('company_id', cid).order('is_primary', { ascending: false }); setOutlets((data || []).map((l: any) => ({ id: l.id, name: l.label || l.suburb || 'Outlet' }))) } catch {} })()
+      load(cid, range, location, channel)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Refetch when the range changes (server returns a tiny summary → fast).
+  // Refetch when the range or a filter changes (server returns a tiny summary).
   const firstRangeRef = useRef(true)
   useEffect(() => {
     if (firstRangeRef.current) { firstRangeRef.current = false; return }
-    if (companyId) load(companyId, range)
+    if (companyId) load(companyId, range, location, channel)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range])
+  }, [range, location, channel])
 
   const days = RANGES.find(r => r.key === range)?.days ?? null
   const fulfil = summary?.fulfil || { total: 0, shipped: 0, cancelled: 0, awaiting: 0, onHold: 0, rate: 0, avgHrs: 0, buckets: { fresh: 0, mod: 0, late: 0 }, byStatus: [] }
@@ -82,6 +90,8 @@ export default function OrdersReportsPage() {
     for (let offset = 0; offset < 500000; offset += 1000) {
       let q = (supabase as any).from('orders').select('order_number, order_date, customer_name, status, sales_channel, item_count, total, carrier, tracking_number').eq('company_id', companyId)
       if (sinceISO) q = q.gte('order_date', sinceISO)
+      if (location !== 'all') q = location === 'unassigned' ? q.is('store_location_id', null) : q.eq('store_location_id', location)
+      if (channel !== 'all') q = q.eq('sales_channel', channel)
       const { data, error } = await q.order('order_date', { ascending: false }).range(offset, offset + 999)
       if (error || !data?.length) break
       acc.push(...data)
@@ -154,7 +164,21 @@ export default function OrdersReportsPage() {
           <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--slate)' }}>Fulfilment, shipping and sales performance</p>
         </div>
         <div className="no-print" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {outlets.length > 0 && (
+            <select value={location} onChange={e => setLocation(e.target.value)} style={ctrl} title="Filter by outlet">
+              <option value="all">All outlets</option>
+              {outlets.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+              <option value="unassigned">Unassigned</option>
+            </select>
+          )}
+          <select value={channel} onChange={e => setChannel(e.target.value)} style={ctrl} title="Filter by sales channel">
+            <option value="all">All channels</option>
+            {(summary?.channelsAll || []).map((c: string) => <option key={c} value={c}>{channelMeta(c).label}</option>)}
+          </select>
           <select value={range} onChange={e => setRange(e.target.value)} style={ctrl}>{RANGES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}</select>
+          {(location !== 'all' || channel !== 'all') && (
+            <button type="button" onClick={() => { setLocation('all'); setChannel('all') }} style={{ ...ctrl, color: ACCENT }}>Clear filters</button>
+          )}
           <button type="button" onClick={exportCsv} style={ctrl}>Export CSV</button>
           <button type="button" onClick={() => window.print()} style={ctrl}>Print</button>
         </div>
