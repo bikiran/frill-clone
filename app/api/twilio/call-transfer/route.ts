@@ -134,14 +134,29 @@ export async function POST(req: NextRequest) {
     // SID into both conference_id (existing logic) and conference_sid (contract).
     const ensureConference = async (): Promise<string> => {
       if (call.conference_id) return call.conference_id
-      try { await svc.updateCall(customerLeg, { twiml: conferenceTwiml() }) } catch (e: any) { throw new Error(`Could not move the customer into a conference: ${e.message}`) }
-      try { await svc.updateCall(agentLeg, { twiml: conferenceTwiml() }) } catch { /* agent may drop; conference still holds the customer */ }
+      // The two legs are a <Dial> bridge: one is the PARENT (the call that ran
+      // the <Dial>) and the other is the dialed CHILD. Redirecting the PARENT
+      // first tears the bridge down and Twilio hangs up the CHILD before it can
+      // join — which is exactly why pressing Hold dropped the agent. So:
+      //   1) move the CHILD leg in first (it survives the redirect), then
+      //   2) move the PARENT leg — by now its Dial has no live child, so
+      //      redirecting it is safe. As a belt-and-braces path, the pending flag
+      //      makes the parent's Dial action (inbound-status) re-join the same
+      //      conference if that Dial ends before our redirect lands.
+      const dir = String(call.direction || '').toLowerCase()
+      const parentLeg = dir === 'outbound' ? agentLeg : customerLeg
+      const childLeg = dir === 'outbound' ? customerLeg : agentLeg
+      try { await db.from('calls').update({ conference_pending: confName }).eq('id', call.id) } catch {}
+      if (childLeg) { try { await svc.updateCall(childLeg, { twiml: conferenceTwiml() }) } catch { /* may already be gone */ } }
+      if (parentLeg) { try { await svc.updateCall(parentLeg, { twiml: conferenceTwiml() }) } catch { /* the Dial-action fallback will catch it */ } }
       // The conference exists once the first participant joins — poll briefly.
       let confSid: string | null = null
-      for (let i = 0; i < 6 && !confSid; i++) {
+      for (let i = 0; i < 8 && !confSid; i++) {
         await new Promise(r => setTimeout(r, 500))
         try { confSid = await svc.getConferenceSid(confName) } catch {}
       }
+      // Clear the handoff flag either way — it only guards the redirect window.
+      try { await db.from('calls').update({ conference_pending: null }).eq('id', call.id) } catch {}
       if (!confSid) throw new Error('Conference did not start in time')
       await db.from('calls').update({ conference_id: confSid, conference_name: confName, conference_sid: confSid }).eq('id', call.id)
       call.conference_id = confSid

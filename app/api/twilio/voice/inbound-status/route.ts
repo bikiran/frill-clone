@@ -38,6 +38,20 @@ export async function POST(req: NextRequest) {
     const db = admin()
     const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
 
+    // Hold / warm-transfer in flight: the agent leg was moved into a conference,
+    // which ends this (customer) leg's <Dial>. Instead of hanging up or going to
+    // voicemail, re-join this leg into the SAME conference so the customer stays
+    // connected (on hold) and the agent isn't left talking to nobody.
+    if (callRowId) {
+      try {
+        const { data: c } = await db.from('calls').select('conference_pending').eq('id', callRowId).maybeSingle()
+        const confName = (c as any)?.conference_pending
+        if (confName) {
+          return twiml(`<Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false">${xmlEscape(confName)}</Conference></Dial></Response>`)
+        }
+      } catch {}
+    }
+
     // An agent answered → mark it and finish.
     if (dialStatus === 'completed' || dialStatus === 'answered') {
       if (callRowId) {
