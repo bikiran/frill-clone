@@ -89,6 +89,9 @@ export default function OrdersPage() {
   const ACCENT = accent
   const [me, setMe] = useState<{ id: string | null; name: string }>({ id: null, name: 'You' })
   const [orders, setOrders] = useState<Order[]>([])
+  // Order ids with an unresolved out-of-stock alert — powers the "Order Alerts"
+  // tab/count so it mirrors the Out of Stock list.
+  const [oosOrderIds, setOosOrderIds] = useState<Set<string>>(new Set())
   const [locations, setLocations] = useState<{ id: string; name: string }[]>([])
   const [team, setTeam] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
@@ -198,6 +201,17 @@ export default function OrdersPage() {
     } catch (e: any) { setToast(`Couldn’t load orders: ${e?.message || e}`); setTimeout(() => setToast(''), 6000); setLoading(false) }
   }, [])
 
+  // Load which orders have an unresolved out-of-stock alert, so the "Order
+  // Alerts" tab/count reflects the Out of Stock list. Terminal orders (shipped/
+  // cancelled) are excluded to match how the OOS list treats them as done.
+  const loadOos = useCallback(async (cid: string) => {
+    try {
+      const { data } = await (supabase as any).from('order_stock_alerts')
+        .select('order_id, status').eq('company_id', cid).neq('status', 'resolved').limit(2000)
+      setOosOrderIds(new Set((data || []).map((r: any) => r.order_id).filter(Boolean)))
+    } catch { /* table may not exist yet — leave the set empty */ }
+  }, [])
+
   // Build a per-order product search index (name + SKU) so the board search can
   // match by product, which the order rows themselves don't carry. Loaded in the
   // background — search works on order#/name/email/phone/address immediately and
@@ -279,6 +293,7 @@ export default function OrdersPage() {
       // locations / prefs / team setup below — the board no longer waits on any
       // of that before its first paint.
       loadOrders(cid)
+      loadOos(cid)
       try { const { data: co } = await (supabase as any).from('companies').select('accent_color').eq('id', cid).maybeSingle(); if (co?.accent_color) setAccent(co.accent_color) } catch {}
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user) setMe({ id: session.user.id, name: session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'You' })
@@ -348,13 +363,20 @@ export default function OrdersPage() {
     return true
   }, [fStore])
 
+  // An order is "alerted" if it has an unresolved out-of-stock line (unless it's
+  // already shipped/cancelled) or was manually flagged. This is what the Order
+  // Alerts tab/count and the Alerts KPI surface.
+  const isAlerted = useCallback((o: any) => (
+    (oosOrderIds.has(o.id) && !['shipped', 'cancelled'].includes(o.status)) || !!o.flagged
+  ), [oosOrderIds])
+
   // ── Counts for the tabs (scoped to the current Location filter) ─────────────
   const counts = useMemo(() => {
     const scoped = orders.filter(locMatch)
     const c: Record<string, number> = { all: scoped.length, alerts: 0, awaiting_shipment: 0, on_hold: 0, manual: 0, shipped: 0, cancelled: 0, packed: 0, click_and_collect: 0 }
-    for (const o of scoped) { c[o.status] = (c[o.status] || 0) + 1; if (o.flagged) c.alerts++ }
+    for (const o of scoped) { c[o.status] = (c[o.status] || 0) + 1; if (isAlerted(o)) c.alerts++ }
     return c
-  }, [orders, locMatch])
+  }, [orders, locMatch, isAlerted])
 
   const allTags = useMemo(() => Array.from(new Set(orders.flatMap((o: any) => Array.isArray(o.tags) ? o.tags : []))).filter(Boolean), [orders])
   const teamName = (id: string | null) => team.find(t => t.id === id)?.name || null
@@ -378,7 +400,7 @@ export default function OrdersPage() {
     const now = Date.now()
     let rows = orders.filter((o: any) => {
       const tabDef = STATUS_TABS.find(t => t.key === tab)
-      if (tab === 'alerts') { if (!o.flagged) return false }
+      if (tab === 'alerts') { if (!isAlerted(o)) return false }
       else if (tabDef?.match) { if (!tabDef.match.includes(o.status)) return false }
       if (!locMatch(o)) return false
       if (fAssignee !== 'all') { if (fAssignee === 'none' ? o.assignee_id : o.assignee_id !== fAssignee) return false }
@@ -411,7 +433,7 @@ export default function OrdersPage() {
       return 0
     })
     return rows
-  }, [orders, tab, debouncedSearch, fStore, fAssignee, fTag, fDate, saved, sortCol, sortDir, locMatch, hayIndex])
+  }, [orders, tab, debouncedSearch, fStore, fAssignee, fTag, fDate, saved, sortCol, sortDir, locMatch, hayIndex, isAlerted])
 
   useEffect(() => { setPage(0); setSelected(new Set()) }, [tab, debouncedSearch, fStore, fAssignee, fTag, fDate, saved])
   const pageRows = filtered.slice(page * pageSize, page * pageSize + pageSize)
@@ -821,7 +843,7 @@ export default function OrdersPage() {
 
       {showOOS && companyId && (
         <OutOfStockModal companyId={companyId} accent={ACCENT} locations={locations}
-          onClose={() => setShowOOS(false)}
+          onClose={() => { setShowOOS(false); if (companyId) loadOos(companyId) }}
           onOpenOrder={(id: string) => openOrder(id)} />
       )}
 
