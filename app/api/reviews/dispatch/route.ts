@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { holidaySet, wallClock, isBlockedDay, nextOpenSlot } from '@/lib/holidays'
 import { assessReviewSentiment } from '@/lib/review-sentiment'
+import { shortenUrl } from '@/lib/short-link'
 
 export const dynamic = 'force-dynamic'
 
@@ -123,7 +124,17 @@ async function run(req: NextRequest) {
           continue
         }
         const siteBase = String(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
-        const trackedLink = siteBase ? `${siteBase}/r/${rr.id}` : link
+        let trackedLink = siteBase ? `${siteBase}/r/${rr.id}` : link
+        // Send the tracked link behind the company's own short link
+        // (roxyaquarium.colvy.com/l/<code>) instead of the raw
+        // colvy.com/r/<uuid> redirect — short, branded, and less spammy. The
+        // /l/<code> still resolves to /r/<id>, so the review-click tracking
+        // (which lets us stop pestering customers who already engaged) is
+        // preserved. Falls back to the raw tracked link if shortening fails.
+        try {
+          const short = await shortenUrl(trackedLink, { companyId: rr.company_id, kind: 'review', conversationId: rr.conversation_id })
+          if (short) trackedLink = short
+        } catch {}
 
         // Atomically claim this request BEFORE sending, so two overlapping cron
         // runs (or a retry) can't each send it: flip pending → sending and only
