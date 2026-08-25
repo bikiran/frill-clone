@@ -275,6 +275,28 @@ export class WooCommerceService {
     } catch { return [] }
   }
 
+  // Resolve product images by SKU. WooCommerce order line items usually don't
+  // carry an image, so anything showing an order's products (the Out of Stock
+  // list, packing previews) has nothing to display. This looks each SKU up
+  // against the products endpoint and returns { sku: imageUrl }. Capped and run
+  // in parallel; a SKU with no product / no image is simply omitted.
+  async imagesForSkus(skus: string[]): Promise<Record<string, string>> {
+    const out: Record<string, string> = {}
+    const base = `${this.config.storeUrl}/wp-json/wc/v3/products`
+    const h = this.wcHeaders()
+    const uniq = Array.from(new Set(skus.filter(Boolean))).slice(0, 60)
+    await Promise.all(uniq.map(async (sku) => {
+      try {
+        const res = await fetch(`${base}?sku=${encodeURIComponent(sku)}&per_page=1&status=publish`, { headers: h })
+        if (!res.ok) return
+        const arr = await res.json()
+        const img = arr?.[0]?.images?.[0]?.src
+        if (img) out[sku] = img
+      } catch { /* skip this sku */ }
+    }))
+    return out
+  }
+
   // Re-fetch a single product or variation to recheck price/stock right before
   // submitting (another sale may have happened while the panel was open).
   async getProductOrVariation(productId: number, variationId?: number): Promise<any | null> {

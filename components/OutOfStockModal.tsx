@@ -78,6 +78,27 @@ export default function OutOfStockModal({
         for (const o of ords || []) { m[o.id] = o.status; loc[o.id] = o.store_location_id || null }
         setOrderStatus(m); setOrderLoc(loc)
       } else { setOrderStatus({}); setOrderLoc({}) }
+      // Backfill product thumbnails. Order line items rarely carry an image, so
+      // resolve any missing ones by SKU from WooCommerce, show them immediately,
+      // and cache them onto the alert rows so we don't look them up again.
+      const needSkus = Array.from(new Set(rows.filter(r => !r.image_url && r.sku).map(r => r.sku as string)))
+      if (needSkus.length) {
+        try {
+          const res = await fetch('/api/orders/product-images', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, skus: needSkus }),
+          })
+          const { images } = await res.json()
+          if (images && Object.keys(images).length) {
+            setAlerts(prev => prev.map(a => (!a.image_url && a.sku && images[a.sku]) ? { ...a, image_url: images[a.sku] } : a))
+            for (const a of rows) {
+              if (!a.image_url && a.sku && images[a.sku]) {
+                try { await (supabase as any).from('order_stock_alerts').update({ image_url: images[a.sku] }).eq('id', a.id) } catch {}
+              }
+            }
+          }
+        } catch {}
+      }
     } catch { setAlerts([]) }
     setLoading(false)
   }, [companyId])
