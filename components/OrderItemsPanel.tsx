@@ -94,7 +94,7 @@ export default function OrderItemsPanel({
       }
       const minimal: any = {
         company_id: companyId, order_id: order.id, order_number: order.order_number,
-        customer_name: order.customer_name, line_key: k,
+        customer_name: order.customer_name, store_location_id: order.store_location_id || null, line_key: k,
         product_name: it.product_name, sku: it.sku || null, quantity: it.quantity || 1, status: 'pending',
       }
       let saved = false
