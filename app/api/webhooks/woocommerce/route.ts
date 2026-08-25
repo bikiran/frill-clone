@@ -8,6 +8,7 @@ import { notifyCompany } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { upsertWooOrder } from '@/lib/orders-sync'
 import { wooDateToISO } from '@/lib/orders'
+import { logEnquiryReopened } from '@/lib/conversation-timeline'
 
 const DEFAULT_MESSAGES: Record<string, string> = {
   processing: 'Thank you for placing an order with {business}. We have received it. If you have any questions, feel free to reply here.',
@@ -264,6 +265,20 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     } catch { /* not fatal */ }
   }
   if (!conv) return
+
+  // A new order from the customer reopens a closed enquiry — placing an order is
+  // fresh activity, so the thread shouldn't stay buried in Closed. Only on the
+  // FIRST webhook we see for this order (no conversation recorded against it yet),
+  // so a later status update (pending → processing) doesn't re-open a thread the
+  // team deliberately closed afterwards. Matches how an inbound message/call
+  // reopens the enquiry.
+  if (!isNewConv && !priorOrder?.conversation_id && ['closed', 'resolved'].includes(String(conv.status || ''))) {
+    try {
+      await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: contact?.name || billingName || null, via: 'order' })
+      await db.from('conversations').update({ status: 'open' }).eq('id', conv.id)
+      conv.status = 'open'
+    } catch { /* not fatal */ }
+  }
 
   // Keep the conversation's order status current. The inbox badge was reading
   // only the subject ("Order #…") and so labelled EVERY order conversation

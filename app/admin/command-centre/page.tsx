@@ -33,7 +33,12 @@ type Loc = { id: string; name: string }
 type Agent = { id: string; name: string; avatar: string | null; role: string | null; status: 'available' | 'oncall' | 'offline' }
 
 const isVoicemail = (c: Call) => !!c.is_voicemail || c.status === 'voicemail'
-const isLive = (c: Call) => ['ringing', 'initiated', 'in_progress'].includes(c.status) && !c.ended_at
+// A call is only "live" if it's still in a live state AND started recently. A
+// call whose end/status webhook was lost stays in_progress forever — without
+// this cap it shows an ever-growing duration (e.g. 407 min) and inflates the
+// on-call count. No real call runs this long, so past the cap it's stale, not live.
+const MAX_LIVE_MS = 2 * 60 * 60 * 1000 // 2 hours
+const isLive = (c: Call) => ['ringing', 'initiated', 'in_progress'].includes(c.status) && !c.ended_at && (Date.now() - new Date(c.created_at).getTime()) < MAX_LIVE_MS
 const isAnswered = (c: Call) => !isVoicemail(c) && (['answered', 'completed'].includes(c.status) || (c.duration_seconds || 0) > 0)
 const isMissed = (c: Call) => !isVoicemail(c) && !isAnswered(c) && !isLive(c)
 
@@ -129,33 +134,59 @@ export default function CommandCentrePage() {
 
   // Full team roster + who's available / on a call right now.
   const loadTeam = async (cid: string) => {
-    const { data: members } = await (supabase as any).from('team_members')
-      .select('user_id, email, name, role').eq('company_id', cid)
-    const list = (members || []).filter((m: any) => m.user_id)
-    const cutoff = new Date(Date.now() - 120000).toISOString()
-    const { data: pres } = await (supabase as any).from('agent_presence')
-      .select('user_id, available, last_seen_at').eq('company_id', cid).gte('last_seen_at', cutoff)
+    // The roster is a UNION of three sources, because no single one is complete:
+    //   • team_members — invited staff (but often NOT the company owner)
+    //   • the company owner (companies.owner_id — usually absent from team_members)
+    //   • anyone currently in agent_presence (a shared/company account can be
+    //     online without a team_members row — this is what the old board used)
+    // Reading team_members alone showed "No team members found" for companies
+    // whose only online users are the owner / a shared account.
+    const [membersRes, coRes, presRes] = await Promise.all([
+      (supabase as any).from('team_members').select('user_id, email, name, role').eq('company_id', cid),
+      (supabase as any).from('companies').select('owner_id, name').eq('id', cid).maybeSingle(),
+      (supabase as any).from('agent_presence').select('user_id, available, last_seen_at')
+        .eq('company_id', cid).gte('last_seen_at', new Date(Date.now() - 120000).toISOString()),
+    ])
     const presMap: Record<string, boolean> = {}
-    for (const p of pres || []) presMap[p.user_id] = p.available !== false
-    // Resolve display names + avatars server-side.
+    for (const p of presRes.data || []) if (p.user_id) presMap[p.user_id] = p.available !== false
+
+    // Merge into one map keyed by user_id, keeping the best name/role we know.
+    const byId = new Map<string, { name: string | null; role: string | null }>()
+    for (const m of membersRes.data || []) if (m.user_id) byId.set(m.user_id, { name: m.name || (m.email ? String(m.email).split('@')[0] : null), role: m.role || null })
+    const ownerId = coRes.data?.owner_id
+    if (ownerId && !byId.has(ownerId)) byId.set(ownerId, { name: coRes.data?.name || null, role: 'owner' })
+    for (const uid of Object.keys(presMap)) if (!byId.has(uid)) byId.set(uid, { name: null, role: null })
+
+    // Resolve display names + avatars server-side (auth metadata).
     let names: Record<string, { name: string | null; avatar_url: string | null }> = {}
-    const uids = Array.from(new Set(list.map((m: any) => m.user_id)))
+    const uids = Array.from(byId.keys())
     if (uids.length) {
       try {
         const r = await fetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: uids }) })
         const d = await r.json(); names = d.names || {}
       } catch {}
     }
-    const agents: Agent[] = list.map((m: any) => {
-      const nm = names[m.user_id]?.name || m.name || (m.email ? String(m.email).split('@')[0] : 'Agent')
-      const online = m.user_id in presMap
-      const status: Agent['status'] = !online ? 'offline' : (presMap[m.user_id] ? 'available' : 'oncall')
-      return { id: m.user_id, name: nm, avatar: names[m.user_id]?.avatar_url || null, role: m.role || null, status }
-    }).sort((a: Agent, b: Agent) => {
+    const agents: Agent[] = uids.map(uid => {
+      const base = byId.get(uid)!
+      const nm = names[uid]?.name || base.name || 'Agent'
+      const online = uid in presMap
+      const status: Agent['status'] = !online ? 'offline' : (presMap[uid] ? 'available' : 'oncall')
+      return { id: uid, name: nm, avatar: names[uid]?.avatar_url || null, role: base.role, status }
+    }).sort((a, b) => {
       const rank = { available: 0, oncall: 1, offline: 2 }
       return rank[a.status] - rank[b.status] || a.name.localeCompare(b.name)
     })
     setRoster(agents)
+  }
+
+  // Lightweight refresh of just the calls (for the live board), without the
+  // contact-location backfill — that map is stable enough between full loads.
+  const loadCalls = async (cid: string) => {
+    const since = new Date(Date.now() - 30 * 864e5).toISOString()
+    const { data: cs } = await (supabase as any).from('calls')
+      .select('id, direction, status, is_voicemail, duration_seconds, from_number, to_number, caller_name, contact_name, agent_name, contact_id, created_at, ended_at, sentiment, recording_url')
+      .eq('company_id', cid).gte('created_at', since).order('created_at', { ascending: false }).limit(2000)
+    setCalls(cs || [])
   }
 
   const loadAll = async () => {
@@ -174,7 +205,7 @@ export default function CommandCentrePage() {
     const rows: Call[] = cs || []
     setCalls(rows)
 
-    const cids = Array.from(new Set(rows.map(c => c.contact_id).filter(Boolean))) as string[]
+    const cids = Array.from(new Set(rows.map((c: Call) => c.contact_id).filter(Boolean))) as string[]
     if (cids.length) {
       const map: Record<string, string> = {}
       for (let i = 0; i < cids.length; i += 300) {
@@ -197,10 +228,15 @@ export default function CommandCentrePage() {
     const c = setInterval(tick, 1000)
     return () => clearInterval(c)
   }, [hour12])
+  // Keep the board live: refresh presence AND recent calls on a short interval
+  // (every 15s), plus immediately whenever the tab regains focus.
   useEffect(() => {
     if (!companyId) return
-    const iv = setInterval(() => { loadTeam(companyId) }, 20000)
-    return () => clearInterval(iv)
+    const refresh = () => { loadTeam(companyId); loadCalls(companyId) }
+    const iv = setInterval(refresh, 15000)
+    const onFocus = () => { if (document.visibilityState === 'visible') refresh() }
+    document.addEventListener('visibilitychange', onFocus)
+    return () => { clearInterval(iv); document.removeEventListener('visibilitychange', onFocus) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId])
 
