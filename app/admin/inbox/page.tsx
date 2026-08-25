@@ -729,6 +729,17 @@ export default function InboxPage() {
     finally { setProductSearching(false) }
   }
 
+  // Live search — run the lookup as the agent types (debounced), so results
+  // appear without pressing Search. The button still works for an instant run.
+  useEffect(() => {
+    if (!showProducts) return
+    const q = productQuery.trim()
+    if (q.length < 2) { setProducts([]); setProductError(''); return }
+    const t = setTimeout(() => { searchProducts() }, 350)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productQuery, showProducts, companyId])
+
   // Post a message about the product into the chat (and out over SMS if that's
   // how we're talking to them).
   const sendProductMessage = async (p: any, kind: 'price' | 'link' | 'both') => {
