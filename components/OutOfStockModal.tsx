@@ -78,29 +78,35 @@ export default function OutOfStockModal({
         for (const o of ords || []) { m[o.id] = o.status; loc[o.id] = o.store_location_id || null }
         setOrderStatus(m); setOrderLoc(loc)
       } else { setOrderStatus({}); setOrderLoc({}) }
-      // Backfill product thumbnails. Order line items rarely carry an image, so
-      // resolve any missing ones by SKU from WooCommerce, show them immediately,
-      // and cache them onto the alert rows so we don't look them up again.
-      const needSkus = Array.from(new Set(rows.filter(r => !r.image_url && r.sku).map(r => r.sku as string)))
-      if (needSkus.length) {
-        try {
-          const res = await fetch('/api/orders/product-images', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ companyId, skus: needSkus }),
-          })
-          const { images } = await res.json()
-          if (images && Object.keys(images).length) {
-            setAlerts(prev => prev.map(a => (!a.image_url && a.sku && images[a.sku]) ? { ...a, image_url: images[a.sku] } : a))
-            for (const a of rows) {
-              if (!a.image_url && a.sku && images[a.sku]) {
-                try { await (supabase as any).from('order_stock_alerts').update({ image_url: images[a.sku] }).eq('id', a.id) } catch {}
-              }
-            }
-          }
-        } catch {}
-      }
+      // The list is ready — show it now. Product-image backfill (a live
+      // WooCommerce lookup) runs AFTER, in the background, so it never blocks the
+      // modal opening. Thumbnails pop in as they resolve.
+      setLoading(false)
+      backfillImages(rows)
+      return
     } catch { setAlerts([]) }
     setLoading(false)
+  }, [companyId])
+
+  // Resolve any missing product thumbnails by SKU from WooCommerce, show them,
+  // and cache them onto the alert rows so we don't look them up again. Fully
+  // background — never awaited by load(), so it can't slow the modal.
+  const backfillImages = useCallback(async (rows: Alert[]) => {
+    const needSkus = Array.from(new Set(rows.filter(r => !r.image_url && r.sku).map(r => r.sku as string)))
+    if (!needSkus.length || !companyId) return
+    try {
+      const res = await fetch('/api/orders/product-images', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, skus: needSkus }),
+      })
+      const { images } = await res.json()
+      if (!images || !Object.keys(images).length) return
+      setAlerts(prev => prev.map(a => (!a.image_url && a.sku && images[a.sku]) ? { ...a, image_url: images[a.sku] } : a))
+      // Persist in parallel, best-effort, so the cache is warm next time.
+      await Promise.all(rows
+        .filter(a => !a.image_url && a.sku && images[a.sku])
+        .map(a => (supabase as any).from('order_stock_alerts').update({ image_url: images[a.sku!] }).eq('id', a.id).then(() => {}, () => {})))
+    } catch {}
   }, [companyId])
   useEffect(() => { load() }, [load])
 
