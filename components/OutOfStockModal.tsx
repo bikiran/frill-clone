@@ -48,6 +48,12 @@ export default function OutOfStockModal({
   const ACCENT = accent || 'var(--coral)'
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [orderStatus, setOrderStatus] = useState<Record<string, string>>({})
+  // The order's CURRENT outlet, read live — the alert's own store_location_id is
+  // a snapshot taken when the line was flagged and can be null (older alerts
+  // saved before the outlet was set, or via the minimal fallback that omitted
+  // it) or stale (outlet reassigned after flagging). Filtering on the live value
+  // is what makes the outlet filter actually match.
+  const [orderLoc, setOrderLoc] = useState<Record<string, string | null>>({})
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<'pending' | 'resolved' | 'all'>('pending')
   const [locFilter, setLocFilter] = useState<string>('all')
@@ -66,11 +72,12 @@ export default function OutOfStockModal({
       // Read each referenced order's live status so a shipped order clears the list.
       const ids = Array.from(new Set(rows.map(r => r.order_id)))
       if (ids.length) {
-        const { data: ords } = await (supabase as any).from('orders').select('id, status').in('id', ids)
+        const { data: ords } = await (supabase as any).from('orders').select('id, status, store_location_id').in('id', ids)
         const m: Record<string, string> = {}
-        for (const o of ords || []) m[o.id] = o.status
-        setOrderStatus(m)
-      } else setOrderStatus({})
+        const loc: Record<string, string | null> = {}
+        for (const o of ords || []) { m[o.id] = o.status; loc[o.id] = o.store_location_id || null }
+        setOrderStatus(m); setOrderLoc(loc)
+      } else { setOrderStatus({}); setOrderLoc({}) }
     } catch { setAlerts([]) }
     setLoading(false)
   }, [companyId])
@@ -93,6 +100,11 @@ export default function OutOfStockModal({
   // An alert is "done" (struck through / off the default list) when resolved by
   // hand or its order reached a terminal state.
   const isDone = useCallback((a: Alert) => a.status === 'resolved' || TERMINAL.has(orderStatus[a.order_id] || ''), [orderStatus])
+  // Prefer the order's live outlet; fall back to the snapshot on the alert.
+  const locOf = useCallback((a: Alert): string | null => {
+    const live = orderLoc[a.order_id]
+    return (live !== undefined ? live : a.store_location_id) || null
+  }, [orderLoc])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -100,14 +112,15 @@ export default function OutOfStockModal({
       const done = isDone(a)
       if (statusFilter === 'pending' && done) return false
       if (statusFilter === 'resolved' && !done) return false
-      if (locFilter !== 'all' && (a.store_location_id || '') !== locFilter) return false
+      if (locFilter === 'none' && locOf(a)) return false
+      if (locFilter !== 'all' && locFilter !== 'none' && (locOf(a) || '') !== locFilter) return false
       if (q) {
         const hay = `${a.order_number || ''} ${a.customer_name || ''} ${a.customer_phone || ''} ${a.customer_email || ''} ${a.product_name || ''} ${a.sku || ''}`.toLowerCase()
         if (!hay.includes(q)) return false
       }
       return true
     })
-  }, [alerts, statusFilter, locFilter, search, isDone])
+  }, [alerts, statusFilter, locFilter, search, isDone, locOf])
 
   // Group by order, preserving each order's meta.
   const groups = useMemo(() => {
@@ -160,6 +173,7 @@ export default function OutOfStockModal({
             <select value={locFilter} onChange={e => setLocFilter(e.target.value)} style={ctrl}>
               <option value="all">Any outlet</option>
               {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              <option value="none">No outlet</option>
             </select>
           )}
           <select value={sort} onChange={e => setSort(e.target.value as any)} style={ctrl}>
@@ -199,7 +213,7 @@ export default function OutOfStockModal({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 3, fontSize: 11.5, color: 'var(--slate)', flexWrap: 'wrap' }}>
                       {order.order_date && <span style={{ color: age.color, fontWeight: 700 }}>{age.label} old</span>}
                       {order.customer_phone && <span>{order.customer_phone}</span>}
-                      {order.store_location_id && locName(order.store_location_id) && <span>· {locName(order.store_location_id)}</span>}
+                      {locOf(order) && locName(locOf(order)) && <span>· {locName(locOf(order))}</span>}
                     </div>
                   </div>
                 </div>
