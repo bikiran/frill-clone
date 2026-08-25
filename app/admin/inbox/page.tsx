@@ -4263,6 +4263,19 @@ export default function InboxPage() {
     loadConversations()
     showToast('Enquiry closed')
   }
+  const reopenConv = async (conv: any) => {
+    const wasClosed = ['closed', 'resolved'].includes(String(conv.status || ''))
+    await (supabase as any).from('conversations').update({ status: 'open' }).eq('id', conv.id)
+    if (wasClosed && companyId) {
+      const actorName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Agent'
+      await (supabase as any).from('conversation_events').insert({
+        conversation_id: conv.id, company_id: companyId, event_type: 'reopened', actor_name: actorName, detail: 'Enquiry reopened.',
+      })
+      if (selected?.id === conv.id) loadConversationExtras(conv.id)
+    }
+    loadConversations()
+    showToast('Enquiry reopened')
+  }
   const copyConvLink = (conv: any) => {
     const url = `${window.location.origin}/admin/inbox?conversation=${conv.id}`
     navigator.clipboard?.writeText(url)
@@ -6199,7 +6212,9 @@ export default function InboxPage() {
             [ctxMenu.conv.is_unread ? 'Mark as read' : 'Mark as unread', <svg key="r" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>, () => markRead(ctxMenu.conv)],
             ['Open in new tab', <svg key="o" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>, () => window.open(`/admin/inbox?conversation=${ctxMenu.conv.id}`, '_blank')],
             ['Copy link', <svg key="c" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>, () => copyConvLink(ctxMenu.conv)],
-            ['Close enquiry', <svg key="x" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>, () => closeConv(ctxMenu.conv)],
+            ['closed', 'resolved'].includes(String(ctxMenu.conv.status || ''))
+              ? ['Open enquiry', <svg key="ro" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 3 3 9 9 9"/></svg>, () => reopenConv(ctxMenu.conv)]
+              : ['Close enquiry', <svg key="x" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>, () => closeConv(ctxMenu.conv)],
           ] as any[]).map(([label, icon, fn]: any) => (
             <button key={label} type="button" onClick={() => { fn(); setCtxMenu(null) }}
               style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}
