@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 
@@ -68,6 +68,11 @@ const initialsOf = (n: string) => n.split(' ').map(w => w[0]).filter(Boolean).jo
 type ViewPrefs = { tab: 'live' | 'logs' | 'insights'; locFilter: string; agentFilter: string; hour12: boolean }
 const VIEW_KEY = 'cc_view_default'
 
+const LEADER_RANGES: [string, string][] = [
+  ['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'],
+  ['month', 'This month'], ['lastmonth', 'Last month'], ['all', 'All'], ['custom', 'Custom range'],
+]
+
 export default function CommandCentrePage() {
   const [tab, setTab] = useState<'live' | 'logs' | 'insights'>('live')
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -85,6 +90,13 @@ export default function CommandCentrePage() {
   const [showClockMenu, setShowClockMenu] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
   const clockMenuTimer = useRef<any>(null)
+
+  // Top-team-members leaderboard date range (its own filter, default Today).
+  const [leaderRange, setLeaderRange] = useState<string>('today')
+  const [leaderFrom, setLeaderFrom] = useState('')
+  const [leaderTo, setLeaderTo] = useState('')
+  const [leaderRows, setLeaderRows] = useState<{ name: string; answered: number; total: number }[]>([])
+  const [leaderMenu, setLeaderMenu] = useState(false)
 
   // Call Logs filters
   const [search, setSearch] = useState('')
@@ -241,6 +253,52 @@ export default function CommandCentrePage() {
   }, [companyId])
 
   const callLoc = (c: Call) => (c.contact_id ? contactLoc[c.contact_id] : null) || null
+
+  // The leaderboard has its own date range (independent of the 30-day board
+  // window) so it can look back further — e.g. "Last month" or "All". It runs
+  // its own scoped query for exactly the chosen window.
+  const leaderWindow = (r: string): { fromIso: string; toIso: string | null } | null => {
+    const now = new Date()
+    const sod = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
+    const todayStart = sod(now)
+    const iso = (d: Date) => d.toISOString()
+    switch (r) {
+      case 'today': return { fromIso: iso(todayStart), toIso: null }
+      case 'yesterday': return { fromIso: iso(new Date(todayStart.getTime() - 864e5)), toIso: iso(todayStart) }
+      case '7d': return { fromIso: iso(new Date(now.getTime() - 7 * 864e5)), toIso: null }
+      case '30d': return { fromIso: iso(new Date(now.getTime() - 30 * 864e5)), toIso: null }
+      case 'month': return { fromIso: iso(new Date(now.getFullYear(), now.getMonth(), 1)), toIso: null }
+      case 'lastmonth': return { fromIso: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)), toIso: iso(new Date(now.getFullYear(), now.getMonth(), 1)) }
+      case 'all': return { fromIso: new Date(0).toISOString(), toIso: null }
+      case 'custom': return (leaderFrom && leaderTo) ? { fromIso: new Date(leaderFrom).toISOString(), toIso: new Date(`${leaderTo}T23:59:59`).toISOString() } : null
+      default: return { fromIso: iso(todayStart), toIso: null }
+    }
+  }
+
+  const loadLeaderboard = useCallback(async () => {
+    if (!companyId) return
+    const w = leaderWindow(leaderRange)
+    if (!w) { setLeaderRows([]); return }
+    let q = (supabase as any).from('calls')
+      .select('agent_name, status, is_voicemail, duration_seconds, ended_at, created_at, contact_id')
+      .eq('company_id', companyId).gte('created_at', w.fromIso)
+    if (w.toIso) q = q.lt('created_at', w.toIso)
+    const { data } = await q.order('created_at', { ascending: false }).limit(5000)
+    let rows: Call[] = data || []
+    if (locFilter === 'none') rows = rows.filter(c => !callLoc(c))
+    else if (locFilter !== 'all') rows = rows.filter(c => callLoc(c) === locFilter)
+    if (agentFilter !== 'all') rows = rows.filter(c => (c.agent_name || '') === agentFilter)
+    const by = new Map<string, { answered: number; total: number }>()
+    for (const c of rows) {
+      if (!c.agent_name) continue
+      const e = by.get(c.agent_name) || { answered: 0, total: 0 }
+      e.total++; if (isAnswered(c)) e.answered++
+      by.set(c.agent_name, e)
+    }
+    setLeaderRows(Array.from(by.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.answered - a.answered))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, leaderRange, leaderFrom, leaderTo, locFilter, agentFilter, contactLoc])
+  useEffect(() => { loadLeaderboard() }, [loadLeaderboard])
 
   // Team-member filter options: roster names ∪ agent names seen on calls.
   const agentOptions = useMemo(() => {
@@ -684,12 +742,43 @@ export default function CommandCentrePage() {
                 )}
               </div>
 
-              {/* Agent leaderboard (last 7 days) */}
-              {insights.agentRows.length > 0 && (
-                <div style={card}>
-                  <p style={{ ...kicker, marginBottom: 12 }}>Top team members · 7 days</p>
+              {/* Agent leaderboard — its own date range (default Today) */}
+              <div style={card}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12, position: 'relative' }}>
+                  <p style={kicker}>Top team members</p>
+                  <button type="button" onClick={() => setLeaderMenu(m => !m)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                    {LEADER_RANGES.find(([k]) => k === leaderRange)?.[1] || 'Today'}
+                    <svg width="11" height="11" viewBox="0 0 24 24" {...I}><polyline points="6 9 12 15 18 9" /></svg>
+                  </button>
+                  {leaderMenu && (
+                    <>
+                      <div onClick={() => setLeaderMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
+                      <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, zIndex: 31, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 16px 40px rgba(0,0,0,0.16)', padding: 5, width: 176 }}>
+                        {LEADER_RANGES.map(([k, label]) => (
+                          <button key={k} type="button"
+                            onClick={() => { setLeaderRange(k); if (k !== 'custom') setLeaderMenu(false) }}
+                            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: leaderRange === k ? 800 : 600, background: leaderRange === k ? 'var(--coral)' : 'transparent', color: leaderRange === k ? '#fff' : 'var(--ink)' }}>
+                            {label}
+                          </button>
+                        ))}
+                        {leaderRange === 'custom' && (
+                          <div style={{ padding: '6px 8px 2px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <input type="date" value={leaderFrom} onChange={e => setLeaderFrom(e.target.value)} style={{ padding: '5px 7px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                            <input type="date" value={leaderTo} onChange={e => setLeaderTo(e.target.value)} style={{ padding: '5px 7px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                            <button type="button" onClick={() => setLeaderMenu(false)} disabled={!leaderFrom || !leaderTo}
+                              style={{ padding: '6px 0', borderRadius: 7, border: 'none', background: (leaderFrom && leaderTo) ? 'var(--coral)' : 'var(--border)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: (leaderFrom && leaderTo) ? 'pointer' : 'default' }}>Apply</button>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+                {leaderRows.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>No answered calls in this range.</p>
+                ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                    {insights.agentRows.slice(0, 5).map((r, i) => (
+                    {leaderRows.slice(0, 5).map((r, i) => (
                       <button key={r.name} type="button" onClick={() => setAgentFilter(agentFilter === r.name ? 'all' : r.name)}
                         style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', width: '100%' }}>
                         <span style={{ width: 20, fontSize: 12, fontWeight: 800, color: 'var(--slate)' }}>{i + 1}</span>
@@ -699,8 +788,8 @@ export default function CommandCentrePage() {
                       </button>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
