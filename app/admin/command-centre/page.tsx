@@ -74,7 +74,7 @@ const prettyNum = (n: string | null) => n || 'Unknown'
 const callName = (c: Call) => c.contact_name || c.caller_name || (c.direction === 'inbound' ? c.from_number : c.to_number) || 'Unknown'
 const initialsOf = (n: string) => n.split(' ').map(w => w[0]).filter(Boolean).join('').slice(0, 2).toUpperCase() || '?'
 
-type ViewPrefs = { tab: 'live' | 'logs' | 'insights'; locFilter: string; agentFilter: string; hour12: boolean; commsMode?: 'calls' | 'sms' }
+type ViewPrefs = { tab: 'live' | 'logs' | 'insights'; locFilter: string; agentFilter: string; hour12: boolean; commsMode?: 'calls' | 'sms'; boardRange?: string }
 const VIEW_KEY = 'cc_view_default'
 
 type Sms = { id: string; conversation_id: string | null; sender_type: string | null; sender_name: string | null; content: string | null; created_at: string }
@@ -95,6 +95,12 @@ export default function CommandCentrePage() {
   const [locFilter, setLocFilter] = useState('all')
   const [agentFilter, setAgentFilter] = useState('all')
   const [commsMode, setCommsMode] = useState<'calls' | 'sms'>('calls')
+  // Board-wide date range for the summary metrics (KPIs / performance). The live
+  // panels (Live Calls, presence, activity feed) always reflect now.
+  const [boardRange, setBoardRange] = useState<string>('today')
+  const [boardFrom, setBoardFrom] = useState('')
+  const [boardTo, setBoardTo] = useState('')
+  const [boardMenu, setBoardMenu] = useState(false)
   const [sms, setSms] = useState<Sms[]>([])
   const [loading, setLoading] = useState(true)
   const [clock, setClock] = useState('')
@@ -128,13 +134,14 @@ export default function CommandCentrePage() {
         if (v.agentFilter) setAgentFilter(v.agentFilter)
         if (typeof v.hour12 === 'boolean') setHour12(v.hour12)
         if (v.commsMode) setCommsMode(v.commsMode)
+        if (v.boardRange) setBoardRange(v.boardRange)
       }
     } catch {}
   }, [])
 
   const saveDefaultView = () => {
     try {
-      const v: ViewPrefs = { tab, locFilter, agentFilter, hour12, commsMode }
+      const v: ViewPrefs = { tab, locFilter, agentFilter, hour12, commsMode, boardRange }
       localStorage.setItem(VIEW_KEY, JSON.stringify(v))
       setSavedFlash(true)
       setTimeout(() => setSavedFlash(false), 1600)
@@ -345,12 +352,40 @@ export default function CommandCentrePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calls, contactLoc, locFilter, agentFilter])
 
-  // ── Derived stats (today + yesterday for deltas) ─────────────────────────────
+  // The selected board window, plus the immediately-preceding equal-length
+  // window for the vs-previous deltas. Data is bounded by what's loaded (~30d).
+  const boardWin = useMemo(() => {
+    const day = 864e5
+    const LIVE = Number.MAX_SAFE_INTEGER // open-ended: include live/new activity
+    const d = new Date(); const yr = d.getFullYear(), mo = d.getMonth()
+    const todayStart = new Date(yr, mo, d.getDate()).getTime()
+    let from = todayStart, to = LIVE, prevFrom = todayStart - day, prevTo = todayStart
+    const openPrev = (days: number) => { from = todayStart - (days - 1) * day; to = LIVE; prevFrom = from - days * day; prevTo = from }
+    switch (boardRange) {
+      case 'today': from = todayStart; to = LIVE; prevFrom = todayStart - day; prevTo = todayStart; break
+      case 'yesterday': from = todayStart - day; to = todayStart; prevFrom = todayStart - 2 * day; prevTo = todayStart - day; break
+      case '7d': openPrev(7); break
+      case '30d': openPrev(30); break
+      case 'month': { from = new Date(yr, mo, 1).getTime(); to = LIVE; prevFrom = new Date(yr, mo - 1, 1).getTime(); prevTo = from; break }
+      case 'lastmonth': { from = new Date(yr, mo - 1, 1).getTime(); to = new Date(yr, mo, 1).getTime(); prevFrom = new Date(yr, mo - 2, 1).getTime(); prevTo = from; break }
+      case 'all': from = 0; to = LIVE; prevFrom = 0; prevTo = 0; break
+      case 'custom': {
+        from = boardFrom ? new Date(boardFrom).getTime() : 0
+        to = boardTo ? new Date(`${boardTo}T23:59:59`).getTime() : LIVE
+        const span = Math.max(day, (to === LIVE ? Date.now() : to) - from)
+        prevFrom = from - span; prevTo = from; break
+      }
+    }
+    return { from, to, prevFrom, prevTo }
+  }, [boardRange, boardFrom, boardTo])
+  const boardIsToday = boardRange === 'today'
+
+  // ── Derived stats (selected window + previous window for deltas) ─────────────
   const stats = useMemo(() => {
-    const startToday = new Date(); startToday.setHours(0, 0, 0, 0)
-    const startYest = new Date(startToday); startYest.setDate(startYest.getDate() - 1)
-    const today = scoped.filter(c => new Date(c.created_at) >= startToday)
-    const yest = scoped.filter(c => { const t = new Date(c.created_at); return t >= startYest && t < startToday })
+    const { from, to, prevFrom, prevTo } = boardWin
+    const inWin = (c: Call, a: number, b: number) => { const t = new Date(c.created_at).getTime(); return t >= a && t < b }
+    const today = scoped.filter(c => inWin(c, from, to))
+    const yest = scoped.filter(c => inWin(c, prevFrom, prevTo))
     const agg = (arr: Call[]) => {
       const a = arr.filter(isAnswered), m = arr.filter(isMissed).length, v = arr.filter(isVoicemail).length
       const dur = a.reduce((s, c) => s + (c.duration_seconds || 0), 0)
@@ -360,7 +395,7 @@ export default function CommandCentrePage() {
     const byHour = Array.from({ length: 24 }, () => 0)
     for (const c of today) byHour[new Date(c.created_at).getHours()]++
     return { today: agg(today), yest: agg(yest), liveNow: scoped.filter(isLive).length, byHour }
-  }, [scoped])
+  }, [scoped, boardWin])
 
   const liveCalls = useMemo(() => scoped.filter(isLive), [scoped])
   const available = useMemo(() => roster.filter(a => a.status === 'available'), [roster])
@@ -374,7 +409,7 @@ export default function CommandCentrePage() {
     const color = pct === 0 ? 'var(--slate)' : good ? '#16a34a' : '#dc2626'
     return (
       <span style={{ color, fontWeight: 700, fontSize: 11 }}>
-        {pct === 0 ? '±' : up ? '▲' : '▼'} {Math.abs(pct)}% <span style={{ color: 'var(--slate)', fontWeight: 600 }}>vs yest</span>
+        {pct === 0 ? '±' : up ? '▲' : '▼'} {Math.abs(pct)}% <span style={{ color: 'var(--slate)', fontWeight: 600 }}>vs prev</span>
       </span>
     )
   }
@@ -390,10 +425,10 @@ export default function CommandCentrePage() {
 
   // ── SMS stats (mirror the calls board's shape) ───────────────────────────────
   const smsStats = useMemo(() => {
-    const startToday = new Date(); startToday.setHours(0, 0, 0, 0)
-    const startYest = new Date(startToday); startYest.setDate(startYest.getDate() - 1)
-    const today = sms.filter(m => new Date(m.created_at) >= startToday)
-    const yest = sms.filter(m => { const t = new Date(m.created_at); return t >= startYest && t < startToday })
+    const { from, to, prevFrom, prevTo } = boardWin
+    const inWin = (m: Sms, a: number, b: number) => { const t = new Date(m.created_at).getTime(); return t >= a && t < b }
+    const today = sms.filter(m => inWin(m, from, to))
+    const yest = sms.filter(m => inWin(m, prevFrom, prevTo))
     const agg = (arr: Sms[]) => {
       const inbound = arr.filter(smsInbound).length
       const outbound = arr.length - inbound
@@ -403,7 +438,7 @@ export default function CommandCentrePage() {
     const byHour = Array.from({ length: 24 }, () => 0)
     for (const m of today) byHour[new Date(m.created_at).getHours()]++
     return { today: agg(today), yest: agg(yest), byHour }
-  }, [sms])
+  }, [sms, boardWin])
   const smsFeed = useMemo(() => sms.slice(0, 16).map(m => ({
     id: m.id,
     inbound: smsInbound(m),
@@ -638,6 +673,33 @@ export default function CommandCentrePage() {
           )}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+          {/* Board date range */}
+          <div style={{ position: 'relative' }}>
+            <button type="button" onClick={() => setBoardMenu(m => !m)} style={{ ...ctrl, display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Date range for the metrics">
+              <svg width="13" height="13" viewBox="0 0 24 24" {...I}><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+              {LEADER_RANGES.find(([k]) => k === boardRange)?.[1] || 'Today'}
+              <svg width="11" height="11" viewBox="0 0 24 24" {...I}><polyline points="6 9 12 15 18 9" /></svg>
+            </button>
+            {boardMenu && (
+              <>
+                <div onClick={() => setBoardMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
+                <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 6, zIndex: 31, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 16px 40px rgba(0,0,0,0.16)', padding: 5, width: 180 }}>
+                  {LEADER_RANGES.map(([k, label]) => (
+                    <button key={k} type="button" onClick={() => { setBoardRange(k); if (k !== 'custom') setBoardMenu(false) }}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: boardRange === k ? 800 : 600, background: boardRange === k ? 'var(--coral)' : 'transparent', color: boardRange === k ? '#fff' : 'var(--ink)' }}>{label}</button>
+                  ))}
+                  {boardRange === 'custom' && (
+                    <div style={{ padding: '6px 8px 2px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <input type="date" value={boardFrom} onChange={e => setBoardFrom(e.target.value)} style={{ padding: '5px 7px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                      <input type="date" value={boardTo} onChange={e => setBoardTo(e.target.value)} style={{ padding: '5px 7px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12 }} />
+                      <button type="button" onClick={() => setBoardMenu(false)} disabled={!boardFrom || !boardTo}
+                        style={{ padding: '6px 0', borderRadius: 7, border: 'none', background: (boardFrom && boardTo) ? 'var(--coral)' : 'var(--border)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: (boardFrom && boardTo) ? 'pointer' : 'default' }}>Apply</button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
           <select value={agentFilter} onChange={e => setAgentFilter(e.target.value)} style={ctrl} title="Filter by team member">
             <option value="all">All team members</option>
             {agentOptions.map(n => <option key={n} value={n}>{n}</option>)}
@@ -655,13 +717,14 @@ export default function CommandCentrePage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {/* KPI row with vs-yesterday deltas */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-            {kpi('Calls today', stats.today.total, '#3b82f6', ic.phone, trend(stats.today.total, stats.yest.total))}
+            {kpi(boardIsToday ? 'Calls today' : 'Calls', stats.today.total, '#3b82f6', ic.phone, trend(stats.today.total, stats.yest.total))}
             {kpi('Answered', stats.today.answered, '#16a34a', ic.check, trend(stats.today.answered, stats.yest.answered))}
             {kpi('Missed', stats.today.missed, '#dc2626', ic.x, trend(stats.today.missed, stats.yest.missed, true))}
             {kpi('Voicemails', stats.today.voicemail, '#d97706', ic.vm, trend(stats.today.voicemail, stats.yest.voicemail, true))}
             {kpi('Available', available.length, '#16a34a', ic.user, <span style={{ fontSize: 11, color: 'var(--slate)', fontWeight: 600 }}>{roster.length ? `of ${roster.length} team` : 'team'}</span>)}
             {kpi('On call', stats.liveNow || onCallAgents.length, '#3b82f6', ic.live)}
             {kpi('Talk time', fmtHoursMins(stats.today.talkSecs), '#0891b2', ic.clock, trend(stats.today.talkSecs, stats.yest.talkSecs))}
+            {/* label uses the selected range; "today" only when the range is Today */}
             {kpi('Avg duration', fmtDurLong(stats.today.avgDur), '#7c3aed', ic.clock, trend(stats.today.avgDur, stats.yest.avgDur))}
             {kpi('Miss rate', `${stats.today.missRate}%`, stats.today.missRate > 15 ? '#dc2626' : '#16a34a', ic.pct, trend(stats.today.missRate, stats.yest.missRate, true))}
           </div>
@@ -771,7 +834,7 @@ export default function CommandCentrePage() {
           {/* Row: Performance Today | Alerts & agent leaderboard */}
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(280px, 1fr)', gap: 18, alignItems: 'start' }} className="cc-perf-grid">
             <div style={card}>
-              <p style={{ ...kicker, marginBottom: 14 }}>Performance today</p>
+              <p style={{ ...kicker, marginBottom: 14 }}>{boardIsToday ? 'Performance today' : 'Performance'}</p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'center' }} className="cc-perf-inner">
                 <div>
                   <p style={{ ...kicker, marginBottom: 8 }}>Calls over time</p>
@@ -1070,7 +1133,7 @@ export default function CommandCentrePage() {
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-              {kpi('Messages today', t.total, '#3b82f6', bubble, trend(t.total, y.total))}
+              {kpi(boardIsToday ? 'Messages today' : 'Messages', t.total, '#3b82f6', bubble, trend(t.total, y.total))}
               {kpi('Received', t.received, '#16a34a', <svg width="18" height="18" viewBox="0 0 24 24" {...I}><polyline points="20 12 4 12" /><polyline points="10 18 4 12 10 6" /></svg>, trend(t.received, y.received))}
               {kpi('Sent', t.sent, '#2563eb', <svg width="18" height="18" viewBox="0 0 24 24" {...I}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>, trend(t.sent, y.sent))}
               {kpi('Active chats', t.chats, '#7c3aed', ic.user, trend(t.chats, y.chats))}
@@ -1079,7 +1142,7 @@ export default function CommandCentrePage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) minmax(0, 1.4fr)', gap: 18, alignItems: 'start' }} className="cc-perf-grid">
               {/* SMS volume + split */}
               <div style={card}>
-                <p style={{ ...kicker, marginBottom: 12 }}>SMS today</p>
+                <p style={{ ...kicker, marginBottom: 12 }}>{boardIsToday ? 'SMS today' : 'SMS'}</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                   <div style={{ position: 'relative', width: 104, height: 104, borderRadius: '50%', background: smsDonutBg, flexShrink: 0 }}>
                     <div style={{ position: 'absolute', inset: 12, borderRadius: '50%', background: 'var(--card,#fff)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
