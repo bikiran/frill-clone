@@ -15,6 +15,9 @@ interface Props {
   // is known up-front — jump straight to the call bar for that number instead of
   // making the agent search or key it in again.
   initialTarget?: { number: string; name?: string; contactId?: string } | null
+  // Place the call immediately (a contact's "Call" button wants to ring the
+  // number, not present the keypad).
+  autoStart?: boolean
 }
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#']
@@ -25,7 +28,7 @@ const KEY_TONE: Record<string, number> = {
   '7': 1477, '8': 1633, '9': 800, '*': 941, '0': 1336, '#': 1477,
 }
 
-export default function Dialer({ companyId, agentName, onClose, initialTarget }: Props) {
+export default function Dialer({ companyId, agentName, onClose, initialTarget, autoStart }: Props) {
   const [tab, setTab] = useState<'dialer' | 'recent'>('dialer')
   const [digits, setDigits] = useState('')
   const [search, setSearch] = useState('')
@@ -110,6 +113,18 @@ export default function Dialer({ companyId, agentName, onClose, initialTarget }:
         </div>
 
         {tab === 'dialer' ? (
+          (autoStart && dialing) ? (
+            /* Direct call — a contact's "Call" button rings the number straight
+               away; no keypad to interact with. */
+            <div>
+              <div style={{ textAlign: 'center', marginBottom: 14 }}>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>{dialing.name || dialing.number}</p>
+                {dialing.name && <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>{dialing.number}</p>}
+              </div>
+              <CallBar companyId={companyId} toNumber={dialing.number} contactName={dialing.name}
+                contactId={dialing.contactId} conversationId={null} agentName={agentName} autoStart />
+            </div>
+          ) : (
           <>
             {/* Contact search */}
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search contact…"
@@ -186,6 +201,7 @@ export default function Dialer({ companyId, agentName, onClose, initialTarget }:
               </button>
             </div>
           </>
+          )
         ) : (
           /* ── Recent calls ─────────────────────────────────────────────── */
           <div>
