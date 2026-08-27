@@ -48,6 +48,10 @@ export async function GET(req: NextRequest) {
         line_items: (order.line_items || []).map((li: any) => ({ name: li.name, quantity: li.quantity, total: li.total, sku: li.sku })),
         shipping_total: order.shipping_total,
         discount_total: order.discount_total,
+        // Coupon codes applied and any manual fees, so the drawer can show what
+        // the customer actually paid vs the line-item subtotal.
+        coupon_lines: (order.coupon_lines || []).map((c: any) => ({ code: c.code, discount: c.discount })),
+        fee_lines: (order.fee_lines || []).map((f: any) => ({ name: f.name, total: f.total })),
         total_tax: order.total_tax,
         total: order.total,
         payment_method: order.payment_method_title,

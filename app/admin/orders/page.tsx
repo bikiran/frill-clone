@@ -247,6 +247,12 @@ export default function OrdersPage() {
   // doesn't refilter on every keystroke.
   useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search), 140); return () => clearTimeout(t) }, [search])
 
+  // Opening the Orders page clears the "new orders" nav badge: stamp the seen
+  // time and tell the sidebar to zero the count immediately.
+  useEffect(() => {
+    try { localStorage.setItem('colvy-orders-seen-at', new Date().toISOString()); window.dispatchEvent(new Event('orders-seen')) } catch {}
+  }, [])
+
   // full=false (automatic, on open): light pass over recent orders, silent — must
   // not slow the board. full=true (manual button): full-book backfill + reload.
   const runSync = useCallback(async (cid: string, full = false) => {
@@ -374,7 +380,13 @@ export default function OrdersPage() {
   const counts = useMemo(() => {
     const scoped = orders.filter(locMatch)
     const c: Record<string, number> = { all: scoped.length, alerts: 0, awaiting_shipment: 0, on_hold: 0, manual: 0, shipped: 0, cancelled: 0, packed: 0, click_and_collect: 0 }
-    for (const o of scoped) { c[o.status] = (c[o.status] || 0) + 1; if (isAlerted(o)) c.alerts++ }
+    for (const o of scoped) {
+      // An order that hasn't been PAID isn't ready to ship — keep it out of the
+      // Awaiting Shipment queue (and its count). It still counts under All Orders.
+      const bucket = (o.status === 'awaiting_shipment' && o.payment_status === 'pending') ? 'awaiting_payment' : o.status
+      c[bucket] = (c[bucket] || 0) + 1
+      if (isAlerted(o)) c.alerts++
+    }
     return c
   }, [orders, locMatch, isAlerted])
 
@@ -402,6 +414,9 @@ export default function OrdersPage() {
       const tabDef = STATUS_TABS.find(t => t.key === tab)
       if (tab === 'alerts') { if (!isAlerted(o)) return false }
       else if (tabDef?.match) { if (!tabDef.match.includes(o.status)) return false }
+      // Unpaid orders aren't shippable — don't surface them in the Awaiting
+      // Shipment queue (they remain visible under All Orders).
+      if (tab === 'awaiting_shipment' && o.status === 'awaiting_shipment' && o.payment_status === 'pending') return false
       if (!locMatch(o)) return false
       if (fAssignee !== 'all') { if (fAssignee === 'none' ? o.assignee_id : o.assignee_id !== fAssignee) return false }
       if (fTag !== 'all' && !(Array.isArray(o.tags) && o.tags.includes(fTag))) return false
@@ -1453,6 +1468,9 @@ function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOr
 function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, tagDefs, tagColor, onEnsureTag, onManageTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, onPrintLabel, onLabelPdf, teamName, outletName, fullScreen = false }: any) {
   const ACCENT = accent || 'var(--coral)'
   const [items, setItems] = useState<any[]>([])
+  // Coupon codes, discount and manual fees — not stored on the synced order row,
+  // so fetched live from WooCommerce when the drawer opens (best-effort).
+  const [financials, setFinancials] = useState<{ discount: number; coupons: string[]; fees: { name: string; total: number }[] } | null>(null)
   const [pickMode, setPickMode] = useState(false)
   const [showRefund, setShowRefund] = useState(false)
   const [notes, setNotes] = useState<any[]>([])
@@ -1737,6 +1755,29 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     return () => { cancelled = true }
   }, [order.id, order.external_order_id, order.sales_channel, companyId])
 
+  // Coupon codes, discount and manual fees — live from WooCommerce, since the
+  // synced order row doesn't carry them.
+  useEffect(() => {
+    let cancelled = false
+    setFinancials(null)
+    if (order.sales_channel !== 'woocommerce' || !order.order_number) return
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/orders/details?companyId=${encodeURIComponent(companyId)}&orderId=${encodeURIComponent(order.order_number)}`)
+        const j = await res.json().catch(() => ({}))
+        const o = j?.order
+        if (!cancelled && o) {
+          setFinancials({
+            discount: parseFloat(o.discount_total) || 0,
+            coupons: (o.coupon_lines || []).map((c: any) => c.code).filter(Boolean),
+            fees: (o.fee_lines || []).map((f: any) => ({ name: f.name || 'Fee', total: parseFloat(f.total) || 0 })).filter((f: any) => f.total),
+          })
+        }
+      } catch { /* best-effort — summary still shows subtotal/total */ }
+    })()
+    return () => { cancelled = true }
+  }, [order.id, order.order_number, order.sales_channel, companyId])
+
   const logEvent = async (type: string, detail: string) => {
     const row = { order_id: order.id, company_id: companyId, type, detail, actor_id: me.id, actor_name: me.name }
     try { const { data } = await (supabase as any).from('order_events').insert(row).select().maybeSingle(); if (data) setEvents(e => [data, ...e]) } catch {}
@@ -1931,6 +1972,9 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                 ['Payment', order.payment_status || '—'],
                 ['Fulfilment', order.fulfilment_status || '—'],
                 ['Subtotal', order.subtotal != null ? fmtMoney(order.subtotal, order.currency) : '—'],
+                ...(financials?.coupons?.length ? [['Coupon', financials.coupons.join(', ')]] as [string, any][] : []),
+                ...(financials && financials.discount > 0 ? [['Discount', <span key="disc" style={{ color: '#15803d', fontWeight: 700 }}>−{fmtMoney(financials.discount, order.currency)}</span>]] as [string, any][] : []),
+                ...((financials?.fees || []).map(f => [f.name, fmtMoney(f.total, order.currency)]) as [string, any][]),
                 ['Shipping', isClickCollect(order)
                   ? <span key="cc" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#2563eb', fontWeight: 700 }}><ClickCollectIcon size={13} />{order.shipping_method || 'Click & Collect'}</span>
                   : (Number(order.shipping_total) || 0) > 0 ? `${fmtMoney(order.shipping_total, order.currency)}${order.shipping_method ? ` · ${order.shipping_method}` : ''}` : (order.shipping_method || 'Free')],
