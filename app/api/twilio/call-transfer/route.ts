@@ -164,11 +164,22 @@ export async function POST(req: NextRequest) {
       return confSid
     }
 
+    // Hold (or unhold) a participant that may still be joining the conference —
+    // retry through the join window so we don't 404 on the first attempt.
+    const holdWithRetry = async (confSid: string, sid: string, hold: boolean): Promise<any> => {
+      let lastErr: any = null
+      for (let i = 0; i < 8; i++) {
+        try { await svc.holdParticipant(confSid, sid, hold, integ.hold_music_url || undefined); return null }
+        catch (e: any) { lastErr = e; await new Promise(r => setTimeout(r, 500)) }
+      }
+      return lastErr
+    }
+
     // ── consult: hold the customer, ring a colleague (or the team) in ──────────
     if (action === 'consult') {
       const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
       const confSid = await ensureConference()
-      try { await svc.holdParticipant(confSid, customerLeg, true, integ.hold_music_url || undefined) } catch {}
+      await holdWithRetry(confSid, customerLeg, true)
       await db.from('calls').update({ customer_on_hold: true }).eq('id', call.id)
 
       // Participant status callback lets us flip ringing → active when the
@@ -287,9 +298,14 @@ export async function POST(req: NextRequest) {
     // ── plain hold / unhold ────────────────────────────────────────────────────
     if (action === 'hold' || action === 'unhold') {
       const confSid = await ensureConference()
-      try { await svc.holdParticipant(confSid, customerLeg, action === 'hold', integ.hold_music_url || undefined) } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 })
-      }
+      // ensureConference returns as soon as the conference EXISTS (its first leg
+      // joined) — but the customer (parent) leg is moved in second and may still
+      // be joining. Holding a participant that hasn't joined yet makes Twilio
+      // 404 ("resource not found"), which is exactly the error a first Hold press
+      // showed while a second press (once the leg had joined) worked. Retry
+      // through the join window so the first press just works.
+      const err = await holdWithRetry(confSid, customerLeg, action === 'hold')
+      if (err) return NextResponse.json({ error: err.message }, { status: 500 })
       await db.from('calls').update({ customer_on_hold: action === 'hold' }).eq('id', call.id)
       return NextResponse.json({ ok: true, onHold: action === 'hold' })
     }

@@ -501,6 +501,13 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     } finally { setTransferBusy(false) }
   }
 
+  // Jump to this caller's conversation in the inbox. The inbox find-or-creates a
+  // thread from ?contact=<id>; without a known contact we just open the inbox.
+  const openInInbox = () => {
+    const cid = caller?.contactId
+    try { window.location.assign(cid ? `/admin/inbox?contact=${encodeURIComponent(cid)}` : '/admin/inbox') } catch {}
+  }
+
   // ── Switch device: move this live call to another of my devices ────────────
   const openSwitch = async () => {
     if (!companyId) return
@@ -652,6 +659,15 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
             </div>
           )
         })()}
+
+        {/* Jump to this caller's conversation in the inbox. */}
+        {!caller?.loading && (
+          <button type="button" onClick={openInInbox}
+            style={{ marginTop: 8, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '9px 12px', borderRadius: 10, border: 'none', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg>
+            Open in inbox
+          </button>
+        )}
       </div>
 
       {/* Switch device: move this live call to another of my signed-in devices
