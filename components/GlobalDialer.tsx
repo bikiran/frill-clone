@@ -15,14 +15,14 @@ import Dialer from './Dialer'
 // The target is passed straight through to <Dialer initialTarget>, which jumps
 // to the call bar for that number.
 export default function GlobalDialer({ companyId, agentName }: { companyId: string | null; agentName?: string }) {
-  const [target, setTarget] = useState<{ number: string; name?: string; contactId?: string } | null>(null)
+  const [target, setTarget] = useState<{ number: string; name?: string; contactId?: string; autoStart?: boolean } | null>(null)
 
   useEffect(() => {
     const open = (e: Event) => {
       const detail = (e as CustomEvent).detail || {}
       const number = detail.number || detail.phone
       if (!number) return
-      setTarget({ number, name: detail.name, contactId: detail.contactId })
+      setTarget({ number, name: detail.name, contactId: detail.contactId, autoStart: !!detail.autoStart })
     }
     window.addEventListener('colvy:dial', open as EventListener)
     return () => window.removeEventListener('colvy:dial', open as EventListener)
@@ -34,6 +34,7 @@ export default function GlobalDialer({ companyId, agentName }: { companyId: stri
       companyId={companyId}
       agentName={agentName}
       initialTarget={target}
+      autoStart={target.autoStart}
       onClose={() => setTarget(null)}
     />
   )

@@ -516,7 +516,7 @@ export default function ContactsPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={e => e.stopPropagation()}>
                         {c.phone && (
                           <button type="button" title={`Call ${c.phone}`} aria-label="Call"
-                            onClick={() => window.dispatchEvent(new CustomEvent('colvy:dial', { detail: { number: c.phone, name: c.name, contactId: c.id } }))}
+                            onClick={() => window.dispatchEvent(new CustomEvent('colvy:dial', { detail: { number: c.phone, name: c.name, contactId: c.id, autoStart: true } }))}
                             style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
                             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>

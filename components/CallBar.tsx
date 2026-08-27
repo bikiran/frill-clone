@@ -13,6 +13,7 @@ interface CallBarProps {
   contactId?: string | null
   conversationId?: string | null
   agentName?: string
+  autoStart?: boolean                // place the call immediately on mount
 }
 
 type CallState = 'idle' | 'connecting' | 'ringing' | 'active' | 'ended' | 'error'
@@ -43,9 +44,10 @@ function toE164(raw: string): string | null {
   return '+' + s
 }
 
-export default function CallBar({ companyId, toNumber, contactName, contactId, conversationId, agentName }: CallBarProps) {
+export default function CallBar({ companyId, toNumber, contactName, contactId, conversationId, agentName, autoStart }: CallBarProps) {
   const [state, setState] = useState<CallState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const autoStartedRef = useRef(false)
 
   // Errors and ended calls shouldn't linger — clear the bar automatically so it
   // doesn't sit there permanently.
@@ -441,6 +443,17 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
     setSeconds(0)
     timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000)
   }
+
+  // Auto-place the call on mount when asked (e.g. the "Call" button on a contact
+  // row wants to ring the number straight away, not open the keypad). Guarded so
+  // it fires exactly once even across re-renders.
+  useEffect(() => {
+    if (!autoStart || autoStartedRef.current) return
+    if (!toNumber || !companyId) return
+    autoStartedRef.current = true
+    startCall()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, toNumber, companyId])
 
   // ── Call tones ───────────────────────────────────────────────────────────
   // The call was silent in EVERY state — no ringback while dialling, no beep on
