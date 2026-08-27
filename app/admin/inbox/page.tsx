@@ -21,6 +21,7 @@ import { useActiveCall, callMatches } from '@/lib/active-call'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
 import CallCard from '@/components/CallCard'
+import LiveCallBanner from '@/components/LiveCallBanner'
 import DraftTasks from '@/components/DraftTasks'
 import Dialer from '@/components/Dialer'
 import ResilientImage from '@/components/ResilientImage'
@@ -7497,7 +7498,8 @@ export default function InboxPage() {
                   })
                   .map((c: any) => ({ __call: true, ...c }))
 
-                return [header, ...mergeEvents(list, events, extraCalls).map((item: any) => {
+                const liveBanner = <LiveCallBanner key="live-call-banner" conversationId={selected.id} accent={companyInfo?.accent_color || 'var(--coral)'} />
+                return [header, liveBanner, ...mergeEvents(list, events, extraCalls).map((item: any) => {
                 if (item.__call) {
                   const thisDay = dayLabel(item.created_at)
                   const showDivider = thisDay && thisDay !== lastDay
