@@ -8,70 +8,71 @@ import { supabase } from '@/lib/supabase'
 // The after-the-fact CallCard only appears once a call has CONNECTED/ended, so
 // while a call is ringing or in progress the thread showed nothing — you
 // couldn't tell someone else (or a phone) had already picked it up. This reads
-// the conversation's `calls` row and subscribes to realtime, so the moment a
-// webhook stamps who answered (answered_by / status), every agent viewing the
-// thread sees "On call · <name>" with a live timer. It renders nothing once the
-// call ends (ended_at set) — the CallCard takes over from there.
+// the conversation's `calls` row (updated by the voice webhooks with who
+// answered / the status) and both subscribes to realtime AND polls, so it works
+// even if the calls table isn't in the realtime publication. It renders nothing
+// once the call ends (ended_at set) — the CallCard takes over from there.
 
 type LiveCall = {
   id: string
   status: string | null
-  direction: string | null
-  from_number: string | null
-  to_number: string | null
-  caller_name: string | null
-  contact_name: string | null
   agent_name: string | null
   answered_by: string | null
-  answered_at: string | null
   ended_at: string | null
   is_voicemail: boolean | null
   created_at: string
 }
 
 const MAX_LIVE_MS = 2 * 60 * 60 * 1000 // ignore rows stuck "live" beyond 2h
+const TERMINAL = ['completed', 'missed', 'no-answer', 'no_answer', 'failed', 'busy', 'canceled', 'cancelled', 'voicemail']
 
 const isLive = (c: LiveCall | null): boolean => {
   if (!c || c.ended_at || c.is_voicemail) return false
   if (Date.now() - new Date(c.created_at).getTime() > MAX_LIVE_MS) return false
   const st = String(c.status || '').toLowerCase()
-  if (['completed', 'answered', 'missed', 'no-answer', 'no_answer', 'failed', 'busy', 'canceled', 'cancelled'].includes(st) && !c.answered_at) {
-    // 'answered' with no answered_at is ambiguous; treat terminal-ish states as not live unless they're clearly ongoing.
-    return st === 'answered'
-  }
+  // 'completed'/'answered' as a FINAL status (with an ended_at) is handled above;
+  // any other terminal status means the call is over.
+  if (TERMINAL.includes(st)) return false
   return true
 }
 
+// Answered = a person is on the line. The answer webhooks stamp answered_by (and
+// agent_name); status also flips to an in-progress-ish value on some providers.
 const onCall = (c: LiveCall): boolean => {
   const st = String(c.status || '').toLowerCase()
-  return !!c.answered_at || ['answered', 'in_progress', 'in-progress'].includes(st)
+  return !!c.answered_by || !!c.agent_name || ['answered', 'in_progress', 'in-progress'].includes(st)
 }
 
 export default function LiveCallBanner({ conversationId, accent = 'var(--coral)' }: { conversationId: string; accent?: string }) {
   const [call, setCall] = useState<LiveCall | null>(null)
   const [, setTick] = useState(0)
-  const chRef = useRef<any>(null)
+  const convRef = useRef(conversationId)
+  convRef.current = conversationId
 
   const load = async (convId: string) => {
-    const { data } = await (supabase as any).from('calls')
-      .select('id, status, direction, from_number, to_number, caller_name, contact_name, agent_name, answered_by, answered_at, ended_at, is_voicemail, created_at')
-      .eq('conversation_id', convId).is('ended_at', null)
-      .order('created_at', { ascending: false }).limit(1)
-    const c: LiveCall | null = data?.[0] || null
-    setCall(isLive(c) ? c : null)
+    try {
+      const { data } = await (supabase as any).from('calls')
+        .select('id, status, agent_name, answered_by, ended_at, is_voicemail, created_at')
+        .eq('conversation_id', convId).is('ended_at', null)
+        .order('created_at', { ascending: false }).limit(1)
+      const c: LiveCall | null = data?.[0] || null
+      // Guard against a late response for a conversation we've since left.
+      if (convRef.current !== convId) return
+      setCall(isLive(c) ? c : null)
+    } catch { /* leave whatever we had */ }
   }
 
   useEffect(() => {
     if (!conversationId) { setCall(null); return }
+    setCall(null)
     load(conversationId)
-    // Realtime: any change to a call on this conversation (answered on a phone,
-    // by another agent, ended) refreshes the banner for everyone viewing it.
+    // Poll (realtime on `calls` may not be enabled) + realtime when it is.
+    const iv = setInterval(() => load(conversationId), 4000)
     const ch = (supabase as any).channel(`live-call-${conversationId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'calls', filter: `conversation_id=eq.${conversationId}` },
         () => load(conversationId))
       .subscribe()
-    chRef.current = ch
-    return () => { try { (supabase as any).removeChannel(ch) } catch {} }
+    return () => { clearInterval(iv); try { (supabase as any).removeChannel(ch) } catch {} }
   }, [conversationId])
 
   // Tick the live timer while a call is up.
@@ -85,7 +86,9 @@ export default function LiveCallBanner({ conversationId, accent = 'var(--coral)'
 
   const ongoing = onCall(call)
   const who = call.answered_by || call.agent_name || ''
-  const secs = ongoing ? Math.max(0, Math.floor((Date.now() - new Date(call.answered_at || call.created_at).getTime()) / 1000)) : 0
+  // No dedicated answer timestamp on the row, so time from when the call row was
+  // created (a few seconds of ring time is close enough for a live indicator).
+  const secs = ongoing ? Math.max(0, Math.floor((Date.now() - new Date(call.created_at).getTime()) / 1000)) : 0
   const timer = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`
   const dot = ongoing ? '#22c55e' : '#f59e0b'
   const bg = ongoing ? 'color-mix(in srgb, #22c55e 12%, transparent)' : 'color-mix(in srgb, #f59e0b 14%, transparent)'
