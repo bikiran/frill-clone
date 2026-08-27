@@ -250,6 +250,46 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => { active = false; clearInterval(iv); try { (supabase as any).removeChannel(ch) } catch {} }
   }, [company?.id])
 
+  // New, unviewed orders for the Orders nav badge. "Unviewed" = placed since the
+  // last time this browser opened the Orders page (colvy-orders-seen-at). Only
+  // actionable orders count: PAID (unpaid/pending aren't ready to ship) and not
+  // already shipped/cancelled/refunded.
+  const [ordersNew, setOrdersNew] = useState(0)
+  useEffect(() => {
+    if (!company?.id) return
+    let active = true
+    const load = async () => {
+      try {
+        let s = ''
+        try { s = localStorage.getItem('colvy-orders-seen-at') || '' } catch {}
+        if (!s) {
+          // First run on this browser — start the badge clean rather than
+          // counting the entire back-catalogue as "new".
+          s = new Date().toISOString()
+          try { localStorage.setItem('colvy-orders-seen-at', s) } catch {}
+        }
+        const { count } = await (supabase as any)
+          .from('orders')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', company.id)
+          .gt('order_date', s)
+          .not('payment_status', 'eq', 'pending')
+          .not('status', 'in', '("shipped","cancelled","refunded")')
+        if (active) setOrdersNew(count || 0)
+      } catch {}
+    }
+    load()
+    const iv = setInterval(load, 15000)
+    const onSeen = () => { if (active) setOrdersNew(0); load() }
+    window.addEventListener('orders-seen', onSeen)
+    window.addEventListener('storage', onSeen)
+    const ch = (supabase as any)
+      .channel(`orders-badge-${company.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `company_id=eq.${company.id}` }, load)
+      .subscribe()
+    return () => { active = false; clearInterval(iv); window.removeEventListener('orders-seen', onSeen); window.removeEventListener('storage', onSeen); try { (supabase as any).removeChannel(ch) } catch {} }
+  }, [company?.id])
+
   // Tasks needing this person's attention: assigned to them, not finished, and
   // either due today or already overdue. Same idea as the inbox badge — a count
   // of things actually waiting on you, not a total.
@@ -666,8 +706,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     {(() => {
                       const count = item.label === 'Inbox' ? inboxUnread
                         : item.label === 'Tasks' ? taskDue
+                        : item.label === 'Orders' ? ordersNew
                         : 0
-                      const tone = item.label === 'Tasks' ? 'var(--coral)' : '#ef4444'
+                      const tone = item.label === 'Tasks' ? 'var(--coral)' : item.label === 'Orders' ? '#2563eb' : '#ef4444'
                       return (
                         <>
                           <span style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65, position: 'relative' }}>
@@ -684,7 +725,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                               // pop animation replays whenever the count moves.
                               key={count}
                               className="count-pop"
-                              title={item.label === 'Tasks' ? `${count} task${count === 1 ? '' : 's'} due or overdue` : `${count} unread`}
+                              title={item.label === 'Tasks' ? `${count} task${count === 1 ? '' : 's'} due or overdue` : item.label === 'Orders' ? `${count} new order${count === 1 ? '' : 's'}` : `${count} unread`}
                               style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: tone, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               {count > 99 ? '99+' : count}
                             </span>
