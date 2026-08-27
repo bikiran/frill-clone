@@ -39,6 +39,9 @@ async function run(req: NextRequest) {
 
     let sent = 0
     const results: any[] = []
+    // Contacts already sent a review request in THIS run — so a customer with
+    // several due orders doesn't get one review message per order in one pass.
+    const sentContacts = new Set<string>()
 
     for (const rr of due) {
       try {
@@ -62,6 +65,29 @@ async function run(req: NextRequest) {
             results.push({ id: rr.id, skipped: 'already reviewed' })
             continue
           }
+        }
+
+        // One review request per customer, not per order. A customer who placed
+        // several orders otherwise gets a "leave us a review" message for each —
+        // over SMS AND email. Skip if we've already sent one to this contact
+        // this run, or sent one in the last 30 days (cross-run).
+        if (rr.contact_id) {
+          if (sentContacts.has(rr.contact_id)) {
+            await db.from('review_requests').update({ status: 'skipped', error: 'Review request already sent to this customer' }).eq('id', rr.id)
+            results.push({ id: rr.id, skipped: 'duplicate this run' })
+            continue
+          }
+          try {
+            const cutoff = new Date(Date.now() - 30 * 864e5).toISOString()
+            const { data: prior } = await db.from('review_requests')
+              .select('id').eq('company_id', rr.company_id).eq('contact_id', rr.contact_id)
+              .eq('status', 'sent').gte('sent_at', cutoff).neq('id', rr.id).limit(1)
+            if (prior && prior.length) {
+              await db.from('review_requests').update({ status: 'skipped', error: 'Review request already sent to this customer recently' }).eq('id', rr.id)
+              results.push({ id: rr.id, skipped: 'recent review request' })
+              continue
+            }
+          } catch { /* if the check fails, fall through and send */ }
         }
 
         // Timing rules — never message in quiet hours, on Sundays, or on public
@@ -219,6 +245,7 @@ async function run(req: NextRequest) {
         }
 
         await db.from('review_requests').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', rr.id)
+        if (rr.contact_id) sentContacts.add(rr.contact_id)
         sent++
         results.push({ id: rr.id, order: rr.order_id, status: 'sent' })
       } catch (e: any) {
