@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getVoiceProvider } from '@/lib/voice-provider-client'
 import { setActiveCall, clearActiveCall } from '@/lib/active-call'
@@ -41,6 +42,7 @@ const prettySource = (s?: string | null): string | null => {
 // Registers the Telnyx WebRTC client and listens for INBOUND calls, showing a
 // Coax-style popup with caller context (name, past orders) before answering.
 export default function IncomingCallListener({ companyId, agentName }: Props) {
+  const router = useRouter()
   const [incoming, setIncoming] = useState<any>(null)   // the ringing call
   const [caller, setCaller] = useState<any>(null)       // resolved contact context
   const [inCall, setInCall] = useState(false)
@@ -504,8 +506,12 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   // Jump to this caller's conversation in the inbox. The inbox find-or-creates a
   // thread from ?contact=<id>; without a known contact we just open the inbox.
   const openInInbox = () => {
+    // Client-side navigation (NOT window.location) so the page doesn't reload —
+    // a full reload tears down the Twilio Device and drops the live call. This
+    // listener lives in the persistent admin shell, so a router push keeps the
+    // call alive while the inbox opens.
     const cid = caller?.contactId
-    try { window.location.assign(cid ? `/admin/inbox?contact=${encodeURIComponent(cid)}` : '/admin/inbox') } catch {}
+    try { router.push(cid ? `/admin/inbox?contact=${encodeURIComponent(cid)}` : '/admin/inbox') } catch {}
   }
 
   // ── Switch device: move this live call to another of my devices ────────────
