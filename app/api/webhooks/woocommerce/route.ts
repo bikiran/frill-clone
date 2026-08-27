@@ -341,14 +341,23 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const isNewOrderStatus = ['processing', 'on-hold', 'completed'].includes(status)
   let shouldSend = !seenEvent && template && (cfg.enabled || isNewOrderStatus)
 
-  // Rate-limit the customer-facing automation text. The per-(order,status)
-  // dedupe above stops the SAME order re-messaging, but when several DIFFERENT
-  // orders for the same customer change to the same status at once (e.g. a batch
-  // of cancellations), each one fired its own "Your recent order was cancelled…"
-  // SMS — flooding the customer. Send at most one message per status per contact
-  // in a 60-minute window; the per-order status pills still post individually.
+  // Rate-limit the customer-facing automation text — each message is a paid
+  // SMS. The per-(order,status) dedupe above stops the SAME order re-messaging,
+  // but when several DIFFERENT orders for the same customer change status at
+  // once (a batch of cancellations, or someone placing 10 orders in a few
+  // minutes), each one fired its own SMS and flooded the customer.
+  //
+  // We throttle by BUCKET, not exact status: the positive "thank you" family
+  // (processing / on-hold / completed) shares one bucket, so a burst of new or
+  // completed orders sends a single thank-you rather than one per order — even
+  // if the statuses are mixed. Cancelled/refunded/failed each throttle on their
+  // own. At most one message per bucket per contact in a 60-minute window. The
+  // order itself is untouched, and the per-order status pills still post
+  // individually so the history stays complete.
   if (shouldSend) {
     try {
+      const THANKYOU = ['processing', 'on-hold', 'completed']
+      const bucket = THANKYOU.includes(status) ? THANKYOU : [status]
       const since = new Date(Date.now() - 60 * 60000).toISOString()
       // Scope to all of this contact's threads (orders can split across threads),
       // falling back to the current conversation when there's no contact.
@@ -360,7 +369,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       }
       const { data: recentAuto } = await db.from('messages').select('id')
         .in('conversation_id', convIds)
-        .filter('metadata->>order_automation', 'eq', status)
+        .filter('metadata->>order_automation', 'in', `(${bucket.join(',')})`)
         .gte('created_at', since).limit(1)
       if (recentAuto && recentAuto.length) shouldSend = false
     } catch { /* if the throttle check fails, fall through and send */ }
