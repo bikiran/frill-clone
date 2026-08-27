@@ -53,6 +53,15 @@ const fmtDurLong = (s: number) => {
   const m = Math.floor(s / 60)
   return `${m}m ${s % 60}s`
 }
+// Total talk time as hours + minutes (e.g. "2h 14m", or "37m" under an hour).
+const fmtHoursMins = (s: number) => {
+  s = Math.round(s || 0)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m`
+  return `${s}s`
+}
 const timeAgo = (v: string) => {
   const d = new Date(v).getTime(); if (isNaN(d)) return ''
   const mins = Math.floor((Date.now() - d) / 60000)
@@ -65,8 +74,11 @@ const prettyNum = (n: string | null) => n || 'Unknown'
 const callName = (c: Call) => c.contact_name || c.caller_name || (c.direction === 'inbound' ? c.from_number : c.to_number) || 'Unknown'
 const initialsOf = (n: string) => n.split(' ').map(w => w[0]).filter(Boolean).join('').slice(0, 2).toUpperCase() || '?'
 
-type ViewPrefs = { tab: 'live' | 'logs' | 'insights'; locFilter: string; agentFilter: string; hour12: boolean }
+type ViewPrefs = { tab: 'live' | 'logs' | 'insights'; locFilter: string; agentFilter: string; hour12: boolean; commsMode?: 'calls' | 'sms' }
 const VIEW_KEY = 'cc_view_default'
+
+type Sms = { id: string; conversation_id: string | null; sender_type: string | null; sender_name: string | null; content: string | null; created_at: string }
+const smsInbound = (m: Sms) => ['visitor', 'customer', 'contact'].includes(String(m.sender_type || '').toLowerCase())
 
 const LEADER_RANGES: [string, string][] = [
   ['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'],
@@ -82,6 +94,8 @@ export default function CommandCentrePage() {
   const [roster, setRoster] = useState<Agent[]>([])
   const [locFilter, setLocFilter] = useState('all')
   const [agentFilter, setAgentFilter] = useState('all')
+  const [commsMode, setCommsMode] = useState<'calls' | 'sms'>('calls')
+  const [sms, setSms] = useState<Sms[]>([])
   const [loading, setLoading] = useState(true)
   const [clock, setClock] = useState('')
 
@@ -113,13 +127,14 @@ export default function CommandCentrePage() {
         if (v.locFilter) setLocFilter(v.locFilter)
         if (v.agentFilter) setAgentFilter(v.agentFilter)
         if (typeof v.hour12 === 'boolean') setHour12(v.hour12)
+        if (v.commsMode) setCommsMode(v.commsMode)
       }
     } catch {}
   }, [])
 
   const saveDefaultView = () => {
     try {
-      const v: ViewPrefs = { tab, locFilter, agentFilter, hour12 }
+      const v: ViewPrefs = { tab, locFilter, agentFilter, hour12, commsMode }
       localStorage.setItem(VIEW_KEY, JSON.stringify(v))
       setSavedFlash(true)
       setTimeout(() => setSavedFlash(false), 1600)
@@ -180,7 +195,8 @@ export default function CommandCentrePage() {
     }
     const agents: Agent[] = uids.map(uid => {
       const base = byId.get(uid)!
-      const nm = names[uid]?.name || base.name || 'Agent'
+      const email = (names[uid] as any)?.email as string | undefined
+      const nm = names[uid]?.name || base.name || (email ? email.split('@')[0] : 'Agent')
       const online = uid in presMap
       const status: Agent['status'] = !online ? 'offline' : (presMap[uid] ? 'available' : 'oncall')
       return { id: uid, name: nm, avatar: names[uid]?.avatar_url || null, role: base.role, status }
@@ -199,6 +215,16 @@ export default function CommandCentrePage() {
       .select('id, direction, status, is_voicemail, duration_seconds, from_number, to_number, caller_name, contact_name, agent_name, contact_id, created_at, ended_at, sentiment, recording_url')
       .eq('company_id', cid).gte('created_at', since).order('created_at', { ascending: false }).limit(2000)
     setCalls(cs || [])
+  }
+
+  // SMS messages for the SMS view (delivery_channel = 'sms').
+  const loadSms = async (cid: string) => {
+    const since = new Date(Date.now() - 30 * 864e5).toISOString()
+    const { data } = await (supabase as any).from('messages')
+      .select('id, conversation_id, sender_type, sender_name, content, created_at')
+      .eq('company_id', cid).eq('delivery_channel', 'sms').gte('created_at', since)
+      .order('created_at', { ascending: false }).limit(3000)
+    setSms(data || [])
   }
 
   const loadAll = async () => {
@@ -228,6 +254,7 @@ export default function CommandCentrePage() {
     }
 
     await loadTeam(cid)
+    loadSms(cid)
     setLoading(false)
   }
 
@@ -244,7 +271,7 @@ export default function CommandCentrePage() {
   // (every 15s), plus immediately whenever the tab regains focus.
   useEffect(() => {
     if (!companyId) return
-    const refresh = () => { loadTeam(companyId); loadCalls(companyId) }
+    const refresh = () => { loadTeam(companyId); loadCalls(companyId); loadSms(companyId) }
     const iv = setInterval(refresh, 15000)
     const onFocus = () => { if (document.visibilityState === 'visible') refresh() }
     document.addEventListener('visibilitychange', onFocus)
@@ -327,7 +354,7 @@ export default function CommandCentrePage() {
     const agg = (arr: Call[]) => {
       const a = arr.filter(isAnswered), m = arr.filter(isMissed).length, v = arr.filter(isVoicemail).length
       const dur = a.reduce((s, c) => s + (c.duration_seconds || 0), 0)
-      return { total: arr.length, answered: a.length, missed: m, voicemail: v, missRate: arr.length ? Math.round(m / arr.length * 100) : 0, avgDur: a.length ? Math.round(dur / a.length) : 0 }
+      return { total: arr.length, answered: a.length, missed: m, voicemail: v, missRate: arr.length ? Math.round(m / arr.length * 100) : 0, avgDur: a.length ? Math.round(dur / a.length) : 0, talkSecs: dur }
     }
     // Calls-over-time: 24 hourly buckets for today.
     const byHour = Array.from({ length: 24 }, () => 0)
@@ -360,6 +387,30 @@ export default function CommandCentrePage() {
     when: c.created_at,
     kind: isVoicemail(c) ? 'vm' : isAnswered(c) ? 'ok' : isLive(c) ? 'live' : 'miss',
   })), [scoped])
+
+  // ── SMS stats (mirror the calls board's shape) ───────────────────────────────
+  const smsStats = useMemo(() => {
+    const startToday = new Date(); startToday.setHours(0, 0, 0, 0)
+    const startYest = new Date(startToday); startYest.setDate(startYest.getDate() - 1)
+    const today = sms.filter(m => new Date(m.created_at) >= startToday)
+    const yest = sms.filter(m => { const t = new Date(m.created_at); return t >= startYest && t < startToday })
+    const agg = (arr: Sms[]) => {
+      const inbound = arr.filter(smsInbound).length
+      const outbound = arr.length - inbound
+      const chats = new Set(arr.map(m => m.conversation_id).filter(Boolean)).size
+      return { total: arr.length, received: inbound, sent: outbound, chats }
+    }
+    const byHour = Array.from({ length: 24 }, () => 0)
+    for (const m of today) byHour[new Date(m.created_at).getHours()]++
+    return { today: agg(today), yest: agg(yest), byHour }
+  }, [sms])
+  const smsFeed = useMemo(() => sms.slice(0, 16).map(m => ({
+    id: m.id,
+    inbound: smsInbound(m),
+    who: m.sender_name || (smsInbound(m) ? 'Customer' : 'You'),
+    preview: String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+    when: m.created_at,
+  })), [sms])
 
   // ── Alerts & issues ──────────────────────────────────────────────────────────
   const alerts = useMemo(() => {
@@ -568,10 +619,23 @@ export default function CommandCentrePage() {
 
       {/* Tabs + filters */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid var(--border)', marginBottom: 18, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 18 }}>
-          {tabBtn('live', 'Live Board')}
-          {tabBtn('logs', 'Call Logs')}
-          {tabBtn('insights', 'Insights')}
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+          {/* Calls / SMS quick toggle */}
+          <div style={{ display: 'inline-flex', background: 'var(--canvas)', borderRadius: 9, padding: 3 }}>
+            {(['calls', 'sms'] as const).map(m => (
+              <button key={m} type="button" onClick={() => setCommsMode(m)}
+                style={{ padding: '6px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, background: commsMode === m ? '#fff' : 'transparent', color: commsMode === m ? 'var(--ink)' : 'var(--slate)', boxShadow: commsMode === m ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>
+                {m === 'sms' ? 'SMS' : 'Calls'}
+              </button>
+            ))}
+          </div>
+          {commsMode === 'calls' && (
+            <div style={{ display: 'flex', gap: 18 }}>
+              {tabBtn('live', 'Live Board')}
+              {tabBtn('logs', 'Call Logs')}
+              {tabBtn('insights', 'Insights')}
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
           <select value={agentFilter} onChange={e => setAgentFilter(e.target.value)} style={ctrl} title="Filter by team member">
@@ -587,7 +651,7 @@ export default function CommandCentrePage() {
       </div>
 
       {/* ── LIVE BOARD ──────────────────────────────────────────────────────── */}
-      {tab === 'live' && (
+      {commsMode === 'calls' && tab === 'live' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {/* KPI row with vs-yesterday deltas */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
@@ -597,6 +661,7 @@ export default function CommandCentrePage() {
             {kpi('Voicemails', stats.today.voicemail, '#d97706', ic.vm, trend(stats.today.voicemail, stats.yest.voicemail, true))}
             {kpi('Available', available.length, '#16a34a', ic.user, <span style={{ fontSize: 11, color: 'var(--slate)', fontWeight: 600 }}>{roster.length ? `of ${roster.length} team` : 'team'}</span>)}
             {kpi('On call', stats.liveNow || onCallAgents.length, '#3b82f6', ic.live)}
+            {kpi('Talk time', fmtHoursMins(stats.today.talkSecs), '#0891b2', ic.clock, trend(stats.today.talkSecs, stats.yest.talkSecs))}
             {kpi('Avg duration', fmtDurLong(stats.today.avgDur), '#7c3aed', ic.clock, trend(stats.today.avgDur, stats.yest.avgDur))}
             {kpi('Miss rate', `${stats.today.missRate}%`, stats.today.missRate > 15 ? '#dc2626' : '#16a34a', ic.pct, trend(stats.today.missRate, stats.yest.missRate, true))}
           </div>
@@ -796,7 +861,7 @@ export default function CommandCentrePage() {
       )}
 
       {/* ── CALL LOGS ───────────────────────────────────────────────────────── */}
-      {tab === 'logs' && (
+      {commsMode === 'calls' && tab === 'logs' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
             {kpi('Total calls', logAgg.total, '#3b82f6', ic.phone)}
@@ -873,7 +938,7 @@ export default function CommandCentrePage() {
       )}
 
       {/* ── INSIGHTS ────────────────────────────────────────────────────────── */}
-      {tab === 'insights' && (
+      {commsMode === 'calls' && tab === 'insights' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {insights.pct(insights.c.missRate, insights.p.missRate) > 0 && insights.p.total > 0 && (
             <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca', display: 'flex', alignItems: 'center', gap: 8, color: '#b91c1c', fontSize: 13, fontWeight: 600 }}>
@@ -992,6 +1057,86 @@ export default function CommandCentrePage() {
           )}
         </div>
       )}
+
+      {/* ── SMS BOARD ───────────────────────────────────────────────────────── */}
+      {commsMode === 'sms' && (() => {
+        const t = smsStats.today, y = smsStats.yest
+        const total = t.total || 1
+        const rPct = t.received / total * 100
+        const sPct = t.sent / total * 100
+        const smsDonutBg = `conic-gradient(#16a34a 0 ${rPct}%, #2563eb ${rPct}% ${rPct + sPct}%, var(--canvas) ${rPct + sPct}% 100%)`
+        const maxH = Math.max(1, ...smsStats.byHour)
+        const bubble = <svg width="18" height="18" viewBox="0 0 24 24" {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+              {kpi('Messages today', t.total, '#3b82f6', bubble, trend(t.total, y.total))}
+              {kpi('Received', t.received, '#16a34a', <svg width="18" height="18" viewBox="0 0 24 24" {...I}><polyline points="20 12 4 12" /><polyline points="10 18 4 12 10 6" /></svg>, trend(t.received, y.received))}
+              {kpi('Sent', t.sent, '#2563eb', <svg width="18" height="18" viewBox="0 0 24 24" {...I}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>, trend(t.sent, y.sent))}
+              {kpi('Active chats', t.chats, '#7c3aed', ic.user, trend(t.chats, y.chats))}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) minmax(0, 1.4fr)', gap: 18, alignItems: 'start' }} className="cc-perf-grid">
+              {/* SMS volume + split */}
+              <div style={card}>
+                <p style={{ ...kicker, marginBottom: 12 }}>SMS today</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <div style={{ position: 'relative', width: 104, height: 104, borderRadius: '50%', background: smsDonutBg, flexShrink: 0 }}>
+                    <div style={{ position: 'absolute', inset: 12, borderRadius: '50%', background: 'var(--card,#fff)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>{t.total}</span>
+                      <span style={{ ...kicker, marginTop: 2 }}>Total</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 12.5 }}>
+                    {([['Received', t.received, '#16a34a'], ['Sent', t.sent, '#2563eb']] as [string, number, string][]).map(([l, v, col]) => (
+                      <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: 'var(--slate)' }}>
+                        <span style={{ width: 9, height: 9, borderRadius: 3, background: col }} />
+                        <strong style={{ color: 'var(--ink)' }}>{v}</strong> {l}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <p style={{ ...kicker, margin: '16px 0 8px' }}>Messages over time</p>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 56 }}>
+                  {smsStats.byHour.map((n, h) => (
+                    <div key={h} title={`${h}:00 — ${n} message${n === 1 ? '' : 's'}`}
+                      style={{ flex: 1, height: `${Math.max(3, n / maxH * 100)}%`, borderRadius: 3, background: n === 0 ? 'var(--canvas)' : 'color-mix(in srgb, #3b82f6 65%, transparent)' }} />
+                  ))}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 9, color: 'var(--slate)' }}>
+                  <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span>
+                </div>
+              </div>
+
+              {/* SMS activity feed */}
+              <div style={card}>
+                <p style={{ ...kicker, marginBottom: 12 }}>SMS activity</p>
+                {smsFeed.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>No SMS activity yet.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 420, overflowY: 'auto' }}>
+                    {smsFeed.map(f => (
+                      <div key={f.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                        <span style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: f.inbound ? '#dcfce7' : '#dbeafe', color: f.inbound ? '#16a34a' : '#2563eb' }}>
+                          {f.inbound
+                            ? <svg width="14" height="14" viewBox="0 0 24 24" {...I}><polyline points="20 12 4 12" /><polyline points="10 18 4 12 10 6" /></svg>
+                            : <svg width="14" height="14" viewBox="0 0 24 24" {...I}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.4 }}>
+                            <strong>{f.who}</strong> — {f.inbound ? 'received' : 'sent'}{f.preview ? <span style={{ color: 'var(--slate)' }}>: {f.preview}</span> : null}
+                          </p>
+                          <p style={{ margin: '2px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>{new Date(f.when).toLocaleTimeString('en-AU', { hour12, hour: '2-digit', minute: '2-digit' })} · {timeAgo(f.when)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       <style>{`@media (max-width: 1080px){ .cc-live-grid{ grid-template-columns: 1fr !important; } .cc-perf-grid{ grid-template-columns: 1fr !important; } } @media (max-width: 640px){ .cc-perf-inner{ grid-template-columns: 1fr !important; } }`}</style>
     </div>
