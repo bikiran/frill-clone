@@ -339,7 +339,33 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // in the chat is worse than none at all — the customer is looking at a widget
   // that says nothing about the order they just placed.
   const isNewOrderStatus = ['processing', 'on-hold', 'completed'].includes(status)
-  const shouldSend = !seenEvent && template && (cfg.enabled || isNewOrderStatus)
+  let shouldSend = !seenEvent && template && (cfg.enabled || isNewOrderStatus)
+
+  // Rate-limit the customer-facing automation text. The per-(order,status)
+  // dedupe above stops the SAME order re-messaging, but when several DIFFERENT
+  // orders for the same customer change to the same status at once (e.g. a batch
+  // of cancellations), each one fired its own "Your recent order was cancelled…"
+  // SMS — flooding the customer. Send at most one message per status per contact
+  // in a 60-minute window; the per-order status pills still post individually.
+  if (shouldSend) {
+    try {
+      const since = new Date(Date.now() - 60 * 60000).toISOString()
+      // Scope to all of this contact's threads (orders can split across threads),
+      // falling back to the current conversation when there's no contact.
+      let convIds: string[] = [conv.id]
+      if (contact?.id) {
+        const { data: cvs } = await db.from('conversations').select('id').eq('company_id', companyId).eq('contact_id', contact.id).limit(50)
+        const ids = (cvs || []).map((c: any) => c.id)
+        if (ids.length) convIds = Array.from(new Set([...ids, conv.id]))
+      }
+      const { data: recentAuto } = await db.from('messages').select('id')
+        .in('conversation_id', convIds)
+        .filter('metadata->>order_automation', 'eq', status)
+        .gte('created_at', since).limit(1)
+      if (recentAuto && recentAuto.length) shouldSend = false
+    } catch { /* if the throttle check fails, fall through and send */ }
+  }
+
   if (shouldSend) {
   const refundedAmount = order.refunds?.length ? `$${Math.abs(order.refunds.reduce((s: number, r: any) => s + (parseFloat(r.total) || 0), 0)).toFixed(2)}` : `$${order.total}`
   const body = template
