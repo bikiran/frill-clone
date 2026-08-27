@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    const names: Record<string, { name: string | null; avatar_url: string | null }> = {}
+    const names: Record<string, { name: string | null; avatar_url: string | null; email: string | null }> = {}
     const wanted = new Set(userIds.filter(Boolean))
 
     // getUserById is the precise lookup, but only when we have a real UUID.
@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
           names[id] = {
             name: (u.user_metadata?.display_name as string) || (u.user_metadata?.full_name as string) || null,
             avatar_url: (u.user_metadata?.avatar_url as string) || null,
+            email: (u.email as string) || null,
           }
         }
       } catch { /* skip ids that aren't auth users */ }
