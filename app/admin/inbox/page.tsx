@@ -440,6 +440,17 @@ export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[]>(seededConvs ?? [])
   const [selected, setSelected] = useState<Conversation | null>(null)
   const selectedRef = useRef<Conversation | null>(null)
+
+  // Publish the open conversation + contact so the floating Colvy AI assistant
+  // knows what "reply to this customer" or "task for this chat" refers to. It
+  // clears itself on navigation, so we re-publish whenever the selection moves.
+  useEffect(() => {
+    try {
+      window.dispatchEvent(new CustomEvent('colvy:ai-context', {
+        detail: { conversationId: selected?.id || null, contactId: (selected as any)?.contact_id || null },
+      }))
+    } catch {}
+  }, [selected?.id, (selected as any)?.contact_id])
   const loadWooDataRef = useRef<((id: string | null) => void) | null>(null)
   const [showMergePicker, setShowMergePicker] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
