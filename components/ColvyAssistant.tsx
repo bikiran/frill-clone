@@ -32,13 +32,13 @@ type PageCtx = { conversationId?: string | null; contactId?: string | null; orde
 // Suggested commands per area — a starting point, not a menu of the only things
 // that work. Freeform typing is always the point.
 function suggestionsFor(path: string): string[] {
-  if (path.includes('/inbox')) return ['Reply to this customer', 'Create a task to follow up tomorrow', 'Remind me to call them at 3pm']
-  if (path.includes('/contacts')) return ['Find a contact', 'Add a task for this contact', 'Book an appointment next Tuesday 10am']
-  if (path.includes('/orders')) return ['Show pending orders', "What's the status of an order?", 'Mark this order completed']
+  if (path.includes('/inbox')) return ['Reply to this customer', 'Create a task to follow up tomorrow', 'Call this customer']
+  if (path.includes('/contacts')) return ['Find a contact', 'Call this contact', 'Book an appointment next Tuesday 10am']
+  if (path.includes('/orders')) return ['Show pending orders', 'How did we do this week?', "What's out of stock?"]
   if (path.includes('/calendar')) return ['Book a delivery for Friday 9am', 'Remind me about it the night before']
   if (path.includes('/tasks')) return ['Create a high-priority task', 'Mark a task done', 'Reassign a task']
   if (path.includes('/calls')) return ['Summarise my last call', 'Create a task from this call', 'Remind me to call them back tomorrow']
-  return ['Create a task', 'Remind me to…', 'Find a contact', 'Show pending orders']
+  return ['How did we do this week?', 'Create a task', "What's out of stock?", 'Show pending orders']
 }
 
 const SUGGEST_LABEL: Record<string, string> = {
@@ -120,6 +120,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
         if (idx >= 0) copy[idx] = reply; else copy.push(reply)
         return copy
       })
+      if (res.ok) runClientActions(data.clientActions)
     } catch (e: any) {
       setMsgs(m => {
         const copy = m.slice()
@@ -155,6 +156,18 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
     } catch (e: any) {
       setMsgs(m => { const copy = m.slice(); const t = copy[msgIdx]; if (t && t.role === 'assistant') copy[msgIdx] = { role: 'assistant', error: e?.message || 'Network error.', confirm: null }; return copy })
     } finally { setBusy(false) }
+  }
+
+  // Run directives the server returned for the browser — currently just placing
+  // an outbound call through the app's softphone (the GlobalDialer listens for
+  // `colvy:dial`). The server can't open a WebRTC call; the browser does.
+  function runClientActions(actions?: any[]) {
+    if (!Array.isArray(actions)) return
+    for (const a of actions) {
+      if (a?.type === 'dial' && a?.number) {
+        try { window.dispatchEvent(new CustomEvent('colvy:dial', { detail: { number: a.number, name: a.name, contactId: a.contactId, autoStart: true } })) } catch {}
+      }
+    }
   }
 
   function cancelConfirm(msgIdx: number) {
@@ -270,7 +283,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
               {msgs.length === 0 && (
                 <div style={{ padding: '6px 2px 2px' }}>
                   <p style={{ fontSize: 13, color: 'var(--slate)', marginBottom: 10, lineHeight: 1.5 }}>
-                    Hi {agentName || 'there'} — tell me what you need. I can create tasks and reminders, book calendar events, look up contacts and orders, summarise calls, update or refund an order, and draft a message to a customer (I'll ask before anything is sent, changed or refunded).
+                    Hi {agentName || 'there'} — tell me what you need. I can pull sales figures, check stock, look up contacts, orders and calls, create and update tasks, book events, place a call, update or refund an order, and draft a message to a customer (I'll ask before anything is sent, changed or refunded).
                   </p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                     {suggestions.map(s => (
@@ -363,7 +376,7 @@ function ActionCard({ card, onUndo }: { card: Card; onUndo: () => void }) {
   if (card.kind === '__undone') {
     return <div style={{ border: '1px dashed var(--border)', borderRadius: 12, padding: '10px 12px', fontSize: 12.5, color: 'var(--slate)', marginBottom: 8 }}>Removed</div>
   }
-  const icon = card.kind === 'calendar_event' ? '📅' : card.kind === 'reminder' ? '⏰' : card.kind === 'message' ? '💬' : card.kind === 'order' ? '🛒' : '✅'
+  const icon = card.kind === 'calendar_event' ? '📅' : card.kind === 'reminder' ? '⏰' : card.kind === 'message' ? '💬' : card.kind === 'order' ? '🛒' : card.kind === 'call' ? '📞' : '✅'
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '11px 12px', marginBottom: 8, background: 'var(--white)' }}>
       <div style={{ display: 'flex', gap: 10 }}>

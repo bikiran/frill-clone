@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     const out = await runAssistant({ db, ctx, apiKey: key, history, message, suggested: body?.suggested })
     if (out.error) return NextResponse.json({ error: out.error }, { status: 502 })
-    return NextResponse.json({ text: out.text, cards: out.cards, confirm: out.confirm || null })
+    return NextResponse.json({ text: out.text, cards: out.cards, confirm: out.confirm || null, clientActions: out.clientActions || [] })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Assistant error' }, { status: 500 })
   }
