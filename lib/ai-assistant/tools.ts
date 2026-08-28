@@ -885,6 +885,43 @@ export async function buildConfirmPreview(db: SupabaseClient, ctx: AssistantCont
   return { ok: false, error: `No preview for ${name}` }
 }
 
+// Turn certain READ-tool results into a compact card the client renders as rich
+// content (a stat grid, a list) — so figures show as a clean card rather than
+// the model re-typing them as a markdown table, which is both ugly and slow.
+export function readToolCard(name: string, result: any): any | null {
+  if (name === 'get_report' && result?.report) {
+    const r = result.report
+    return {
+      kind: 'report', title: r.period,
+      stats: [
+        { label: 'Revenue', value: r.revenue },
+        { label: 'Orders', value: String(r.orders) },
+        { label: 'Avg order', value: r.aov },
+        { label: 'Units', value: String(r.units) },
+        { label: 'Fulfilment', value: r.fulfilmentRate },
+        { label: 'Cancelled', value: String(r.cancelled) },
+      ],
+      lists: [
+        (r.topProducts || []).length ? { heading: 'Top products', rows: r.topProducts.slice(0, 5).map((p: any) => ({ label: p.key, value: `${p.count}` })) } : null,
+        (r.channels || []).length ? { heading: 'Channels', rows: r.channels.slice(0, 5).map((c: any) => ({ label: c.key, value: `${c.count}` })) } : null,
+      ].filter(Boolean),
+    }
+  }
+  if (name === 'list_out_of_stock' && Array.isArray(result?.items)) {
+    return {
+      kind: 'list', title: `${result.count} item${result.count === 1 ? '' : 's'} out of stock`,
+      rows: result.items.slice(0, 10).map((i: any) => ({ label: i.product, sub: [i.qty ? `${i.qty}×` : null, i.order].filter(Boolean).join(' · ') })),
+    }
+  }
+  if (name === 'check_stock' && Array.isArray(result?.products)) {
+    return {
+      kind: 'list', title: result.products.length ? 'Stock' : 'No matching products',
+      rows: result.products.slice(0, 8).map((p: any) => ({ label: p.name, sub: [p.stockStatus === 'instock' ? 'In stock' : p.stockStatus === 'outofstock' ? 'Out of stock' : p.stockStatus, p.stockQty != null ? `${p.stockQty} on hand` : null, p.price].filter(Boolean).join(' · ') })),
+    }
+  }
+  return null
+}
+
 // ── small utils ──────────────────────────────────────────────────────────────
 async function insertResilient(db: any, table: string, row: any, droppable: string[]): Promise<{ id?: string; error?: string }> {
   // Some optional columns may not exist on older schemas — drop them and retry

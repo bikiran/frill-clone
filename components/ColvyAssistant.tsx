@@ -21,6 +21,10 @@ type Card = {
   lines?: string[]
   href?: string
   undo?: { entityType: string; entityId: string } | null
+  // report / list cards
+  stats?: { label: string; value: string }[]
+  lists?: { heading: string; rows: { label: string; value: string }[] }[]
+  rows?: { label: string; sub?: string }[]
 }
 type ConfirmPayload = { tool: string; args: any; preview: any }
 type Msg =
@@ -382,7 +386,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
                         <TypingDots />
                       ) : (
                         <>
-                          {m.text && <p style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.5, marginBottom: (m.cards?.length || m.confirm) ? 8 : 0 }}>{m.text}</p>}
+                          {m.text && <div style={{ marginBottom: (m.cards?.length || m.confirm) ? 8 : 0 }}><RichText text={m.text} /></div>}
                           {m.error && <p style={{ fontSize: 13, color: '#b91c1c', lineHeight: 1.5 }}>{m.error}</p>}
 
                           {m.cards?.map((c, ci) => <ActionCard key={ci} card={c} onUndo={() => undo(c)} />)}
@@ -450,6 +454,8 @@ function ActionCard({ card, onUndo }: { card: Card; onUndo: () => void }) {
   if (card.kind === '__undone') {
     return <div style={{ border: '1px dashed var(--border)', borderRadius: 12, padding: '10px 12px', fontSize: 12.5, color: 'var(--slate)', marginBottom: 8 }}>Removed</div>
   }
+  if (card.kind === 'report') return <ReportCard card={card} />
+  if (card.kind === 'list') return <ListCard card={card} />
   const icon = card.kind === 'calendar_event' ? '📅' : card.kind === 'reminder' ? '⏰' : card.kind === 'message' ? '💬' : card.kind === 'order' ? '🛒' : card.kind === 'call' ? '📞' : '✅'
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '11px 12px', marginBottom: 8, background: 'var(--white)' }}>
@@ -466,6 +472,86 @@ function ActionCard({ card, onUndo }: { card: Card; onUndo: () => void }) {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function ReportCard({ card }: { card: Card }) {
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '12px', marginBottom: 8, background: 'var(--white)' }}>
+      <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 9 }}>{card.title}</p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        {(card.stats || []).map((s, i) => (
+          <div key={i} style={{ background: 'var(--canvas, #f8f9fb)', borderRadius: 9, padding: '8px 9px' }}>
+            <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.15 }}>{s.value}</p>
+            <p style={{ fontSize: 10.5, color: 'var(--slate)', marginTop: 1 }}>{s.label}</p>
+          </div>
+        ))}
+      </div>
+      {(card.lists || []).map((l, i) => (
+        <div key={i} style={{ marginTop: 10 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', marginBottom: 4 }}>{l.heading}</p>
+          {l.rows.map((r, j) => (
+            <div key={j} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '2px 0', fontSize: 12.5, color: 'var(--ink)' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
+              <span style={{ color: 'var(--slate)', flexShrink: 0 }}>{r.value}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ListCard({ card }: { card: Card }) {
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '11px 12px', marginBottom: 8, background: 'var(--white)' }}>
+      <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: (card.rows || []).length ? 8 : 0 }}>{card.title}</p>
+      {(card.rows || []).map((r, i) => (
+        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '4px 0', borderTop: i ? '1px solid var(--border)' : 'none' }}>
+          <span style={{ fontSize: 12.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
+          {r.sub && <span style={{ fontSize: 11.5, color: 'var(--slate)', flexShrink: 0 }}>{r.sub}</span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Lightweight markdown for assistant replies: paragraphs, bullet/numbered
+// lists, **bold**, and [links](url). No tables — data comes back as cards.
+function RichText({ text }: { text: string }) {
+  const inline = (s: string, keyBase: string): React.ReactNode[] => {
+    const out: React.ReactNode[] = []
+    const re = /\*\*(.+?)\*\*|\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/[^\s]+)/g
+    let last = 0, m: RegExpExecArray | null, k = 0
+    while ((m = re.exec(s))) {
+      if (m.index > last) out.push(s.slice(last, m.index))
+      if (m[1] != null) out.push(<strong key={`${keyBase}-${k++}`}>{m[1]}</strong>)
+      else if (m[2] != null) out.push(<a key={`${keyBase}-${k++}`} href={m[3]} target="_blank" rel="noreferrer" style={{ color: 'var(--coral)' }}>{m[2]}</a>)
+      else if (m[4] != null) out.push(<a key={`${keyBase}-${k++}`} href={m[4]} target="_blank" rel="noreferrer" style={{ color: 'var(--coral)' }}>{m[4]}</a>)
+      last = re.lastIndex
+    }
+    if (last < s.length) out.push(s.slice(last))
+    return out
+  }
+  const lines = String(text || '').split('\n')
+  return (
+    <div style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.5 }}>
+      {lines.map((ln, i) => {
+        const t = ln.trim()
+        if (!t) return <div key={i} style={{ height: 6 }} />
+        const bullet = /^[-*•]\s+/.test(t)
+        const num = /^\d+\.\s+/.test(t)
+        if (bullet || num) {
+          return (
+            <div key={i} style={{ display: 'flex', gap: 7, paddingLeft: 2 }}>
+              <span style={{ color: 'var(--slate)', flexShrink: 0 }}>{num ? t.match(/^\d+\./)![0] : '•'}</span>
+              <span>{inline(t.replace(/^([-*•]|\d+\.)\s+/, ''), `l${i}`)}</span>
+            </div>
+          )
+        }
+        return <p key={i} style={{ margin: 0 }}>{inline(t, `p${i}`)}</p>
+      })}
     </div>
   )
 }

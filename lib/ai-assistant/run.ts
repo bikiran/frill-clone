@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   ASSISTANT_TOOLS, TOOL_SAFETY,
-  runReadTool, executeAction, buildConfirmPreview,
+  runReadTool, executeAction, buildConfirmPreview, readToolCard,
   type AssistantContext,
 } from '@/lib/ai-assistant/tools'
 
@@ -74,7 +74,8 @@ HOW YOU WORK
 - If a search returns MORE THAN ONE plausible match, do NOT guess — ask the user which one, listing the options briefly. If it returns none, say so.
 - Only ask a follow-up question when a required detail is genuinely missing (e.g. a reminder with no time). Don't interrogate — make sensible assumptions for optional fields and act.
 - Interpret relative dates/times against today, in the local timezone, and pass them as ISO 8601.
-- Keep replies short. One or two sentences. The UI shows a compact card for each action you take, so don't re-describe the card in prose.
+- Keep replies short — one or two sentences. The UI shows a compact card for every action and for data results (reports, stock lists), so DON'T repeat the figures or rebuild them as a table in your text. For a report, give a single-sentence takeaway (e.g. what stands out), not the numbers again.
+- Plain text only. Never use markdown tables, and avoid heavy formatting — a short sentence, or a few plain bullet points at most.
 - Never claim you did something you didn't. If a tool fails, say briefly what went wrong.
 
 WHAT YOU CAN DO
@@ -128,7 +129,7 @@ export async function runAssistant(opts: {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 900, system, tools: ASSISTANT_TOOLS.map(({ safety, ...t }) => t), messages }),
+        body: JSON.stringify({ model: MODEL, max_tokens: 640, system, tools: ASSISTANT_TOOLS.map(({ safety, ...t }) => t), messages }),
       })
       const data = await res.json()
       if (!res.ok) return { text: '', cards, error: data?.error?.message || 'Assistant request failed' }
@@ -166,6 +167,10 @@ export async function runAssistant(opts: {
 
         if (safety === 'read') {
           const out = await runReadTool(db, ctx, tu.name, tu.input)
+          // Data tools (reports, stock) render as a rich card, so the model
+          // doesn't need to re-type the figures as a table.
+          const card = readToolCard(tu.name, out)
+          if (card) cards.push(card)
           toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) })
           continue
         }
