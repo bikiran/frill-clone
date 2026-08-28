@@ -23,6 +23,7 @@ import { getCompanyByOwner } from '@/lib/board'
 import { useRouter } from 'next/navigation'
 import MobileNav from '@/components/MobileNav'
 import FeedbackButton from '@/components/FeedbackButton'
+import ColvyAssistant from '@/components/ColvyAssistant'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -789,6 +790,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       <MobileNav />
       <FeedbackButton companyId={company?.id} />
+      {/* Floating Colvy AI command bar — natural-language actions on any admin
+          page. Reads the current page's context (open conversation/contact/
+          order) via the `colvy:ai-context` event so "reply to this customer" or
+          "task for this order" just work. */}
+      <ColvyAssistant companyId={company?.id || null} userId={user?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
       {/* Background uploads keep running as you move around the app. */}
       <UploadQueueIndicator />
     </div>
