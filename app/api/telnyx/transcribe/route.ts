@@ -283,7 +283,12 @@ ${summarySource.slice(0, 12000)}`
           // actual name. Only persist it when it truly resembles a name — never
           // save a sentence/phrase as the contact name. If it doesn't, leave the
           // contact nameless (the number/"Visitor" stays) rather than inventing one.
-          if (nameBlank && isLikelyPersonName(val(extractedContact.name))) patch.name = val(extractedContact.name)
+          // AND never take a name from an OUTBOUND call: there the transcript's
+          // self-introduction is the AGENT's ("this is Dicky from Roxy Aquarium"),
+          // so the model can wrongly name the contact after the staff member. The
+          // customer's own email/address still get written below.
+          const isOutbound = String(call.direction || '').toLowerCase() === 'outbound'
+          if (nameBlank && !isOutbound && isLikelyPersonName(val(extractedContact.name))) patch.name = val(extractedContact.name)
           if (!ct.email && val(extractedContact.email) && /@/.test(extractedContact.email)) patch.email = val(extractedContact.email)
           if (!ct.address && addrLine) {
             patch.address = addrLine
