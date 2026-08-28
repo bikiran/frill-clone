@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureCallCard } from '@/lib/call-card'
+import { isLikelyPersonName } from '@/lib/contactName'
 
 export const maxDuration = 60
 
@@ -277,7 +278,12 @@ ${summarySource.slice(0, 12000)}`
           const nameBlank = !ct.name || /^\+?\d[\d\s-]*$/.test(String(ct.name)) || String(ct.name).toLowerCase() === 'visitor' || String(ct.name).trim() === String(ct.email || '').trim()
           const addrLine = val(extractedContact.address)
           const patch: any = {}
-          if (nameBlank && val(extractedContact.name)) patch.name = val(extractedContact.name)
+          // The model is asked to return the caller's name, but it can echo a
+          // transcript fragment ("looking for", "I need help") instead of an
+          // actual name. Only persist it when it truly resembles a name — never
+          // save a sentence/phrase as the contact name. If it doesn't, leave the
+          // contact nameless (the number/"Visitor" stays) rather than inventing one.
+          if (nameBlank && isLikelyPersonName(val(extractedContact.name))) patch.name = val(extractedContact.name)
           if (!ct.email && val(extractedContact.email) && /@/.test(extractedContact.email)) patch.email = val(extractedContact.email)
           if (!ct.address && addrLine) {
             patch.address = addrLine

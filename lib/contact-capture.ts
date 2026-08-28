@@ -11,6 +11,8 @@
 // Best-effort: guarded on ANTHROPIC_API_KEY, never throws, and only ever FILLS
 // EMPTY fields on an existing contact — it won't overwrite what a human saved.
 
+import { isLikelyPersonName } from '@/lib/contactName'
+
 const digitsOf = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
 
 // Find, or create, a contact for a phone number — company-scoped.
@@ -86,7 +88,12 @@ export async function extractContactDetails(text: string): Promise<ExtractedCont
     const json = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)
     const parsed = JSON.parse(json)
     const clean = (v: any) => (typeof v === 'string' && v.trim() ? v.trim() : null)
-    return { name: clean(parsed.name), suburb: clean(parsed.suburb), email: clean(parsed.email) }
+    // Gate the name at the source: even though the model is told to return only a
+    // self-identified name, it can echo a message fragment ("looking for", "I
+    // need help"). Drop anything that doesn't resemble a real name so no consumer
+    // of this function can persist a phrase as the contact name.
+    const rawName = clean(parsed.name)
+    return { name: rawName && isLikelyPersonName(rawName) ? rawName : null, suburb: clean(parsed.suburb), email: clean(parsed.email) }
   } catch {
     return empty
   }

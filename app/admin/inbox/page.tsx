@@ -7,6 +7,7 @@ import { uploadAttachment, readJsonSafe } from '@/lib/upload-attachment'
 import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { enrichNames } from '@/lib/team-names'
+import { isLikelyPersonName } from '@/lib/contactName'
 import AddContactModal from '@/components/AddContactModal'
 import SendTrackingModal from '@/components/SendTrackingModal'
 import VoiceDictationButton from '@/components/VoiceDictationButton'
@@ -313,27 +314,26 @@ function extractFromText(text: string) {
   let name: string | null = null
   {
     const NAME = "([A-Z][a-z'\\-]{1,20}(?:\\s+[A-Z][a-z'\\-]{1,20}){0,2})"
-    const patterns = [
-      new RegExp(`(?:my name(?:'s| is)|name(?:'s| is))\\s+${NAME}`),
-      new RegExp(`(?:i am|i'm|im)\\s+${NAME}`, 'i'),
-      new RegExp(`(?:this is|it's|its)\\s+${NAME}(?:\\s+here)?`, 'i'),
-      new RegExp(`(?:regards|thanks|cheers|from)[,\\s]+${NAME}\\s*$`, 'im'),
+    // CRITICAL: the NAME groups require REAL capital letters and the patterns are
+    // NOT case-insensitive. A prior `i` flag made [A-Z] also match lowercase, so a
+    // lowercase message/transcript like "…i'm looking for…" captured "looking for"
+    // as a name. Triggers are made case-tolerant explicitly; the captured name
+    // stays strictly capitalised; and every candidate is finally validated by
+    // isLikelyPersonName so a phrase can never be saved as a contact name.
+    const patterns: { re: RegExp; weak?: boolean }[] = [
+      { re: new RegExp(`(?:[Mm]y name(?:'s| is)|[Nn]ame(?:'s| is))\\s+${NAME}`) },
+      { re: new RegExp(`(?:[Ii] am|[Ii]'m|[Ii]m)\\s+${NAME}`) },
+      { re: new RegExp(`(?:[Tt]his is|[Ii]t's|[Ii]ts)\\s+${NAME}(?:\\s+here)?`) },
+      { re: new RegExp(`(?:[Rr]egards|[Tt]hanks|[Cc]heers|[Ff]rom)[,\\s]+${NAME}\\s*$`, 'm'), weak: true },
     ]
-    // Words that follow "I'm"/"this is" far more often than a name does.
-    const NOT_NAMES = new Set([
-      'Just', 'Still', 'Also', 'Sorry', 'Not', 'Very', 'Really', 'Happy', 'Good',
-      'Fine', 'Ok', 'Okay', 'Interested', 'Looking', 'Wondering', 'Trying',
-      'After', 'About', 'Keen', 'Hoping', 'Waiting', 'Thinking', 'Going',
-      'Hi', 'Hello', 'Hey', 'Thanks', 'Thank', 'Regards', 'Cheers',
-    ])
-    for (const re of patterns) {
+    for (const { re, weak } of patterns) {
       const m = cleaned.match(re)
       const candidate = m?.[1]?.trim()
       if (!candidate) continue
-      const first = candidate.split(/\s+/)[0]
-      if (NOT_NAMES.has(first)) continue
-      // A bare single word is only trusted from an explicit "my name is".
-      if (!candidate.includes(' ') && !/name/i.test(m![0])) continue
+      // A bare single word is only trusted from a strong self-introduction, not a
+      // weak sign-off ("from Sarah").
+      if (!candidate.includes(' ') && weak) continue
+      if (!isLikelyPersonName(candidate)) continue
       name = candidate
       break
     }
@@ -4806,6 +4806,11 @@ export default function InboxPage() {
   // Automatically save an AI-detected field to the contact when it's empty,
   // and record that AI filled it so we can show an AI badge next to it.
   const autoSaveAiField = async (conv: any, field: string, value: string) => {
+    // Root-cause guard mirroring the mobile app: never persist a name that reads
+    // like a sentence/phrase or a fragment of message text. This is the write
+    // choke point, so a bad name is dropped here before it can reach the contact
+    // row or the conversation subject.
+    if (field === 'name' && !isLikelyPersonName(value)) return
     let contactId = conv.contact_id || conv.__contact?.id
     if (contactId) {
       const { data: existing } = await (supabase as any).from('contacts').select(`${field}, ai_saved_fields`).eq('id', contactId).maybeSingle()
