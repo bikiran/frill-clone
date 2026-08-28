@@ -705,6 +705,19 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     const channelLabel = delivery.channel === 'sms' ? 'SMS' : delivery.channel === 'email' ? 'Email' : delivery.channel === 'live_chat' ? 'Live chat' : 'message'
     await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Sent message', tool: name, entityType: 'message', entityId: conversationId, input: { contactId: contact?.id || null, phone: phone || null, text, channel: delivery.channel }, result: { sent: delivery.sent, channel: delivery.channel } })
     if (!delivery.sent) return { ok: false, error: delivery.error || `Could not deliver the ${channelLabel}.` }
+    // Record it in the thread so it actually shows in the inbox. deliverAutomated
+    // Message sends with skipChatMessage and relies on the caller to log the
+    // thread row — without this, the SMS/email goes out but leaves no trace.
+    try {
+      await D.from('messages').insert({
+        conversation_id: conversationId, company_id: ctx.companyId,
+        sender_type: 'agent', sender_name: ctx.companyName,
+        content: text, message_type: 'text', is_read: true,
+        delivery_channel: delivery.channel === 'sms' ? 'sms' : delivery.channel === 'email' ? 'email' : 'chat',
+        metadata: { colvy_ai: true, sent_by: ctx.userName },
+      })
+      await D.from('conversations').update({ last_message: text.slice(0, 200), last_message_at: new Date().toISOString() }).eq('id', conversationId)
+    } catch { /* delivered even if the thread write fails */ }
     const card = { kind: 'message', title: `Message sent · ${channelLabel}`, lines: [`To ${toName}`, `“${text.length > 90 ? text.slice(0, 90) + '…' : text}”`], href: `/admin/inbox?conversation=${conversationId}` }
     return { ok: true, entityType: 'message', entityId: conversationId, card, undo: null }
   }
