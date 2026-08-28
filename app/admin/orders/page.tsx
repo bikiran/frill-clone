@@ -145,6 +145,17 @@ export default function OrdersPage() {
   const [drawerFull, setDrawerFull] = useState(false)
   const openOrder = (id: string) => { setDrawerId(id); setDrawerFull(!showSidebar) }
 
+  // Publish the open order to the floating Colvy AI assistant so "refund this
+  // order" / "mark this order completed" resolve to the drawer's order.
+  useEffect(() => {
+    const o = drawerId ? orders.find(x => x.id === drawerId) : null
+    try {
+      window.dispatchEvent(new CustomEvent('colvy:ai-context', {
+        detail: { orderId: drawerId || null, contactId: (o as any)?.contact_id || null, conversationId: (o as any)?.conversation_id || null },
+      }))
+    } catch {}
+  }, [drawerId, orders])
+
   const [printModal, setPrintModal] = useState<{ doc: 'packing_slip' | 'label'; ids: string[]; title: string } | null>(null)
   // Open the print preview (packing slips or labels) as an in-page modal.
   const openPrint = useCallback((docType: 'packing_slip' | 'label', ids: string[]) => {

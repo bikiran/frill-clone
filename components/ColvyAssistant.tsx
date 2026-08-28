@@ -34,15 +34,15 @@ type PageCtx = { conversationId?: string | null; contactId?: string | null; orde
 function suggestionsFor(path: string): string[] {
   if (path.includes('/inbox')) return ['Reply to this customer', 'Create a task to follow up tomorrow', 'Remind me to call them at 3pm']
   if (path.includes('/contacts')) return ['Find a contact', 'Add a task for this contact', 'Book an appointment next Tuesday 10am']
-  if (path.includes('/orders')) return ['Create a follow-up task for this order', 'Remind me to check this order tomorrow']
+  if (path.includes('/orders')) return ['Show pending orders', "What's the status of an order?", 'Mark this order completed']
   if (path.includes('/calendar')) return ['Book a delivery for Friday 9am', 'Remind me about it the night before']
-  if (path.includes('/tasks')) return ['Create a high-priority task', 'Remind me to review tasks at 5pm']
-  if (path.includes('/calls')) return ['Create a task from this call', 'Remind me to call them back tomorrow']
-  return ['Create a task', 'Remind me to…', 'Find a contact', 'Book an appointment']
+  if (path.includes('/tasks')) return ['Create a high-priority task', 'Mark a task done', 'Reassign a task']
+  if (path.includes('/calls')) return ['Summarise my last call', 'Create a task from this call', 'Remind me to call them back tomorrow']
+  return ['Create a task', 'Remind me to…', 'Find a contact', 'Show pending orders']
 }
 
 const SUGGEST_LABEL: Record<string, string> = {
-  task: 'View tasks', reminder: 'View reminders', calendar_event: 'Open calendar', message: 'Open conversation',
+  task: 'View tasks', reminder: 'View reminders', calendar_event: 'Open calendar', message: 'Open conversation', order: 'Open orders',
 }
 
 export default function ColvyAssistant({ companyId, userId, agentName }: { companyId?: string | null; userId?: string | null; agentName?: string | null }) {
@@ -146,8 +146,8 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
         const target = copy[msgIdx]
         if (target && target.role === 'assistant') {
           const next: Msg = res.ok
-            ? { role: 'assistant', text: 'Sent.', cards: data.card ? [data.card] : [], confirm: null }
-            : { role: 'assistant', error: data?.error || 'Could not send.', confirm: null }
+            ? { role: 'assistant', text: 'Done.', cards: data.card ? [data.card] : [], confirm: null }
+            : { role: 'assistant', error: data?.error || 'Could not complete that.', confirm: null }
           copy[msgIdx] = next
         }
         return copy
@@ -165,10 +165,13 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
   // permissive, so the client can do this directly and immediately.
   async function undo(card: Card) {
     if (!card.undo) return
-    const { entityType, entityId } = card.undo
+    const { entityType, entityId, restore } = card.undo as any
     const table = entityType === 'calendar_event' ? 'calendar_events' : 'conversation_tasks'
     try {
-      await (supabase as any).from(table).delete().eq('id', entityId)
+      // An edit (task_update) is undone by restoring the prior values; a created
+      // row is undone by deleting it.
+      if (restore) await (supabase as any).from(table).update(restore).eq('id', entityId)
+      else await (supabase as any).from(table).delete().eq('id', entityId)
       setToast({ text: 'Undone' })
       setMsgs(m => m.map(msg => msg.role === 'assistant' && msg.cards
         ? { ...msg, cards: msg.cards.map(c => c === card ? { ...c, kind: '__undone', title: 'Removed', lines: [], undo: null } : c) }
@@ -267,7 +270,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
               {msgs.length === 0 && (
                 <div style={{ padding: '6px 2px 2px' }}>
                   <p style={{ fontSize: 13, color: 'var(--slate)', marginBottom: 10, lineHeight: 1.5 }}>
-                    Hi {agentName || 'there'} — tell me what you need. I can create tasks and reminders, book calendar events, look up contacts, and draft a message to a customer (I'll ask before sending).
+                    Hi {agentName || 'there'} — tell me what you need. I can create tasks and reminders, book calendar events, look up contacts and orders, summarise calls, update or refund an order, and draft a message to a customer (I'll ask before anything is sent, changed or refunded).
                   </p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                     {suggestions.map(s => (
@@ -360,7 +363,7 @@ function ActionCard({ card, onUndo }: { card: Card; onUndo: () => void }) {
   if (card.kind === '__undone') {
     return <div style={{ border: '1px dashed var(--border)', borderRadius: 12, padding: '10px 12px', fontSize: 12.5, color: 'var(--slate)', marginBottom: 8 }}>Removed</div>
   }
-  const icon = card.kind === 'calendar_event' ? '📅' : card.kind === 'reminder' ? '⏰' : card.kind === 'message' ? '💬' : '✅'
+  const icon = card.kind === 'calendar_event' ? '📅' : card.kind === 'reminder' ? '⏰' : card.kind === 'message' ? '💬' : card.kind === 'order' ? '🛒' : '✅'
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '11px 12px', marginBottom: 8, background: 'var(--white)' }}>
       <div style={{ display: 'flex', gap: 10 }}>
@@ -382,15 +385,34 @@ function ActionCard({ card, onUndo }: { card: Card; onUndo: () => void }) {
 
 function ConfirmCard({ confirm, busy, onCancel, onSend }: { confirm: ConfirmPayload; busy: boolean; onCancel: () => void; onSend: () => void }) {
   const p = confirm.preview || {}
+  const isRefund = p.kind === 'refund_order'
+  const isOrder = p.kind === 'order_status' || isRefund
+  const heading = isRefund ? 'Confirm refund' : isOrder ? 'Confirm order change' : 'Confirm send'
+  const cta = isRefund ? 'Refund' : isOrder ? 'Confirm' : 'Send'
   return (
     <div style={{ border: '1px solid var(--coral)', borderRadius: 12, padding: '12px', background: 'var(--peach)' }}>
-      <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Confirm send</p>
-      <p style={{ fontSize: 12.5, color: 'var(--ink)', marginBottom: 2 }}><strong>To:</strong> {p.to || 'customer'} {p.via ? `· ${p.via}` : ''}</p>
-      <p style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.45, background: 'var(--white)', borderRadius: 8, padding: '8px 10px', margin: '6px 0 10px' }}>{p.text}</p>
+      <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>{heading}</p>
+
+      {isOrder ? (
+        <>
+          <p style={{ fontSize: 13, color: 'var(--ink)', marginBottom: 2 }}><strong>{p.orderLabel}</strong>{p.to ? ` · ${p.to}` : ''}</p>
+          {isRefund
+            ? <p style={{ fontSize: 13, color: 'var(--ink)', marginBottom: 2 }}>Refund <strong>{p.amount}</strong></p>
+            : <p style={{ fontSize: 13, color: 'var(--ink)', marginBottom: 2 }}>{p.action} <span style={{ color: 'var(--slate)' }}>(now {p.current})</span></p>}
+          {p.warn && <p style={{ fontSize: 12, color: '#b91c1c', margin: '6px 0 10px' }}>{p.warn}</p>}
+          {!p.warn && <div style={{ height: 6 }} />}
+        </>
+      ) : (
+        <>
+          <p style={{ fontSize: 12.5, color: 'var(--ink)', marginBottom: 2 }}><strong>To:</strong> {p.to || 'customer'} {p.via ? `· ${p.via}` : ''}</p>
+          <p style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.45, background: 'var(--white)', borderRadius: 8, padding: '8px 10px', margin: '6px 0 10px' }}>{p.text}</p>
+        </>
+      )}
+
       <div style={{ display: 'flex', gap: 8 }}>
         <button type="button" onClick={onSend} disabled={busy}
           style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-          {busy ? 'Sending…' : 'Send'}
+          {busy ? 'Working…' : cta}
         </button>
         <button type="button" onClick={onCancel} disabled={busy}
           style={{ padding: '9px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
