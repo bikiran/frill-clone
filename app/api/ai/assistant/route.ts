@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { runAssistant, type AssistantTurn } from '@/lib/ai-assistant/run'
+import { runAssistant, reportFastPath, type AssistantTurn } from '@/lib/ai-assistant/run'
 import { resolveCaller } from '@/lib/ai-assistant/caller'
 
 export const dynamic = 'force-dynamic'
@@ -39,6 +39,10 @@ export async function POST(req: NextRequest) {
     const history: AssistantTurn[] = Array.isArray(body?.history)
       ? body.history.map((h: any) => ({ role: h?.role === 'assistant' ? 'assistant' : 'user', text: String(h?.text || '') }))
       : []
+
+    // Deterministic fast-path for a plain report question — no model call at all.
+    const fast = await reportFastPath(db, ctx, message)
+    if (fast) return NextResponse.json({ text: fast.text, cards: fast.cards, confirm: null, clientActions: [] })
 
     const out = await runAssistant({ db, ctx, apiKey: key, history, message, suggested: body?.suggested })
     if (out.error) return NextResponse.json({ error: out.error }, { status: 502 })

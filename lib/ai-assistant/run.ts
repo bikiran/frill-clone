@@ -95,6 +95,41 @@ SAFETY
 - You cannot delete records or take a new payment. If asked, say it's not something you can do yet.`
 }
 
+// Fast-path: a plain "how did we do this week?" needs no reasoning — resolve
+// the range, run the report, and return the card with a computed one-liner.
+// This skips BOTH model round-trips (decide-tool + summarise), so a report
+// answer is effectively instant. Returns null when the message isn't an
+// unambiguous report ask, so anything else falls through to the full loop.
+const REPORT_RANGES: [RegExp, string][] = [
+  [/\b(today|so far today)\b/, 'today'],
+  [/\byesterday\b/, 'yesterday'],
+  [/\b(this month|the month|month to date|mtd)\b/, 'month'],
+  [/\b(last|past)\s*30\b|\b30\s*days?\b/, '30d'],
+  [/\b(last|past)?\s*90\b|\b90\s*days?\b|\bquarter\b/, '90d'],
+  [/\ball[\s-]?time\b|\bever\b|\ball\s+orders?\b/, 'all'],
+  [/\b(this|last|past)\s*week\b|\b7\s*days?\b|\bweekly\b/, '7d'],
+]
+
+export async function reportFastPath(db: SupabaseClient, ctx: AssistantContext, message: string): Promise<AssistantResponse | null> {
+  const m = String(message || '').toLowerCase().trim()
+  if (!m) return null
+  // Only when it clearly asks for figures AND names no other kind of work.
+  const isReport = /(how'?d?\s+(did|are|is|was|have)?\s*we\s+do)|how'?s?\s+business|how\s+are\s+(we|things|sales)|our\s+(sales|numbers|figures|revenue|takings|performance)|\b(sales|revenue|numbers|figures|takings|performance)\b.*\b(this|last|today|yesterday|week|month|quarter|report)|\breport\b|\bhow\s+much\s+(did\s+we\s+)?(make|sell|take)/i.test(m)
+  const excluded = /\b(send|message|text|email|call|ring|dial|task|remind|reminder|book|appointment|event|refund|cancel|status|stock|contact|order\s*#?\d)\b/i.test(m)
+  if (!isReport || excluded) return null
+  const range = (REPORT_RANGES.find(([re]) => re.test(m))?.[1]) || '7d'
+
+  const out: any = await runReadTool(db, ctx, 'get_report', { range })
+  const r = out?.report
+  if (!r) return null   // couldn't build a report — let the model try
+  const card = readToolCard('get_report', out)
+  const rate = parseInt(String(r.fulfilmentRate), 10)
+  const bits = [`${r.period}: ${r.orders} order${r.orders === 1 ? '' : 's'}, ${r.revenue}.`]
+  if (!isNaN(rate) && rate < 80) bits.push(`Fulfilment ${r.fulfilmentRate}${r.cancelled ? ` — ${r.cancelled} cancelled` : ''} is worth a look.`)
+  else if (r.orders > 0) bits.push('Looking healthy.')
+  return { text: bits.join(' '), cards: card ? [card] : [], confirm: null, clientActions: [] }
+}
+
 export async function runAssistant(opts: {
   db: SupabaseClient
   ctx: AssistantContext
