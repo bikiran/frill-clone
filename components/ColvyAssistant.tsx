@@ -59,6 +59,51 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const recogRef = useRef<any>(null)
 
+  // Floating orb: draggable anywhere (position remembered across sessions), and
+  // dismissable for the session via a close tab that slides out on hover.
+  const ORB = 54
+  const [orbPos, setOrbPos] = useState<{ x: number; y: number } | null>(null)
+  const [orbHover, setOrbHover] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
+  const dragRef = useRef<{ ox: number; oy: number; sx: number; sy: number; moved: boolean; x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    try { const p = localStorage.getItem('colvy-ai-orb-pos'); if (p) setOrbPos(JSON.parse(p)) } catch {}
+    try { if (sessionStorage.getItem('colvy-ai-dismissed') === '1') setDismissed(true) } catch {}
+  }, [])
+  // Keep the orb on-screen if the window is resized smaller.
+  useEffect(() => {
+    const onResize = () => setOrbPos(p => p ? { x: Math.min(p.x, window.innerWidth - ORB - 8), y: Math.min(p.y, window.innerHeight - ORB - 8) } : p)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  function onOrbPointerDown(e: React.PointerEvent) {
+    const el = e.currentTarget as HTMLElement
+    try { el.setPointerCapture(e.pointerId) } catch {}
+    const r = el.getBoundingClientRect()
+    dragRef.current = { ox: e.clientX - r.left, oy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, moved: false, x: r.left, y: r.top }
+  }
+  function onOrbPointerMove(e: React.PointerEvent) {
+    const d = dragRef.current; if (!d) return
+    if (Math.abs(e.clientX - d.sx) > 4 || Math.abs(e.clientY - d.sy) > 4) d.moved = true
+    if (!d.moved) return
+    d.x = Math.min(Math.max(8, e.clientX - d.ox), window.innerWidth - ORB - 8)
+    d.y = Math.min(Math.max(8, e.clientY - d.oy), window.innerHeight - ORB - 8)
+    setOrbPos({ x: d.x, y: d.y })
+  }
+  function onOrbPointerUp() {
+    const d = dragRef.current; dragRef.current = null
+    if (!d) return
+    if (d.moved) { try { localStorage.setItem('colvy-ai-orb-pos', JSON.stringify({ x: d.x, y: d.y })) } catch {} }
+    else setOpen(true)   // a tap (not a drag) opens the panel
+  }
+  function dismissOrb(e: React.MouseEvent) {
+    e.stopPropagation()
+    setDismissed(true)
+    try { sessionStorage.setItem('colvy-ai-dismissed', '1') } catch {}
+  }
+
   // Reset page context on navigation; pages re-publish what's open.
   useEffect(() => { pageCtxRef.current = {} }, [pathname])
 
@@ -66,7 +111,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
     const onCtx = (e: any) => { pageCtxRef.current = { ...pageCtxRef.current, ...(e?.detail || {}) } }
     window.addEventListener('colvy:ai-context', onCtx as any)
     // Let other UI open the assistant (e.g. a header button) and optionally seed it.
-    const onOpen = (e: any) => { setOpen(true); const q = e?.detail?.prompt; if (q) setInput(String(q)) }
+    const onOpen = (e: any) => { setOpen(true); setDismissed(false); try { sessionStorage.removeItem('colvy-ai-dismissed') } catch {}; const q = e?.detail?.prompt; if (q) setInput(String(q)) }
     window.addEventListener('colvy:ai-open', onOpen as any)
     return () => { window.removeEventListener('colvy:ai-context', onCtx as any); window.removeEventListener('colvy:ai-open', onOpen as any) }
   }, [])
@@ -228,24 +273,53 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
 
   return (
     <>
-      {/* Launcher orb — sits above the mobile nav bar and other floats. */}
-      {!open && (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label="Open Colvy AI"
-          className="colvy-ai-orb"
+      {/* Launcher orb — draggable anywhere; a hover tab dismisses it for the
+          session. Above the mobile nav bar and other floats. */}
+      {!open && !dismissed && (
+        <div
+          className="colvy-ai-orb-wrap"
+          onMouseEnter={() => setOrbHover(true)}
+          onMouseLeave={() => setOrbHover(false)}
           style={{
-            position: 'fixed', right: 18,
-            bottom: 'calc(58px + env(safe-area-inset-bottom, 0px) + 16px)',
-            width: 54, height: 54, borderRadius: '50%', border: 'none', cursor: 'pointer',
-            background: `linear-gradient(135deg, ${CORAL}, #ff9d72)`,
-            boxShadow: '0 10px 28px rgba(255,122,107,0.45)', color: '#fff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 930,
+            position: 'fixed', zIndex: 930, width: ORB, height: ORB, touchAction: 'none',
+            ...(orbPos
+              ? { left: orbPos.x, top: orbPos.y }
+              : { right: 18, bottom: 'calc(58px + env(safe-area-inset-bottom, 0px) + 16px)' }),
           }}
         >
-          <SparkIcon />
-        </button>
+          {/* Dismiss-for-session tab — slides out on hover. */}
+          <button
+            type="button"
+            onClick={dismissOrb}
+            aria-label="Hide Colvy AI for now"
+            title="Hide for now"
+            style={{
+              position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%',
+              border: '1.5px solid var(--card, #fff)', background: '#111827', color: '#fff', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, zIndex: 2,
+              opacity: orbHover ? 1 : 0, transform: orbHover ? 'scale(1)' : 'scale(0.6)',
+              transition: 'opacity .14s ease, transform .14s ease', pointerEvents: orbHover ? 'auto' : 'none',
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+          <button
+            type="button"
+            onPointerDown={onOrbPointerDown}
+            onPointerMove={onOrbPointerMove}
+            onPointerUp={onOrbPointerUp}
+            aria-label="Open Colvy AI (drag to move)"
+            className="colvy-ai-orb"
+            style={{
+              width: ORB, height: ORB, borderRadius: '50%', border: 'none', cursor: 'grab',
+              background: `linear-gradient(135deg, ${CORAL}, #ff9d72)`,
+              boxShadow: '0 10px 28px rgba(255,122,107,0.45)', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none',
+            }}
+          >
+            <SparkIcon />
+          </button>
+        </div>
       )}
 
       {open && (

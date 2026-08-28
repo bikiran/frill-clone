@@ -211,12 +211,14 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
   },
   {
     name: 'send_message', safety: 'confirm',
-    description: 'Send a message to a customer. REQUIRES user confirmation — never sends without it. Provide contactId (or use the current conversation) and the message text. Channel is chosen automatically (live chat / SMS / email).',
+    description: "Send a message to a customer. REQUIRES user confirmation — never sends without it. If the user NAMES a specific recipient (not the open conversation), resolve them with search_contacts and pass their contactId — do NOT rely on the open conversation, or the message will go to the wrong person. Pass phone (and name) only for someone who isn't a saved contact. Channel is chosen automatically (live chat / SMS / email).",
     input_schema: {
       type: 'object',
       properties: {
-        contactId: { type: 'string' },
+        contactId: { type: 'string', description: 'the resolved recipient — required when the user names someone specific' },
         conversationId: { type: 'string' },
+        phone: { type: 'string', description: 'raw phone, only if the recipient is not a saved contact' },
+        name: { type: 'string', description: 'display name to go with phone' },
         text: { type: 'string' },
         channel: { type: 'string', enum: ['auto', 'sms', 'email'] },
       },
@@ -335,6 +337,28 @@ async function resolveOrder(db: any, companyId: string, ref: string): Promise<an
   if (exact?.[0]) return exact[0]
   const { data: loose } = await db.from('orders').select('*').eq('company_id', companyId).ilike('order_number', `%${r}%`).limit(2)
   return loose?.length === 1 ? loose[0] : null
+}
+
+// Resolve who a message is for. A recipient the user NAMES (an explicit
+// contactId / conversationId / phone the model passes) always wins over the
+// ambient open conversation — otherwise "text Bikiran" while Diana's chat is
+// open would message Diana. Ambient context is only used when the model passed
+// no explicit recipient at all.
+async function resolveMessageRecipient(db: any, ctx: AssistantContext, args: any): Promise<{ contact: any; conversationId: string | null; phone: string; name: string; error?: string }> {
+  const loadContact = async (id: string) => { const { data } = await db.from('contacts').select('*').eq('company_id', ctx.companyId).eq('id', id).maybeSingle(); return data }
+  const loadConv = async (id: string) => { const { data } = await db.from('conversations').select('id, contact_id').eq('company_id', ctx.companyId).eq('id', id).maybeSingle(); return data }
+  let contact: any = null
+  let conversationId: string | null = null
+  if (args?.contactId) { contact = await loadContact(args.contactId) }
+  else if (args?.conversationId) { const c = await loadConv(args.conversationId); conversationId = c?.id || null; if (c?.contact_id) contact = await loadContact(c.contact_id) }
+  else if (args?.phone) { /* raw phone handled below — explicit, so no ambient fallback */ }
+  else if (ctx.contactId) { contact = await loadContact(ctx.contactId) }
+  else if (ctx.conversationId) { const c = await loadConv(ctx.conversationId); conversationId = c?.id || null; if (c?.contact_id) contact = await loadContact(c.contact_id) }
+  const rawPhone = (!contact && args?.phone) ? String(args.phone).trim() : ''
+  if (!contact && !rawPhone) return { contact: null, conversationId: null, phone: '', name: '', error: 'Tell me who to send this to — a name, a phone number, or open their conversation.' }
+  const phone = contact?.phone || rawPhone || ''
+  const name = contact?.name || args?.name || phone || contact?.email || 'customer'
+  return { contact, conversationId, phone, name }
 }
 
 // The active WooCommerce store for a company (first active integration).
@@ -651,26 +675,20 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
   if (name === 'send_message') {
     const text = String(args?.text || '').trim()
     if (!text) return { ok: false, error: 'The message is empty.' }
-    // Resolve the recipient contact + a conversation to thread into.
-    let contact: any = null
-    let conversationId: string | null = args?.conversationId || ctx.conversationId || null
-    if (conversationId) {
-      const { data: conv } = await D.from('conversations').select('id, contact_id').eq('company_id', ctx.companyId).eq('id', conversationId).maybeSingle()
-      if (conv?.contact_id) { const { data } = await D.from('contacts').select('*').eq('id', conv.contact_id).maybeSingle(); contact = data }
-    }
-    if (!contact && (args?.contactId || ctx.contactId)) {
-      const { data } = await D.from('contacts').select('*').eq('company_id', ctx.companyId).eq('id', args?.contactId || ctx.contactId).maybeSingle()
-      contact = data
-    }
-    if (!contact) return { ok: false, error: 'I could not work out who to send this to.' }
+    const r = await resolveMessageRecipient(D, ctx, args)
+    if (r.error) return { ok: false, error: r.error }
+    let { contact, conversationId, phone, name: toName } = r
+
     if (!conversationId) {
-      const { data: existing } = await D.from('conversations').select('id').eq('company_id', ctx.companyId).eq('contact_id', contact.id).order('last_message_at', { ascending: false }).limit(1)
-      conversationId = existing?.[0]?.id || null
+      if (contact?.id) {
+        const { data: existing } = await D.from('conversations').select('id').eq('company_id', ctx.companyId).eq('contact_id', contact.id).order('last_message_at', { ascending: false }).limit(1)
+        conversationId = existing?.[0]?.id || null
+      }
       if (!conversationId) {
         const { data: created } = await D.from('conversations').insert({
-          company_id: ctx.companyId, contact_id: contact.id, channel: 'chat', status: 'open',
-          subject: contact.name || contact.phone || contact.email || 'Conversation',
-          sms_number: contact.phone || null, sms_enabled: !!contact.phone,
+          company_id: ctx.companyId, contact_id: contact?.id || null, channel: 'chat', status: 'open',
+          subject: toName || 'Conversation',
+          sms_number: phone || null, sms_enabled: !!phone,
           last_message: '', last_message_at: new Date().toISOString(),
         }).select('id').maybeSingle()
         conversationId = created?.id || null
@@ -679,15 +697,15 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     if (!conversationId) return { ok: false, error: 'Could not open a conversation to send into.' }
     const delivery = await deliverAutomatedMessage({
       companyId: ctx.companyId, conversationId, text,
-      phone: contact.phone || undefined, email: contact.email || undefined,
+      phone: phone || undefined, email: (contact?.email) || undefined,
       senderName: ctx.companyName, origin: ctx.siteOrigin,
       preferChannel: args?.channel === 'email' ? 'email' : undefined,
       force: true, db: D,
     })
     const channelLabel = delivery.channel === 'sms' ? 'SMS' : delivery.channel === 'email' ? 'Email' : delivery.channel === 'live_chat' ? 'Live chat' : 'message'
-    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Sent message', tool: name, entityType: 'message', entityId: conversationId, input: { contactId: contact.id, text, channel: delivery.channel }, result: { sent: delivery.sent, channel: delivery.channel } })
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Sent message', tool: name, entityType: 'message', entityId: conversationId, input: { contactId: contact?.id || null, phone: phone || null, text, channel: delivery.channel }, result: { sent: delivery.sent, channel: delivery.channel } })
     if (!delivery.sent) return { ok: false, error: delivery.error || `Could not deliver the ${channelLabel}.` }
-    const card = { kind: 'message', title: `Message sent · ${channelLabel}`, lines: [`To ${contact.name || contact.phone || contact.email}`, `“${text.length > 90 ? text.slice(0, 90) + '…' : text}”`], href: `/admin/inbox?conversation=${conversationId}` }
+    const card = { kind: 'message', title: `Message sent · ${channelLabel}`, lines: [`To ${toName}`, `“${text.length > 90 ? text.slice(0, 90) + '…' : text}”`], href: `/admin/inbox?conversation=${conversationId}` }
     return { ok: true, entityType: 'message', entityId: conversationId, card, undo: null }
   }
 
@@ -821,18 +839,15 @@ export async function buildConfirmPreview(db: SupabaseClient, ctx: AssistantCont
     if (!canEdit(ctx.role as any)) return { ok: false, error: "You don't have permission to send messages." }
     const text = String(args?.text || '').trim()
     if (!text) return { ok: false, error: 'The message is empty.' }
-    let contact: any = null
-    if (args?.conversationId || ctx.conversationId) {
-      const { data: conv } = await D.from('conversations').select('contact_id').eq('company_id', ctx.companyId).eq('id', args?.conversationId || ctx.conversationId).maybeSingle()
-      if (conv?.contact_id) { const { data } = await D.from('contacts').select('id, name, phone, email').eq('id', conv.contact_id).maybeSingle(); contact = data }
-    }
-    if (!contact && (args?.contactId || ctx.contactId)) {
-      const { data } = await D.from('contacts').select('id, name, phone, email').eq('company_id', ctx.companyId).eq('id', args?.contactId || ctx.contactId).maybeSingle()
-      contact = data
-    }
-    if (!contact) return { ok: false, error: 'Tell me who to send this to — a name or open their conversation.' }
-    const channel = args?.channel === 'email' ? 'Email' : (contact.phone ? 'SMS' : (contact.email ? 'Email' : 'message'))
-    return { ok: true, preview: { kind: 'send_message', to: contact.name || contact.phone || contact.email, via: channel, text, args: { ...args, contactId: contact.id } } }
+    const r = await resolveMessageRecipient(D, ctx, args)
+    if (r.error) return { ok: false, error: r.error }
+    const channel = args?.channel === 'email' ? 'Email' : (r.phone ? 'SMS' : (r.contact?.email ? 'Email' : 'message'))
+    // Pin the resolved recipient into the confirm args so /execute sends to
+    // exactly who the preview showed — never drifting to the open conversation.
+    const pinned = r.contact?.id
+      ? { text, channel: args?.channel, contactId: r.contact.id }
+      : { text, channel: args?.channel, phone: r.phone, name: r.name }
+    return { ok: true, preview: { kind: 'send_message', to: r.name, via: channel, text, args: pinned } }
   }
 
   if (name === 'update_order_status' || name === 'cancel_order' || name === 'refund_order') {

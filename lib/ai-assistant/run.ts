@@ -41,7 +41,7 @@ export type AssistantResponse = {
 
 function routeHint(route?: string | null): string {
   if (!route) return ''
-  if (route.includes('/inbox')) return "The user is in the Inbox. If they say 'reply', 'message them', or 'send', they usually mean the customer in the open conversation."
+  if (route.includes('/inbox')) return "The user is in the Inbox. A bare 'reply' / 'message them' means the customer in the open conversation — but if they NAME a different person or give a phone number, that named recipient is the target: resolve them with search_contacts and pass the contactId (never send to the open conversation's contact instead)."
   if (route.includes('/contacts')) return 'The user is on Contacts. A named person is most likely a contact here.'
   if (route.includes('/orders')) return 'The user is on Orders. An action about "this order" refers to the open order.'
   if (route.includes('/calendar')) return 'The user is on the Calendar. Bookings/appointments are calendar events.'
