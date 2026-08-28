@@ -96,7 +96,19 @@ export async function POST(req: NextRequest) {
     }
 
     const callSid = get('CallSid')
-    await db.from('calls').update({ recording_url: publicUrl, ...(callSid ? { twilio_call_sid: callSid } : {}) }).eq('id', rowId)
+    // duration_seconds from the <Dial> leg is unreliable for some answered
+    // inbound calls (a 2:56 recording logged as 0:02). The recording length is
+    // the real answered talk time, so adopt RecordingDuration when it's LONGER
+    // than what we already have — only ever correcting upward, never shrinking an
+    // already-correct value. This is what made the call card / player show 0:02
+    // for a 2:56 recording until playback loaded the real length.
+    const recDur = parseInt(get('RecordingDuration') || '0', 10) || 0
+    let durPatch: Record<string, number> = {}
+    if (recDur > 0) {
+      const { data: cur } = await db.from('calls').select('duration_seconds').eq('id', rowId).maybeSingle()
+      if (recDur > (cur?.duration_seconds || 0)) durPatch = { duration_seconds: recDur }
+    }
+    await db.from('calls').update({ recording_url: publicUrl, ...(callSid ? { twilio_call_sid: callSid } : {}), ...durPatch }).eq('id', rowId)
     // Make sure the thread has a card to display this recording/summary, even if
     // the browser never posted one. Idempotent — no-op if it already exists.
     await ensureCallCard(db, rowId)
