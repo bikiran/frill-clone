@@ -3,6 +3,7 @@ import { getUserRole, canEdit, canAccessBilling } from '@/lib/permissions'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
 import { logAiEvent } from '@/lib/ai-assistant/audit'
 import { mapWooStatus, mapWooPayment, statusMeta } from '@/lib/orders'
+import { WooCommerceService } from '@/lib/woocommerce-service'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI assistant — controlled tool layer.
@@ -128,6 +129,26 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'get_report', safety: 'read',
+    description: "Business performance for a period — order count, revenue, average order value, units, fulfilment rate, top products and channel split. Use for 'how did we do this week', 'sales this month', 'today's numbers'.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        range: { type: 'string', enum: ['today', 'yesterday', '7d', '30d', '90d', 'month', 'all'], description: 'defaults to 7d' },
+      },
+    },
+  },
+  {
+    name: 'check_stock', safety: 'read',
+    description: "Check a product's live stock level and price in the store (WooCommerce), by name or SKU.",
+    input_schema: { type: 'object', properties: { query: { type: 'string', description: 'product name or SKU' } }, required: ['query'] },
+  },
+  {
+    name: 'list_out_of_stock', safety: 'read',
+    description: "List items currently flagged out of stock (open stock alerts) across orders, optionally for one outlet.",
+    input_schema: { type: 'object', properties: { outletId: { type: 'string' }, limit: { type: 'number' } } },
+  },
+  {
     name: 'create_task', safety: 'immediate',
     description: 'Create a task. Reversible. Optionally due-dated, assigned to specific team members and/or an outlet, and linked to an order or conversation.',
     input_schema: {
@@ -182,6 +203,11 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       },
       required: ['taskId'],
     },
+  },
+  {
+    name: 'start_call', safety: 'immediate',
+    description: "Place an outbound call to a contact from the user's browser softphone. Use for 'call Lacey' / 'ring this customer'. Resolve the contact first; the dialer opens and rings them.",
+    input_schema: { type: 'object', properties: { contactId: { type: 'string' }, phone: { type: 'string' } } },
   },
   {
     name: 'send_message', safety: 'confirm',
@@ -258,6 +284,40 @@ const money = (n: any, ccy = 'AUD') => {
   const v = Number(n)
   if (!isFinite(v)) return ''
   try { return new Intl.NumberFormat('en-AU', { style: 'currency', currency: ccy || 'AUD' }).format(v) } catch { return `$${v.toFixed(2)}` }
+}
+
+// Melbourne-local calendar windows, so "today" means the business's today, not
+// UTC's. The offset is read at `now` (handles current DST); a boundary-day DST
+// edge is immaterial for a summary.
+const TZ = 'Australia/Melbourne'
+function tzOffsetMs(at: Date): number {
+  const utc = new Date(at.toLocaleString('en-US', { timeZone: 'UTC' }))
+  const loc = new Date(at.toLocaleString('en-US', { timeZone: TZ }))
+  return loc.getTime() - utc.getTime()
+}
+// Start of the local day, `daysAgo` days back, as a real UTC ISO instant.
+function localDayStartISO(daysAgo = 0): string {
+  const off = tzOffsetMs(new Date())
+  const local = new Date(Date.now() + off)
+  local.setUTCHours(0, 0, 0, 0)
+  local.setUTCDate(local.getUTCDate() - daysAgo)
+  return new Date(local.getTime() - off).toISOString()
+}
+// Resolve a report range keyword to an inclusive-start / exclusive-end window.
+function reportWindow(range: string): { start: string | null; end: string | null; label: string } {
+  const r = String(range || '7d')
+  const off = tzOffsetMs(new Date())
+  const startOfMonth = () => { const l = new Date(Date.now() + off); l.setUTCDate(1); l.setUTCHours(0, 0, 0, 0); return new Date(l.getTime() - off).toISOString() }
+  switch (r) {
+    case 'today': return { start: localDayStartISO(0), end: null, label: 'Today' }
+    case 'yesterday': return { start: localDayStartISO(1), end: localDayStartISO(0), label: 'Yesterday' }
+    case '30d': return { start: new Date(Date.now() - 30 * 864e5).toISOString(), end: null, label: 'Last 30 days' }
+    case '90d': return { start: new Date(Date.now() - 90 * 864e5).toISOString(), end: null, label: 'Last 90 days' }
+    case 'month': return { start: startOfMonth(), end: null, label: 'This month' }
+    case 'all': return { start: null, end: null, label: 'All time' }
+    case '7d':
+    default: return { start: new Date(Date.now() - 7 * 864e5).toISOString(), end: null, label: 'Last 7 days' }
+  }
 }
 
 // Resolve an order the user names — by our local id, or by the human order
@@ -434,6 +494,72 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
       })),
     }
   }
+
+  if (name === 'get_report') {
+    const win = reportWindow(args?.range || '7d')
+    let q = D.from('orders')
+      .select('status, total, item_count, sales_channel, primary_sku, order_date')
+      .eq('company_id', ctx.companyId)
+    if (win.start) q = q.gte('order_date', win.start)
+    if (win.end) q = q.lt('order_date', win.end)
+    const { data } = await q.limit(5000)
+    const rows = data || []
+    const isCancelled = (s: string) => ['cancelled', 'refunded'].includes(String(s))
+    const live = rows.filter((o: any) => !isCancelled(o.status))
+    const revenue = live.reduce((a: number, o: any) => a + (Number(o.total) || 0), 0)
+    const units = live.reduce((a: number, o: any) => a + (Number(o.item_count) || 0), 0)
+    const shipped = rows.filter((o: any) => o.status === 'shipped').length
+    const cancelled = rows.filter((o: any) => o.status === 'cancelled').length
+    const denom = rows.length - cancelled
+    const skuCount: Record<string, number> = {}
+    const chanCount: Record<string, number> = {}
+    for (const o of live) {
+      if (o.primary_sku) skuCount[o.primary_sku] = (skuCount[o.primary_sku] || 0) + 1
+      const ch = o.sales_channel || 'manual'; chanCount[ch] = (chanCount[ch] || 0) + 1
+    }
+    const top = (m: Record<string, number>) => Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => ({ key: k, count: v }))
+    return {
+      report: {
+        period: win.label,
+        orders: live.length,
+        revenue: money(revenue), aov: money(live.length ? revenue / live.length : 0), units,
+        shipped, cancelled, fulfilmentRate: denom > 0 ? `${Math.round((shipped / denom) * 100)}%` : 'n/a',
+        topProducts: top(skuCount), channels: top(chanCount),
+        note: rows.length >= 5000 ? 'Showing the most recent 5000 orders in range.' : undefined,
+      },
+    }
+  }
+  if (name === 'check_stock') {
+    const q = String(args?.query || '').trim()
+    if (!q) return { error: 'Give a product name or SKU.' }
+    const store = await activeWooStore(D, ctx.companyId)
+    if (!store?.store_url) return { error: 'No store is connected, so I can\'t check live stock.' }
+    try {
+      const woo = new WooCommerceService({ storeUrl: store.store_url, consumerKey: store.consumer_key, consumerSecret: store.consumer_secret, companyId: ctx.companyId })
+      const products = await woo.searchProducts(q, 8)
+      return {
+        products: products.map((p: any) => ({
+          name: p.name, sku: p.sku || null,
+          stockStatus: p.stock_status, stockQty: p.manage_stock ? p.stock_quantity : null,
+          price: money(p.price), hasVariations: p.has_variations,
+        })),
+      }
+    } catch (e: any) { return { error: e?.message || 'Could not reach the store.' } }
+  }
+  if (name === 'list_out_of_stock') {
+    let q = D.from('order_stock_alerts')
+      .select('product_name, sku, quantity, order_number, customer_name, store_location_id, updated_at')
+      .eq('company_id', ctx.companyId).eq('status', 'pending')
+    if (args?.outletId) q = q.eq('store_location_id', args.outletId)
+    const { data } = await q.order('updated_at', { ascending: false }).limit(Math.min(args?.limit || 25, 60))
+    return {
+      count: (data || []).length,
+      items: (data || []).map((r: any) => ({
+        product: r.product_name, sku: r.sku || null, qty: r.quantity,
+        order: r.order_number, customer: r.customer_name, flagged: fmtDate(r.updated_at),
+      })),
+    }
+  }
   return { error: `Unknown read tool: ${name}` }
 }
 
@@ -446,6 +572,9 @@ export type ActionResult = {
   // undo: with `restore` present the client updates the row back to those
   // values; without it, the client deletes the created row.
   undo?: { entityType: string; entityId: string; restore?: Record<string, any> } | null
+  // A directive for the client to run in the browser (e.g. open the softphone
+  // and dial). The server can't place a WebRTC call — the browser does.
+  clientAction?: { type: string; [k: string]: any } | null
 }
 
 // ── WRITE tools: execute a validated action. Used for 'immediate' inline and for
@@ -633,6 +762,21 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     const card = { kind: 'order', title: `Order ${order.order_number || ''} ${label}`.trim(), lines: [order.customer_name, money(order.total, order.currency)].filter(Boolean), href: '/admin/orders' }
     await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: name === 'cancel_order' ? 'Cancelled order' : 'Updated order status', tool: name, entityType: 'order', entityId: order.id, input: { orderNumber: order.order_number, status: wooStatus }, result: { ok: true } })
     return { ok: true, entityType: 'order', entityId: order.id, card, undo: null }
+  }
+
+  if (name === 'start_call') {
+    let contact: any = null
+    if (args?.contactId || ctx.contactId) {
+      const { data } = await D.from('contacts').select('id, name, phone').eq('company_id', ctx.companyId).eq('id', args?.contactId || ctx.contactId).maybeSingle()
+      contact = data
+    }
+    const phone = (contact?.phone || args?.phone || '').trim()
+    if (!phone) return { ok: false, error: 'I don\'t have a phone number to call — tell me who, or open their contact.' }
+    const name2 = contact?.name || 'Contact'
+    const card = { kind: 'call', title: `Calling ${name2}…`, lines: [phone], href: null }
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Started call', tool: name, entityType: 'call', entityId: contact?.id || null, input: { phone, contactId: contact?.id || null }, result: { dialed: true } })
+    // The browser places the WebRTC call — return a directive it will run.
+    return { ok: true, entityType: 'call', entityId: contact?.id || undefined, card, undo: null, clientAction: { type: 'dial', number: phone, name: name2, contactId: contact?.id || undefined } }
   }
 
   if (name === 'refund_order') {

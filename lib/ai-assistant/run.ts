@@ -34,6 +34,8 @@ export type AssistantResponse = {
   // Present when the model wants to run a 'confirm' tool. The client must show a
   // confirmation and POST to /api/ai/assistant/execute to actually run it.
   confirm?: { tool: string; args: any; preview: any } | null
+  // Directives for the browser to run (e.g. open the softphone and dial).
+  clientActions?: any[]
   error?: string
 }
 
@@ -80,7 +82,9 @@ WHAT YOU CAN DO
 - Tasks & reminders: create them, and update an existing one (mark done/reopen, reprioritise, change due date, reassign) — resolve it with search_tasks first.
 - Calendar: create events.
 - Orders: search and read them (status, payment, totals, line items). You can also change an order's status, cancel it, or refund it in the store — these are confirmed actions (see SAFETY).
-- Calls: find recent calls and read their AI summary, action items and sentiment.
+- Reports: get_report gives sales, order count, average order value, units, fulfilment rate and top products for a period (today, this week, this month, etc). Answer performance questions from it — never invent numbers.
+- Stock: check_stock reads a product's live stock and price from the store; list_out_of_stock shows items currently flagged out of stock.
+- Calls: find recent calls, read their AI summary/action items/sentiment, and place an outbound call to a contact (start_call opens the user's softphone and rings them).
 - Messaging: draft and send a message to a customer (confirmed).
 
 SAFETY
@@ -101,6 +105,7 @@ export async function runAssistant(opts: {
 }): Promise<AssistantResponse> {
   const { db, ctx, apiKey, history, message } = opts
   const cards: any[] = []
+  const clientActions: any[] = []
 
   // Prior turns as plain text, then the new instruction. Tool traffic lives only
   // inside this call — the client replays user/assistant text, never tool blocks.
@@ -134,7 +139,7 @@ export async function runAssistant(opts: {
 
       if (!toolUses.length) {
         // Model is done — a plain answer / question / confirmation of work.
-        return { text: text || 'Done.', cards, confirm: null }
+        return { text: text || 'Done.', cards, confirm: null, clientActions }
       }
 
       // Record the assistant turn (text + tool_use blocks) for the next round.
@@ -154,7 +159,7 @@ export async function runAssistant(opts: {
           }
           return {
             text: text || 'Ready to send — please review.',
-            cards,
+            cards, clientActions,
             confirm: { tool: tu.name, args: prev.preview.args || tu.input, preview: prev.preview },
           }
         }
@@ -168,6 +173,7 @@ export async function runAssistant(opts: {
         // 'immediate' — reversible internal write; do it now.
         const r = await executeAction(db, ctx, tu.name, tu.input)
         if (r.ok && r.card) cards.push({ ...r.card, undo: r.undo || null })
+        if (r.ok && r.clientAction) clientActions.push(r.clientAction)
         toolResults.push({
           type: 'tool_result', tool_use_id: tu.id,
           content: JSON.stringify(r.ok ? { ok: true, entityType: r.entityType, entityId: r.entityId } : { ok: false, error: r.error }),
@@ -180,8 +186,8 @@ export async function runAssistant(opts: {
     }
 
     // Ran out of steps — return whatever we did.
-    return { text: cards.length ? 'Done.' : "I couldn't complete that — try rephrasing.", cards, confirm: null }
+    return { text: cards.length ? 'Done.' : "I couldn't complete that — try rephrasing.", cards, confirm: null, clientActions }
   } catch (e: any) {
-    return { text: '', cards, error: e?.message || 'Assistant error' }
+    return { text: '', cards, clientActions, error: e?.message || 'Assistant error' }
   }
 }
