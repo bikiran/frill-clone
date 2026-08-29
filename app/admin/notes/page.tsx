@@ -621,6 +621,10 @@ export default function NotesPage() {
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                       {done}/{total}
                     </span>}
+                    {n.notebook && <span className="chip" style={{ background: '#f5f3ff', color: '#7c3aed' }} title={`Notebook: ${n.notebook}`}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                      {n.notebook}
+                    </span>}
                     {(n.tags || []).slice(0, 2).map(t => <span key={t} className="chip" style={{ background: '#f1f5f9', color: '#475569' }}>#{t}</span>)}
                     {n.shared_with_team && <span className="chip" style={{ background: '#ecfdf5', color: '#059669' }}>
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
