@@ -33,14 +33,23 @@ export async function POST(req: NextRequest) {
     const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     if (await isExternalSendBlocked(conv.company_id, db)) { logBlockedSend(conv.company_id, 'email', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
-    if (conv.channel !== 'email') {
-      return NextResponse.json({ error: 'This conversation is not an email thread' }, { status: 400 })
-    }
 
     // Recipient = the composer's To field, falling back to the contact's email.
     const { data: contact } = await db.from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
     const toEmail = (to && String(to).trim()) || contact?.email
-    if (!toEmail) return NextResponse.json({ error: 'No recipient for this email' }, { status: 400 })
+    // Email can be sent on ANY conversation that has a reachable email address —
+    // not just ones that STARTED as email. A widget/chat/SMS enquiry from someone
+    // whose contact carries an email (or with an explicit To in the composer)
+    // should be answerable by email, which starts an email thread. Only block when
+    // there's genuinely no recipient; a missing prior email just means no
+    // In-Reply-To header (a fresh standalone email), which the code below handles.
+    if (!toEmail) {
+      return NextResponse.json({
+        error: conv.channel === 'email'
+          ? 'No recipient for this email'
+          : 'This contact has no email address — add one to reply by email.',
+      }, { status: 400 })
+    }
     const ccEmail = cc && String(cc).trim() ? String(cc).trim() : null
     const bccEmail = bcc && String(bcc).trim() ? String(bcc).trim() : null
 
