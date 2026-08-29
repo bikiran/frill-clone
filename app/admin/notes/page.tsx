@@ -19,8 +19,9 @@ type Note = {
   shared_with_team?: boolean; created_by?: string; created_by_name?: string
   shared_members?: { id: string; name: string }[]; comments?: any[]; edit_log?: { name: string; email?: string; at: string }[]
   linked_tasks?: { id: string; title: string; done?: boolean }[]
+  notebook?: string | null
 }
-type ChecklistItem = { id: string; text: string; done: boolean }
+type ChecklistItem = { id: string; text: string; done: boolean; image?: string | null; due_date?: string | null; flagged?: boolean }
 
 const rid = () => Math.random().toString(36).slice(2, 9)
 const isAudio = (a: any) => a?.kind === 'audio' || (a?.type || '').startsWith('audio/')
@@ -54,6 +55,7 @@ const fmtAgo = (iso?: string) => {
 const toLocalInput = (iso?: string | null) => { if (!iso) return ''; const d = new Date(iso), p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}` }
 const fromLocalInput = (v: string) => v ? new Date(v).toISOString() : null
 const fmtReminder = (iso?: string | null) => iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''
+const fmtDue = (d?: string | null) => { if (!d) return ''; const dt = new Date(`${d}T00:00`); return isNaN(+dt) ? d : dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
 const presetIso = (days: number, h = 9) => { const d = new Date(); d.setDate(d.getDate() + days); d.setHours(h, 0, 0, 0); return d.toISOString() }
 
 export default function NotesPage() {
@@ -213,11 +215,38 @@ export default function NotesPage() {
         await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
           companyId, action: 'update', id: next.id, userId: uid, title: next.title, body: next.body,
           checklist: next.checklist, attachments: next.attachments, cover_image: next.cover_image ?? null,
-          allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned, shared_with_team: !!next.shared_with_team, shared_members: next.shared_members || [], linked_tasks: next.linked_tasks || [],
+          allow_public_edit: !!next.allow_public_edit, tags: next.tags || [], reminder_at: next.reminder_at ?? null, pinned: !!next.pinned, shared_with_team: !!next.shared_with_team, shared_members: next.shared_members || [], linked_tasks: next.linked_tasks || [], notebook: next.notebook ?? null,
         }) })
       } catch {} finally { setSaving(false); if (editSeqRef.current === mySeq) dirtyRef.current = false }
     }, 650)
   }
+
+  // ── Checklist item extras (photo / due date / flag) ───────────────────────
+  const patchCheck = (id: string, patch: Partial<ChecklistItem>) => {
+    if (!note) return
+    queueSave({ ...note, checklist: (note.checklist || []).map(x => x.id === id ? { ...x, ...patch } : x) })
+  }
+  const chkPhotoInput = useRef<HTMLInputElement | null>(null)
+  const chkPhotoFor = useRef<string | null>(null)
+  const [chkDateFor, setChkDateFor] = useState<string | null>(null)
+  const [chkUploading, setChkUploading] = useState<string | null>(null)
+  const pickCheckPhoto = (id: string) => { chkPhotoFor.current = id; chkPhotoInput.current?.click() }
+  const onCheckPhoto = async (files: FileList | null) => {
+    const id = chkPhotoFor.current; chkPhotoFor.current = null
+    const file = files?.[0]
+    if (!id || !file || !companyId) return
+    setChkUploading(id)
+    try {
+      const fd = new FormData(); fd.append('file', file); fd.append('companyId', companyId); fd.append('conversationId', 'notes')
+      const res = await fetch('/api/inbox/upload', { method: 'POST', body: fd })
+      const d = await res.json()
+      if (d?.url) patchCheck(id, { image: d.url })
+    } catch {} finally { setChkUploading(null) }
+  }
+
+  // ── Notebooks ─────────────────────────────────────────────────────────────
+  const [nbMenu, setNbMenu] = useState(false)
+  const [nbNew, setNbNew] = useState('')
 
   // ── Live sync (web ⇄ mobile) ──────────────────────────────────────────────
   // We watch the `notes` table over Supabase realtime (postgres_changes) — the
@@ -433,6 +462,11 @@ export default function NotesPage() {
         .nchk-del { opacity: 0; background: none; border: none; color: var(--slate); cursor: pointer; font-size: 20px; line-height: 1; padding: 2px 6px; border-radius: 7px; transition: opacity .12s, background .12s, color .12s; }
         .nchk-row:hover .nchk-del { opacity: 1; }
         .nchk-del:hover { background: var(--peach); color: var(--coral); }
+        .nchk-act { flex-shrink: 0; width: 28px; height: 28px; border-radius: 7px; border: none; background: none; color: var(--slate); opacity: 0.4; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; transition: opacity .12s, background .12s, color .12s; }
+        .nchk-row:hover .nchk-act { opacity: 0.72; }
+        .nchk-act:hover { background: var(--canvas); opacity: 1; }
+        .nchk-act[data-on="true"] { color: var(--coral); opacity: 1; }
+        .nchk-act:disabled { opacity: 0.3; cursor: default; }
         @media (max-width: 860px) {
           .ne-inner { padding: 16px 16px 32px; }
           .ne-meta { padding: 10px 14px 4px; }
@@ -680,8 +714,46 @@ export default function NotesPage() {
               {/* Scroll: title, cover, paragraph (and the rest) */}
               <div className="ne-scroll">
                 <div className="ne-inner">
+              {/* Add to a notebook — file this note under a named notebook, like
+                  the mobile app. The picker lists notebooks already in use. */}
+              <div style={{ position: 'relative', marginBottom: 10 }}>
+                <button type="button" onClick={() => setNbMenu(v => !v)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 10px', borderRadius: 9, border: '1px solid var(--border)', background: note.notebook ? 'var(--peach)' : '#fff', color: note.notebook ? 'var(--coral)' : 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+                  {note.notebook || 'Add to a notebook'}
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+                </button>
+                {nbMenu && (() => {
+                  const names = Array.from(new Set(list.map(n => (n as any).notebook).filter(Boolean))).sort() as string[]
+                  const setNb = (nb: string | null) => { setNbMenu(false); setNbNew(''); queueSave({ ...note, notebook: nb }) }
+                  return (
+                    <>
+                      <div onClick={() => setNbMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                      <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 41, minWidth: 240, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 16px 40px rgba(0,0,0,0.14)', padding: 6, maxHeight: 320, overflowY: 'auto' }}>
+                        <button type="button" onClick={() => setNb(null)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: !note.notebook ? 'var(--peach)' : 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, color: 'var(--slate)' }}>No notebook</button>
+                        {names.map(nb => (
+                          <button key={nb} type="button" onClick={() => setNb(nb)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: note.notebook === nb ? 'var(--peach)' : 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: note.notebook === nb ? 'var(--coral)' : 'var(--ink)' }}>
+                            {nb}{note.notebook === nb && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft: 'auto' }}><polyline points="20 6 9 17 4 12" /></svg>}
+                          </button>
+                        ))}
+                        <div style={{ display: 'flex', gap: 6, padding: 6, borderTop: '1px solid var(--border)', marginTop: 4 }}>
+                          <input value={nbNew} onChange={e => setNbNew(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && nbNew.trim()) setNb(nbNew.trim()) }}
+                            placeholder="New notebook…" style={{ flex: 1, minWidth: 0, border: '1px solid var(--border)', borderRadius: 8, padding: '7px 9px', fontSize: 13, outline: 'none' }} />
+                          <button type="button" disabled={!nbNew.trim()} onClick={() => nbNew.trim() && setNb(nbNew.trim())}
+                            style={{ border: 'none', borderRadius: 8, padding: '0 12px', background: nbNew.trim() ? 'var(--coral)' : 'var(--border)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: nbNew.trim() ? 'pointer' : 'default' }}>Add</button>
+                        </div>
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+
               <input value={note.title} onChange={e => queueSave({ ...note, title: e.target.value })} placeholder="Untitled"
                 style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', fontSize: 34, fontWeight: 800, color: 'var(--ink)', padding: 0, marginBottom: 14, lineHeight: 1.15 }} />
+              {/* Single hidden input reused for any checklist-item photo. */}
+              <input ref={chkPhotoInput} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { onCheckPhoto(e.target.files); e.currentTarget.value = '' }} />
 
               {note.cover_image && (
                 <div style={{ position: 'relative', borderRadius: 14, overflow: 'hidden', marginBottom: 18, background: '#000', maxHeight: 320 }}>
@@ -737,8 +809,51 @@ export default function NotesPage() {
                       </button>
                       <input className="nchk-input" value={c.text} onChange={e => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, text: e.target.value } : x) })}
                         placeholder="List item" style={{ color: c.done ? 'var(--slate)' : 'var(--ink)', textDecoration: c.done ? 'line-through' : 'none' }} />
+                      {/* Per-item actions: photo, due date, flag — parity with mobile. */}
+                      <button className="nchk-act" data-on={!!c.image} title={chkUploading === c.id ? 'Uploading…' : c.image ? 'Replace photo' : 'Add photo'} disabled={chkUploading === c.id}
+                        onClick={() => pickCheckPhoto(c.id)}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                      </button>
+                      <button className="nchk-act" data-on={!!c.due_date} title={c.due_date ? `Due ${fmtDue(c.due_date)}` : 'Add due date'}
+                        onClick={() => setChkDateFor(v => v === c.id ? null : c.id)}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                      </button>
+                      <button className="nchk-act" data-on={!!c.flagged} title={c.flagged ? 'Remove flag' : 'Flag'}
+                        onClick={() => patchCheck(c.id, { flagged: !c.flagged })}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill={c.flagged ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                      </button>
                       <button className="nchk-del" onClick={() => queueSave({ ...note, checklist: note.checklist.filter(x => x.id !== c.id) })} title="Remove">×</button>
                     </div>
+                    {/* Below-row extras: due chip, inline date picker, photo thumb. */}
+                    {(c.due_date || chkDateFor === c.id || c.image) && (
+                      <div style={{ paddingLeft: 46, marginTop: 1, marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 7 }}>
+                        {(c.due_date || chkDateFor === c.id) && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            {c.due_date && !chkDateFor && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 9px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 700 }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                                Due {fmtDue(c.due_date)}
+                              </span>
+                            )}
+                            {chkDateFor === c.id && (
+                              <>
+                                <input type="date" autoFocus value={c.due_date || ''} onChange={e => patchCheck(c.id, { due_date: e.target.value || null })}
+                                  style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '5px 8px', fontSize: 13, outline: 'none' }} />
+                                {c.due_date && <button onClick={() => { patchCheck(c.id, { due_date: null }); setChkDateFor(null) }} style={{ border: 'none', background: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>Clear</button>}
+                                <button onClick={() => setChkDateFor(null)} style={{ border: 'none', background: 'none', color: 'var(--coral)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>Done</button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                        {c.image && (
+                          <div style={{ position: 'relative', width: 'fit-content' }}>
+                            <a href={c.image} target="_blank" rel="noopener"><img src={c.image} alt="" style={{ maxHeight: 120, maxWidth: 220, borderRadius: 10, border: '1px solid var(--border)', display: 'block', objectFit: 'cover' }} /></a>
+                            <button onClick={() => patchCheck(c.id, { image: null })} title="Remove photo"
+                              style={{ position: 'absolute', top: -7, right: -7, width: 22, height: 22, borderRadius: '50%', border: '1.5px solid #fff', background: '#111827', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
                 {dragCheck && dragCheck.to === (note.checklist || []).length && dragCheck.from !== (note.checklist || []).length - 1 && (

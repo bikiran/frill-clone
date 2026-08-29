@@ -66,12 +66,12 @@ export async function POST(req: NextRequest) {
 
     if (action === 'update') {
       const patch: any = { updated_at: new Date().toISOString() }
-      for (const f of ['title', 'body', 'checklist', 'attachments', 'cover_image', 'allow_public_edit', 'tags', 'reminder_at', 'pinned', 'shared_with_team', 'shared_members', 'comments', 'linked_tasks']) if (body[f] !== undefined) patch[f] = body[f]
+      for (const f of ['title', 'body', 'checklist', 'attachments', 'cover_image', 'allow_public_edit', 'tags', 'reminder_at', 'pinned', 'shared_with_team', 'shared_members', 'comments', 'linked_tasks', 'notebook']) if (body[f] !== undefined) patch[f] = body[f]
       let { error } = await db.from('notes').update(patch).eq('id', body.id).eq('company_id', companyId)
       // If a newer column (V234–V240) isn't migrated yet, drop those keys and
       // retry so the core fields still save.
       if (error && missing(error.message)) {
-        for (const f of ['tags', 'reminder_at', 'pinned', 'shared_with_team', 'shared_members', 'comments', 'linked_tasks']) delete patch[f]
+        for (const f of ['tags', 'reminder_at', 'pinned', 'shared_with_team', 'shared_members', 'comments', 'linked_tasks', 'notebook']) delete patch[f]
         const retry = await db.from('notes').update(patch).eq('id', body.id).eq('company_id', companyId)
         error = retry.error
       }
