@@ -81,7 +81,7 @@ export default function NotesPage() {
   const [tagAdding, setTagAdding] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<{ kind: 'all' | 'pinned' | 'shared' | 'reminder' | 'tag'; tag?: string }>({ kind: 'all' })
+  const [filter, setFilter] = useState<{ kind: 'all' | 'pinned' | 'shared' | 'reminder' | 'tag' | 'notebook'; tag?: string; notebook?: string }>({ kind: 'all' })
   const [filterOpen, setFilterOpen] = useState(false)
   const [taskPicker, setTaskPicker] = useState(false)
   const [taskList, setTaskList] = useState<{ id: string; title: string; done?: boolean }[]>([])
@@ -418,17 +418,19 @@ export default function NotesPage() {
   const shown = tab === 'trash' ? trashList : tab === 'reminders' ? reminders : list
   // Search + filter over the current tab's rows.
   const allTags = Array.from(new Set(list.flatMap(n => n.tags || []))).sort()
+  const allNotebooks = Array.from(new Set(list.map(n => n.notebook).filter(Boolean))).sort() as string[]
   const q = search.trim().toLowerCase()
   const filterActive = !!q || filter.kind !== 'all'
   const visibleRows = shown.filter(n => {
-    if (q) { const hay = `${n.title || ''} ${plainText(n.body || '')} ${(n.tags || []).join(' ')}`.toLowerCase(); if (!hay.includes(q)) return false }
+    if (q) { const hay = `${n.title || ''} ${plainText(n.body || '')} ${(n.tags || []).join(' ')} ${n.notebook || ''}`.toLowerCase(); if (!hay.includes(q)) return false }
     if (filter.kind === 'pinned' && !n.pinned) return false
     if (filter.kind === 'shared' && !(n.shared_with_team || (n.shared_members || []).length)) return false
     if (filter.kind === 'reminder' && !n.reminder_at) return false
     if (filter.kind === 'tag' && !(n.tags || []).includes(filter.tag as string)) return false
+    if (filter.kind === 'notebook' && n.notebook !== filter.notebook) return false
     return true
   })
-  const filterLabel = filter.kind === 'all' ? 'All' : filter.kind === 'pinned' ? 'Pinned' : filter.kind === 'shared' ? 'Shared' : filter.kind === 'reminder' ? 'Reminder' : `#${filter.tag}`
+  const filterLabel = filter.kind === 'all' ? 'All' : filter.kind === 'pinned' ? 'Pinned' : filter.kind === 'shared' ? 'Shared' : filter.kind === 'reminder' ? 'Reminder' : filter.kind === 'notebook' ? (filter.notebook as string) : `#${filter.tag}`
   const media = note ? (note.attachments || []).filter(a => !isAudio(a)) : []
   const audios = note ? (note.attachments || []).filter(isAudio) : []
   const setAllAttachments = (next: any[]) => note && queueSave({ ...note, attachments: next })
@@ -549,6 +551,14 @@ export default function NotesPage() {
                   <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 190, maxHeight: 320, overflowY: 'auto' }}>
                     {([['all', 'All notes'], ['pinned', 'Pinned'], ['shared', 'Shared with team'], ['reminder', 'Has reminder']] as const).map(([k, label]) => (
                       <button key={k} style={{ ...menuItem, ...(filter.kind === k ? { color: 'var(--coral)', fontWeight: 700 } : {}) }} onClick={() => { setFilter({ kind: k }); setFilterOpen(false) }}>{label}</button>
+                    ))}
+                    {allNotebooks.length > 0 && <div style={{ borderTop: '1px solid var(--border)', margin: '5px 0' }} />}
+                    {allNotebooks.length > 0 && <p style={{ margin: '4px 10px 4px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Notebooks</p>}
+                    {allNotebooks.map(nb => (
+                      <button key={nb} style={{ ...menuItem, display: 'flex', alignItems: 'center', gap: 7, ...(filter.kind === 'notebook' && filter.notebook === nb ? { color: 'var(--coral)', fontWeight: 700 } : {}) }} onClick={() => { setFilter({ kind: 'notebook', notebook: nb }); setFilterOpen(false) }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nb}</span>
+                      </button>
                     ))}
                     {allTags.length > 0 && <div style={{ borderTop: '1px solid var(--border)', margin: '5px 0' }} />}
                     {allTags.length > 0 && <p style={{ margin: '4px 10px 4px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Tags</p>}
