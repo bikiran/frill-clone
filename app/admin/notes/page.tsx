@@ -12,6 +12,7 @@ import AudioDock from '@/components/AudioDock'
 import VoiceBlocks from '@/components/VoiceBlocks'
 import NoteComments from '@/components/NoteComments'
 import ChecklistProductPicker, { type PickerProduct } from '@/components/ChecklistProductPicker'
+import { notebookOf, visibleTags, withNotebook, listNotebooks } from '@/lib/notebooks'
 
 type Note = {
   id: string; title: string; body: string; checklist: ChecklistItem[]; attachments: any[]
@@ -22,7 +23,9 @@ type Note = {
   linked_tasks?: { id: string; title: string; done?: boolean }[]
   notebook?: string | null
 }
-type ChecklistItem = { id: string; text: string; done: boolean; image?: string | null; due_date?: string | null; flagged?: boolean; quantity?: number; sku?: string | null; product_id?: any; price?: string | null }
+// Field names mirror colvy-mobile (lib/notes.ts NoteChecklistItem) so items
+// sync both ways: due, qty, productId, image, sku, price, flagged.
+type ChecklistItem = { id: string; text: string; done: boolean; image?: string | null; due?: string | null; flagged?: boolean; qty?: number; sku?: string | null; productId?: any; price?: string | null }
 
 const rid = () => Math.random().toString(36).slice(2, 9)
 const isAudio = (a: any) => a?.kind === 'audio' || (a?.type || '').startsWith('audio/')
@@ -56,7 +59,11 @@ const fmtAgo = (iso?: string) => {
 const toLocalInput = (iso?: string | null) => { if (!iso) return ''; const d = new Date(iso), p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}` }
 const fromLocalInput = (v: string) => v ? new Date(v).toISOString() : null
 const fmtReminder = (iso?: string | null) => iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''
-const fmtDue = (d?: string | null) => { if (!d) return ''; const dt = new Date(`${d}T00:00`); return isNaN(+dt) ? d : dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
+// Checklist item due dates are stored as a full ISO timestamp to match mobile
+// (colvy-mobile stores end-of-day ISO). Tolerate a bare YYYY-MM-DD too.
+const fmtDue = (d?: string | null) => { if (!d) return ''; const dt = new Date(d); return isNaN(+dt) ? String(d) : dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
+const dueInputValue = (d?: string | null) => { if (!d) return ''; const dt = new Date(d); if (isNaN(+dt)) return ''; const p = (n: number) => String(n).padStart(2, '0'); return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}` }
+const dueFromInput = (v: string) => v ? new Date(`${v}T23:59:00`).toISOString() : null
 const presetIso = (days: number, h = 9) => { const d = new Date(); d.setDate(d.getDate() + days); d.setHours(h, 0, 0, 0); return d.toISOString() }
 
 export default function NotesPage() {
@@ -250,11 +257,11 @@ export default function NotesPage() {
   const addProductToChecklist = (p: PickerProduct) => {
     if (!note) return
     const list = note.checklist || []
-    const existing = list.find(x => x.product_id != null && String(x.product_id) === String(p.id))
+    const existing = list.find(x => x.productId != null && String(x.productId) === String(p.id))
     if (existing) {
-      queueSave({ ...note, checklist: list.map(x => x === existing ? { ...x, quantity: (x.quantity || 1) + 1 } : x) })
+      queueSave({ ...note, checklist: list.map(x => x === existing ? { ...x, qty: (x.qty || 1) + 1 } : x) })
     } else {
-      queueSave({ ...note, checklist: [...list, { id: rid(), text: p.name, done: false, image: p.image || null, quantity: 1, sku: p.sku || null, product_id: p.id, price: p.price ?? null }] })
+      queueSave({ ...note, checklist: [...list, { id: rid(), text: p.name, done: false, image: p.image || null, qty: 1, sku: p.sku || null, productId: p.id, price: p.price ?? null }] })
     }
   }
 
@@ -431,17 +438,17 @@ export default function NotesPage() {
   const reminders = list.filter(n => n.reminder_at).sort((a, b) => new Date(a.reminder_at!).getTime() - new Date(b.reminder_at!).getTime())
   const shown = tab === 'trash' ? trashList : tab === 'reminders' ? reminders : list
   // Search + filter over the current tab's rows.
-  const allTags = Array.from(new Set(list.flatMap(n => n.tags || []))).sort()
-  const allNotebooks = Array.from(new Set(list.map(n => n.notebook).filter(Boolean))).sort() as string[]
+  const allTags = Array.from(new Set(list.flatMap(n => visibleTags(n.tags)))).sort()
+  const allNotebooks = listNotebooks(list)
   const q = search.trim().toLowerCase()
   const filterActive = !!q || filter.kind !== 'all'
   const visibleRows = shown.filter(n => {
-    if (q) { const hay = `${n.title || ''} ${plainText(n.body || '')} ${(n.tags || []).join(' ')} ${n.notebook || ''}`.toLowerCase(); if (!hay.includes(q)) return false }
+    if (q) { const hay = `${n.title || ''} ${plainText(n.body || '')} ${visibleTags(n.tags).join(' ')} ${notebookOf(n) || ''}`.toLowerCase(); if (!hay.includes(q)) return false }
     if (filter.kind === 'pinned' && !n.pinned) return false
     if (filter.kind === 'shared' && !(n.shared_with_team || (n.shared_members || []).length)) return false
     if (filter.kind === 'reminder' && !n.reminder_at) return false
     if (filter.kind === 'tag' && !(n.tags || []).includes(filter.tag as string)) return false
-    if (filter.kind === 'notebook' && n.notebook !== filter.notebook) return false
+    if (filter.kind === 'notebook' && notebookOf(n) !== filter.notebook) return false
     return true
   })
   const filterLabel = filter.kind === 'all' ? 'All' : filter.kind === 'pinned' ? 'Pinned' : filter.kind === 'shared' ? 'Shared' : filter.kind === 'reminder' ? 'Reminder' : filter.kind === 'notebook' ? (filter.notebook as string) : `#${filter.tag}`
@@ -639,11 +646,11 @@ export default function NotesPage() {
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                       {done}/{total}
                     </span>}
-                    {n.notebook && <span className="chip" style={{ background: '#f5f3ff', color: '#7c3aed' }} title={`Notebook: ${n.notebook}`}>
+                    {(() => { const nb = notebookOf(n); return nb ? <span className="chip" style={{ background: '#f5f3ff', color: '#7c3aed' }} title={`Notebook: ${nb}`}>
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                      {n.notebook}
-                    </span>}
-                    {(n.tags || []).slice(0, 2).map(t => <span key={t} className="chip" style={{ background: '#f1f5f9', color: '#475569' }}>#{t}</span>)}
+                      {nb}
+                    </span> : null })()}
+                    {visibleTags(n.tags).slice(0, 2).map(t => <span key={t} className="chip" style={{ background: '#f1f5f9', color: '#475569' }}>#{t}</span>)}
                     {n.shared_with_team && <span className="chip" style={{ background: '#ecfdf5', color: '#059669' }}>
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                       {n.created_by && n.created_by !== uid ? (n.created_by_name || 'Team') : 'Team'}
@@ -749,25 +756,30 @@ export default function NotesPage() {
               {/* Add to a notebook — file this note under a named notebook, like
                   the mobile app. The picker lists notebooks already in use. */}
               <div style={{ position: 'relative', marginBottom: 10 }}>
+                {(() => { const curNb = notebookOf(note); return (
                 <button type="button" onClick={() => setNbMenu(v => !v)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 10px', borderRadius: 9, border: '1px solid var(--border)', background: note.notebook ? 'var(--peach)' : '#fff', color: note.notebook ? 'var(--coral)' : 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 10px', borderRadius: 9, border: '1px solid var(--border)', background: curNb ? 'var(--peach)' : '#fff', color: curNb ? 'var(--coral)' : 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
-                  {note.notebook || 'Add to a notebook'}
+                  {curNb || 'Add to a notebook'}
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
                 </button>
+                ) })()}
                 {nbMenu && (() => {
-                  const names = Array.from(new Set(list.map(n => (n as any).notebook).filter(Boolean))).sort() as string[]
-                  const setNb = (nb: string | null) => { setNbMenu(false); setNbNew(''); queueSave({ ...note, notebook: nb }) }
+                  const curNb = notebookOf(note)
+                  const names = listNotebooks(list)
+                  // Store the notebook as a shared `nb:` tag (mobile's convention) and
+                  // clear the legacy column, so a notebook set on either app matches.
+                  const setNb = (nb: string | null) => { setNbMenu(false); setNbNew(''); queueSave({ ...note, tags: withNotebook(note.tags, nb), notebook: null }) }
                   return (
                     <>
                       <div onClick={() => setNbMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
                       <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 41, minWidth: 240, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 16px 40px rgba(0,0,0,0.14)', padding: 6, maxHeight: 320, overflowY: 'auto' }}>
                         <button type="button" onClick={() => setNb(null)}
-                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: !note.notebook ? 'var(--peach)' : 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, color: 'var(--slate)' }}>No notebook</button>
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: !curNb ? 'var(--peach)' : 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, color: 'var(--slate)' }}>No notebook</button>
                         {names.map(nb => (
                           <button key={nb} type="button" onClick={() => setNb(nb)}
-                            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: note.notebook === nb ? 'var(--peach)' : 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: note.notebook === nb ? 'var(--coral)' : 'var(--ink)' }}>
-                            {nb}{note.notebook === nb && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft: 'auto' }}><polyline points="20 6 9 17 4 12" /></svg>}
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: curNb === nb ? 'var(--peach)' : 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: curNb === nb ? 'var(--coral)' : 'var(--ink)' }}>
+                            {nb}{curNb === nb && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft: 'auto' }}><polyline points="20 6 9 17 4 12" /></svg>}
                           </button>
                         ))}
                         <div style={{ display: 'flex', gap: 6, padding: 6, borderTop: '1px solid var(--border)', marginTop: 4 }}>
@@ -840,25 +852,25 @@ export default function NotesPage() {
                         {c.done && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
                       </button>
                       {/* Product items show a thumbnail inline, like the mobile app. */}
-                      {c.product_id != null && c.image && <img src={c.image} alt="" style={{ width: 30, height: 30, borderRadius: 7, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} />}
+                      {c.productId != null && c.image && <img src={c.image} alt="" style={{ width: 30, height: 30, borderRadius: 7, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} />}
                       <input className="nchk-input" value={c.text} onChange={e => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, text: e.target.value } : x) })}
                         placeholder="List item" style={{ color: c.done ? 'var(--slate)' : 'var(--ink)', textDecoration: c.done ? 'line-through' : 'none' }} />
                       {/* Quantity stepper for product items. */}
-                      {c.product_id != null && (
+                      {c.productId != null && (
                         <span className="nchk-qty">
-                          <button type="button" title="Decrease" onClick={() => patchCheck(c.id, { quantity: Math.max(1, (c.quantity || 1) - 1) })}>−</button>
-                          <span className="nchk-qty-n">{c.quantity || 1}</span>
-                          <button type="button" title="Increase" onClick={() => patchCheck(c.id, { quantity: (c.quantity || 1) + 1 })}>+</button>
+                          <button type="button" title="Decrease" onClick={() => patchCheck(c.id, { qty: Math.max(1, (c.qty || 1) - 1) })}>−</button>
+                          <span className="nchk-qty-n">{c.qty || 1}</span>
+                          <button type="button" title="Increase" onClick={() => patchCheck(c.id, { qty: (c.qty || 1) + 1 })}>+</button>
                         </span>
                       )}
                       {/* Per-item actions: photo, due date, flag — parity with mobile. Product items already carry a photo. */}
-                      {c.product_id == null && (
+                      {c.productId == null && (
                         <button className="nchk-act" data-on={!!c.image} title={chkUploading === c.id ? 'Uploading…' : c.image ? 'Replace photo' : 'Add photo'} disabled={chkUploading === c.id}
                           onClick={() => pickCheckPhoto(c.id)}>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                         </button>
                       )}
-                      <button className="nchk-act" data-on={!!c.due_date} title={c.due_date ? `Due ${fmtDue(c.due_date)}` : 'Add due date'}
+                      <button className="nchk-act" data-on={!!c.due} title={c.due ? `Due ${fmtDue(c.due)}` : 'Add due date'}
                         onClick={() => setChkDateFor(v => v === c.id ? null : c.id)}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                       </button>
@@ -869,27 +881,27 @@ export default function NotesPage() {
                       <button className="nchk-del" onClick={() => queueSave({ ...note, checklist: note.checklist.filter(x => x.id !== c.id) })} title="Remove">×</button>
                     </div>
                     {/* Below-row extras: due chip, inline date picker, manual photo. */}
-                    {(c.due_date || chkDateFor === c.id || (c.image && c.product_id == null)) && (
+                    {(c.due || chkDateFor === c.id || (c.image && c.productId == null)) && (
                       <div style={{ paddingLeft: 46, marginTop: 1, marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 7 }}>
-                        {(c.due_date || chkDateFor === c.id) && (
+                        {(c.due || chkDateFor === c.id) && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            {c.due_date && !chkDateFor && (
+                            {c.due && !chkDateFor && (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 9px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 700 }}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                                Due {fmtDue(c.due_date)}
+                                Due {fmtDue(c.due)}
                               </span>
                             )}
                             {chkDateFor === c.id && (
                               <>
-                                <input type="date" autoFocus value={c.due_date || ''} onChange={e => patchCheck(c.id, { due_date: e.target.value || null })}
+                                <input type="date" autoFocus value={dueInputValue(c.due)} onChange={e => patchCheck(c.id, { due: dueFromInput(e.target.value) })}
                                   style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '5px 8px', fontSize: 13, outline: 'none' }} />
-                                {c.due_date && <button onClick={() => { patchCheck(c.id, { due_date: null }); setChkDateFor(null) }} style={{ border: 'none', background: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>Clear</button>}
+                                {c.due && <button onClick={() => { patchCheck(c.id, { due: null }); setChkDateFor(null) }} style={{ border: 'none', background: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>Clear</button>}
                                 <button onClick={() => setChkDateFor(null)} style={{ border: 'none', background: 'none', color: 'var(--coral)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>Done</button>
                               </>
                             )}
                           </div>
                         )}
-                        {c.image && c.product_id == null && (
+                        {c.image && c.productId == null && (
                           <div style={{ position: 'relative', width: 'fit-content' }}>
                             <a href={c.image} target="_blank" rel="noopener"><img src={c.image} alt="" style={{ maxHeight: 120, maxWidth: 220, borderRadius: 10, border: '1px solid var(--border)', display: 'block', objectFit: 'cover' }} /></a>
                             <button onClick={() => patchCheck(c.id, { image: null })} title="Remove photo"
@@ -920,7 +932,7 @@ export default function NotesPage() {
                 companyId={companyId}
                 open={prodPicker}
                 onClose={() => setProdPicker(false)}
-                addedIds={new Set((note.checklist || []).filter(c => c.product_id != null).map(c => String(c.product_id)))}
+                addedIds={new Set((note.checklist || []).filter(c => c.productId != null).map(c => String(c.productId)))}
                 onAdd={addProductToChecklist}
               />
 
@@ -1047,7 +1059,7 @@ export default function NotesPage() {
                 </div>
 
                 {/* Tags */}
-                {(note.tags || []).map(t => (
+                {visibleTags(note.tags).map(t => (
                   <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 700, padding: '6px 11px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)' }}>
                     #{t}
                     <button onClick={() => queueSave({ ...note, tags: (note.tags || []).filter(x => x !== t) })} style={{ background: 'none', border: 'none', color: 'var(--coral)', cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1 }}>×</button>
