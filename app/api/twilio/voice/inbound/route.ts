@@ -197,6 +197,11 @@ export async function POST(req: NextRequest) {
         `<Client statusCallback="${xmlEscape(childCb)}" statusCallbackEvent="initiated ringing answered" statusCallbackMethod="POST">` +
           `<Identity>${xmlEscape(id)}</Identity>` +
           `<Parameter name="callRowId" value="${xmlEscape(callRowId || '')}"/>` +
+          // The agent's Voice-SDK identity (u_<userId>) is company-agnostic, so a
+          // teammate in several workspaces gets calls for all of them at one
+          // identity. Tag which workspace this call belongs to so the mobile app
+          // can switch into the right one before ringing (multi-workspace routing).
+          `<Parameter name="companyId" value="${xmlEscape(companyId)}"/>` +
         `</Client>`
       )
     }).join('')
