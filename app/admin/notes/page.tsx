@@ -11,6 +11,7 @@ import VoiceRecorder from '@/components/VoiceRecorder'
 import AudioDock from '@/components/AudioDock'
 import VoiceBlocks from '@/components/VoiceBlocks'
 import NoteComments from '@/components/NoteComments'
+import ChecklistProductPicker, { type PickerProduct } from '@/components/ChecklistProductPicker'
 
 type Note = {
   id: string; title: string; body: string; checklist: ChecklistItem[]; attachments: any[]
@@ -21,7 +22,7 @@ type Note = {
   linked_tasks?: { id: string; title: string; done?: boolean }[]
   notebook?: string | null
 }
-type ChecklistItem = { id: string; text: string; done: boolean; image?: string | null; due_date?: string | null; flagged?: boolean }
+type ChecklistItem = { id: string; text: string; done: boolean; image?: string | null; due_date?: string | null; flagged?: boolean; quantity?: number; sku?: string | null; product_id?: any; price?: string | null }
 
 const rid = () => Math.random().toString(36).slice(2, 9)
 const isAudio = (a: any) => a?.kind === 'audio' || (a?.type || '').startsWith('audio/')
@@ -242,6 +243,19 @@ export default function NotesPage() {
       const d = await res.json()
       if (d?.url) patchCheck(id, { image: d.url })
     } catch {} finally { setChkUploading(null) }
+  }
+
+  // ── Add products to the checklist (search / scan) ─────────────────────────
+  const [prodPicker, setProdPicker] = useState(false)
+  const addProductToChecklist = (p: PickerProduct) => {
+    if (!note) return
+    const list = note.checklist || []
+    const existing = list.find(x => x.product_id != null && String(x.product_id) === String(p.id))
+    if (existing) {
+      queueSave({ ...note, checklist: list.map(x => x === existing ? { ...x, quantity: (x.quantity || 1) + 1 } : x) })
+    } else {
+      queueSave({ ...note, checklist: [...list, { id: rid(), text: p.name, done: false, image: p.image || null, quantity: 1, sku: p.sku || null, product_id: p.id, price: p.price ?? null }] })
+    }
   }
 
   // ── Notebooks ─────────────────────────────────────────────────────────────
@@ -469,6 +483,10 @@ export default function NotesPage() {
         .nchk-act:hover { background: var(--canvas); opacity: 1; }
         .nchk-act[data-on="true"] { color: var(--coral); opacity: 1; }
         .nchk-act:disabled { opacity: 0.3; cursor: default; }
+        .nchk-qty { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--border); border-radius: 9px; padding: 1px; background: #fff; }
+        .nchk-qty button { width: 26px; height: 26px; border: none; background: none; color: var(--slate); font-size: 17px; line-height: 1; cursor: pointer; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; }
+        .nchk-qty button:hover { background: var(--canvas); color: var(--coral); }
+        .nchk-qty-n { min-width: 22px; text-align: center; font-size: 13.5px; font-weight: 700; color: var(--ink); }
         @media (max-width: 860px) {
           .ne-inner { padding: 16px 16px 32px; }
           .ne-meta { padding: 10px 14px 4px; }
@@ -821,13 +839,25 @@ export default function NotesPage() {
                         onClick={() => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, done: !x.done } : x) })}>
                         {c.done && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
                       </button>
+                      {/* Product items show a thumbnail inline, like the mobile app. */}
+                      {c.product_id != null && c.image && <img src={c.image} alt="" style={{ width: 30, height: 30, borderRadius: 7, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} />}
                       <input className="nchk-input" value={c.text} onChange={e => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, text: e.target.value } : x) })}
                         placeholder="List item" style={{ color: c.done ? 'var(--slate)' : 'var(--ink)', textDecoration: c.done ? 'line-through' : 'none' }} />
-                      {/* Per-item actions: photo, due date, flag — parity with mobile. */}
-                      <button className="nchk-act" data-on={!!c.image} title={chkUploading === c.id ? 'Uploading…' : c.image ? 'Replace photo' : 'Add photo'} disabled={chkUploading === c.id}
-                        onClick={() => pickCheckPhoto(c.id)}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                      </button>
+                      {/* Quantity stepper for product items. */}
+                      {c.product_id != null && (
+                        <span className="nchk-qty">
+                          <button type="button" title="Decrease" onClick={() => patchCheck(c.id, { quantity: Math.max(1, (c.quantity || 1) - 1) })}>−</button>
+                          <span className="nchk-qty-n">{c.quantity || 1}</span>
+                          <button type="button" title="Increase" onClick={() => patchCheck(c.id, { quantity: (c.quantity || 1) + 1 })}>+</button>
+                        </span>
+                      )}
+                      {/* Per-item actions: photo, due date, flag — parity with mobile. Product items already carry a photo. */}
+                      {c.product_id == null && (
+                        <button className="nchk-act" data-on={!!c.image} title={chkUploading === c.id ? 'Uploading…' : c.image ? 'Replace photo' : 'Add photo'} disabled={chkUploading === c.id}
+                          onClick={() => pickCheckPhoto(c.id)}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                        </button>
+                      )}
                       <button className="nchk-act" data-on={!!c.due_date} title={c.due_date ? `Due ${fmtDue(c.due_date)}` : 'Add due date'}
                         onClick={() => setChkDateFor(v => v === c.id ? null : c.id)}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -838,8 +868,8 @@ export default function NotesPage() {
                       </button>
                       <button className="nchk-del" onClick={() => queueSave({ ...note, checklist: note.checklist.filter(x => x.id !== c.id) })} title="Remove">×</button>
                     </div>
-                    {/* Below-row extras: due chip, inline date picker, photo thumb. */}
-                    {(c.due_date || chkDateFor === c.id || c.image) && (
+                    {/* Below-row extras: due chip, inline date picker, manual photo. */}
+                    {(c.due_date || chkDateFor === c.id || (c.image && c.product_id == null)) && (
                       <div style={{ paddingLeft: 46, marginTop: 1, marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 7 }}>
                         {(c.due_date || chkDateFor === c.id) && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -859,7 +889,7 @@ export default function NotesPage() {
                             )}
                           </div>
                         )}
-                        {c.image && (
+                        {c.image && c.product_id == null && (
                           <div style={{ position: 'relative', width: 'fit-content' }}>
                             <a href={c.image} target="_blank" rel="noopener"><img src={c.image} alt="" style={{ maxHeight: 120, maxWidth: 220, borderRadius: 10, border: '1px solid var(--border)', display: 'block', objectFit: 'cover' }} /></a>
                             <button onClick={() => patchCheck(c.id, { image: null })} title="Remove photo"
@@ -874,11 +904,25 @@ export default function NotesPage() {
                   <div style={{ position: 'relative', height: 0 }}><div style={{ position: 'absolute', top: -2, left: 40, right: 8, height: 2.5, borderRadius: 2, background: 'var(--coral)', boxShadow: '0 0 0 3px rgba(255,122,107,0.16)' }} /></div>
                 )}
                 </div>
-                <button onClick={() => queueSave({ ...note, checklist: [...(note.checklist || []), { id: rid(), text: '', done: false }] })}
-                  style={{ marginTop: 8, marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 14.5, fontWeight: 700, cursor: 'pointer', padding: '4px 0' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  Add item</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, marginLeft: 8, flexWrap: 'wrap' }}>
+                  <button onClick={() => queueSave({ ...note, checklist: [...(note.checklist || []), { id: rid(), text: '', done: false }] })}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 14.5, fontWeight: 700, cursor: 'pointer', padding: '4px 0' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Add item</button>
+                  <button onClick={() => setProdPicker(true)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 14.5, fontWeight: 700, cursor: 'pointer', padding: '4px 0' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                    Add products</button>
+                </div>
               </div>
+
+              <ChecklistProductPicker
+                companyId={companyId}
+                open={prodPicker}
+                onClose={() => setProdPicker(false)}
+                addedIds={new Set((note.checklist || []).filter(c => c.product_id != null).map(c => String(c.product_id)))}
+                onAdd={addProductToChecklist}
+              />
 
               <div style={{ marginTop: 22 }}>
                 <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Voice notes</h3>
