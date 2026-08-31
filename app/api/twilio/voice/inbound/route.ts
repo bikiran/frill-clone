@@ -145,8 +145,25 @@ export async function POST(req: NextRequest) {
     // to voicemail. But a registered push token means Twilio's own Voice push
     // can wake the app and deliver the invite — so include every agent that has
     // one. Twilio rings all identities at once and cancels the losers.
-    const { data: mobileTokens } = await db.from('push_tokens')
+    //
+    // Match on MEMBERSHIP, not on the token's stored company_id. A teammate's
+    // push token and Voice-SDK identity (u_<userId>) are per-USER and
+    // company-agnostic — one device receives calls for every workspace the user
+    // belongs to. But the token row only records the workspace the app was LAST
+    // active in, so filtering push_tokens by company_id missed a device whenever
+    // the agent was currently in a DIFFERENT workspace: the call for THIS
+    // workspace rang nobody and went straight to voicemail. Instead, ring every
+    // member of this company (team_members) that holds a push token on any
+    // workspace.
+    const { data: members } = await db.from('team_members')
       .select('user_id').eq('company_id', companyId).not('user_id', 'is', null)
+    const memberIds = Array.from(new Set(
+      ((members || []).map((m: any) => m.user_id)).filter(Boolean)
+    )) as string[]
+    const { data: mobileTokens } = memberIds.length
+      ? await db.from('push_tokens')
+          .select('user_id').in('user_id', memberIds).not('user_id', 'is', null)
+      : { data: [] as any[] }
 
     // Respect an explicit "unavailable": someone online who turned calls off
     // shouldn't be pulled back in just because their phone holds a token.
