@@ -165,17 +165,28 @@ export async function POST(req: NextRequest) {
           .select('user_id').in('user_id', memberIds).not('user_id', 'is', null)
       : { data: [] as any[] }
 
-    // Respect an explicit "unavailable": someone online who turned calls off
-    // shouldn't be pulled back in just because their phone holds a token.
+    // "Unavailable" = presence explicitly reported available=false (on a call, or
+    // calls turned off). This is only reliable for WEB agents, whose tab stays
+    // alive to clear it. A MOBILE app can be killed by the OS mid-call (Samsung
+    // does this aggressively) and never gets to flip back to available — leaving a
+    // stale available=false that would then silence the phone for EVERY future
+    // call (straight to voicemail, no ring — exactly the report). So apply this
+    // set ONLY to the web/online agents below, never to push-token devices.
     const { data: away } = await db.from('agent_presence')
       .select('user_id').eq('company_id', companyId)
       .gte('last_seen_at', cutoff).eq('available', false)
     const unavailable = new Set<string>(((away || []).map((a: any) => a.user_id)).filter(Boolean))
 
     const userIds = new Set<string>([
-      ...((online || []).map((a: any) => a.user_id)),
-      ...((mobileTokens || []).map((t: any) => t.user_id)),
-    ].filter((id: any) => id && !unavailable.has(id)))
+      // Web/foreground agents: honour the explicit "unavailable" flag.
+      ...((online || []).map((a: any) => a.user_id)).filter((id: any) => id && !unavailable.has(id)),
+      // Mobile devices with a push token: ALWAYS ring. Twilio's push wakes a
+      // closed app, and a stale "busy" flag from an OS-killed app must not skip
+      // the phone. If the agent really is on a call, the app auto-rejects the
+      // second invite, so the call still falls through to voicemail/other agents —
+      // no double-ring, but no silent miss either.
+      ...((mobileTokens || []).map((t: any) => t.user_id)).filter(Boolean),
+    ])
     // Keep the user ids alongside their Voice-SDK identities: the per-<Client>
     // status callback needs the user id to record WHO answered the call.
     const ringUsers = Array.from(userIds)
