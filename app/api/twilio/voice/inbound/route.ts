@@ -157,9 +157,16 @@ export async function POST(req: NextRequest) {
     // workspace.
     const { data: members } = await db.from('team_members')
       .select('user_id').eq('company_id', companyId).not('user_id', 'is', null)
-    const memberIds = Array.from(new Set(
-      ((members || []).map((m: any) => m.user_id)).filter(Boolean)
-    )) as string[]
+    // The workspace OWNER (companies.owner_id) is a full member of the company but
+    // is NOT necessarily a row in team_members — so selecting mobiles by
+    // team_members alone stopped ringing an owner's phone entirely (every call
+    // went to voicemail for an owner-only account). Include the owner explicitly.
+    const { data: ownerRow } = await db.from('companies')
+      .select('owner_id').eq('id', companyId).maybeSingle()
+    const memberIds = Array.from(new Set([
+      ...((members || []).map((m: any) => m.user_id)),
+      ...(ownerRow?.owner_id ? [ownerRow.owner_id] : []),
+    ].filter(Boolean))) as string[]
     const { data: mobileTokens } = memberIds.length
       ? await db.from('push_tokens')
           .select('user_id').in('user_id', memberIds).not('user_id', 'is', null)
