@@ -33,13 +33,17 @@ export async function POST(req: NextRequest) {
     const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     if (await isExternalSendBlocked(conv.company_id, db)) { logBlockedSend(conv.company_id, 'email', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
-    if (conv.channel !== 'email') {
-      return NextResponse.json({ error: 'This conversation is not an email thread' }, { status: 400 })
-    }
 
     // Recipient = the composer's To field, falling back to the contact's email.
     const { data: contact } = await db.from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
     const toEmail = (to && String(to).trim()) || contact?.email
+    // Don't require the conversation to already BE an email thread. A widget /
+    // abandoned-cart / chat conversation whose contact has an email address can
+    // still be replied to by email — we send a fresh message from the company
+    // mailbox and thread it onto this conversation. The only hard requirement is a
+    // recipient; everything below (mailbox fallback, In-Reply-To, subject) already
+    // copes with there being no prior email. This lifts the "This conversation is
+    // not an email thread" block on carts and other non-email threads.
     if (!toEmail) return NextResponse.json({ error: 'No recipient for this email' }, { status: 400 })
     const ccEmail = cc && String(cc).trim() ? String(cc).trim() : null
     const bccEmail = bcc && String(bcc).trim() ? String(bcc).trim() : null
