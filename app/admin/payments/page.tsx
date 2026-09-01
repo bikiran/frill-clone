@@ -87,6 +87,30 @@ export default function PaymentsPage() {
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [toast, setToast] = useState('')
+  const [repairing, setRepairing] = useState(false)
+
+  // Repoint older pending payment links (raw Stripe URLs that expire in ~24h) at
+  // the durable /pay/<id> resolver, so links already texted to customers work.
+  const repairLinks = async () => {
+    if (repairing) return
+    setRepairing(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/payments/backfill-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+        body: JSON.stringify({ companyId }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j.error) setToast(`Repair failed: ${j.error || res.status}`)
+      else if (!j.scanned) setToast('All payment links are already up to date')
+      else setToast(`Repaired ${j.repointed} link${j.repointed === 1 ? '' : 's'} (${j.scanned} checked)`)
+    } catch (e: any) {
+      setToast(`Repair failed: ${e.message}`)
+    } finally {
+      setRepairing(false)
+    }
+  }
   const [selected, setSelected] = useState<Payment | null>(null)
   const [details, setDetails] = useState<any>(null)
   const [detailsLoading, setDetailsLoading] = useState(false)
@@ -335,8 +359,19 @@ export default function PaymentsPage() {
 
   return (
     <div style={{ padding: 24 }}>
-      <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: 'var(--ink)' }}>Payments</h1>
-      <p style={{ margin: '3px 0 18px', fontSize: 13, color: 'var(--slate)' }}>Track payments, refunds, and payment links across Colvy.</p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: 'var(--ink)' }}>Payments</h1>
+          <p style={{ margin: '3px 0 18px', fontSize: 13, color: 'var(--slate)' }}>Track payments, refunds, and payment links across Colvy.</p>
+        </div>
+        {/* Revive pending payment links sent before durable links — repoints the
+            short link a customer already has at the /pay resolver. Owner/admin
+            only (enforced server-side); safe to run more than once. */}
+        <button type="button" onClick={repairLinks} disabled={repairing} title="Fix older pending payment links that expired on Stripe"
+          style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: repairing ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+          {repairing ? 'Repairing…' : 'Repair old links'}
+        </button>
+      </div>
 
       {/* KPIs */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
