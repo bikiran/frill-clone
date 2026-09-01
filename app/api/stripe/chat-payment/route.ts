@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Stripe from 'stripe'
+import { randomUUID } from 'crypto'
 import { shortenUrl } from '@/lib/short-link'
 import { createClient } from '@supabase/supabase-js'
+import { createChatCheckoutSession } from '@/lib/chat-checkout'
 
 function admin() {
   return createClient(
@@ -9,12 +10,6 @@ function admin() {
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
-}
-
-function stripe() {
-  const secret = (process.env.STRIPE_SECRET_KEY || '').trim()
-  if (!secret.startsWith('sk_')) throw new Error('Stripe not configured — add STRIPE_SECRET_KEY.')
-  return new Stripe(secret, { apiVersion: '2024-06-20' as any })
 }
 
 // Creates a hosted Stripe Checkout session on the business's CONNECTED account,
@@ -49,76 +44,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Connect your Stripe account first (Integrations → Stripe), or add your Stripe keys.' }, { status: 400 })
     }
 
-    const s = useOwnKeys
-      ? new Stripe((company.stripe_secret_key || '').trim(), { apiVersion: '2024-06-20' as any })
-      : stripe()
-
     const colvyBase = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
-    // ── Determine safe return URLs ──────────────────────────────────────────
+    // ── Determine the safe return origin ────────────────────────────────────
     // The customer is on the BUSINESS website (e.g. roxyaquarium.com.au) with an
-    // embedded widget. We must return them there after Checkout — NOT to the
-    // Colvy tenant subdomain. We only trust an origin that matches the tenant's
-    // configured & verified website_domains (both www and non-www).
+    // embedded widget. Checkout must return them there — NOT to the Colvy tenant
+    // subdomain. We only trust an origin that matches the tenant's configured &
+    // verified website_domains (both www and non-www).
     const verified: string[] = Array.isArray(company?.website_domains) ? company.website_domains : []
     const normalizeHost = (u: string | null): string | null => {
       if (!u) return null
       try { return new URL(u).hostname.replace(/^www\./, '').toLowerCase() } catch { return null }
     }
-    // Candidate origin: prefer the explicit pageUrl the widget sends, else the
-    // request Origin/Referer header. Never trust it until matched to allowlist.
     const candidate = normalizeHost(convPageUrl) || normalizeHost(pageUrl) || normalizeHost(req.headers.get('origin')) || normalizeHost(req.headers.get('referer'))
     const isVerified = !!candidate && verified.some(d => (d || '').replace(/^www\./, '').toLowerCase() === candidate)
 
-    let successBase: string
-    let cancelUrl: string
-    if (isVerified && candidate) {
-      // Return to the real business website (support www + non-www — we send the
-      // bare host over https; the site can canonicalise as it wishes).
-      successBase = `https://${candidate}/payment-success`
-      cancelUrl = `https://${candidate}/payment-cancelled`
-    } else {
-      // Fallback: safe Colvy-hosted result pages (used when the payment wasn't
-      // initiated from a verified business site, e.g. the Colvy portal itself).
-      successBase = `${colvyBase}/pay/success`
-      cancelUrl = `${colvyBase}/pay/cancelled`
-    }
-    const successUrl = `${successBase}?session_id={CHECKOUT_SESSION_ID}`
+    // The customer-facing link is durable: it points at /pay/<id>, which mints a
+    // fresh Checkout session whenever the previous one has expired (Stripe
+    // Checkout sessions die after ~24h). So an SMS'd link keeps working for days
+    // instead of dead-ending on Stripe's "session has timed out" page.
+    const payId = randomUUID()
+    const session = await createChatCheckoutSession(company, {
+      cents, currency: 'aud', description, companyId, conversationId,
+      orderId, integrationId, originHost: candidate, originVerified: isVerified, pageUrl,
+    })
 
-    // Optional platform fee (only applies to Connect mode; not when the
-    // business uses their own keys — the money is already theirs).
-    const feePct = useOwnKeys ? 0 : parseFloat(process.env.COLVY_PAYMENT_FEE_PCT || '0')
-    const applicationFee = feePct > 0 ? Math.round(cents * (feePct / 100)) : 0
-
-    const session = await s.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card'],
-      line_items: [{
-        price_data: {
-          currency: 'aud',
-          product_data: { name: description || `Payment to ${company.name}` },
-          unit_amount: cents,
-        },
-        quantity: 1,
-      }],
-      payment_intent_data: applicationFee > 0 ? { application_fee_amount: applicationFee } : undefined,
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      metadata: {
-        kind: 'chat_payment', companyId, conversationId,
-        orderId: orderId ? String(orderId) : '',
-        integrationId: integrationId ? String(integrationId) : '',
-        originHost: candidate || '', originVerified: isVerified ? '1' : '0',
-        pageUrl: (pageUrl || '').slice(0, 400),
-      },
-    }, useOwnKeys ? undefined : { stripeAccount: company.stripe_account_id })
-
-    // Post the payment message into the chat
-    // Wrap the (very long, spammy-looking) Stripe URL behind colvy.com/l/<code>
-    // so it's short in SMS and readable in chat.
-    const shortUrl = await shortenUrl(session.url || '', {
+    // Post the payment message into the chat. Wrap the durable /pay/<id> URL
+    // behind colvy.com/l/<code> so it's short in SMS and readable in chat.
+    const payUrl = `${colvyBase}/pay/${payId}`
+    const shortUrl = await shortenUrl(payUrl, {
       companyId, kind: 'payment', conversationId,
     })
+    const custLink = shortUrl || payUrl
 
     const { data: msg } = await db.from('messages').insert({
       conversation_id: conversationId,
@@ -128,14 +85,17 @@ export async function POST(req: NextRequest) {
       content: `💳 Payment request: $${(cents / 100).toFixed(2)} AUD${description ? ` — ${description}` : ''}`,
       message_type: 'payment',
       delivery_channel: deliveryChannel,
-      message_payload: { amount_cents: cents, currency: 'aud', description: description || null, checkout_url: shortUrl || session.url, status: 'pending', order_id: orderId || null },
+      message_payload: { amount_cents: cents, currency: 'aud', description: description || null, checkout_url: custLink, status: 'pending', order_id: orderId || null },
     }).select().maybeSingle()
 
-    // Record the payment
+    // Record the payment. checkout_url is the DURABLE customer link (/pay/<id>
+    // behind the short link); stripe_session_id is the current live session,
+    // which /pay/<id> refreshes on demand.
     await db.from('chat_payments').insert({
+      id: payId,
       company_id: companyId, conversation_id: conversationId, message_id: msg?.id,
       amount_cents: cents, currency: 'aud', description: description || null,
-      status: 'pending', stripe_session_id: session.id, checkout_url: session.url,
+      status: 'pending', stripe_session_id: session.id, checkout_url: custLink,
     })
 
     await db.from('conversations').update({
@@ -143,7 +103,7 @@ export async function POST(req: NextRequest) {
       last_message_at: new Date().toISOString(),
     }).eq('id', conversationId)
 
-    return NextResponse.json({ ok: true, checkoutUrl: shortUrl || session.url, fullUrl: session.url, messageId: msg?.id })
+    return NextResponse.json({ ok: true, checkoutUrl: custLink, fullUrl: payUrl, messageId: msg?.id })
   } catch (err: any) {
     console.error('Chat payment error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
