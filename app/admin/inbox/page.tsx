@@ -192,13 +192,23 @@ function listTime(d: string) {
   return parsed.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })
 }
 
+// Time format across the inbox: 12-hour (default) or 24-hour. A per-user choice
+// (localStorage) toggled from the inbox settings, read by every time formatter
+// so the whole inbox switches at once.
+let INBOX_HOUR12 = true
+if (typeof window !== 'undefined') { try { const v = localStorage.getItem('colvy:inbox-hour12'); if (v !== null) INBOX_HOUR12 = v === '1' } catch {} }
+function timeOpts(): Intl.DateTimeFormatOptions {
+  return INBOX_HOUR12 ? { hour: 'numeric', minute: '2-digit', hour12: true } : { hour: '2-digit', minute: '2-digit', hour12: false }
+}
+function setInboxHour12(v: boolean) { INBOX_HOUR12 = v; try { localStorage.setItem('colvy:inbox-hour12', v ? '1' : '0') } catch {} }
+
 // Safe time formatter — handles null, undefined, and non-ISO timestamps
 function fmtTime(d: string | undefined | null) {
   if (!d) return ''
   const s = typeof d === 'string' ? d : String(d)
   const parsed = parseTs(s)
   if (!parsed) return ''
-  return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return parsed.toLocaleTimeString([], timeOpts())
 }
 // Formats like "Received 7:18 PM | 08 Jul | Instagram" / "Delivered 2:03 PM | 09 Jul"
 function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: string) {
@@ -206,7 +216,7 @@ function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: st
   const s = typeof d === 'string' ? d : String(d)
   const parsed = parseTs(s)
   if (!parsed) return ''
-  const time = parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const time = parsed.toLocaleTimeString([], timeOpts())
   const date = parsed.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' })
   const label = isAgent ? 'Delivered' : 'Received'
   const NAMES: Record<string, string> = {
@@ -452,6 +462,10 @@ export default function InboxPage() {
     } catch {}
   }, [selected?.id, (selected as any)?.contact_id])
   const loadWooDataRef = useRef<((id: string | null) => void) | null>(null)
+  // Inbox settings popover + the 12/24-hour time-format choice (per-user).
+  const [inboxSettingsOpen, setInboxSettingsOpen] = useState(false)
+  const [hour12, setHour12] = useState(INBOX_HOUR12)
+  const changeHour12 = (v: boolean) => { setInboxHour12(v); setHour12(v) }
   const [showMergePicker, setShowMergePicker] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
   const [showDoa, setShowDoa] = useState(false)
@@ -6722,10 +6736,33 @@ export default function InboxPage() {
               <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--peach)', color: 'var(--coral)', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap', flexShrink: 0 }}>
                 {conversations.filter(c => c.is_unread && !['closed','resolved'].includes(c.status)).length} unread
               </span>
-              <Link href="/admin/crm-settings/profile" title="Inbox settings"
-                style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', textDecoration: 'none' }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-              </Link>
+              <div style={{ position: 'relative' }}>
+                <button type="button" onClick={() => setInboxSettingsOpen(v => !v)} title="Inbox settings"
+                  style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: inboxSettingsOpen ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: inboxSettingsOpen ? 'var(--coral)' : 'var(--slate)' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </button>
+                {inboxSettingsOpen && (
+                  <>
+                    <div onClick={() => setInboxSettingsOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
+                    <div style={{ position: 'absolute', top: '116%', right: 0, zIndex: 61, width: 232, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 16px 40px rgba(0,0,0,0.16)', padding: 12 }}>
+                      <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Time format</p>
+                      <div style={{ display: 'flex', gap: 6, background: 'var(--canvas,#f5f6f8)', borderRadius: 9, padding: 3 }}>
+                        {[{ v: true, label: '12-hour', hint: '1:30 PM' }, { v: false, label: '24-hour', hint: '13:30' }].map(o => (
+                          <button key={o.label} type="button" onClick={() => changeHour12(o.v)}
+                            style={{ flex: 1, border: 'none', borderRadius: 7, padding: '7px 6px', cursor: 'pointer', background: hour12 === o.v ? '#fff' : 'transparent', boxShadow: hour12 === o.v ? '0 1px 3px rgba(0,0,0,0.12)' : 'none', color: hour12 === o.v ? 'var(--coral)' : 'var(--slate)', fontWeight: 700, fontSize: 12.5, lineHeight: 1.2 }}>
+                            {o.label}<br /><span style={{ fontSize: 10.5, fontWeight: 500, color: 'var(--slate)' }}>{o.hint}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <Link href="/admin/crm-settings/profile" onClick={() => setInboxSettingsOpen(false)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', textDecoration: 'none' }}>
+                        More inbox settings
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 'auto' }}><polyline points="9 18 15 12 9 6"/></svg>
+                      </Link>
+                    </div>
+                  </>
+                )}
+              </div>
               <button type="button" onClick={() => setSidebarCollapsed(true)} title="Collapse sidebar"
                 style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -9493,7 +9530,7 @@ export default function InboxPage() {
                             {i < events.length - 1 && <div style={{ width: 1.5, flex: 1, background: 'var(--border)', marginTop: 2 }} />}
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{ margin: 0, fontSize: 10, color: '#9ca3af' }}>{d.toLocaleDateString([], { month: 'short', day: 'numeric' })} · {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                            <p style={{ margin: 0, fontSize: 10, color: '#9ca3af' }}>{d.toLocaleDateString([], { month: 'short', day: 'numeric' })} · {d.toLocaleTimeString([], timeOpts())}</p>
                             <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--ink)' }}>{ev.detail}</p>
                             {ev.actor_name && <p style={{ margin: '1px 0 0', fontSize: 11, color: '#9ca3af' }}>by {ev.actor_name}</p>}
                           </div>
