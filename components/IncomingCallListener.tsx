@@ -380,10 +380,13 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
 
   const startTimer = () => { setSeconds(0); timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000) }
 
-  // A simple ringtone via WebAudio (two-tone, looped) so an incoming call is
-  // audible even before it's answered.
+  // Incoming-call ringtone. Prefer the branded ringtone file (the same one the
+  // mobile app rings with, so a call sounds the same on web and phone); fall back
+  // to a WebAudio two-tone only if the audio file can't play (autoplay blocked,
+  // decode error) so a call is never silent before it's answered.
   const ringOscRef = useRef<any>(null)
-  const startRing = () => {
+  const ringAudioRef = useRef<HTMLAudioElement | null>(null)
+  const startOscRing = () => {
     try {
       const AC = (window as any).AudioContext || (window as any).webkitAudioContext
       if (!AC) return
@@ -402,7 +405,25 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       ringOscRef.current.timer = setInterval(beep, 3000)
     } catch {}
   }
+  const startRing = () => {
+    try {
+      const a = new Audio('/ringtone.mp3')
+      a.loop = true
+      a.volume = 0.6
+      ringAudioRef.current = a
+      // If the browser blocks autoplay or the file fails, ring via WebAudio so the
+      // call is still audible.
+      a.play().catch(() => { ringAudioRef.current = null; startOscRing() })
+    } catch { startOscRing() }
+  }
   const stopRing = () => {
+    try {
+      if (ringAudioRef.current) {
+        ringAudioRef.current.pause()
+        ringAudioRef.current.currentTime = 0
+        ringAudioRef.current = null
+      }
+    } catch {}
     try {
       if (ringOscRef.current) {
         clearInterval(ringOscRef.current.timer)
