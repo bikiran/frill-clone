@@ -192,15 +192,15 @@ function listTime(d: string) {
   return parsed.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })
 }
 
-// Time format across the inbox: 12-hour (default) or 24-hour. A per-user choice
-// (localStorage) toggled from the inbox settings, read by every time formatter
-// so the whole inbox switches at once.
+// Time format across the inbox: 12-hour (default) or 24-hour. A COMPANY-level
+// choice (companies.inbox_settings.hour12) toggled from the inbox settings, so
+// every agent on the team sees the same format. Read by every time formatter
+// via this module flag, which is set from the loaded company setting.
 let INBOX_HOUR12 = true
-if (typeof window !== 'undefined') { try { const v = localStorage.getItem('colvy:inbox-hour12'); if (v !== null) INBOX_HOUR12 = v === '1' } catch {} }
 function timeOpts(): Intl.DateTimeFormatOptions {
   return INBOX_HOUR12 ? { hour: 'numeric', minute: '2-digit', hour12: true } : { hour: '2-digit', minute: '2-digit', hour12: false }
 }
-function setInboxHour12(v: boolean) { INBOX_HOUR12 = v; try { localStorage.setItem('colvy:inbox-hour12', v ? '1' : '0') } catch {} }
+function setInboxHour12(v: boolean) { INBOX_HOUR12 = v }
 
 // Safe time formatter — handles null, undefined, and non-ISO timestamps
 function fmtTime(d: string | undefined | null) {
@@ -465,7 +465,15 @@ export default function InboxPage() {
   // Inbox settings popover + the 12/24-hour time-format choice (per-user).
   const [inboxSettingsOpen, setInboxSettingsOpen] = useState(false)
   const [hour12, setHour12] = useState(INBOX_HOUR12)
-  const changeHour12 = (v: boolean) => { setInboxHour12(v); setHour12(v) }
+  const changeHour12 = (v: boolean) => {
+    setInboxHour12(v); setHour12(v)
+    // Persist company-wide so the whole team shares the format.
+    if (companyId) {
+      const next = { ...(companyInfo?.inbox_settings || {}), hour12: v }
+      setCompanyInfo((c: any) => c ? { ...c, inbox_settings: next } : c)
+      ;(supabase as any).from('companies').update({ inbox_settings: next }).eq('id', companyId).then(() => {}, () => {})
+    }
+  }
   const [showMergePicker, setShowMergePicker] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
   const [showDoa, setShowDoa] = useState(false)
@@ -1510,8 +1518,13 @@ export default function InboxPage() {
       if (!cid) return
       setCompanyId(cid)
       // Load company logo/name/accent for agent message avatars
-      const { data: ci } = await (supabase as any).from('companies').select('name, logo_url, accent_color, slug, conversation_actions').eq('id', cid).maybeSingle()
-      if (ci) { setCompanyInfo(ci); setConvActions(ci.conversation_actions || {}) }
+      const { data: ci } = await (supabase as any).from('companies').select('name, logo_url, accent_color, slug, conversation_actions, inbox_settings').eq('id', cid).maybeSingle()
+      if (ci) {
+        setCompanyInfo(ci); setConvActions(ci.conversation_actions || {})
+        // Apply the company-wide time format so every agent matches.
+        const h12 = ci.inbox_settings?.hour12
+        if (typeof h12 === 'boolean') { setInboxHour12(h12); setHour12(h12) }
+      }
       loadTeam(cid)
       loadConversations(cid)
       setLoading(false)
@@ -6754,6 +6767,7 @@ export default function InboxPage() {
                           </button>
                         ))}
                       </div>
+                      <p style={{ margin: '7px 2px 0', fontSize: 10.5, color: 'var(--slate)' }}>Applies to everyone on the team.</p>
                       <Link href="/admin/crm-settings/profile" onClick={() => setInboxSettingsOpen(false)}
                         style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', textDecoration: 'none' }}>
                         More inbox settings
