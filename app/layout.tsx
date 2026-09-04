@@ -9,6 +9,7 @@ import { TerminologyProvider } from '@/lib/terminologyContext'
 import { ToastProvider } from '@/components/ToastProvider'
 import LiveChat from '@/components/LiveChat'
 import UpdateNotification from '@/components/UpdateNotification'
+import Analytics from '@/components/Analytics'
 import './globals.css'
 
 const NAV_ITEMS = [
@@ -587,6 +588,7 @@ export default function RootLayout({
           <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         </head>
         <body>
+          <Analytics />
           {children}
           <UpdateNotification accentColor={company?.accent_color} />
         </body>
@@ -728,6 +730,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
       <body style={{ background: 'var(--canvas)' }}>
+        <Analytics />
         {/* Header */}
         <header className="sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)' }}>
           <nav className="h-14 px-6 flex items-center justify-between">
