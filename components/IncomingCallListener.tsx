@@ -177,7 +177,12 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           const { Device } = await import('@twilio/voice-sdk')
           const device = new Device(tData.token, { codecPreferences: ['opus', 'pcmu'] as any })
           clientRef.current = device
-          device.on('registered', () => { if (!cancelled) { setReady(true); setConnErr(null); console.log('[twilio voice] registered') } })
+          // Silence the SDK's OWN incoming ringtone — we play our branded
+          // /ringtone.mp3 (startRing) instead. Without this the browser rings
+          // twice: Twilio's default tone and ours at the same time.
+          const muteSdkRing = () => { try { (device as any).audio?.incoming?.(false); (device as any).audio?.outgoing?.(false) } catch {} }
+          muteSdkRing()
+          device.on('registered', () => { if (!cancelled) { setReady(true); setConnErr(null); console.log('[twilio voice] registered'); muteSdkRing() } })
           device.on('unregistered', () => { if (!cancelled) { setReady(false); console.log('[twilio voice] unregistered') } })
           // Twilio access tokens are short-lived. Refresh in place before expiry
           // so a long-idle tab keeps its registration instead of silently dying.
