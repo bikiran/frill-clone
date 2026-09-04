@@ -63,10 +63,24 @@ export function TagChip({ name, color, onRemove }: { name: string; color?: strin
 }
 
 export function CopyBtn({ onClick, title }: { onClick: () => void; title?: string }) {
+  const [done, setDone] = useState(false)
+  // Give the copy a felt gesture: a quick press-pop, then swap the icon for a
+  // green tick for ~1s so the click registers visually (not just the toast).
   return (
-    <button type="button" title={title || 'Copy'} onClick={e => { e.stopPropagation(); e.preventDefault(); onClick() }}
-      style={{ background: 'none', border: 'none', padding: 2, cursor: 'copy', color: 'var(--slate)', display: 'inline-flex', lineHeight: 0, borderRadius: 4, flexShrink: 0 }}>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+    <button type="button" title={done ? 'Copied' : (title || 'Copy')}
+      onClick={e => { e.stopPropagation(); e.preventDefault(); onClick(); setDone(true); setTimeout(() => setDone(false), 1100) }}
+      style={{
+        background: 'none', border: 'none', padding: 2, cursor: 'copy',
+        color: done ? '#16a34a' : 'var(--slate)', display: 'inline-flex', lineHeight: 0, borderRadius: 4, flexShrink: 0,
+        transform: done ? 'scale(1.25)' : 'scale(1)',
+        transition: 'transform .14s cubic-bezier(.34,1.56,.64,1), color .14s ease',
+      }}
+      onPointerDown={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(.82)' }}
+      onPointerUp={e => { (e.currentTarget as HTMLElement).style.transform = done ? 'scale(1.25)' : 'scale(1)' }}
+      onPointerLeave={e => { (e.currentTarget as HTMLElement).style.transform = done ? 'scale(1.25)' : 'scale(1)' }}>
+      {done
+        ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+        : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>}
     </button>
   )
 }
@@ -1951,8 +1965,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
               {order.customer_name && <CopyBtn onClick={() => copyToClipboard(order.customer_name, onFlash)} title="Copy name" />}
               {(order.tags || []).includes('VIP') && <span style={{ fontSize: 10, fontWeight: 800, color: '#15803d', background: '#dcfce7', padding: '1px 7px', borderRadius: 20 }}>VIP</span>}
             </div>
-            {order.customer_email && <p onClick={() => copyToClipboard(order.customer_email, onFlash)} title="Click to copy email" style={{ margin: '5px 0 0', fontSize: 12.5, color: 'var(--slate)', cursor: 'copy', display: 'inline-flex', alignItems: 'center', gap: 5 }}>{order.customer_email}<CopyBtn onClick={() => copyToClipboard(order.customer_email, onFlash)} title="Copy email" /></p>}
-            {order.customer_phone && <p onClick={() => copyToClipboard(order.customer_phone, onFlash)} title="Click to copy phone" style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--slate)', cursor: 'copy', display: 'inline-flex', alignItems: 'center', gap: 5 }}>{order.customer_phone}<CopyBtn onClick={() => copyToClipboard(order.customer_phone, onFlash)} title="Copy phone" /></p>}
+            {order.customer_email && <p onClick={() => copyToClipboard(order.customer_email, onFlash)} title="Click to copy email" style={{ margin: '5px 0 0', fontSize: 12.5, color: 'var(--slate)', cursor: 'copy', display: 'flex', width: 'fit-content', maxWidth: '100%', alignItems: 'center', gap: 5 }}>{order.customer_email}<CopyBtn onClick={() => copyToClipboard(order.customer_email, onFlash)} title="Copy email" /></p>}
+            {order.customer_phone && <p onClick={() => copyToClipboard(order.customer_phone, onFlash)} title="Click to copy phone" style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--slate)', cursor: 'copy', display: 'flex', width: 'fit-content', maxWidth: '100%', alignItems: 'center', gap: 5 }}>{order.customer_phone}<CopyBtn onClick={() => copyToClipboard(order.customer_phone, onFlash)} title="Copy phone" /></p>}
             {convHref && <a href={convHref} style={{ display: 'inline-block', marginTop: 8, fontSize: 12.5, fontWeight: 700, color: ACCENT, textDecoration: 'none' }}>Open conversation →</a>}
           </div>
 
