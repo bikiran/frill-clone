@@ -181,11 +181,11 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
   if (!wooRows.length) return 0
 
   const extIds = wooRows.map(o => String(o.woo_order_id)).filter(Boolean)
-  const existing = new Map<string, { id: string; order_date: string | null; status: string | null; store_location_id: string | null; shipping_method: string | null }>()
+  const existing = new Map<string, { id: string; order_date: string | null; status: string | null; payment_status: string | null; store_location_id: string | null; shipping_method: string | null }>()
   for (let i = 0; i < extIds.length; i += 300) {
-    const { data } = await db.from('orders').select('id, external_order_id, order_date, status, store_location_id, shipping_method')
+    const { data } = await db.from('orders').select('id, external_order_id, order_date, status, payment_status, store_location_id, shipping_method')
       .eq('company_id', companyId).eq('sales_channel', 'woocommerce').in('external_order_id', extIds.slice(i, i + 300))
-    for (const r of data || []) existing.set(String(r.external_order_id), { id: r.id, order_date: r.order_date, status: r.status, store_location_id: r.store_location_id, shipping_method: r.shipping_method })
+    for (const r of data || []) existing.set(String(r.external_order_id), { id: r.id, order_date: r.order_date, status: r.status, payment_status: r.payment_status, store_location_id: r.store_location_id, shipping_method: r.shipping_method })
   }
   const locations = await loadLocations(db, companyId)
 
@@ -206,10 +206,14 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
     }
   }
 
-  // Reconcile TERMINAL WooCommerce statuses onto already-synced orders — so an
-  // order completed/cancelled in the store (whose webhook may have been missed)
-  // advances on the board at the next Sync. Non-terminal statuses are left alone,
-  // and a shipped/cancelled order is never downgraded. Bounded per run.
+  // Reconcile already-synced orders against the store (in case a webhook was
+  // missed): advance TERMINAL statuses (completed/cancelled) and refresh the
+  // PAYMENT status. The payment refresh matters because an order first seen as
+  // unpaid ("pending") and paid later would otherwise stay pending on the board
+  // forever — and the Awaiting Shipment queue hides unpaid orders, so a paid
+  // order would silently never appear. Staff-owned status is left alone for
+  // non-terminal Woo states, and a shipped/cancelled order is never downgraded.
+  // Bounded per run.
   let statusFixed = 0
   for (const o of wooRows) {
     if (statusFixed >= 400) break
@@ -222,6 +226,9 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
     } else if (['cancelled', 'refunded', 'failed', 'trash'].includes(wl) && prev.status !== 'cancelled') {
       patch = { status: 'cancelled' }
     }
+    // Keep payment in sync with the store (source of truth for payment).
+    const wp = mapWooPayment(o.status)
+    if (wp && wp !== prev.payment_status) patch = { ...(patch || {}), payment_status: wp }
     if (patch) { try { await db.from('orders').update(patch).eq('id', prev.id); statusFixed++ } catch {} }
   }
 
