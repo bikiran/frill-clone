@@ -50,23 +50,42 @@ export interface ExtractedContact {
   name: string | null
   suburb: string | null
   email: string | null
+  // Full postal address the customer states about themselves (e.g. when they
+  // text back their address on request). Each part is only filled when clearly
+  // stated — the model never invents a postcode or state it wasn't given.
+  address: string | null   // street line, e.g. "26 Hopkins Road"
+  city: string | null      // town / suburb / locality, e.g. "Fulham"
+  state: string | null     // AU state abbreviation, e.g. "VIC"
+  postcode: string | null  // e.g. "3851"
+  country: string | null   // e.g. "Australia"
 }
 
-// Ask Claude for the sender's name / suburb / email from the message text.
+// Ask Claude for the sender's name / address / email from the message text.
 // The phone is NOT extracted here — it's the sender's number, which the caller
 // supplies separately (the model never sees it in the body).
 export async function extractContactDetails(text: string): Promise<ExtractedContact> {
-  const empty: ExtractedContact = { name: null, suburb: null, email: null }
+  const empty: ExtractedContact = {
+    name: null, suburb: null, email: null,
+    address: null, city: null, state: null, postcode: null, country: null,
+  }
   const key = process.env.ANTHROPIC_API_KEY
   if (!key || !text || !text.trim()) return empty
 
   const system =
-    'You extract contact details a customer states about THEMSELVES in an inbound SMS. ' +
-    'Return ONLY a compact JSON object: {"name": string|null, "suburb": string|null, "email": string|null}. ' +
+    'You extract contact details a customer states about THEMSELVES in an inbound SMS to an ' +
+    'Australian business. Return ONLY a compact JSON object with these keys: ' +
+    '{"name": string|null, "email": string|null, "address": string|null, "city": string|null, ' +
+    '"state": string|null, "postcode": string|null, "country": string|null}. ' +
     'Rules: name = the sender\'s own first/full name only when they clearly self-identify ' +
     '(e.g. "its Dylan here", "this is Sarah Lee") — never a name they mention about someone else, ' +
-    'and never a business name. suburb = the town/suburb/locality they say they are from or in ' +
-    '(e.g. "from Ballarat"). email = their email address if present. ' +
+    'and never a business name. email = their email address if present. ' +
+    'For a postal address they give (often when texting back their address): ' +
+    'address = the street line ONLY (e.g. "26 Hopkins Road"), never the business name, unit notes, ' +
+    'or delivery instructions. city = the town/suburb/locality (e.g. "Fulham"). ' +
+    'state = the Australian state as its standard abbreviation (NSW, VIC, QLD, SA, WA, TAS, NT, ACT) ' +
+    'when stated OR unambiguous from the locality; else null. ' +
+    'postcode = the 4-digit Australian postcode ONLY if it appears in the text — NEVER guess or infer it. ' +
+    'country = "Australia" when the address is clearly Australian, else null. ' +
     'Use null for anything not clearly stated. No prose, no markdown — JSON only.'
 
   try {
@@ -75,7 +94,7 @@ export async function extractContactDetails(text: string): Promise<ExtractedCont
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 200,
+        max_tokens: 300,
         system,
         messages: [{ role: 'user', content: text.slice(0, 2000) }],
       }),
@@ -86,7 +105,19 @@ export async function extractContactDetails(text: string): Promise<ExtractedCont
     const json = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)
     const parsed = JSON.parse(json)
     const clean = (v: any) => (typeof v === 'string' && v.trim() ? v.trim() : null)
-    return { name: clean(parsed.name), suburb: clean(parsed.suburb), email: clean(parsed.email) }
+    // The locality doubles as both `city` (shown on the contact card) and `suburb`
+    // (used by older suburb-based features) — prefer an explicit city, else suburb.
+    const city = clean(parsed.city)
+    return {
+      name: clean(parsed.name),
+      email: clean(parsed.email),
+      address: clean(parsed.address),
+      city,
+      suburb: city,
+      state: clean(parsed.state),
+      postcode: clean(parsed.postcode),
+      country: clean(parsed.country),
+    }
   } catch {
     return empty
   }
@@ -129,7 +160,7 @@ export async function captureContactFromSms(params: {
   // ── Existing contact: fill only empty fields, mark them as AI-added ─────────
   if (contactId) {
     try {
-      const { data: c } = await db.from('contacts').select('name, phone, suburb, email, ai_saved_fields, ai_rejected').eq('id', contactId).maybeSingle()
+      const { data: c } = await db.from('contacts').select('name, phone, suburb, email, address, city, state, postcode, country, ai_saved_fields, ai_rejected').eq('id', contactId).maybeSingle()
       const patch: Record<string, any> = {}
       const marks = new Set<string>((c?.ai_saved_fields as string[]) || [])
       // Values a human already cleared/corrected for this field — never re-fill
@@ -137,9 +168,20 @@ export async function captureContactFromSms(params: {
       const rejected = (c?.ai_rejected && typeof c.ai_rejected === 'object') ? (c.ai_rejected as Record<string, any>) : {}
       const isRejected = (field: string, val: string) =>
         Array.isArray(rejected[field]) && rejected[field].some((v: any) => String(v).trim().toLowerCase() === val.trim().toLowerCase())
-      if (!c?.name && details.name && !isRejected('name', details.name)) { patch.name = details.name; marks.add('name') }
-      if (!c?.suburb && details.suburb && !isRejected('suburb', details.suburb)) { patch.suburb = details.suburb; marks.add('suburb') }
-      if (!c?.email && details.email && !isRejected('email', details.email)) { patch.email = details.email; marks.add('email') }
+      // Only ever fill an EMPTY field, skip a value a human rejected, and mark it
+      // as AI-added. Same rule for every field, so add the address parts uniformly.
+      const fill = (field: keyof ExtractedContact) => {
+        const val = (details as any)[field]
+        if (val && !(c as any)?.[field] && !isRejected(field, val)) { patch[field] = val; marks.add(field) }
+      }
+      fill('name')
+      fill('suburb')
+      fill('email')
+      fill('address')
+      fill('city')
+      fill('state')
+      fill('postcode')
+      fill('country')
       if (!c?.phone && fromDigits) { patch.phone = from }
       if (Object.keys(patch).length) {
         patch.ai_saved_fields = Array.from(marks)
@@ -153,21 +195,24 @@ export async function captureContactFromSms(params: {
   }
 
   // ── No contact: create one only when we actually captured something useful ──
-  // (a name/suburb/email). We never mint a bare, nameless contact for every
-  // random inbound number — that just fills the CRM with noise.
-  if (!details.name && !details.suburb && !details.email) return noop
+  // (a name/address/suburb/email). We never mint a bare, nameless contact for
+  // every random inbound number — that just fills the CRM with noise.
+  const captured: (keyof ExtractedContact)[] = ['name', 'email', 'address', 'city', 'suburb', 'state', 'postcode', 'country']
+  if (!captured.some(f => (details as any)[f])) return noop
 
   try {
-    const marks: string[] = []
-    if (details.name) marks.push('name')
-    if (details.suburb) marks.push('suburb')
-    if (details.email) marks.push('email')
+    const marks = captured.filter(f => (details as any)[f]) as string[]
     const { data: created } = await db.from('contacts').insert({
       company_id: companyId,
       name: details.name || from,
       phone: from,
       suburb: details.suburb || null,
       email: details.email || null,
+      address: details.address || null,
+      city: details.city || null,
+      state: details.state || null,
+      postcode: details.postcode || null,
+      country: details.country || null,
       source: 'sms',
       ai_saved_fields: marks,
     }).select('id').maybeSingle()
