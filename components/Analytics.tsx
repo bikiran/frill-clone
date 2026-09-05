@@ -37,6 +37,13 @@ export default function Analytics() {
           // Session recording is opt-in — enable it in the PostHog project when
           // wanted, rather than recording customer data by default.
           disable_session_recording: true,
+          // This is a CRM — element text and attributes routinely contain
+          // customer PII (names, emails in mailto:/tel: links, phone numbers in
+          // titles/aria-labels). Mask both in autocapture so events record WHAT
+          // was clicked (tag, position, our own data-attr) but never the
+          // customer's data.
+          mask_all_text: true,
+          mask_all_element_attributes: true,
         })
         if (cancelled) return
         phRef.current = posthog
