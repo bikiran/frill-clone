@@ -408,7 +408,7 @@ export default function OrdersPage() {
     for (const o of scoped) {
       // An order that hasn't been PAID isn't ready to ship — keep it out of the
       // Awaiting Shipment queue (and its count). It still counts under All Orders.
-      const bucket = (o.status === 'awaiting_shipment' && o.payment_status === 'pending') ? 'awaiting_payment' : o.status
+      const bucket = (o.status === 'awaiting_shipment' && (o.payment_status === 'pending' || o.payment_status === 'failed')) ? 'awaiting_payment' : o.status
       c[bucket] = (c[bucket] || 0) + 1
       if (isAlerted(o)) c.alerts++
     }
@@ -441,7 +441,7 @@ export default function OrdersPage() {
       else if (tabDef?.match) { if (!tabDef.match.includes(o.status)) return false }
       // Unpaid orders aren't shippable — don't surface them in the Awaiting
       // Shipment queue (they remain visible under All Orders).
-      if (tab === 'awaiting_shipment' && o.status === 'awaiting_shipment' && o.payment_status === 'pending') return false
+      if (tab === 'awaiting_shipment' && o.status === 'awaiting_shipment' && (o.payment_status === 'pending' || o.payment_status === 'failed')) return false
       if (!locMatch(o)) return false
       if (fAssignee !== 'all') { if (fAssignee === 'none' ? o.assignee_id : o.assignee_id !== fAssignee) return false }
       if (fTag !== 'all' && !(Array.isArray(o.tags) && o.tags.includes(fTag))) return false

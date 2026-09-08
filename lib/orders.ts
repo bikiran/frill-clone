@@ -59,11 +59,19 @@ export function wooDateToISO(o: any): string | null {
 // WooCommerce status → operational status / payment.
 export function mapWooStatus(woo?: string | null): OrderStatus {
   const s = String(woo || '').toLowerCase()
-  if (['processing', 'pending'].includes(s)) return 'awaiting_shipment'
+  // `failed` is a PAYMENT failure (declined card, SCA drop-out), NOT a
+  // cancellation — such orders very commonly recover when the customer retries,
+  // and WooCommerce keeps them as live orders. Mapping it to the terminal
+  // `cancelled` stranded recovered orders on the board (imported during the brief
+  // failed window, then stuck cancelled forever once paid). Treat it as an unpaid
+  // awaiting_shipment order instead: the payment status (see mapWooPayment) keeps
+  // it out of the shippable queue, and it flips to a normal paid order the moment
+  // payment succeeds. Only `cancelled`/`trash` are true terminal cancellations.
+  if (['processing', 'pending', 'failed'].includes(s)) return 'awaiting_shipment'
   if (s === 'on-hold') return 'on_hold'
   if (['completed'].includes(s)) return 'shipped'
   if (s === 'refunded') return 'refunded'
-  if (['cancelled', 'failed', 'trash'].includes(s)) return 'cancelled'
+  if (['cancelled', 'trash'].includes(s)) return 'cancelled'
   return 'awaiting_shipment'
 }
 export function mapWooPayment(woo?: string | null): string {
