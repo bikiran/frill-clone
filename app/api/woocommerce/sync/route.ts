@@ -236,6 +236,10 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         }
         return { status: 200, body: {
           success: true, mode, page, totalPages, total, updated: orderRows.length, done: doneInc,
+          // The woo_order_ids changed at the store this run — lets a caller
+          // reconcile exactly these into the operational table regardless of how
+          // old the order is (a late payment/refund/cancel on an old order).
+          changedIds: orderRows.map((r: any) => r.woo_order_id).filter(Boolean),
           message: `Orders page ${page}/${totalPages} synced incrementally (${orderRows.length} changed)`,
         } }
       }
