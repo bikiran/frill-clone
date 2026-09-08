@@ -18,6 +18,8 @@ import FilePickerButton from '@/components/FilePickerButton'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
 import { useClickOutside } from '@/lib/use-click-outside'
 import { useActiveCall, callMatches } from '@/lib/active-call'
+import { getEffectiveEntitlements } from '@/lib/entitlements-client'
+import { flagEnabled } from '@/lib/feature-flags'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
 import CallCard from '@/components/CallCard'
@@ -446,6 +448,16 @@ export default function InboxPage() {
   const seededConvs = seededCid ? readCache<Conversation[]>(`inbox-convs:${seededCid}:open`) : undefined
   const [companyId, setCompanyId] = useState<string | null>(seededCid)
   const [companyInfo, setCompanyInfo] = useState<any>(null)
+  // Per-company operational flag (default ON): may this company text the upload
+  // link to the customer's mobile? Off = links only post in the conversation.
+  const [mediaSmsEnabled, setMediaSmsEnabled] = useState(true)
+  useEffect(() => {
+    let cancelled = false
+    getEffectiveEntitlements()
+      .then(e => { if (!cancelled) setMediaSmsEnabled(flagEnabled(e.features, 'media_sms_fallback')) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
   const [user, setUser] = useState<any>(null)
   const [conversations, setConversations] = useState<Conversation[]>(seededConvs ?? [])
   const [selected, setSelected] = useState<Conversation | null>(null)
@@ -3833,7 +3845,7 @@ export default function InboxPage() {
   const uploadChannel = (): string => {
     const ch = activeChannel
     if (ch === 'email' || ch === 'instagram' || ch === 'facebook') return ch
-    if (smsDestination()) return 'sms'
+    if (mediaSmsEnabled && smsDestination()) return 'sms'
     return 'chat'
   }
 
@@ -3855,10 +3867,12 @@ export default function InboxPage() {
     if (ch === 'email' || ch === 'instagram' || ch === 'facebook') {
       return deliverToCustomer({ subject, body, url: link })
     }
-    if (!(selected as any)?.sms_number && smsDestination()) {
+    if (mediaSmsEnabled && !(selected as any)?.sms_number && smsDestination()) {
       return deliverToCustomer({ subject, body, url: link, silent: true })
     }
-    return 'sent' // server already texted (thread has an sms_number), or widget with no mobile
+    // server already texted (thread has an sms_number), widget with no mobile, or
+    // media-link SMS disabled for this company — the card stays in the thread.
+    return 'sent'
   }
 
   const requestMediaQuick = async () => {

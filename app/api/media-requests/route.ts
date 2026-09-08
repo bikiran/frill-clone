@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSmsSender } from '@/lib/sms-provider'
+import { companyFlagEnabled } from '@/lib/feature-flags'
 
 function admin() {
   return createClient(
@@ -69,7 +70,10 @@ export async function POST(req: NextRequest) {
         const { data: conv } = await db.from('conversations')
           .select('sms_number, sms_enabled').eq('id', conversationId).maybeSingle()
         const to = conv?.sms_number
-        if (to && conv?.sms_enabled !== false) {
+        // Per-company operational flag (default ON): skip texting the link when
+        // media-link SMS is disabled for this company.
+        const smsAllowed = await companyFlagEnabled(db, companyId, 'media_sms_fallback')
+        if (to && conv?.sms_enabled !== false && smsAllowed) {
           const sender = await resolveSmsSender(db, companyId)
           if (sender) await sender.send({ to, text: smsText })
         }
