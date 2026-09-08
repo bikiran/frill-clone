@@ -55,22 +55,40 @@ export async function GET(req: NextRequest) {
       const since = integ.last_synced_at || new Date(Date.now() - 60 * 60 * 1000).toISOString()
       let page = 1
       let totalPages = 1
+      const changedIds = new Set<number>()
       do {
         const r = await syncPage({ companyId: integ.company_id, integrationId: integ.id, mode: 'orders', page, modifiedAfter: since })
         if (r.status !== 200) break
         totalPages = Number(r.body?.totalPages || 1)
+        for (const id of (r.body?.changedIds || [])) changedIds.add(Number(id))
         page++
       } while (page <= totalPages && page <= 10) // cap pages/run so one store can't hog the window
 
-      // 2. Mirror the recently-changed storefront orders into the operational
-      // table. syncWooOrders only inserts NEW ones and fires the "New order"
-      // push for them (guarded against a first-time backfill).
+      // 2. Mirror the storefront orders into the operational table. Reconcile
+      // BOTH sets so an order never needs a manual Sync to catch up:
+      //   • every order that changed at the store this run (ANY age) — so a late
+      //     status change on an older order (a failed order finally paid, a
+      //     refund, a late cancel) is reconciled, not just orders created today;
+      //   • all orders created in the last 24h — a safety net for a brand-new
+      //     order whose change we might otherwise miss.
+      // syncWooOrders only INSERTS genuinely-new orders (reconciling the rest in
+      // place), and its own 24h guard keeps the "New order" push from firing on
+      // old orders that merely changed status.
       const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      const wooById = new Map<number, any>()
       const { data: recentWoo } = await db.from('woocommerce_orders')
         .select('*').eq('company_id', integ.company_id)
         .gte('order_date', dayAgo).order('order_date', { ascending: false }).limit(200)
-      const synced = await syncWooOrders(db, integ.company_id, recentWoo || [])
-      results.push({ company: integ.company_id, synced })
+      for (const w of recentWoo || []) wooById.set(Number(w.woo_order_id), w)
+      // Fetch the changed-this-run orders that the recent-24h query didn't cover.
+      const missing = [...changedIds].filter(id => id && !wooById.has(id))
+      for (let i = 0; i < missing.length; i += 300) {
+        const { data } = await db.from('woocommerce_orders')
+          .select('*').eq('company_id', integ.company_id).in('woo_order_id', missing.slice(i, i + 300))
+        for (const w of data || []) wooById.set(Number(w.woo_order_id), w)
+      }
+      const synced = await syncWooOrders(db, integ.company_id, [...wooById.values()])
+      results.push({ company: integ.company_id, synced, changed: changedIds.size })
     } catch (e: any) {
       results.push({ company: integ.company_id, error: e?.message || String(e) })
     }
