@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
+import { track } from '@/lib/analytics'
 import {
   STATUS_TABS, statusMeta, channelMeta, orderAge, fmtMoney,
   CARRIERS, CARRIER_LABEL, CARRIER_SERVICES, isClickCollect,
@@ -174,6 +175,7 @@ export default function OrdersPage() {
   // Open the print preview (packing slips or labels) as an in-page modal.
   const openPrint = useCallback((docType: 'packing_slip' | 'label', ids: string[]) => {
     if (!ids.length || !companyId) { flash('Select at least one order'); return }
+    track(docType === 'label' ? 'order_labels_printed' : 'order_slips_printed', { count: ids.length })
     setPrintModal({ doc: docType, ids, title: docType === 'label' ? `Shipping Label${ids.length > 1 ? 's' : ''}` : `Packing Slip${ids.length > 1 ? 's' : ''}` })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId])
@@ -482,6 +484,14 @@ export default function OrdersPage() {
   // ── Mutations ──────────────────────────────────────────────────────────────
   const patchOrder = async (ids: string[], patch: any, event?: { type: string; detail: string }) => {
     setOrders(os => os.map(o => ids.includes(o.id) ? { ...o, ...patch } : o))
+    // Analytics: emit named fulfilment events from the one choke point every
+    // status/assign/outlet change flows through (bulk toolbar AND single-order
+    // drawer), so the funnel/throughput dashboards see them uniformly. No-op
+    // unless PostHog is configured; never throws.
+    const n = ids.length
+    if (patch.status) track('order_status_set', { status: patch.status, count: n, bulk: n > 1 })
+    if ('assignee_id' in patch) track('order_assigned', { count: n, unassign: !patch.assignee_id })
+    if ('store_location_id' in patch) track('order_outlet_assigned', { count: n })
     try {
       await (supabase as any).from('orders').update({ ...patch, updated_at: new Date().toISOString() }).in('id', ids)
       if (event && companyId) {
