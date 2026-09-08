@@ -17,7 +17,7 @@ function genToken() {
 // POST: create a media request and post the link into the conversation.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId, contactId, prompt, accept, maxFiles, expiryHours, createdBy } = await req.json()
+    const { companyId, conversationId, contactId, prompt, accept, maxFiles, expiryHours, createdBy, deliveryChannel } = await req.json()
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
 
@@ -53,6 +53,10 @@ export async function POST(req: NextRequest) {
         sender_type: 'agent', sender_name: createdBy || 'Support',
         content: smsText,
         message_type: 'media_request',
+        // Stamp the channel the link is actually delivered over (SMS/email/…) so
+        // the inbox doesn't mislabel a texted request as "Live Chat". The client
+        // computes this; default to chat when not supplied.
+        delivery_channel: (typeof deliveryChannel === 'string' && deliveryChannel) ? deliveryChannel : 'chat',
         message_payload: { kind: 'media_request', token, prompt: request.prompt, accept: request.accept, max_files: request.max_files, expires_at, link },
       })
       await db.from('conversations').update({ last_message: 'Requested media upload', last_message_at: new Date().toISOString() }).eq('id', conversationId)

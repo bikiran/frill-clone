@@ -3824,6 +3824,19 @@ export default function InboxPage() {
   // couldn't be received. Creates a media request with sensible defaults (photos
   // + videos) and texts the secure upload link, no modal.
   const [quickMrBusy, setQuickMrBusy] = useState(false)
+  // Where the upload link will ACTUALLY be delivered — used to stamp the
+  // in-thread card so the inbox shows the true channel (SMS/email) instead of
+  // always "Live Chat". Mirrors deliverUploadLink's routing: email/Messenger/
+  // Instagram keep their channel; anything else with a known mobile (thread
+  // sms_number or the contact's phone) goes by SMS; only a widget conversation
+  // with no mobile at all is truly chat.
+  const uploadChannel = (): string => {
+    const ch = activeChannel
+    if (ch === 'email' || ch === 'instagram' || ch === 'facebook') return ch
+    if (smsDestination()) return 'sms'
+    return 'chat'
+  }
+
   // Deliver a freshly-created upload link to the customer EXACTLY ONCE.
   //
   // The server (/api/media-requests) always posts the in-thread card and, when
@@ -3859,6 +3872,7 @@ export default function InboxPage() {
           prompt: 'Please upload your photos or videos here.',
           accept: ['image', 'video'], maxFiles: 10, expiryHours: null,
           createdBy: user?.user_metadata?.display_name || user?.email?.split('@')[0],
+          deliveryChannel: uploadChannel(),
         }),
       })
       const data = await res.json()
@@ -3884,6 +3898,7 @@ export default function InboxPage() {
           accept: mrAccept, maxFiles: parseInt(mrMaxFiles) || 10,
           expiryHours: mrExpiry ? parseInt(mrExpiry) : null,
           createdBy: user?.user_metadata?.display_name || user?.email?.split('@')[0],
+          deliveryChannel: uploadChannel(),
         }),
       })
       const data = await res.json()
