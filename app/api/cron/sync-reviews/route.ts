@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { syncReviews } from '@/lib/google-business'
+import { logJobRun } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -29,6 +30,8 @@ export async function GET(req: NextRequest) {
     if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const startedAt = new Date().toISOString()
+  const t0 = Date.now()
   const db = admin()
   const { data: accounts } = await db.from('google_business_accounts')
     .select('company_id, account_name, location_name, is_active')
@@ -51,5 +54,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const errored = results.filter(r => r.error).length
+  await logJobRun({
+    job: 'sync-reviews', startedAt, durationMs: Date.now() - t0,
+    status: results.length === 0 ? 'idle' : (errored ? 'error' : 'success'),
+    detail: { companies: results.length, errored },
+    error: errored ? results.find(r => r.error)?.error : null,
+  })
   return NextResponse.json({ ok: true, companies: results.length, results })
 }

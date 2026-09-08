@@ -1220,6 +1220,12 @@ const JOBS: { key: string; label: string; schedule: string; desc: string; color:
   { key: 'email-sync', label: 'Email Sync', schedule: 'Every 5 min', desc: 'Pulls new mail into every connected Gmail mailbox', color: '#8b5cf6', staleMs: 20 * 60000 },
   { key: 'order-sync', label: 'Order Sync', schedule: 'Every 3 min', desc: 'Pulls WooCommerce orders and reconciles the board to the store (recovers paid-but-cancelled, applies terminal states)', color: '#0ea5e9', staleMs: 15 * 60000 },
   { key: 'campaigns-process', label: 'Campaign Worker', schedule: 'Every 2 min', desc: 'Starts scheduled campaigns and drips the next sending batch', color: '#ff7a6b', staleMs: 10 * 60000 },
+  { key: 'transcode-worker', label: 'Transcode Worker', schedule: 'Every minute', desc: 'Drains the video transcode queue and reclaims stuck jobs', color: '#ec4899', staleMs: 8 * 60000 },
+  { key: 'task-reminders', label: 'Task Reminders', schedule: 'Every 15 min', desc: 'Pushes a reminder when a task becomes due', color: '#f59e0b', staleMs: 45 * 60000 },
+  { key: 'sweep-stale-calls', label: 'Stale-Call Sweep', schedule: 'Every 15 min', desc: 'Closes calls stuck live after a lost hangup webhook', color: '#14b8a6', staleMs: 45 * 60000 },
+  { key: 'demo-seed', label: 'Demo Reset', schedule: 'Hourly', desc: 'Rebuilds the public Harbour & Bean showcase workspace', color: '#6366f1', staleMs: 150 * 60000 },
+  { key: 'sync-reviews', label: 'Review Sync', schedule: 'Every 6 hours', desc: 'Pulls new Google reviews into connected businesses', color: '#eab308', staleMs: 8 * 3600000 },
+  { key: 'expire-media', label: 'Media Expiry', schedule: 'Daily', desc: 'Purges expired share links and 30-day-old trashed media', color: '#0891b2', staleMs: 26 * 3600000 },
 ]
 const DEFAULT_STALE_MS = 3600000 // 1h fallback for jobs without an explicit cadence
 const prettyJob = (k: string) => k.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
