@@ -122,6 +122,12 @@ export default function CommandCentrePage() {
   const [search, setSearch] = useState('')
   const [dirFilter, setDirFilter] = useState<'all' | 'inbound' | 'outbound'>('all')
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | 'answered' | 'missed' | 'voicemail'>('all')
+  // Call Logs dataset for ranges that reach beyond the 30-day live-board cache
+  // (All / This month / older custom ranges). Fetched from the server per range
+  // so the KPI totals, the list, search and filters are accurate for the whole
+  // period instead of silently capping at the last 30 days. Null → use the cache.
+  const [logCalls, setLogCalls] = useState<Call[] | null>(null)
+  const [logLoading, setLogLoading] = useState(false)
 
   // Restore a saved default view once, before first paint of the board.
   useEffect(() => {
@@ -380,6 +386,64 @@ export default function CommandCentrePage() {
   }, [boardRange, boardFrom, boardTo])
   const boardIsToday = boardRange === 'today'
 
+  // Does the selected window reach past the 30-day cache the board loads? If so
+  // the Call Logs tab must fetch the calls for the range from the server, or its
+  // totals/list would silently stop at 30 days.
+  const CACHE_DAYS = 30
+  const rangeNeedsFetch = useMemo(
+    () => boardWin.from < Date.now() - (CACHE_DAYS - 1) * 864e5,
+    [boardWin],
+  )
+
+  // Fetch every call in the selected window (paginated) so all-time totals work.
+  // Only the date window drives the fetch — location/agent/direction/outcome/
+  // search are applied client-side over this superset, so changing them never
+  // needs a refetch.
+  const loadLogCalls = useCallback(async () => {
+    if (!companyId) return
+    setLogLoading(true)
+    try {
+      const { from, to } = boardWin
+      const fromIso = new Date(from).toISOString()
+      const toIso = to >= Number.MAX_SAFE_INTEGER ? null : new Date(to).toISOString()
+      const cols = 'id, direction, status, is_voicemail, duration_seconds, from_number, to_number, caller_name, contact_name, agent_name, contact_id, created_at, ended_at, sentiment, recording_url'
+      const acc: Call[] = []
+      const PAGE = 1000
+      for (let p = 0; p < 50; p++) { // cap 50k so one huge account can't hang the tab
+        let q = (supabase as any).from('calls').select(cols).eq('company_id', companyId).gte('created_at', fromIso)
+        if (toIso) q = q.lt('created_at', toIso)
+        const { data } = await q.order('created_at', { ascending: false }).range(p * PAGE, p * PAGE + PAGE - 1)
+        if (!data?.length) break
+        acc.push(...data)
+        if (data.length < PAGE) break
+      }
+      // Backfill contact→location for any contacts not already mapped, so the
+      // Location filter works on the fetched rows too.
+      const cids = Array.from(new Set(acc.map(c => c.contact_id).filter(Boolean))) as string[]
+      const missing = cids.filter(id => !(id in contactLoc))
+      if (missing.length) {
+        const map: Record<string, string> = {}
+        for (let i = 0; i < missing.length; i += 300) {
+          const { data } = await (supabase as any).from('contacts').select('id, location_id').in('id', missing.slice(i, i + 300))
+          for (const c of data || []) if (c.location_id) map[c.id] = c.location_id
+        }
+        if (Object.keys(map).length) setContactLoc(prev => ({ ...prev, ...map }))
+      }
+      setLogCalls(acc)
+    } finally { setLogLoading(false) }
+    // contactLoc intentionally omitted: read as a snapshot to compute missing ids
+    // (a stale read only means we re-fetch a few locations, never a loop).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, boardWin])
+
+  // Drive the fetch: only on the Call Logs tab, only when the range reaches past
+  // the cache. Otherwise clear it so the tab uses the shared 30-day dataset.
+  useEffect(() => {
+    if (tab !== 'logs' || !companyId) return
+    if (!rangeNeedsFetch) { setLogCalls(null); return }
+    loadLogCalls()
+  }, [tab, companyId, rangeNeedsFetch, loadLogCalls])
+
   // ── Derived stats (selected window + previous window for deltas) ─────────────
   const stats = useMemo(() => {
     const { from, to, prevFrom, prevTo } = boardWin
@@ -508,12 +572,19 @@ export default function CommandCentrePage() {
   const logRows = useMemo(() => {
     const q = search.trim().toLowerCase()
     const { from, to } = boardWin
-    return scoped.filter(c => {
+    // Use the range-fetched dataset when present (all-time / >30-day ranges),
+    // else the shared 30-day cache. When using the fetched set we bypass `scoped`
+    // and apply location/agent here so both paths filter identically.
+    const source = logCalls ?? calls
+    return source.filter(c => {
       // Honour the board date range — without this the Call Logs KPIs and table
       // showed EVERY loaded call regardless of the "Today"/"All" selection, so
       // "Today" and "All" reported the same (30-day) total.
       const t = new Date(c.created_at).getTime()
       if (t < from || t >= to) return false
+      if (locFilter === 'none') { if (callLoc(c)) return false }
+      else if (locFilter !== 'all') { if (callLoc(c) !== locFilter) return false }
+      if (agentFilter !== 'all' && (c.agent_name || '') !== agentFilter) return false
       if (dirFilter !== 'all' && c.direction !== dirFilter) return false
       if (outcomeFilter === 'answered' && !isAnswered(c)) return false
       if (outcomeFilter === 'missed' && !isMissed(c)) return false
@@ -524,7 +595,7 @@ export default function CommandCentrePage() {
       }
       return true
     })
-  }, [scoped, search, dirFilter, outcomeFilter, boardWin])
+  }, [logCalls, calls, contactLoc, locFilter, agentFilter, search, dirFilter, outcomeFilter, boardWin])
   const logAgg = useMemo(() => {
     const a = logRows.filter(isAnswered).length, m = logRows.filter(isMissed).length, v = logRows.filter(isVoicemail).length
     const dur = logRows.filter(isAnswered).reduce((s, c) => s + (c.duration_seconds || 0), 0)
@@ -940,6 +1011,13 @@ export default function CommandCentrePage() {
             {kpi('Avg duration', fmtDurLong(logAgg.avgDur), '#7c3aed', ic.clock)}
             {kpi('Voicemails', logAgg.voicemail, '#d97706', ic.vm)}
           </div>
+          {logLoading && (
+            <p style={{ margin: '-4px 0 0', fontSize: 12, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span style={{ width: 12, height: 12, border: '2px solid var(--border)', borderTopColor: 'var(--coral)', borderRadius: '50%', display: 'inline-block', animation: 'ccspin .8s linear infinite' }} />
+              Loading the full period…
+              <style>{`@keyframes ccspin{to{transform:rotate(360deg)}}`}</style>
+            </p>
+          )}
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, number, or agent…"
