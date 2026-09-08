@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
+import { setPosthog } from '@/lib/analytics'
 
 // Product analytics via PostHog. Loads only when NEXT_PUBLIC_POSTHOG_KEY is set,
 // so builds/deploys without it are unaffected (a no-op). Captures pageviews on
@@ -47,6 +48,9 @@ export default function Analytics() {
         })
         if (cancelled) return
         phRef.current = posthog
+        // Expose the instance to lib/analytics' track() so components can emit
+        // named business events (fulfilment funnel, etc.).
+        setPosthog(posthog)
         posthog.capture('$pageview', { $current_url: window.location.href })
 
         // Tie events to the signed-in user and their workspace.
