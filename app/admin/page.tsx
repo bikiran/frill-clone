@@ -35,6 +35,9 @@ export default function AdminDashboard() {
   const [user, setUser] = useState<any>(null)
   const [plan, setPlan] = useState<any>('free')
   const [stats, setStats] = useState({ ideas: 0, announcements: 0, surveys: 0, polls: 0 })
+  // Operational (CRM/commerce) snapshot — orders, calls, inbox — so the dashboard
+  // reflects the day-to-day the team actually runs, not just the feedback board.
+  const [ops, setOps] = useState<{ awaiting: number; shipped: number; calls: number; open: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set())
   const [activity, setActivity] = useState<any[]>([])
@@ -64,6 +67,7 @@ export default function AdminDashboard() {
     resolveCompanyId().then(cid => {
       fetchStats(cid)
       fetchActivity(cid)
+      fetchOps(cid)
     })
 
     // Live activity: subscribe to ideas table changes
@@ -162,6 +166,23 @@ export default function AdminDashboard() {
       }
     } catch (err: any) { alert(err.message) }
     setSeeding(false)
+  }
+
+  const fetchOps = async (cid?: string) => {
+    try {
+      const compId = cid || companyId || await resolveCompanyId()
+      if (!compId) return
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+      const since30 = new Date(Date.now() - 30 * 864e5).toISOString()
+      const cnt = async (q: any) => { try { const { count } = await q; return count || 0 } catch { return 0 } }
+      const [awaiting, shipped, calls, open] = await Promise.all([
+        cnt((supabase as any).from('orders').select('id', { count: 'exact', head: true }).eq('company_id', compId).in('status', ['awaiting_shipment', 'packed', 'click_and_collect'])),
+        cnt((supabase as any).from('orders').select('id', { count: 'exact', head: true }).eq('company_id', compId).eq('status', 'shipped').gte('shipped_at', since30)),
+        cnt((supabase as any).from('calls').select('id', { count: 'exact', head: true }).eq('company_id', compId).gte('created_at', todayStart.toISOString())),
+        cnt((supabase as any).from('conversations').select('id', { count: 'exact', head: true }).eq('company_id', compId).eq('status', 'open')),
+      ])
+      setOps({ awaiting, shipped, calls, open })
+    } catch {}
   }
 
   const fetchActivity = async (cid?: string) => {
@@ -295,6 +316,24 @@ export default function AdminDashboard() {
               style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
               ✓ Mark all done
             </button>
+          </div>
+
+          {/* Operations at a glance (CRM / commerce) */}
+          <div className="mb-8">
+            <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Operations</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: 'Awaiting fulfilment', value: ops?.awaiting, href: '/admin/orders', color: '#1d4ed8' },
+                { label: 'Shipped · 30d', value: ops?.shipped, href: '/admin/orders', color: '#15803d' },
+                { label: 'Calls today', value: ops?.calls, href: '/admin/command-centre', color: '#7c3aed' },
+                { label: 'Open conversations', value: ops?.open, href: '/admin/inbox', color: '#b45309' },
+              ].map(s => (
+                <Link key={s.label} href={s.href} className="bg-white rounded-xl border p-4 hover:shadow-md transition-smooth" style={{ borderColor: 'var(--border)' }}>
+                  <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--slate)' }}>{s.label}</p>
+                  <p className="text-3xl font-bold" style={{ color: s.color }}>{ops === null ? '…' : (s.value ?? 0)}</p>
+                </Link>
+              ))}
+            </div>
           </div>
 
           {/* Stats */}
