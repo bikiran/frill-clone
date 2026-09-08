@@ -3824,6 +3824,30 @@ export default function InboxPage() {
   // couldn't be received. Creates a media request with sensible defaults (photos
   // + videos) and texts the secure upload link, no modal.
   const [quickMrBusy, setQuickMrBusy] = useState(false)
+  // Deliver a freshly-created upload link to the customer EXACTLY ONCE.
+  //
+  // The server (/api/media-requests) always posts the in-thread card and, when
+  // the thread has an sms_number, also texts the link. So here we only cover
+  // what the server did NOT deliver:
+  //   • email / Messenger / Instagram — the server never sends these;
+  //   • sms/chat/widget with NO thread sms_number but a known mobile — the
+  //     server didn't text, so send it ourselves (silent: the card is already
+  //     posted, and we don't duplicate it).
+  // Crucially, when the thread HAS an sms_number the server already texted, so
+  // we send nothing — this is what removes the SMS double-send (server + client)
+  // that hit SMS-channel media requests.
+  const deliverUploadLink = async (link: string, body: string): Promise<string> => {
+    const subject = `${companyInfo?.name || 'We'} need a few files from you`
+    const ch = activeChannel
+    if (ch === 'email' || ch === 'instagram' || ch === 'facebook') {
+      return deliverToCustomer({ subject, body, url: link })
+    }
+    if (!(selected as any)?.sms_number && smsDestination()) {
+      return deliverToCustomer({ subject, body, url: link, silent: true })
+    }
+    return 'sent' // server already texted (thread has an sms_number), or widget with no mobile
+  }
+
   const requestMediaQuick = async () => {
     if (!companyId || !selected || quickMrBusy) return
     setQuickMrBusy(true)
@@ -3840,25 +3864,7 @@ export default function InboxPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not create request')
       let how = 'sent'
-      const widget = activeChannel === 'widget' || activeChannel === 'chat'
-      if (!widget && data.link) {
-        how = await deliverToCustomer({
-          subject: `${companyInfo?.name || 'We'} need a few files from you`,
-          body: 'Please upload your photos or videos here:',
-          url: data.link,
-        })
-      } else if (widget && data.link && !(selected as any)?.sms_number && smsDestination()) {
-        // Chat/widget conversation with no thread SMS number but a known mobile:
-        // the server only texts the link when the thread has an sms_number, so an
-        // async live-chat customer who has left the widget never received it.
-        // Text it ourselves (silent — the media-request card is already in the
-        // thread). Gated on !sms_number so we never double up with the server.
-        how = await deliverToCustomer({
-          subject: `${companyInfo?.name || 'We'} need a few files from you`,
-          body: 'Please upload your photos or videos here:',
-          url: data.link, silent: true,
-        })
-      }
+      if (data.link) how = await deliverUploadLink(data.link, 'Please upload your photos or videos here:')
       showToast(`Upload link ${how.toLowerCase()}`)
       selectConversation(selected)
     } catch (e: any) { showToast(e.message || 'Could not send the upload link') }
@@ -3884,32 +3890,14 @@ export default function InboxPage() {
       if (!res.ok) throw new Error(data.error || 'Could not create request')
       setShowMediaRequest(false)
 
-      // Non-widget channels: send the upload link (the in-chat uploader can't
-      // render on email/SMS/Messenger/Instagram).
+      // Deliver the link over the customer's channel — see deliverUploadLink for
+      // how it avoids both a missed send (chat with a mobile) and a double send
+      // (SMS thread the server already texted).
       let how = 'sent'
-      const widget = activeChannel === 'widget' || activeChannel === 'chat'
-      const mrBody = `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`
-      if (!widget && data.link) {
+      if (data.link) {
         try {
-          how = await deliverToCustomer({
-            subject: `${companyInfo?.name || 'We'} need a few files from you`,
-            body: mrBody,
-            url: data.link,
-          })
+          how = await deliverUploadLink(data.link, `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`)
         } catch (e: any) { showToast(`Request created, but sending failed: ${e.message}`); setMrSaving(false); return }
-      } else if (widget && data.link && !(selected as any)?.sms_number && smsDestination()) {
-        // Chat/widget conversation with no thread SMS number but a known mobile:
-        // the server only texts when the thread has an sms_number, so an async
-        // live-chat customer who left the widget never received it. Text it
-        // ourselves (silent — the card is already in the thread; gated on
-        // !sms_number so we never double up with the server's own send).
-        try {
-          how = await deliverToCustomer({
-            subject: `${companyInfo?.name || 'We'} need a few files from you`,
-            body: mrBody,
-            url: data.link, silent: true,
-          })
-        } catch { /* card is already posted; SMS copy is best-effort */ }
       }
       showToast(`Media request ${how.toLowerCase()}`)
       selectConversation(selected)
