@@ -2642,55 +2642,75 @@ function UsersPage() {
 }
 
 function AnalyticsPage() {
-  const growth = [12, 19, 15, 25, 22, 31, 28, 38, 35, 42, 39, 48]
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  const features = [
-    { name: 'Ideas Board', adoption: 98, color: '#ff7a6b' },
-    { name: 'Roadmap', adoption: 74, color: '#6366f1' },
-    { name: 'Announcements', adoption: 61, color: '#10b981' },
-    { name: 'Help Center', adoption: 48, color: '#f59e0b' },
-    { name: 'Live Chat', adoption: 29, color: '#8b5cf6' },
-    { name: 'AI Assistant', adoption: 22, color: '#ec4899' },
-    { name: 'Custom Domain', adoption: 18, color: '#0891b2' },
-    { name: 'API Access', adoption: 15, color: '#14b8a6' },
-  ]
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  // Real, platform-wide metrics from our own tables. (Live product-usage funnels
+  // live in PostHog — this reflects the same operational activity from the DB so
+  // it's accurate without a PostHog round-trip.)
+  const [growth, setGrowth] = useState<{ label: string; value: number }[] | null>(null)
+  const [ops, setOps] = useState<{ orders: number; shipped: number; calls: number; companies: number } | null>(null)
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const since = new Date(Date.now() - 30 * 864e5).toISOString()
+        const count = async (q: any) => { try { const { count } = await q; return count || 0 } catch { return 0 } }
+        // Company growth: last 12 months, bucketed from companies.created_at.
+        const buckets: { label: string; value: number }[] = []
+        const now = new Date()
+        for (let i = 11; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+          const next = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
+          buckets.push({ label: MONTHS[d.getMonth()], value: await count(
+            (supabase as any).from('companies').select('*', { count: 'exact', head: true })
+              .gte('created_at', d.toISOString()).lt('created_at', next.toISOString())
+          ) })
+        }
+        setGrowth(buckets)
+        const [orders, shipped, calls, companies] = await Promise.all([
+          count((supabase as any).from('orders').select('*', { count: 'exact', head: true }).gte('created_at', since)),
+          count((supabase as any).from('orders').select('*', { count: 'exact', head: true }).eq('status', 'shipped').gte('shipped_at', since)),
+          count((supabase as any).from('calls').select('*', { count: 'exact', head: true }).gte('created_at', since)),
+          count((supabase as any).from('companies').select('*', { count: 'exact', head: true })),
+        ])
+        setOps({ orders, shipped, calls, companies })
+      } catch { setGrowth([]); setOps({ orders: 0, shipped: 0, calls: 0, companies: 0 }) }
+    })()
+  }, [])
+  const gMax = Math.max(1, ...(growth || []).map(g => g.value))
   return (
     <div>
-      <SectionHeader title="Analytics" sub="Platform-wide usage and growth metrics" />
+      <SectionHeader title="Analytics" sub="Platform-wide activity from Colvy's own data (live product funnels are in PostHog)" />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Company Growth</p>
-          <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 16 }}>New companies per month</p>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 80 }}>
-            {growth.map((v, i) => (
-              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <div style={{ width: '100%', background: 'linear-gradient(to top, #ff7a6b, #ff9a8b)', borderRadius: '4px 4px 0 0', height: `${(v / 48) * 68}px`, transition: 'height 0.4s ease' }} />
-                <span style={{ fontSize: 9, color: 'var(--sa-muted)' }}>{months[i]}</span>
+          <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 16 }}>New companies per month (last 12)</p>
+          {growth === null ? <p style={{ fontSize: 12, color: 'var(--sa-muted)' }}>Loading…</p> : (
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 80 }}>
+              {growth.map((g, i) => (
+                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }} title={`${g.value} new`}>
+                  <div style={{ width: '100%', background: 'linear-gradient(to top, #ff7a6b, #ff9a8b)', borderRadius: '4px 4px 0 0', height: `${(g.value / gMax) * 68}px`, minHeight: g.value ? 2 : 0, transition: 'height 0.4s ease' }} />
+                  <span style={{ fontSize: 9, color: 'var(--sa-muted)' }}>{g.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Operations · last 30 days</p>
+          <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 16 }}>Order & call activity across every workspace</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {[
+              { label: 'Orders imported', value: ops?.orders, color: '#0ea5e9' },
+              { label: 'Orders shipped', value: ops?.shipped, color: '#10b981' },
+              { label: 'Calls handled', value: ops?.calls, color: '#8b5cf6' },
+              { label: 'Total companies', value: ops?.companies, color: '#ff7a6b' },
+            ].map(m => (
+              <div key={m.label} style={{ padding: '12px 14px', borderRadius: 12, border: '1px solid var(--sa-border)' }}>
+                <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 4px' }}>{m.label}</p>
+                <p style={{ fontSize: 22, fontWeight: 800, color: m.color, margin: 0 }}>{ops === null ? '…' : (m.value ?? 0).toLocaleString()}</p>
               </div>
             ))}
           </div>
         </div>
-        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Feature Adoption</p>
-          <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 16 }}>% of companies using each feature</p>
-          {features.map(f => (
-            <div key={f.name} style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontSize: 12, color: 'var(--sa-muted)' }}>{f.name}</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--sa-text)' }}>{f.adoption}%</span>
-              </div>
-              <div style={{ height: 5, borderRadius: 999, background: 'var(--sa-border)' }}>
-                <div style={{ height: '100%', width: `${f.adoption}%`, background: f.color, borderRadius: 999 }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
-        <KPI label="Avg Session" value="8.4m" trend={12} sub="per user" color="#6366f1" />
-        <KPI label="Ideas / Company" value="34" trend={8} sub="average" color="#ff7a6b" />
-        <KPI label="Vote Rate" value="67%" trend={5} sub="ideas with votes" color="#10b981" />
-        <KPI label="NPS Score" value="71" trend={3} sub="platform average" color="#f59e0b" />
       </div>
     </div>
   )
