@@ -3840,11 +3840,23 @@ export default function InboxPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not create request')
       let how = 'sent'
-      if (activeChannel !== 'widget' && activeChannel !== 'chat' && data.link) {
+      const widget = activeChannel === 'widget' || activeChannel === 'chat'
+      if (!widget && data.link) {
         how = await deliverToCustomer({
           subject: `${companyInfo?.name || 'We'} need a few files from you`,
           body: 'Please upload your photos or videos here:',
           url: data.link,
+        })
+      } else if (widget && data.link && !(selected as any)?.sms_number && smsDestination()) {
+        // Chat/widget conversation with no thread SMS number but a known mobile:
+        // the server only texts the link when the thread has an sms_number, so an
+        // async live-chat customer who has left the widget never received it.
+        // Text it ourselves (silent — the media-request card is already in the
+        // thread). Gated on !sms_number so we never double up with the server.
+        how = await deliverToCustomer({
+          subject: `${companyInfo?.name || 'We'} need a few files from you`,
+          body: 'Please upload your photos or videos here:',
+          url: data.link, silent: true,
         })
       }
       showToast(`Upload link ${how.toLowerCase()}`)
@@ -3875,14 +3887,29 @@ export default function InboxPage() {
       // Non-widget channels: send the upload link (the in-chat uploader can't
       // render on email/SMS/Messenger/Instagram).
       let how = 'sent'
-      if (activeChannel !== 'widget' && activeChannel !== 'chat' && data.link) {
+      const widget = activeChannel === 'widget' || activeChannel === 'chat'
+      const mrBody = `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`
+      if (!widget && data.link) {
         try {
           how = await deliverToCustomer({
             subject: `${companyInfo?.name || 'We'} need a few files from you`,
-            body: `${mrPrompt.trim() || 'Please upload the requested files.'}\nUpload here:`,
+            body: mrBody,
             url: data.link,
           })
         } catch (e: any) { showToast(`Request created, but sending failed: ${e.message}`); setMrSaving(false); return }
+      } else if (widget && data.link && !(selected as any)?.sms_number && smsDestination()) {
+        // Chat/widget conversation with no thread SMS number but a known mobile:
+        // the server only texts when the thread has an sms_number, so an async
+        // live-chat customer who left the widget never received it. Text it
+        // ourselves (silent — the card is already in the thread; gated on
+        // !sms_number so we never double up with the server's own send).
+        try {
+          how = await deliverToCustomer({
+            subject: `${companyInfo?.name || 'We'} need a few files from you`,
+            body: mrBody,
+            url: data.link, silent: true,
+          })
+        } catch { /* card is already posted; SMS copy is best-effort */ }
       }
       showToast(`Media request ${how.toLowerCase()}`)
       selectConversation(selected)
