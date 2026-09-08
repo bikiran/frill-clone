@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import { setPosthog } from '@/lib/analytics'
+import { getEffectiveEntitlements } from '@/lib/entitlements-client'
+import { flagEnabled } from '@/lib/feature-flags'
 
 // Product analytics via PostHog. Loads only when NEXT_PUBLIC_POSTHOG_KEY is set,
 // so builds/deploys without it are unaffected (a no-op). Captures pageviews on
@@ -25,6 +27,12 @@ export default function Analytics() {
 
     ;(async () => {
       try {
+        // Per-company operational flag (default ON). A logged-in company that has
+        // turned analytics off sends no events; anonymous/marketing visitors (no
+        // company resolved) and any lookup failure default to ON, unchanged.
+        const ent = await getEffectiveEntitlements().catch(() => null)
+        if (ent && !flagEnabled(ent.features, 'posthog_analytics')) return
+        if (cancelled) return
         const posthog = (await import('posthog-js')).default
         posthog.init(key, {
           api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',

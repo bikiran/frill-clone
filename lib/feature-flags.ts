@@ -15,8 +15,16 @@ export const OPERATIONAL_FLAGS: { key: string; label: string; desc: string }[] =
     label: 'Order auto-reconcile',
     desc: 'The order-sync worker reconciles the board to the store every few minutes (recovers paid-but-cancelled orders, applies terminal states, refreshes payment). Off = new orders still import, but no automatic reconciliation of existing ones.',
   },
-  // media_sms_fallback and posthog_analytics are added in a follow-up once their
-  // client-side gates are wired, so a shown toggle always takes full effect.
+  {
+    key: 'media_sms_fallback',
+    label: 'Media-link SMS',
+    desc: 'Text the upload link to the customer’s mobile so they receive it off-site (an SMS thread, or a live-chat customer who has a mobile). Off = the link is only posted in the conversation, never texted.',
+  },
+  {
+    key: 'posthog_analytics',
+    label: 'Product analytics (PostHog)',
+    desc: 'Capture pageviews and fulfilment events for this company. Off = no analytics events are sent for this company (independent of the global PostHog key).',
+  },
 ]
 export const OPERATIONAL_FLAG_KEYS = OPERATIONAL_FLAGS.map(f => f.key)
 
