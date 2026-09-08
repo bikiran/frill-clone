@@ -2654,6 +2654,18 @@ function AnalyticsPage() {
   // it's accurate without a PostHog round-trip.)
   const [growth, setGrowth] = useState<{ label: string; value: number }[] | null>(null)
   const [ops, setOps] = useState<{ orders: number; shipped: number; calls: number; companies: number } | null>(null)
+  // Live product analytics pulled from PostHog's Query API via our server route.
+  const [ph, setPh] = useState<any>(null)      // { configured, funnel, trend, totals, errors } | { error }
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data } = await supabase.auth.getSession()
+        const token = data?.session?.access_token
+        const res = await fetch('/api/platform-admin/posthog-insights', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+        setPh(await res.json())
+      } catch { setPh({ error: 'unreachable' }) }
+    })()
+  }, [])
   useEffect(() => {
     ;(async () => {
       try {
@@ -2684,7 +2696,7 @@ function AnalyticsPage() {
   const gMax = Math.max(1, ...(growth || []).map(g => g.value))
   return (
     <div>
-      <SectionHeader title="Analytics" sub="Platform-wide activity from Colvy's own data (live product funnels are in PostHog)" />
+      <SectionHeader title="Analytics" sub="Platform-wide activity from Colvy's own data, plus live PostHog funnels below" />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Company Growth</p>
@@ -2717,6 +2729,80 @@ function AnalyticsPage() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Live product analytics from PostHog */}
+      <div style={{ marginTop: 14 }}>
+        <SectionHeader title="Product analytics · live from PostHog" sub="Fulfilment funnel and shipped-order trend, queried live (last 30 / 14 days)" />
+        {ph === null ? (
+          <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Loading…</p>
+        ) : ph.error ? (
+          <div style={{ padding: '14px 16px', borderRadius: 10, background: '#ef444418', border: '1px solid #ef444455', fontSize: 12.5, color: 'var(--sa-text)' }}>Couldn’t reach PostHog: {String(ph.error)}</div>
+        ) : ph.configured === false ? (
+          <div style={{ padding: '14px 16px', borderRadius: 10, background: '#f59e0b18', border: '1px solid #f59e0b55', fontSize: 12.5, color: 'var(--sa-text)', lineHeight: 1.6 }}>
+            Live PostHog analytics aren’t configured. Set <b>POSTHOG_API_KEY</b> (a personal API key with query read scope) and <b>POSTHOG_PROJECT_ID</b> in the environment, then reload. (Optional: <b>POSTHOG_API_HOST</b> if not on US/EU cloud.)
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            {/* Funnel */}
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Packed → Shipped funnel</p>
+              <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 16 }}>Unique orders, last 30 days</p>
+              {(!ph.funnel || ph.funnel.length === 0) ? (
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)' }}>No funnel data yet.</p>
+              ) : (() => {
+                const top = Math.max(1, ...ph.funnel.map((s: any) => s.count))
+                const first = ph.funnel[0]?.count || 0
+                return ph.funnel.map((s: any, i: number) => {
+                  const conv = first ? Math.round((s.count / first) * 100) : 0
+                  return (
+                    <div key={i} style={{ marginBottom: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontSize: 12, color: 'var(--sa-muted)', textTransform: 'capitalize' }}>{i + 1}. {s.name}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--sa-text)' }}>{s.count.toLocaleString()}{i > 0 && <span style={{ color: 'var(--sa-muted)', fontWeight: 500 }}> · {conv}%</span>}</span>
+                      </div>
+                      <div style={{ height: 8, borderRadius: 999, background: 'var(--sa-border)' }}>
+                        <div style={{ height: '100%', width: `${(s.count / top) * 100}%`, background: i === 0 ? '#6366f1' : '#10b981', borderRadius: 999 }} />
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+            {/* Trend + totals */}
+            <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Orders shipped / day</p>
+              <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 16 }}>Last 14 days</p>
+              {(!ph.trend || ph.trend.length === 0) ? (
+                <p style={{ fontSize: 12, color: 'var(--sa-muted)' }}>No trend data yet.</p>
+              ) : (() => {
+                const tMax = Math.max(1, ...ph.trend.map((d: any) => d.value))
+                return (
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 70, marginBottom: 14 }}>
+                    {ph.trend.map((d: any, i: number) => (
+                      <div key={i} style={{ flex: 1, background: 'linear-gradient(to top,#10b981,#34d399)', borderRadius: '3px 3px 0 0', height: `${(d.value / tMax) * 60}px`, minHeight: d.value ? 2 : 0 }} title={`${d.label}: ${d.value}`} />
+                    ))}
+                  </div>
+                )
+              })()}
+              {ph.totals && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {[
+                    { k: 'shipped', label: 'Shipped · 30d' },
+                    { k: 'labels', label: 'Labels printed' },
+                    { k: 'pageviews', label: 'Pageviews' },
+                    { k: 'visitors', label: 'Visitors' },
+                  ].map(m => (
+                    <div key={m.k} style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid var(--sa-border)' }}>
+                      <p style={{ fontSize: 10.5, color: 'var(--sa-muted)', margin: '0 0 2px' }}>{m.label}</p>
+                      <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{Number(ph.totals[m.k] || 0).toLocaleString()}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
