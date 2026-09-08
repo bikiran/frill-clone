@@ -489,7 +489,7 @@ export default function OrdersPage() {
       }
     } catch {}
   }
-  const setStatus = (ids: string[], status: string) => patchOrder(ids, { status, ...(status === 'shipped' ? { shipped_at: new Date().toISOString() } : {}) }, { type: status === 'shipped' ? 'shipped' : status === 'packed' ? 'packed' : 'status_changed', detail: `Status set to ${statusMeta(status).label}` })
+  const setStatus = (ids: string[], status: string) => patchOrder(ids, { status, ...(status === 'shipped' ? { shipped_at: new Date().toISOString(), fulfilment_status: 'fulfilled' } : {}) }, { type: status === 'shipped' ? 'shipped' : status === 'packed' ? 'packed' : 'status_changed', detail: `Status set to ${statusMeta(status).label}` })
   const assign = (ids: string[], userId: string | null) => patchOrder(ids, { assignee_id: userId, assignee_name: teamName(userId) }, { type: 'assigned', detail: userId ? `Assigned to ${teamName(userId)}` : 'Unassigned' })
   const outletName = (id: string | null) => locations.find(l => l.id === id)?.name || null
   const setDefaultOutletPref = (id: string | null) => {
@@ -706,6 +706,17 @@ export default function OrdersPage() {
       {selCount > 0 ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           <span style={{ fontSize: 12.5, fontWeight: 700, color: ACCENT }}>{selCount} selected</span>
+          {/* Selection is per-page; let staff extend it to the whole filtered
+              queue so a bulk action isn't capped at one page of results. */}
+          {selCount < filtered.length && pageRows.length > 0 && pageRows.every(o => selected.has(o.id)) && (
+            <button type="button" onClick={() => setSelected(new Set(filtered.map(o => o.id)))}
+              style={{ background: 'none', border: 'none', color: ACCENT, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', padding: '2px 0' }}>
+              Select all {filtered.length}
+            </button>
+          )}
+          {selCount === filtered.length && filtered.length > pageSize && (
+            <span style={{ fontSize: 12, color: 'var(--slate)' }}>· all in filter</span>
+          )}
           <button type="button" onClick={() => openPrint('packing_slip', [...selected])} style={{ ...ctrl, background: ACCENT, color: '#fff', border: 'none', fontWeight: 700 }}>Packing Slips</button>
           <button type="button" onClick={() => openPrint('label', [...selected])} style={ctrl}>Print Labels</button>
           <select value="" onChange={e => { if (e.target.value) { assign([...selected], e.target.value === 'none' ? null : e.target.value); setSelected(new Set()) } }} style={ctrl}>
