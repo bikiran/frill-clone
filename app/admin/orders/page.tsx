@@ -1563,7 +1563,12 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     try {
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token
-      const where = outletName ? ` at ${outletName}` : ''
+      // outletName is a LOOKUP FUNCTION, not a string. Interpolating it put the
+      // function's own source into the customer's SMS, and a function is always
+      // truthy so the guard never caught it: real customers were told their order
+      // was ready for collection at "e=>S.find(t=>t.id===e)?.name||null".
+      const outlet = outletName?.(order.store_location_id) || ''
+      const where = outlet ? ` at ${outlet}` : ''
       const text = [
         `Hi ${order.customer_name || 'there'},`, '',
         `Your order ${order.order_number} is ready for collection${where}.`,
