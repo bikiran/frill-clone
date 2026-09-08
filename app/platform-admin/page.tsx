@@ -1185,10 +1185,17 @@ function WebhookExplorerPage() {
 // Operations · Background Jobs — health of the scheduled workers (email sync,
 // campaign sender) with cadence, duration, throughput and failures. Real data
 // from job_runs (COLVY_V218). The registry lists the jobs Colvy actually runs.
-const JOBS: { key: string; label: string; schedule: string; desc: string; color: string }[] = [
-  { key: 'email-sync', label: 'Email Sync', schedule: 'Every 5 min', desc: 'Pulls new mail into every connected Gmail mailbox', color: '#8b5cf6' },
-  { key: 'campaigns-process', label: 'Campaign Worker', schedule: 'Every 2 min', desc: 'Starts scheduled campaigns and drips the next sending batch', color: '#ff7a6b' },
+// `staleMs` is the age past which "no run" is a problem — a generous multiple of
+// the job's cadence, so a 3-min job and a daily job aren't judged by the same
+// ruler. Any job key that appears in job_runs but isn't listed here still gets a
+// heartbeat card (derived below), so new workers are observable without edits.
+const JOBS: { key: string; label: string; schedule: string; desc: string; color: string; staleMs?: number }[] = [
+  { key: 'email-sync', label: 'Email Sync', schedule: 'Every 5 min', desc: 'Pulls new mail into every connected Gmail mailbox', color: '#8b5cf6', staleMs: 20 * 60000 },
+  { key: 'order-sync', label: 'Order Sync', schedule: 'Every 3 min', desc: 'Pulls WooCommerce orders and reconciles the board to the store (recovers paid-but-cancelled, applies terminal states)', color: '#0ea5e9', staleMs: 15 * 60000 },
+  { key: 'campaigns-process', label: 'Campaign Worker', schedule: 'Every 2 min', desc: 'Starts scheduled campaigns and drips the next sending batch', color: '#ff7a6b', staleMs: 10 * 60000 },
 ]
+const DEFAULT_STALE_MS = 3600000 // 1h fallback for jobs without an explicit cadence
+const prettyJob = (k: string) => k.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 const JOB_STATUS_COLOR: Record<string, string> = { success: '#10b981', idle: '#6b7280', error: '#ef4444', running: '#6366f1' }
 
 function JobRunDetail({ run, onClose }: { run: any; onClose: () => void }) {
@@ -1256,6 +1263,14 @@ function BackgroundJobsPage() {
     const rate = last24.length ? Math.round((worked / last24.length) * 100) : null
     return { last, runs24: last24.length, errored, avg, rate }
   }
+  // Union of the known registry and any job key seen in job_runs, so a worker
+  // that started logging (e.g. order-sync) is observable even before it's added
+  // to the registry above.
+  const registryKeys = new Set(JOBS.map(j => j.key))
+  const derivedJobs = Array.from(new Set(all.map(r => r.job).filter(Boolean)))
+    .filter(k => !registryKeys.has(k))
+    .map(k => ({ key: k as string, label: prettyJob(k as string), schedule: 'Scheduled', desc: 'Background worker', color: '#6366f1', staleMs: undefined as number | undefined }))
+  const cards = [...JOBS, ...derivedJobs]
   const list = all.filter(r => jobFilter === 'all' || r.job === jobFilter)
   const th: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }
   const td: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
@@ -1277,10 +1292,10 @@ function BackgroundJobsPage() {
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14, marginBottom: 22 }}>
-            {JOBS.map(j => {
+            {cards.map(j => {
               const s = stat(j.key)
               const lastColor = s.last ? (JOB_STATUS_COLOR[String(s.last.status)] || '#6b7280') : '#6b7280'
-              const stale = s.last?.created_at ? (Date.now() - new Date(s.last.created_at).getTime()) > 3600000 : true
+              const stale = s.last?.created_at ? (Date.now() - new Date(s.last.created_at).getTime()) > (j.staleMs ?? DEFAULT_STALE_MS) : true
               return (
                 <div key={j.key} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 18 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
@@ -1318,7 +1333,7 @@ function BackgroundJobsPage() {
           </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
             <button onClick={() => setJobFilter('all')} style={chip(jobFilter === 'all')}>All jobs</button>
-            {JOBS.map(j => <button key={j.key} onClick={() => setJobFilter(j.key)} style={chip(jobFilter === j.key)}>{j.label}</button>)}
+            {cards.map(j => <button key={j.key} onClick={() => setJobFilter(j.key)} style={chip(jobFilter === j.key)}>{j.label}</button>)}
           </div>
           <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
