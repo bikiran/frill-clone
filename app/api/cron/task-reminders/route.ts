@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { logJobRun } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -43,6 +44,8 @@ export async function GET(req: NextRequest) {
     if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const startedAt = new Date().toISOString()
+  const t0 = Date.now()
   const db = admin()
   const base = process.env.NEXT_PUBLIC_SITE_URL || `${req.nextUrl.origin}`
   const nowIso = new Date().toISOString()
@@ -117,5 +120,6 @@ export async function GET(req: NextRequest) {
     console.error('[task-reminders] calendar_events skipped', e?.message)
   }
 
+  await logJobRun({ job: 'task-reminders', startedAt, durationMs: Date.now() - t0, status: pushed ? 'success' : 'idle', detail: { pushed } })
   return NextResponse.json({ ok: true, pushed })
 }

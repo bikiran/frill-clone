@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { logJobRun } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -39,6 +40,8 @@ export async function GET(req: NextRequest) {
     if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const startedAt = new Date().toISOString()
+  const t0 = Date.now()
   const db = admin()
   const nowIso = new Date().toISOString()
 
@@ -52,10 +55,12 @@ export async function GET(req: NextRequest) {
       .limit(500)
     if (error) {
       // Migration V247 not applied yet — nothing to do.
+      await logJobRun({ job: 'expire-media', startedAt, durationMs: Date.now() - t0, status: 'idle', detail: { note: 'expiry columns not present' } })
       return NextResponse.json({ ok: true, note: 'expiry columns not present', purged: 0 })
     }
     due = data || []
-  } catch {
+  } catch (e: any) {
+    await logJobRun({ job: 'expire-media', startedAt, durationMs: Date.now() - t0, status: 'error', error: e?.message })
     return NextResponse.json({ ok: true, purged: 0 })
   }
 
@@ -109,5 +114,6 @@ export async function GET(req: NextRequest) {
     console.error('[expire-media] trash purge failed', e?.message)
   }
 
+  await logJobRun({ job: 'expire-media', startedAt, durationMs: Date.now() - t0, status: 'success', detail: { purged, itemsDeleted, trashPurged } })
   return NextResponse.json({ ok: true, purged, itemsDeleted, trashPurged })
 }

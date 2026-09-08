@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { logJobRun } from '@/lib/job-log'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -39,6 +40,8 @@ export async function GET(req: NextRequest) {
     if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const startedAt = new Date().toISOString()
+  const t0 = Date.now()
   const db = admin()
   const cutoff = new Date(Date.now() - STALE_MS).toISOString()
   const nowIso = new Date().toISOString()
@@ -61,8 +64,10 @@ export async function GET(req: NextRequest) {
     }
   } catch (e: any) {
     console.error('[sweep-stale-calls] failed', e?.message)
+    await logJobRun({ job: 'sweep-stale-calls', startedAt, durationMs: Date.now() - t0, status: 'error', error: e?.message })
     return NextResponse.json({ error: e?.message || 'sweep failed' }, { status: 500 })
   }
 
+  await logJobRun({ job: 'sweep-stale-calls', startedAt, durationMs: Date.now() - t0, status: swept ? 'success' : 'idle', detail: { swept } })
   return NextResponse.json({ ok: true, swept })
 }
