@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { syncWooOrders } from '@/lib/orders-sync'
 import { syncPage } from '@/app/api/woocommerce/sync/route'
 import { logJobRun } from '@/lib/job-log'
+import { companyFlagEnabled } from '@/lib/feature-flags'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
@@ -87,8 +88,11 @@ export async function GET(req: NextRequest) {
           .select('*').eq('company_id', integ.company_id).in('woo_order_id', missing.slice(i, i + 300))
         for (const w of data || []) wooById.set(Number(w.woo_order_id), w)
       }
-      const synced = await syncWooOrders(db, integ.company_id, [...wooById.values()])
-      results.push({ company: integ.company_id, synced, changed: changedIds.size })
+      // Per-company operational flag: auto-reconcile defaults ON, but a super
+      // admin can switch it off for a company (new orders still import).
+      const reconcile = await companyFlagEnabled(db, integ.company_id, 'order_auto_reconcile')
+      const synced = await syncWooOrders(db, integ.company_id, [...wooById.values()], { reconcile })
+      results.push({ company: integ.company_id, synced, changed: changedIds.size, reconcile })
     } catch (e: any) {
       results.push({ company: integ.company_id, error: e?.message || String(e) })
     }
