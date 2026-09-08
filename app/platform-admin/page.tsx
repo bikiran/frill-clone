@@ -6,6 +6,7 @@ import LegalAdminPage from '../admin/legal/page'
 import PlatformBannerAdmin from '@/components/PlatformBannerAdmin'
 import { SmsPricing, DEFAULT_PRICING, calculateCost, aud, audRate, parsePricingRow } from '@/lib/sms-pricing'
 import { PLAN_FEATURES, PLAN_LIMITS, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
+import { OPERATIONAL_FLAGS } from '@/lib/feature-flags'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -563,6 +564,32 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
                           <option value="default">Plan default</option>
                           <option value="on">Force on</option>
                           <option value="off">Force off</option>
+                        </select>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px' }}>Operational features</p>
+                <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '0 0 8px', lineHeight: 1.5 }}>These ship ON for every company. Switch one off only to disable that behaviour for this business.</p>
+                <div style={{ border: '1px solid var(--sa-border)', borderRadius: 12, overflow: 'hidden' }}>
+                  {OPERATIONAL_FLAGS.map((f, i) => {
+                    const ov = entFeatures[f.key]                 // undefined = default (on)
+                    const off = ov === false
+                    return (
+                      <div key={f.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderTop: i ? '1px solid var(--sa-border)' : 'none' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 13, color: 'var(--sa-text)', margin: 0 }}>{f.label}</p>
+                          <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '2px 0 0', lineHeight: 1.45 }}>{f.desc}</p>
+                        </div>
+                        <select value={off ? 'off' : 'on'} onChange={e => {
+                          const v = e.target.value
+                          setEntFeatures(prev => { const n = { ...prev }; if (v === 'on') delete n[f.key]; else n[f.key] = false; return n })
+                        }} style={{ ...paInput, width: 'auto', padding: '6px 10px' }}>
+                          <option value="on">Enabled</option>
+                          <option value="off">Disabled</option>
                         </select>
                       </div>
                     )

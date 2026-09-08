@@ -177,8 +177,13 @@ async function resolveContacts(db: any, companyId: string, wooRows: any[]): Prom
  * the webhook via upsertWooOrder), so a re-sync is near-instant and never touches
  * the operational fields staff own.
  */
-export async function syncWooOrders(db: any, companyId: string, wooRows: any[]): Promise<number> {
+export async function syncWooOrders(db: any, companyId: string, wooRows: any[], opts?: { reconcile?: boolean }): Promise<number> {
   if (!wooRows.length) return 0
+  // Reconciliation (date/status/payment/outlet fixes on EXISTING orders) can be
+  // turned off per company via the order_auto_reconcile operational flag. New
+  // orders are always imported regardless — only the automatic reconciliation of
+  // already-synced orders is gated. Defaults ON.
+  const reconcile = opts?.reconcile !== false
 
   const extIds = wooRows.map(o => String(o.woo_order_id)).filter(Boolean)
   const existing = new Map<string, { id: string; order_date: string | null; status: string | null; payment_status: string | null; store_location_id: string | null; shipping_method: string | null }>()
@@ -194,7 +199,7 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
   // fix any stored date that no longer matches — bounded so a big catalogue
   // converges over a couple of runs rather than doing thousands of writes at once.
   let fixed = 0
-  for (const o of wooRows) {
+  if (reconcile) for (const o of wooRows) {
     if (fixed >= 800) break
     const prev = existing.get(String(o.woo_order_id))
     if (!prev) continue
@@ -215,7 +220,7 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
   // non-terminal Woo states, and a shipped/cancelled order is never downgraded.
   // Bounded per run.
   let statusFixed = 0
-  for (const o of wooRows) {
+  if (reconcile) for (const o of wooRows) {
     if (statusFixed >= 400) break
     const prev = existing.get(String(o.woo_order_id))
     if (!prev) continue
@@ -248,7 +253,7 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
   // kept (woocommerce_orders doesn't retain it). Never clobbers a manual
   // assignment, and bounded so a big catalogue converges over a couple of runs.
   let mapped = 0
-  if (locations.length) {
+  if (reconcile && locations.length) {
     for (const [, prev] of existing) {
       if (mapped >= 400) break
       if (prev.status !== 'click_and_collect' || prev.store_location_id) continue
