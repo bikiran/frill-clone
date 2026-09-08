@@ -507,7 +507,13 @@ export default function CommandCentrePage() {
   // ── Call Logs: apply filters ──────────────────────────────────────────────
   const logRows = useMemo(() => {
     const q = search.trim().toLowerCase()
+    const { from, to } = boardWin
     return scoped.filter(c => {
+      // Honour the board date range — without this the Call Logs KPIs and table
+      // showed EVERY loaded call regardless of the "Today"/"All" selection, so
+      // "Today" and "All" reported the same (30-day) total.
+      const t = new Date(c.created_at).getTime()
+      if (t < from || t >= to) return false
       if (dirFilter !== 'all' && c.direction !== dirFilter) return false
       if (outcomeFilter === 'answered' && !isAnswered(c)) return false
       if (outcomeFilter === 'missed' && !isMissed(c)) return false
@@ -518,7 +524,7 @@ export default function CommandCentrePage() {
       }
       return true
     })
-  }, [scoped, search, dirFilter, outcomeFilter])
+  }, [scoped, search, dirFilter, outcomeFilter, boardWin])
   const logAgg = useMemo(() => {
     const a = logRows.filter(isAnswered).length, m = logRows.filter(isMissed).length, v = logRows.filter(isVoicemail).length
     const dur = logRows.filter(isAnswered).reduce((s, c) => s + (c.duration_seconds || 0), 0)
