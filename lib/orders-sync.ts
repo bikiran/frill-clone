@@ -221,9 +221,19 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[]):
     if (!prev) continue
     const wl = String(o.status || '').toLowerCase()
     let patch: any = null
-    if (wl === 'completed' && prev.status !== 'shipped' && prev.status !== 'cancelled') {
-      patch = { status: 'shipped', fulfilment_status: 'fulfilled', shipped_at: new Date().toISOString() }
-    } else if (['cancelled', 'refunded', 'failed', 'trash'].includes(wl) && prev.status !== 'cancelled') {
+    if (wl === 'completed' && prev.status !== 'shipped') {
+      // A completed store order is unambiguously live — advance it to shipped even
+      // if a transient failed-payment import had wrongly marked it cancelled.
+      patch = { status: 'shipped', fulfilment_status: 'fulfilled', shipped_at: new Date().toISOString(), flagged: false }
+    } else if (['processing', 'pending', 'on-hold'].includes(wl) && prev.status === 'cancelled') {
+      // The store shows this order as live (paid/processing) but Colvy has it
+      // cancelled. That happens when the order was imported during a transient
+      // failed-payment window (SCA decline → retry) and mapped to cancelled, then
+      // the customer paid. A live store order is never cancelled — recover it to
+      // its mapped status so it rejoins the board, and clear the failed-payment
+      // auto-flag now that payment went through.
+      patch = { status: statusOf(o), flagged: false }
+    } else if (['cancelled', 'refunded', 'trash'].includes(wl) && prev.status !== 'cancelled') {
       patch = { status: 'cancelled' }
     }
     // Keep payment in sync with the store (source of truth for payment).
@@ -328,10 +338,17 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
     // and we never downgrade an order that's already shipped or cancelled.
     const patch: any = { ...src }
     const wl = String(o.status || '').toLowerCase()
-    if (wl === 'completed' && prev.status !== 'shipped' && prev.status !== 'cancelled') {
-      patch.status = 'shipped'; patch.fulfilment_status = 'fulfilled'
+    if (wl === 'completed' && prev.status !== 'shipped') {
+      // A completed store order is live — advance to shipped even from a
+      // wrongly-cancelled (failed-payment import) state.
+      patch.status = 'shipped'; patch.fulfilment_status = 'fulfilled'; patch.flagged = false
       if (!prev.shipped_at) patch.shipped_at = new Date().toISOString()
-    } else if (['cancelled', 'refunded', 'failed', 'trash'].includes(wl) && prev.status !== 'cancelled') {
+    } else if (['processing', 'pending', 'on-hold'].includes(wl) && prev.status === 'cancelled') {
+      // Store says live but Colvy has it cancelled — recover an order that was
+      // imported during a transient failed-payment window and then paid. Clear
+      // the failed-payment auto-flag now that payment went through.
+      patch.status = statusOf(o); patch.flagged = false
+    } else if (['cancelled', 'refunded', 'trash'].includes(wl) && prev.status !== 'cancelled') {
       patch.status = 'cancelled'
     }
     await updateResilient(db, 'orders', patch, prev.id)
