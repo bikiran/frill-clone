@@ -9,6 +9,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
+    // New workspaces start a 14-day trial (unless a specific plan is passed, e.g.
+    // an admin provisioning a paid/complimentary account). The trial_ends_at
+    // drives the in-app countdown + upgrade wall and the super-admin trial funnel.
+    const TRIAL_DAYS = 14
+    const chosenPlan = plan || 'trial'
+    const trialFields = chosenPlan === 'trial'
+      ? { trial_ends_at: new Date(Date.now() + TRIAL_DAYS * 86400000).toISOString() }
+      : {}
+
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false }
@@ -24,7 +33,8 @@ export async function POST(req: NextRequest) {
       industry: industry || '',
       accent_color: accentColor || '#ff7a6b',
       description: description || '',
-      plan: plan || 'free',
+      plan: chosenPlan,
+      ...trialFields,
     }).select().single()
 
     if (error) {
@@ -34,7 +44,7 @@ export async function POST(req: NextRequest) {
         const { data: d2, error: e2 } = await admin.from('companies').insert({
           owner_id: userId, slug: slug.toLowerCase().trim(), name: name.trim(),
           industry: industry || '', accent_color: accentColor || '#ff7a6b',
-          description: description || '', plan: plan || 'free',
+          description: description || '', plan: chosenPlan, ...trialFields,
         }).select().single()
         if (e2) return NextResponse.json({ error: e2.message }, { status: 400 })
         

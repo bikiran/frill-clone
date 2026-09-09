@@ -2134,8 +2134,8 @@ function OverviewPage({ data }: { data: any }) {
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 16 }}>Plan Distribution</p>
           {(() => {
             const dist = data.planDistribution || {}
-            const order = ['enterprise', 'pro', 'trial', 'free', 'suspended']
-            const colors: Record<string, string> = { enterprise: '#8b5cf6', pro: '#10b981', trial: '#f59e0b', free: '#d1d5db', suspended: '#ef4444' }
+            const order = ['enterprise', 'growth', 'pro', 'business', 'startup', 'trial', 'free', 'suspended']
+            const colors: Record<string, string> = { enterprise: '#8b5cf6', growth: '#ff7a6b', pro: '#10b981', business: '#2563eb', startup: '#0891b2', trial: '#f59e0b', free: '#d1d5db', suspended: '#ef4444' }
             const total = Object.values(dist).reduce((a: number, b: any) => a + b, 0) as number
             const keys = Object.keys(dist).sort((a, b) => (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b)))
             if (total === 0) return <p style={{ fontSize: 12, color: 'var(--sa-muted)' }}>No companies yet.</p>
