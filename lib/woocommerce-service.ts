@@ -289,7 +289,7 @@ export class WooCommerceService {
     // product's NAME, so that has to outrank a word buried in a description.
     // Lower score is better.
     const ql = query.trim().toLowerCase()
-    const terms = ql.split(/\s+/).filter(Boolean)
+    const qterms = ql.split(/\s+/).filter(Boolean)
     const score = (p: any): number => {
       const name = String(p.name || '').toLowerCase()
       const sku = String(p.sku || '').toLowerCase()
@@ -299,9 +299,9 @@ export class WooCommerceService {
       if (name.includes(ql)) return 3
       if (sku.startsWith(ql)) return 4
       // Every word present in the name, just not adjacent.
-      const hit = terms.filter(t => name.includes(t)).length
-      if (terms.length && hit === terms.length) return 5
-      if (hit > 0) return 6 + (terms.length - hit)
+      const hit = qterms.filter(t => name.includes(t)).length
+      if (qterms.length && hit === qterms.length) return 5
+      if (hit > 0) return 6 + (qterms.length - hit)
       // Nothing in the name: WooCommerce matched the description. Keep it, since
       // it is occasionally what was meant, but never above a name match.
       return 50
