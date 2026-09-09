@@ -82,6 +82,44 @@ function Reveal({ children, delay = 0, y = 34 }: { children: ReactNode; delay?: 
   const { ref, v } = useReveal()
   return <div ref={ref} style={{ opacity: v ? 1 : 0, transform: v ? 'none' : `translateY(${y}px)`, transition: `opacity 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}s, transform 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}s` }}>{children}</div>
 }
+
+// ManyChat-style big-text reveal: words rise into view, staggered, on scroll.
+function BigReveal({ text }: { text: string }) {
+  const { ref, v } = useReveal(0.35)
+  const words = text.split(' ')
+  return (
+    <span ref={ref as any} style={{ display: 'inline' }}>
+      {words.map((w, i) => (
+        <span key={i}>
+          <span style={{ display: 'inline-block', overflow: 'hidden', verticalAlign: 'bottom', paddingBottom: '0.14em', marginBottom: '-0.14em' }}>
+            <span style={{ display: 'inline-block', transform: v ? 'translateY(0)' : 'translateY(112%)', opacity: v ? 1 : 0, transition: `transform 0.65s cubic-bezier(0.16,1,0.3,1) ${i * 0.075}s, opacity 0.5s ${i * 0.075}s` }}>{w}</span>
+          </span>
+          {i < words.length - 1 ? ' ' : ''}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+// Scroll-linked parallax drift for any block (translateY relative to viewport).
+function Parallax({ strength = 0.06, children }: { strength?: number; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [y, setY] = useState(0)
+  useEffect(() => {
+    let raf = 0
+    const on = () => {
+      if (raf) return
+      raf = requestAnimationFrame(() => {
+        const el = ref.current
+        if (el) { const r = el.getBoundingClientRect(); setY(((r.top + r.height / 2) - window.innerHeight / 2) * -strength) }
+        raf = 0
+      })
+    }
+    on(); window.addEventListener('scroll', on, { passive: true }); window.addEventListener('resize', on)
+    return () => { window.removeEventListener('scroll', on); window.removeEventListener('resize', on); if (raf) cancelAnimationFrame(raf) }
+  }, [strength])
+  return <div ref={ref} style={{ transform: `translateY(${y}px)`, willChange: 'transform' }}>{children}</div>
+}
 function useCycle(len: number, ms: number) {
   const [i, setI] = useState(0)
   useEffect(() => { const t = setInterval(() => setI(v => (v + 1) % len), ms); return () => clearInterval(t) }, [len, ms])
@@ -318,7 +356,7 @@ export default function LandingPage() {
                 <div style={{ order: flip ? 2 : 1 }}>
                   <Reveal>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: f.color, color: '#fff', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 18 }}>{f.tag}</span>
-                    <h3 style={{ fontSize: 'clamp(30px, 4.4vw, 52px)', fontWeight: 900, letterSpacing: '-0.025em', lineHeight: 1.04, margin: '0 0 16px', color: text }}>{f.title}</h3>
+                    <h3 style={{ fontSize: 'clamp(30px, 4.4vw, 52px)', fontWeight: 900, letterSpacing: '-0.025em', lineHeight: 1.04, margin: '0 0 16px', color: text }}><BigReveal text={f.title} /></h3>
                     <p style={{ fontSize: 17.5, color: muted, lineHeight: 1.65, margin: '0 0 22px', maxWidth: 520 }}>{f.body}</p>
                     <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 28px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                       {f.bullets.map(b => (<li key={b} style={{ display: 'flex', alignItems: 'center', gap: 11, fontSize: 15.5, fontWeight: 600, color: text }}><span style={{ width: 24, height: 24, borderRadius: '50%', background: f.color, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>{b}</li>))}
@@ -327,11 +365,13 @@ export default function LandingPage() {
                   </Reveal>
                 </div>
                 <div style={{ order: flip ? 1 : 2, display: 'flex', justifyContent: 'center' }}>
-                  <Reveal>
-                    {f.visual === 'demo' && <div style={{ width: '100%', maxWidth: 520, borderRadius: 20, overflow: 'hidden', border: `1px solid ${cardBorder}`, boxShadow: '0 30px 70px rgba(15,17,25,0.18)' }}><OmniInboxDemo dark={dark} /></div>}
-                    {f.visual === 'sale' && <SaleMock color={f.color} text={text} muted={muted} cardBg={dark ? '#171826' : '#fff'} border={cardBorder} />}
-                    {f.visual === 'flow' && <FlowMock color={f.color} text={text} cardBg={dark ? '#171826' : '#fff'} border={cardBorder} />}
-                  </Reveal>
+                  <Parallax strength={flip ? -0.05 : 0.05}>
+                    <Reveal>
+                      {f.visual === 'demo' && <div style={{ width: '100%', maxWidth: 520, borderRadius: 20, overflow: 'hidden', border: `1px solid ${cardBorder}`, boxShadow: '0 30px 70px rgba(15,17,25,0.18)' }}><OmniInboxDemo dark={dark} /></div>}
+                      {f.visual === 'sale' && <SaleMock color={f.color} text={text} muted={muted} cardBg={dark ? '#171826' : '#fff'} border={cardBorder} />}
+                      {f.visual === 'flow' && <FlowMock color={f.color} text={text} cardBg={dark ? '#171826' : '#fff'} border={cardBorder} />}
+                    </Reveal>
+                  </Parallax>
                 </div>
               </div>
             </section>
