@@ -136,14 +136,15 @@ function fmtNum(n: number) {
   if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, '') + 'K'
   return n.toLocaleString()
 }
-function StatsBand({ stats }: { stats: { teams: number; conversations: number; messages: number; callMinutes: number; paymentsTotal: number; sales: number } }) {
+function StatsBand({ stats }: { stats: { teams: number; conversations: number; messages: number; contacts: number; orders: number; callMinutes: number; paymentsTotal: number } }) {
   const pool: { v: string; l: string }[] = [
     { v: stats.teams > 0 ? fmtNum(stats.teams) + '+' : '12,000+', l: 'Teams on Colvy' },
     { v: stats.conversations > 0 ? fmtNum(stats.conversations) + '+' : '10K+', l: 'Conversations handled' },
     { v: stats.messages > 0 ? fmtNum(stats.messages) + '+' : '250K+', l: 'Messages exchanged' },
+    ...(stats.contacts > 0 ? [{ v: fmtNum(stats.contacts) + '+', l: 'Customers managed' }] : []),
+    ...(stats.orders > 0 ? [{ v: fmtNum(stats.orders) + '+', l: 'Orders processed' }] : []),
     ...(stats.callMinutes > 0 ? [{ v: fmtNum(stats.callMinutes) + ' min', l: 'Minutes on calls' }] : []),
     ...(stats.paymentsTotal > 0 ? [{ v: '$' + fmtNum(stats.paymentsTotal) + '+', l: 'Payments handled' }] : []),
-    ...(stats.sales > 0 ? [{ v: fmtNum(stats.sales) + '+', l: 'Sales recorded' }] : []),
     { v: '98%', l: 'Customer satisfaction' },
     { v: '4 min', l: 'To get set up' },
   ]
@@ -190,7 +191,7 @@ const CloseIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="n
 
 export default function LandingPage() {
   const [user, setUser] = useState<any>(null)
-  const [realStats, setRealStats] = useState({ teams: 0, conversations: 0, messages: 0, callMinutes: 0, paymentsTotal: 0, sales: 0 })
+  const [realStats, setRealStats] = useState({ teams: 0, conversations: 0, messages: 0, contacts: 0, orders: 0, callMinutes: 0, paymentsTotal: 0 })
   const [dark, setDark] = useState(false)
   const [scrollY, setScrollY] = useState(0)
   const [mouse, setMouse] = useState({ x: 0, y: 0 })
@@ -204,13 +205,14 @@ export default function LandingPage() {
       (supabase as any).from('companies').select('*', { count: 'exact', head: true }),
       (supabase as any).from('conversations').select('*', { count: 'exact', head: true }),
       (supabase as any).from('messages').select('*', { count: 'exact', head: true }),
+      (supabase as any).from('contacts').select('*', { count: 'exact', head: true }),
+      (supabase as any).from('orders').select('*', { count: 'exact', head: true }),
       (supabase as any).from('calls').select('duration_seconds').limit(20000),
       (supabase as any).from('chat_payments').select('amount_cents').eq('status', 'paid').limit(20000),
-      (supabase as any).from('conversation_sales').select('id', { count: 'exact', head: true }),
-    ]).then(([co, conv, msg, calls, pays, sales]: any[]) => {
+    ]).then(([co, conv, msg, contacts, orders, calls, pays]: any[]) => {
       const callMinutes = Math.round((calls.data || []).reduce((s: number, r: any) => s + (r.duration_seconds || 0), 0) / 60)
       const paymentsTotal = Math.round((pays.data || []).reduce((s: number, r: any) => s + (r.amount_cents || 0), 0) / 100)
-      setRealStats({ teams: co.count || 0, conversations: conv.count || 0, messages: msg.count || 0, callMinutes, paymentsTotal, sales: sales.count || 0 })
+      setRealStats({ teams: co.count || 0, conversations: conv.count || 0, messages: msg.count || 0, contacts: contacts.count || 0, orders: orders.count || 0, callMinutes, paymentsTotal })
     }).catch(() => {})
     const { data: l } = supabase.auth.onAuthStateChange((_: any, s: any) => setUser(s?.user ?? null))
     let raf = 0
@@ -284,7 +286,7 @@ export default function LandingPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button onClick={() => setDark(!dark)} aria-label="Toggle theme" style={{ width: 38, height: 38, borderRadius: 11, border: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>{dark ? <SunIcon /> : <MoonIcon />}</button>
-            {user ? (<button onClick={handleDashboard} className="cv-btn-primary" style={{ ...btnPrimary, padding: '10px 22px', fontSize: 14.5 }}>Dashboard →</button>) : (<><a href="/signin" className="cv-desktop" style={{ fontSize: 14.5, fontWeight: 600, color: muted, textDecoration: 'none', padding: '0 6px' }}>Sign in</a><a href="/signup" className="cv-btn-primary" style={{ ...btnPrimary, padding: '10px 22px', fontSize: 14.5 }}>Get started free</a></>)}
+            {user ? (<button onClick={handleDashboard} className="cv-btn-primary cv-desktop" style={{ ...btnPrimary, padding: '10px 22px', fontSize: 14.5 }}>Dashboard →</button>) : (<><a href="/signin" className="cv-desktop" style={{ fontSize: 14.5, fontWeight: 600, color: muted, textDecoration: 'none', padding: '0 6px' }}>Sign in</a><a href="/signup" className="cv-btn-primary cv-desktop" style={{ ...btnPrimary, padding: '10px 22px', fontSize: 14.5 }}>Get started free</a></>)}
             <button className="cv-mobile-toggle" onClick={() => setMobileOpen(!mobileOpen)} style={{ display: 'none', width: 38, height: 38, borderRadius: 11, border: `1px solid ${cardBorder}`, background: cardBg, alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>{mobileOpen ? <CloseIcon /> : <MenuIcon />}</button>
           </div>
         </div>
