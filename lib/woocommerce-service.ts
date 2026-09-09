@@ -248,16 +248,47 @@ export class WooCommerceService {
 
     // Text search and exact-SKU lookup. A SKU miss is normal, so that one is
     // allowed to come back empty — but a text-search failure is a real error.
-    const byText = await call(`${base}?search=${encodeURIComponent(query)}&per_page=${limit}&status=publish`)
+    // Ask for more than we return, so there is something to rank. WooCommerce's
+    // `search` matches the DESCRIPTION as well as the title, and orders by DATE,
+    // not relevance — so "Cichlid co" put unrelated recent stock above the
+    // products actually called "Cichlid Co…", purely because those words appear
+    // somewhere in their copy.
+    const byText = await call(`${base}?search=${encodeURIComponent(query)}&per_page=${Math.max(limit * 3, 50)}&status=publish`)
     const bySkuExact = await call(`${base}?sku=${encodeURIComponent(query)}&per_page=${limit}&status=publish`).catch(() => [])
 
-    // Merge, de-duplicate by id, keep order (text matches first, then SKU).
+    // Merge and de-duplicate by id.
     const seen = new Set<number>()
     const merged: any[] = []
     for (const p of [...(byText || []), ...(bySkuExact || [])]) {
       if (p && p.id && !seen.has(p.id)) { seen.add(p.id); merged.push(norm(p)) }
     }
+
+    // Rank them ourselves. What someone typed is almost always the start of a
+    // product's NAME, so that has to outrank a word buried in a description.
+    // Lower score is better.
+    const ql = query.trim().toLowerCase()
+    const terms = ql.split(/\s+/).filter(Boolean)
+    const score = (p: any): number => {
+      const name = String(p.name || '').toLowerCase()
+      const sku = String(p.sku || '').toLowerCase()
+      if (sku === ql) return 0
+      if (name === ql) return 1
+      if (name.startsWith(ql)) return 2
+      if (name.includes(ql)) return 3
+      if (sku.startsWith(ql)) return 4
+      // Every word present in the name, just not adjacent.
+      const hit = terms.filter(t => name.includes(t)).length
+      if (terms.length && hit === terms.length) return 5
+      if (hit > 0) return 6 + (terms.length - hit)
+      // Nothing in the name: WooCommerce matched the description. Keep it, since
+      // it is occasionally what was meant, but never above a name match.
+      return 50
+    }
     return merged
+      .map((p, i) => ({ p, s: score(p), i }))
+      .sort((a, b) => (a.s - b.s) || (a.i - b.i))   // stable within a score
+      .slice(0, limit)
+      .map(x => x.p)
   }
 
   // Fetch the variations of a variable product (exact variation IDs + attributes).
