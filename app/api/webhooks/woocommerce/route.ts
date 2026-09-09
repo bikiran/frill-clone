@@ -19,6 +19,49 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   'on-hold': 'Your order is on hold while we confirm a few details. We\'ll be in touch shortly — feel free to reply here.',
 }
 
+// Customer-facing messages that are actively BAD to send on an order that is
+// actually alive/paid: "your order was cancelled" / "your payment failed". A
+// WooCommerce order can transiently pass through cancelled/failed (a BNPL
+// redirect like Afterpay flipping pending → cancelled → processing, an
+// out-of-order or retried webhook delivery), and firing the negative SMS then
+// tells a paying customer their order died. Refunded is excluded — it's a real
+// terminal event on an already-paid order and should still send.
+const NEGATIVE_RACE_STATUSES = ['cancelled', 'failed']
+// A live/paid order should never receive a cancellation/failure message.
+const LIVE_STATUSES = ['processing', 'completed', 'on-hold', 'pending']
+
+// Does the order payload itself show it was paid? A cancelled/failed order that
+// carries a payment date or transaction id is really a paid order mislabelled
+// by an out-of-order webhook — never message it as cancelled.
+function orderLooksPaid(order: any): boolean {
+  const paidStamp = order?.date_paid || order?.date_paid_gmt
+  const txn = order?.transaction_id
+  return !!(String(paidStamp || '').trim() || String(txn || '').trim())
+}
+
+// Re-fetch the order's CURRENT status from WooCommerce so we don't act on a
+// stale/out-of-order webhook. Returns the live status string (lowercased), or
+// null if we can't reach the store (no creds / network) — callers decide how to
+// treat "unknown".
+async function fetchLiveWooStatus(db: any, companyId: string, orderId: any): Promise<string | null> {
+  try {
+    if (!orderId) return null
+    const { data: integ } = await db.from('woocommerce_integrations')
+      .select('store_url, consumer_key, consumer_secret')
+      .eq('company_id', companyId).eq('is_active', true)
+      .order('created_at', { ascending: true }).limit(1)
+    const wc = integ?.[0]
+    if (!wc?.store_url || !wc?.consumer_key || !wc?.consumer_secret) return null
+    const auth = Buffer.from(`${wc.consumer_key}:${wc.consumer_secret}`).toString('base64')
+    const res = await fetch(`${wc.store_url}/wp-json/wc/v3/orders/${orderId}`, {
+      headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+    })
+    if (!res.ok) return null
+    const live = await res.json()
+    return String(live?.status || '').toLowerCase() || null
+  } catch { return null }
+}
+
 // ── Recover abandoned carts by email/phone ──────────────────────────────────
 // The WordPress bridge only marks a cart recovered when the SAME browser
 // session converts. Customers routinely abandon on mobile and buy on desktop,
@@ -139,6 +182,33 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const phone = order.billing?.phone
   if (!email && !phone) return
 
+  // Is this negative status (cancelled / failed) actually a spurious one on an
+  // order that is really alive/paid? A BNPL redirect (Afterpay) or an
+  // out-of-order / retried webhook can deliver a "cancelled" event for an order
+  // that is processing/paid. We resolve this ONCE and reuse it both to avoid
+  // downgrading the conversation's order badge to "Cancelled" and to suppress
+  // the "Your order was cancelled" customer message. Refunded is deliberately
+  // excluded — it's a real terminal event on a paid order.
+  let negativeButActuallyLive = false
+  let resolvedLiveStatus: string | null = null
+  if (NEGATIVE_RACE_STATUSES.includes(status)) {
+    if (orderLooksPaid(order)) {
+      negativeButActuallyLive = true
+      resolvedLiveStatus = 'processing'   // paid → in progress (accurate enough for the badge)
+    } else {
+      const liveStatus = await fetchLiveWooStatus(db, companyId, order.id)
+      if (liveStatus && liveStatus !== status && LIVE_STATUSES.includes(liveStatus)) {
+        negativeButActuallyLive = true
+        resolvedLiveStatus = liveStatus
+      }
+    }
+    if (negativeButActuallyLive) {
+      console.log('[Order automation] ignoring spurious negative status', { order: order.number || order.id, webhookStatus: status, liveStatus: resolvedLiveStatus })
+    }
+  }
+  // The status the badge/records should reflect — never a spurious negative one.
+  const badgeStatus = negativeButActuallyLive ? (resolvedLiveStatus || 'processing') : status
+
   // De-dup: only one automation message per (order, status). A separate key
   // tracks whether we've already created the conversation for this order.
   const dupeKey = { company_id: companyId, order_id: order.id, status }
@@ -243,7 +313,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       company_id: companyId, channel: 'chat', subject: convSubject,
       contact_id: contact?.id || null, status: 'open', is_unread: true, unread_count: 1,
       last_message: '', last_message_at: new Date().toISOString(),
-      order_status: status || null,
+      order_status: badgeStatus || null,
       sms_number: convPhone,
       sms_enabled: !!convPhone,
     }).select().maybeSingle()
@@ -285,13 +355,13 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // "ORDER PLACED" — including failed payments, which is the opposite of what
   // happened. The badge now reads this column.
   try {
-    await db.from('conversations').update({ order_status: status || null }).eq('id', conv.id)
+    await db.from('conversations').update({ order_status: badgeStatus || null }).eq('id', conv.id)
 
   // Credit this order to any link the customer clicked shortly before ordering,
   // so Link Reports can show revenue influenced. Best-effort — never blocks the
   // order being processed.
   try {
-    const paid = ['processing', 'completed'].includes(String(status || '').toLowerCase())
+    const paid = ['processing', 'completed'].includes(String(badgeStatus || '').toLowerCase())
     await attributeOrderToLinks({
       companyId,
       contactId: contact?.id || null,
@@ -318,14 +388,14 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     const priorOrderMsg = (priorOrderMsgs || []).find((m: any) => m.metadata?.order_event && String(m.metadata?.order_id) === String(order.id))
     if (priorOrderMsg) {
       await db.from('messages').update({
-        content: `Order #${order.number || order.id} — ${status || 'received'} · $${order.total}`,
-        metadata: { ...(priorOrderMsg.metadata || {}), status },
+        content: `Order #${order.number || order.id} — ${badgeStatus || 'received'} · $${order.total}`,
+        metadata: { ...(priorOrderMsg.metadata || {}), status: badgeStatus },
       }).eq('id', priorOrderMsg.id)
     } else {
       await db.from('messages').insert({
         conversation_id: conv.id, company_id: companyId, sender_type: 'system',
-        content: `Order #${order.number || order.id} — ${status || 'received'} · $${order.total}`,
-        metadata: { order_event: true, order_id: order.id, status },
+        content: `Order #${order.number || order.id} — ${badgeStatus || 'received'} · $${order.total}`,
+        metadata: { order_event: true, order_id: order.id, status: badgeStatus },
       })
     }
     try { await notifyCompany({ db, companyId, type: 'order', message: `New order #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
@@ -373,6 +443,14 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
         .gte('created_at', since).limit(1)
       if (recentAuto && recentAuto.length) shouldSend = false
     } catch { /* if the throttle check fails, fall through and send */ }
+  }
+
+  // Never tell a paying customer their order was cancelled: if this negative
+  // status turned out to be spurious (see negativeButActuallyLive above), don't
+  // send the "Your recent order was cancelled / payment failed" message.
+  if (shouldSend && negativeButActuallyLive) {
+    shouldSend = false
+    console.log('[Order automation] suppressed negative message — order is live/paid', { order: order.number || order.id, status })
   }
 
   if (shouldSend) {
@@ -502,7 +580,10 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       company_id: companyId,
       woo_order_id: order.id,
       customer_email: email || null,
-      status,
+      // Use the resolved status so a spurious "cancelled" (BNPL race /
+      // out-of-order webhook) on a paid order isn't mirrored to the Orders
+      // board and sales records as cancelled.
+      status: badgeStatus,
       total: parseFloat(order.total) || 0,
       shipping_total: parseFloat(order.shipping_total || '0') || 0,
       currency: order.currency || 'AUD',
