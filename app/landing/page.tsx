@@ -37,6 +37,9 @@ const BUBBLES = [
   { text: 'Can I get 2 more?', color: CORAL, x: '90%', y: '80%', depth: 0.9, delay: 1.1 },
 ]
 
+// Big-text ticker just above the feature bands.
+const MARQUEE_WORDS = ['One inbox for every channel', 'Sell inside the chat', 'Reply in seconds', 'Record every sale', 'Automate the follow-up', 'Never miss a customer']
+
 const BRANDS = [
   { name: 'WhatsApp', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg' },
   { name: 'Instagram', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/instagram.svg' },
@@ -292,6 +295,18 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* BIG-TEXT MARQUEE (ManyChat-style ticker) */}
+      <section style={{ background: CORAL, padding: '18px 0', overflow: 'hidden' }}>
+        <div className="cv-marquee-track" style={{ animationDuration: '26s' }}>
+          {[...Array(2)].flatMap((_, dup) => MARQUEE_WORDS.map((w, i) => (
+            <span key={`${dup}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
+              <span style={{ fontSize: 'clamp(28px, 5vw, 60px)', fontWeight: 900, letterSpacing: '-0.02em', color: '#fff', whiteSpace: 'nowrap', padding: '0 26px' }}>{w}</span>
+              <span aria-hidden style={{ width: 'clamp(10px,1.6vw,16px)', height: 'clamp(10px,1.6vw,16px)', borderRadius: '50%', background: 'rgba(255,255,255,0.55)', flexShrink: 0 }} />
+            </span>
+          )))}
+        </div>
+      </section>
+
       {/* BIG FEATURE BANDS (full-bleed colour, edge-to-edge) */}
       <div id="features">
         {BIG.map((f, i) => {
@@ -404,13 +419,14 @@ const HIW_STEPS: Step[] = [
 
 function HowItWorks({ dark, cardBorder }: { dark: boolean; cardBorder: string }) {
   const [active, setActive] = useState(0)
-  const [paused, setPaused] = useState(false)
+  // Auto-advance continuously. Keying the timer on `active` means a click simply
+  // jumps to that step and the cycle carries on from there (full dwell time),
+  // rather than pausing.
   useEffect(() => {
-    if (paused) return
-    const t = setInterval(() => setActive(a => (a + 1) % HIW_STEPS.length), 4200)
-    return () => clearInterval(t)
-  }, [paused])
-  const pick = (i: number) => { setActive(i); setPaused(true) }
+    const t = setTimeout(() => setActive(a => (a + 1) % HIW_STEPS.length), 4200)
+    return () => clearTimeout(t)
+  }, [active])
+  const pick = (i: number) => setActive(i)
   const step = HIW_STEPS[active]
 
   return (
@@ -424,7 +440,7 @@ function HowItWorks({ dark, cardBorder }: { dark: boolean; cardBorder: string })
               {HIW_STEPS.map((s, i) => {
                 const on = i === active
                 return (
-                  <button key={s.title} onClick={() => pick(i)} onMouseEnter={() => setPaused(true)}
+                  <button key={s.title} onClick={() => pick(i)}
                     style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 14, padding: on ? '16px 16px' : '14px 16px', marginBottom: 6, background: on ? (dark ? '#f1f3f9' : '#f4f6fb') : 'transparent', transition: 'all 0.25s' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: on ? BLUE : '#cbd2e0', flexShrink: 0, transition: 'background 0.25s' }} />
