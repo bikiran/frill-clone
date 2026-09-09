@@ -3,10 +3,14 @@ import { createClient } from '@supabase/supabase-js'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
-// Monthly price per plan (AUD). Adjust to match real pricing.
+// Monthly price per plan (AUD), matching lib/plan.ts PLAN_PRICES. Enterprise is
+// custom-priced, so it contributes 0 to the plan ESTIMATE — real enterprise
+// revenue comes through the live subscription amounts below.
 const PLAN_PRICE: Record<string, number> = {
-  free: 0, trial: 0, startup: 19, business: 49, growth: 149, enterprise: 399,
+  free: 0, trial: 0, pro: 99, enterprise: 0,
 }
+// Which plans count as paying customers.
+const PAID_PLANS = ['pro', 'enterprise']
 
 function admin() {
   return createClient(
@@ -38,14 +42,21 @@ export async function GET(req: NextRequest) {
     const sevenAgo = new Date(now.getTime() - 7 * 86400000).toISOString()
 
     // ── Companies + plan distribution (REAL from companies.plan)
-    const { data: companies } = await db.from('companies').select('id, plan, created_at')
+    const { data: companies } = await db.from('companies').select('id, plan, created_at, trial_ends_at')
     const totalCompanies = companies?.length || 0
     const planCounts: Record<string, number> = {}
     ;(companies || []).forEach((c: any) => { const p = (c.plan || 'free').toLowerCase(); planCounts[p] = (planCounts[p] || 0) + 1 })
-    const paidPlans = ['startup', 'business', 'growth', 'enterprise']
-    const paidCompanies = (companies || []).filter((c: any) => paidPlans.includes((c.plan || '').toLowerCase())).length
+    const paidCompanies = (companies || []).filter((c: any) => PAID_PLANS.includes((c.plan || '').toLowerCase())).length
     const trialCompanies = (companies || []).filter((c: any) => (c.plan || '').toLowerCase() === 'trial').length
     const newToday = (companies || []).filter((c: any) => c.created_at && c.created_at >= today).length
+
+    // ── Trial funnel detail (REAL from companies.trial_ends_at)
+    const nowMs = Date.now()
+    const sevenAheadMs = nowMs + 7 * 86400000
+    const trialRows = (companies || []).filter((c: any) => (c.plan || '').toLowerCase() === 'trial')
+    const activeTrials = trialRows.filter((c: any) => c.trial_ends_at && new Date(c.trial_ends_at).getTime() >= nowMs).length
+    const trialsEndingSoon = trialRows.filter((c: any) => { const t = c.trial_ends_at ? new Date(c.trial_ends_at).getTime() : 0; return t >= nowMs && t <= sevenAheadMs }).length
+    const expiredTrials = trialRows.filter((c: any) => c.trial_ends_at && new Date(c.trial_ends_at).getTime() < nowMs).length
 
     // ── MRR (REAL): prefer live subscription amounts; fall back to plan estimate.
     let mrr = 0
@@ -61,6 +72,23 @@ export async function GET(req: NextRequest) {
     if (mrrSource === 'plan_estimate') {
       mrr = (companies || []).reduce((sum: number, c: any) => sum + (PLAN_PRICE[(c.plan || 'free').toLowerCase()] || 0), 0)
     }
+
+    // ── Subscription lifecycle (REAL from subscriptions): new paid + churn (30d).
+    let newPaidLast30 = 0, canceledLast30 = 0, activeSubs = 0
+    try {
+      const { data: allSubs } = await db.from('subscriptions').select('status, created_at, updated_at, canceled_at')
+      for (const s of allSubs || []) {
+        const st = String(s.status || '').toLowerCase()
+        if (st === 'active') activeSubs++
+        if (st === 'active' && s.created_at && s.created_at >= thirtyAgo) newPaidLast30++
+        const cancelTs = s.canceled_at || (st === 'canceled' ? s.updated_at : null)
+        if (st === 'canceled' && cancelTs && cancelTs >= thirtyAgo) canceledLast30++
+      }
+    } catch {}
+    // Churn = cancellations ÷ (still-active + cancelled) over the window.
+    const churn = (activeSubs + canceledLast30) > 0 ? Math.round((canceledLast30 / (activeSubs + canceledLast30)) * 1000) / 10 : 0
+    // ARPA = average monthly revenue per paying account.
+    const arpa = paidCompanies > 0 ? Math.round(mrr / paidCompanies) : 0
 
     // ── Active companies (REAL): distinct companies with a conversation or idea
     //    updated in the last 30 days. DAC = same but for today.
@@ -114,7 +142,10 @@ export async function GET(req: NextRequest) {
       today: newToday,
       newLast7,
       mrr, arr: mrr * 12, mrrSource,
+      arpa,
       conversion: Math.round(conversion * 10) / 10,
+      activeTrials, trialsEndingSoon, expiredTrials,
+      newPaidLast30, canceledLast30, churn,
       planDistribution: planCounts,
       activeSeries,
       ideas: ideaCount || 0,

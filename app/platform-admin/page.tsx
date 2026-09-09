@@ -2093,15 +2093,28 @@ function OverviewPage({ data }: { data: any }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14, marginBottom: 24 }}>
         <KPI label="Total Companies" value={data.companies?.toLocaleString() ?? '—'} sub="all workspaces" color="#ff7a6b" />
         <KPI label="Active Companies" value={data.active?.toLocaleString() ?? '—'} sub="active in 30 days" color="#6366f1" />
-        <KPI label="Trial" value={data.trials?.toLocaleString() ?? '—'} sub="on trial plan" color="#f59e0b" />
-        <KPI label="Paid" value={data.paid?.toLocaleString() ?? '—'} sub="paid plans" color="#10b981" />
-        <KPI label="MRR" value={`$${(data.mrr ?? 0).toLocaleString()}`} sub={data.mrrSource === 'subscriptions' ? 'from Stripe subs' : 'est. from plans'} color="#8b5cf6" />
-        <KPI label="ARR" value={`$${(data.arr ?? 0).toLocaleString()}`} sub="annual run rate" color="#ec4899" />
-        <KPI label="Conversion" value={data.conversion != null ? `${data.conversion}%` : '—'} sub="paid ÷ (paid + trial)" color="#0891b2" />
+        <KPI label="On trial" value={data.trials?.toLocaleString() ?? '—'} sub="on trial plan" color="#f59e0b" />
         <KPI label="New Today" value={data.today?.toLocaleString() ?? '0'} sub="signups in last 24h" color="#10b981" />
         <KPI label="DAC" value={data.dac?.toLocaleString() ?? '—'} sub="active companies today" color="#6366f1" />
         <KPI label="Total Ideas" value={data.ideas?.toLocaleString() ?? '—'} sub="across all boards" color="#f59e0b" />
         <KPI label="Help Articles" value={data.articles?.toLocaleString() ?? '—'} sub="published" color="#0891b2" />
+      </div>
+
+      {/* Revenue & growth (SaaS metrics) */}
+      <div style={{ marginBottom: 24 }}>
+        <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px' }}>Revenue & growth</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14 }}>
+          <KPI label="MRR" value={`$${(data.mrr ?? 0).toLocaleString()}`} sub={data.mrrSource === 'subscriptions' ? 'live from Stripe subs' : 'est. from plans'} color="#8b5cf6" />
+          <KPI label="ARR" value={`$${(data.arr ?? 0).toLocaleString()}`} sub="annual run rate" color="#ec4899" />
+          <KPI label="ARPA" value={`$${(data.arpa ?? 0).toLocaleString()}`} sub="avg revenue / account" color="#8b5cf6" />
+          <KPI label="Paying customers" value={data.paid?.toLocaleString() ?? '—'} sub="pro + enterprise" color="#10b981" />
+          <KPI label="New paid · 30d" value={data.newPaidLast30?.toLocaleString() ?? '—'} sub="subscriptions started" color="#10b981" />
+          <KPI label="Churn · 30d" value={data.churn != null ? `${data.churn}%` : '—'} sub={`${data.canceledLast30 ?? 0} cancelled`} color="#ef4444" />
+          <KPI label="Active trials" value={data.activeTrials?.toLocaleString() ?? '—'} sub="not yet expired" color="#f59e0b" />
+          <KPI label="Trials ending · 7d" value={data.trialsEndingSoon?.toLocaleString() ?? '—'} sub="reach out to convert" color="#f59e0b" />
+          <KPI label="Trial → paid" value={data.conversion != null ? `${data.conversion}%` : '—'} sub="paid ÷ (paid + trial)" color="#0891b2" />
+          <KPI label="Expired trials" value={data.expiredTrials?.toLocaleString() ?? '—'} sub="lapsed, not converted" color="#6b7280" />
+        </div>
       </div>
 
       {/* Attention Required */}
@@ -2121,8 +2134,8 @@ function OverviewPage({ data }: { data: any }) {
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 16 }}>Plan Distribution</p>
           {(() => {
             const dist = data.planDistribution || {}
-            const order = ['growth', 'business', 'startup', 'trial', 'free', 'enterprise', 'suspended']
-            const colors: Record<string, string> = { growth: '#ff7a6b', business: '#6366f1', startup: '#10b981', trial: '#f59e0b', free: '#d1d5db', enterprise: '#8b5cf6', suspended: '#ef4444' }
+            const order = ['enterprise', 'pro', 'trial', 'free', 'suspended']
+            const colors: Record<string, string> = { enterprise: '#8b5cf6', pro: '#10b981', trial: '#f59e0b', free: '#d1d5db', suspended: '#ef4444' }
             const total = Object.values(dist).reduce((a: number, b: any) => a + b, 0) as number
             const keys = Object.keys(dist).sort((a, b) => (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b)))
             if (total === 0) return <p style={{ fontSize: 12, color: 'var(--sa-muted)' }}>No companies yet.</p>
