@@ -712,6 +712,12 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     const ins = await insertResilient(D, 'conversation_sales', row, ['conversation_id', 'contact_id', 'payment_method', 'sold_by_user_id', 'sold_by_name', 'recorded_by_user_id', 'recorded_by_name', 'note', 'currency'])
     if (!ins.id) return { ok: false, error: ins.error || 'Could not record the sale.' }
     const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(amount)
+    // Mirror the manual flow: a pill in the message stream + a Timeline entry.
+    if (ctx.conversationId) {
+      const methodLabel = row.payment_method ? ` · ${row.payment_method}` : ''
+      try { await D.from('messages').insert({ conversation_id: ctx.conversationId, company_id: ctx.companyId, sender_type: 'system', content: `Sale recorded · ${money}${methodLabel}`, metadata: { sale_event: true, amount, method: row.payment_method || null, sold_by: soldByName } }) } catch {}
+      try { await D.from('conversation_events').insert({ conversation_id: ctx.conversationId, company_id: ctx.companyId, event_type: 'sale', actor_name: ctx.userName, detail: `Sale recorded · ${money}${methodLabel} — credited to ${soldByName}${row.note ? ` · ${row.note}` : ''}` }) } catch {}
+    }
     const card = {
       kind: 'sale', title: `${money} sale recorded`,
       lines: [row.payment_method || null, `Credited to ${soldByName}`, row.note || null].filter(Boolean),
