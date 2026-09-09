@@ -27,15 +27,6 @@ const HERO_WORDS = ['customer.', 'sale.', 'booking.', 'callback.', 'repeat order
 // Rotating capability line for the brand band.
 const CAPABILITIES = ['making sales', 'every channel', 'phone calls', 'call summaries', 'follow-ups', 'happy customers']
 
-// Placeholder "animated photos" for the demo band — swap these for real product
-// shots / GIFs later; they crossfade with a slow Ken-Burns zoom.
-const DEMO_PHOTOS = [
-  { src: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1400&q=80&auto=format&fit=crop', cap: 'Reply across every channel from one inbox' },
-  { src: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1400&q=80&auto=format&fit=crop', cap: 'Take the sale without leaving the chat' },
-  { src: 'https://images.unsplash.com/photo-1553413077-190dd305871c?w=1400&q=80&auto=format&fit=crop', cap: 'Orders, payments & history side by side' },
-  { src: 'https://images.unsplash.com/photo-1512428559087-560fa5ceab42?w=1400&q=80&auto=format&fit=crop', cap: 'Every conversation, one customer profile' },
-]
-
 // Opaque floating chat bubbles — positioned to the RIGHT half + corners so they
 // never sit on the headline or body copy.
 const BUBBLES = [
@@ -95,25 +86,6 @@ const SunIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="non
 const MoonIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>)
 const MenuIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></svg>)
 const CloseIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>)
-
-// ── Animated demo photos (crossfade + slow zoom) ─────────────────────────────
-function AnimatedPhotos({ border }: { border: string }) {
-  const i = useCycle(DEMO_PHOTOS.length, 3200)
-  return (
-    <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 24, overflow: 'hidden', border: `1px solid ${border}`, boxShadow: '0 40px 100px rgba(15,17,25,0.22)', background: '#000' }}>
-      {DEMO_PHOTOS.map((p, idx) => (
-        <img key={p.src} src={p.src} alt={p.cap} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: idx === i ? 1 : 0, transform: idx === i ? 'scale(1.08)' : 'scale(1)', transition: 'opacity 1s ease, transform 3.6s ease', willChange: 'opacity, transform' }} />
-      ))}
-      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 55%, rgba(15,17,25,0.72))' }} />
-      <div style={{ position: 'absolute', left: 20, bottom: 18, right: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <span key={i} style={{ color: '#fff', fontSize: 'clamp(15px, 2vw, 20px)', fontWeight: 800, animation: 'wordIn 0.5s ease', textShadow: '0 2px 12px rgba(0,0,0,0.4)' }}>{DEMO_PHOTOS[i].cap}</span>
-        <span style={{ display: 'inline-flex', gap: 6, flexShrink: 0 }}>
-          {DEMO_PHOTOS.map((_, idx) => <span key={idx} style={{ width: idx === i ? 22 : 7, height: 7, borderRadius: 99, background: idx === i ? '#fff' : 'rgba(255,255,255,0.5)', transition: 'width 0.4s ease' }} />)}
-        </span>
-      </div>
-    </div>
-  )
-}
 
 export default function LandingPage() {
   const [user, setUser] = useState<any>(null)
@@ -326,18 +298,9 @@ export default function LandingPage() {
         })}
       </div>
 
-      {/* ANIMATED DEMO PHOTOS (short, crossfading) */}
-      <section style={{ background: canvas, padding: 'clamp(64px, 9vw, 110px) 24px', borderTop: `1px solid ${cardBorder}`, borderBottom: `1px solid ${cardBorder}` }}>
-        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-          <Reveal>
-            <div style={{ textAlign: 'center', marginBottom: 40 }}>
-              <p style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: CORAL, margin: '0 0 12px' }}>See it in action</p>
-              <h2 style={{ fontSize: 'clamp(30px, 4.8vw, 54px)', fontWeight: 900, letterSpacing: '-0.025em', margin: 0, color: text }}>A chat becomes a sale</h2>
-            </div>
-          </Reveal>
-          <Reveal><AnimatedPhotos border={cardBorder} /></Reveal>
-        </div>
-      </section>
+      {/* SEE HOW IT WORKS — interactive, clickable, animated (full-bleed) */}
+      <HowItWorks dark={dark} cardBorder={cardBorder} />
+
 
       {/* STATS — full-bleed bold band */}
       <section style={{ background: CORAL, color: '#fff', padding: 'clamp(56px, 8vw, 92px) 24px' }}>
@@ -399,6 +362,121 @@ function SaleMock({ color, text, muted, cardBg, border }: { color: string; text:
     </div>
   )
 }
+// ── See how it works: clickable step list drives an animated phone ───────────
+type Step = { title: string; desc: string; href: string; channel: string; who: string; color: string; bubbles: { side: 'them' | 'me'; text: string; kind?: 'text' | 'image' | 'pill' | 'system' }[] }
+const HIW_STEPS: Step[] = [
+  { title: 'Every channel in one inbox', desc: 'WhatsApp, Instagram, Messenger, email & SMS — one thread.', href: '/inbox-crm', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
+    bubbles: [{ side: 'them', text: 'Hi! Do you still have the 4ft reef tank in stock? 🐠' }, { side: 'me', text: 'Hey Sam! Yes — 2 left in Sydney.' }] },
+  { title: 'Reply with media from your gallery', desc: 'Send saved photos & videos without leaving the chat.', href: '/inbox-crm#gallery', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
+    bubbles: [{ side: 'them', text: 'Can you show me one?' }, { side: 'me', text: '', kind: 'image' }, { side: 'me', text: 'Here it is 📸' }] },
+  { title: 'Take the payment in chat', desc: 'Send a payment link or record any method — right here.', href: '/inbox-crm#woo', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
+    bubbles: [{ side: 'me', text: 'Sent you a payment link 💳' }, { side: 'them', text: "I've sent the payment 🙌" }, { side: 'me', text: 'Order #123466 · Paid ✅', kind: 'pill' }] },
+  { title: 'Record the sale', desc: 'Log the revenue Colvy helped you make — even off-Stripe.', href: '/inbox-crm#woo', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
+    bubbles: [{ side: 'me', text: 'Sale recorded · $385 · Bank transfer', kind: 'pill' }, { side: 'system', text: 'Credited to you · added to Revenue via Colvy', kind: 'system' }] },
+  { title: 'Automate the follow-up', desc: 'Auto-reply, assign a task and schedule the next nudge.', href: '/inbox-crm#tasks', channel: 'WhatsApp', who: 'Sam Rivera', color: '#25D366',
+    bubbles: [{ side: 'system', text: 'Task created · Ship 4ft reef tank', kind: 'system' }, { side: 'system', text: 'Follow-up scheduled in 3 days', kind: 'system' }, { side: 'me', text: "Thanks Sam! We'll have this on its way today 🚚" }] },
+]
+
+function HowItWorks({ dark, cardBorder }: { dark: boolean; cardBorder: string }) {
+  const [active, setActive] = useState(0)
+  const [paused, setPaused] = useState(false)
+  useEffect(() => {
+    if (paused) return
+    const t = setInterval(() => setActive(a => (a + 1) % HIW_STEPS.length), 4200)
+    return () => clearInterval(t)
+  }, [paused])
+  const pick = (i: number) => { setActive(i); setPaused(true) }
+  const step = HIW_STEPS[active]
+
+  return (
+    <section style={{ background: BLUE, padding: 'clamp(56px, 8vw, 104px) 24px' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+        <h2 style={{ color: '#fff', fontSize: 'clamp(28px, 4.4vw, 50px)', fontWeight: 900, letterSpacing: '-0.025em', textAlign: 'center', margin: '0 0 44px' }}>See how it works</h2>
+        <div className="cv-hiw" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'clamp(24px, 4vw, 56px)', alignItems: 'stretch' }}>
+          {/* Left: clickable list */}
+          <div style={{ background: '#fff', borderRadius: 24, padding: 'clamp(20px, 2.6vw, 34px)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 1 }}>
+              {HIW_STEPS.map((s, i) => {
+                const on = i === active
+                return (
+                  <button key={s.title} onClick={() => pick(i)} onMouseEnter={() => setPaused(true)}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 14, padding: on ? '16px 16px' : '14px 16px', marginBottom: 6, background: on ? (dark ? '#f1f3f9' : '#f4f6fb') : 'transparent', transition: 'all 0.25s' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: on ? BLUE : '#cbd2e0', flexShrink: 0, transition: 'background 0.25s' }} />
+                      <span style={{ fontSize: 'clamp(16px, 1.8vw, 19px)', fontWeight: 800, color: INK, letterSpacing: '-0.01em' }}>{s.title}</span>
+                    </span>
+                    <span style={{ display: 'grid', gridTemplateRows: on ? '1fr' : '0fr', transition: 'grid-template-rows 0.3s ease', paddingLeft: 18 }}>
+                      <span style={{ overflow: 'hidden' }}>
+                        <span style={{ display: 'block', fontSize: 14, color: 'rgba(15,17,25,0.6)', lineHeight: 1.5, margin: '6px 0 8px' }}>{s.desc}</span>
+                        <a href={s.href} onClick={e => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: BLUE, textDecoration: 'none' }}>
+                          Check it out
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
+                        </a>
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            <a href="/signup" style={{ marginTop: 14, alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '13px 26px', borderRadius: 999, background: INK, color: '#fff', fontWeight: 800, fontSize: 14.5, textDecoration: 'none' }}>Get started free</a>
+          </div>
+
+          {/* Right: animated phone */}
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 20 }}>
+            <PhoneMock step={step} activeKey={active} border={cardBorder} />
+            <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 15, fontWeight: 600, lineHeight: 1.5, borderLeft: '3px solid rgba(255,255,255,0.5)', paddingLeft: 14, margin: 0, maxWidth: 360, alignSelf: 'flex-start' }}>{step.desc}</p>
+          </div>
+        </div>
+      </div>
+      <style>{`@media (max-width:900px){ .cv-hiw{ grid-template-columns:1fr !important; } }`}</style>
+    </section>
+  )
+}
+
+function PhoneMock({ step, activeKey, border }: { step: Step; activeKey: number; border: string }) {
+  return (
+    <div style={{ alignSelf: 'center', width: 'min(340px, 100%)', background: '#0f1420', borderRadius: 34, padding: 12, boxShadow: '0 40px 90px rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.12)' }}>
+      <div style={{ background: '#f7f8fb', borderRadius: 24, overflow: 'hidden', minHeight: 440, display: 'flex', flexDirection: 'column' }}>
+        {/* header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', background: '#fff', borderBottom: `1px solid ${border}` }}>
+          <span style={{ width: 34, height: 34, borderRadius: '50%', background: `linear-gradient(135deg, ${CORAL}, ${PURPLE})`, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13 }}>SR</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: INK }}>{step.who}</p>
+            <p style={{ margin: 0, fontSize: 11.5, color: 'rgba(15,17,25,0.5)', display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: step.color }} />via {step.channel}</p>
+          </div>
+          <span style={{ fontSize: 10.5, fontWeight: 800, color: '#16a34a', background: '#dcfce7', padding: '3px 8px', borderRadius: 999 }}>Live</span>
+        </div>
+        {/* bubbles (re-mount on step change for the entry animation) */}
+        <div key={activeKey} style={{ flex: 1, padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {step.bubbles.map((b, i) => {
+            const anim = { animation: `popIn 0.45s cubic-bezier(0.16,1,0.3,1) ${i * 0.18}s both` }
+            if (b.kind === 'system') return (
+              <div key={i} style={{ ...anim, alignSelf: 'center', maxWidth: '92%', textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'rgba(15,17,25,0.55)', background: '#eef1f6', padding: '7px 12px', borderRadius: 12 }}>{b.text}</div>
+            )
+            if (b.kind === 'pill') return (
+              <div key={i} style={{ ...anim, alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: 7, background: GREEN, color: '#fff', fontSize: 12.5, fontWeight: 800, padding: '9px 14px', borderRadius: 999 }}>{b.text}</div>
+            )
+            if (b.kind === 'image') return (
+              <div key={i} style={{ ...anim, alignSelf: 'flex-end', width: 150, height: 104, borderRadius: '14px 14px 4px 14px', overflow: 'hidden', border: `1px solid ${border}` }}>
+                <img src="https://images.unsplash.com/photo-1520302630591-fd1c66edc19d?w=400&q=80&auto=format&fit=crop" alt="Reef tank" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+            )
+            const me = b.side === 'me'
+            return (
+              <div key={i} style={{ ...anim, alignSelf: me ? 'flex-end' : 'flex-start', maxWidth: '82%', padding: '10px 13px', borderRadius: me ? '15px 15px 4px 15px' : '15px 15px 15px 4px', background: me ? CORAL : '#fff', color: me ? '#fff' : INK, border: me ? 'none' : `1px solid ${border}`, fontSize: 13.5, fontWeight: 600, lineHeight: 1.45, boxShadow: me ? 'none' : '0 4px 14px rgba(15,17,25,0.05)' }}>{b.text}</div>
+            )
+          })}
+        </div>
+        {/* composer */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: '#fff', borderTop: `1px solid ${border}` }}>
+          <span style={{ flex: 1, fontSize: 12.5, color: 'rgba(15,17,25,0.4)', background: '#f1f3f8', padding: '9px 12px', borderRadius: 999 }}>Reply to Sam…</span>
+          <span style={{ width: 32, height: 32, borderRadius: '50%', background: CORAL, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FlowMock({ color, text, cardBg, border }: { color: string; text: string; cardBg: string; border: string }) {
   const steps = [{ t: 'New message arrives', c: color }, { t: 'Auto-reply sent', c: GREEN }, { t: 'Task created & assigned', c: BLUE }, { t: 'Follow-up scheduled', c: YELLOW }]
   return (
