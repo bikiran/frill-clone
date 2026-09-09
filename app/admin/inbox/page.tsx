@@ -441,6 +441,18 @@ function CallGlyph({ kind }: { kind: CallKind }) {
   return <svg {...common}><polyline points="16 2 16 8 22 8"/><line x1="23" y1="1" x2="16" y2="8"/>{handset}</svg>
 }
 
+// Phrases that suggest a payment just happened — drives the "record this sale?"
+// prompt. Lower-cased substring match against recent messages.
+const PAYMENT_SIGNAL_PHRASES = [
+  'i have paid', "i've paid", 'ive paid', 'just paid', 'paid the invoice', 'invoice paid',
+  'payment sent', 'sent the payment', 'sent payment', 'sent you the payment', 'made the payment',
+  'made payment', 'bank transfer', 'transferred the', 'transferred it', 'sent the money',
+  'paid via', 'payment done', 'paid it', 'paid now', 'have paid', 'thank you for the payment',
+  'thanks for the payment', 'thanks for your payment', 'receipt attached', 'uploaded the receipt',
+  'sent the receipt', 'sent you the receipt', 'here is the receipt', "here's the receipt",
+  'deposited', 'e-transfer', 'etransfer', 'payment made',
+]
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function InboxPage() {
   // Seed from the shared identity cache + the last conversation list we rendered
@@ -554,6 +566,22 @@ export default function InboxPage() {
   const [ticketPriority, setTicketPriority] = useState('normal')
   const [ticketSaving, setTicketSaving] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
+  // Smart sale detection: when a recent message reads like a payment happened,
+  // prompt the agent to log the sale. Deterministic phrase match — instant, free
+  // and reliable, no model call per message. Dismissals are per-conversation for
+  // the tab session so it never nags.
+  const [saleDismissed, setSaleDismissed] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(sessionStorage.getItem('colvy_sale_prompt_dismissed') || '[]')) } catch { return new Set() }
+  })
+  const dismissSalePrompt = (id: string) => setSaleDismissed(prev => {
+    const n = new Set(prev); n.add(id)
+    try { sessionStorage.setItem('colvy_sale_prompt_dismissed', JSON.stringify([...n])) } catch {}
+    return n
+  })
+  const paymentSignal = useMemo(() => {
+    const recent = messages.slice(-6)
+    return recent.some(m => { const t = String((m as any).content || '').toLowerCase(); return PAYMENT_SIGNAL_PHRASES.some(p => t.includes(p)) })
+  }, [messages])
   const [contact, setContact] = useState<Contact | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [reply, setReply] = useState('')
@@ -8580,6 +8608,17 @@ export default function InboxPage() {
                 </div>
               )}
 
+              {/* Smart prompt: a recent message reads like a payment — offer to log the sale. */}
+              {selected && paymentSignal && !saleDismissed.has(selected.id) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '9px 12px', borderRadius: 10, background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
+                  <span style={{ fontSize: 16, flexShrink: 0 }}>💰</span>
+                  <span style={{ flex: 1, fontSize: 12.5, color: '#065f46', fontWeight: 600 }}>Looks like a payment — did this convert to a sale?</span>
+                  <button type="button" onClick={() => { dismissSalePrompt(selected.id); setShowRecordSale(true) }}
+                    style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>Yes, record</button>
+                  <button type="button" onClick={() => dismissSalePrompt(selected.id)}
+                    style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #a7f3d0', background: '#fff', color: '#065f46', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Not now</button>
+                </div>
+              )}
               <textarea ref={textareaRef} value={reply} onChange={e => {
                   const v = e.target.value
                   setReply(v)
