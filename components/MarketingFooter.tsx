@@ -14,7 +14,7 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
 
   const COLS = [
     { title: 'Platform', links: [{ l: 'Inbox & CRM', h: '/inbox-crm' }, { l: 'Media Gallery', h: '/inbox-crm#gallery' }, { l: 'WooCommerce', h: '/inbox-crm#woo' }, { l: 'Payments', h: '/inbox-crm#woo' }, { l: 'Link Reports', h: '/inbox-crm#links' }, { l: 'Insights', h: '/inbox-crm#insights' }] },
-    { title: 'Product', links: [{ l: 'Ideas', h: '/features/ideas' }, { l: 'Roadmap', h: '/features/roadmap' }, { l: 'Announcements', h: '/features/announcements' }, { l: 'Knowledgebase', h: '/features/knowledgebase' }, { l: 'Import', h: '/features/import' }] },
+    { title: 'Product', links: [{ l: 'Ideas', h: '/product/ideas' }, { l: 'Roadmap', h: '/product/roadmap' }, { l: 'Announcements', h: '/product/announcements' }, { l: 'Knowledgebase', h: '/product/knowledgebase' }, { l: 'Import', h: '/product/import' }] },
     { title: 'Company', links: [{ l: 'Pricing', h: '/pricing' }, { l: 'Sign up', h: '/signup' }, { l: 'Sign in', h: '/signin' }, { l: 'Get started free', h: '/signup' }] },
     { title: 'Channels', links: [{ l: 'WhatsApp', h: '/inbox-crm' }, { l: 'Instagram', h: '/inbox-crm' }, { l: 'Messenger', h: '/inbox-crm' }, { l: 'Email & SMS', h: '/inbox-crm' }, { l: 'Live chat', h: '/inbox-crm' }] },
     { title: 'Legal', links: [{ l: 'Privacy', h: '/privacy' }, { l: 'Terms', h: '/terms' }] },

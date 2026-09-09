@@ -284,7 +284,7 @@ export default function InboxCrmPage() {
             <span style={{ fontWeight: 900, fontSize: 22, color: text, letterSpacing: '-0.02em' }}>Colvy</span>
           </a>
           <div className="cv-desktop" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            {[{ label: 'Inbox & CRM', href: '/inbox-crm', hot: true }, { label: 'Ideas', href: '/features/ideas' }, { label: 'Roadmap', href: '/features/roadmap' }, { label: 'Announcements', href: '/features/announcements' }, { label: 'Pricing', href: '/pricing' }].map((n: any) => (
+            {[{ label: 'Inbox & CRM', href: '/inbox-crm', hot: true }, { label: 'Ideas', href: '/product/ideas' }, { label: 'Roadmap', href: '/product/roadmap' }, { label: 'Announcements', href: '/product/announcements' }, { label: 'Pricing', href: '/pricing' }].map((n: any) => (
               <a key={n.label} href={n.href} className="cv-navlink" style={{ padding: '8px 14px', borderRadius: 10, fontSize: 14.5, fontWeight: n.hot ? 800 : 600, color: n.hot ? CORAL : muted, textDecoration: 'none' }}>{n.label}</a>
             ))}
           </div>
@@ -297,7 +297,7 @@ export default function InboxCrmPage() {
         </div>
         {mobileOpen && (
           <div style={{ background: bg, borderTop: `1px solid ${cardBorder}`, padding: '14px 24px 22px' }}>
-            {[{ label: 'Inbox & CRM', href: '/inbox-crm' }, { label: 'Ideas', href: '/features/ideas' }, { label: 'Roadmap', href: '/features/roadmap' }, { label: 'Announcements', href: '/features/announcements' }, { label: 'Pricing', href: '/pricing' }, { label: 'Sign in', href: '/signin' }].map(n => (<a key={n.label} href={n.href} onClick={() => setMobileOpen(false)} style={{ display: 'block', padding: '13px 0', fontSize: 16, fontWeight: 600, color: text, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` }}>{n.label}</a>))}
+            {[{ label: 'Inbox & CRM', href: '/inbox-crm' }, { label: 'Ideas', href: '/product/ideas' }, { label: 'Roadmap', href: '/product/roadmap' }, { label: 'Announcements', href: '/product/announcements' }, { label: 'Pricing', href: '/pricing' }, { label: 'Sign in', href: '/signin' }].map(n => (<a key={n.label} href={n.href} onClick={() => setMobileOpen(false)} style={{ display: 'block', padding: '13px 0', fontSize: 16, fontWeight: 600, color: text, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` }}>{n.label}</a>))}
             <button onClick={go} style={{ ...btnPrimary, marginTop: 16, width: '100%', justifyContent: 'center' }}>{user ? 'Dashboard →' : 'Get started free'}</button>
           </div>
         )}

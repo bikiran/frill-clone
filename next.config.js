@@ -20,6 +20,16 @@ const nextConfig = {
       { protocol: 'https', hostname: '**.supabase.co' },
     ],
   },
+  // The marketing feature pages moved from /features/* to /product/* so the
+  // top-nav URLs read as an intentional product family (and don't collide with
+  // the tenant portal's own /roadmap and /announcements routes). Redirect the
+  // old paths so existing links, bookmarks and search results keep working.
+  async redirects() {
+    return [
+      { source: '/features', destination: '/product', permanent: true },
+      { source: '/features/:slug*', destination: '/product/:slug*', permanent: true },
+    ]
+  },
   // Keep the embeddable widget script fresh so businesses pick up updates fast
   // (default static caching would pin an old widget.js for a long time).
   async headers() {
