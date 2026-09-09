@@ -7111,12 +7111,16 @@ export default function InboxPage() {
               {locationFilter === 'all' && (() => {
                 const locId = (conv as any).assigned_location_id || (conv as any).location_id
                 const loc = outlets.find((o: any) => o.id === locId)
-                // An abandoned cart came from the store, not the chat widget —
-                // labelling it "Live Chat" was misleading.
-                const isCart = String(conv.subject || '').toLowerCase().startsWith('abandoned cart')
+                // An abandoned cart or a placed order came from the store, not the
+                // chat widget — labelling either "Live Chat" was misleading. Orders
+                // carry the customer's name as the subject, so detect them by
+                // order_status (matching the source badge above), not just subject.
+                const subjLc = String(conv.subject || '').toLowerCase()
+                const isCart = subjLc.startsWith('abandoned cart')
+                const isOrder = !!(conv as any).order_status || subjLc.startsWith('order #')
                 const isWidget = conv.channel === 'chat' || conv.channel === 'widget' || conv.channel === 'live_chat'
                 const label = loc ? (loc.label || loc.suburb)
-                  : isCart ? 'Website'
+                  : (isCart || isOrder) ? 'Website'
                   : isWidget ? 'Live Chat'
                   : null
                 if (!label) return null
@@ -7613,8 +7617,12 @@ export default function InboxPage() {
                   whatsapp: 'WhatsApp Enquiry', phone: 'Phone Call',
                 }
                 const subj = (selected.subject || '').toLowerCase()
+                // Order threads carry the customer's NAME as the subject once a
+                // contact is known, so a subject-only check misses them and they
+                // fell through to "Live Chat Enquiry". Detect the order by its
+                // order_status too — these came from the store, not the widget.
                 const enquiryKind = subj.startsWith('abandoned cart') ? 'Abandoned Cart'
-                  : subj.startsWith('order #') ? 'Order Placed'
+                  : (subj.startsWith('order #') || (selected as any).order_status) ? 'Order Placed'
                   : (SRC[(selected.channel || '').toLowerCase()] || 'Live Chat Enquiry')
 
                 const header = (
