@@ -4,7 +4,7 @@ import React from 'react'
 import UploadQueueIndicator from '@/components/UploadQueueIndicator'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import IncomingCallListener from '@/components/IncomingCallListener'
 import CallHandoff from '@/components/CallHandoff'
@@ -155,6 +155,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname()
   const router = useRouter()
   const [authed, setAuthed] = useState<boolean | null>(null)
+  // When auth resolution hangs or throws (a stuck/expired session token, a
+  // backend blip), we must never leave the user on an endless spinner. This
+  // flips to an error so a recoverable screen (Retry / Sign in) renders instead.
+  const [authError, setAuthError] = useState(false)
+  // Mirror of `authed` for the backstop timeout to read the latest value.
+  const authedRef = useRef<boolean | null>(null)
+  useEffect(() => { authedRef.current = authed }, [authed])
   const [adminCollapsed, setAdminCollapsed] = useState(false)
   const [company, setCompany] = useState<any>(null)
   const [demoMsg, setDemoMsg] = useState('')
@@ -387,7 +394,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         })
       }
 
-      supabase.auth.getSession().then(async ({ data }: any) => {
+      // getSession() can hang if a token refresh network call stalls. Race it
+      // against a timeout so a stuck session surfaces the recoverable screen
+      // instead of spinning forever.
+      const withTimeout = <T,>(p: Promise<T>, ms: number) => Promise.race([
+        p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+      ])
+      await withTimeout(supabase.auth.getSession(), 12000).then(async ({ data }: any) => {
       // admin.colvy.com is the platform super-admin domain — never a company
       // admin. Any /admin/* URL there must go to the platform panel instead of
       // falling through to a company lookup that resolves nothing and 404s.
@@ -489,10 +502,35 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }
       // Not an admin of anything — deny
       router.push('/')
-    })
+    }).catch(() => setAuthError(true))
     } // end initAuth
-    initAuth()
+    initAuth().catch(() => setAuthError(true))
+    // Backstop: if auth resolution hasn't completed (a query that hangs without
+    // rejecting), surface the recoverable screen rather than an endless spinner.
+    const backstop = setTimeout(() => { if (authedRef.current === null) setAuthError(true) }, 15000)
+    return () => clearTimeout(backstop)
   }, [])
+
+  // Auth resolution hung or failed (stuck/expired session token, backend blip) —
+  // give the user a way out instead of an infinite spinner.
+  if (authed === null && authError) {
+    const signInAgain = async () => { try { await supabase.auth.signOut() } catch {} ; window.location.href = '/signin' }
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)', padding: 24 }}>
+        <div style={{ maxWidth: 380, textAlign: 'center' }}>
+          <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--peach, #fff0ec)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v4" /><path d="M12 17h.01" /><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
+          </div>
+          <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>We couldn&rsquo;t load your workspace</h2>
+          <p style={{ margin: '0 0 20px', fontSize: 14, lineHeight: 1.6, color: 'var(--slate)' }}>Your session may have expired, or the connection stalled. Try again, or sign in to refresh your session.</p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <button onClick={() => window.location.reload()} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Try again</button>
+            <button onClick={signInAgain} style={{ padding: '10px 20px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Sign in again</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (authed === null) {
     return (
