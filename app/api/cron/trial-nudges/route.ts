@@ -88,6 +88,12 @@ export async function GET(req: NextRequest) {
       if (!kind) continue
       considered++
 
+      // Only proceed when we can actually send — otherwise we'd claim the dedupe
+      // row without sending and never retry once configured.
+      if (!key) continue // email not configured — do nothing, retry a later run
+      const to = c.business_email
+      if (!to) { skippedNoEmail++; continue } // no address yet — retry when added
+
       // Dedupe: claim the (company, kind, trial_ends_at) row first. A unique
       // index makes the insert fail if this nudge already went out — so even
       // overlapping runs never double-send.
@@ -95,9 +101,6 @@ export async function GET(req: NextRequest) {
         .insert({ company_id: c.id, kind, trial_ends_at: c.trial_ends_at })
       if (claimErr) continue // already sent (unique violation) or table missing → skip
 
-      if (!key) continue // recorded the milestone, but email isn't configured
-      const to = c.business_email
-      if (!to) { skippedNoEmail++; continue }
       const business = c.name || 'your business'
       const { subject, html } = emailFor(kind, business, `${SUBDOMAIN(c.slug)}/admin/billing`)
       try {
