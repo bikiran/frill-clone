@@ -27,6 +27,13 @@ export type ColvyEvent =
   | 'order_slips_printed'   // packing slips printed (props: count)
   | 'order_assigned'        // orders assigned to a teammate (props: count, unassign)
   | 'order_outlet_assigned' // orders assigned to an outlet (props: count)
+  // Acquisition / conversion funnel (signup → workspace → checkout)
+  | 'signup_started'        // signup page opened
+  | 'signup_submitted'      // account created (props: via, joining)
+  | 'workspace_created'     // a new workspace came into existence
+  | 'pricing_viewed'        // the billing/plans page was opened
+  | 'checkout_started'      // upgrade clicked, redirecting to Stripe (props: tier, billing)
+  | 'checkout_completed'    // returned from Stripe checkout success (props: tier)
 
 export function track(event: ColvyEvent, props?: Record<string, any>): void {
   try { ph?.capture?.(event, props) } catch { /* analytics must never break the app */ }

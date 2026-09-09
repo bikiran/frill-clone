@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 import { isValidSlug, isSlugAvailable } from '@/lib/board'
 import { redirectToUserAdmin } from '@/lib/redirect'
+import { track } from '@/lib/analytics'
 import { useRouter } from 'next/navigation'
 
 const INDUSTRIES = ['SaaS', 'E-commerce', 'Healthcare', 'Education', 'Finance',
@@ -38,6 +39,8 @@ function SignUpForm() {
   const [resendCountdown, setResendCountdown] = useState(0)
   const [resendLoading, setResendLoading] = useState(false)
   const [resendSuccess, setResendSuccess] = useState('')
+
+  useEffect(() => { track('signup_started') }, [])
 
   useEffect(() => {
     // Check if user is already signed in
@@ -182,6 +185,7 @@ function SignUpForm() {
         }))
       }
 
+      track('signup_submitted', { via: 'email', joining: !!companyContext })
       setNeedsConfirmation(true)
     } catch (err: any) {
       setError(err.message || 'Sign up failed')
@@ -195,6 +199,7 @@ function SignUpForm() {
       if (!companyName.trim()) { setError('Please enter your company name before signing up with Google'); return }
       if (slugStatus !== 'available') { setError('Please choose a valid, available board URL before signing up with Google'); return }
     }
+    track('signup_submitted', { via: 'google', joining: !!companyContext })
     setOAuthLoading('google')
     await signInWithGoogle(companyContext
       ? { companyId: companyContext.id }
@@ -206,6 +211,7 @@ function SignUpForm() {
       if (!companyName.trim()) { setError('Please enter your company name before signing up with GitHub'); return }
       if (slugStatus !== 'available') { setError('Please choose a valid, available board URL before signing up with GitHub'); return }
     }
+    track('signup_submitted', { via: 'github', joining: !!companyContext })
     setOAuthLoading('github')
     await signInWithGitHub(companyContext
       ? { companyId: companyContext.id }
