@@ -20,6 +20,7 @@ import { useClickOutside } from '@/lib/use-click-outside'
 import { useActiveCall, callMatches } from '@/lib/active-call'
 import { getEffectiveEntitlements } from '@/lib/entitlements-client'
 import { flagEnabled } from '@/lib/feature-flags'
+import RecordSaleModal from '@/components/RecordSaleModal'
 import Link from 'next/link'
 import CallBar from '@/components/CallBar'
 import CallCard from '@/components/CallCard'
@@ -492,6 +493,7 @@ export default function InboxPage() {
   const [doaMatch, setDoaMatch] = useState(false)
   const [convActions, setConvActions] = useState<Record<string, any>>({})
   const [showActionMenu, setShowActionMenu] = useState(false)
+  const [showRecordSale, setShowRecordSale] = useState(false)
   const [showMediaRequest, setShowMediaRequest] = useState(false)
   const [mrPrompt, setMrPrompt] = useState('')
   const [mrAccept, setMrAccept] = useState<string[]>(['image', 'video', 'pdf'])
@@ -6540,6 +6542,17 @@ export default function InboxPage() {
       )}
 
       {/* Request Media popup */}
+      {showRecordSale && selected && companyId && (
+        <RecordSaleModal
+          companyId={companyId}
+          conversation={selected}
+          contact={contact}
+          teamMembers={teamMembers as any}
+          currentUser={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] }}
+          currency="AUD"
+          onClose={() => setShowRecordSale(false)}
+        />
+      )}
       {showMediaRequest && selected && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowMediaRequest(false)}>
           <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '100%', background: '#fff', borderRadius: 16, overflow: 'hidden', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -8866,7 +8879,6 @@ export default function InboxPage() {
           {/* + Action button — shows enabled conversation actions */}
           {(() => {
             const enabledActions = Object.entries(convActions).filter(([, v]: any) => v?.enabled)
-            if (enabledActions.length === 0) return null
             const ACTION_META: Record<string, { label: string; icon: (s?: number) => React.ReactNode }> = {
               doa: { label: 'DOA Claim', icon: Icon.box },
               warranty: { label: 'Warranty Claim', icon: Icon.shield },
@@ -8886,6 +8898,13 @@ export default function InboxPage() {
                 </button>
                 {showActionMenu && (
                   <div style={{ position: 'absolute', top: '100%', left: 14, right: 14, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', zIndex: 20, overflow: 'hidden', marginTop: 2 }}>
+                    {/* Record sale — always available, and can be used multiple times. */}
+                    <button type="button" onClick={() => { setShowActionMenu(false); setShowRecordSale(true) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13.5, color: 'var(--ink)', textAlign: 'left', fontWeight: 600 }}>
+                      <span style={{ color: '#16a34a', display: 'inline-flex' }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+                      </span> Record sale
+                    </button>
                     {[...enabledActions, ...(enabledActions.some(([k]: any) => k === 'proof_of_delivery') ? [] : [['proof_of_delivery', {}]])].map(([key, cfg]: any) => {
                       const meta = ACTION_META[key] || { label: key, icon: (s?: number) => <span>•</span> }
                       return (

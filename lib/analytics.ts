@@ -34,6 +34,7 @@ export type ColvyEvent =
   | 'pricing_viewed'        // the billing/plans page was opened
   | 'checkout_started'      // upgrade clicked, redirecting to Stripe (props: tier, billing)
   | 'checkout_completed'    // returned from Stripe checkout success (props: tier)
+  | 'sale_recorded'         // a tenant logged an attributed sale (props: amount, currency, payment_method)
 
 export function track(event: ColvyEvent, props?: Record<string, any>): void {
   try { ph?.capture?.(event, props) } catch { /* analytics must never break the app */ }
