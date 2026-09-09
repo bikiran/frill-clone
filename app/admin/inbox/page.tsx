@@ -7863,6 +7863,10 @@ export default function InboxPage() {
                     <div style={{ maxWidth: '70%', position: 'relative' }}
                       onMouseEnter={() => setShowReactPicker(null)}>
                       {!isAgent && <p style={{ margin: '0 0 3px 4px', fontSize: 10, color: '#9ca3af' }}>{contact?.name || msg.sender_name || 'Visitor'}</p>}
+                      {/* Outbound messages name the team member (or business, for
+                          automated ones) that sent them, so an agent reply isn't
+                          mistaken for a customer message. */}
+                      {isAgent && <p style={{ margin: '0 4px 3px 0', fontSize: 10, color: '#9ca3af', textAlign: 'right' }}>{msg.sender_name || 'Team'}</p>}
 
                       {/* Reply-to quote */}
                       {repliedMsg && (
