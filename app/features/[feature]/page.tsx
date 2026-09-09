@@ -1,58 +1,24 @@
 'use client'
 
 import { useParams } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import { useEffect, useRef, useState, ReactNode } from 'react'
+import { supabase } from '@/lib/supabase'
+import { redirectToUserAdmin } from '@/lib/redirect'
 import MarketingFooter from '@/components/MarketingFooter'
 
-function useInView() {
-  const ref = useRef<HTMLDivElement>(null)
-  const [v, setV] = useState(false)
-  useEffect(() => {
-    const o = new IntersectionObserver(([e]) => { if (e.isIntersecting) setV(true) }, { threshold: 0.1 })
-    if (ref.current) o.observe(ref.current)
-    return () => o.disconnect()
-  }, [])
-  return { ref, v }
-}
+// Feature deep-dive page (ideas / roadmap / announcements / knowledgebase),
+// re-skinned to match the main landing's bold, bright system.
 
-function useParallax(speed = 0.2) {
-  const [y, setY] = useState(0)
-  useEffect(() => {
-    const h = () => setY(window.scrollY * speed)
-    window.addEventListener('scroll', h, { passive: true })
-    return () => window.removeEventListener('scroll', h)
-  }, [speed])
-  return y
-}
-
-function FeatureIcon({ type }: { type: string }) {
-  const p = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-  switch(type) {
-    case 'search': return <svg {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    case 'folder': return <svg {...p}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-    case 'star': return <svg {...p}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-    case 'chart': return <svg {...p}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-    case 'link': return <svg {...p}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-    case 'eye': return <svg {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-    case 'check': return <svg {...p}><polyline points="20 6 9 17 4 12"/></svg>
-    case 'report': return <svg {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-    case 'vote': return <svg {...p}><polyline points="17 11 12 6 7 11"/><line x1="12" y1="18" x2="12" y2="6"/></svg>
-    case 'tag': return <svg {...p}><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-    case 'bell': return <svg {...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-    case 'send': return <svg {...p}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-    case 'zap': return <svg {...p}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-    default: return <svg {...p}><circle cx="12" cy="12" r="10"/></svg>
-  }
-}
+const CORAL = '#ff6a4d'
+const BLUE = '#2b59ff'
+const YELLOW = '#ffcb45'
+const GREEN = '#00c48c'
+const INK = '#0f1119'
 
 const PAGES: Record<string, any> = {
   ideas: {
-    emoji: '💡',
-    color: '#ff7a6b',
-    gradient: 'linear-gradient(135deg, #ff7a6b 0%, #ff9a8b 50%, #ffd4d0 100%)',
+    emoji: '💡', color: CORAL, subtitle: 'Ideas Board',
     title: 'Turn feedback into features',
-    subtitle: 'Ideas Board',
     hero: 'One beautiful place for all your customer feedback. Collect, prioritize, and act on what matters most.',
     features: [
       { icon: '🗳️', title: 'Public voting', desc: 'Let customers vote on ideas. The most wanted features rise to the top automatically.' },
@@ -71,15 +37,12 @@ const PAGES: Record<string, any> = {
     cta: 'Start collecting feedback',
   },
   roadmap: {
-    emoji: '🗺️',
-    color: '#6366f1',
-    gradient: 'linear-gradient(135deg, #6366f1 0%, #818cf8 50%, #c7d2fe 100%)',
-    title: 'Show users what\'s coming',
-    subtitle: 'Public Roadmap',
+    emoji: '🗺️', color: BLUE, subtitle: 'Public Roadmap',
+    title: 'Show users what’s coming',
     hero: 'Build trust by being transparent. A beautiful, public roadmap that your customers will actually check.',
     features: [
       { icon: '📋', title: 'Kanban columns', desc: 'Under Review, Planned, In Development, Shipped — drag ideas through your workflow.' },
-      { icon: '🎯', title: 'Custom statuses', desc: 'Create your own statuses with custom colors to match your team\'s process.' },
+      { icon: '🎯', title: 'Custom statuses', desc: 'Create your own statuses with custom colors to match your team’s process.' },
       { icon: '🔗', title: 'Linked to feedback', desc: 'Ideas on your board automatically appear on the roadmap when you update their status.' },
       { icon: '📅', title: 'Timeline view', desc: 'Show delivery dates and milestones in a visual timeline your users will love.' },
       { icon: '🌐', title: 'Embeddable', desc: 'Embed your roadmap on your website or in your app with one line of code.' },
@@ -93,11 +56,8 @@ const PAGES: Record<string, any> = {
     cta: 'Build your roadmap',
   },
   announcements: {
-    emoji: '📢',
-    color: '#10b981',
-    gradient: 'linear-gradient(135deg, #10b981 0%, #34d399 50%, #a7f3d0 100%)',
+    emoji: '📢', color: GREEN, subtitle: 'Announcements',
     title: 'Keep users in the loop',
-    subtitle: 'Announcements',
     hero: 'A beautiful changelog that celebrates every ship. Tell your story, build loyalty, and reduce support tickets.',
     features: [
       { icon: '✍️', title: 'Rich editor', desc: 'Write beautiful announcements with our markdown editor. Add images, embeds, and formatting.' },
@@ -115,18 +75,15 @@ const PAGES: Record<string, any> = {
     cta: 'Start your changelog',
   },
   knowledgebase: {
-    emoji: '📚',
-    color: '#f59e0b',
-    gradient: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 50%, #fde68a 100%)',
-    title: 'Answer questions before they\'re asked',
-    subtitle: 'Knowledgebase',
+    emoji: '📚', color: YELLOW, subtitle: 'Knowledgebase',
+    title: 'Answer questions before they’re asked',
     hero: 'A beautiful, searchable help centre that reduces support tickets by 40% on average.',
     features: [
       { icon: '🔍', title: 'Instant search', desc: 'Full-text search across all articles. Users find answers in seconds, not support queues.' },
       { icon: '📂', title: 'Categories', desc: 'Organize articles by category — Getting Started, Features, Billing, Troubleshooting.' },
       { icon: '⭐', title: 'Featured articles', desc: 'Pin your most important articles at the top so new users find them immediately.' },
       { icon: '👍', title: 'Helpfulness rating', desc: 'Users mark articles as helpful. See which docs need improvement.' },
-      { icon: '💬', title: 'Live chat integration', desc: 'Can\'t find an answer? Start a live chat or open a support ticket directly from the help centre.' },
+      { icon: '💬', title: 'Live chat integration', desc: 'Can’t find an answer? Start a live chat or open a support ticket directly from the help centre.' },
       { icon: '🌐', title: 'Custom domain', desc: 'Host your help centre on help.yourcompany.com with full white labeling.' },
     ],
     mockup: [
@@ -138,214 +95,178 @@ const PAGES: Record<string, any> = {
     cta: 'Build your help centre',
   },
 }
+const ALL = [
+  { label: 'Ideas Board', href: '/features/ideas', emoji: '💡', color: CORAL },
+  { label: 'Roadmap', href: '/features/roadmap', emoji: '🗺️', color: BLUE },
+  { label: 'Announcements', href: '/features/announcements', emoji: '📢', color: GREEN },
+  { label: 'Knowledgebase', href: '/features/knowledgebase', emoji: '📚', color: YELLOW },
+]
 
-function IdeasMockup({ data, color, dark }: any) {
+// ── helpers (shared look with the main landing) ──────────────────────────────
+function useReveal(threshold = 0.15) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [v, setV] = useState(false)
+  useEffect(() => {
+    const o = new IntersectionObserver(([e]) => { if (e.isIntersecting) setV(true) }, { threshold })
+    if (ref.current) o.observe(ref.current)
+    return () => o.disconnect()
+  }, [threshold])
+  return { ref, v }
+}
+function Reveal({ children, delay = 0, y = 30 }: { children: ReactNode; delay?: number; y?: number }) {
+  const { ref, v } = useReveal()
+  return <div ref={ref} style={{ opacity: v ? 1 : 0, transform: v ? 'none' : `translateY(${y}px)`, transition: `opacity 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}s, transform 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}s` }}>{children}</div>
+}
+function BigReveal({ text }: { text: string }) {
+  const { ref, v } = useReveal(0.35)
+  const words = text.split(' ')
   return (
-    <div className="space-y-2">
-      {data.map((i: any, idx: number) => (
-        <div key={idx} className="flex items-center gap-3 p-3 rounded-xl"
-          style={{ background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: `1px solid ${dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)'}` }}>
-          <div className="w-10 h-10 rounded-xl flex flex-col items-center justify-center text-white text-xs font-bold shrink-0"
-            style={{ background: color + '25', border: `1px solid ${color}40` }}>
-            <span style={{ color }}>▲</span>
-            <span style={{ color }}>{i.votes}</span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate" style={{ color: dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.8)' }}>{i.title}</p>
-            <p className="text-xs" style={{ color: dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)' }}>#{i.tag}</p>
-          </div>
-          <span className="text-xs px-2 py-1 rounded-full shrink-0 font-medium"
-            style={{ background: color + '20', color }}>
-            {i.status}
+    <span ref={ref as any} style={{ display: 'inline' }}>
+      {words.map((w, i) => (
+        <span key={i}>
+          <span style={{ display: 'inline-block', overflow: 'hidden', verticalAlign: 'bottom', paddingBottom: '0.14em', marginBottom: '-0.14em' }}>
+            <span style={{ display: 'inline-block', transform: v ? 'translateY(0)' : 'translateY(112%)', opacity: v ? 1 : 0, transition: `transform 0.65s cubic-bezier(0.16,1,0.3,1) ${i * 0.07}s, opacity 0.5s ${i * 0.07}s` }}>{w}</span>
           </span>
-        </div>
+          {i < words.length - 1 ? ' ' : ''}
+        </span>
       ))}
-    </div>
+    </span>
   )
 }
+const ArrowRight = ({ s = 16 }: { s?: number }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>)
+const SunIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>)
+const MoonIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>)
 
-function RoadmapMockup({ data, color, dark }: any) {
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {data.map((col: any) => (
-        <div key={col.col} className="rounded-xl p-3" style={{ background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}` }}>
-          <p className="text-xs font-bold mb-2" style={{ color }}>{col.col}</p>
-          <div className="space-y-1.5">
-            {col.items.map((item: string) => (
-              <div key={item} className="p-2 rounded-lg text-xs" style={{ background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', color: dark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)' }}>{item}</div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
+// ── themed mockups (kept from before) ────────────────────────────────────────
+function IdeasMockup({ data, color, dark, border, ink, sub }: any) {
+  return (<div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{data.map((i: any, idx: number) => (
+    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${border}` }}>
+      <div style={{ width: 40, height: 40, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: color + '22', border: `1px solid ${color}40`, color, fontSize: 11, fontWeight: 800 }}><span>▲</span><span>{i.votes}</span></div>
+      <div style={{ flex: 1, minWidth: 0 }}><p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.title}</p><p style={{ margin: 0, fontSize: 11.5, color: sub }}>#{i.tag}</p></div>
+      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 999, flexShrink: 0, background: color + '20', color }}>{i.status}</span>
+    </div>))}</div>)
 }
-
-function AnnouncementMockup({ data, color, dark }: any) {
-  return (
-    <div className="space-y-3">
-      {data.map((a: any, i: number) => (
-        <div key={i} className="p-4 rounded-xl" style={{ background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: `1px solid ${dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)'}` }}>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: color + '20', color }}>{a.tag}</span>
-            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>{a.date}</span>
-          </div>
-          <p className="text-sm font-semibold mb-2" style={{ color: dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.8)' }}>{a.title}</p>
-          <div className="flex items-center gap-3 text-xs" style={{ color: dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)' }}>
-            <span>{a.reactions}</span>
-            <span>👁 {a.views} views</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
+function RoadmapMockup({ data, color, dark, border, ink, sub }: any) {
+  return (<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>{data.map((col: any) => (
+    <div key={col.col} style={{ borderRadius: 12, padding: 10, background: dark ? 'rgba(255,255,255,0.03)' : '#fff', border: `1px solid ${border}` }}>
+      <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 800, color }}>{col.col}</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{col.items.map((item: string) => (<div key={item} style={{ padding: 8, borderRadius: 8, fontSize: 11.5, background: dark ? 'rgba(255,255,255,0.05)' : color + '10', color: dark ? 'rgba(255,255,255,0.8)' : ink }}>{item}</div>))}</div>
+    </div>))}</div>)
 }
-
-function KbMockup({ data, color, dark }: any) {
-  return (
-    <div className="space-y-2">
-      {data.map((cat: any, i: number) => (
-        <div key={i} className="flex items-center justify-between p-3 rounded-xl cursor-pointer group"
-          style={{ background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: `1px solid ${dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)'}` }}>
-          <div className="flex items-center gap-3">
-            <span className="text-xl">{cat.category}</span>
-            <div>
-              <p className="text-sm font-medium" style={{ color: dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.8)' }}>{cat.title}</p>
-              <p className="text-xs" style={{ color: dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)' }}>{cat.articles} articles · {cat.views} views</p>
-            </div>
-          </div>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: color, opacity: 0.6 }}><polyline points="9 18 15 12 9 6"/></svg>
-        </div>
-      ))}
-    </div>
-  )
+function AnnouncementMockup({ data, color, dark, border, ink, sub }: any) {
+  return (<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{data.map((a: any, i: number) => (
+    <div key={i} style={{ padding: 14, borderRadius: 12, background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${border}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, background: color + '20', color }}>{a.tag}</span><span style={{ fontSize: 11, color: sub }}>{a.date}</span></div>
+      <p style={{ margin: '0 0 8px', fontSize: 13.5, fontWeight: 700, color: ink }}>{a.title}</p>
+      <div style={{ display: 'flex', gap: 12, fontSize: 11.5, color: sub }}><span>{a.reactions}</span><span>👁 {a.views} views</span></div>
+    </div>))}</div>)
+}
+function KbMockup({ data, color, dark, border, ink, sub }: any) {
+  return (<div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{data.map((cat: any, i: number) => (
+    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 12, background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${border}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><span style={{ fontSize: 20 }}>{cat.category}</span><div><p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: ink }}>{cat.title}</p><p style={{ margin: 0, fontSize: 11.5, color: sub }}>{cat.articles} articles · {cat.views} views</p></div></div>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+    </div>))}</div>)
 }
 
 export default function FeaturePage() {
   const params = useParams()
   const feature = (params?.feature as string) || 'ideas'
   const page = PAGES[feature] || PAGES.ideas
-  const parallax = useParallax(0.25)
+  const color: string = page.color
   const [dark, setDark] = useState(false)
-  const { ref: f1, v: v1 } = useInView()
-  const { ref: f2, v: v2 } = useInView()
-  const { ref: f3, v: v3 } = useInView()
+  const [user, setUser] = useState<any>(null)
+  const [scrollY, setScrollY] = useState(0)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }: any) => setUser(data?.session?.user))
+    const { data: l } = supabase.auth.onAuthStateChange((_: any, s: any) => setUser(s?.user ?? null))
+    let raf = 0
+    const onScroll = () => { if (raf) return; raf = requestAnimationFrame(() => { setScrollY(window.scrollY); raf = 0 }) }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => { l?.subscription?.unsubscribe(); window.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf) }
+  }, [])
+
+  const go = async () => {
+    if (!user) { window.location.href = '/signup'; return }
+    try {
+      const { data: co } = await (supabase as any).from('companies').select('slug').eq('owner_id', user.id).order('created_at', { ascending: true }).limit(1).maybeSingle()
+      if (co?.slug) window.location.href = `https://${co.slug}.colvy.com/admin`
+      else await redirectToUserAdmin(user.id)
+    } catch { await redirectToUserAdmin(user.id) }
+  }
+
+  const bg = dark ? '#0a0b12' : '#ffffff'
+  const canvas = dark ? '#0e0f18' : '#fff6f2'
+  const text = dark ? '#f4f5fb' : INK
+  const muted = dark ? 'rgba(244,245,251,0.62)' : 'rgba(15,17,25,0.6)'
+  const cardBg = dark ? 'rgba(255,255,255,0.045)' : '#ffffff'
+  const cardBorder = dark ? 'rgba(255,255,255,0.09)' : 'rgba(15,17,25,0.09)'
+  const navScrolled = scrollY > 30
+  const navBg = navScrolled ? (dark ? 'rgba(10,11,18,0.82)' : 'rgba(255,255,255,0.85)') : 'transparent'
+  const font = '-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Inter,sans-serif'
+  const gridImg = `linear-gradient(${dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.045)'} 1px,transparent 1px),linear-gradient(90deg,${dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.045)'} 1px,transparent 1px)`
+  const btnPrimary: React.CSSProperties = { padding: '15px 30px', borderRadius: 999, background: color, color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer', border: 'none', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: `0 10px 30px ${color}55` }
+  const btnGhost: React.CSSProperties = { padding: '15px 26px', borderRadius: 999, border: `2px solid ${dark ? 'rgba(255,255,255,0.16)' : 'rgba(15,17,25,0.12)'}`, background: 'transparent', color: text, fontWeight: 700, fontSize: 15, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }
 
   return (
-    <div style={{ background: dark ? '#000' : '#fafafa', color: dark ? '#fff' : '#0a0a0a', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif', minHeight: '100vh', transition: 'background 0.3s, color 0.3s' }}>
+    <div style={{ background: bg, color: text, fontFamily: font, minHeight: '100vh', overflowX: 'hidden', transition: 'background 0.3s, color 0.3s' }}>
       <style>{`
-        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
-        @keyframes slideUp { from{opacity:0;transform:translateY(30px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes shimmer { 0%{background-position:-200% center} 100%{background-position:200% center} }
-        .float { animation: float 5s ease-in-out infinite; }
-        .slide-up { animation: slideUp 0.8s cubic-bezier(0.16,1,0.3,1) forwards; }
-        .slide-up-1 { animation-delay:.1s; opacity:0; }
-        .slide-up-2 { animation-delay:.2s; opacity:0; }
-        .slide-up-3 { animation-delay:.3s; opacity:0; }
-        .feat-card { transition: all 0.35s cubic-bezier(0.16,1,0.3,1); }
-        .feat-card:hover { transform: translateY(-6px); background: rgba(255,255,255,0.07) !important; }
-        .feat-card:hover .feat-icon { transform: scale(1.2) rotate(8deg); }
-        .feat-icon { display:inline-block; transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1); }
+        @keyframes wordIn { from{opacity:0;transform:translateY(0.4em)} to{opacity:1;transform:translateY(0)} }
+        .fp-navlink:hover { color:${color} !important; }
+        .fp-card,.fp-navlink,.fp-btn { transition:all 0.22s cubic-bezier(0.16,1,0.3,1); }
+        .fp-card:hover { transform:translateY(-6px); }
+        .fp-btn:hover { transform:translateY(-2px); }
+        @media (max-width:900px){ .fp-hero{ grid-template-columns:1fr !important; } .fp-desktop{ display:none !important; } }
       `}</style>
 
-      {/* Nav */}
-      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md border-b"
-        style={{ background: dark ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)', borderColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)', backdropFilter: 'blur(20px)' }}>
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/landing" className="text-xl font-bold" style={{ color: '#ff7a6b' }}>Colvy</Link>
-          <div className="hidden md:flex items-center gap-1">
-            {[
-              { label: 'Ideas', href: '/features/ideas' },
-              { label: 'Roadmap', href: '/features/roadmap' },
-              { label: 'Announcements', href: '/features/announcements' },
-              { label: 'Knowledgebase', href: '/features/knowledgebase' },
-              { label: 'Pricing', href: '/pricing' },
-            ].map(n => (
-              <Link key={n.label} href={n.href}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:bg-white/10"
-                style={{ color: n.href.includes(feature) ? (dark ? '#fff' : '#0a0a0a') : (dark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.5)'), fontWeight: n.href.includes(feature) ? 600 : 400 }}>
-                {n.label}
-              </Link>
-            ))}
+      {/* NAV */}
+      <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, background: navBg, backdropFilter: navScrolled ? 'blur(18px)' : 'none', borderBottom: `1px solid ${navScrolled ? cardBorder : 'transparent'}`, transition: 'all 0.3s' }}>
+        <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 24px', height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <a href="/" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none' }}>
+            <img src="/icon-512.png" alt="Colvy" width={32} height={32} style={{ borderRadius: 9, display: 'block' }} />
+            <span style={{ fontWeight: 900, fontSize: 22, color: text, letterSpacing: '-0.02em' }}>Colvy</span>
+          </a>
+          <div className="fp-desktop" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {[{ label: 'Inbox & CRM', href: '/inbox-crm' }, { label: 'Ideas', href: '/features/ideas' }, { label: 'Roadmap', href: '/features/roadmap' }, { label: 'Announcements', href: '/features/announcements' }, { label: 'Pricing', href: '/pricing' }].map((n) => {
+              const active = n.href.includes(feature)
+              return <a key={n.label} href={n.href} className="fp-navlink" style={{ padding: '8px 14px', borderRadius: 10, fontSize: 14.5, fontWeight: active ? 800 : 600, color: active ? color : muted, textDecoration: 'none' }}>{n.label}</a>
+            })}
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setDark(!dark)}
-              className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:scale-110 cursor-pointer"
-              style={{ background: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
-              {dark ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-            ) : (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            )}
-            </button>
-            <Link href="/signup"
-              className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:scale-105"
-              style={{ background: page.color }}>
-              Get started free
-            </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button onClick={() => setDark(!dark)} aria-label="Toggle theme" style={{ width: 38, height: 38, borderRadius: 11, border: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>{dark ? <SunIcon /> : <MoonIcon />}</button>
+            <button onClick={go} className="fp-btn" style={{ ...btnPrimary, padding: '10px 22px', fontSize: 14.5 }}>{user ? 'Dashboard →' : 'Get started free'}</button>
           </div>
         </div>
       </nav>
 
       {/* HERO */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden px-6" style={{ paddingTop: 80 }}>
-        {/* Orbs */}
-        <div className="absolute rounded-full pointer-events-none"
-          style={{ width: 700, height: 700, background: `radial-gradient(circle, ${page.color}35 0%, transparent 65%)`, top: '5%', left: '15%', filter: 'blur(60px)', transform: `translateY(${parallax * 0.4}px)` }} />
-        <div className="absolute rounded-full pointer-events-none"
-          style={{ width: 400, height: 400, background: `radial-gradient(circle, ${page.color}20 0%, transparent 70%)`, bottom: '10%', right: '10%', filter: 'blur(60px)', transform: `translateY(${-parallax * 0.2}px)` }} />
-
-        {/* Grid */}
-        <div className="absolute inset-0 pointer-events-none"
-          style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)', backgroundSize: '50px 50px', WebkitMaskImage: 'radial-gradient(ellipse at center, black 30%, transparent 75%)' }} />
-
-        <div className="relative max-w-5xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-12 items-center">
-            {/* Left */}
-            <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold mb-6 slide-up slide-up-1"
-                style={{ background: page.color + '20', border: `1px solid ${page.color}40`, color: page.color }}>
-                <span className="text-lg">{page.emoji}</span> {page.subtitle}
-              </div>
-              <h1 className="text-4xl md:text-6xl font-black mb-6 leading-tight slide-up slide-up-1" style={{ letterSpacing: '-0.03em', color: dark ? '#fff' : '#0a0a0a' }}>
-                {page.title}
-              </h1>
-              <p className="text-lg mb-8 leading-relaxed slide-up slide-up-2" style={{ color: dark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)' }}>
-                {page.hero}
-              </p>
-              <div className="flex gap-4 slide-up slide-up-3">
-                <Link href="/signup"
-                  className="px-6 py-3.5 rounded-2xl text-sm font-bold text-white transition-all hover:scale-105 hover:shadow-2xl"
-                  style={{ background: `linear-gradient(135deg, ${page.color}, ${page.color}cc)`, boxShadow: `0 0 30px ${page.color}40` }}>
-                  {page.cta} →
-                </Link>
-                <Link href="/landing"
-                  className="px-6 py-3.5 rounded-2xl text-sm font-semibold transition-all hover:bg-white/10"
-                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)' }}>
-                  See all features
-                </Link>
+      <section style={{ position: 'relative', minHeight: '92vh', display: 'flex', alignItems: 'center', padding: '120px 24px 70px', overflow: 'hidden', background: dark ? 'linear-gradient(180deg, #10111b 0%, #0a0b12 60%)' : `linear-gradient(180deg, ${color}12 0%, #ffffff 58%)` }}>
+        <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 80%)' }} />
+        <div aria-hidden style={{ position: 'absolute', top: '-12%', left: '-8%', width: 460, height: 460, background: color, borderRadius: '46% 54% 60% 40% / 45% 45% 55% 55%', opacity: dark ? 0.16 : 0.22, transform: `translateY(${scrollY * 0.12}px)` }} />
+        <div style={{ position: 'relative', zIndex: 2, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+          <div className="fp-hero" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'center' }}>
+            <div style={{ maxWidth: 560 }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 15px', borderRadius: 999, marginBottom: 22, background: color + '1a', border: `1px solid ${color}44`, color, fontSize: 13, fontWeight: 800 }}><span style={{ fontSize: 16 }}>{page.emoji}</span> {page.subtitle}</div>
+              <h1 style={{ fontSize: 'clamp(40px, 5.6vw, 74px)', fontWeight: 900, lineHeight: 1.0, letterSpacing: '-0.035em', margin: '0 0 22px' }}><BigReveal text={page.title} /></h1>
+              <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 520, margin: '0 0 32px' }}>{page.hero}</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+                <button onClick={go} className="fp-btn" style={btnPrimary}>{page.cta} <ArrowRight /></button>
+                <a href="/features" className="fp-btn" style={btnGhost}>See all features</a>
               </div>
             </div>
-
-            {/* Right — Mockup */}
-            <div className="float">
-              <div className="rounded-2xl overflow-hidden shadow-2xl" style={{ background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)', border: `1px solid ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`, padding: '1px' }}>
-                <div className="rounded-2xl overflow-hidden" style={{ background: dark ? 'rgba(12,12,12,0.95)' : '#fafafa' }}>
-                  {/* Browser bar */}
-                  <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
-                    <div className="flex gap-1.5">
-                      {['#ff5f57','#ffbd2e','#28ca41'].map(c => <div key={c} className="w-2.5 h-2.5 rounded-full" style={{ background: c }} />)}
-                    </div>
-                    <div className="flex-1 mx-3 px-3 py-1 rounded-md text-xs text-center" style={{ background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', color: dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.35)' }}>
-                      yourcompany.colvy.com/{feature === 'knowledgebase' ? 'help' : feature}
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    {feature === 'ideas' && <IdeasMockup data={page.mockup} color={page.color} dark={dark} />}
-                    {feature === 'roadmap' && <RoadmapMockup data={page.mockup} color={page.color} dark={dark} />}
-                    {feature === 'announcements' && <AnnouncementMockup data={page.mockup} color={page.color} dark={dark} />}
-                    {feature === 'knowledgebase' && <KbMockup data={page.mockup} color={page.color} dark={dark} />}
-                  </div>
+            <div style={{ position: 'relative', transform: `translateY(${scrollY * -0.04}px)` }}>
+              <div aria-hidden style={{ position: 'absolute', inset: -20, borderRadius: 34, background: `linear-gradient(135deg, ${color}, ${color}88)`, opacity: dark ? 0.4 : 0.22, filter: 'blur(28px)' }} />
+              <div style={{ position: 'relative', borderRadius: 22, overflow: 'hidden', border: `1px solid ${cardBorder}`, background: dark ? '#0e0f18' : '#fafbff', boxShadow: '0 40px 100px rgba(15,17,25,0.22)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 15px', borderBottom: `1px solid ${cardBorder}`, background: cardBg }}>
+                  <span style={{ display: 'flex', gap: 6 }}>{['#ff5f57', '#febc2e', '#28c840'].map(c => <span key={c} style={{ width: 11, height: 11, borderRadius: '50%', background: c }} />)}</span>
+                  <span style={{ flex: 1, textAlign: 'center', fontSize: 11.5, color: muted }}>yourcompany.colvy.com/{feature === 'knowledgebase' ? 'help' : feature}</span>
+                </div>
+                <div style={{ padding: 16 }}>
+                  {feature === 'ideas' && <IdeasMockup data={page.mockup} color={color} dark={dark} border={cardBorder} ink={text} sub={muted} />}
+                  {feature === 'roadmap' && <RoadmapMockup data={page.mockup} color={color} dark={dark} border={cardBorder} ink={text} sub={muted} />}
+                  {feature === 'announcements' && <AnnouncementMockup data={page.mockup} color={color} dark={dark} border={cardBorder} ink={text} sub={muted} />}
+                  {feature === 'knowledgebase' && <KbMockup data={page.mockup} color={color} dark={dark} border={cardBorder} ink={text} sub={muted} />}
                 </div>
               </div>
             </div>
@@ -354,77 +275,55 @@ export default function FeaturePage() {
       </section>
 
       {/* FEATURES GRID */}
-      <section className="py-24 px-6" ref={f1 as any}>
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-4xl font-black text-center mb-4" style={{ color: dark ? '#fff' : '#0a0a0a' }}
-            style={{ opacity: v1 ? 1 : 0, transform: v1 ? 'none' : 'translateY(30px)', transition: 'all 0.7s cubic-bezier(0.16,1,0.3,1)' }}>
-            Everything you need
-          </h2>
-          <p className="text-center mb-16 text-lg"
-            style={{ color: dark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.45)', opacity: v1 ? 1 : 0, transition: 'all 0.7s 0.1s' }}>
-            No compromises. No cobbling tools together.
-          </p>
-          <div className="grid md:grid-cols-3 gap-5">
+      <section style={{ padding: 'clamp(64px, 9vw, 110px) 24px', background: canvas, borderTop: `1px solid ${cardBorder}`, borderBottom: `1px solid ${cardBorder}` }}>
+        <div style={{ maxWidth: 1160, margin: '0 auto' }}>
+          <Reveal><div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <h2 style={{ fontSize: 'clamp(30px, 4.6vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', margin: '0 0 12px', color: text }}>Everything you need</h2>
+            <p style={{ fontSize: 18, color: muted, margin: 0 }}>No compromises. No cobbling tools together.</p>
+          </div></Reveal>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
             {page.features.map((f: any, i: number) => (
-              <div key={f.title} className="feat-card p-6 rounded-2xl"
-                style={{
-                  background: dark ? 'rgba(255,255,255,0.04)' : '#fff',
-                  border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'}`,
-                  opacity: v1 ? 1 : 0,
-                  transform: v1 ? 'none' : 'translateY(40px)',
-                  transition: `all 0.7s cubic-bezier(0.16,1,0.3,1) ${0.05 * i}s`,
-                }}>
-                <div className="feat-icon text-3xl mb-4">{f.icon}</div>
-                <h3 className="text-lg font-bold mb-2">{f.title}</h3>
-                <p className="text-sm leading-relaxed" style={{ color: dark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.5)' }}>{f.desc}</p>
-              </div>
+              <Reveal key={f.title} delay={(i % 3) * 0.06}>
+                <div className="fp-card" style={{ padding: 26, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, height: '100%' }}>
+                  <div style={{ fontSize: 30, marginBottom: 14 }}>{f.icon}</div>
+                  <h3 style={{ fontSize: 18, fontWeight: 800, color: text, margin: '0 0 8px' }}>{f.title}</h3>
+                  <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{f.desc}</p>
+                </div>
+              </Reveal>
             ))}
           </div>
         </div>
       </section>
 
       {/* CTA */}
-      <section className="py-24 px-6" ref={f2 as any}>
-        <div className="max-w-2xl mx-auto text-center"
-          style={{ opacity: v2 ? 1 : 0, transform: v2 ? 'none' : 'translateY(30px)', transition: 'all 0.7s cubic-bezier(0.16,1,0.3,1)' }}>
-          <div className="text-5xl mb-6">{page.emoji}</div>
-          <h2 className="text-4xl font-black mb-4" style={{ color: dark ? '#fff' : '#0a0a0a' }}>Ready to try {page.subtitle}?</h2>
-          <p className="mb-8" style={{ color: dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }}>
-            Set up in 4 minutes. Free forever for small teams.
-          </p>
-          <Link href="/signup"
-            className="inline-block px-10 py-4 rounded-2xl text-base font-bold text-white transition-all hover:scale-105"
-            style={{ background: `linear-gradient(135deg, ${page.color}, ${page.color}cc)`, boxShadow: `0 0 40px ${page.color}40` }}>
-            Get started free →
-          </Link>
+      <section style={{ position: 'relative', padding: 'clamp(64px, 9vw, 120px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${color}, ${color}bb)`, overflow: 'hidden' }}>
+        <div aria-hidden style={{ position: 'absolute', top: -50, left: '8%', width: 240, height: 240, borderRadius: '50%', background: 'rgba(255,255,255,0.14)' }} />
+        <div aria-hidden style={{ position: 'absolute', bottom: -70, right: '8%', width: 300, height: 300, borderRadius: '50%', background: 'rgba(255,255,255,0.12)' }} />
+        <div style={{ position: 'relative', maxWidth: 720, margin: '0 auto' }}>
+          <Reveal>
+            <div style={{ fontSize: 46, marginBottom: 14 }}>{page.emoji}</div>
+            <h2 style={{ fontSize: 'clamp(30px, 5vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff', lineHeight: 1.04, margin: '0 0 14px' }}>Ready to try {page.subtitle}?</h2>
+            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Set up in 4 minutes. Free forever for small teams.</p>
+            <button onClick={go} className="fp-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started free <ArrowRight /></button>
+          </Reveal>
         </div>
       </section>
 
-      {/* Other features nav */}
-      <section className="py-16 px-6 border-t" style={{ borderColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }} ref={f3 as any}>
-        <div className="max-w-4xl mx-auto">
-          <p className="text-center text-sm mb-8" style={{ color: dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.35)' }}>Explore all features</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { label: 'Ideas Board', href: '/features/ideas', emoji: '💡', color: '#ff7a6b' },
-              { label: 'Roadmap', href: '/features/roadmap', emoji: '🗺️', color: '#6366f1' },
-              { label: 'Announcements', href: '/features/announcements', emoji: '📢', color: '#10b981' },
-              { label: 'Knowledgebase', href: '/features/knowledgebase', emoji: '📚', color: '#f59e0b' },
-            ].filter(f => !f.href.includes(feature)).map(f => (
-              <Link key={f.label} href={f.href}
-                className="feat-card p-4 rounded-2xl text-center"
-                style={{
-                  background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)'}`,
-                  opacity: v3 ? 1 : 0, transform: v3 ? 'none' : 'translateY(20px)',
-                  transition: 'all 0.6s cubic-bezier(0.16,1,0.3,1)',
-                }}>
-                <div className="text-2xl mb-2 feat-icon">{f.emoji}</div>
-                <p className="text-sm font-medium" style={{ color: f.color }}>{f.label}</p>
-              </Link>
+      {/* Other features */}
+      <section style={{ padding: 'clamp(56px, 8vw, 90px) 24px', background: bg }}>
+        <div style={{ maxWidth: 960, margin: '0 auto' }}>
+          <p style={{ textAlign: 'center', fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: muted, margin: '0 0 32px' }}>Explore all features</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+            {ALL.filter(f => !f.href.includes(feature)).map(f => (
+              <a key={f.label} href={f.href} className="fp-card" style={{ padding: 22, borderRadius: 18, textAlign: 'center', background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none' }}>
+                <div style={{ fontSize: 26, marginBottom: 10 }}>{f.emoji}</div>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: f.color }}>{f.label}</p>
+              </a>
             ))}
           </div>
         </div>
       </section>
+
       <MarketingFooter dark={dark} />
     </div>
   )
