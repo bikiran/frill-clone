@@ -130,6 +130,58 @@ function RotatingWord({ words, color, ms = 2100 }: { words: string[]; color?: st
   return <span key={i} style={{ color, display: 'inline-block', animation: 'wordIn 0.55s cubic-bezier(0.16,1,0.3,1)' }}>{words[i]}</span>
 }
 
+// Full-bleed stats band that auto-slides through pages of real metrics.
+function fmtNum(n: number) {
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M'
+  if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, '') + 'K'
+  return n.toLocaleString()
+}
+function StatsBand({ stats }: { stats: { teams: number; conversations: number; messages: number; callMinutes: number; paymentsTotal: number; sales: number } }) {
+  const pool: { v: string; l: string }[] = [
+    { v: stats.teams > 0 ? fmtNum(stats.teams) + '+' : '12,000+', l: 'Teams on Colvy' },
+    { v: stats.conversations > 0 ? fmtNum(stats.conversations) + '+' : '10K+', l: 'Conversations handled' },
+    { v: stats.messages > 0 ? fmtNum(stats.messages) + '+' : '250K+', l: 'Messages exchanged' },
+    ...(stats.callMinutes > 0 ? [{ v: fmtNum(stats.callMinutes) + ' min', l: 'Minutes on calls' }] : []),
+    ...(stats.paymentsTotal > 0 ? [{ v: '$' + fmtNum(stats.paymentsTotal) + '+', l: 'Payments handled' }] : []),
+    ...(stats.sales > 0 ? [{ v: fmtNum(stats.sales) + '+', l: 'Sales recorded' }] : []),
+    { v: '98%', l: 'Customer satisfaction' },
+    { v: '4 min', l: 'To get set up' },
+  ]
+  const pages: { v: string; l: string }[][] = []
+  for (let i = 0; i < pool.length; i += 4) pages.push(pool.slice(i, i + 4))
+  const [p, setP] = useState(0)
+  useEffect(() => {
+    if (pages.length < 2) return
+    const t = setInterval(() => setP(x => (x + 1) % pages.length), 3600)
+    return () => clearInterval(t)
+  }, [pages.length])
+  return (
+    <section style={{ background: CORAL, color: '#fff', padding: 'clamp(56px, 8vw, 92px) 24px', overflow: 'hidden' }}>
+      <div style={{ maxWidth: 1080, margin: '0 auto', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', width: `${pages.length * 100}%`, transform: `translateX(-${p * (100 / pages.length)}%)`, transition: 'transform 0.6s cubic-bezier(0.16,1,0.3,1)' }}>
+          {pages.map((page, pi) => (
+            <div key={pi} style={{ width: `${100 / pages.length}%`, flexShrink: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 28, padding: '0 6px', alignContent: 'center' }}>
+              {page.map(s => (
+                <div key={s.l} style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 'clamp(38px, 5.5vw, 64px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1 }}>{s.v}</div>
+                  <div style={{ fontSize: 14.5, color: 'rgba(255,255,255,0.88)', marginTop: 8, fontWeight: 600 }}>{s.l}</div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+        {pages.length > 1 && (
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 34 }}>
+            {pages.map((_, i) => (
+              <button key={i} onClick={() => setP(i)} aria-label={`Stats page ${i + 1}`} style={{ width: i === p ? 26 : 9, height: 9, borderRadius: 99, border: 'none', padding: 0, cursor: 'pointer', background: i === p ? '#fff' : 'rgba(255,255,255,0.45)', transition: 'width 0.4s ease' }} />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 const ArrowRight = ({ s = 16 }: { s?: number }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>)
 const SunIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>)
 const MoonIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>)
@@ -138,7 +190,7 @@ const CloseIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="n
 
 export default function LandingPage() {
   const [user, setUser] = useState<any>(null)
-  const [realStats, setRealStats] = useState({ teams: 0, ideas: 0 })
+  const [realStats, setRealStats] = useState({ teams: 0, conversations: 0, messages: 0, callMinutes: 0, paymentsTotal: 0, sales: 0 })
   const [dark, setDark] = useState(false)
   const [scrollY, setScrollY] = useState(0)
   const [mouse, setMouse] = useState({ x: 0, y: 0 })
@@ -146,10 +198,20 @@ export default function LandingPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => setUser(data?.session?.user))
+    // Real platform metrics for the stats band. Counts are head-only (cheap);
+    // the two sum-based ones pull just the numeric column (capped).
     Promise.all([
       (supabase as any).from('companies').select('*', { count: 'exact', head: true }),
-      (supabase as any).from('ideas').select('*', { count: 'exact', head: true }),
-    ]).then(([coRes, ideaRes]) => setRealStats({ teams: coRes.count || 0, ideas: ideaRes.count || 0 })).catch(() => {})
+      (supabase as any).from('conversations').select('*', { count: 'exact', head: true }),
+      (supabase as any).from('messages').select('*', { count: 'exact', head: true }),
+      (supabase as any).from('calls').select('duration_seconds').limit(20000),
+      (supabase as any).from('chat_payments').select('amount_cents').eq('status', 'paid').limit(20000),
+      (supabase as any).from('conversation_sales').select('id', { count: 'exact', head: true }),
+    ]).then(([co, conv, msg, calls, pays, sales]: any[]) => {
+      const callMinutes = Math.round((calls.data || []).reduce((s: number, r: any) => s + (r.duration_seconds || 0), 0) / 60)
+      const paymentsTotal = Math.round((pays.data || []).reduce((s: number, r: any) => s + (r.amount_cents || 0), 0) / 100)
+      setRealStats({ teams: co.count || 0, conversations: conv.count || 0, messages: msg.count || 0, callMinutes, paymentsTotal, sales: sales.count || 0 })
+    }).catch(() => {})
     const { data: l } = supabase.auth.onAuthStateChange((_: any, s: any) => setUser(s?.user ?? null))
     let raf = 0
     const onScroll = () => { if (raf) return; raf = requestAnimationFrame(() => { setScrollY(window.scrollY); raf = 0 }) }
@@ -383,17 +445,8 @@ export default function LandingPage() {
       <HowItWorks dark={dark} cardBorder={cardBorder} />
 
 
-      {/* STATS — full-bleed bold band */}
-      <section style={{ background: CORAL, color: '#fff', padding: 'clamp(56px, 8vw, 92px) 24px' }}>
-        <div style={{ maxWidth: 1080, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 28 }}>
-          {[
-            { value: realStats.teams > 0 ? realStats.teams.toLocaleString() + '+' : '12,000+', label: 'Teams on Colvy' },
-            { value: realStats.ideas > 1000 ? (realStats.ideas / 1000).toFixed(1) + 'K' : (realStats.ideas > 0 ? realStats.ideas.toLocaleString() : '2.4M'), label: 'Conversations handled' },
-            { value: '98%', label: 'Customer satisfaction' },
-            { value: '4 min', label: 'To get set up' },
-          ].map((s, i) => (<Reveal key={s.label} delay={i * 0.06}><div style={{ textAlign: 'center' }}><div style={{ fontSize: 'clamp(38px, 5.5vw, 64px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1 }}>{s.value}</div><div style={{ fontSize: 14.5, color: 'rgba(255,255,255,0.85)', marginTop: 8, fontWeight: 600 }}>{s.label}</div></div></Reveal>))}
-        </div>
-      </section>
+      {/* STATS — full-bleed bold band, auto-sliding through real metrics */}
+      <StatsBand stats={realStats} />
 
       {/* PARALLAX PHOTO BANNER */}
       <ParallaxBanner />

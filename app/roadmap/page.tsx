@@ -289,9 +289,12 @@ export default function RoadmapPage() {
     <div className="w-full px-4 md:px-8 py-6 md:py-8 h-[calc(100vh-56px)] flex flex-col">
       <div className="mb-6 flex items-start md:items-center justify-between flex-col md:flex-row gap-3 shrink-0">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Roadmap</h1>
+          <div className="flex items-center gap-3 mb-1.5">
+            <h1 className="text-2xl md:text-3xl font-extrabold" style={{ color: 'var(--ink)', letterSpacing: '-0.02em' }}>Roadmap</h1>
+            {ideas.length > 0 && <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{ideas.length} ideas</span>}
+          </div>
           <p className="text-sm md:text-base" style={{ color: 'var(--slate)' }}>
-            {canDrag ? 'Drag ideas between columns to update their status' : 'Sign in to manage roadmap'}
+            {canDrag ? 'Drag ideas between columns to update their status' : 'See what we’re planning, building and shipping'}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -404,15 +407,15 @@ export default function RoadmapPage() {
             onDragLeave={handleDragLeave}
             onDrop={e => handleDrop(e, column.key)}
             className={`kanban-column bg-white rounded-2xl border p-4 relative transition-smooth ${dragOverColumn === column.key ? 'drop-zone-active' : ''}`}
-            style={{ borderColor: 'var(--border)' }}>
-            
-            <div className="mb-3 pb-3 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
+            style={{ borderColor: 'var(--border)', borderTop: `3px solid ${column.color}`, boxShadow: '0 6px 20px rgba(15,23,42,0.05)' }}>
+
+            <div className="mb-3 pb-3 shrink-0" style={{ margin: '-16px -16px 12px', padding: '14px 16px', borderBottom: '1px solid var(--border)', background: `linear-gradient(180deg, ${column.bg}, transparent)`, borderRadius: '13px 13px 0 0' }}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full" style={{ background: column.color }} />
-                  <h2 className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>{column.label}</h2>
+                  <h2 className="font-bold text-sm" style={{ color: 'var(--ink)' }}>{column.label}</h2>
                 </div>
-                <span className="text-xs px-2 py-1 rounded-full font-bold" style={{ background: column.bg, color: column.color }}>
+                <span className="text-xs px-2.5 py-1 rounded-full font-extrabold" style={{ background: column.color, color: '#fff' }}>
                   {column.ideas.length}
                 </span>
               </div>

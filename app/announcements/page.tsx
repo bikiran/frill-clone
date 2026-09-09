@@ -433,7 +433,7 @@ export default function AnnouncementsPage() {
                   </div>
 
                   {/* Title */}
-                  <h1 className="text-2xl md:text-3xl font-bold mb-5 leading-tight" style={{ color: 'var(--ink)' }}>
+                  <h1 className="text-3xl md:text-4xl font-extrabold mb-5 leading-tight" style={{ color: 'var(--ink)', letterSpacing: '-0.025em' }}>
                     {ann.title}
                   </h1>
 
