@@ -210,6 +210,20 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
     input_schema: { type: 'object', properties: { contactId: { type: 'string' }, phone: { type: 'string' } } },
   },
   {
+    name: 'record_sale', safety: 'immediate',
+    description: "Log a sale made through this conversation — the revenue Colvy helped generate, including off-Stripe bank transfers. Use for 'record a $385 sale, bank transfer, credit Vicky'. Credits the sale to a team member (default: the current user); pass soldByName to credit someone else. Links to the open conversation/contact automatically. Reversible.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        amount: { type: 'number', description: 'sale amount in dollars' },
+        paymentMethod: { type: 'string', description: "e.g. 'Bank transfer', 'Card', 'Cash', 'Stripe'" },
+        soldByName: { type: 'string', description: 'team member to credit; omit to credit the current user' },
+        note: { type: 'string' },
+      },
+      required: ['amount'],
+    },
+  },
+  {
     name: 'send_message', safety: 'confirm',
     description: "Send a message to a customer. REQUIRES user confirmation — never sends without it. If the user NAMES a specific recipient (not the open conversation), resolve them with search_contacts and pass their contactId — do NOT rely on the open conversation, or the message will go to the wrong person. Pass phone (and name) only for someone who isn't a saved contact. Channel is chosen automatically (live chat / SMS / email).",
     input_schema: {
@@ -670,6 +684,41 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     const card = { kind: 'calendar_event', title, lines: [when], href: '/admin/calendar' }
     await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Created calendar event', tool: name, entityType: 'calendar_event', entityId: ins.id, input: row, result: { title } })
     return { ok: true, entityType: 'calendar_event', entityId: ins.id, card, undo: { entityType: 'calendar_event', entityId: ins.id } }
+  }
+
+  if (name === 'record_sale') {
+    const amount = Number(args?.amount)
+    if (!isFinite(amount) || amount <= 0) return { ok: false, error: 'A sale needs a dollar amount.' }
+    // Credit the sale: a named team member if given (matched loosely), else the
+    // current user. An unmatched name is still credited by name.
+    let soldById: string | null = ctx.userId
+    let soldByName = ctx.userName
+    if (args?.soldByName) {
+      const q = String(args.soldByName).trim()
+      const { data } = await D.from('team_members').select('id, name, user_id').eq('company_id', ctx.companyId).ilike('name', `%${q}%`).limit(1)
+      if (data?.[0]) { soldById = data[0].id || data[0].user_id || null; soldByName = data[0].name || q }
+      else { soldById = null; soldByName = q }
+    }
+    const row: any = {
+      company_id: ctx.companyId,
+      conversation_id: ctx.conversationId || null,
+      contact_id: ctx.contactId || null,
+      amount, currency: 'AUD',
+      payment_method: args?.paymentMethod ? String(args.paymentMethod).trim() : null,
+      sold_by_user_id: soldById, sold_by_name: soldByName,
+      recorded_by_user_id: ctx.userId, recorded_by_name: ctx.userName,
+      note: args?.note ? String(args.note).trim() : null,
+    }
+    const ins = await insertResilient(D, 'conversation_sales', row, ['conversation_id', 'contact_id', 'payment_method', 'sold_by_user_id', 'sold_by_name', 'recorded_by_user_id', 'recorded_by_name', 'note', 'currency'])
+    if (!ins.id) return { ok: false, error: ins.error || 'Could not record the sale.' }
+    const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(amount)
+    const card = {
+      kind: 'sale', title: `${money} sale recorded`,
+      lines: [row.payment_method || null, `Credited to ${soldByName}`, row.note || null].filter(Boolean),
+      href: '/admin',
+    }
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Recorded sale', tool: name, entityType: 'sale', entityId: ins.id, input: row, result: { amount } })
+    return { ok: true, entityType: 'sale', entityId: ins.id, card, undo: { entityType: 'sale', entityId: ins.id } }
   }
 
   if (name === 'send_message') {
