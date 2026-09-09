@@ -48,7 +48,7 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
           {/* Left: brand blurb + link columns */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <span style={{ width: 34, height: 34, borderRadius: 10, background: CORAL, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 900, fontSize: 19 }}>C</span>
+              <img src="/icon-512.png" alt="Colvy" width={34} height={34} style={{ borderRadius: 9, display: 'block' }} />
               <span style={{ fontWeight: 900, fontSize: 22, letterSpacing: '-0.02em' }}>Colvy</span>
             </div>
             <p style={{ fontSize: 14.5, color: muted, lineHeight: 1.6, maxWidth: 340, margin: '0 0 30px' }}>One place to talk to customers across every channel — and sell more.</p>
