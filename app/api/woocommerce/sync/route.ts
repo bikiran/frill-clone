@@ -168,6 +168,52 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
       } }
     }
 
+    if (mode === 'products') {
+      // Mirror the catalogue locally so the app's product picker can search it
+      // without a live WooCommerce call per keystroke. Same page-at-a-time shape
+      // as customers above.
+      const { data: products, totalPages, total } = await wcFetch(`products?per_page=${perPage}&page=${page}&orderby=id&order=asc&status=publish${modifiedAfter}`)
+
+      const rows = (products as any[]).map(p => ({
+        company_id: companyId,
+        woo_product_id: p.id,
+        name: p.name || '',
+        sku: p.sku || '',
+        type: p.type || null,
+        price: p.price ?? null,
+        regular_price: p.regular_price ?? null,
+        sale_price: p.sale_price ?? null,
+        on_sale: !!p.on_sale,
+        tax_status: p.tax_status || null,
+        tax_class: p.tax_class || null,
+        stock_status: p.stock_status || null,
+        stock_quantity: p.stock_quantity ?? null,
+        manage_stock: !!p.manage_stock,
+        image: p.images?.[0]?.src || null,
+        permalink: p.permalink || null,
+        short_description: String(p.short_description || '').replace(/<[^>]+>/g, '').trim(),
+        variation_ids: p.variations || [],
+        synced_at: new Date().toISOString(),
+      }))
+
+      let syncedCount = 0
+      if (rows.length > 0) {
+        // Same conflict-key ordering as customers, so overlapping syncs lock
+        // rows in a consistent order instead of deadlocking.
+        rows.sort((a: any, b: any) => (a.woo_product_id || 0) - (b.woo_product_id || 0))
+        await upsertRetry(() => supabase
+          .from('woocommerce_products')
+          .upsert(rows, { onConflict: 'company_id,woo_product_id' }))
+        syncedCount = rows.length
+      }
+
+      const done = page >= totalPages
+      return { status: 200, body: {
+        success: true, mode, page, totalPages, total, syncedCount, done,
+        message: `Products page ${page}/${totalPages} synced (${syncedCount})`,
+      } }
+    }
+
     if (mode === 'orders') {
       // Fetch FIRST — only reset stats after a successful fetch, so a failed
       // API call can never leave every customer wiped to $0 (which is what
