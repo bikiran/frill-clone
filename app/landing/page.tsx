@@ -50,6 +50,14 @@ const BRANDS = [
   { name: 'Shopify', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/shopify.svg' },
 ]
 
+// Trust strip for the hero banner (ManyChat-style bottom badges).
+const TRUST: { label: string; logo?: string; star?: boolean }[] = [
+  { label: '4.9/5 average rating', star: true },
+  { label: 'Meta Business tools', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/meta.svg' },
+  { label: 'WooCommerce ready', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/woocommerce.svg' },
+  { label: 'Stripe payments', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/stripe.svg' },
+]
+
 const STORIES = [
   { name: 'Sam Rivera', role: 'CEO', company: 'Roxy Aquarium', color: CORAL, photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80&auto=format&fit=crop', quote: 'A WhatsApp message becomes a paid sale without leaving the thread.', metric: '4 min setup' },
   { name: 'Aiko Tanaka', role: 'Product Lead', company: 'nePlay', color: BLUE, photo: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&q=80&auto=format&fit=crop', quote: 'One shared inbox for every channel. Our team finally moves fast.', metric: '2× replies' },
@@ -154,7 +162,7 @@ export default function LandingPage() {
         .cv-card:hover { transform:translateY(-6px); }
         .cv-navlink:hover { color:${CORAL} !important; }
         .cv-marquee-track { display:flex; width:max-content; animation:marquee 32s linear infinite; }
-        @media (max-width:900px){ .cv-big-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-bubbles{ display:none !important; } .cv-brand-huge{ font-size:64px !important; } }
+        @media (max-width:900px){ .cv-big-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-bubbles{ display:none !important; } .cv-brand-huge{ font-size:64px !important; } .cv-trust{ position:static !important; margin-top:36px; bottom:auto !important; } }
         @media (prefers-reduced-motion: reduce){ .cv-marquee-track{ animation:none } [class*="cv-float"]{ animation:none !important } }
       `}</style>
 
@@ -162,7 +170,7 @@ export default function LandingPage() {
       <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, background: navBg, backdropFilter: navScrolled ? 'blur(18px)' : 'none', borderBottom: `1px solid ${navScrolled ? cardBorder : 'transparent'}`, transition: 'all 0.3s' }}>
         <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 24px', height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <a href="/" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none' }}>
-            <span style={{ width: 32, height: 32, borderRadius: 10, background: CORAL, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 900, fontSize: 18 }}>C</span>
+            <img src="/icon-512.png" alt="Colvy" width={32} height={32} style={{ borderRadius: 9, display: 'block' }} />
             <span style={{ fontWeight: 900, fontSize: 22, color: text, letterSpacing: '-0.02em' }}>Colvy</span>
           </a>
           <div className="cv-desktop" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -185,7 +193,7 @@ export default function LandingPage() {
       </nav>
 
       {/* HERO — full-bleed, grid-lined, colour blobs bleeding off both edges */}
-      <section onMouseMove={onHeroMouse} style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', padding: '120px 24px 70px', overflow: 'hidden' }}>
+      <section onMouseMove={onHeroMouse} style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', padding: '120px 24px 130px', overflow: 'hidden', background: dark ? 'linear-gradient(180deg, #10111b 0%, #0a0b12 60%)' : 'linear-gradient(180deg, #fff4ef 0%, #ffffff 58%)' }}>
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 80%)' }} />
         <div aria-hidden style={{ position: 'absolute', top: '-14%', left: '-8%', width: 460, height: 460, background: YELLOW, borderRadius: '46% 54% 60% 40% / 45% 45% 55% 55%', opacity: dark ? 0.16 : 0.5, transform: `translateY(${scrollY * 0.12}px)` }} />
         <div aria-hidden style={{ position: 'absolute', bottom: '-12%', right: '-8%', width: 520, height: 520, background: BLUE, borderRadius: '58% 42% 45% 55% / 55% 48% 52% 45%', opacity: dark ? 0.16 : 0.14, transform: `translateY(${scrollY * -0.08}px)` }} />
@@ -242,6 +250,18 @@ export default function LandingPage() {
             </div>
           </div>
         </div>
+
+        {/* Trust strip pinned to the bottom of the banner (ManyChat-style) */}
+        <div className="cv-trust" style={{ position: 'absolute', left: 0, right: 0, bottom: 26, display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 'clamp(16px, 4vw, 44px)', padding: '0 24px', zIndex: 2 }}>
+          {TRUST.map(t => (
+            <span key={t.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 13.5, fontWeight: 700, color: muted, whiteSpace: 'nowrap' }}>
+              {t.star
+                ? <span style={{ color: YELLOW, letterSpacing: 1 }}>★★★★★</span>
+                : <img src={t.logo} alt="" width={18} height={18} style={{ opacity: dark ? 0.8 : 0.6, filter: dark ? 'invert(1)' : 'none' }} />}
+              {t.label}
+            </span>
+          ))}
+        </div>
       </section>
 
       {/* BRAND MARQUEE (full-bleed) */}
@@ -260,7 +280,7 @@ export default function LandingPage() {
         <div style={{ position: 'relative', maxWidth: 1100, margin: '0 auto', textAlign: 'center' }}>
           <Reveal>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 14, marginBottom: 22 }}>
-              <span style={{ width: 'clamp(56px,8vw,88px)', height: 'clamp(56px,8vw,88px)', borderRadius: 'clamp(16px,2.4vw,24px)', background: CORAL, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 900, fontSize: 'clamp(34px,5vw,56px)', boxShadow: `0 20px 50px ${CORAL}66` }}>C</span>
+              <img src="/icon-512.png" alt="Colvy" style={{ width: 'clamp(56px,8vw,88px)', height: 'clamp(56px,8vw,88px)', borderRadius: 'clamp(16px,2.4vw,24px)', boxShadow: `0 20px 50px rgba(0,0,0,0.5)` }} />
               <span className="cv-brand-huge" style={{ fontWeight: 900, fontSize: 'clamp(56px, 11vw, 132px)', letterSpacing: '-0.04em', lineHeight: 1 }}>Colvy</span>
             </div>
             <h2 style={{ fontSize: 'clamp(26px, 4.4vw, 52px)', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.08, margin: '0 auto', maxWidth: 900 }}>
@@ -394,7 +414,7 @@ function HowItWorks({ dark, cardBorder }: { dark: boolean; cardBorder: string })
   const step = HIW_STEPS[active]
 
   return (
-    <section style={{ background: BLUE, padding: 'clamp(56px, 8vw, 104px) 24px' }}>
+    <section style={{ background: 'linear-gradient(155deg, #5b7cf0 0%, #6d6ef0 55%, #8b74f0 100%)', padding: 'clamp(56px, 8vw, 104px) 24px' }}>
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
         <h2 style={{ color: '#fff', fontSize: 'clamp(28px, 4.4vw, 50px)', fontWeight: 900, letterSpacing: '-0.025em', textAlign: 'center', margin: '0 0 44px' }}>See how it works</h2>
         <div className="cv-hiw" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'clamp(24px, 4vw, 56px)', alignItems: 'stretch' }}>
@@ -454,7 +474,7 @@ function PhoneMock({ step, activeKey, border }: { step: Step; activeKey: number;
             <div aria-hidden style={{ position: 'absolute', top: 9, left: '50%', transform: 'translateX(-50%)', width: 86, height: 26, borderRadius: 999, background: '#05060a', zIndex: 3 }} />
             {/* Colvy app bar (branding) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '40px 15px 10px', background: '#fff' }}>
-              <span style={{ width: 24, height: 24, borderRadius: 7, background: CORAL, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 13, flexShrink: 0 }}>C</span>
+              <img src="/icon-512.png" alt="Colvy" width={24} height={24} style={{ borderRadius: 7, display: 'block', flexShrink: 0 }} />
               <span style={{ fontSize: 14.5, fontWeight: 900, color: INK, letterSpacing: '-0.02em' }}>Colvy</span>
               <span style={{ fontSize: 11, color: 'rgba(15,17,25,0.4)', fontWeight: 600 }}>Inbox</span>
               <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 800, color: '#16a34a', background: '#dcfce7', padding: '3px 9px', borderRadius: 999 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />Live</span>
