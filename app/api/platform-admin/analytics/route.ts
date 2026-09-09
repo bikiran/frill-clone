@@ -3,14 +3,17 @@ import { createClient } from '@supabase/supabase-js'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
-// Monthly price per plan (AUD), matching lib/plan.ts PLAN_PRICES. Enterprise is
-// custom-priced, so it contributes 0 to the plan ESTIMATE — real enterprise
-// revenue comes through the live subscription amounts below.
+// Monthly price per plan for the ESTIMATE fallback. Covers both plan taxonomies
+// present in the app: entitlements (pro/enterprise) and the self-serve checkout
+// tiers (startup/business/growth). Enterprise is custom-priced → 0 in the
+// estimate; real revenue comes from live subscription amounts below.
 const PLAN_PRICE: Record<string, number> = {
-  free: 0, trial: 0, pro: 99, enterprise: 0,
+  free: 0, trial: 0, suspended: 0,
+  startup: 25, business: 49, growth: 149, pro: 99, enterprise: 0,
 }
-// Which plans count as paying customers.
-const PAID_PLANS = ['pro', 'enterprise']
+// A company is "paying" if it's on any plan that isn't free/trial/suspended.
+const NON_PAID = new Set(['free', 'trial', 'suspended', ''])
+const isPaidPlan = (p: any) => { const s = String(p || '').toLowerCase(); return !!s && !NON_PAID.has(s) }
 
 function admin() {
   return createClient(
@@ -46,7 +49,7 @@ export async function GET(req: NextRequest) {
     const totalCompanies = companies?.length || 0
     const planCounts: Record<string, number> = {}
     ;(companies || []).forEach((c: any) => { const p = (c.plan || 'free').toLowerCase(); planCounts[p] = (planCounts[p] || 0) + 1 })
-    const paidCompanies = (companies || []).filter((c: any) => PAID_PLANS.includes((c.plan || '').toLowerCase())).length
+    const paidCompanies = (companies || []).filter((c: any) => isPaidPlan(c.plan)).length
     const trialCompanies = (companies || []).filter((c: any) => (c.plan || '').toLowerCase() === 'trial').length
     const newToday = (companies || []).filter((c: any) => c.created_at && c.created_at >= today).length
 

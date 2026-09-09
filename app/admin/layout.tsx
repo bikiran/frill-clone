@@ -11,6 +11,7 @@ import CallHandoff from '@/components/CallHandoff'
 import GlobalDialer from '@/components/GlobalDialer'
 import { getActiveCall, subscribeActiveCall } from '@/lib/active-call'
 import AdminBanner from '@/components/AdminBanner'
+import TrialBanner from '@/components/TrialBanner'
 import ImpersonationBanner from '@/components/ImpersonationBanner'
 import DemoBanner from '@/components/DemoBanner'
 import DemoTour from '@/components/DemoTour'
@@ -783,6 +784,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Main content — offset by sidebar width on desktop, full width on mobile */}
       <div className="admin-main" style={{ marginLeft: adminCollapsed ? 60 : 220, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', transition: 'margin-left 0.2s ease' }}>
         <AdminBanner />
+        <TrialBanner company={company} />
         <div className="colvy-mobile-pad">
           {children}
         </div>

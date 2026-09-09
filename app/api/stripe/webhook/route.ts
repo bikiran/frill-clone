@@ -165,6 +165,11 @@ export async function POST(req: NextRequest) {
             current_period_end: periodEnd,
             synced_at: new Date().toISOString(),
           }, { onConflict: 'user_id' })
+          // Reflect the paid plan on the company so the trial ends: clears the
+          // in-app trial countdown/wall and counts them as paying in the metrics.
+          try {
+            await (supabase as any).from('companies').update({ plan: tier, trial_ends_at: null }).eq('owner_id', userId)
+          } catch {}
         }
         // Phone number purchase — provision the number now that payment is set up
         if (meta.kind === 'phone_number' && meta.companyId) {
@@ -208,6 +213,11 @@ export async function POST(req: NextRequest) {
           status: 'canceled',
           tier: 'free',
         }).eq('stripe_subscription_id', sub.id)
+        // Revert the company to free so it stops counting as a paying customer.
+        try {
+          const { data: subRow } = await (supabase as any).from('subscriptions').select('user_id').eq('stripe_subscription_id', sub.id).maybeSingle()
+          if (subRow?.user_id) await (supabase as any).from('companies').update({ plan: 'free' }).eq('owner_id', subRow.user_id)
+        } catch {}
         break
       }
     }
