@@ -230,9 +230,14 @@ export default function LandingPage() {
                   </div>
                 ))}
               </div>
-              <div aria-hidden style={{ position: 'absolute', inset: -14, borderRadius: 34, background: `linear-gradient(135deg, ${CORAL}, ${PINK} 55%, ${PURPLE})`, opacity: dark ? 0.4 : 0.26, filter: 'blur(6px)' }} />
-              <div style={{ position: 'relative', borderRadius: 26, overflow: 'hidden', border: `1px solid ${cardBorder}`, background: cardBg, boxShadow: '0 40px 100px rgba(15,17,25,0.22)', transform: `rotate(-1.2deg) translate(${mouse.x * -10}px, ${mouse.y * -10}px)`, transition: 'transform 0.25s ease-out' }}>
-                <OmniInboxDemo dark={dark} />
+              <div aria-hidden style={{ position: 'absolute', inset: -22, borderRadius: 40, background: `linear-gradient(135deg, ${CORAL}, ${PINK} 55%, ${PURPLE})`, opacity: dark ? 0.42 : 0.24, filter: 'blur(30px)' }} />
+              {/* Sleek device: titanium bezel wrapping the live inbox window */}
+              <div style={{ position: 'relative', borderRadius: 28, padding: 8, background: 'linear-gradient(150deg, #34363f, #0b0c12 62%)', boxShadow: '0 50px 120px rgba(15,17,25,0.34), 0 0 0 1px rgba(255,255,255,0.06) inset', transform: `perspective(1600px) rotateY(${-2 + mouse.x * -3}deg) rotateX(${1 + mouse.y * 2}deg) translate(${mouse.x * -8}px, ${mouse.y * -8}px)`, transition: 'transform 0.3s ease-out' }}>
+                <div style={{ position: 'relative', borderRadius: 21, overflow: 'hidden', boxShadow: '0 0 0 1px rgba(0,0,0,0.4)' }}>
+                  {/* subtle screen sheen */}
+                  <div aria-hidden style={{ position: 'absolute', inset: 0, zIndex: 4, pointerEvents: 'none', background: 'linear-gradient(120deg, rgba(255,255,255,0.14), transparent 30%)' }} />
+                  <OmniInboxDemo dark={dark} />
+                </div>
               </div>
             </div>
           </div>
