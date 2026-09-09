@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { track } from '@/lib/analytics'
+import PaymentMethodPicker from '@/components/PaymentMethodPicker'
 
 // Records a sale attributed to this conversation — the revenue Colvy helped
 // generate, including bank-transfer / off-Stripe sales that only live in the
@@ -10,7 +11,6 @@ import { track } from '@/lib/analytics'
 // removed. Sold-by defaults to the conversation's assignee (falling back to the
 // current agent) but is editable, since the person who took the bank transfer
 // isn't always the one who chatted.
-const DEFAULT_METHODS = ['Bank transfer', 'Card', 'Cash', 'Stripe', 'PayPal', 'Other']
 
 type Member = { id: string; name?: string | null }
 type Sale = {
@@ -41,7 +41,6 @@ export default function RecordSaleModal({
   })()
 
   const [sales, setSales] = useState<Sale[] | null>(null)
-  const [knownMethods, setKnownMethods] = useState<string[]>([])
   const [amount, setAmount] = useState('')
   const [method, setMethod] = useState('')
   const [soldBy, setSoldBy] = useState(defaultSoldBy)
@@ -62,13 +61,6 @@ export default function RecordSaleModal({
         .order('created_at', { ascending: false })
       setSales(data || [])
     } catch { setSales([]) }
-    // Payment-method suggestions: the defaults plus anything this company has used.
-    try {
-      const { data } = await (supabase as any).from('conversation_sales')
-        .select('payment_method').eq('company_id', companyId).not('payment_method', 'is', null).limit(500)
-      const used = Array.from(new Set((data || []).map((r: any) => String(r.payment_method || '').trim()).filter(Boolean)))
-      setKnownMethods(Array.from(new Set([...DEFAULT_METHODS, ...used])))
-    } catch { setKnownMethods(DEFAULT_METHODS) }
   }
   useEffect(() => { load() }, [conversation?.id])
 
@@ -172,8 +164,7 @@ export default function RecordSaleModal({
           </div>
           <div style={{ marginBottom: 12 }}>
             <label style={label}>Payment method</label>
-            <input list="colvy-pay-methods" value={method} onChange={e => setMethod(e.target.value)} placeholder="Select or type a new method" style={input} />
-            <datalist id="colvy-pay-methods">{knownMethods.map(m => <option key={m} value={m} />)}</datalist>
+            <PaymentMethodPicker companyId={companyId} value={method} onChange={setMethod} />
           </div>
           <div style={{ marginBottom: 12 }}>
             <label style={label}>Sale credited to</label>
