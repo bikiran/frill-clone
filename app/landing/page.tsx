@@ -159,6 +159,7 @@ export default function LandingPage() {
         @keyframes popIn { 0%{opacity:0;transform:scale(0.9) translateY(10px)} 100%{opacity:1;transform:scale(1) translateY(0)} }
         @keyframes blink { 0%,100%{opacity:0.25} 50%{opacity:1} }
         @keyframes wordIn { from{opacity:0;transform:translateY(0.4em)} to{opacity:1;transform:translateY(0)} }
+        @keyframes hiwFill { from{width:0%} to{width:100%} }
         .cv-btn-primary:hover { transform:translateY(-2px); box-shadow:0 16px 42px ${CORAL}66; }
         .cv-btn-primary,.cv-btn-ghost,.cv-card,.cv-navlink { transition:all 0.22s cubic-bezier(0.16,1,0.3,1); }
         .cv-btn-ghost:hover { border-color:${CORAL}; color:${CORAL}; }
@@ -295,13 +296,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* BIG-TEXT MARQUEE (ManyChat-style ticker) */}
-      <section style={{ background: CORAL, padding: '18px 0', overflow: 'hidden' }}>
-        <div className="cv-marquee-track" style={{ animationDuration: '26s' }}>
+      {/* BIG-TEXT MARQUEE (ManyChat-style ticker, transparent) */}
+      <section style={{ background: 'transparent', padding: 'clamp(26px, 4vw, 48px) 0', overflow: 'hidden' }}>
+        <div className="cv-marquee-track" style={{ animationDuration: '30s' }}>
           {[...Array(2)].flatMap((_, dup) => MARQUEE_WORDS.map((w, i) => (
             <span key={`${dup}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
-              <span style={{ fontSize: 'clamp(28px, 5vw, 60px)', fontWeight: 900, letterSpacing: '-0.02em', color: '#fff', whiteSpace: 'nowrap', padding: '0 26px' }}>{w}</span>
-              <span aria-hidden style={{ width: 'clamp(10px,1.6vw,16px)', height: 'clamp(10px,1.6vw,16px)', borderRadius: '50%', background: 'rgba(255,255,255,0.55)', flexShrink: 0 }} />
+              <span style={{ fontSize: 'clamp(30px, 5.5vw, 68px)', fontWeight: 900, letterSpacing: '-0.03em', color: i % 2 === 0 ? text : CORAL, whiteSpace: 'nowrap', padding: '0 28px' }}>{w}</span>
+              <span aria-hidden style={{ width: 'clamp(11px,1.6vw,18px)', height: 'clamp(11px,1.6vw,18px)', borderRadius: '50%', background: i % 2 === 0 ? CORAL : YELLOW, flexShrink: 0 }} />
             </span>
           )))}
         </div>
@@ -353,6 +354,9 @@ export default function LandingPage() {
           ].map((s, i) => (<Reveal key={s.label} delay={i * 0.06}><div style={{ textAlign: 'center' }}><div style={{ fontSize: 'clamp(38px, 5.5vw, 64px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1 }}>{s.value}</div><div style={{ fontSize: 14.5, color: 'rgba(255,255,255,0.85)', marginTop: 8, fontWeight: 600 }}>{s.label}</div></div></Reveal>))}
         </div>
       </section>
+
+      {/* PARALLAX PHOTO BANNER */}
+      <ParallaxBanner />
 
       {/* TESTIMONIALS */}
       <section style={{ padding: 'clamp(64px, 9vw, 110px) 24px', background: bg }}>
@@ -468,6 +472,19 @@ function HowItWorks({ dark, cardBorder }: { dark: boolean; cardBorder: string })
             <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 15, fontWeight: 600, lineHeight: 1.5, borderLeft: '3px solid rgba(255,255,255,0.5)', paddingLeft: 14, margin: 0, maxWidth: 360, alignSelf: 'flex-start' }}>{step.desc}</p>
           </div>
         </div>
+
+        {/* Progress timeline — fills as each step auto-plays; click to jump */}
+        <div style={{ display: 'flex', gap: 8, maxWidth: 620, margin: '34px auto 0' }}>
+          {HIW_STEPS.map((s, i) => (
+            <button key={s.title} onClick={() => pick(i)} aria-label={s.title}
+              style={{ flex: 1, height: 6, padding: 0, border: 'none', borderRadius: 99, background: 'rgba(255,255,255,0.28)', overflow: 'hidden', cursor: 'pointer' }}>
+              <span
+                key={i === active ? `run-${active}` : `seg-${i}`}
+                style={{ display: 'block', height: '100%', background: '#fff', borderRadius: 99, transformOrigin: 'left', width: i < active ? '100%' : '0%', animation: i === active ? 'hiwFill 4.2s linear forwards' : 'none' }}
+              />
+            </button>
+          ))}
+        </div>
       </div>
       <style>{`@media (max-width:900px){ .cv-hiw{ grid-template-columns:1fr !important; } }`}</style>
     </section>
@@ -541,5 +558,39 @@ function FlowMock({ color, text, cardBg, border }: { color: string; text: string
         </div>
       ))}
     </div>
+  )
+}
+
+// ── Full-bleed parallax photo banner ─────────────────────────────────────────
+function ParallaxBanner() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [off, setOff] = useState(0)
+  useEffect(() => {
+    let raf = 0
+    const on = () => {
+      if (raf) return
+      raf = requestAnimationFrame(() => {
+        const el = ref.current
+        if (el) { const r = el.getBoundingClientRect(); setOff(((r.top + r.height / 2) - window.innerHeight / 2) * -0.14) }
+        raf = 0
+      })
+    }
+    on(); window.addEventListener('scroll', on, { passive: true }); window.addEventListener('resize', on)
+    return () => { window.removeEventListener('scroll', on); window.removeEventListener('resize', on); if (raf) cancelAnimationFrame(raf) }
+  }, [])
+  const IMG = 'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=1600&q=80&auto=format&fit=crop'
+  return (
+    <section ref={ref} style={{ position: 'relative', minHeight: 'clamp(400px, 66vh, 660px)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <div aria-hidden style={{ position: 'absolute', left: 0, right: 0, top: '-16%', bottom: '-16%', backgroundImage: `url(${IMG})`, backgroundSize: 'cover', backgroundPosition: 'center', transform: `translateY(${off}px) scale(1.12)`, willChange: 'transform' }} />
+      <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(120deg, rgba(15,17,25,0.78) 0%, rgba(15,17,25,0.4) 45%, ${CORAL}cc 100%)` }} />
+      <div style={{ position: 'relative', maxWidth: 860, textAlign: 'center', padding: '0 24px', color: '#fff' }}>
+        <Reveal>
+          <p style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'rgba(255,255,255,0.85)', margin: '0 0 16px' }}>Everywhere your customers are</p>
+          <h2 style={{ fontSize: 'clamp(34px, 6vw, 72px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.02, margin: '0 0 18px' }}>Be there in every chat,<br />on every channel.</h2>
+          <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: 'rgba(255,255,255,0.9)', lineHeight: 1.6, maxWidth: 560, margin: '0 auto 30px', fontWeight: 500 }}>From the first hello to the fifth reorder — Colvy keeps every conversation, order and sale in one lively place.</p>
+          <a href="/signup" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '15px 32px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 16, textDecoration: 'none', boxShadow: '0 16px 40px rgba(0,0,0,0.28)' }}>Start free — no card <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg></a>
+        </Reveal>
+      </div>
+    </section>
   )
 }
