@@ -9,6 +9,10 @@
       "schedule": "*/3 * * * *"
     },
     {
+      "path": "/api/cron/trial-nudges",
+      "schedule": "0 15 * * *"
+    },
+    {
       "path": "/api/campaigns/process",
       "schedule": "*/2 * * * *"
     },

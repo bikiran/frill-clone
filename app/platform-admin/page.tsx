@@ -1225,6 +1225,7 @@ const JOBS: { key: string; label: string; schedule: string; desc: string; color:
   { key: 'sweep-stale-calls', label: 'Stale-Call Sweep', schedule: 'Every 15 min', desc: 'Closes calls stuck live after a lost hangup webhook', color: '#14b8a6', staleMs: 45 * 60000 },
   { key: 'demo-seed', label: 'Demo Reset', schedule: 'Hourly', desc: 'Rebuilds the public Harbour & Bean showcase workspace', color: '#6366f1', staleMs: 150 * 60000 },
   { key: 'sync-reviews', label: 'Review Sync', schedule: 'Every 6 hours', desc: 'Pulls new Google reviews into connected businesses', color: '#eab308', staleMs: 8 * 3600000 },
+  { key: 'trial-nudges', label: 'Trial Nudges', schedule: 'Daily', desc: 'Emails trial owners at T-3 days, expiry, and T+3 to drive conversion', color: '#f59e0b', staleMs: 26 * 3600000 },
   { key: 'expire-media', label: 'Media Expiry', schedule: 'Daily', desc: 'Purges expired share links and 30-day-old trashed media', color: '#0891b2', staleMs: 26 * 3600000 },
 ]
 const DEFAULT_STALE_MS = 3600000 // 1h fallback for jobs without an explicit cadence
