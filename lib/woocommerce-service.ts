@@ -284,8 +284,15 @@ export class WooCommerceService {
       // it is occasionally what was meant, but never above a name match.
       return 50
     }
-    return merged
-      .map((p, i) => ({ p, s: score(p), i }))
+    // Drop pure description matches (score 50 — no query term in the name or
+    // SKU) whenever there are genuine name/SKU matches. Otherwise a search like
+    // "cichlid col" fills up with unrelated products whose *descriptions* happen
+    // to mention one of the words. Only fall back to description matches when
+    // nothing matches by name/SKU at all.
+    const scored = merged.map((p, i) => ({ p, s: score(p), i }))
+    const strong = scored.filter(x => x.s < 50)
+    const chosen = strong.length ? strong : scored
+    return chosen
       .sort((a, b) => (a.s - b.s) || (a.i - b.i))   // stable within a score
       .slice(0, limit)
       .map(x => x.p)
