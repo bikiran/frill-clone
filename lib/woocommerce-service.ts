@@ -246,20 +246,42 @@ export class WooCommerceService {
       return res.json()
     }
 
-    // Text search and exact-SKU lookup. A SKU miss is normal, so that one is
-    // allowed to come back empty — but a text-search failure is a real error.
-    // Ask for more than we return, so there is something to rank. WooCommerce's
-    // `search` matches the DESCRIPTION as well as the title, and orders by DATE,
-    // not relevance — so "Cichlid co" put unrelated recent stock above the
-    // products actually called "Cichlid Co…", purely because those words appear
-    // somewhere in their copy.
-    const byText = await call(`${base}?search=${encodeURIComponent(query)}&per_page=${Math.max(limit * 3, 50)}&status=publish`)
-    const bySkuExact = await call(`${base}?sku=${encodeURIComponent(query)}&per_page=${limit}&status=publish`).catch(() => [])
+    // Only the fields we actually use. WooCommerce returns the ENTIRE product
+    // otherwise — full HTML description, every meta row, category and tag
+    // objects — which is most of the weight of this request and none of the
+    // value. This is the single biggest thing making the picker feel slow.
+    const FIELDS = [
+      'id', 'name', 'sku', 'type', 'price', 'regular_price', 'sale_price', 'on_sale',
+      'tax_status', 'tax_class', 'stock_status', 'stock_quantity', 'manage_stock',
+      'images', 'permalink', 'short_description', 'variations',
+    ].join(',')
+    const page = Math.max(limit * 3, 50)
+    const q = (term: string, extra = '') =>
+      `${base}?per_page=${page}&status=publish&_fields=${FIELDS}${extra}&search=${encodeURIComponent(term)}`
+
+    // Search the WHOLE phrase, and separately its first word.
+    //
+    // WooCommerce's `search` is a WordPress search: it requires every term to
+    // appear, and a partial last word routinely misses. Typing "Cichlid col"
+    // returned three unrelated fish and NOT "Cichlid Color Food" — no ranking
+    // can rescue a product the query never returned. The first word alone is the
+    // widest reliable net, and the scoring below then puts the product whose
+    // NAME starts with the full phrase back on top where it belongs.
+    const terms = query.trim().split(/\s+/).filter(Boolean)
+    const broad = terms.length > 1 ? terms[0] : null
+
+    // In parallel. These used to run one after another for no reason, so every
+    // keystroke paid both round trips end to end.
+    const [byText, byBroad, bySkuExact] = await Promise.all([
+      call(q(query)),
+      broad ? call(q(broad)).catch(() => []) : Promise.resolve([]),
+      call(`${base}?sku=${encodeURIComponent(query)}&per_page=${limit}&status=publish&_fields=${FIELDS}`).catch(() => []),
+    ])
 
     // Merge and de-duplicate by id.
     const seen = new Set<number>()
     const merged: any[] = []
-    for (const p of [...(byText || []), ...(bySkuExact || [])]) {
+    for (const p of [...(byText || []), ...(byBroad || []), ...(bySkuExact || [])]) {
       if (p && p.id && !seen.has(p.id)) { seen.add(p.id); merged.push(norm(p)) }
     }
 
