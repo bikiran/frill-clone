@@ -7,7 +7,7 @@ export const config = {
 const ADMIN_PATHS = [
   '/admin', '/api/', '/signin', '/signup', '/landing', '/onboarding',
   '/upgrade', '/billing', '/auth/', '/reset-password', '/forgot-password',
-  '/profile', '/platform-admin', '/account', '/pricing', '/features',
+  '/profile', '/platform-admin', '/account', '/pricing', '/product',
 ]
 
 export function proxy(req: NextRequest) {

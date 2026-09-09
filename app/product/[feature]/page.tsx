@@ -96,10 +96,10 @@ const PAGES: Record<string, any> = {
   },
 }
 const ALL = [
-  { label: 'Ideas Board', href: '/features/ideas', emoji: '💡', color: CORAL },
-  { label: 'Roadmap', href: '/features/roadmap', emoji: '🗺️', color: BLUE },
-  { label: 'Announcements', href: '/features/announcements', emoji: '📢', color: GREEN },
-  { label: 'Knowledgebase', href: '/features/knowledgebase', emoji: '📚', color: YELLOW },
+  { label: 'Ideas Board', href: '/product/ideas', emoji: '💡', color: CORAL },
+  { label: 'Roadmap', href: '/product/roadmap', emoji: '🗺️', color: BLUE },
+  { label: 'Announcements', href: '/product/announcements', emoji: '📢', color: GREEN },
+  { label: 'Knowledgebase', href: '/product/knowledgebase', emoji: '📚', color: YELLOW },
 ]
 
 // ── helpers (shared look with the main landing) ──────────────────────────────
@@ -228,7 +228,7 @@ export default function FeaturePage() {
             <span style={{ fontWeight: 900, fontSize: 22, color: text, letterSpacing: '-0.02em' }}>Colvy</span>
           </a>
           <div className="fp-desktop" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            {[{ label: 'Inbox & CRM', href: '/inbox-crm' }, { label: 'Ideas', href: '/features/ideas' }, { label: 'Roadmap', href: '/features/roadmap' }, { label: 'Announcements', href: '/features/announcements' }, { label: 'Pricing', href: '/pricing' }].map((n) => {
+            {[{ label: 'Inbox & CRM', href: '/inbox-crm' }, { label: 'Ideas', href: '/product/ideas' }, { label: 'Roadmap', href: '/product/roadmap' }, { label: 'Announcements', href: '/product/announcements' }, { label: 'Pricing', href: '/pricing' }].map((n) => {
               const active = n.href.includes(feature)
               return <a key={n.label} href={n.href} className="fp-navlink" style={{ padding: '8px 14px', borderRadius: 10, fontSize: 14.5, fontWeight: active ? 800 : 600, color: active ? color : muted, textDecoration: 'none' }}>{n.label}</a>
             })}
@@ -252,7 +252,7 @@ export default function FeaturePage() {
               <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 520, margin: '0 0 32px' }}>{page.hero}</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
                 <button onClick={go} className="fp-btn" style={btnPrimary}>{page.cta} <ArrowRight /></button>
-                <a href="/features" className="fp-btn" style={btnGhost}>See all features</a>
+                <a href="/product" className="fp-btn" style={btnGhost}>See all features</a>
               </div>
             </div>
             <div style={{ position: 'relative', transform: `translateY(${scrollY * -0.04}px)` }}>

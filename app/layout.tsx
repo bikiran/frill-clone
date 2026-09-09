@@ -17,18 +17,18 @@ const NAV_ITEMS = [
   { href: '/roadmap', label: 'Roadmap', icon: 'roadmap' },
   { href: '/announcements', label: 'Updates', icon: 'updates' },
   { href: '/help', label: 'Help', icon: 'help' },
-  { href: '/features/ideas', label: 'Product', icon: 'features' },
-  { href: '/features', label: 'Features', icon: 'features' },
+  { href: '/product/ideas', label: 'Product', icon: 'features' },
+  { href: '/product', label: 'Features', icon: 'features' },
   { href: '/pricing', label: 'Pricing', icon: 'pricing' },
 ]
 
 // Marketing-context nav (colvy.com, signin, signup) — real pages that exist
 const MARKETING_NAV = [
   { href: '/inbox-crm', label: 'Inbox & CRM', icon: 'inbox' },
-  { href: '/features/ideas', label: 'Ideas', icon: 'ideas' },
-  { href: '/features/roadmap', label: 'Roadmap', icon: 'roadmap' },
-  { href: '/features/announcements', label: 'Announcements', icon: 'updates' },
-  { href: '/features/knowledgebase', label: 'Knowledgebase', icon: 'help' },
+  { href: '/product/ideas', label: 'Ideas', icon: 'ideas' },
+  { href: '/product/roadmap', label: 'Roadmap', icon: 'roadmap' },
+  { href: '/product/announcements', label: 'Announcements', icon: 'updates' },
+  { href: '/product/knowledgebase', label: 'Knowledgebase', icon: 'help' },
   { href: '/pricing', label: 'Pricing', icon: 'pricing' },
 ]
 
@@ -571,7 +571,7 @@ export default function RootLayout({
   // `/u/` = the customer secure-upload page. It carries its own branded card
   // header, so the app nav on top was redundant and left a big gap above the
   // card. Render it standalone like the other full-page routes.
-  const isFullPageRoute = ['/landing', '/inbox-crm', '/pricing', '/features', '/platform-admin', '/forms/', '/widget', '/auth/handoff', '/u/', '/demo'].some(p => pathname?.startsWith(p))
+  const isFullPageRoute = ['/landing', '/inbox-crm', '/pricing', '/product', '/platform-admin', '/forms/', '/widget', '/auth/handoff', '/u/', '/demo'].some(p => pathname?.startsWith(p))
   // admin.colvy.com is the Super Admin console — it has its own dark chrome, so
   // the marketing/board nav must never render on top of it (regardless of the
   // path the proxy serves it under). Whole host is full-page.
@@ -789,7 +789,7 @@ export default function RootLayout({
                 return ordered
                 .filter(item => {
                   if (isOnBoard && navVisibility[item.label as keyof typeof navVisibility] === false) return false
-                  const isBoardItem = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label) && item.href.startsWith('/') && !item.href.startsWith('/features')
+                  const isBoardItem = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label) && item.href.startsWith('/') && !item.href.startsWith('/product')
                   const isMarketingItem = item.label === 'Features' || item.label === 'Product'
                   if (!isOnBoard && isBoardItem) return false
                   if (isOnBoard && isMarketingItem) return false
