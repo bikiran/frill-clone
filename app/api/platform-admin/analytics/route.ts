@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     const sevenAgo = new Date(now.getTime() - 7 * 86400000).toISOString()
 
     // ── Companies + plan distribution (REAL from companies.plan)
-    const { data: companies } = await db.from('companies').select('id, plan, created_at, trial_ends_at')
+    const { data: companies } = await db.from('companies').select('id, name, plan, created_at, trial_ends_at')
     const totalCompanies = companies?.length || 0
     const planCounts: Record<string, number> = {}
     ;(companies || []).forEach((c: any) => { const p = (c.plan || 'free').toLowerCase(); planCounts[p] = (planCounts[p] || 0) + 1 })
@@ -136,6 +136,26 @@ export async function GET(req: NextRequest) {
     // New signups in the last 7 days (for a small trend)
     const newLast7 = (companies || []).filter((c: any) => c.created_at && c.created_at >= sevenAgo).length
 
+    // ── Attributed sales logged in-chat (REAL): the revenue tenants credit to
+    //    Colvy across every workspace, last 30 days. Aggregated in JS (bounded
+    //    window); top workspaces named from the companies map.
+    let salesLogged30d = 0, salesCount30d = 0
+    let topSalesCompanies: { id: string; name: string; total: number }[] = []
+    try {
+      const nameOf = new Map<string, string>((companies || []).map((c: any) => [c.id, c.name || 'Workspace']))
+      const { data: saleRows } = await db.from('conversation_sales')
+        .select('amount, company_id').gte('created_at', thirtyAgo).limit(20000)
+      const byCo = new Map<string, number>()
+      for (const r of saleRows || []) {
+        const a = Number(r.amount) || 0
+        salesLogged30d += a; salesCount30d++
+        byCo.set(r.company_id, (byCo.get(r.company_id) || 0) + a)
+      }
+      topSalesCompanies = Array.from(byCo.entries())
+        .map(([id, total]) => ({ id, name: nameOf.get(id) || 'Workspace', total: Math.round(total) }))
+        .sort((a, b) => b.total - a.total).slice(0, 5)
+    } catch { /* conversation_sales may not exist yet */ }
+
     return NextResponse.json({
       companies: totalCompanies,
       active: activeSet.size,
@@ -149,6 +169,7 @@ export async function GET(req: NextRequest) {
       conversion: Math.round(conversion * 10) / 10,
       activeTrials, trialsEndingSoon, expiredTrials,
       newPaidLast30, canceledLast30, churn,
+      salesLogged30d: Math.round(salesLogged30d), salesCount30d, topSalesCompanies,
       planDistribution: planCounts,
       activeSeries,
       ideas: ideaCount || 0,
