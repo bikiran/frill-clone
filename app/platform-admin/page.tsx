@@ -2115,7 +2115,21 @@ function OverviewPage({ data }: { data: any }) {
           <KPI label="Trials ending · 7d" value={data.trialsEndingSoon?.toLocaleString() ?? '—'} sub="reach out to convert" color="#f59e0b" />
           <KPI label="Trial → paid" value={data.conversion != null ? `${data.conversion}%` : '—'} sub="paid ÷ (paid + trial)" color="#0891b2" />
           <KPI label="Expired trials" value={data.expiredTrials?.toLocaleString() ?? '—'} sub="lapsed, not converted" color="#6b7280" />
+          <KPI label="Sales logged · 30d" value={`$${(data.salesLogged30d ?? 0).toLocaleString()}`} sub={`${data.salesCount30d ?? 0} in-chat sales`} color="#16a34a" />
         </div>
+        {/* Top workspaces by revenue tenants attribute to Colvy (in-chat sales). */}
+        {Array.isArray(data.topSalesCompanies) && data.topSalesCompanies.length > 0 && (
+          <div style={{ marginTop: 12, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 18 }}>
+            <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 3px' }}>Revenue generated via Colvy · last 30 days</p>
+            <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 12px' }}>Top workspaces by in-chat sales logged (incl. bank transfers)</p>
+            {data.topSalesCompanies.map((c: any) => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '7px 0', borderBottom: '1px solid var(--sa-border)' }}>
+                <span style={{ fontSize: 13, color: 'var(--sa-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#16a34a', whiteSpace: 'nowrap' }}>${Number(c.total || 0).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Attention Required */}
