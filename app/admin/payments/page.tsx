@@ -27,6 +27,13 @@ type Payment = {
   refunded_at: string | null
   paid_at: string | null
   created_at: string
+  // Manually recorded sales (conversation_sales) are merged into this list so
+  // bank-transfer / cash takings show up in Payments too. These carry a couple
+  // of extra fields and skip the Stripe-only actions (refund, receipt, etc.).
+  source?: 'stripe' | 'sale'
+  payment_method?: string | null   // sale: the method chosen (Bank transfer, Cash…)
+  sold_by_name?: string | null     // sale: the credited team member
+  contact_id?: string | null       // sale: direct contact link (no conversation needed)
 }
 
 function parseTs(d: string | null | undefined): Date | null {
@@ -127,22 +134,64 @@ export default function PaymentsPage() {
     let q = (supabase as any).from('chat_payments').select('*').eq('company_id', cid)
     if (since) q = q.gte('created_at', since)
     const { data } = await q.order('created_at', { ascending: false }).limit(1000)
-    const rows: Payment[] = data || []
+    const stripeRows: Payment[] = (data || []).map((p: any) => ({ ...p, source: 'stripe' as const }))
+
+    // Manually recorded sales (bank transfer, cash, etc.) — merge them into the
+    // same list so takings that never went through a Stripe link still show up,
+    // count toward Collected, and are searchable/exportable here. Best-effort:
+    // if the table isn't present yet (migration not run) we just show Stripe rows.
+    let saleRows: Payment[] = []
+    try {
+      let sq = (supabase as any).from('conversation_sales').select('*').eq('company_id', cid)
+      if (since) sq = sq.gte('sale_at', since)
+      const { data: sales } = await sq.order('sale_at', { ascending: false }).limit(1000)
+      saleRows = (sales || []).map((s: any): Payment => ({
+        id: `sale:${s.id}`,
+        company_id: s.company_id,
+        conversation_id: s.conversation_id || null,
+        amount_cents: Math.round((Number(s.amount) || 0) * 100),
+        currency: s.currency || 'AUD',
+        description: s.note || 'Recorded sale',
+        status: 'paid',
+        stripe_payment_intent: null,
+        checkout_url: null,
+        receipt_url: null,
+        card_brand: null,
+        card_last4: null,
+        refunded_cents: 0,
+        refunded_at: null,
+        paid_at: s.sale_at || s.created_at,
+        created_at: s.created_at || s.sale_at,
+        source: 'sale',
+        payment_method: s.payment_method || null,
+        sold_by_name: s.sold_by_name || null,
+        contact_id: s.contact_id || null,
+      }))
+    } catch { saleRows = [] }
+
+    const rows: Payment[] = [...stripeRows, ...saleRows].sort(
+      (a, b) => (parseTs(b.paid_at || b.created_at)?.getTime() || 0) - (parseTs(a.paid_at || a.created_at)?.getTime() || 0)
+    )
     setPayments(rows)
 
     const convIds = Array.from(new Set(rows.map(p => p.conversation_id).filter(Boolean))) as string[]
+    // Sales can be attributed to a contact directly (no conversation), so gather
+    // those contact ids too.
+    const directContactIds = Array.from(new Set(rows.map(p => p.contact_id).filter(Boolean))) as string[]
+    let convContactIds: string[] = []
     if (convIds.length) {
       const { data: cs } = await (supabase as any).from('conversations').select('id, contact_id, subject, sms_number, channel').in('id', convIds)
       const cmap: Record<string, any> = {}
       for (const c of cs || []) cmap[c.id] = c
       setConvs(cmap)
-      const ctIds = Array.from(new Set((cs || []).map((c: any) => c.contact_id).filter(Boolean)))
-      if (ctIds.length) {
-        const { data: cts } = await (supabase as any).from('contacts').select('id, name, phone, email').in('id', ctIds)
-        const ctmap: Record<string, any> = {}
-        for (const c of cts || []) ctmap[c.id] = c
-        setContacts(ctmap)
-      }
+      convContactIds = (cs || []).map((c: any) => c.contact_id).filter(Boolean)
+    }
+    const ctIds = Array.from(new Set([...convContactIds, ...directContactIds]))
+    if (ctIds.length) {
+      const { data: cts } = await (supabase as any).from('contacts').select('id, name, phone, email').in('id', ctIds)
+      const ctmap: Record<string, any> = {}
+      for (const c of cts || []) ctmap[c.id] = c
+      setContacts(ctmap)
     }
   }, [])
 
@@ -179,18 +228,30 @@ export default function PaymentsPage() {
 
   const customerOf = useCallback((p: Payment) => {
     const conv = p.conversation_id ? convs[p.conversation_id] : null
-    const ct = conv?.contact_id ? contacts[conv.contact_id] : null
+    // A recorded sale may be attributed to a contact directly (no conversation).
+    const directCt = p.contact_id ? contacts[p.contact_id] : null
+    const ct = (conv?.contact_id ? contacts[conv.contact_id] : null) || directCt
     const name = ct?.name || conv?.subject || 'Customer'
     const phone = ct?.phone || conv?.sms_number || ''
     const email = ct?.email || ''
-    return { name, phone, email, contact: phone || email, email2: email, conv, contactId: conv?.contact_id || null, channel: conv?.channel || '' }
+    return { name, phone, email, contact: phone || email, email2: email, conv, contactId: conv?.contact_id || p.contact_id || null, channel: conv?.channel || '' }
   }, [convs, contacts])
 
-  const methodLabel = (p: Payment) => p.card_brand ? `${p.card_brand.toUpperCase()} •••• ${p.card_last4 || '••••'}` : (p.status === 'paid' ? 'Card' : '—')
+  // Turn a stored payment_method value (bank_transfer, cash…) into a label.
+  const prettyMethod = (m?: string | null) => {
+    const s = String(m || '').trim()
+    return s ? s.replace(/[_-]+/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()) : ''
+  }
+  const methodLabel = (p: Payment) =>
+    p.card_brand ? `${p.card_brand.toUpperCase()} •••• ${p.card_last4 || '••••'}`
+      : (p.source === 'sale' ? (prettyMethod(p.payment_method) || 'Recorded') : (p.status === 'paid' ? 'Card' : '—'))
 
   const methodOptions = useMemo(() => {
     const set = new Set<string>()
-    for (const p of payments) if (p.card_brand) set.add(p.card_brand.toLowerCase())
+    for (const p of payments) {
+      if (p.card_brand) set.add(p.card_brand.toLowerCase())
+      else if (p.source === 'sale' && p.payment_method) set.add(String(p.payment_method).toLowerCase())
+    }
     return Array.from(set).sort()
   }, [payments])
   const channelOptions = useMemo(() => {
@@ -203,7 +264,10 @@ export default function PaymentsPage() {
     const q = search.trim().toLowerCase()
     return payments.filter(p => {
       if (statusFilter !== 'all' && p.status !== statusFilter) return false
-      if (methodFilter !== 'all' && (p.card_brand || '').toLowerCase() !== methodFilter) return false
+      if (methodFilter !== 'all') {
+        const pm = (p.card_brand || (p.source === 'sale' ? p.payment_method : '') || '').toLowerCase()
+        if (pm !== methodFilter) return false
+      }
       const c = customerOf(p)
       if (channelFilter !== 'all' && String(c.channel || '').toLowerCase() !== channelFilter) return false
       if (q) {
@@ -281,6 +345,9 @@ export default function PaymentsPage() {
 
   const openDrawer = async (p: Payment) => {
     setSelected(p); setDetails(null); setRefundAmt(''); setActivity([]); setDetailsLoading(true)
+    // A recorded sale has no Stripe object or payment link — skip the network
+    // calls entirely.
+    if (p.source === 'sale') { setDetailsLoading(false); return }
     // Link views for the activity timeline (real click data).
     ;(async () => {
       try {
@@ -466,9 +533,18 @@ export default function PaymentsPage() {
                         {money(p.amount_cents, p.currency || 'AUD')}
                         {p.refunded_cents ? <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: '#e11d48' }}>−{money(p.refunded_cents, p.currency || 'AUD')}</span> : null}
                       </td>
-                      <td style={{ ...td, color: 'var(--slate)', maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.description || '—'}</td>
+                      <td style={{ ...td, color: 'var(--slate)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {p.source === 'sale' && (
+                          <span title="Recorded manually (not a Stripe payment)" style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: 'uppercase', color: '#0e7490', background: '#cffafe', padding: '2px 6px', borderRadius: 6, marginRight: 6, verticalAlign: 'middle' }}>Recorded</span>
+                        )}
+                        {p.description || '—'}
+                      </td>
                       <td style={{ ...td, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
-                        {p.card_brand ? <span style={{ fontVariantNumeric: 'tabular-nums' }}><span style={{ fontWeight: 700, color: 'var(--ink)' }}>{p.card_brand.toUpperCase()}</span> ···· {p.card_last4 || '••••'}</span> : (p.status === 'paid' ? 'Card' : '—')}
+                        {p.card_brand
+                          ? <span style={{ fontVariantNumeric: 'tabular-nums' }}><span style={{ fontWeight: 700, color: 'var(--ink)' }}>{p.card_brand.toUpperCase()}</span> ···· {p.card_last4 || '••••'}</span>
+                          : p.source === 'sale'
+                            ? <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{prettyMethod(p.payment_method) || 'Recorded'}</span>
+                            : (p.status === 'paid' ? 'Card' : '—')}
                       </td>
                       <td style={td}><span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span></td>
                       <td style={{ ...td, color: 'var(--slate)', whiteSpace: 'nowrap' }}>{fmtDate(p.paid_at || p.created_at)}</td>
@@ -477,7 +553,7 @@ export default function PaymentsPage() {
                           {p.status === 'pending' && (
                             <button type="button" disabled={isBusy} onClick={() => doRemind(p)} style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: isBusy ? 0.6 : 1 }}>Send reminder</button>
                           )}
-                          {p.status === 'paid' && (
+                          {p.status === 'paid' && p.source !== 'sale' && (
                             <button type="button" disabled={isBusy} onClick={() => doResend(p)} style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: isBusy ? 0.6 : 1 }}>Resend receipt</button>
                           )}
                           {p.checkout_url && (
@@ -485,7 +561,7 @@ export default function PaymentsPage() {
                               <svg {...I({ width: 14, height: 14 })}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                             </button>
                           )}
-                          {p.status === 'paid' && (
+                          {p.status === 'paid' && p.source !== 'sale' && (
                             <button type="button" disabled={isBusy} onClick={() => doRefund(p)} style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid #f4b4bf', background: 'var(--card,#fff)', color: '#e11d48', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: isBusy ? 0.6 : 1 }}>Refund</button>
                           )}
                           <button type="button" onClick={() => openDrawer(p)} title="Details" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -522,7 +598,8 @@ export default function PaymentsPage() {
         const sm = statusMeta(p.status)
         const ac = avatarColor(c.name)
         const remaining = (p.amount_cents || 0) - (p.refunded_cents || 0)
-        const canRefund = p.status === 'paid' && remaining > 0
+        const isSale = p.source === 'sale'
+        const canRefund = p.status === 'paid' && remaining > 0 && !isSale
         const isBusy = busy === p.id
         const kick: React.CSSProperties = { margin: 0, fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }
         const field = (label: string, val: React.ReactNode) => (
@@ -533,11 +610,15 @@ export default function PaymentsPage() {
         )
         // Build the activity timeline from real signals.
         const items: { label: string; at: string | null; tone: string; sub?: string }[] = []
-        items.push({ label: 'Payment link created', at: p.created_at, tone: '#94a3b8' })
-        for (const v of activity) items.push({ label: 'Payment link viewed', at: v.clicked_at, tone: '#3b82f6', sub: [v.city, v.region].filter(Boolean).join(', ') })
-        if (p.status === 'paid' || p.status === 'refunded') items.push({ label: 'Payment completed', at: p.paid_at, tone: '#16a34a' })
-        if (p.refunded_cents) items.push({ label: `Refunded ${money(p.refunded_cents, p.currency || 'AUD')}`, at: p.refunded_at, tone: '#e11d48' })
-        if (p.status === 'pending') items.push({ label: 'Awaiting payment', at: null, tone: '#d97706' })
+        if (isSale) {
+          items.push({ label: 'Sale recorded', at: p.paid_at || p.created_at, tone: '#16a34a', sub: [prettyMethod(p.payment_method), p.sold_by_name ? `by ${p.sold_by_name}` : ''].filter(Boolean).join(' · ') })
+        } else {
+          items.push({ label: 'Payment link created', at: p.created_at, tone: '#94a3b8' })
+          for (const v of activity) items.push({ label: 'Payment link viewed', at: v.clicked_at, tone: '#3b82f6', sub: [v.city, v.region].filter(Boolean).join(', ') })
+          if (p.status === 'paid' || p.status === 'refunded') items.push({ label: 'Payment completed', at: p.paid_at, tone: '#16a34a' })
+          if (p.refunded_cents) items.push({ label: `Refunded ${money(p.refunded_cents, p.currency || 'AUD')}`, at: p.refunded_at, tone: '#e11d48' })
+          if (p.status === 'pending') items.push({ label: 'Awaiting payment', at: null, tone: '#d97706' })
+        }
         items.sort((a, b) => (parseTs(a.at)?.getTime() || Infinity) - (parseTs(b.at)?.getTime() || Infinity))
 
         return (
@@ -575,11 +656,23 @@ export default function PaymentsPage() {
                   {field('Amount', money(p.amount_cents, p.currency || 'AUD'))}
                   {p.refunded_cents ? field('Refunded', <span style={{ color: '#e11d48' }}>−{money(p.refunded_cents, p.currency || 'AUD')} · {money(remaining, p.currency || 'AUD')} kept</span>) : null}
                   {field('Description', p.description || '—')}
-                  {field('Payment link', p.status === 'pending' ? <span style={{ color: '#16a34a', fontWeight: 700 }}>● Active</span> : p.checkout_url ? 'Used' : '—')}
-                  {field('Created', fmtDate(p.created_at))}
-                  {field('Method', detailsLoading && !p.card_brand ? 'Loading…' : (p.card_brand ? `${p.card_brand.toUpperCase()} •••• ${p.card_last4 || (details?.last4 || '••••')}` : (details?.brand ? `${details.brand.toUpperCase()} •••• ${details.last4}` : (p.status === 'paid' ? 'Card' : '—'))))}
-                  {field('Channel', c.channel ? (c.channel === 'sms' ? 'SMS' : c.channel.charAt(0).toUpperCase() + c.channel.slice(1)) : '—')}
-                  {field('Stripe payment', details?.paymentIntentId || p.stripe_payment_intent || '—')}
+                  {isSale ? (
+                    <>
+                      {field('Source', <span style={{ color: '#0e7490', fontWeight: 700 }}>Recorded sale</span>)}
+                      {field('Method', prettyMethod(p.payment_method) || '—')}
+                      {field('Recorded by', p.sold_by_name || '—')}
+                      {field('Date', fmtDate(p.paid_at || p.created_at))}
+                      {field('Channel', c.channel ? (c.channel === 'sms' ? 'SMS' : c.channel.charAt(0).toUpperCase() + c.channel.slice(1)) : '—')}
+                    </>
+                  ) : (
+                    <>
+                      {field('Payment link', p.status === 'pending' ? <span style={{ color: '#16a34a', fontWeight: 700 }}>● Active</span> : p.checkout_url ? 'Used' : '—')}
+                      {field('Created', fmtDate(p.created_at))}
+                      {field('Method', detailsLoading && !p.card_brand ? 'Loading…' : (p.card_brand ? `${p.card_brand.toUpperCase()} •••• ${p.card_last4 || (details?.last4 || '••••')}` : (details?.brand ? `${details.brand.toUpperCase()} •••• ${details.last4}` : (p.status === 'paid' ? 'Card' : '—'))))}
+                      {field('Channel', c.channel ? (c.channel === 'sms' ? 'SMS' : c.channel.charAt(0).toUpperCase() + c.channel.slice(1)) : '—')}
+                      {field('Stripe payment', details?.paymentIntentId || p.stripe_payment_intent || '—')}
+                    </>
+                  )}
                 </div>
 
                 {/* Refund box */}
@@ -603,7 +696,7 @@ export default function PaymentsPage() {
 
                 {/* Actions */}
                 <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {p.status === 'paid' && <button type="button" disabled={isBusy} onClick={() => doResend(p)} style={{ padding: '10px 12px', borderRadius: 9, border: 'none', background: CORAL, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: isBusy ? 0.6 : 1 }}>Resend receipt</button>}
+                  {p.status === 'paid' && !isSale && <button type="button" disabled={isBusy} onClick={() => doResend(p)} style={{ padding: '10px 12px', borderRadius: 9, border: 'none', background: CORAL, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: isBusy ? 0.6 : 1 }}>Resend receipt</button>}
                   {p.status === 'pending' && <button type="button" disabled={isBusy} onClick={() => doRemind(p)} style={{ padding: '10px 12px', borderRadius: 9, border: 'none', background: CORAL, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: isBusy ? 0.6 : 1 }}>Send reminder</button>}
                   {canRefund && <button type="button" disabled={isBusy} onClick={() => doRefund(p)} style={{ padding: '10px 12px', borderRadius: 9, border: '1px solid #f4b4bf', background: 'var(--card,#fff)', color: '#e11d48', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Refund payment</button>}
                   {c.conv?.id && <button type="button" onClick={() => router.push(`/admin/inbox?conversation=${c.conv.id}`)} style={{ padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Open in inbox</button>}
@@ -674,7 +767,8 @@ export default function PaymentsPage() {
                 </div>
 
                 <div style={{ marginTop: 4, fontSize: 12, color: 'var(--slate)' }}>
-                  <p style={{ margin: 0 }}>Paid with {p.card_brand ? `${p.card_brand.toUpperCase()} •••• ${p.card_last4 || '••••'}` : 'card'}</p>
+                  <p style={{ margin: 0 }}>Paid with {p.card_brand ? `${p.card_brand.toUpperCase()} •••• ${p.card_last4 || '••••'}` : (p.source === 'sale' ? (prettyMethod(p.payment_method) || 'recorded payment') : 'card')}</p>
+                  {p.source === 'sale' && p.sold_by_name && <p style={{ margin: '2px 0 0' }}>Recorded by {p.sold_by_name}</p>}
                   {(p.stripe_payment_intent) && <p style={{ margin: '2px 0 0', fontSize: 10.5, wordBreak: 'break-all' }}>Ref: {p.stripe_payment_intent}</p>}
                 </div>
                 <p style={{ margin: '16px 0 0', fontSize: 11, color: 'var(--slate)', textAlign: 'center' }}>Thank you for your payment.</p>
