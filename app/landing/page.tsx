@@ -435,42 +435,50 @@ function HowItWorks({ dark, cardBorder }: { dark: boolean; cardBorder: string })
 
 function PhoneMock({ step, activeKey, border }: { step: Step; activeKey: number; border: string }) {
   return (
-    <div style={{ alignSelf: 'center', width: 'min(340px, 100%)', background: '#0f1420', borderRadius: 34, padding: 12, boxShadow: '0 40px 90px rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.12)' }}>
-      <div style={{ background: '#f7f8fb', borderRadius: 24, overflow: 'hidden', minHeight: 440, display: 'flex', flexDirection: 'column' }}>
-        {/* header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', background: '#fff', borderBottom: `1px solid ${border}` }}>
-          <span style={{ width: 34, height: 34, borderRadius: '50%', background: `linear-gradient(135deg, ${CORAL}, ${PURPLE})`, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13 }}>SR</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: INK }}>{step.who}</p>
-            <p style={{ margin: 0, fontSize: 11.5, color: 'rgba(15,17,25,0.5)', display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: step.color }} />via {step.channel}</p>
-          </div>
-          <span style={{ fontSize: 10.5, fontWeight: 800, color: '#16a34a', background: '#dcfce7', padding: '3px 8px', borderRadius: 999 }}>Live</span>
-        </div>
-        {/* bubbles (re-mount on step change for the entry animation) */}
-        <div key={activeKey} style={{ flex: 1, padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {step.bubbles.map((b, i) => {
-            const anim = { animation: `popIn 0.45s cubic-bezier(0.16,1,0.3,1) ${i * 0.18}s both` }
-            if (b.kind === 'system') return (
-              <div key={i} style={{ ...anim, alignSelf: 'center', maxWidth: '92%', textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'rgba(15,17,25,0.55)', background: '#eef1f6', padding: '7px 12px', borderRadius: 12 }}>{b.text}</div>
-            )
-            if (b.kind === 'pill') return (
-              <div key={i} style={{ ...anim, alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: 7, background: GREEN, color: '#fff', fontSize: 12.5, fontWeight: 800, padding: '9px 14px', borderRadius: 999 }}>{b.text}</div>
-            )
-            if (b.kind === 'image') return (
-              <div key={i} style={{ ...anim, alignSelf: 'flex-end', width: 150, height: 104, borderRadius: '14px 14px 4px 14px', overflow: 'hidden', border: `1px solid ${border}` }}>
-                <img src="https://images.unsplash.com/photo-1520302630591-fd1c66edc19d?w=400&q=80&auto=format&fit=crop" alt="Reef tank" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+    <div style={{ alignSelf: 'center', position: 'relative', width: 'min(300px, 100%)' }}>
+      {/* side buttons */}
+      <span aria-hidden style={{ position: 'absolute', left: -3, top: 132, width: 3, height: 30, borderRadius: 2, background: '#05060a' }} />
+      <span aria-hidden style={{ position: 'absolute', left: -3, top: 176, width: 3, height: 54, borderRadius: 2, background: '#05060a' }} />
+      <span aria-hidden style={{ position: 'absolute', left: -3, top: 240, width: 3, height: 54, borderRadius: 2, background: '#05060a' }} />
+      <span aria-hidden style={{ position: 'absolute', right: -3, top: 200, width: 3, height: 78, borderRadius: 2, background: '#05060a' }} />
+      {/* titanium frame */}
+      <div style={{ position: 'relative', background: 'linear-gradient(145deg, #2a2c35, #0b0c12 60%)', borderRadius: 48, padding: 5, boxShadow: '0 50px 110px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06) inset' }}>
+        <div style={{ background: '#05060a', borderRadius: 44, padding: 8 }}>
+          <div style={{ position: 'relative', background: '#f6f7fb', borderRadius: 38, overflow: 'hidden', aspectRatio: '295 / 620', display: 'flex', flexDirection: 'column' }}>
+            {/* dynamic island */}
+            <div aria-hidden style={{ position: 'absolute', top: 9, left: '50%', transform: 'translateX(-50%)', width: 86, height: 26, borderRadius: 999, background: '#05060a', zIndex: 3 }} />
+            {/* Colvy app bar (branding) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '40px 15px 10px', background: '#fff' }}>
+              <span style={{ width: 24, height: 24, borderRadius: 7, background: CORAL, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 13, flexShrink: 0 }}>C</span>
+              <span style={{ fontSize: 14.5, fontWeight: 900, color: INK, letterSpacing: '-0.02em' }}>Colvy</span>
+              <span style={{ fontSize: 11, color: 'rgba(15,17,25,0.4)', fontWeight: 600 }}>Inbox</span>
+              <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 800, color: '#16a34a', background: '#dcfce7', padding: '3px 9px', borderRadius: 999 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />Live</span>
+            </div>
+            {/* contact row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 15px', background: '#fff', borderBottom: `1px solid ${border}` }}>
+              <span style={{ width: 32, height: 32, borderRadius: '50%', background: `linear-gradient(135deg, ${CORAL}, ${PURPLE})`, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>SR</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: INK }}>{step.who}</p>
+                <p style={{ margin: 0, fontSize: 11, color: 'rgba(15,17,25,0.5)', display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: step.color }} />via {step.channel}</p>
               </div>
-            )
-            const me = b.side === 'me'
-            return (
-              <div key={i} style={{ ...anim, alignSelf: me ? 'flex-end' : 'flex-start', maxWidth: '82%', padding: '10px 13px', borderRadius: me ? '15px 15px 4px 15px' : '15px 15px 15px 4px', background: me ? CORAL : '#fff', color: me ? '#fff' : INK, border: me ? 'none' : `1px solid ${border}`, fontSize: 13.5, fontWeight: 600, lineHeight: 1.45, boxShadow: me ? 'none' : '0 4px 14px rgba(15,17,25,0.05)' }}>{b.text}</div>
-            )
-          })}
-        </div>
-        {/* composer */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: '#fff', borderTop: `1px solid ${border}` }}>
-          <span style={{ flex: 1, fontSize: 12.5, color: 'rgba(15,17,25,0.4)', background: '#f1f3f8', padding: '9px 12px', borderRadius: 999 }}>Reply to Sam…</span>
-          <span style={{ width: 32, height: 32, borderRadius: '50%', background: CORAL, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></span>
+            </div>
+            {/* bubbles (re-mount on step change for the entry animation) */}
+            <div key={activeKey} style={{ flex: 1, padding: '14px 13px', display: 'flex', flexDirection: 'column', gap: 9, overflow: 'hidden' }}>
+              {step.bubbles.map((b, i) => {
+                const anim = { animation: `popIn 0.45s cubic-bezier(0.16,1,0.3,1) ${i * 0.18}s both` }
+                if (b.kind === 'system') return (<div key={i} style={{ ...anim, alignSelf: 'center', maxWidth: '92%', textAlign: 'center', fontSize: 11.5, fontWeight: 700, color: 'rgba(15,17,25,0.55)', background: '#eef1f6', padding: '7px 12px', borderRadius: 12 }}>{b.text}</div>)
+                if (b.kind === 'pill') return (<div key={i} style={{ ...anim, alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: 7, background: GREEN, color: '#fff', fontSize: 12, fontWeight: 800, padding: '9px 13px', borderRadius: 999 }}>{b.text}</div>)
+                if (b.kind === 'image') return (<div key={i} style={{ ...anim, alignSelf: 'flex-end', width: 140, height: 98, borderRadius: '14px 14px 4px 14px', overflow: 'hidden', border: `1px solid ${border}` }}><img src="https://images.unsplash.com/photo-1520302630591-fd1c66edc19d?w=400&q=80&auto=format&fit=crop" alt="Reef tank" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div>)
+                const me = b.side === 'me'
+                return (<div key={i} style={{ ...anim, alignSelf: me ? 'flex-end' : 'flex-start', maxWidth: '82%', padding: '10px 13px', borderRadius: me ? '15px 15px 4px 15px' : '15px 15px 15px 4px', background: me ? CORAL : '#fff', color: me ? '#fff' : INK, border: me ? 'none' : `1px solid ${border}`, fontSize: 13, fontWeight: 600, lineHeight: 1.45, boxShadow: me ? 'none' : '0 4px 14px rgba(15,17,25,0.05)' }}>{b.text}</div>)
+              })}
+            </div>
+            {/* composer */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px 14px', background: '#fff', borderTop: `1px solid ${border}` }}>
+              <span style={{ flex: 1, fontSize: 12, color: 'rgba(15,17,25,0.4)', background: '#f1f3f8', padding: '9px 12px', borderRadius: 999 }}>Reply to Sam…</span>
+              <span style={{ width: 30, height: 30, borderRadius: '50%', background: CORAL, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
