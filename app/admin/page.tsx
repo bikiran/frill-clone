@@ -38,6 +38,8 @@ export default function AdminDashboard() {
   // Operational (CRM/commerce) snapshot — orders, calls, inbox — so the dashboard
   // reflects the day-to-day the team actually runs, not just the feedback board.
   const [ops, setOps] = useState<{ awaiting: number; shipped: number; calls: number; open: number } | null>(null)
+  // Attributed sales logged from conversations — the revenue Colvy helped make.
+  const [sales, setSales] = useState<{ total: number; count: number; byMethod: [string, number][]; bySeller: [string, number][] } | null>(null)
   const [loading, setLoading] = useState(true)
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set())
   const [activity, setActivity] = useState<any[]>([])
@@ -68,6 +70,7 @@ export default function AdminDashboard() {
       fetchStats(cid)
       fetchActivity(cid)
       fetchOps(cid)
+      fetchSales(cid)
     })
 
     // Live activity: subscribe to ideas table changes
@@ -183,6 +186,28 @@ export default function AdminDashboard() {
       ])
       setOps({ awaiting, shipped, calls, open })
     } catch {}
+  }
+
+  const fetchSales = async (cid?: string) => {
+    try {
+      const compId = cid || companyId || await resolveCompanyId()
+      if (!compId) return
+      const since30 = new Date(Date.now() - 30 * 864e5).toISOString()
+      const { data } = await (supabase as any).from('conversation_sales')
+        .select('amount, payment_method, sold_by_name, created_at')
+        .eq('company_id', compId).gte('created_at', since30).limit(2000)
+      const rows = data || []
+      let total = 0
+      const byMethodM = new Map<string, number>()
+      const bySellerM = new Map<string, number>()
+      for (const r of rows) {
+        const a = Number(r.amount) || 0; total += a
+        const m = r.payment_method || 'Unspecified'; byMethodM.set(m, (byMethodM.get(m) || 0) + a)
+        const s = r.sold_by_name || 'Unattributed'; bySellerM.set(s, (bySellerM.get(s) || 0) + a)
+      }
+      const top = (mp: Map<string, number>) => Array.from(mp.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5)
+      setSales({ total, count: rows.length, byMethod: top(byMethodM), bySeller: top(bySellerM) })
+    } catch { setSales({ total: 0, count: 0, byMethod: [], bySeller: [] }) }
   }
 
   const fetchActivity = async (cid?: string) => {
@@ -335,6 +360,37 @@ export default function AdminDashboard() {
               ))}
             </div>
           </div>
+
+          {/* Revenue via Colvy — attributed sales logged from conversations */}
+          {sales && (sales.count > 0 || sales.total > 0) && (
+            <div className="mb-8">
+              <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Revenue via Colvy · last 30 days</h2>
+              <div className="grid md:grid-cols-3 gap-4">
+                <div className="bg-white rounded-xl border p-5" style={{ borderColor: 'var(--border)' }}>
+                  <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--slate)' }}>Revenue logged</p>
+                  <p className="text-3xl font-bold" style={{ color: '#15803d' }}>
+                    {new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(sales.total)}
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>{sales.count} sale{sales.count === 1 ? '' : 's'} recorded</p>
+                </div>
+                {([['By team member', sales.bySeller], ['By payment method', sales.byMethod]] as [string, [string, number][]][]).map(([title, rowsArr]) => (
+                  <div key={title} className="bg-white rounded-xl border p-5" style={{ borderColor: 'var(--border)' }}>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>{title}</p>
+                    {rowsArr.length === 0 ? (
+                      <p className="text-sm" style={{ color: 'var(--slate)' }}>—</p>
+                    ) : rowsArr.map(([name, amt]) => (
+                      <div key={name} className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm truncate mr-2" style={{ color: 'var(--ink)' }}>{name}</span>
+                        <span className="text-sm font-semibold whitespace-nowrap" style={{ color: 'var(--ink)' }}>
+                          {new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(amt)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
