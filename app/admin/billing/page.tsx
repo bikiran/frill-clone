@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { track } from '@/lib/analytics'
 
 // Currency rates relative to USD
 const CURRENCY_RATES: Record<string, { rate: number; symbol: string; label: string }> = {
@@ -109,6 +110,16 @@ export default function BillingPage() {
         else if (tz.includes('Canada') || tz.includes('America/Toronto') || tz.includes('America/Vancouver')) setCurrency('CAD')
       } catch {}
 
+      // Funnel: distinguish a return from Stripe checkout (?success=1) from an
+      // ordinary visit to the plans page.
+      try {
+        if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('success') === '1') {
+          track('checkout_completed', { tier: sub?.tier || co?.plan || null })
+        } else {
+          track('pricing_viewed', { plan: co?.plan || null })
+        }
+      } catch {}
+
       setPageLoading(false)
     })
   }, [router])
@@ -123,6 +134,7 @@ export default function BillingPage() {
 
   const handleUpgrade = async (planId: string) => {
     if (!user) return
+    track('checkout_started', { tier: planId, billing })
     setLoading(planId)
     try {
       const res = await fetch('/api/stripe/create-checkout', {

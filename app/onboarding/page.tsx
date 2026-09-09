@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getCompanyByOwner } from '@/lib/board'
 import { redirectToUserAdmin } from '@/lib/redirect'
+import { track } from '@/lib/analytics'
 import Link from 'next/link'
 
 export default function OnboardingPage() {
@@ -62,6 +63,14 @@ export default function OnboardingPage() {
         } catch {}
       }
 
+      // Funnel: a workspace reached the post-signup onboarding screen. Fire once
+      // per workspace per browser so a revisit doesn't re-count it.
+      if (co?.id) {
+        try {
+          const k = `colvy_ws_tracked_${co.id}`
+          if (!localStorage.getItem(k)) { track('workspace_created', { plan: co.plan || null }); localStorage.setItem(k, '1') }
+        } catch { track('workspace_created') }
+      }
       setCompany(co)
       setLoaded(true)
     })
