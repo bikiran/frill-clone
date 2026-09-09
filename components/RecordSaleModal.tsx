@@ -106,6 +106,25 @@ export default function RecordSaleModal({
         row.note = note.trim() || null
         await (supabase as any).from('conversation_sales').insert(row)
         try { track('sale_recorded', { amount: amt, currency, payment_method: row.payment_method || 'unspecified' }) } catch {}
+        // Surface the sale in the conversation: a pill in the message stream and
+        // an entry in the Timeline. Best-effort — never block the save on these.
+        if (conversation?.id) {
+          const money = fmt(amt)
+          const methodLabel = row.payment_method ? ` · ${row.payment_method}` : ''
+          try {
+            await (supabase as any).from('messages').insert({
+              conversation_id: conversation.id, company_id: companyId, sender_type: 'system',
+              content: `Sale recorded · ${money}${methodLabel}`,
+              metadata: { sale_event: true, amount: amt, method: row.payment_method || null, sold_by: seller.name },
+            })
+          } catch {}
+          try {
+            await (supabase as any).from('conversation_events').insert({
+              conversation_id: conversation.id, company_id: companyId, event_type: 'sale', actor_name: meName,
+              detail: `Sale recorded · ${money}${methodLabel} — credited to ${seller.name}${row.note ? ` · ${row.note}` : ''}`,
+            })
+          } catch {}
+        }
       }
       resetForm()
       await load()

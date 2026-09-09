@@ -412,6 +412,8 @@ function LifecycleIcon({ kind }: { kind: string }) {
       return <svg viewBox="0 0 24 24" style={p} {...common}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     case 'placed':
       return <svg viewBox="0 0 24 24" style={p} {...common}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+    case 'sale':
+      return <svg viewBox="0 0 24 24" style={p} {...common}><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
     default:
       return <svg viewBox="0 0 24 24" style={p} {...common}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
   }
@@ -6579,6 +6581,7 @@ export default function InboxPage() {
           currentUser={{ id: user?.id, name: user?.user_metadata?.display_name || user?.email?.split('@')[0] }}
           currency="AUD"
           onClose={() => setShowRecordSale(false)}
+          onSaved={() => { if (selected) loadConversationExtras(selected.id) }}
         />
       )}
       {showMediaRequest && selected && (
@@ -7765,7 +7768,8 @@ export default function InboxPage() {
                   const sm: any = (msg as any).metadata || {}
                   const orderStatus = String(sm.status || sm.order_automation || '').toLowerCase()
                   let kind = '', accent = '', title = ''
-                  if (sm.abandoned_cart) { kind = 'cart'; accent = '#d97706'; title = 'Abandoned cart' }
+                  if (sm.sale_event) { kind = 'sale'; accent = '#16a34a'; title = 'Sale recorded' }
+                  else if (sm.abandoned_cart) { kind = 'cart'; accent = '#d97706'; title = 'Abandoned cart' }
                   else if (sm.cart_recovered) { kind = 'recovered'; accent = '#16a34a'; title = 'Cart recovered' }
                   else if (sm.order_event || sm.order_id || sm.order_automation) {
                     if (orderStatus === 'refunded') { kind = 'refunded'; accent = '#d97706'; title = 'Order refunded' }
@@ -8939,8 +8943,8 @@ export default function InboxPage() {
                   <div style={{ position: 'absolute', top: '100%', left: 14, right: 14, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', zIndex: 20, overflow: 'hidden', marginTop: 2 }}>
                     {/* Record sale — always available, and can be used multiple times. */}
                     <button type="button" onClick={() => { setShowActionMenu(false); setShowRecordSale(true) }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13.5, color: 'var(--ink)', textAlign: 'left', fontWeight: 600 }}>
-                      <span style={{ color: '#16a34a', display: 'inline-flex' }}>
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13.5, color: 'var(--ink)', textAlign: 'left' }}>
+                      <span style={{ color: 'var(--coral)', display: 'inline-flex' }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
                       </span> Record sale
                     </button>
