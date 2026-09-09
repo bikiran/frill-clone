@@ -103,6 +103,7 @@ export default function OrdersReportsPage() {
   const fulfil = summary?.fulfil || { total: 0, shipped: 0, cancelled: 0, awaiting: 0, onHold: 0, rate: 0, avgHrs: 0, buckets: { fresh: 0, mod: 0, late: 0 }, byStatus: [] }
   const shippingR = summary?.shipping || { labels: 0, cost: 0, avg: 0, charged: 0, margin: 0, detail: [], carriers: [], services: [], track: [] }
   const sales = summary?.sales || { revenue: 0, orderN: 0, aov: 0, units: 0, channels: [], topSku: [] }
+  const colvySales = summary?.colvySales || { total: 0, count: 0, bySeller: [], byMethod: [] }
 
   const ACCENT = accent
 
@@ -141,7 +142,7 @@ export default function OrdersReportsPage() {
       <p style={{ margin: '5px 0 0', fontSize: 23, fontWeight: 800, color: color || 'var(--ink)' }}>{value}</p>
     </div>
   )
-  const Bars = ({ rows }: { rows: { label: string; value: number; color?: string; sub?: string }[] }) => {
+  const Bars = ({ rows, money }: { rows: { label: string; value: number; color?: string; sub?: string }[]; money?: boolean }) => {
     const max = Math.max(1, ...rows.map(r => r.value))
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 12 }}>
@@ -152,7 +153,7 @@ export default function OrdersReportsPage() {
             <div style={{ flex: 1, background: 'var(--canvas)', borderRadius: 6, height: 18, overflow: 'hidden' }}>
               <div style={{ width: `${(r.value / max) * 100}%`, height: '100%', background: r.color || ACCENT, borderRadius: 6, minWidth: r.value > 0 ? 3 : 0, transition: 'width .3s' }} />
             </div>
-            <span style={{ width: 78, textAlign: 'right', fontSize: 12.5, fontWeight: 700 }}>{r.sub ?? r.value}</span>
+            <span style={{ width: 78, textAlign: 'right', fontSize: 12.5, fontWeight: 700 }}>{r.sub ?? (money ? fmtMoney(r.value) : r.value)}</span>
           </div>
         ))}
       </div>
@@ -333,6 +334,25 @@ export default function OrdersReportsPage() {
               <p style={kick}>Top SKUs (by orders)</p>
               <Bars rows={sales.topSku} />
             </div>
+          </div>
+
+          {/* Sales logged in-chat via Colvy — attributed revenue incl. bank
+              transfers and other off-Stripe payments that never touch an order. */}
+          <div style={{ ...card, padding: 18 }}>
+            <p style={{ ...kick, marginBottom: 2 }}>Sales via Colvy</p>
+            <p style={{ margin: '0 0 14px', fontSize: 11.5, color: 'var(--slate)' }}>Sales your team logged from conversations (incl. bank transfers) in this period</p>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+              <Kpi label="Logged revenue" value={fmtMoney(colvySales.total)} color="#16a34a" />
+              <Kpi label="Sales recorded" value={String(colvySales.count)} />
+            </div>
+            {colvySales.count === 0 ? (
+              <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: 0 }}>No in-chat sales recorded in this period. Log one from a conversation via <b>+ Action → Record sale</b>.</p>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+                <div><p style={kick}>By team member</p><Bars rows={colvySales.bySeller} money /></div>
+                <div><p style={kick}>By payment method</p><Bars rows={colvySales.byMethod} money /></div>
+              </div>
+            )}
           </div>
         </div>
       )}

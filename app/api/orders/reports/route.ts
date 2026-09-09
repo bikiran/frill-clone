@@ -195,10 +195,30 @@ export async function GET(req: NextRequest) {
       dailyRevenue.push({ day: label, value: byDayRev[k] || 0 })
     }
 
+    // Attributed sales logged in-chat via Colvy (incl. off-Stripe bank transfers)
+    // over the same window — total, count, and breakdowns by seller and method.
+    let colvySales = { total: 0, count: 0, bySeller: [] as { label: string; value: number }[], byMethod: [] as { label: string; value: number }[] }
+    try {
+      let csq = db.from('conversation_sales').select('amount, payment_method, sold_by_name, created_at').eq('company_id', companyId)
+      if (sinceISO) csq = csq.gte('created_at', sinceISO)
+      if (endISO) csq = csq.lte('created_at', endISO)
+      const { data: csRows } = await csq.limit(20000)
+      let total = 0
+      const sellerM = new Map<string, number>(), methodM = new Map<string, number>()
+      for (const r of csRows || []) {
+        const a = Number(r.amount) || 0; total += a
+        const s = r.sold_by_name || 'Unattributed'; sellerM.set(s, (sellerM.get(s) || 0) + a)
+        const m = r.payment_method || 'Unspecified'; methodM.set(m, (methodM.get(m) || 0) + a)
+      }
+      const top = (mp: Map<string, number>) => Array.from(mp.entries()).map(([label, value]) => ({ label, value: Math.round(value) })).sort((a, b) => b.value - a.value).slice(0, 8)
+      colvySales = { total: Math.round(total), count: (csRows || []).length, bySeller: top(sellerM), byMethod: top(methodM) }
+    } catch { /* conversation_sales may not exist yet */ }
+
     return NextResponse.json({
       fulfil: { total, shipped, cancelled, awaiting, onHold, rate, avgHrs, buckets, byStatus },
       shipping: { labels, cost, avg, charged, margin, detail, carriers, services, track },
       sales: { revenue, orderN, aov, units, channels, topSku },
+      colvySales,
       dailyOrders, dailyRevenue,
       channelsAll,
     })
