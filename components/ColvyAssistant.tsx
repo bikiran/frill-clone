@@ -228,7 +228,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
   async function undo(card: Card) {
     if (!card.undo) return
     const { entityType, entityId, restore } = card.undo as any
-    const table = entityType === 'calendar_event' ? 'calendar_events' : 'conversation_tasks'
+    const table = entityType === 'calendar_event' ? 'calendar_events' : entityType === 'sale' ? 'conversation_sales' : 'conversation_tasks'
     try {
       // An edit (task_update) is undone by restoring the prior values; a created
       // row is undone by deleting it.
