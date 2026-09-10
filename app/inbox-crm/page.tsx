@@ -272,7 +272,8 @@ export default function InboxCrmPage() {
         .cv-card:hover { transform:translateY(-6px); }
         .cv-navlink:hover { color:${CORAL} !important; }
         .cv-marquee-track { display:flex; width:max-content; animation:marquee 30s linear infinite; }
-        @media (max-width:900px){ .cv-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } }
+        .cv-sm{ display:none; }
+        @media (max-width:900px){ .cv-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-lg{ display:none !important; } .cv-sm{ display:inline !important; } .cv-hero-cta{ flex-wrap:nowrap !important; } .cv-hero-cta > *{ flex:1 1 0 !important; min-width:0 !important; justify-content:center !important; padding-left:14px !important; padding-right:14px !important; white-space:nowrap !important; } }
         @media (prefers-reduced-motion: reduce){ .cv-marquee-track{ animation:none } }
       `}</style>
 
@@ -291,7 +292,7 @@ export default function InboxCrmPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button onClick={() => setDark(!dark)} aria-label="Toggle theme" style={{ width: 38, height: 38, borderRadius: 11, border: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>{dark ? <SunIcon /> : <MoonIcon />}</button>
             {!user && <a href="/signin" className="cv-desktop" style={{ fontSize: 14.5, fontWeight: 600, color: muted, textDecoration: 'none', padding: '0 6px' }}>Sign in</a>}
-            <button onClick={go} className="cv-btn-primary" style={{ ...btnPrimary, padding: '10px 22px', fontSize: 14.5 }}>{user ? 'Dashboard →' : 'Get started free'}</button>
+            <button onClick={go} className="cv-btn-primary cv-desktop" style={{ ...btnPrimary, padding: '10px 22px', fontSize: 14.5 }}>{user ? 'Dashboard →' : 'Get started free'}</button>
             <button className="cv-mobile-toggle" onClick={() => setMobileOpen(!mobileOpen)} style={{ display: 'none', width: 38, height: 38, borderRadius: 11, border: `1px solid ${cardBorder}`, background: cardBg, alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>{mobileOpen ? <CloseIcon /> : <MenuIcon />}</button>
           </div>
         </div>
@@ -322,9 +323,9 @@ export default function InboxCrmPage() {
               <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 540, margin: '0 0 32px' }}>
                 Colvy unifies WhatsApp, Instagram, Messenger, email, SMS &amp; live chat into one shared inbox — with a built-in CRM, media gallery, WooCommerce, trackable links and location insights behind every message.
               </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center' }}>
-                <button onClick={go} className="cv-btn-primary" style={btnPrimary}>{user ? 'Go to dashboard' : 'Start free — no card'} <ArrowRight /></button>
-                <a href="#inbox" className="cv-btn-ghost" style={btnGhost}>See how it works ↓</a>
+              <div className="cv-hero-cta" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+                <button onClick={go} className="cv-btn-primary" style={btnPrimary}>{user ? 'Go to dashboard' : (<><span className="cv-lg">Start free — no card</span><span className="cv-sm">Start free</span></>)} <ArrowRight /></button>
+                <a href="#inbox" className="cv-btn-ghost" style={btnGhost}><span className="cv-lg">See how it works ↓</span><span className="cv-sm">How it works ↓</span></a>
               </div>
             </div>
 
