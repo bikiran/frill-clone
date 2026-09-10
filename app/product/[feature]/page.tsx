@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
 import MarketingFooter from '@/components/MarketingFooter'
+import FeatureIcon from '@/components/FeatureIcon'
 
 // Feature deep-dive page (ideas / roadmap / announcements / knowledgebase),
 // re-skinned to match the main landing's bold, bright system.
@@ -17,16 +18,16 @@ const INK = '#0f1119'
 
 const PAGES: Record<string, any> = {
   ideas: {
-    emoji: '💡', color: CORAL, subtitle: 'Ideas Board',
+    icon: 'idea', color: CORAL, subtitle: 'Ideas Board',
     title: 'Turn feedback into features',
     hero: 'One beautiful place for all your customer feedback. Collect, prioritize, and act on what matters most.',
     features: [
-      { icon: '🗳️', title: 'Public voting', desc: 'Let customers vote on ideas. The most wanted features rise to the top automatically.' },
-      { icon: '🏷️', title: 'Topics & tags', desc: 'Organize ideas by category so nothing gets lost in the noise.' },
-      { icon: '🔍', title: 'Smart search', desc: 'Find any idea instantly. Full-text search across all submissions.' },
-      { icon: '📊', title: 'Priority scoring', desc: 'RICE scoring built in — reach, impact, confidence, effort — calculated automatically.' },
-      { icon: '🔔', title: 'Status updates', desc: 'Move ideas through statuses. Users get notified when their idea ships.' },
-      { icon: '👤', title: 'Anonymous submission', desc: 'Let users submit without an account. Guest IDs track their votes.' },
+      { icon: 'vote', title: 'Public voting', desc: 'Let customers vote on ideas. The most wanted features rise to the top automatically.' },
+      { icon: 'tag', title: 'Topics & tags', desc: 'Organize ideas by category so nothing gets lost in the noise.' },
+      { icon: 'search', title: 'Smart search', desc: 'Find any idea instantly. Full-text search across all submissions.' },
+      { icon: 'chart', title: 'Priority scoring', desc: 'RICE scoring built in — reach, impact, confidence, effort — calculated automatically.' },
+      { icon: 'bell', title: 'Status updates', desc: 'Move ideas through statuses. Users get notified when their idea ships.' },
+      { icon: 'user', title: 'Anonymous submission', desc: 'Let users submit without an account. Guest IDs track their votes.' },
     ],
     mockup: [
       { title: 'Dark mode support', votes: 47, status: 'Planned', tag: 'improvement' },
@@ -37,16 +38,16 @@ const PAGES: Record<string, any> = {
     cta: 'Start collecting feedback',
   },
   roadmap: {
-    emoji: '🗺️', color: BLUE, subtitle: 'Public Roadmap',
+    icon: 'map', color: BLUE, subtitle: 'Public Roadmap',
     title: 'Show users what’s coming',
     hero: 'Build trust by being transparent. A beautiful, public roadmap that your customers will actually check.',
     features: [
-      { icon: '📋', title: 'Kanban columns', desc: 'Under Review, Planned, In Development, Shipped — drag ideas through your workflow.' },
-      { icon: '🎯', title: 'Custom statuses', desc: 'Create your own statuses with custom colors to match your team’s process.' },
-      { icon: '🔗', title: 'Linked to feedback', desc: 'Ideas on your board automatically appear on the roadmap when you update their status.' },
-      { icon: '📅', title: 'Timeline view', desc: 'Show delivery dates and milestones in a visual timeline your users will love.' },
-      { icon: '🌐', title: 'Embeddable', desc: 'Embed your roadmap on your website or in your app with one line of code.' },
-      { icon: '🔒', title: 'Access control', desc: 'Private roadmap for internal use, public for transparency, or gated by SSO.' },
+      { icon: 'kanban', title: 'Kanban columns', desc: 'Under Review, Planned, In Development, Shipped — drag ideas through your workflow.' },
+      { icon: 'target', title: 'Custom statuses', desc: 'Create your own statuses with custom colors to match your team’s process.' },
+      { icon: 'link', title: 'Linked to feedback', desc: 'Ideas on your board automatically appear on the roadmap when you update their status.' },
+      { icon: 'calendar', title: 'Timeline view', desc: 'Show delivery dates and milestones in a visual timeline your users will love.' },
+      { icon: 'globe', title: 'Embeddable', desc: 'Embed your roadmap on your website or in your app with one line of code.' },
+      { icon: 'lock', title: 'Access control', desc: 'Private roadmap for internal use, public for transparency, or gated by SSO.' },
     ],
     mockup: [
       { col: 'Under Review', items: ['API webhooks', 'Dark mode', 'Custom branding'] },
@@ -56,16 +57,16 @@ const PAGES: Record<string, any> = {
     cta: 'Build your roadmap',
   },
   announcements: {
-    emoji: '📢', color: GREEN, subtitle: 'Announcements',
+    icon: 'megaphone', color: GREEN, subtitle: 'Announcements',
     title: 'Keep users in the loop',
     hero: 'A beautiful changelog that celebrates every ship. Tell your story, build loyalty, and reduce support tickets.',
     features: [
-      { icon: '✍️', title: 'Rich editor', desc: 'Write beautiful announcements with our markdown editor. Add images, embeds, and formatting.' },
-      { icon: '🏷️', title: 'Categorized tags', desc: 'New Feature, Bug Fix, Improvement — color-coded tags so users find what they care about.' },
-      { icon: '📬', title: 'Email subscribers', desc: 'Users subscribe to get notified by email when you publish. Built-in newsletter.' },
-      { icon: '😍', title: 'Emoji reactions', desc: 'Let users react to updates with emoji. See what lands with your community.' },
-      { icon: '📌', title: 'Pin important updates', desc: 'Pin your most important announcements to the top so they never get buried.' },
-      { icon: '📊', title: 'View tracking', desc: 'See exactly how many users read each announcement with built-in analytics.' },
+      { icon: 'pen', title: 'Rich editor', desc: 'Write beautiful announcements with our markdown editor. Add images, embeds, and formatting.' },
+      { icon: 'tag', title: 'Categorized tags', desc: 'New Feature, Bug Fix, Improvement — color-coded tags so users find what they care about.' },
+      { icon: 'mail', title: 'Email subscribers', desc: 'Users subscribe to get notified by email when you publish. Built-in newsletter.' },
+      { icon: 'reaction', title: 'Emoji reactions', desc: 'Let users react to updates with emoji. See what lands with your community.' },
+      { icon: 'pin', title: 'Pin important updates', desc: 'Pin your most important announcements to the top so they never get buried.' },
+      { icon: 'chart', title: 'View tracking', desc: 'See exactly how many users read each announcement with built-in analytics.' },
     ],
     mockup: [
       { title: 'Dark mode is live! 🌙', tag: 'New Feature', date: 'Jun 19', reactions: '🔥 12', views: 342 },
@@ -75,31 +76,31 @@ const PAGES: Record<string, any> = {
     cta: 'Start your changelog',
   },
   knowledgebase: {
-    emoji: '📚', color: YELLOW, subtitle: 'Knowledgebase',
+    icon: 'book', color: YELLOW, subtitle: 'Knowledgebase',
     title: 'Answer questions before they’re asked',
     hero: 'A beautiful, searchable help centre that reduces support tickets by 40% on average.',
     features: [
-      { icon: '🔍', title: 'Instant search', desc: 'Full-text search across all articles. Users find answers in seconds, not support queues.' },
-      { icon: '📂', title: 'Categories', desc: 'Organize articles by category — Getting Started, Features, Billing, Troubleshooting.' },
-      { icon: '⭐', title: 'Featured articles', desc: 'Pin your most important articles at the top so new users find them immediately.' },
-      { icon: '👍', title: 'Helpfulness rating', desc: 'Users mark articles as helpful. See which docs need improvement.' },
-      { icon: '💬', title: 'Live chat integration', desc: 'Can’t find an answer? Start a live chat or open a support ticket directly from the help centre.' },
-      { icon: '🌐', title: 'Custom domain', desc: 'Host your help centre on help.yourcompany.com with full white labeling.' },
+      { icon: 'search', title: 'Instant search', desc: 'Full-text search across all articles. Users find answers in seconds, not support queues.' },
+      { icon: 'folder', title: 'Categories', desc: 'Organize articles by category — Getting Started, Features, Billing, Troubleshooting.' },
+      { icon: 'star', title: 'Featured articles', desc: 'Pin your most important articles at the top so new users find them immediately.' },
+      { icon: 'thumbsup', title: 'Helpfulness rating', desc: 'Users mark articles as helpful. See which docs need improvement.' },
+      { icon: 'chat', title: 'Live chat integration', desc: 'Can’t find an answer? Start a live chat or open a support ticket directly from the help centre.' },
+      { icon: 'globe', title: 'Custom domain', desc: 'Host your help centre on help.yourcompany.com with full white labeling.' },
     ],
     mockup: [
       { title: 'Getting started', articles: 4, category: '🚀', views: 1420 },
       { title: 'Features', articles: 6, category: '✨', views: 876 },
-      { title: 'Integrations', articles: 3, category: '🔗', views: 654 },
+      { title: 'Integrations', articles: 3, category: 'link', views: 654 },
       { title: 'Billing', articles: 2, category: '💳', views: 432 },
     ],
     cta: 'Build your help centre',
   },
 }
 const ALL = [
-  { label: 'Ideas Board', href: '/product/ideas', emoji: '💡', color: CORAL },
-  { label: 'Roadmap', href: '/product/roadmap', emoji: '🗺️', color: BLUE },
-  { label: 'Announcements', href: '/product/announcements', emoji: '📢', color: GREEN },
-  { label: 'Knowledgebase', href: '/product/knowledgebase', emoji: '📚', color: YELLOW },
+  { label: 'Ideas Board', href: '/product/ideas', icon: 'idea', color: CORAL },
+  { label: 'Roadmap', href: '/product/roadmap', icon: 'map', color: BLUE },
+  { label: 'Announcements', href: '/product/announcements', icon: 'megaphone', color: GREEN },
+  { label: 'Knowledgebase', href: '/product/knowledgebase', icon: 'book', color: YELLOW },
 ]
 
 // ── helpers (shared look with the main landing) ──────────────────────────────
@@ -247,7 +248,7 @@ export default function FeaturePage() {
         <div style={{ position: 'relative', zIndex: 2, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
           <div className="fp-hero" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'center' }}>
             <div style={{ maxWidth: 560 }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 15px', borderRadius: 999, marginBottom: 22, background: color + '1a', border: `1px solid ${color}44`, color, fontSize: 13, fontWeight: 800 }}><span style={{ fontSize: 16 }}>{page.emoji}</span> {page.subtitle}</div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 15px', borderRadius: 999, marginBottom: 22, background: color + '1a', border: `1px solid ${color}44`, color, fontSize: 13, fontWeight: 800 }}><FeatureIcon name={page.icon} color={color} size={15} /> {page.subtitle}</div>
               <h1 style={{ fontSize: 'clamp(40px, 5.6vw, 74px)', fontWeight: 900, lineHeight: 1.0, letterSpacing: '-0.035em', margin: '0 0 22px' }}><BigReveal text={page.title} /></h1>
               <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 520, margin: '0 0 32px' }}>{page.hero}</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
@@ -285,7 +286,7 @@ export default function FeaturePage() {
             {page.features.map((f: any, i: number) => (
               <Reveal key={f.title} delay={(i % 3) * 0.06}>
                 <div className="fp-card" style={{ padding: 26, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, height: '100%' }}>
-                  <div style={{ fontSize: 30, marginBottom: 14 }}>{f.icon}</div>
+                  <div style={{ width: 52, height: 52, borderRadius: 14, background: color + '18', border: `1px solid ${color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}><FeatureIcon name={f.icon} color={color} size={26} /></div>
                   <h3 style={{ fontSize: 18, fontWeight: 800, color: text, margin: '0 0 8px' }}>{f.title}</h3>
                   <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{f.desc}</p>
                 </div>
@@ -301,7 +302,7 @@ export default function FeaturePage() {
         <div aria-hidden style={{ position: 'absolute', bottom: -70, right: '8%', width: 300, height: 300, borderRadius: '50%', background: 'rgba(255,255,255,0.12)' }} />
         <div style={{ position: 'relative', maxWidth: 720, margin: '0 auto' }}>
           <Reveal>
-            <div style={{ fontSize: 46, marginBottom: 14 }}>{page.emoji}</div>
+            <div style={{ display: 'inline-flex', marginBottom: 16, padding: 16, borderRadius: 18, background: 'rgba(255,255,255,0.16)' }}><FeatureIcon name={page.icon} color="#fff" size={40} /></div>
             <h2 style={{ fontSize: 'clamp(30px, 5vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff', lineHeight: 1.04, margin: '0 0 14px' }}>Ready to try {page.subtitle}?</h2>
             <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Set up in 4 minutes. Free forever for small teams.</p>
             <button onClick={go} className="fp-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started free <ArrowRight /></button>
@@ -316,7 +317,7 @@ export default function FeaturePage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
             {ALL.filter(f => !f.href.includes(feature)).map(f => (
               <a key={f.label} href={f.href} className="fp-card" style={{ padding: 22, borderRadius: 18, textAlign: 'center', background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none' }}>
-                <div style={{ fontSize: 26, marginBottom: 10 }}>{f.emoji}</div>
+                <div style={{ display: 'inline-flex', marginBottom: 12, padding: 12, borderRadius: 14, background: f.color + '18', border: `1px solid ${f.color}33` }}><FeatureIcon name={f.icon} color={f.color} size={26} /></div>
                 <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: f.color }}>{f.label}</p>
               </a>
             ))}
