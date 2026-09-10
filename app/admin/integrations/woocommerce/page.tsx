@@ -246,7 +246,7 @@ export default function WooCommerceIntegration() {
     }
   }
 
-  const handleSync = async (incremental = false, integrationId?: string) => {
+  const handleSync = async (incremental = false, integrationId?: string, scope?: 'products') => {
     setSyncing(true)
     setError('')
     setSuccess('')
@@ -255,7 +255,7 @@ export default function WooCommerceIntegration() {
       // you close this tab or your laptop).
       const res = await fetch('/api/woocommerce/sync-start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, incremental, integrationId }),
+        body: JSON.stringify({ companyId, incremental, integrationId, scope }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not start sync')
@@ -629,6 +629,19 @@ export default function WooCommerceIntegration() {
               }}
             >
               ⚡ Quick Update
+            </button>
+
+            <button
+              onClick={() => handleSync(false, undefined, 'products')}
+              disabled={syncing}
+              title="Copy the product catalogue into Colvy. The product picker searches this copy, so a product added in WooCommerce will not appear until this has run."
+              style={{
+                flex: 1, minWidth: '150px', padding: '10px 16px', borderRadius: '8px',
+                border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--ink)',
+                fontSize: '13px', fontWeight: 600, cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1,
+              }}
+            >
+              🛍️ Sync products
             </button>
 
             <button
