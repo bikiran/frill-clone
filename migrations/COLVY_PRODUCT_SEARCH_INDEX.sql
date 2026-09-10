@@ -45,3 +45,9 @@ create index if not exists woocommerce_products_company
 
 -- Read through the service role only, same as the other WooCommerce mirrors.
 alter table woocommerce_products enable row level security;
+
+-- Supabase reaches this table through PostgREST, which serves from a cached
+-- schema. Without this the app can get "relation does not exist" for a table
+-- that plainly exists, until the cache happens to refresh. Every other
+-- migration here ends the same way.
+notify pgrst, 'reload schema';
