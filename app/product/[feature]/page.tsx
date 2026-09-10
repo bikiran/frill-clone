@@ -218,7 +218,7 @@ export default function FeaturePage() {
         .fp-card,.fp-navlink,.fp-btn { transition:all 0.22s cubic-bezier(0.16,1,0.3,1); }
         .fp-card:hover { transform:translateY(-6px); }
         .fp-btn:hover { transform:translateY(-2px); }
-        @media (max-width:900px){ .fp-hero{ grid-template-columns:1fr !important; } .fp-desktop{ display:none !important; } }
+        @media (max-width:900px){ .fp-hero{ grid-template-columns:1fr !important; } .fp-desktop{ display:none !important; } .fp-hero-cta{ flex-wrap:nowrap !important; align-items:stretch !important; } .fp-hero-cta > *{ flex:1 1 0 !important; min-width:0 !important; justify-content:center !important; text-align:center !important; padding-left:14px !important; padding-right:14px !important; } }
       `}</style>
 
       {/* NAV */}
@@ -251,7 +251,7 @@ export default function FeaturePage() {
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 15px', borderRadius: 999, marginBottom: 22, background: color + '1a', border: `1px solid ${color}44`, color, fontSize: 13, fontWeight: 800 }}><FeatureIcon name={page.icon} color={color} size={15} /> {page.subtitle}</div>
               <h1 style={{ fontSize: 'clamp(40px, 5.6vw, 74px)', fontWeight: 900, lineHeight: 1.0, letterSpacing: '-0.035em', margin: '0 0 22px' }}><BigReveal text={page.title} /></h1>
               <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 520, margin: '0 0 32px' }}>{page.hero}</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+              <div className="fp-hero-cta" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <button onClick={go} className="fp-btn" style={btnPrimary}>{page.cta} <ArrowRight /></button>
                 <a href="/product" className="fp-btn" style={btnGhost}>See all features</a>
               </div>

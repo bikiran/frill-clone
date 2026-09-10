@@ -72,7 +72,7 @@ export default function FeaturesIndex() {
 
   return (
     <div style={{ background: bg, color: text, fontFamily: font, minHeight: '100vh', overflowX: 'hidden', transition: 'background 0.3s, color 0.3s' }}>
-      <style>{`.fx-card,.fx-navlink,.fx-btn{transition:all 0.22s cubic-bezier(0.16,1,0.3,1)} .fx-card:hover{transform:translateY(-6px)} .fx-navlink:hover{color:${CORAL} !important} .fx-btn:hover{transform:translateY(-2px)} @media(max-width:760px){.fx-desktop{display:none !important}}`}</style>
+      <style>{`.fx-card,.fx-navlink,.fx-btn{transition:all 0.22s cubic-bezier(0.16,1,0.3,1)} .fx-card:hover{transform:translateY(-6px)} .fx-navlink:hover{color:${CORAL} !important} .fx-btn:hover{transform:translateY(-2px)} @media(max-width:760px){.fx-desktop{display:none !important} .fx-hero-cta{flex-wrap:nowrap !important;align-items:stretch !important} .fx-hero-cta > *{flex:1 1 0 !important;min-width:0 !important;justify-content:center !important;text-align:center !important;padding-left:14px !important;padding-right:14px !important}}`}</style>
 
       <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, background: navBg, backdropFilter: navScrolled ? 'blur(18px)' : 'none', borderBottom: `1px solid ${navScrolled ? cardBorder : 'transparent'}`, transition: 'all 0.3s' }}>
         <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 24px', height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -96,7 +96,7 @@ export default function FeaturesIndex() {
             <p style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: CORAL, margin: '0 0 16px' }}>Everything you need</p>
             <h1 style={{ fontSize: 'clamp(42px, 6.2vw, 82px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 0.98, margin: '0 0 22px' }}>Customer feedback,<br />into <span style={{ color: CORAL }}>shipped features.</span></h1>
             <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 620, margin: '0 auto 32px' }}>One platform. Collect ideas, plan your roadmap, and announce what you ship — all in a single, beautiful tool your customers will love using.</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, justifyContent: 'center' }}>
+            <div className="fx-hero-cta" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
               <button onClick={go} className="fx-btn" style={btnPrimary}>{user ? 'Go to dashboard' : 'Start for free'} <ArrowRight /></button>
               <a href="/pricing" className="fx-btn" style={btnGhost}>See pricing</a>
             </div>
