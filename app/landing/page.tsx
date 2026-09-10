@@ -210,13 +210,13 @@ function SuiteIcon({ name, color }: { name: string; color: string }) {
 // is an optional real background photo (with a dark scrim for legibility);
 // falls back to the abstract colour mesh when absent.
 const SUITE: { icon: string; title: string; desc: string; cta: string; href: string; color: string; img?: string }[] = [
-  { icon: 'idea', title: 'Ideas board', desc: 'Capture feature requests and let customers upvote what matters most.', cta: 'Explore ideas', href: '/product/ideas', color: CORAL },
-  { icon: 'map', title: 'Public roadmap', desc: "Show what's planned, in progress and shipped — build trust in the open.", cta: 'See roadmap', href: '/product/roadmap', color: BLUE },
-  { icon: 'megaphone', title: 'Announcements', desc: 'Post changelogs and auto-notify everyone who voted when their idea ships.', cta: 'See updates', href: '/product/announcements', color: GREEN },
-  { icon: 'form', title: 'Forms', desc: 'Collect leads, requests and details with branded custom forms.', cta: 'Explore forms', href: '/product', color: PURPLE },
-  { icon: 'chart', title: 'Surveys', desc: 'Ask customers anything and measure sentiment over time.', cta: 'Explore surveys', href: '/product', color: CYAN },
-  { icon: 'vote', title: 'Polls & voting', desc: 'Run quick polls and let the best ideas rise to the top automatically.', cta: 'Explore polls', href: '/product', color: PINK },
-  { icon: 'help', title: 'Help centre', desc: 'Self-serve articles and a knowledge base so customers find answers fast.', cta: 'Explore help', href: '/product', color: YELLOW },
+  { icon: 'idea', title: 'Ideas board', desc: 'Capture feature requests and let customers upvote what matters most.', cta: 'Explore ideas', href: '/product/ideas', color: CORAL, img: '/suite/ideas.jpg' },
+  { icon: 'map', title: 'Public roadmap', desc: "Show what's planned, in progress and shipped — build trust in the open.", cta: 'See roadmap', href: '/product/roadmap', color: BLUE, img: '/suite/roadmap.jpg' },
+  { icon: 'megaphone', title: 'Announcements', desc: 'Post changelogs and auto-notify everyone who voted when their idea ships.', cta: 'See updates', href: '/product/announcements', color: GREEN, img: '/suite/announcements.jpg' },
+  { icon: 'form', title: 'Forms', desc: 'Collect leads, requests and details with branded custom forms.', cta: 'Explore forms', href: '/product', color: PURPLE, img: '/suite/forms.jpg' },
+  { icon: 'chart', title: 'Surveys', desc: 'Ask customers anything and measure sentiment over time.', cta: 'Explore surveys', href: '/product', color: CYAN, img: '/suite/surveys.jpg' },
+  { icon: 'vote', title: 'Polls & voting', desc: 'Run quick polls and let the best ideas rise to the top automatically.', cta: 'Explore polls', href: '/product', color: PINK, img: '/suite/polls.jpg' },
+  { icon: 'help', title: 'Help centre', desc: 'Self-serve articles and a knowledge base so customers find answers fast.', cta: 'Explore help', href: '/product', color: YELLOW, img: '/suite/help.jpg' },
 ]
 
 function SuiteCard({ s, i, dark, border }: { s: typeof SUITE[number]; i: number; dark: boolean; border: string }) {
