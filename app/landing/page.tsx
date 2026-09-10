@@ -231,10 +231,12 @@ function SuiteCard({ s, i, dark, border }: { s: typeof SUITE[number]; i: number;
       transition: `opacity 0.75s cubic-bezier(0.16,1,0.3,1) ${i * 0.08}s, transform 0.75s cubic-bezier(0.16,1,0.3,1) ${i * 0.08}s`,
       boxShadow: v ? '0 30px 70px rgba(15,17,25,0.30)' : 'none',
     }}>
-      {/* Real background photo (when provided) with a dark scrim so text stays
-          legible — ManyChat-style. Parallax drifts the photo a touch on hover. */}
-      {s.img && <img src={s.img} alt="" aria-hidden className="cv-suite-photo" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
-      {s.img && <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(180deg, rgba(15,17,25,0.15) 0%, rgba(15,17,25,0.55) 45%, rgba(15,17,25,0.94) 100%)` }} />}
+      {/* Real background photo (when provided), colour-graded toward the card's
+          accent (soft-light wash + a touch more saturation/contrast) for a
+          cinematic feel, then a dark scrim so text stays legible. */}
+      {s.img && <img src={s.img} alt="" aria-hidden className="cv-suite-photo" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'saturate(1.12) contrast(1.05) brightness(0.98)' }} />}
+      {s.img && <div aria-hidden style={{ position: 'absolute', inset: 0, background: s.color, mixBlendMode: 'soft-light', opacity: 0.42 }} />}
+      {s.img && <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(180deg, rgba(15,17,25,0.10) 0%, rgba(15,17,25,0.52) 42%, rgba(15,17,25,0.94) 100%)` }} />}
       {/* Abstract futuristic backdrop — colour mesh + grid + glow. Kept subtle
           over a photo, full-strength without one. */}
       {!s.img && <div aria-hidden style={{ position: 'absolute', inset: 0, background: `radial-gradient(130% 90% at 82% -5%, ${s.color}66, transparent 55%), radial-gradient(90% 70% at -5% 105%, ${s.color}33, transparent 60%)` }} />}
