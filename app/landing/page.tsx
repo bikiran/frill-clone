@@ -143,7 +143,6 @@ function StatsBand({ stats }: { stats: { teams: number; conversations: number; m
     { v: stats.conversations > 0 ? fmtNum(stats.conversations) + '+' : '10K+', l: 'Conversations handled' },
     { v: stats.messages > 0 ? fmtNum(stats.messages) + '+' : '250K+', l: 'Messages exchanged' },
     ...(stats.contacts > 0 ? [{ v: fmtNum(stats.contacts) + '+', l: 'Customers managed' }] : []),
-    ...(stats.orders > 0 ? [{ v: fmtNum(stats.orders) + '+', l: 'Orders processed' }] : []),
     ...(stats.callMinutes > 0 ? [{ v: fmtNum(stats.callMinutes) + ' min', l: 'Minutes on calls' }] : []),
     ...(stats.paymentsTotal > 0 ? [{ v: '$' + fmtNum(stats.paymentsTotal) + '+', l: 'Payments handled' }] : []),
     { v: '98%', l: 'Customer satisfaction' },
