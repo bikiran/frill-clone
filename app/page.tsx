@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { track } from '@/lib/analytics'
 import { supabase } from '@/lib/supabase'
 import IdeaCard from '@/components/IdeaCard'
 import IdeaModal from '@/components/IdeaModal'
@@ -118,6 +119,7 @@ export default function HomePage() {
   const [topics, setTopics] = useState<{ id: string; emoji: string; count: number }[]>([])
   const [userVotes, setUserVotes] = useState<Set<string>>(new Set())
   const [guestVotes, setGuestVotes] = useState<Set<string>>(new Set())
+  const boardViewed = useRef(false)  // fire board_viewed once per mount
   const [userLikes, setUserLikes] = useState<Set<string>>(new Set())
   const [userSubscriptions, setUserSubscriptions] = useState<Set<string>>(new Set())
   const [showGuestModal, setShowGuestModal] = useState(false)
@@ -466,6 +468,10 @@ export default function HomePage() {
       if (newData) setIdeas(newData)
     } else if (data) {
       setIdeas(data)
+    }
+    if (companyId && !boardViewed.current) {
+      boardViewed.current = true
+      try { track('board_viewed', { idea_count: data?.length || 0 }) } catch {}
     }
     setLoading(false)
   }
