@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import ImageViewer from './ImageViewer'
 import { supabase } from '@/lib/supabase'
+import { track } from '@/lib/analytics'
 import { useToast } from '@/components/ToastProvider'
 import { SurveyQuestionBuilder, type SurveyQuestion } from '@/components/SurveyQuestionBuilder'
 import { FormFieldBuilder, type FormField } from '@/components/FormFieldBuilder'
@@ -516,6 +517,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       await supabase.from('votes').insert({ idea_id: idea.id, user_id: session.session.user.id })
     }
 
+    try { track('idea_submitted', { topics: selectedTopics?.length || 0 }) } catch {}
     setSubmitted(true)
     triggerConfetti()
     

@@ -83,6 +83,16 @@ export default function OnboardingPage() {
     { icon: '⚙️', title: 'Customize your board', desc: 'Set your brand colors, logo, and configure your board settings.' },
   ]
 
+  // Leaving onboarding for the dashboard = onboarding done. Fire once per
+  // workspace per browser (mirrors the workspace_created guard), then redirect.
+  const finishOnboarding = async () => {
+    try {
+      const k = company?.id ? `colvy_onb_done_${company.id}` : null
+      if (!k || !localStorage.getItem(k)) { track('onboarding_completed', { slug: company?.slug || null }); if (k) localStorage.setItem(k, '1') }
+    } catch { try { track('onboarding_completed') } catch {} }
+    if (user) await redirectToUserAdmin(user.id); else window.location.href = '/admin'
+  }
+
   if (!loaded) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)' }}>
       <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
@@ -158,7 +168,7 @@ export default function OnboardingPage() {
               className="px-8 py-2.5 rounded-xl font-semibold text-white cursor-pointer"
               style={{ background: 'var(--coral)' }}>Next →</button>
           ) : (
-            <button onClick={async () => { if (user) await redirectToUserAdmin(user.id); else window.location.href = '/admin' }}
+            <button onClick={finishOnboarding}
               className="px-8 py-2.5 rounded-xl font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)' }}>
               Go to Dashboard →
             </button>
@@ -173,7 +183,7 @@ export default function OnboardingPage() {
           ))}
         </div>
 
-        <button onClick={async () => { if (user) await redirectToUserAdmin(user.id); else window.location.href = '/admin' }}
+        <button onClick={finishOnboarding}
           className="block mt-6 text-sm hover:underline cursor-pointer" style={{ color: 'var(--slate)' }}>
           Skip to dashboard →
         </button>
