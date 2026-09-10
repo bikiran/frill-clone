@@ -481,10 +481,17 @@ export default function HomePage() {
     ]
     
     const companyId = await getCompanyId()
-    let q = supabase.from('ideas').select('topics') as any
-    if (companyId) q = q.eq('company_id', companyId)
-    const { data } = await q
-    
+    // No company resolved (still loading, or an unknown subdomain) — show the
+    // default topics at zero. NEVER count ideas without a company_id filter:
+    // that used to tally topics across EVERY tenant's ideas, so a brand-new
+    // empty board displayed other companies' aggregate counts (a cross-tenant
+    // leak) instead of its own 0s.
+    if (!companyId) {
+      setTopics(DEFAULT_TOPICS.map(t => ({ id: t.id, emoji: t.emoji, count: 0 })))
+      return
+    }
+    const { data } = await supabase.from('ideas').select('topics').eq('company_id', companyId)
+
     const topicMap: Record<string, number> = {}
     
     // Aggregate topics from ideas
