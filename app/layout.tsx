@@ -17,7 +17,7 @@ const NAV_ITEMS = [
   { href: '/roadmap', label: 'Roadmap', icon: 'roadmap' },
   { href: '/announcements', label: 'Updates', icon: 'updates' },
   { href: '/help', label: 'Help', icon: 'help' },
-  { href: '/product/ideas', label: 'Product', icon: 'features' },
+  { href: '/product/ideas', label: 'Product', icon: 'inbox' },
   { href: '/product', label: 'Features', icon: 'features' },
   { href: '/pricing', label: 'Pricing', icon: 'pricing' },
 ]
@@ -734,22 +734,8 @@ export default function RootLayout({
         {/* Header */}
         <header className="sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)' }}>
           <nav className="h-14 px-6 flex items-center justify-between">
-            {/* Left: mobile hamburger + logo */}
+            {/* Left: logo */}
             <div className="flex items-center gap-2">
-              <button
-                className="md:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 transition-smooth cursor-pointer"
-                onClick={() => {
-                  // On admin pages this hamburger should open the admin sidebar,
-                  // not the marketing drawer.
-                  if (pathname?.startsWith('/admin')) {
-                    window.dispatchEvent(new CustomEvent('colvy:toggle-admin-sidebar'))
-                  } else {
-                    setShowDrawer(!showDrawer)
-                  }
-                }}
-                aria-label="Menu">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-              </button>
               {/* Logo */}
               <Link href={isSubdomain ? homePath : '/'} className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
               {/* On subdomains show company branding; on colvy.com show Colvy */}
@@ -762,7 +748,10 @@ export default function RootLayout({
                   <span style={{ color: 'var(--coral)' }}>{company.name}</span>
                 </>
               ) : (
-                <span style={{ color: 'var(--coral)' }}>Colvy</span>
+                <>
+                  <img src="/icon-512.png" alt="Colvy" style={{ width: 28, height: 28, borderRadius: 8, display: 'block', flexShrink: 0 }} />
+                  <span style={{ color: 'var(--coral)' }}>Colvy</span>
+                </>
               )}
             </Link>
             </div>
@@ -1004,20 +993,33 @@ export default function RootLayout({
                   <Link
                     href="/signin"
                     onClick={() => setShowDrawer(false)}
-                    className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-smooth hover:opacity-70"
+                    className="hidden md:inline-flex px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-smooth hover:opacity-70"
                     style={{ color: 'var(--slate)' }}>
                     Sign in
                   </Link>
                   <Link
                     href="/signup"
                     onClick={() => setShowDrawer(false)}
-                    className="px-3 py-1.5 md:px-5 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold text-white transition-smooth press-effect cursor-pointer"
+                    className="hidden md:inline-flex px-3 py-1.5 md:px-5 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold text-white transition-smooth press-effect cursor-pointer"
                     style={{ background: 'var(--coral)' }}>
                     Get started
                   </Link>
                 </>
               )}
 
+              {/* Mobile hamburger — on the right, matching the marketing pages */}
+              <button
+                className="md:hidden p-2 -mr-1 rounded-lg hover:bg-gray-100 transition-smooth cursor-pointer"
+                onClick={() => {
+                  if (pathname?.startsWith('/admin')) {
+                    window.dispatchEvent(new CustomEvent('colvy:toggle-admin-sidebar'))
+                  } else {
+                    setShowDrawer(!showDrawer)
+                  }
+                }}
+                aria-label="Menu">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              </button>
             </div>
           </nav>
         </header>
