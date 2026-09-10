@@ -59,13 +59,13 @@ function ResetPasswordForm() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>New password</label>
-                  <div className="relative">
+                  <div style={{ position: 'relative' }}>
                     <input type={showPassword ? 'text' : 'password'} value={password}
                       onChange={e => setPassword(e.target.value)} placeholder="Min. 6 characters" required autoFocus
-                      className="w-full px-4 py-2.5 rounded-xl border focus:outline-none"
-                      style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+                      className="w-full py-2.5 rounded-xl border focus:outline-none"
+                      style={{ borderColor: 'var(--border)', fontSize: '16px', paddingLeft: 16, paddingRight: 64 }} />
                     <button type="button" onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-sm cursor-pointer" style={{ color: 'var(--slate)' }}>
+                      style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 13, fontWeight: 600, color: 'var(--slate)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
                       {showPassword ? 'Hide' : 'Show'}
                     </button>
                   </div>
