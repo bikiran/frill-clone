@@ -268,7 +268,7 @@ export default function LandingPage() {
         .cv-card:hover { transform:translateY(-6px); }
         .cv-navlink:hover { color:${CORAL} !important; }
         .cv-marquee-track { display:flex; width:max-content; animation:marquee 32s linear infinite; }
-        @media (max-width:900px){ .cv-big-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-bubbles{ display:none !important; } .cv-brand-huge{ font-size:64px !important; } .cv-trust{ position:static !important; margin-top:36px; bottom:auto !important; } }
+        @media (max-width:900px){ .cv-hero{ flex-direction:column !important; align-items:stretch !important; } .cv-big-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-bubbles{ display:none !important; } .cv-brand-huge{ font-size:64px !important; } .cv-trust{ position:static !important; margin-top:36px; bottom:auto !important; width:100% !important; } }
         @media (prefers-reduced-motion: reduce){ .cv-marquee-track{ animation:none } [class*="cv-float"]{ animation:none !important } }
       `}</style>
 
@@ -299,7 +299,7 @@ export default function LandingPage() {
       </nav>
 
       {/* HERO — full-bleed, grid-lined, colour blobs bleeding off both edges */}
-      <section onMouseMove={onHeroMouse} style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', padding: '120px 24px 130px', overflow: 'hidden', background: dark ? 'linear-gradient(180deg, #10111b 0%, #0a0b12 60%)' : 'linear-gradient(180deg, #fff4ef 0%, #ffffff 58%)' }}>
+      <section className="cv-hero" onMouseMove={onHeroMouse} style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', padding: '120px 24px 130px', overflow: 'hidden', background: dark ? 'linear-gradient(180deg, #10111b 0%, #0a0b12 60%)' : 'linear-gradient(180deg, #fff4ef 0%, #ffffff 58%)' }}>
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 80%)' }} />
         <div aria-hidden style={{ position: 'absolute', top: '-14%', left: '-8%', width: 460, height: 460, background: YELLOW, borderRadius: '46% 54% 60% 40% / 45% 45% 55% 55%', opacity: dark ? 0.16 : 0.5, transform: `translateY(${scrollY * 0.12}px)` }} />
         <div aria-hidden style={{ position: 'absolute', bottom: '-12%', right: '-8%', width: 520, height: 520, background: BLUE, borderRadius: '58% 42% 45% 55% / 55% 48% 52% 45%', opacity: dark ? 0.16 : 0.14, transform: `translateY(${scrollY * -0.08}px)` }} />
