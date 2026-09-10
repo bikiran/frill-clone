@@ -276,6 +276,28 @@ function FeatureSuite({ dark, text, muted, cardBorder, canvas }: { dark: boolean
   )
 }
 
+// Hero trust strip — compact chips that fade in one at a time on reveal.
+function TrustStrip({ muted, dark, cardBg, border }: { muted: string; dark: boolean; cardBg: string; border: string }) {
+  const { ref, v } = useReveal(0.35)
+  return (
+    <div ref={ref as any} className="cv-trust" style={{ position: 'absolute', left: 0, right: 0, bottom: 26, display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 'clamp(9px, 1.6vw, 14px)', padding: '0 24px', zIndex: 2 }}>
+      {TRUST.map((t, i) => (
+        <span key={t.label} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 700, color: muted, whiteSpace: 'nowrap',
+          padding: '8px 15px', borderRadius: 999, background: cardBg, border: `1px solid ${border}`, boxShadow: dark ? 'none' : '0 4px 16px rgba(15,17,25,0.05)',
+          opacity: v ? 1 : 0, transform: v ? 'none' : 'translateY(12px)',
+          transition: `opacity 0.5s ease ${i * 0.13}s, transform 0.55s cubic-bezier(0.16,1,0.3,1) ${i * 0.13}s`,
+        }}>
+          {t.star
+            ? <span style={{ color: YELLOW, letterSpacing: 1 }}>★★★★★</span>
+            : <img src={t.logo} alt="" width={18} height={18} style={{ opacity: dark ? 0.85 : 0.65, filter: dark ? 'invert(1)' : 'none' }} />}
+          {t.label}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export default function LandingPage() {
   const [user, setUser] = useState<any>(null)
   const [realStats, setRealStats] = useState({ teams: 0, conversations: 0, messages: 0, contacts: 0, orders: 0, callMinutes: 0, paymentsTotal: 0 })
@@ -357,7 +379,8 @@ export default function LandingPage() {
         .cv-marquee-track { display:flex; width:max-content; animation:marquee 32s linear infinite; }
         .cv-suite-track::-webkit-scrollbar { display:none; }
         .cv-suite-card:hover { transform:translateY(-6px) !important; box-shadow:0 40px 90px rgba(15,17,25,0.42) !important; }
-        @media (max-width:900px){ .cv-hero{ flex-direction:column !important; align-items:stretch !important; } .cv-big-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-bubbles{ display:none !important; } .cv-brand-huge{ font-size:64px !important; } .cv-trust{ position:static !important; margin-top:36px; bottom:auto !important; width:100% !important; } }
+        .cv-sm{ display:none; }
+        @media (max-width:900px){ .cv-hero{ flex-direction:column !important; align-items:stretch !important; } .cv-big-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-bubbles{ display:none !important; } .cv-brand-huge{ font-size:64px !important; } .cv-trust{ position:static !important; margin-top:32px; bottom:auto !important; width:100% !important; } .cv-lg{ display:none !important; } .cv-sm{ display:inline !important; } .cv-hero-cta{ flex-wrap:nowrap !important; } .cv-hero-cta > *{ flex:1 1 0 !important; min-width:0 !important; justify-content:center !important; padding-left:14px !important; padding-right:14px !important; white-space:nowrap !important; } }
         @media (prefers-reduced-motion: reduce){ .cv-marquee-track{ animation:none } [class*="cv-float"]{ animation:none !important } }
       `}</style>
 
@@ -410,9 +433,9 @@ export default function LandingPage() {
               <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 520, margin: '0 0 32px' }}>
                 One shared inbox for WhatsApp, Instagram, email, SMS &amp; live chat — with WooCommerce, payments, media and AI built in. Talk to customers and close sales, all in one place.
               </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center' }}>
-                <button onClick={handleDashboard} className="cv-btn-primary" style={btnPrimary}>{user ? 'Go to dashboard' : 'Start free — no card'} <ArrowRight /></button>
-                <a href="#features" className="cv-btn-ghost" style={btnGhost}>See how it works ↓</a>
+              <div className="cv-hero-cta" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+                <button onClick={handleDashboard} className="cv-btn-primary" style={btnPrimary}>{user ? 'Go to dashboard' : (<><span className="cv-lg">Start free — no card</span><span className="cv-sm">Start free</span></>)} <ArrowRight /></button>
+                <a href="#features" className="cv-btn-ghost" style={btnGhost}><span className="cv-lg">See how it works ↓</span><span className="cv-sm">How it works ↓</span></a>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 26 }}>
                 <div style={{ display: 'flex' }}>{[CORAL, BLUE, GREEN, YELLOW, PURPLE].map((c, i) => (<div key={i} style={{ width: 34, height: 34, borderRadius: '50%', background: c, border: `2.5px solid ${bg}`, marginLeft: i ? -10 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#fff' }}>{['SC', 'MW', 'PS', 'JK', 'AR'][i]}</div>))}</div>
@@ -447,16 +470,7 @@ export default function LandingPage() {
         </div>
 
         {/* Trust strip pinned to the bottom of the banner (ManyChat-style) */}
-        <div className="cv-trust" style={{ position: 'absolute', left: 0, right: 0, bottom: 26, display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 'clamp(16px, 4vw, 44px)', padding: '0 24px', zIndex: 2 }}>
-          {TRUST.map(t => (
-            <span key={t.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 13.5, fontWeight: 700, color: muted, whiteSpace: 'nowrap' }}>
-              {t.star
-                ? <span style={{ color: YELLOW, letterSpacing: 1 }}>★★★★★</span>
-                : <img src={t.logo} alt="" width={18} height={18} style={{ opacity: dark ? 0.8 : 0.6, filter: dark ? 'invert(1)' : 'none' }} />}
-              {t.label}
-            </span>
-          ))}
-        </div>
+        <TrustStrip muted={muted} dark={dark} cardBg={cardBg} border={cardBorder} />
       </section>
 
       {/* BRAND MARQUEE (full-bleed) */}
