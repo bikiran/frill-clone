@@ -21,7 +21,10 @@ function origin(req: NextRequest) {
 // the user closes their browser / laptop.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, incremental, integrationId } = await req.json()
+    const { companyId, incremental, integrationId, scope } = await req.json()
+    // 'products' starts the job at the catalogue phase, which is the last one,
+    // so it mirrors products and stops. Anything else runs the full walk.
+    const startPhase = scope === 'products' ? 'products' : 'customers'
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
     const db = admin()
 
@@ -49,9 +52,11 @@ export async function POST(req: NextRequest) {
     }
 
     const { data: job } = await db.from('woo_sync_jobs').insert({
-      company_id: companyId, integration_id: integ.id, status: 'running', phase: 'customers', current_page: 1,
+      company_id: companyId, integration_id: integ.id, status: 'running', phase: startPhase, current_page: 1,
       modified_after: modifiedAfter,
-      message: incremental ? 'Checking for updates…' : 'Starting sync…',
+      message: startPhase === 'products'
+        ? 'Starting product sync…'
+        : (incremental ? 'Checking for updates…' : 'Starting sync…'),
     }).select().maybeSingle()
 
     // Fire-and-forget the first batch (don't await — returns immediately)
