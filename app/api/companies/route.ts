@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { provisionSubdomain } from '@/lib/provision-domain'
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,22 +58,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    // Seed sample data + register subdomain (both non-blocking)
+    // Register the subdomain with Vercel + Cloudflare BEFORE returning. This was
+    // previously a fire-and-forget fetch to /api/domains, but a serverless
+    // function is frozen as soon as it returns its response, so that background
+    // request was routinely killed and the domain never got added — leaving the
+    // new board on a 404'd subdomain. Call the provisioner directly and await it
+    // (it never throws — returns a structured result).
+    let domain: any = null
     if (data?.id) {
-      const { seedCompanyData } = await import('@/lib/seedCompany')
-      seedCompanyData(data.id, data.name).catch(console.error)
+      try { domain = await provisionSubdomain(`${data.slug}.colvy.com`) } catch (e: any) { domain = { ok: false, error: e?.message } }
 
-      // Register subdomain with Vercel + Cloudflare
-      const newSlug = data.slug
-      const baseUrl = process.env.NEXTAUTH_URL || 'https://colvy.com'
-      fetch(`${baseUrl}/api/domains`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain: `${newSlug}.colvy.com` }),
-      }).catch(() => {})
+      // Seed sample data — safe to leave non-blocking (the board renders without
+      // it and onboarding's ensure-domain re-seeds if it's still empty).
+      try {
+        const { seedCompanyData } = await import('@/lib/seedCompany')
+        seedCompanyData(data.id, data.name).catch(console.error)
+      } catch { /* non-fatal */ }
     }
 
-    return NextResponse.json({ company: data })
+    return NextResponse.json({ company: data, domain })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

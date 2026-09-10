@@ -34,7 +34,7 @@ function ResetPasswordForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12" style={{ background: 'var(--peach)' }}>
+    <div className="min-h-screen flex items-start justify-center px-4 pt-10 pb-16" style={{ background: 'var(--peach)' }}>
       <div className="w-full max-w-md">
         <Link href="/landing" className="inline-block mb-8 text-2xl font-bold" style={{ color: 'var(--coral)' }}>
           Colvy
