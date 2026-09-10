@@ -190,16 +190,33 @@ const MoonIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="no
 const MenuIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></svg>)
 const CloseIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>)
 
+// Clean line icons (lucide-style) for the engagement-suite cards.
+function SuiteIcon({ name, color }: { name: string; color: string }) {
+  const p = { width: 28, height: 28, viewBox: '0 0 24 24', fill: 'none', stroke: color, strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  switch (name) {
+    case 'idea': return <svg {...p}><path d="M9 18h6" /><path d="M10 22h4" /><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" /></svg>
+    case 'map': return <svg {...p}><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" /><line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" /></svg>
+    case 'megaphone': return <svg {...p}><path d="m3 11 18-5v12L3 14v-3z" /><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" /></svg>
+    case 'form': return <svg {...p}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="M9 12h6" /><path d="M9 16h5" /></svg>
+    case 'chart': return <svg {...p}><line x1="6" y1="20" x2="6" y2="14" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="18" y1="20" x2="18" y2="10" /></svg>
+    case 'vote': return <svg {...p}><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+    case 'help': return <svg {...p}><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" /><line x1="4.93" y1="4.93" x2="9.17" y2="9.17" /><line x1="14.83" y1="14.83" x2="19.07" y2="19.07" /><line x1="14.83" y1="9.17" x2="19.07" y2="4.93" /><line x1="4.93" y1="19.07" x2="9.17" y2="14.83" /></svg>
+    default: return null
+  }
+}
+
 // The rest of the customer-engagement suite — surfaced as a lively horizontal
-// carousel whose cards slide in from the right on scroll (Apple-style).
-const SUITE: { emoji: string; title: string; desc: string; cta: string; href: string; color: string }[] = [
-  { emoji: '💡', title: 'Ideas board', desc: 'Capture feature requests and let customers upvote what matters most.', cta: 'Explore ideas', href: '/product/ideas', color: CORAL },
-  { emoji: '🗺️', title: 'Public roadmap', desc: "Show what's planned, in progress and shipped — build trust in the open.", cta: 'See roadmap', href: '/product/roadmap', color: BLUE },
-  { emoji: '📣', title: 'Announcements', desc: 'Post changelogs and auto-notify everyone who voted when their idea ships.', cta: 'See updates', href: '/product/announcements', color: GREEN },
-  { emoji: '📝', title: 'Forms', desc: 'Collect leads, requests and details with branded custom forms.', cta: 'Explore forms', href: '/product', color: PURPLE },
-  { emoji: '📊', title: 'Surveys', desc: 'Ask customers anything and measure sentiment over time.', cta: 'Explore surveys', href: '/product', color: CYAN },
-  { emoji: '🗳️', title: 'Polls & voting', desc: 'Run quick polls and let the best ideas rise to the top automatically.', cta: 'Explore polls', href: '/product', color: PINK },
-  { emoji: '📚', title: 'Help centre', desc: 'Self-serve articles and a knowledge base so customers find answers fast.', cta: 'Explore help', href: '/product', color: YELLOW },
+// carousel whose cards slide in from the right on scroll (Apple-style). `img`
+// is an optional real background photo (with a dark scrim for legibility);
+// falls back to the abstract colour mesh when absent.
+const SUITE: { icon: string; title: string; desc: string; cta: string; href: string; color: string; img?: string }[] = [
+  { icon: 'idea', title: 'Ideas board', desc: 'Capture feature requests and let customers upvote what matters most.', cta: 'Explore ideas', href: '/product/ideas', color: CORAL },
+  { icon: 'map', title: 'Public roadmap', desc: "Show what's planned, in progress and shipped — build trust in the open.", cta: 'See roadmap', href: '/product/roadmap', color: BLUE },
+  { icon: 'megaphone', title: 'Announcements', desc: 'Post changelogs and auto-notify everyone who voted when their idea ships.', cta: 'See updates', href: '/product/announcements', color: GREEN },
+  { icon: 'form', title: 'Forms', desc: 'Collect leads, requests and details with branded custom forms.', cta: 'Explore forms', href: '/product', color: PURPLE },
+  { icon: 'chart', title: 'Surveys', desc: 'Ask customers anything and measure sentiment over time.', cta: 'Explore surveys', href: '/product', color: CYAN },
+  { icon: 'vote', title: 'Polls & voting', desc: 'Run quick polls and let the best ideas rise to the top automatically.', cta: 'Explore polls', href: '/product', color: PINK },
+  { icon: 'help', title: 'Help centre', desc: 'Self-serve articles and a knowledge base so customers find answers fast.', cta: 'Explore help', href: '/product', color: YELLOW },
 ]
 
 function SuiteCard({ s, i, dark, border }: { s: typeof SUITE[number]; i: number; dark: boolean; border: string }) {
@@ -214,14 +231,19 @@ function SuiteCard({ s, i, dark, border }: { s: typeof SUITE[number]; i: number;
       transition: `opacity 0.75s cubic-bezier(0.16,1,0.3,1) ${i * 0.08}s, transform 0.75s cubic-bezier(0.16,1,0.3,1) ${i * 0.08}s`,
       boxShadow: v ? '0 30px 70px rgba(15,17,25,0.30)' : 'none',
     }}>
-      {/* abstract futuristic backdrop — colour mesh + grid + glow, no external art */}
-      <div aria-hidden style={{ position: 'absolute', inset: 0, background: `radial-gradient(130% 90% at 82% -5%, ${s.color}66, transparent 55%), radial-gradient(90% 70% at -5% 105%, ${s.color}33, transparent 60%)` }} />
-      <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,0.055) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.055) 1px,transparent 1px)', backgroundSize: '34px 34px', opacity: 0.5 }} />
-      <div aria-hidden style={{ position: 'absolute', top: -50, right: -50, width: 190, height: 190, borderRadius: '50%', background: s.color, opacity: 0.45, filter: 'blur(64px)' }} />
+      {/* Real background photo (when provided) with a dark scrim so text stays
+          legible — ManyChat-style. Parallax drifts the photo a touch on hover. */}
+      {s.img && <img src={s.img} alt="" aria-hidden className="cv-suite-photo" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+      {s.img && <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(180deg, rgba(15,17,25,0.15) 0%, rgba(15,17,25,0.55) 45%, rgba(15,17,25,0.94) 100%)` }} />}
+      {/* Abstract futuristic backdrop — colour mesh + grid + glow. Kept subtle
+          over a photo, full-strength without one. */}
+      {!s.img && <div aria-hidden style={{ position: 'absolute', inset: 0, background: `radial-gradient(130% 90% at 82% -5%, ${s.color}66, transparent 55%), radial-gradient(90% 70% at -5% 105%, ${s.color}33, transparent 60%)` }} />}
+      <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,0.055) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.055) 1px,transparent 1px)', backgroundSize: '34px 34px', opacity: s.img ? 0.28 : 0.5 }} />
+      <div aria-hidden style={{ position: 'absolute', top: -50, right: -50, width: 190, height: 190, borderRadius: '50%', background: s.color, opacity: s.img ? 0.3 : 0.45, filter: 'blur(64px)' }} />
       <div style={{ position: 'relative' }}>
-        <div style={{ fontSize: 30, width: 58, height: 58, borderRadius: 16, background: `${s.color}26`, border: `1px solid ${s.color}77`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>{s.emoji}</div>
+        <div style={{ width: 58, height: 58, borderRadius: 16, background: `${s.color}26`, border: `1px solid ${s.color}77`, backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}><SuiteIcon name={s.icon} color="#fff" /></div>
         <h3 style={{ fontSize: 22, fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 8px' }}>{s.title}</h3>
-        <p style={{ fontSize: 14.5, lineHeight: 1.55, color: 'rgba(255,255,255,0.74)', margin: '0 0 16px' }}>{s.desc}</p>
+        <p style={{ fontSize: 14.5, lineHeight: 1.55, color: 'rgba(255,255,255,0.78)', margin: '0 0 16px' }}>{s.desc}</p>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{s.cta} <ArrowRight s={14} /></span>
       </div>
     </a>
