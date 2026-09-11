@@ -304,14 +304,14 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
             </div>
 
             {/* Right: futuristic parallax feature panel */}
-            <a href={panelMenu.feature.href} className="mn-feat" style={{ position: 'relative', flex: '0 0 340px', maxWidth: 340, borderRadius: 20, overflow: 'hidden', textDecoration: 'none', minHeight: 230, background: `linear-gradient(150deg, ${ax} 0%, ${ax}cc 40%, ${dark ? '#0b0c14' : '#171a2b'} 115%)`, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: 22 }}>
+            <a href={panelMenu.feature.href} className="mn-feat" style={{ position: 'relative', flex: '0 0 340px', maxWidth: 340, borderRadius: 20, overflow: 'hidden', textDecoration: 'none', minHeight: 240, background: `linear-gradient(150deg, ${ax} 0%, ${ax}cc 40%, ${dark ? '#0b0c14' : '#171a2b'} 115%)`, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 14, padding: 22 }}>
               {/* glow blobs (parallax) */}
               <div className="mn-float" aria-hidden style={{ position: 'absolute', top: -40, right: -30, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', filter: 'blur(30px)', transform: `translate(${par.x * 26}px, ${par.y * 26}px)` }} />
               <div className="mn-float" aria-hidden style={{ position: 'absolute', bottom: -50, left: -30, width: 170, height: 170, borderRadius: '50%', background: 'rgba(0,0,0,0.22)', filter: 'blur(34px)', transform: `translate(${par.x * -20}px, ${par.y * -20}px)` }} />
               {/* watermark icon (parallax, opposite) */}
               <div className="mn-float" aria-hidden style={{ position: 'absolute', top: 16, right: 16, color: 'rgba(255,255,255,0.9)', transform: `translate(${par.x * -16}px, ${par.y * -16}px)` }}><FeatureIcon name={panelMenu.feature.icon} color="rgba(255,255,255,0.92)" size={40} /></div>
-              {/* floating chips (parallax) */}
-              <div aria-hidden style={{ position: 'absolute', top: 74, left: 22, right: 22, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {/* floating chips (parallax) — in normal flow at the top so they never overlap the copy */}
+              <div aria-hidden style={{ position: 'relative', display: 'flex', flexWrap: 'wrap', gap: 8, paddingRight: 46 }}>
                 {panelMenu.feature.chips.map((c, i) => (
                   <span key={c} className="mn-float" style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 999, padding: '5px 11px', transform: `translate(${par.x * (14 + i * 8)}px, ${par.y * (10 + i * 6)}px)` }}>{c}</span>
                 ))}
