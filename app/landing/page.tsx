@@ -537,7 +537,7 @@ export default function LandingPage() {
       <ParallaxBanner />
 
       {/* TESTIMONIALS */}
-      <section style={{ padding: 'clamp(64px, 9vw, 110px) 24px', background: bg }}>
+      <section id="stories" style={{ padding: 'clamp(64px, 9vw, 110px) 24px', background: bg, scrollMarginTop: 80 }}>
         <div style={{ maxWidth: 1160, margin: '0 auto' }}>
           <Reveal><h2 style={{ textAlign: 'center', fontSize: 'clamp(28px, 4.4vw, 48px)', fontWeight: 900, letterSpacing: '-0.025em', margin: '0 0 48px', color: text }}>Teams that switched, <span style={{ color: CORAL }}>and stayed</span></h2></Reveal>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
