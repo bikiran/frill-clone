@@ -15,21 +15,21 @@ const INK = '#0f1119'
 
 // Modular, product-based pricing. Customers pick the product they actually use:
 // the Feedback suite (ideas / roadmap / announcements / polls / surveys / help
-// center) is deliberately cheap; the Omni-channel product (inbox / CRM / voice
+// center) is deliberately cheap; the Inbox product (live chat / CRM / voice
 // calls / SMS) carries the messaging costs and is priced higher — still well
 // under call-first competitors like Coax ($349 AUD/mo entry). Everything bundles
 // both. `smsNote` marks the plans whose SMS line references the fair-use footnote.
 const TIERS = [
   { id: 'free', name: 'Free', tagline: 'Try the feedback suite', accent: '#6b7280', monthly: 0, annual: 0, badge: null, cta: 'Get started free', smsNote: false, features: ['Ideas & feedback board', 'Public roadmap', 'Announcements / changelog', '1 poll & 1 survey', 'Help center (10 articles)', 'Feedback widget', '2 team members', 'Community support'] },
   { id: 'feedback', name: 'Feedback', tagline: 'For product & feedback teams', accent: PURPLE, monthly: 39, annual: 29, badge: null, cta: 'Start free trial', smsNote: false, features: ['Everything in Free', 'Unlimited ideas & voting', 'Unlimited polls, surveys & forms', 'Private + public roadmaps', 'Unlimited help center articles', 'Customisable widget', 'Remove Colvy branding', '5 team members', 'Email support'] },
-  { id: 'omnichannel', name: 'Omni-channel', tagline: 'For sales & support teams', accent: BLUE, monthly: 179, annual: 149, badge: null, cta: 'Start free trial', smsNote: true, features: ['Live chat inbox', 'Contacts & CRM', 'WhatsApp, SMS & voice calls', '3,000 SMS / month included*', 'WooCommerce sync', 'Broadcast & scheduled campaigns', 'AI flow automation', 'Review dashboard', '10 team members', 'Priority support'] },
-  { id: 'everything', name: 'Everything', tagline: 'The full Colvy platform', accent: CORAL, monthly: 259, annual: 209, badge: 'Best value', cta: 'Start free trial', smsNote: true, features: ['Feedback suite + Omni-channel', '3,000 SMS / month included*', 'White-label branding', 'Custom domain', 'SSO / SAML', 'Advanced analytics', 'AI writing assistant', 'Unlimited team members', 'Dedicated onboarding', 'Priority phone support & SLA'] },
+  { id: 'omnichannel', name: 'Inbox', tagline: 'For sales & support teams', accent: BLUE, monthly: 179, annual: 149, badge: null, cta: 'Start free trial', smsNote: true, features: ['Live chat inbox', 'Contacts & CRM', 'WhatsApp, SMS & voice calls', '3,000 SMS / month included*', 'WooCommerce sync', 'Broadcast & scheduled campaigns', 'AI flow automation', 'Review dashboard', '10 team members', 'Priority support'] },
+  { id: 'everything', name: 'Everything', tagline: 'The full Colvy platform', accent: CORAL, monthly: 259, annual: 209, badge: 'Best value', cta: 'Start free trial', smsNote: true, features: ['Feedback suite + Inbox', '3,000 SMS / month included*', 'White-label branding', 'Custom domain', 'Advanced analytics', 'AI writing assistant', 'Unlimited team members', 'Priority support'] },
 ]
 
 const FAQS = [
-  { q: 'How does the pricing work?', a: 'Pick the product you actually use. The Feedback plan covers ideas, roadmaps, announcements, polls, surveys and your help center. Omni-channel covers live chat, CRM, SMS and voice calls. Everything bundles both — plus white-label, SSO and dedicated support. Start on Free and upgrade whenever you need more.' },
+  { q: 'How does the pricing work?', a: 'Pick the product you actually use. The Feedback plan covers ideas, roadmaps, announcements, polls, surveys and your help center. Inbox covers live chat, CRM, SMS and voice calls. Everything bundles both. For white-label, SSO/SAML, SLAs and custom contracts, talk to sales. Start on Free and upgrade whenever you need more.' },
   { q: 'Is there a free plan?', a: 'Yes — the Free plan is free forever with no credit card required. It includes an ideas board, a public roadmap, announcements, a help center and the feedback widget.' },
-  { q: 'How is SMS and calling billed?', a: 'The Omni-channel and Everything plans include 3,000 SMS per month. Beyond that, usage is metered and varies by volume — most Australian SMBs can expect roughly 5c per standard SMS. SMS marketing campaigns and international messaging are billed separately. See the note below the plans for details.' },
+  { q: 'How is SMS and calling billed?', a: 'The Inbox and Everything plans include 3,000 SMS per month. Beyond that, usage is metered and varies by volume — most Australian SMBs can expect roughly 5c per standard SMS. SMS marketing campaigns and international messaging are billed separately. See the note below the plans for details.' },
   { q: 'Can I change plans later?', a: 'Absolutely. You can upgrade or downgrade at any time. Upgrades take effect immediately; downgrades take effect at the end of your billing cycle.' },
   { q: 'What is the 14-day trial?', a: 'Every paid plan comes with a 14-day free trial. No credit card required. Cancel anytime before the trial ends and you won’t be charged.' },
   { q: 'Is my data safe?', a: 'Yes. All data is encrypted in transit and at rest. We’re hosted on Supabase (PostgreSQL) with daily backups and SOC 2 Type II certified infrastructure.' },
@@ -122,7 +122,7 @@ export default function PricingPage() {
       <section style={{ position: 'relative', padding: '150px 24px 40px', textAlign: 'center', overflow: 'hidden', background: dark ? 'linear-gradient(180deg, #10111b 0%, #0a0b12 70%)' : 'linear-gradient(180deg, #fff4ef 0%, #ffffff 80%)' }}>
         <Reveal>
           <h1 style={{ fontSize: 'clamp(42px, 6vw, 78px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.0, margin: '0 0 16px' }}>Simple, <span style={{ color: CORAL }}>honest</span> pricing</h1>
-          <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, margin: '0 auto 28px', lineHeight: 1.6 }}>Start free. Upgrade when you need more. No hidden fees, no per-seat tricks.</p>
+          <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 560, margin: '0 auto 28px', lineHeight: 1.6 }}>Start free. Upgrade as your business grows. Software is predictable; communication usage is billed separately.</p>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12, background: cardBg, borderRadius: 999, padding: '8px 16px', border: `1px solid ${cardBorder}` }}>
             <span style={{ fontSize: 14, fontWeight: annual ? 500 : 800, color: annual ? muted : text }}>Monthly</span>
             <button type="button" onClick={() => setAnnual(v => !v)} style={{ width: 46, height: 26, borderRadius: 999, background: annual ? CORAL : (dark ? 'rgba(255,255,255,0.2)' : '#d1d5db'), border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s' }}>
@@ -167,15 +167,25 @@ export default function PricingPage() {
         </Reveal>
       </section>
 
-      {/* ENTERPRISE */}
-      <section style={{ padding: '30px 24px 70px' }}>
+      {/* ENTERPRISE — quiet "contact sales" strip */}
+      <section style={{ padding: '20px 24px 70px' }}>
         <Reveal>
-          <div style={{ maxWidth: 1120, margin: '0 auto', borderRadius: 24, background: `linear-gradient(135deg, ${INK}, #1a1c2e)`, padding: 'clamp(32px, 5vw, 52px)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 20 }}>
-            <div>
-              <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: 900, letterSpacing: '-0.02em', color: '#fff', margin: '0 0 8px' }}>Need something custom?</h2>
-              <p style={{ fontSize: 15.5, color: 'rgba(255,255,255,0.7)', margin: 0 }}>Enterprise plans with SSO, custom integrations, SLAs, and dedicated support.</p>
+          <div style={{ maxWidth: 900, margin: '0 auto', borderRadius: 18, background: cardBg, border: `1px solid ${cardBorder}`, padding: 'clamp(24px, 3vw, 34px)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <h2 style={{ fontSize: 18, fontWeight: 900, letterSpacing: '-0.01em', color: text, margin: 0 }}>Enterprise</h2>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: muted, border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '2px 10px' }}>Contact sales</span>
+                </div>
+                <p style={{ fontSize: 14, color: muted, margin: '6px 0 0', maxWidth: 520, lineHeight: 1.55 }}>For teams that need compliance, control and scale beyond the plans above.</p>
+              </div>
+              <a href="mailto:bishalstha76@gmail.com?subject=Colvy%20Enterprise%20enquiry" className="pr-btn" style={{ padding: '11px 24px', borderRadius: 999, background: 'transparent', color: text, fontWeight: 800, fontSize: 14, textDecoration: 'none', border: `1.5px solid ${cardBorder}`, flexShrink: 0 }}>Contact sales →</a>
             </div>
-            <a href="mailto:bishalstha76@gmail.com" className="pr-btn" style={{ padding: '14px 30px', borderRadius: 999, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 15, textDecoration: 'none', flexShrink: 0 }}>Talk to sales →</a>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {['White-label branding', 'SSO / SAML', 'SLA guarantee', 'Dedicated onboarding', 'Dedicated support', 'Custom contracts', 'High-volume usage & rates'].map(f => (
+                <span key={f} style={{ fontSize: 12.5, fontWeight: 600, color: muted, background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.03)', border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '5px 12px' }}>{f}</span>
+              ))}
+            </div>
           </div>
         </Reveal>
       </section>

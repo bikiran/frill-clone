@@ -15,7 +15,7 @@ const INDUSTRIES = ['SaaS', 'E-commerce', 'Healthcare', 'Education', 'Finance',
 // Plans the pricing page can hand off via ?plan=<id>. Labels shown to the new
 // user so they know which plan their 14-day trial will start on.
 const PLAN_LABELS: Record<string, string> = {
-  free: 'Free', feedback: 'Feedback', omnichannel: 'Omni-channel', everything: 'Everything',
+  free: 'Free', feedback: 'Feedback', omnichannel: 'Inbox', everything: 'Everything',
 }
 
 function SignUpForm() {
