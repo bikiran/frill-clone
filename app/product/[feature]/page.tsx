@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
 import MarketingFooter from '@/components/MarketingFooter'
+import MarketingNav from '@/components/MarketingNav'
 import FeatureIcon from '@/components/FeatureIcon'
 
 // Feature deep-dive page (ideas / roadmap / announcements / knowledgebase),
@@ -222,24 +223,7 @@ export default function FeaturePage() {
       `}</style>
 
       {/* NAV */}
-      <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, background: navBg, backdropFilter: navScrolled ? 'blur(18px)' : 'none', borderBottom: `1px solid ${navScrolled ? cardBorder : 'transparent'}`, transition: 'all 0.3s' }}>
-        <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 24px', height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <a href="/" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none' }}>
-            <img src="/icon-512.png" alt="Colvy" width={32} height={32} style={{ borderRadius: 9, display: 'block' }} />
-            <span style={{ fontWeight: 900, fontSize: 22, color: text, letterSpacing: '-0.02em' }}>Colvy</span>
-          </a>
-          <div className="fp-desktop" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            {[{ label: 'Inbox & CRM', href: '/inbox-crm' }, { label: 'Ideas', href: '/product/ideas' }, { label: 'Roadmap', href: '/product/roadmap' }, { label: 'Announcements', href: '/product/announcements' }, { label: 'Pricing', href: '/pricing' }].map((n) => {
-              const active = n.href.includes(feature)
-              return <a key={n.label} href={n.href} className="fp-navlink" style={{ padding: '8px 14px', borderRadius: 10, fontSize: 14.5, fontWeight: active ? 800 : 600, color: active ? color : muted, textDecoration: 'none' }}>{n.label}</a>
-            })}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button onClick={() => setDark(!dark)} aria-label="Toggle theme" style={{ width: 38, height: 38, borderRadius: 11, border: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>{dark ? <SunIcon /> : <MoonIcon />}</button>
-            <button onClick={go} className="fp-btn" style={{ ...btnPrimary, padding: '10px 22px', fontSize: 14.5 }}>{user ? 'Dashboard →' : 'Get started free'}</button>
-          </div>
-        </div>
-      </nav>
+      <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HERO */}
       <section style={{ position: 'relative', minHeight: '92vh', display: 'flex', alignItems: 'center', padding: '120px 24px 70px', overflow: 'hidden', background: dark ? 'linear-gradient(180deg, #10111b 0%, #0a0b12 60%)' : `linear-gradient(180deg, ${color}12 0%, #ffffff 58%)` }}>
