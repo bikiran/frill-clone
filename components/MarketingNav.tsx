@@ -61,7 +61,7 @@ const MENUS: Menu[] = [
         { icon: 'megaphone', title: 'Broadcast campaigns', desc: 'Reach everyone at once', href: '/inbox-crm' },
       ] },
     ],
-    feature: { eyebrow: 'One shared inbox', title: 'Every channel, one thread', desc: 'WhatsApp, Instagram, SMS, email and chat beside one customer profile.', icon: 'inbox', chips: ['WhatsApp', 'Instagram', 'SMS'], href: '/inbox-crm', cta: 'Explore the inbox' },
+    feature: { eyebrow: 'One shared inbox', title: 'Every channel, one thread', desc: 'WhatsApp, Instagram, SMS, email and chat beside one customer profile.', icon: 'inbox', chips: ['WhatsApp', 'Instagram', 'SMS'], href: '/solutions/channels', cta: 'Explore channels' },
   },
   {
     key: 'phones', label: 'Phones', accent: GREEN,
@@ -79,7 +79,7 @@ const MENUS: Menu[] = [
         { icon: 'pin', title: 'Numbers & porting', desc: 'Bring or buy a number', href: '/inbox-crm#calls' },
       ] },
     ],
-    feature: { eyebrow: 'Built-in calling', title: 'Talk, transfer, transcribe', desc: 'A full phone system inside the inbox — every call logged and summarised.', icon: 'phone', chips: ['Live call', 'AI notes', 'Transcribed'], href: '/inbox-crm#calls', cta: 'See calling' },
+    feature: { eyebrow: 'Built-in calling', title: 'Talk, transfer, transcribe', desc: 'A full phone system inside the inbox — every call logged and summarised.', icon: 'phone', chips: ['Live call', 'AI notes', 'Transcribed'], href: '/solutions/phones', cta: 'See phones' },
   },
   {
     key: 'ai', label: 'AI Assistant', accent: PURPLE,
@@ -97,7 +97,7 @@ const MENUS: Menu[] = [
         { icon: 'link', title: 'Workflows', desc: 'Trigger actions on events', href: '/inbox-crm#tasks' },
       ] },
     ],
-    feature: { eyebrow: 'Always-on AI', title: 'Replies drafted in a blink', desc: 'An assistant that knows your docs, drafts replies and takes real actions.', icon: 'ai', chips: ['Auto-reply', 'Summarise', 'Take action'], href: '/inbox-crm#tasks', cta: 'Meet the AI' },
+    feature: { eyebrow: 'Always-on AI', title: 'Replies drafted in a blink', desc: 'An assistant that knows your docs, drafts replies and takes real actions.', icon: 'ai', chips: ['Auto-reply', 'Summarise', 'Take action'], href: '/solutions/ai-assistant', cta: 'Meet the AI' },
   },
   {
     key: 'integrations', label: 'Integrations', accent: CYAN,
@@ -113,7 +113,7 @@ const MENUS: Menu[] = [
         { icon: 'folder', title: 'Xero', desc: 'Invoices & accounting', href: '/product' },
       ] },
     ],
-    feature: { eyebrow: 'Plays nice', title: 'Connect your whole stack', desc: 'Commerce, payments and the tools you already run — wired into every thread.', icon: 'plug', chips: ['WooCommerce', 'Stripe', 'Shopify'], href: '/inbox-crm#woo', cta: 'Browse integrations' },
+    feature: { eyebrow: 'Plays nice', title: 'Connect your whole stack', desc: 'Commerce, payments and the tools you already run — wired into every thread.', icon: 'plug', chips: ['WooCommerce', 'Stripe', 'Shopify'], href: '/solutions/integrations', cta: 'Browse integrations' },
   },
   {
     key: 'industries', label: 'Industries', accent: PINK,
@@ -129,14 +129,14 @@ const MENUS: Menu[] = [
         { icon: 'help', title: 'Healthcare', desc: 'Reminders & patient comms', href: '/signup' },
       ] },
     ],
-    feature: { eyebrow: 'Made to fit', title: 'Tuned to your industry', desc: 'The same platform, shaped around how your team actually works.', icon: 'star', chips: ['Retail', 'Hospitality', 'SaaS'], href: '/signup', cta: 'Start free' },
+    feature: { eyebrow: 'Made to fit', title: 'Tuned to your industry', desc: 'The same platform, shaped around how your team actually works.', icon: 'star', chips: ['Retail', 'Hospitality', 'SaaS'], href: '/solutions/industries', cta: 'See industries' },
   },
 ]
 
 const LINKS: Link[] = [
   { label: 'Pricing', href: '/pricing' },
   { label: 'Testimonials', href: '/#stories' },
-  { label: 'Compare', href: '/pricing' },
+  { label: 'Compare', href: '/solutions/compare' },
 ]
 
 const SunIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>)
