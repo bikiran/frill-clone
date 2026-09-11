@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
 import OmniInboxDemo from '@/components/OmniInboxDemo'
 import MarketingFooter from '@/components/MarketingFooter'
+import MarketingNav from '@/components/MarketingNav'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy landing — bright, bold, full-bleed and kinetic (ManyChat energy):
@@ -384,30 +385,7 @@ export default function LandingPage() {
       `}</style>
 
       {/* NAV */}
-      <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, background: navBg, backdropFilter: navScrolled ? 'blur(18px)' : 'none', borderBottom: `1px solid ${navScrolled ? cardBorder : 'transparent'}`, transition: 'all 0.3s' }}>
-        <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 24px', height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <a href="/" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none' }}>
-            <img src="/icon-512.png" alt="Colvy" width={32} height={32} style={{ borderRadius: 9, display: 'block' }} />
-            <span style={{ fontWeight: 900, fontSize: 22, color: text, letterSpacing: '-0.02em' }}>Colvy</span>
-          </a>
-          <div className="cv-desktop" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            {!user && [
-              { label: 'Inbox & CRM', href: '/inbox-crm', hot: true }, { label: 'Ideas', href: '/product/ideas' }, { label: 'Roadmap', href: '/product/roadmap' }, { label: 'Announcements', href: '/product/announcements' }, { label: 'Pricing', href: '/pricing' },
-            ].map((n: any) => (<a key={n.label} href={n.href} className="cv-navlink" style={{ padding: '8px 14px', borderRadius: 10, fontSize: 14.5, fontWeight: n.hot ? 800 : 600, color: n.hot ? CORAL : muted, textDecoration: 'none' }}>{n.label}</a>))}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button onClick={() => setDark(!dark)} aria-label="Toggle theme" style={{ width: 38, height: 38, borderRadius: 11, border: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>{dark ? <SunIcon /> : <MoonIcon />}</button>
-            {user ? (<button onClick={handleDashboard} className="cv-btn-primary cv-desktop" style={{ ...btnPrimary, padding: '10px 22px', fontSize: 14.5 }}>Dashboard →</button>) : (<><a href="/signin" className="cv-desktop" style={{ fontSize: 14.5, fontWeight: 600, color: muted, textDecoration: 'none', padding: '0 6px' }}>Sign in</a><a href="/signup" className="cv-btn-primary cv-desktop" style={{ ...btnPrimary, padding: '10px 22px', fontSize: 14.5 }}>Get started free</a></>)}
-            <button className="cv-mobile-toggle" onClick={() => setMobileOpen(!mobileOpen)} style={{ display: 'none', width: 38, height: 38, borderRadius: 11, border: `1px solid ${cardBorder}`, background: cardBg, alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>{mobileOpen ? <CloseIcon /> : <MenuIcon />}</button>
-          </div>
-        </div>
-        {mobileOpen && (
-          <div style={{ background: bg, borderTop: `1px solid ${cardBorder}`, padding: '14px 24px 22px' }}>
-            {[{ label: 'Inbox & CRM', href: '/inbox-crm' }, { label: 'Ideas', href: '/product/ideas' }, { label: 'Roadmap', href: '/product/roadmap' }, { label: 'Announcements', href: '/product/announcements' }, { label: 'Pricing', href: '/pricing' }, { label: 'Sign in', href: '/signin' }].map(n => (<a key={n.label} href={n.href} onClick={() => setMobileOpen(false)} style={{ display: 'block', padding: '13px 0', fontSize: 16, fontWeight: 600, color: text, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` }}>{n.label}</a>))}
-            <button onClick={handleDashboard} style={{ ...btnPrimary, marginTop: 16, width: '100%', justifyContent: 'center' }}>{user ? 'Dashboard →' : 'Get started free'}</button>
-          </div>
-        )}
-      </nav>
+      <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HERO — full-bleed, grid-lined, colour blobs bleeding off both edges */}
       <section className="cv-hero" onMouseMove={onHeroMouse} style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', padding: '120px 24px 130px', overflow: 'hidden', background: dark ? 'linear-gradient(180deg, #10111b 0%, #0a0b12 60%)' : 'linear-gradient(180deg, #fff4ef 0%, #ffffff 58%)' }}>
