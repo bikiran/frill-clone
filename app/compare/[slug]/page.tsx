@@ -15,14 +15,18 @@ import MarketingFooter from '@/components/MarketingFooter'
 // We intentionally do NOT reproduce any competitor's real customer names, quotes
 // or results — those belong to them. Copy here is product-level and neutral.
 
-const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', INK = '#0f1119'
+const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', TEAL = '#12b5a5', INDIGO = '#4f46e5', INK = '#0f1119'
 
-// Standard capability row order for every table.
+// Standard capability row order for every table. Comms rows first, then the
+// product-feedback suite — where Colvy is unique among these tools. A competitor
+// with a shorter `comp` array shows ✗ for the rows it doesn't declare.
 const FEAT = [
   'SMS (Australian 🇦🇺 numbers)', 'WhatsApp', 'Instagram DMs', 'Facebook / Meta DMs',
   'Email (Gmail / Outlook)', 'Phone calls & voicemail', 'Google Reviews', 'Live chat widget',
   'AI assistant', 'Call intelligence & transcription', 'WISMO automation', 'POS / ERP integrations',
   'Payments (send link, get paid)', 'Australian 🇦🇺 phone numbers', 'Australian 🇦🇺 support team', '45-minute migration',
+  'Ideas & feedback board', 'Public roadmap', 'Announcements / changelog', 'Polls & surveys',
+  'Media gallery', 'Team notes', 'Shared calendar', 'Tasks & reminders',
 ]
 
 type Val = boolean | string
@@ -125,6 +129,37 @@ const CMP: Record<string, Cmp> = {
       { t: 'Live the same afternoon', d: 'Set up in 45 minutes, not a multi-month enterprise rollout.' },
     ],
     checklist: ['Every channel included at SMB pricing', 'AI assistant handles common questions and WISMO 24/7', 'Call intelligence transcribes and summarises every call', 'Google Reviews automated and managed in one place', 'Secure payment links built in', 'Australian 🇦🇺 support team and local numbers', 'No lock-in contracts — cancel anytime', 'Full migration in 45 minutes'],
+  },
+  coax: {
+    name: 'Coax', accent: TEAL, heroTitle: 'The Coax alternative with a', heroAccent: 'built-in feedback loop', heroSub: 'Everything Coax does for conversations — plus a built-in ideas board, public roadmap and changelog, so your product and comms live in one lively platform.',
+    stats: [{ big: '1', label: 'platform for comms + product' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
+    // Coax is a strong comms peer (all comms rows ✓); Colvy adds the feedback suite (auto ✗ for Coax).
+    comp: [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true],
+    tableNote: 'Colvy matches Coax on conversations — and adds the product-feedback suite Coax doesn’t have.',
+    wins: [
+      { t: 'A built-in feedback board', d: 'Capture, prioritise and vote on ideas right inside Colvy. Coax has no ideas board.' },
+      { t: 'A public roadmap', d: 'Show customers what’s planned, in progress and shipped — build trust in the open. Coax has none.' },
+      { t: 'Announcements & changelog', d: 'Post release notes and auto-notify the customers who asked. Tied to the inbox, not a separate tool.' },
+      { t: 'The full loop', d: 'Idea → roadmap → announcement, connected to conversations so customers hear back when their idea ships.' },
+      { t: 'One platform, one bill', d: 'Run support, sales and your product roadmap in one place instead of bolting on a feedback tool.' },
+      { t: 'Everything Coax does, too', d: 'SMS, WhatsApp, calls, email, social, reviews, payments and AI — all still included.' },
+    ],
+    checklist: ['Every channel you run in Coax — SMS, WhatsApp, calls, email, social', 'Plus a built-in ideas & feedback board', 'A public roadmap customers can follow', 'Announcements & changelog tied to the inbox', 'Polls & surveys to validate decisions', 'Call intelligence on every call', 'Australian 🇦🇺 support and local numbers', 'No lock-in contracts — cancel anytime'],
+  },
+  manychat: {
+    name: 'ManyChat', accent: INDIGO, heroTitle: 'The ManyChat alternative that', heroAccent: 'closes the loop', heroSub: 'ManyChat automates chat-marketing flows. Colvy is a full inbox, CRM, calls and feedback platform — real conversations and real revenue, not just automations.',
+    stats: [{ big: 'Inbox', label: '+ CRM, not just flows' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
+    comp: ['Add-on', true, true, true, 'Basic', false, false, true, 'Flows', false, false, 'Limited', 'Add-on', false, false, false],
+    tableNote: 'ManyChat is built for chat-marketing flows. Colvy is a full communication + feedback platform.',
+    wins: [
+      { t: 'A real shared inbox', d: 'A true team inbox with a CRM profile beside every chat — not just automated flows.' },
+      { t: 'Voice calls included', d: 'Calls, voicemail and call intelligence are built in. ManyChat is messaging-only.' },
+      { t: 'A feedback suite built in', d: 'Ideas board, roadmap and changelog to build what customers ask for. ManyChat has none.' },
+      { t: 'Sell and get paid in chat', d: 'Live orders, payment links and recorded sales — right in the thread.' },
+      { t: 'AI that takes action', d: 'Colvy AI checks orders and takes real actions, beyond keyword-triggered flows.' },
+      { t: 'Australian 🇦🇺 support', d: 'Local team, local numbers, pricing in AUD.' },
+    ],
+    checklist: ['A real team inbox with CRM, not just flows', 'Voice calls, voicemail and call intelligence', 'Ideas board, roadmap and changelog built in', 'Payments and recorded sales in the thread', 'AI that reads orders and takes action', 'Google Reviews automated and managed', 'Australian 🇦🇺 support and local numbers', 'No lock-in contracts — cancel anytime'],
   },
 }
 
@@ -232,7 +267,7 @@ export default function ComparePage() {
               <div key={f} className="cmp-row" style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr', alignItems: 'center', borderTop: `1px solid ${rowLine}`, transition: 'background 0.15s' }}>
                 <div style={{ padding: '13px 18px', fontSize: 14, fontWeight: 600, color: text }}>{f}</div>
                 <div style={{ padding: '13px 12px', display: 'flex', justifyContent: 'center' }}><Check c={GREEN} /></div>
-                <div style={{ padding: '13px 12px', display: 'flex', justifyContent: 'center', textAlign: 'center' }}>{cell(c.comp[i])}</div>
+                <div style={{ padding: '13px 12px', display: 'flex', justifyContent: 'center', textAlign: 'center' }}>{cell(c.comp[i] ?? false)}</div>
               </div>
             ))}
           </div>

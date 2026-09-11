@@ -756,7 +756,7 @@ function ParallaxBanner() {
     on(); window.addEventListener('scroll', on, { passive: true }); window.addEventListener('resize', on)
     return () => { window.removeEventListener('scroll', on); window.removeEventListener('resize', on); if (raf) cancelAnimationFrame(raf) }
   }, [])
-  const IMG = 'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=1600&q=80&auto=format&fit=crop'
+  const IMG = '/hero/landing-omni.jpg'
   return (
     <section ref={ref} style={{ position: 'relative', minHeight: 'clamp(400px, 66vh, 660px)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
       <div aria-hidden style={{ position: 'absolute', left: 0, right: 0, top: '-16%', bottom: '-16%', backgroundImage: `url(${IMG})`, backgroundSize: 'cover', backgroundPosition: 'center', transform: `translateY(${off}px) scale(1.12)`, willChange: 'transform' }} />
