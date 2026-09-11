@@ -87,7 +87,8 @@ const CloseIcon = () => (<svg width="20" height="20" viewBox="0 0 24 24" fill="n
 export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; onToggleDark: () => void }) {
   const pathname = usePathname() || ''
   const [scrolled, setScrolled] = useState(false)
-  const [open, setOpen] = useState<string | null>(null)   // desktop mega-menu
+  const [open, setOpen] = useState<string | null>(null)   // desktop mega-menu target
+  const [lastKey, setLastKey] = useState<string | null>(null) // content kept mounted through the close animation
   const [mobileOpen, setMobileOpen] = useState(false)
   const [mobileSection, setMobileSection] = useState<string | null>(null)
   const [user, setUser] = useState<any>(null)
@@ -125,7 +126,8 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   const solid = scrolled || !!open || mobileOpen
   const navBg = solid ? (dark ? 'rgba(10,11,18,0.85)' : 'rgba(255,255,255,0.88)') : 'transparent'
 
-  const openNow = (k: string) => { if (closeTimer.current) clearTimeout(closeTimer.current); setOpen(k) }
+  const openNow = (k: string) => { if (closeTimer.current) clearTimeout(closeTimer.current); setLastKey(k); setOpen(k) }
+  const toggle = (k: string) => { if (open === k) setOpen(null); else openNow(k) }
   const scheduleClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setOpen(null), 130) }
 
   const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'inbox' && pathname.startsWith('/inbox-crm')) || (k === 'pricing' && pathname.startsWith('/pricing'))
@@ -142,7 +144,9 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   }
 
   const primaryBtn: React.CSSProperties = { padding: '10px 22px', borderRadius: 999, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 14.5, border: 'none', cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }
-  const activeMenu = MENUS.find(m => m.key === open) || null
+  // Content stays mounted (keyed by lastKey) so the panel animates OUT, not just in.
+  const panelMenu = MENUS.find(m => m.key === lastKey) || null
+  const panelOpen = !!open
 
   return (
     <nav
@@ -150,15 +154,26 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
       onMouseLeave={scheduleClose}
     >
       <style>{`
-        .mn-link{transition:color .18s,background .18s}
+        .mn-link{transition:color .2s cubic-bezier(0.16,1,0.3,1)}
         .mn-link:hover{color:${CORAL} !important}
-        .mn-item{transition:background .16s}
-        .mn-item:hover{background:${hoverBg} !important}
-        .mn-cta:hover{transform:translateY(-1px)}
+        .mn-item{transition:background .2s cubic-bezier(0.16,1,0.3,1),transform .2s cubic-bezier(0.16,1,0.3,1)}
+        .mn-item:hover{background:${hoverBg} !important;transform:translateX(2px)}
+        .mn-item:hover .mn-ico{transform:scale(1.08) rotate(-3deg)}
+        .mn-ico{transition:transform .25s cubic-bezier(0.34,1.56,0.64,1)}
+        .mn-cta{transition:transform .22s cubic-bezier(0.16,1,0.3,1),box-shadow .22s cubic-bezier(0.16,1,0.3,1)}
+        .mn-cta:hover{transform:translateY(-1px);box-shadow:0 10px 24px ${CORAL}44}
+        /* Buttery panel: fade + slide, GPU-composited. Content items stagger in. */
+        .mn-panel{transform-origin:top center;transition:opacity .28s cubic-bezier(0.16,1,0.3,1),transform .34s cubic-bezier(0.16,1,0.3,1);will-change:opacity,transform}
+        .mn-panel-open{opacity:1;transform:translateY(0) scale(1)}
+        .mn-panel-closed{opacity:0;transform:translateY(-10px) scale(0.985);pointer-events:none}
+        @keyframes mnItemIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+        .mn-panel-open .mn-stagger{animation:mnItemIn .42s cubic-bezier(0.16,1,0.3,1) both}
+        @keyframes mnSheetIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+        .mn-sheet{animation:mnSheetIn .3s cubic-bezier(0.16,1,0.3,1) both}
         .mn-desktop{display:flex}
         .mn-mtoggle{display:none}
         @media(max-width:900px){.mn-desktop{display:none !important}.mn-mtoggle{display:flex !important}}
-        @media(prefers-reduced-motion:reduce){.mn-cta,.mn-link,.mn-item{transition:none !important}}
+        @media(prefers-reduced-motion:reduce){.mn-cta,.mn-link,.mn-item,.mn-ico,.mn-panel{transition:none !important}.mn-stagger,.mn-sheet{animation:none !important}}
       `}</style>
 
       <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 24px', height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -173,7 +188,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
           {MENUS.map(m => (
             <button key={m.key} type="button" className="mn-link"
               onMouseEnter={() => openNow(m.key)} onFocus={() => openNow(m.key)}
-              onClick={() => setOpen(open === m.key ? null : m.key)}
+              onClick={() => toggle(m.key)}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 14px', borderRadius: 10, fontSize: 14.5, fontWeight: isActive(m.key) ? 800 : 600, color: isActive(m.key) || open === m.key ? CORAL : muted, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
               {m.label}<Chevron open={open === m.key} />
             </button>
@@ -196,29 +211,32 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
         </div>
       </div>
 
-      {/* Desktop mega-menu panel */}
-      {activeMenu && (
-        <div className="mn-desktop" onMouseEnter={() => openNow(activeMenu.key)} onMouseLeave={scheduleClose}
-          style={{ position: 'absolute', top: 68, left: 0, right: 0, background: panelBg, borderBottom: `1px solid ${cardBorder}`, boxShadow: '0 24px 50px rgba(15,17,25,0.14)', animation: 'none' }}>
-          <div style={{ maxWidth: 1280, margin: '0 auto', padding: '26px 24px 20px', display: 'flex', gap: 48 }}>
-            {activeMenu.columns.map(col => (
-              <div key={col.heading} style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: '0 12px 8px', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: muted }}>{col.heading}</p>
-                {col.items.map(it => (
-                  <a key={it.title} href={it.href} className="mn-item" style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 12px', borderRadius: 12, textDecoration: 'none' }}>
-                    <span style={{ width: 38, height: 38, borderRadius: 10, background: CORAL + '14', color: CORAL, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FeatureIcon name={it.icon} color={CORAL} size={19} /></span>
-                    <span style={{ minWidth: 0 }}>
-                      <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: text }}>{it.title}</span>
-                      <span style={{ display: 'block', fontSize: 12.5, color: muted, marginTop: 1 }}>{it.desc}</span>
-                    </span>
-                  </a>
-                ))}
+      {/* Desktop mega-menu panel — kept mounted so it animates in AND out */}
+      {panelMenu && (
+        <div className={`mn-desktop mn-panel ${panelOpen ? 'mn-panel-open' : 'mn-panel-closed'}`}
+          onMouseEnter={() => openNow(panelMenu.key)} onMouseLeave={scheduleClose}
+          style={{ position: 'absolute', top: 68, left: 0, right: 0, background: panelBg, borderBottom: `1px solid ${cardBorder}`, boxShadow: '0 24px 50px rgba(15,17,25,0.16)' }}>
+          <div key={lastKey || ''}>
+            <div style={{ maxWidth: 1280, margin: '0 auto', padding: '26px 24px 20px', display: 'flex', gap: 48 }}>
+              {panelMenu.columns.map((col, ci) => (
+                <div key={col.heading} style={{ flex: 1, minWidth: 0 }}>
+                  <p className="mn-stagger" style={{ margin: '0 12px 8px', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: muted, animationDelay: `${ci * 0.04}s` }}>{col.heading}</p>
+                  {col.items.map((it, ii) => (
+                    <a key={it.title} href={it.href} className="mn-item mn-stagger" style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 12px', borderRadius: 12, textDecoration: 'none', animationDelay: `${ci * 0.04 + (ii + 1) * 0.045}s` }}>
+                      <span className="mn-ico" style={{ width: 38, height: 38, borderRadius: 10, background: CORAL + '14', color: CORAL, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FeatureIcon name={it.icon} color={CORAL} size={19} /></span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: text }}>{it.title}</span>
+                        <span style={{ display: 'block', fontSize: 12.5, color: muted, marginTop: 1 }}>{it.desc}</span>
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div style={{ borderTop: `1px solid ${cardBorder}`, background: dark ? 'rgba(255,255,255,0.02)' : 'rgba(15,17,25,0.02)' }}>
+              <div style={{ maxWidth: 1280, margin: '0 auto', padding: '12px 36px' }}>
+                <a href={panelMenu.footer.href} className="mn-link" style={{ fontSize: 13.5, fontWeight: 800, color: CORAL, textDecoration: 'none' }}>{panelMenu.footer.label} →</a>
               </div>
-            ))}
-          </div>
-          <div style={{ borderTop: `1px solid ${cardBorder}`, background: dark ? 'rgba(255,255,255,0.02)' : 'rgba(15,17,25,0.02)' }}>
-            <div style={{ maxWidth: 1280, margin: '0 auto', padding: '12px 36px' }}>
-              <a href={activeMenu.footer.href} className="mn-link" style={{ fontSize: 13.5, fontWeight: 800, color: CORAL, textDecoration: 'none' }}>{activeMenu.footer.label} →</a>
             </div>
           </div>
         </div>
@@ -226,7 +244,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
 
       {/* Mobile sheet */}
       {mobileOpen && (
-        <div style={{ background: bg, borderTop: `1px solid ${cardBorder}`, padding: '10px 20px 22px', maxHeight: 'calc(100dvh - 68px)', overflowY: 'auto' }}>
+        <div className="mn-sheet" style={{ background: bg, borderTop: `1px solid ${cardBorder}`, padding: '10px 20px 22px', maxHeight: 'calc(100dvh - 68px)', overflowY: 'auto' }}>
           {MENUS.map(m => (
             <div key={m.key} style={{ borderBottom: `1px solid ${cardBorder}` }}>
               <button type="button" onClick={() => setMobileSection(mobileSection === m.key ? null : m.key)}
