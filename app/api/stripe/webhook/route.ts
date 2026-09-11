@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { confirmChatPayment } from '@/lib/chat-payment-confirm'
+import { internalPlanForTier } from '@/lib/plan'
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || ''
 
@@ -167,8 +168,12 @@ export async function POST(req: NextRequest) {
           }, { onConflict: 'user_id' })
           // Reflect the paid plan on the company so the trial ends: clears the
           // in-app trial countdown/wall and counts them as paying in the metrics.
+          // Map the marketing tier (feedback/omnichannel/everything/…) to the
+          // internal entitlement plan (pro/enterprise) that feature checks and the
+          // entitlement matrix understand — the subscription row above keeps the
+          // marketing tier for billing/analytics.
           try {
-            await (supabase as any).from('companies').update({ plan: tier, trial_ends_at: null }).eq('owner_id', userId)
+            await (supabase as any).from('companies').update({ plan: internalPlanForTier(tier), trial_ends_at: null }).eq('owner_id', userId)
           } catch {}
         }
         // Phone number purchase — provision the number now that payment is set up

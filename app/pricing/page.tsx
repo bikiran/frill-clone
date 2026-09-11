@@ -81,7 +81,9 @@ export default function PricingPage() {
       window.location.href = tier ? `/signup?plan=${tier.id}&billing=${billing}` : '/signup'
       return
     }
-    const path = paid ? '/upgrade' : '/admin'
+    // Paid → the board's upgrade page (checkout runs on the tenant origin where the
+    // session lives), carrying the chosen plan + billing so it's preselected.
+    const path = paid ? `/upgrade?plan=${tier!.id}&billing=${billing}` : '/admin'
     try {
       const hostname = window.location.hostname
       if (hostname.includes('localhost') || hostname.includes('vercel.app')) { window.location.href = path; return }
