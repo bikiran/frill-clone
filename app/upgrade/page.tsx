@@ -97,7 +97,7 @@ export default function UpgradePage() {
   const handleUpgrade = async (tier: any) => {
     if (tier.id === 'free' || tier.id === currentPlan) return
     if (tier.id === 'enterprise') {
-      window.location.href = 'mailto:bishalstha76@gmail.com?subject=Enterprise Plan Inquiry'
+      window.location.href = 'mailto:support@colvy.com?subject=Enterprise Plan Inquiry'
       return
     }
     if (!user) {
