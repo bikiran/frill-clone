@@ -2,25 +2,36 @@
 
 import { useState, useEffect, useRef, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
-import { redirectToUserAdmin } from '@/lib/redirect'
+import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
+import { track } from '@/lib/analytics'
 import MarketingFooter from '@/components/MarketingFooter'
 
 const CORAL = '#ff6a4d'
 const PINK = '#ff4d8d'
 const PURPLE = '#7c5cff'
 const GREEN = '#00c48c'
+const BLUE = '#2b59ff'
 const INK = '#0f1119'
 
+// Modular, product-based pricing. Customers pick the product they actually use:
+// the Feedback suite (ideas / roadmap / announcements / polls / surveys / help
+// center) is deliberately cheap; the Inbox product (live chat / CRM / voice
+// calls / SMS) carries the messaging costs and is priced higher — still well
+// under call-first competitors like Coax ($349 AUD/mo entry). Everything bundles
+// both. `smsNote` marks the plans whose SMS line references the fair-use footnote.
 const TIERS = [
-  { id: 'starter', name: 'Starter', monthly: 0, annual: 0, badge: null, cta: 'Get started free', features: ['Unlimited ideas board', 'Public roadmap', 'Changelog / announcements', 'Help Center (10 articles)', 'Widget (all tabs)', '3 team members', 'Guest voting', 'Community support'] },
-  { id: 'growth', name: 'Growth', monthly: 49, annual: 39, badge: 'Most popular', cta: 'Start free trial', features: ['Everything in Starter', 'Unlimited help articles', 'Live chat inbox', 'Contacts & CRM', 'WooCommerce sync', 'Review dashboard', 'Scheduled messages', 'AI flow automation', '10 team members', 'Priority support'] },
-  { id: 'business', name: 'Business', monthly: 149, annual: 119, badge: null, cta: 'Start free trial', features: ['Everything in Growth', 'Unlimited team members', 'White-label branding', 'Custom domain', 'SSO / SAML', 'Advanced analytics', 'AI writing assistant', 'Priority phone support', 'Dedicated onboarding', 'SLA guarantee'] },
+  { id: 'free', name: 'Free', tagline: 'Try the feedback suite', accent: '#6b7280', monthly: 0, annual: 0, badge: null, cta: 'Get started free', smsNote: false, features: ['Ideas & feedback board', 'Public roadmap', 'Announcements / changelog', '1 poll & 1 survey', 'Help center (10 articles)', 'Feedback widget', '2 team members', 'Community support'] },
+  { id: 'feedback', name: 'Feedback', tagline: 'For product & feedback teams', accent: PURPLE, monthly: 39, annual: 29, badge: null, cta: 'Start free trial', smsNote: false, features: ['Everything in Free', 'Unlimited ideas & voting', 'Unlimited polls, surveys & forms', 'Private + public roadmaps', 'Unlimited help center articles', 'Customisable widget', 'Remove Colvy branding', '5 team members', 'Email support'] },
+  { id: 'omnichannel', name: 'Inbox', tagline: 'For sales & support teams', accent: BLUE, monthly: 179, annual: 149, badge: null, cta: 'Start free trial', smsNote: true, features: ['Live chat inbox', 'Contacts & CRM', 'WhatsApp, SMS & voice calls', '3,000 SMS / month included*', 'WooCommerce sync', 'Broadcast & scheduled campaigns', 'AI flow automation', 'Review dashboard', '10 team members', 'Priority support'] },
+  { id: 'everything', name: 'Everything', tagline: 'The full Colvy platform', accent: CORAL, monthly: 259, annual: 209, badge: 'Best value', cta: 'Start free trial', smsNote: true, features: ['Feedback suite + Inbox', '3,000 SMS / month included*', 'White-label branding', 'Custom domain', 'Advanced analytics', 'AI writing assistant', 'Unlimited team members', 'Priority support'] },
 ]
 
 const FAQS = [
-  { q: 'Is there a free plan?', a: 'Yes — the Starter plan is free forever with no credit card required. It includes unlimited ideas, a public roadmap, help center, and widget.' },
+  { q: 'How does the pricing work?', a: 'Pick the product you actually use. The Feedback plan covers ideas, roadmaps, announcements, polls, surveys and your help center. Inbox covers live chat, CRM, SMS and voice calls. Everything bundles both. For white-label, SSO/SAML, SLAs and custom contracts, talk to sales. Start on Free and upgrade whenever you need more.' },
+  { q: 'Is there a free plan?', a: 'Yes — the Free plan is free forever with no credit card required. It includes an ideas board, a public roadmap, announcements, a help center and the feedback widget.' },
+  { q: 'How is SMS and calling billed?', a: 'The Inbox and Everything plans include 3,000 SMS per month. Beyond that, usage is metered and varies by volume — most Australian SMBs can expect roughly 5c per standard SMS. SMS marketing campaigns and international messaging are billed separately. See the note below the plans for details.' },
   { q: 'Can I change plans later?', a: 'Absolutely. You can upgrade or downgrade at any time. Upgrades take effect immediately; downgrades take effect at the end of your billing cycle.' },
-  { q: 'What is the 14-day trial?', a: 'Growth and Business plans come with a 14-day free trial. No credit card required. Cancel anytime before the trial ends and you won’t be charged.' },
+  { q: 'What is the 14-day trial?', a: 'Every paid plan comes with a 14-day free trial. No credit card required. Cancel anytime before the trial ends and you won’t be charged.' },
   { q: 'Is my data safe?', a: 'Yes. All data is encrypted in transit and at rest. We’re hosted on Supabase (PostgreSQL) with daily backups and SOC 2 Type II certified infrastructure.' },
   { q: 'Do you offer discounts for nonprofits or startups?', a: 'Yes — email us at bishalstha76@gmail.com with your details and we’ll set you up with a special rate.' },
 ]
@@ -45,6 +56,7 @@ export default function PricingPage() {
   const [dark, setDark] = useState(false)
   const [scrollY, setScrollY] = useState(0)
   useEffect(() => {
+    track('pricing_viewed')
     supabase.auth.getSession().then(({ data }) => setUser(data.session?.user || null))
     const { data: l } = supabase.auth.onAuthStateChange((_: any, s: any) => setUser(s?.user ?? null))
     let raf = 0
@@ -52,9 +64,31 @@ export default function PricingPage() {
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => { l?.subscription?.unsubscribe(); window.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf) }
   }, [])
-  const go = async () => {
-    if (!user) { window.location.href = '/signup'; return }
-    try { const { data: co } = await (supabase as any).from('companies').select('slug').eq('owner_id', user.id).order('created_at', { ascending: true }).limit(1).maybeSingle(); if (co?.slug) window.location.href = `https://${co.slug}.colvy.com/admin`; else await redirectToUserAdmin(user.id) } catch { await redirectToUserAdmin(user.id) }
+
+  // A pricing CTA. `tier` is omitted for the generic nav / footer buttons.
+  //  • Logged out → /signup, carrying the chosen plan + billing period so the
+  //    account they create knows what they came for.
+  //  • Logged in, paid tier → their board's upgrade/checkout page.
+  //  • Logged in, free / generic → their board dashboard.
+  // boardUrl() handles the reserved-slug case (the super-admin's "admin" workspace)
+  // so a logged-in owner never lands on admin.colvy.com/admin (a 404).
+  const go = async (tier?: typeof TIERS[number]) => {
+    const billing = annual ? 'annual' : 'monthly'
+    const paid = !!tier && tier.monthly > 0
+    if (paid) track('checkout_started', { tier: tier!.id, billing })
+
+    if (!user) {
+      window.location.href = tier ? `/signup?plan=${tier.id}&billing=${billing}` : '/signup'
+      return
+    }
+    const path = paid ? '/upgrade' : '/admin'
+    try {
+      const hostname = window.location.hostname
+      if (hostname.includes('localhost') || hostname.includes('vercel.app')) { window.location.href = path; return }
+      const { data: co } = await (supabase as any).from('companies').select('slug').eq('owner_id', user.id).order('created_at', { ascending: true }).limit(1).maybeSingle()
+      if (co?.slug) { window.location.href = boardUrl(co.slug, path); return }
+      await redirectToUserAdmin(user.id, path)
+    } catch { await redirectToUserAdmin(user.id, path) }
   }
 
   const bg = dark ? '#0a0b12' : '#ffffff'
@@ -79,7 +113,7 @@ export default function PricingPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button onClick={() => setDark(!dark)} aria-label="Toggle theme" style={{ width: 38, height: 38, borderRadius: 11, border: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>{dark ? <SunIcon /> : <MoonIcon />}</button>
-            <button onClick={go} className="pr-btn" style={{ padding: '10px 22px', borderRadius: 999, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 14.5, border: 'none', cursor: 'pointer' }}>{user ? 'Dashboard →' : 'Get started free'}</button>
+            <button onClick={() => go()} className="pr-btn" style={{ padding: '10px 22px', borderRadius: 999, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 14.5, border: 'none', cursor: 'pointer' }}>{user ? 'Dashboard →' : 'Get started free'}</button>
           </div>
         </div>
       </nav>
@@ -88,7 +122,7 @@ export default function PricingPage() {
       <section style={{ position: 'relative', padding: '150px 24px 40px', textAlign: 'center', overflow: 'hidden', background: dark ? 'linear-gradient(180deg, #10111b 0%, #0a0b12 70%)' : 'linear-gradient(180deg, #fff4ef 0%, #ffffff 80%)' }}>
         <Reveal>
           <h1 style={{ fontSize: 'clamp(42px, 6vw, 78px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.0, margin: '0 0 16px' }}>Simple, <span style={{ color: CORAL }}>honest</span> pricing</h1>
-          <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, margin: '0 auto 28px', lineHeight: 1.6 }}>Start free. Upgrade when you need more. No hidden fees, no per-seat tricks.</p>
+          <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 560, margin: '0 auto 28px', lineHeight: 1.6 }}>Start free. Upgrade as your business grows. Software is predictable; communication usage is billed separately.</p>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12, background: cardBg, borderRadius: 999, padding: '8px 16px', border: `1px solid ${cardBorder}` }}>
             <span style={{ fontSize: 14, fontWeight: annual ? 500 : 800, color: annual ? muted : text }}>Monthly</span>
             <button type="button" onClick={() => setAnnual(v => !v)} style={{ width: 46, height: 26, borderRadius: 999, background: annual ? CORAL : (dark ? 'rgba(255,255,255,0.2)' : '#d1d5db'), border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s' }}>
@@ -100,39 +134,58 @@ export default function PricingPage() {
       </section>
 
       {/* TIERS */}
-      <section style={{ padding: '20px 24px 40px' }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 22, alignItems: 'start' }}>
+      <section style={{ padding: '20px 24px 24px' }}>
+        <div style={{ maxWidth: 1240, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(258px, 1fr))', gap: 20, alignItems: 'start' }}>
           {TIERS.map((tier, i) => {
-            const isGrowth = tier.id === 'growth'
+            const hi = !!tier.badge
             const price = annual ? tier.annual : tier.monthly
+            const accent = tier.accent
             return (
               <Reveal key={tier.id} delay={i * 0.06}>
-                <div className="pr-card" style={{ borderRadius: 24, padding: '34px 28px', border: isGrowth ? `2px solid ${CORAL}` : `1px solid ${cardBorder}`, background: isGrowth ? (dark ? 'rgba(255,106,77,0.08)' : '#fff7f4') : cardBg, position: 'relative', boxShadow: isGrowth ? `0 24px 60px ${CORAL}30` : '0 10px 30px rgba(15,17,25,0.05)', transform: isGrowth ? 'scale(1.02)' : 'none' }}>
-                  {tier.badge && <div style={{ position: 'absolute', top: -13, left: '50%', transform: 'translateX(-50%)', fontSize: 11.5, fontWeight: 800, background: CORAL, color: '#fff', padding: '5px 16px', borderRadius: 999, whiteSpace: 'nowrap' }}>{tier.badge}</div>}
-                  <h3 style={{ fontSize: 20, fontWeight: 900, margin: '0 0 4px', color: text }}>{tier.name}</h3>
-                  <div style={{ margin: '14px 0 22px', display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                    {price === 0 ? <span style={{ fontSize: 46, fontWeight: 900, letterSpacing: '-0.03em', color: text }}>Free</span> : <><span style={{ fontSize: 46, fontWeight: 900, letterSpacing: '-0.03em', color: text }}>${price}</span><span style={{ fontSize: 14, color: muted }}>/mo{annual ? ', billed yearly' : ''}</span></>}
+                <div className="pr-card" style={{ borderRadius: 24, padding: '30px 24px', border: hi ? `2px solid ${accent}` : `1px solid ${cardBorder}`, background: hi ? (dark ? 'rgba(255,106,77,0.08)' : '#fff7f4') : cardBg, position: 'relative', boxShadow: hi ? `0 24px 60px ${accent}30` : '0 10px 30px rgba(15,17,25,0.05)', transform: hi ? 'scale(1.02)' : 'none' }}>
+                  {tier.badge && <div style={{ position: 'absolute', top: -13, left: '50%', transform: 'translateX(-50%)', fontSize: 11.5, fontWeight: 800, background: accent, color: '#fff', padding: '5px 16px', borderRadius: 999, whiteSpace: 'nowrap' }}>{tier.badge}</div>}
+                  <h3 style={{ fontSize: 20, fontWeight: 900, margin: '0 0 3px', color: text }}>{tier.name}</h3>
+                  <p style={{ fontSize: 12.5, fontWeight: 600, color: accent, margin: 0, minHeight: 18 }}>{tier.tagline}</p>
+                  <div style={{ margin: '14px 0 20px', display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                    {price === 0 ? <span style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-0.03em', color: text }}>Free</span> : <><span style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-0.03em', color: text }}>${price}</span><span style={{ fontSize: 13.5, color: muted }}>/mo{annual ? ', billed yearly' : ''}</span></>}
                   </div>
-                  <button onClick={go} className="pr-btn" style={{ display: 'block', width: '100%', padding: '14px 0', borderRadius: 12, textAlign: 'center', background: isGrowth ? CORAL : 'transparent', color: isGrowth ? '#fff' : text, border: isGrowth ? 'none' : `2px solid ${cardBorder}`, fontWeight: 800, fontSize: 14.5, cursor: 'pointer', marginBottom: 24 }}>{tier.cta}</button>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 11 }}>
-                    {tier.features.map((f, j) => (<li key={j} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 14, color: text }}><span style={{ width: 20, height: 20, borderRadius: '50%', background: (isGrowth ? CORAL : GREEN) + '1a', color: isGrowth ? CORAL : GREEN, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>{f}</li>))}
+                  <button onClick={() => go(tier)} className="pr-btn" style={{ display: 'block', width: '100%', padding: '13px 0', borderRadius: 12, textAlign: 'center', background: hi ? accent : 'transparent', color: hi ? '#fff' : text, border: hi ? 'none' : `2px solid ${cardBorder}`, fontWeight: 800, fontSize: 14.5, cursor: 'pointer', marginBottom: 22 }}>{tier.cta}</button>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {tier.features.map((f, j) => (<li key={j} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13.5, color: text }}><span style={{ width: 19, height: 19, borderRadius: '50%', background: accent + '1a', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>{f}</li>))}
                   </ul>
                 </div>
               </Reveal>
             )
           })}
         </div>
+
+        {/* Fair-use footnote */}
+        <Reveal>
+          <p style={{ maxWidth: 900, margin: '26px auto 0', fontSize: 12.5, lineHeight: 1.65, color: muted, textAlign: 'center' }}>
+            *SMS fair use policy applies. The base package includes up to 3,000 SMS per month. Usage charges apply beyond this allowance and vary based on volume — most Australian 🇦🇺 SMBs can expect approximately 5c per standard SMS. SMS marketing campaigns and international messaging are billed separately. Voice call minutes are metered — <a href="mailto:bishalstha76@gmail.com" style={{ color: CORAL, textDecoration: 'none', fontWeight: 600 }}>contact us</a> for high-volume call rates.
+          </p>
+        </Reveal>
       </section>
 
-      {/* ENTERPRISE */}
-      <section style={{ padding: '30px 24px 70px' }}>
+      {/* ENTERPRISE — quiet "contact sales" strip */}
+      <section style={{ padding: '20px 24px 70px' }}>
         <Reveal>
-          <div style={{ maxWidth: 1120, margin: '0 auto', borderRadius: 24, background: `linear-gradient(135deg, ${INK}, #1a1c2e)`, padding: 'clamp(32px, 5vw, 52px)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 20 }}>
-            <div>
-              <h2 style={{ fontSize: 'clamp(24px, 3vw, 34px)', fontWeight: 900, letterSpacing: '-0.02em', color: '#fff', margin: '0 0 8px' }}>Need something custom?</h2>
-              <p style={{ fontSize: 15.5, color: 'rgba(255,255,255,0.7)', margin: 0 }}>Enterprise plans with SSO, custom integrations, SLAs, and dedicated support.</p>
+          <div style={{ maxWidth: 900, margin: '0 auto', borderRadius: 18, background: cardBg, border: `1px solid ${cardBorder}`, padding: 'clamp(24px, 3vw, 34px)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <h2 style={{ fontSize: 18, fontWeight: 900, letterSpacing: '-0.01em', color: text, margin: 0 }}>Enterprise</h2>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: muted, border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '2px 10px' }}>Contact sales</span>
+                </div>
+                <p style={{ fontSize: 14, color: muted, margin: '6px 0 0', maxWidth: 520, lineHeight: 1.55 }}>For teams that need compliance, control and scale beyond the plans above.</p>
+              </div>
+              <a href="mailto:bishalstha76@gmail.com?subject=Colvy%20Enterprise%20enquiry" className="pr-btn" style={{ padding: '11px 24px', borderRadius: 999, background: 'transparent', color: text, fontWeight: 800, fontSize: 14, textDecoration: 'none', border: `1.5px solid ${cardBorder}`, flexShrink: 0 }}>Contact sales →</a>
             </div>
-            <a href="mailto:bishalstha76@gmail.com" className="pr-btn" style={{ padding: '14px 30px', borderRadius: 999, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 15, textDecoration: 'none', flexShrink: 0 }}>Talk to sales →</a>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {['White-label branding', 'SSO / SAML', 'SLA guarantee', 'Dedicated onboarding', 'Dedicated support', 'Custom contracts', 'High-volume usage & rates'].map(f => (
+                <span key={f} style={{ fontSize: 12.5, fontWeight: 600, color: muted, background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.03)', border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '5px 12px' }}>{f}</span>
+              ))}
+            </div>
           </div>
         </Reveal>
       </section>
@@ -161,7 +214,7 @@ export default function PricingPage() {
           <Reveal>
             <h2 style={{ fontSize: 'clamp(30px, 5vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff', lineHeight: 1.04, margin: '0 0 14px' }}>Start free today</h2>
             <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>No credit card · set up in 4 minutes · cancel anytime</p>
-            <button onClick={go} className="pr-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>{user ? 'Go to dashboard' : 'Get started — it’s free'}</button>
+            <button onClick={() => go()} className="pr-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>{user ? 'Go to dashboard' : 'Get started — it’s free'}</button>
           </Reveal>
         </div>
       </section>

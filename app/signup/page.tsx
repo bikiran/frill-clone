@@ -6,14 +6,21 @@ import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 import { isValidSlug, isSlugAvailable } from '@/lib/board'
 import { redirectToUserAdmin } from '@/lib/redirect'
 import { track } from '@/lib/analytics'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 const INDUSTRIES = ['SaaS', 'E-commerce', 'Healthcare', 'Education', 'Finance',
   'Logistics', 'Manufacturing', 'Media & Entertainment', 'Travel & Hospitality',
   'Retail', 'Real Estate', 'Other']
 
+// Plans the pricing page can hand off via ?plan=<id>. Labels shown to the new
+// user so they know which plan their 14-day trial will start on.
+const PLAN_LABELS: Record<string, string> = {
+  free: 'Free', feedback: 'Feedback', omnichannel: 'Inbox', everything: 'Everything',
+}
+
 function SignUpForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [step, setStep] = useState(1)
   const [companyContext, setCompanyContext] = useState<any>(null) // For company subdomain signup
   const [isSubdomainContext, setIsSubdomainContext] = useState(false) // True if we're on a *.colvy.com board URL
@@ -40,7 +47,18 @@ function SignUpForm() {
   const [resendLoading, setResendLoading] = useState(false)
   const [resendSuccess, setResendSuccess] = useState('')
 
-  useEffect(() => { track('signup_started') }, [])
+  // Plan the visitor picked on /pricing (?plan=feedback&billing=annual). Stashed so
+  // the post-confirmation checkout knows what trial to start; shown as a small badge.
+  const planParam = searchParams.get('plan')
+  const billingParam = searchParams.get('billing') === 'annual' ? 'annual' : 'monthly'
+  const planLabel = planParam ? PLAN_LABELS[planParam] : null
+
+  useEffect(() => {
+    track('signup_started', planParam ? { plan: planParam, billing: billingParam } : undefined)
+    if (planParam && planParam !== 'free') {
+      try { localStorage.setItem('pending_plan', JSON.stringify({ plan: planParam, billing: billingParam })) } catch {}
+    }
+  }, [planParam, billingParam])
 
   useEffect(() => {
     // Check if user is already signed in
@@ -360,6 +378,17 @@ function SignUpForm() {
                 "Colvy" alt text next to the wordmark, showing "Colvy" twice. */}
             <span style={{ fontWeight: 800, fontSize: 17, color: '#ff7a6b' }}>Colvy</span>
           </a>
+
+          {planLabel && !companyContext && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '10px 14px', borderRadius: 12, background: '#fff4f1', border: '1px solid #ffd9d0' }}>
+              <span style={{ fontSize: 18 }}>🚀</span>
+              <span style={{ fontSize: 13, color: '#0d0d0d' }}>
+                {planParam === 'free'
+                  ? <>Starting on the <strong>Free</strong> plan — no credit card needed.</>
+                  : <>Starting your <strong>14-day {planLabel}</strong> trial ({billingParam === 'annual' ? 'annual' : 'monthly'} billing). No card required.</>}
+              </span>
+            </div>
+          )}
 
           {/* Step indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
