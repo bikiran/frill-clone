@@ -136,7 +136,7 @@ const MENUS: Menu[] = [
 const LINKS: Link[] = [
   { label: 'Pricing', href: '/pricing' },
   { label: 'Testimonials', href: '/#stories' },
-  { label: 'Compare', href: '/solutions/compare' },
+  { label: 'Compare', href: '/compare' },
 ]
 
 const SunIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>)
@@ -304,14 +304,14 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
             </div>
 
             {/* Right: futuristic parallax feature panel */}
-            <a href={panelMenu.feature.href} className="mn-feat" style={{ position: 'relative', flex: '0 0 340px', maxWidth: 340, borderRadius: 20, overflow: 'hidden', textDecoration: 'none', minHeight: 230, background: `linear-gradient(150deg, ${ax} 0%, ${ax}cc 40%, ${dark ? '#0b0c14' : '#171a2b'} 115%)`, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: 22 }}>
+            <a href={panelMenu.feature.href} className="mn-feat" style={{ position: 'relative', flex: '0 0 340px', maxWidth: 340, borderRadius: 20, overflow: 'hidden', textDecoration: 'none', minHeight: 240, background: `linear-gradient(150deg, ${ax} 0%, ${ax}cc 40%, ${dark ? '#0b0c14' : '#171a2b'} 115%)`, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 14, padding: 22 }}>
               {/* glow blobs (parallax) */}
               <div className="mn-float" aria-hidden style={{ position: 'absolute', top: -40, right: -30, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', filter: 'blur(30px)', transform: `translate(${par.x * 26}px, ${par.y * 26}px)` }} />
               <div className="mn-float" aria-hidden style={{ position: 'absolute', bottom: -50, left: -30, width: 170, height: 170, borderRadius: '50%', background: 'rgba(0,0,0,0.22)', filter: 'blur(34px)', transform: `translate(${par.x * -20}px, ${par.y * -20}px)` }} />
               {/* watermark icon (parallax, opposite) */}
               <div className="mn-float" aria-hidden style={{ position: 'absolute', top: 16, right: 16, color: 'rgba(255,255,255,0.9)', transform: `translate(${par.x * -16}px, ${par.y * -16}px)` }}><FeatureIcon name={panelMenu.feature.icon} color="rgba(255,255,255,0.92)" size={40} /></div>
-              {/* floating chips (parallax) */}
-              <div aria-hidden style={{ position: 'absolute', top: 74, left: 22, right: 22, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {/* floating chips (parallax) — in normal flow at the top so they never overlap the copy */}
+              <div aria-hidden style={{ position: 'relative', display: 'flex', flexWrap: 'wrap', gap: 8, paddingRight: 46 }}>
                 {panelMenu.feature.chips.map((c, i) => (
                   <span key={c} className="mn-float" style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 999, padding: '5px 11px', transform: `translate(${par.x * (14 + i * 8)}px, ${par.y * (10 + i * 6)}px)` }}>{c}</span>
                 ))}
