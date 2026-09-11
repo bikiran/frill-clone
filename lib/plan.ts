@@ -134,6 +134,29 @@ export async function getUserPlan(userId?: string): Promise<Plan> {
   return 'free'
 }
 
+// Marketing / pricing plan ids — what the customer actually buys, what the
+// pricing page and Stripe checkout metadata carry (free, feedback, omnichannel,
+// everything, plus legacy startup/growth/business/pro) — mapped onto the internal
+// entitlement plan that governs feature access. The matrix above is defined for
+// free/pro/enterprise, and dozens of call sites switch on `plan === 'pro' |
+// 'enterprise'`, so persisting a raw marketing id to companies.plan would strip a
+// paying customer of access. Persist the mapped plan; keep the marketing id on the
+// subscription row for billing/analytics.
+export function internalPlanForTier(tier: string | null | undefined): Plan {
+  switch ((tier || '').toLowerCase()) {
+    case 'everything':
+    case 'enterprise': return 'enterprise'
+    case 'feedback':
+    case 'omnichannel':
+    case 'startup':
+    case 'growth':
+    case 'business':
+    case 'pro': return 'pro'
+    case 'trial': return 'trial'
+    default: return 'free'
+  }
+}
+
 export function canAccess(plan: Plan, feature: string): boolean {
   if (plan === 'enterprise') return true
   const features = PLAN_FEATURES[plan] || []

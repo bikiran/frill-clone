@@ -3,6 +3,20 @@ import { NextRequest, NextResponse } from 'next/server'
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || ''
 
 const PRICE_IDS: Record<string, Record<string, string>> = {
+  // Modular, product-based plans (see /pricing). One Stripe price per plan ×
+  // billing period. Add these to the Vercel env in every environment.
+  feedback: {
+    monthly: process.env.STRIPE_FEEDBACK_MONTHLY_PRICE_ID || '',
+    annual:  process.env.STRIPE_FEEDBACK_ANNUAL_PRICE_ID  || '',
+  },
+  omnichannel: {
+    monthly: process.env.STRIPE_OMNICHANNEL_MONTHLY_PRICE_ID || '',
+    annual:  process.env.STRIPE_OMNICHANNEL_ANNUAL_PRICE_ID  || '',
+  },
+  everything: {
+    monthly: process.env.STRIPE_EVERYTHING_MONTHLY_PRICE_ID || '',
+    annual:  process.env.STRIPE_EVERYTHING_ANNUAL_PRICE_ID  || '',
+  },
   startup: {
     monthly: process.env.STRIPE_STARTUP_MONTHLY_PRICE_ID || '',
     annual:  process.env.STRIPE_STARTUP_ANNUAL_PRICE_ID  || '',
@@ -28,7 +42,7 @@ const PRICE_IDS: Record<string, Record<string, string>> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId, tier, billing = 'monthly', email } = await req.json()
+    const { userId, tier, billing = 'monthly', email, trial = false, companyId = null } = await req.json()
 
     if (!userId || !tier) {
       return NextResponse.json({ error: 'Missing userId or tier' }, { status: 400 })
@@ -55,14 +69,21 @@ export async function POST(req: NextRequest) {
 
     const origin = req.headers.get('origin') || 'https://colvy.com'
 
+    // "Start free trial" (marketing CTAs) starts a 14-day trial with no card up
+    // front — matching the pricing promise. A plain upgrade collects the card now.
+    const trialParams: any = trial
+      ? { subscription_data: { trial_period_days: 14 }, payment_method_collection: 'if_required' }
+      : {}
+
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
       customer_email: email,
       line_items: [{ price: priceId, quantity: 1 }],
-      metadata: { userId, tier, billing },
+      metadata: { userId, tier, billing, ...(companyId ? { companyId } : {}) },
       success_url: `${origin}/admin/billing?success=1`,
       cancel_url:  `${origin}/admin/billing`,
+      ...trialParams,
     })
 
     return NextResponse.json({ url: session.url, sessionId: session.id })

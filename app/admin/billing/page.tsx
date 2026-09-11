@@ -19,21 +19,24 @@ const CURRENCY_RATES: Record<string, { rate: number; symbol: string; label: stri
   INR: { rate: 83.5,   symbol: '₹',  label: 'INR – Indian Rupee' },
 }
 
+// Mirrors the modular plans on /pricing and /upgrade. Each id is a Stripe checkout
+// tier (see app/api/stripe/create-checkout/route.ts PRICE_IDS). Base prices are in
+// USD; the currency selector converts. Annual is billed yearly (per-month shown).
 const PLANS = [
   {
-    id: 'startup', name: 'Startup', usdMonthly: 25, usdAnnual: 240, color: '#6b7280',
-    desc: 'For small teams getting started',
-    features: ['50 active ideas', 'Public roadmap', 'Announcements', 'Help centre', '1 team member'],
+    id: 'feedback', name: 'Feedback', usdMonthly: 39, usdAnnual: 348, color: '#7c5cff',
+    desc: 'For product & feedback teams',
+    features: ['Unlimited ideas & voting', 'Polls, surveys & forms', 'Private + public roadmaps', 'Unlimited help articles', 'Remove Colvy branding', '5 team members'],
   },
   {
-    id: 'business', name: 'Business', usdMonthly: 49, usdAnnual: 470, color: '#2563eb',
-    desc: 'For growing product teams',
-    features: ['Unlimited ideas', 'All Startup features', '5 team members', 'Priority support', 'Basic analytics'],
+    id: 'omnichannel', name: 'Inbox', usdMonthly: 179, usdAnnual: 1788, color: '#2b59ff',
+    desc: 'For sales & support teams',
+    features: ['Live chat inbox', 'Contacts & CRM', 'WhatsApp, SMS & voice calls', '3,000 SMS / month included', 'WooCommerce sync', '10 team members'],
   },
   {
-    id: 'growth', name: 'Growth', usdMonthly: 149, usdAnnual: 1430, color: 'var(--coral)', highlighted: true,
-    desc: 'For serious product teams',
-    features: ['Unlimited ideas', 'White labeling', 'Custom domains', 'Unlimited team', 'Advanced analytics', 'API access', 'Priority support'],
+    id: 'everything', name: 'Everything', usdMonthly: 259, usdAnnual: 2508, color: 'var(--coral)', highlighted: true,
+    desc: 'The full Colvy platform',
+    features: ['Feedback suite + Inbox', 'White-label & custom domain', 'Advanced analytics', 'AI writing assistant', 'Unlimited team members', 'Priority support'],
   },
 ]
 
@@ -137,10 +140,13 @@ export default function BillingPage() {
     track('checkout_started', { tier: planId, billing })
     setLoading(planId)
     try {
+      // Plan subscriptions start a 14-day trial (no card up front); the branding
+      // add-on is a straight charge, not a trial.
+      const trial = planId !== 'branding_removal'
       const res = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, tier: planId, billing, email: user.email, currency }),
+        body: JSON.stringify({ userId: user.id, tier: planId, billing, email: user.email, currency, trial }),
       })
       const data = await res.json()
       if (data.setup) {
@@ -176,7 +182,7 @@ export default function BillingPage() {
 
   const currentPlanId = subscription?.tier || company?.plan || 'free'
   const isOnPlan = (id: string) => currentPlanId === id
-  const isPaid = ['startup', 'business', 'growth', 'pro', 'enterprise'].includes(currentPlanId)
+  const isPaid = ['feedback', 'omnichannel', 'everything', 'startup', 'business', 'growth', 'pro', 'enterprise'].includes(currentPlanId)
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
@@ -310,7 +316,7 @@ export default function BillingPage() {
               style={{ borderColor: (plan as any).highlighted ? 'var(--coral)' : active ? plan.color : 'var(--border)', boxShadow: (plan as any).highlighted ? '0 0 0 2px var(--coral)20' : 'none' }}>
               {(plan as any).highlighted && (
                 <div className="py-1.5 text-center text-xs font-bold text-white" style={{ background: 'var(--coral)' }}>
-                  MOST POPULAR
+                  BEST VALUE
                 </div>
               )}
               <div className="p-6 bg-white">
@@ -372,7 +378,7 @@ export default function BillingPage() {
             </button>
           </div>
         </div>
-        {(currentPlanId === 'business' || currentPlanId === 'growth' || currentPlanId === 'enterprise') && (
+        {['feedback', 'omnichannel', 'everything', 'business', 'growth', 'enterprise', 'pro'].includes(currentPlanId) && (
           <div className="mt-3 p-3 rounded-xl text-sm" style={{ background: '#dcfce7', color: '#16a34a' }}>
             ✓ Branding removal is included free on your {currentPlanId} plan.
           </div>

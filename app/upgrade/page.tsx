@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
+// Mirrors the modular plans on the public /pricing page. Each paid plan's id is a
+// Stripe checkout tier (see app/api/stripe/create-checkout/route.ts PRICE_IDS).
 const TIERS = [
   {
     id: 'free',
@@ -11,26 +13,35 @@ const TIERS = [
     price: 0,
     annualPrice: 0,
     color: '#6b7280',
-    features: ['Up to 5 team members','Unlimited ideas','Public feedback board','Basic roadmap','Announcements','Help Centre','Email support'],
-    limits: ['No white labeling','No API access','No SSO'],
+    features: ['Ideas & feedback board','Public roadmap','Announcements','Help center (10 articles)','2 team members'],
+    limits: ['No live chat / CRM','No SMS or voice calls'],
   },
   {
-    id: 'pro',
-    name: 'Pro',
-    price: 99,
-    annualPrice: 79,
-    color: 'var(--coral)',
-    highlighted: true,
-    features: ['Unlimited team members','White labeling & custom domain','Guest voting control','REST API access','Advanced analytics','Priority support','Webhooks & Slack','Custom fields'],
+    id: 'feedback',
+    name: 'Feedback',
+    price: 39,
+    annualPrice: 29,
+    color: '#7c5cff',
+    features: ['Unlimited ideas & voting','Polls, surveys & forms','Private + public roadmaps','Unlimited help articles','Remove Colvy branding','5 team members'],
     limits: [],
   },
   {
-    id: 'enterprise',
-    name: 'Enterprise',
-    price: null,
-    annualPrice: null,
-    color: '#1a1a1a',
-    features: ['Everything in Pro','SSO (Google, GitHub, SAML)','Custom integrations','Dedicated support manager','SLA guarantee','On-premise option'],
+    id: 'omnichannel',
+    name: 'Inbox',
+    price: 179,
+    annualPrice: 149,
+    color: '#2b59ff',
+    features: ['Live chat inbox','Contacts & CRM','WhatsApp, SMS & voice calls','3,000 SMS / month included','WooCommerce sync','10 team members'],
+    limits: [],
+  },
+  {
+    id: 'everything',
+    name: 'Everything',
+    price: 259,
+    annualPrice: 209,
+    color: 'var(--coral)',
+    highlighted: true,
+    features: ['Feedback suite + Inbox','White-label & custom domain','Advanced analytics','AI writing assistant','Unlimited team members','Priority support'],
     limits: [],
   },
 ]
@@ -50,9 +61,37 @@ export default function UpgradePage() {
   const [loading, setLoading] = useState<string | null>(null)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [setupNeeded, setSetupNeeded] = useState(false)
+  const [preselected, setPreselected] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }: any) => setUser(data?.session?.user))
+    // Preselect billing period + plan handed over from the marketing pricing page
+    // (?plan=&billing=) or stashed at signup (pending_plan), so a visitor who
+    // clicked "Start free trial" lands ready to check out.
+    let preselect: string | null = null
+    try {
+      const q = new URLSearchParams(window.location.search)
+      if (q.get('billing') === 'annual') setBilling('annual')
+      else if (q.get('billing') === 'monthly') setBilling('monthly')
+      preselect = q.get('plan')
+      if (!preselect) {
+        const pend = JSON.parse(localStorage.getItem('pending_plan') || 'null')
+        if (pend?.plan) { preselect = pend.plan; if (pend.billing === 'annual' || pend.billing === 'monthly') setBilling(pend.billing) }
+      }
+    } catch {}
+    if (preselect && TIERS.some(t => t.id === preselect)) setPreselected(preselect)
+
+    supabase.auth.getSession().then(async ({ data }: any) => {
+      const u = data?.session?.user
+      setUser(u)
+      // Reflect what they already pay for. subscriptions.tier holds the marketing
+      // plan id (feedback/omnichannel/everything); fall back to the company plan.
+      if (u) {
+        try {
+          const { data: sub } = await (supabase as any).from('subscriptions').select('tier, status').eq('user_id', u.id).maybeSingle()
+          if (sub?.tier && (sub.status === 'active' || sub.status === 'trialing')) setCurrentPlan(sub.tier)
+        } catch {}
+      }
+    })
   }, [])
 
   const handleUpgrade = async (tier: any) => {
@@ -62,7 +101,7 @@ export default function UpgradePage() {
       return
     }
     if (!user) {
-      window.location.href = '/signin?next=/upgrade'
+      window.location.href = `/signin?next=${encodeURIComponent('/upgrade?plan=' + tier.id + '&billing=' + billing)}`
       return
     }
 
@@ -72,7 +111,8 @@ export default function UpgradePage() {
       const res = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, tier: tier.id, billing, email: user.email }),
+        // trial:true → 14-day free trial, no card up front (matches the pricing promise).
+        body: JSON.stringify({ userId: user.id, tier: tier.id, billing, email: user.email, trial: true }),
       })
       const data = await res.json()
 
@@ -82,7 +122,7 @@ export default function UpgradePage() {
         return
       }
       if (data.error) throw new Error(data.error)
-      if (data.url) window.location.href = data.url
+      if (data.url) { try { localStorage.removeItem('pending_plan') } catch {}; window.location.href = data.url }
     } catch (err: any) {
       alert('Error: ' + err.message)
     }
@@ -106,8 +146,12 @@ export default function UpgradePage() {
               <p>To enable payments, add these to your Vercel environment variables:</p>
               <pre className="mt-2 text-xs p-3 rounded-lg overflow-x-auto" style={{ background: '#1e1e2e', color: '#cdd6f4' }}>
 {`STRIPE_SECRET_KEY=sk_live_...
-STRIPE_PRO_MONTHLY_PRICE_ID=price_...
-STRIPE_PRO_ANNUAL_PRICE_ID=price_...`}
+STRIPE_FEEDBACK_MONTHLY_PRICE_ID=price_...
+STRIPE_FEEDBACK_ANNUAL_PRICE_ID=price_...
+STRIPE_OMNICHANNEL_MONTHLY_PRICE_ID=price_...
+STRIPE_OMNICHANNEL_ANNUAL_PRICE_ID=price_...
+STRIPE_EVERYTHING_MONTHLY_PRICE_ID=price_...
+STRIPE_EVERYTHING_ANNUAL_PRICE_ID=price_...`}
               </pre>
               <p className="mt-2">Create products and prices at <a href="https://dashboard.stripe.com/products" target="_blank" className="underline font-semibold">dashboard.stripe.com</a></p>
             </div>
@@ -130,21 +174,28 @@ STRIPE_PRO_ANNUAL_PRICE_ID=price_...`}
         </div>
 
         {/* Pricing cards */}
-        <div className="grid md:grid-cols-3 gap-6 mb-16">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-16">
           {TIERS.map(tier => {
             const p = billing === 'annual' ? tier.annualPrice : tier.price
             const isCurrent = tier.id === currentPlan
             const isLoading = loading === tier.id
+            const isPreselected = tier.id === preselected && !isCurrent
             return (
-              <div key={tier.id} className="rounded-2xl border p-8 flex flex-col relative transition-all hover:shadow-lg"
+              <div key={tier.id} className="rounded-2xl border p-6 flex flex-col relative transition-all hover:shadow-lg"
                 style={{
-                  borderColor: tier.highlighted ? 'var(--coral)' : 'var(--border)',
+                  borderColor: tier.highlighted || isPreselected ? tier.color : 'var(--border)',
                   background: tier.highlighted ? 'var(--peach)' : 'white',
                   transform: tier.highlighted ? 'scale(1.03)' : 'scale(1)',
+                  boxShadow: isPreselected ? `0 0 0 2px ${tier.color}` : undefined,
                 }}>
                 {tier.highlighted && (
                   <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full text-xs font-bold text-white shadow-md" style={{ background: 'var(--coral)' }}>
-                    MOST POPULAR
+                    BEST VALUE
+                  </div>
+                )}
+                {isPreselected && !tier.highlighted && (
+                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full text-xs font-bold text-white shadow-md" style={{ background: tier.color }}>
+                    YOUR PICK
                   </div>
                 )}
 
@@ -181,7 +232,7 @@ STRIPE_PRO_ANNUAL_PRICE_ID=price_...`}
                       <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
                       Processing...
                     </span>
-                  ) : tier.id === 'enterprise' ? 'Contact Sales' : tier.id === 'free' ? 'Current Plan' : `Get ${tier.name}`}
+                  ) : tier.id === 'enterprise' ? 'Contact Sales' : tier.id === 'free' ? 'Free plan' : `Start ${tier.name} trial`}
                 </button>
 
                 <ul className="space-y-2.5 flex-1">
