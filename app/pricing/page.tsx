@@ -33,7 +33,7 @@ const FAQS = [
   { q: 'Can I change plans later?', a: 'Absolutely. You can upgrade or downgrade at any time. Upgrades take effect immediately; downgrades take effect at the end of your billing cycle.' },
   { q: 'What is the 14-day trial?', a: 'Every paid plan comes with a 14-day free trial. No credit card required. Cancel anytime before the trial ends and you won’t be charged.' },
   { q: 'Is my data safe?', a: 'Yes. All data is encrypted in transit and at rest. We’re hosted on Supabase (PostgreSQL) with daily backups and SOC 2 Type II certified infrastructure.' },
-  { q: 'Do you offer discounts for nonprofits or startups?', a: 'Yes — email us at bishalstha76@gmail.com with your details and we’ll set you up with a special rate.' },
+  { q: 'Do you offer discounts for nonprofits or startups?', a: 'Yes — email us at support@colvy.com with your details and we’ll set you up with a special rate.' },
 ]
 
 function useReveal(threshold = 0.15) {
@@ -164,7 +164,7 @@ export default function PricingPage() {
         {/* Fair-use footnote */}
         <Reveal>
           <p style={{ maxWidth: 900, margin: '26px auto 0', fontSize: 12.5, lineHeight: 1.65, color: muted, textAlign: 'center' }}>
-            *SMS fair use policy applies. The base package includes up to 3,000 SMS per month. Usage charges apply beyond this allowance and vary based on volume — most Australian 🇦🇺 SMBs can expect approximately 5c per standard SMS. SMS marketing campaigns and international messaging are billed separately. Voice call minutes are metered — <a href="mailto:bishalstha76@gmail.com" style={{ color: CORAL, textDecoration: 'none', fontWeight: 600 }}>contact us</a> for high-volume call rates.
+            *SMS fair use policy applies. The base package includes up to 3,000 SMS per month. Usage charges apply beyond this allowance and vary based on volume — most Australian 🇦🇺 SMBs can expect approximately 5c per standard SMS. SMS marketing campaigns and international messaging are billed separately. Voice call minutes are metered — <a href="mailto:support@colvy.com" style={{ color: CORAL, textDecoration: 'none', fontWeight: 600 }}>contact us</a> for high-volume call rates.
           </p>
         </Reveal>
       </section>
@@ -181,7 +181,7 @@ export default function PricingPage() {
                 </div>
                 <p style={{ fontSize: 14, color: muted, margin: '6px 0 0', maxWidth: 520, lineHeight: 1.55 }}>For teams that need compliance, control and scale beyond the plans above.</p>
               </div>
-              <a href="mailto:bishalstha76@gmail.com?subject=Colvy%20Enterprise%20enquiry" className="pr-btn" style={{ padding: '11px 24px', borderRadius: 999, background: 'transparent', color: text, fontWeight: 800, fontSize: 14, textDecoration: 'none', border: `1.5px solid ${cardBorder}`, flexShrink: 0 }}>Contact sales →</a>
+              <a href="mailto:support@colvy.com?subject=Colvy%20Enterprise%20enquiry" className="pr-btn" style={{ padding: '11px 24px', borderRadius: 999, background: 'transparent', color: text, fontWeight: 800, fontSize: 14, textDecoration: 'none', border: `1.5px solid ${cardBorder}`, flexShrink: 0 }}>Contact sales →</a>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {['White-label branding', 'SSO / SAML', 'SLA guarantee', 'Dedicated onboarding', 'Dedicated support', 'Custom contracts', 'High-volume usage & rates'].map(f => (
