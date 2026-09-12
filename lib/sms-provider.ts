@@ -35,6 +35,26 @@ export interface SmsSender {
   send(p: SmsSendParams): Promise<SmsSendResult>
 }
 
+/**
+ * A carrier rejection, in words the person who pressed send can act on.
+ *
+ * Both providers hand back their own wording, which is accurate and useless at
+ * the point of failure: forwarding an attachment to a landline reported only
+ * that the provider refused it, so the send looked broken rather than
+ * impossible. Working out that the number was a landline took a trip through
+ * the web app.
+ *
+ * The provider's own text is always kept — it is the record of what actually
+ * came back, and the patterns below are guesses at wording that can change.
+ */
+export function explainSmsFailure(raw: unknown): string {
+  const msg = String((raw as any)?.message || raw || 'Send failed')
+  if (/landline|fixed[ -]?line|not a valid mobile|non-?mobile|unsupported destination|cannot receive/i.test(msg)) {
+    return `That number cannot receive text messages — it looks like a landline. (${msg})`
+  }
+  return msg
+}
+
 /** The company's chosen SMS provider, defaulting to Telnyx (and tolerant of the
  *  sms_provider column not existing yet on an un-migrated database). */
 export async function getSmsProvider(db: any, companyId: string): Promise<SmsProvider> {
@@ -64,15 +84,19 @@ export async function resolveSmsSender(db: any, companyId: string): Promise<SmsS
         from,
         supportsMms: true,
         async send(p: SmsSendParams): Promise<SmsSendResult> {
-          const r = await svc.sendMessage({
-            to: p.to,
-            text: p.text,
-            from: t.phone_number || undefined,
-            messagingServiceSid: t.messaging_service_sid || undefined,
-            mediaUrls: p.mediaUrls,
-            statusCallback: p.statusCallback,
-          })
-          return { id: r.sid, provider: 'twilio' }
+          try {
+            const r = await svc.sendMessage({
+              to: p.to,
+              text: p.text,
+              from: t.phone_number || undefined,
+              messagingServiceSid: t.messaging_service_sid || undefined,
+              mediaUrls: p.mediaUrls,
+              statusCallback: p.statusCallback,
+            })
+            return { id: r.sid, provider: 'twilio' }
+          } catch (e) {
+            throw new Error(explainSmsFailure(e))
+          }
         },
       }
     }
@@ -90,13 +114,17 @@ export async function resolveSmsSender(db: any, companyId: string): Promise<SmsS
       async send(p: SmsSendParams): Promise<SmsSendResult> {
         // Telnyx path keeps its established behaviour: media is delivered as
         // links appended to the body by the caller, so `send` is text-only.
-        const r = await svc.sendSMS({
-          from: integ.phone_number,
-          to: p.to,
-          text: p.text,
-          messaging_profile_id: integ.messaging_profile_id || undefined,
-        })
-        return { id: r?.data?.id || null, provider: 'telnyx' }
+        try {
+          const r = await svc.sendSMS({
+            from: integ.phone_number,
+            to: p.to,
+            text: p.text,
+            messaging_profile_id: integ.messaging_profile_id || undefined,
+          })
+          return { id: r?.data?.id || null, provider: 'telnyx' }
+        } catch (e) {
+          throw new Error(explainSmsFailure(e))
+        }
       },
     }
   }
