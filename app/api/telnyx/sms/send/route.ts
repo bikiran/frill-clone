@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { toE164 } from '@/lib/telnyx-service'
-import { resolveSmsSender } from '@/lib/sms-provider'
+import { resolveSmsSender, isLandlineRejection } from '@/lib/sms-provider'
 import { trackLinksInText } from '@/lib/link-tracking'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 
@@ -17,11 +17,15 @@ function admin() {
 // Attachments are sent as short Colvy links (not raw MMS media) so large
 // videos aren't rejected and images aren't downscaled by the carrier.
 export async function POST(req: NextRequest) {
+  // Hoisted so the catch can still see which conversation this was for.
+  let conversationId: string | undefined
   try {
     // skipChatMessage: deliver the SMS but DON'T log it as a chat message. Used
     // when the chat already shows a richer version (e.g. a payment card), so the
     // customer doesn't see the same thing twice with a long raw link.
-    const { companyId, conversationId, to, text, senderName, attachments, skipChatMessage } = await req.json()
+    const body0 = await req.json()
+    const { companyId, to, text, senderName, attachments, skipChatMessage } = body0
+    conversationId = body0.conversationId
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
@@ -216,6 +220,22 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, id: providerMessageId })
   } catch (err: any) {
+    // The carrier just told us this number is not a mobile. Remember it on the
+    // contact so the next send skips the doomed round trip — the lookup that
+    // normally fills this in costs money per number, and a refusal is the same
+    // answer for free.
+    try {
+      if (isLandlineRejection(err) && conversationId) {
+        const db2 = admin()
+        const { data: conv } = await db2.from('conversations')
+          .select('contact_id').eq('id', conversationId).maybeSingle()
+        if (conv?.contact_id) {
+          await db2.from('contacts')
+            .update({ line_type: 'landline', line_type_checked_at: new Date().toISOString() })
+            .eq('id', conv.contact_id)
+        }
+      }
+    } catch { /* best-effort; never changes what the caller is told */ }
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

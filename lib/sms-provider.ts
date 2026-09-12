@@ -47,9 +47,14 @@ export interface SmsSender {
  * The provider's own text is always kept — it is the record of what actually
  * came back, and the patterns below are guesses at wording that can change.
  */
+export function isLandlineRejection(raw: unknown): boolean {
+  const msg = String((raw as any)?.message || raw || '')
+  return /landline|fixed[ -]?line|not a valid mobile|non-?mobile|unsupported destination|cannot receive/i.test(msg)
+}
+
 export function explainSmsFailure(raw: unknown): string {
   const msg = String((raw as any)?.message || raw || 'Send failed')
-  if (/landline|fixed[ -]?line|not a valid mobile|non-?mobile|unsupported destination|cannot receive/i.test(msg)) {
+  if (isLandlineRejection(msg)) {
     return `That number cannot receive text messages — it looks like a landline. (${msg})`
   }
   return msg
