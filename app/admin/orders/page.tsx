@@ -7,7 +7,7 @@ import { peekCompanyUser } from '@/lib/client-cache'
 import { track } from '@/lib/analytics'
 import {
   STATUS_TABS, statusMeta, channelMeta, orderAge, fmtMoney,
-  CARRIERS, CARRIER_LABEL, CARRIER_SERVICES, isClickCollect,
+  CARRIERS, CARRIER_LABEL, CARRIER_SERVICES, isClickCollect, variationFromMeta,
 } from '@/lib/orders'
 import OrderPrintDoc from '@/components/OrderPrintDoc'
 import OrderItemsPanel from '@/components/OrderItemsPanel'
@@ -1782,8 +1782,31 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
       (supabase as any).from('order_events').select('*').eq('order_id', order.id).order('created_at', { ascending: false }),
       (supabase as any).from('conversation_tasks').select('*').eq('company_id', companyId).eq('order_id', order.id).order('created_at', { ascending: false }),
     ])
-    setItems(it.data || []); setNotes(nt.data || []); setEvents(ev.data || []); setTasks(tk.data || [])
-  }, [order.id, companyId])
+    let itemsData = it.data || []
+    // Backfill the picked variation from the live Woo order when a synced row is
+    // missing it (older syncs didn't capture meta_data), so variations show
+    // without waiting for a re-sync. Match on the stored Woo line id, then fall
+    // back to position.
+    if (order.sales_channel === 'woocommerce' && order.order_number && itemsData.some((r: any) => !r?.metadata?.variation)) {
+      try {
+        const res = await fetch(`/api/orders/details?companyId=${encodeURIComponent(companyId)}&orderId=${encodeURIComponent(order.order_number)}`)
+        const j = await res.json().catch(() => ({}))
+        const lines: any[] = j?.order?.line_items || []
+        if (lines.length) {
+          const byId = new Map<string, string>()
+          lines.forEach((li: any) => { if (li?.id != null) byId.set(String(li.id), variationFromMeta(li.meta_data)) })
+          itemsData = itemsData.map((r: any, i: number) => {
+            if (r?.metadata?.variation) return r
+            const wl = r?.metadata?.woo_line_id
+            let v = wl != null ? byId.get(String(wl)) : undefined
+            if (!v && lines[i]) v = variationFromMeta(lines[i].meta_data)
+            return v ? { ...r, metadata: { ...(r.metadata || {}), variation: v } } : r
+          })
+        }
+      } catch { /* live enrich is best-effort — synced fields still render */ }
+    }
+    setItems(itemsData); setNotes(nt.data || []); setEvents(ev.data || []); setTasks(tk.data || [])
+  }, [order.id, order.order_number, order.sales_channel, companyId])
   useEffect(() => { load() }, [load])
 
   // WooCommerce order-note history (system + staff + customer notes), fetched
