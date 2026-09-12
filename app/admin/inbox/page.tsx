@@ -1502,18 +1502,28 @@ export default function InboxPage() {
 
       const me = user.user_metadata?.display_name || user.email?.split('@')[0]
 
-      // Text it too, if that's how we talk to them.
+      // Text it too, if that's how we talk to them. A failed text must not lose
+      // the forward — the message still goes in the thread below — but it must
+      // not pass silently either. Swallowing it here is why forwarding to a
+      // landline looked like it worked on the web and broken on mobile.
       const phone = contactTarget.phone
+      let smsError = ''
       if (phone) {
         try {
-          await fetch('/api/telnyx/sms/send', {
+          const res = await fetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: convId, to: phone,
               text: '', attachments: [forwarding], senderName: me, skipChatMessage: true,
             }),
           })
-        } catch {}
+          if (!res.ok) {
+            const d = await res.json().catch(() => null)
+            smsError = d?.error || `HTTP ${res.status}`
+          }
+        } catch (e: any) {
+          smsError = e?.message || 'Could not reach the SMS service'
+        }
       }
 
       await (supabase as any).from('messages').insert({
@@ -1528,7 +1538,9 @@ export default function InboxPage() {
       }).eq('id', convId)
 
       setForwarding(null); setForwardSearch(''); setForwardResults([])
-      showToast(`Forwarded to ${contactTarget.name || contactTarget.email}`)
+      showToast(smsError
+        ? `Forwarded to ${contactTarget.name || contactTarget.email}, but the text did not go out: ${smsError}`
+        : `Forwarded to ${contactTarget.name || contactTarget.email}`)
       loadConversations()
     } catch (e: any) {
       showToast('Could not forward: ' + e.message)
