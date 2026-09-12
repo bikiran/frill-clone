@@ -42,6 +42,19 @@ export class TelnyxService {
     })
   }
 
+  /**
+   * What kind of line a number is: 'mobile', 'landline', 'voip', or whatever
+   * else the carrier reports. Null when the lookup gives no usable answer.
+   *
+   * This is a PAID lookup, one call per number, so callers are expected to
+   * cache the result rather than ask on every send.
+   */
+  async lookupLineType(e164: string): Promise<string | null> {
+    const data = await this.req(`/number_lookup/${encodeURIComponent(e164)}?type=carrier`, 'GET')
+    const t = data?.data?.carrier?.type
+    return t ? String(t).toLowerCase() : null
+  }
+
   // Create an on-demand credential for WebRTC (telephony credential tied to a connection)
   async createTelephonyCredential(connectionId: string, name: string) {
     return this.req('/telephony_credentials', 'POST', { connection_id: connectionId, name })
