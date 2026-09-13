@@ -50,18 +50,18 @@ const MENUS: Menu[] = [
     columns: [
       { heading: 'Inbound', items: [
         { icon: 'inbox', title: 'Shared inbox', desc: 'Every channel, one thread', href: '/inbox-crm' },
-        { icon: 'chat', title: 'Live chat widget', desc: 'Capture leads on your site', href: '/inbox-crm' },
-        { icon: 'reaction', title: 'Meta DMs', desc: 'Instagram & Messenger', href: '/inbox-crm' },
-        { icon: 'star', title: 'Google reviews', desc: 'Reply from the same place', href: '/inbox-crm' },
+        { icon: 'chat', title: 'Live chat widget', desc: 'Capture leads on your site', href: '/channels/chat-widget' },
+        { icon: 'reaction', title: 'Meta DMs', desc: 'Instagram & Messenger', href: '/channels/meta' },
+        { icon: 'star', title: 'Google reviews', desc: 'Reply from the same place', href: '/channels/google-reviews' },
       ] },
       { heading: 'Messaging', items: [
-        { icon: 'chat', title: 'SMS', desc: 'Text customers in one place', href: '/inbox-crm' },
-        { icon: 'chat', title: 'WhatsApp', desc: 'Business number or your own', href: '/inbox-crm' },
-        { icon: 'mail', title: 'Email', desc: 'In the same thread', href: '/inbox-crm' },
-        { icon: 'megaphone', title: 'Broadcast campaigns', desc: 'Reach everyone at once', href: '/inbox-crm' },
+        { icon: 'chat', title: 'SMS', desc: 'Text customers in one place', href: '/channels/sms' },
+        { icon: 'chat', title: 'WhatsApp', desc: 'Business number or your own', href: '/channels/whatsapp' },
+        { icon: 'mail', title: 'Email', desc: 'In the same thread', href: '/channels/email' },
+        { icon: 'megaphone', title: 'Broadcast campaigns', desc: 'Reach everyone at once', href: '/channels/sms' },
       ] },
     ],
-    feature: { eyebrow: 'One shared inbox', title: 'Every channel, one thread', desc: 'WhatsApp, Instagram, SMS, email and chat beside one customer profile.', icon: 'inbox', chips: ['WhatsApp', 'Instagram', 'SMS'], href: '/solutions/channels', cta: 'Explore channels' },
+    feature: { eyebrow: 'One shared inbox', title: 'Every channel, one thread', desc: 'WhatsApp, Instagram, SMS, email and chat beside one customer profile.', icon: 'inbox', chips: ['WhatsApp', 'Instagram', 'SMS'], href: '/channels/meta', cta: 'Explore channels' },
   },
   {
     key: 'phones', label: 'Phones', accent: GREEN,
@@ -79,7 +79,7 @@ const MENUS: Menu[] = [
         { icon: 'pin', title: 'Numbers & porting', desc: 'Bring or buy a number', href: '/inbox-crm#calls' },
       ] },
     ],
-    feature: { eyebrow: 'Built-in calling', title: 'Talk, transfer, transcribe', desc: 'A full phone system inside the inbox — every call logged and summarised.', icon: 'phone', chips: ['Live call', 'AI notes', 'Transcribed'], href: '/solutions/phones', cta: 'See phones' },
+    feature: { eyebrow: 'Built-in calling', title: 'Talk, transfer, transcribe', desc: 'A full phone system inside the inbox — every call logged and summarised.', icon: 'phone', chips: ['Live call', 'AI notes', 'Transcribed'], href: '/channels/phones', cta: 'See phones' },
   },
   {
     key: 'ai', label: 'AI Assistant', accent: PURPLE,
@@ -191,7 +191,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   const scheduleClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setOpen(null), 130) }
   const onPanelMove = (e: React.MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPar({ x: (e.clientX - r.left) / r.width - 0.5, y: (e.clientY - r.top) / r.height - 0.5 }) }
 
-  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'channels' && pathname.startsWith('/inbox-crm')) || (k === 'pricing' && pathname.startsWith('/pricing'))
+  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/channels/phones')) || (k === 'pricing' && pathname.startsWith('/pricing'))
 
   const handleDashboard = async () => {
     if (!user) { window.location.href = '/signup'; return }
