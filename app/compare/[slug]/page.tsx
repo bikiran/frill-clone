@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
+import FeatureIcon from '@/components/FeatureIcon'
 
 // Landing-styled competitor comparison pages (Colvy vs Podium / Gorgias / Gladly
 // / Intercom / Zendesk / Freshdesk). Data-driven so every comparison shares the
@@ -289,6 +290,31 @@ export default function ComparePage() {
             </Reveal>
           ))}
         </div>
+      </section>
+
+      {/* SWITCHING OFFER — money back + free migration */}
+      <section style={{ maxWidth: 1000, margin: '0 auto', padding: '10px 24px 20px' }}>
+        <Reveal>
+          <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 6px' }}>Already paid {c.name}? <span style={{ color: accent }}>You won’t lose a cent</span></h2>
+          <p style={{ textAlign: 'center', fontSize: 16, color: muted, maxWidth: 620, margin: '0 auto 30px', lineHeight: 1.55 }}>Switching mid-contract shouldn’t cost you. We make the move painless — and free.</p>
+        </Reveal>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
+          {[
+            { icon: 'tag', t: 'We’ll cover your unused balance', d: `On a yearly plan with ${c.name}? Send us proof of payment and we’ll credit the remaining months as free time on Colvy — or carry your subscription over. You don’t pay twice.` },
+            { icon: 'bolt', t: 'Free migration, done for you', d: `Our team moves everything from ${c.name} to Colvy for you — conversations, contacts, numbers and channels — in about 45 minutes, at no cost.` },
+          ].map((o, i) => (
+            <Reveal key={o.t} delay={i * 0.06}>
+              <div className="cmp-card" style={{ height: '100%', borderRadius: 20, padding: 28, background: `linear-gradient(150deg, ${accent}14, ${accent}05)`, border: `1px solid ${accent}33` }}>
+                <div style={{ width: 46, height: 46, borderRadius: 13, background: accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><FeatureIcon name={o.icon} color="#fff" size={23} /></div>
+                <h3 style={{ fontSize: 18, fontWeight: 800, margin: '0 0 7px', color: text }}>{o.t}</h3>
+                <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{o.d}</p>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+        <Reveal>
+          <p style={{ textAlign: 'center', fontSize: 12.5, color: muted, margin: '18px auto 0', maxWidth: 640, lineHeight: 1.55 }}>Balance credit is offered at Colvy’s discretion on sighting valid proof of a current annual payment — <a href="mailto:support@colvy.com?subject=Switching%20to%20Colvy" style={{ color: accent, textDecoration: 'none', fontWeight: 600 }}>talk to us</a> and we’ll sort it out.</p>
+        </Reveal>
       </section>
 
       {/* MIGRATION / CHECKLIST */}
