@@ -119,14 +119,14 @@ const MENUS: Menu[] = [
     key: 'industries', label: 'Industries', accent: PINK,
     columns: [
       { heading: 'By team', items: [
-        { icon: 'bolt', title: 'SaaS & tech', desc: 'Feedback → roadmap → ship', href: '/signup' },
-        { icon: 'star', title: 'Agencies', desc: 'Every client in one place', href: '/signup' },
-        { icon: 'tag', title: 'E-commerce', desc: 'Sell inside the chat', href: '/signup' },
+        { icon: 'bolt', title: 'SaaS & tech', desc: 'Feedback → roadmap → ship', href: '/industries/saas' },
+        { icon: 'star', title: 'Agencies', desc: 'Every client in one place', href: '/industries/agencies' },
+        { icon: 'tag', title: 'E-commerce', desc: 'Sell inside the chat', href: '/industries/ecommerce' },
       ] },
       { heading: 'Local & service', items: [
-        { icon: 'reaction', title: 'Hospitality', desc: 'Bookings & guest comms', href: '/signup' },
-        { icon: 'pin', title: 'Real estate', desc: 'Leads & follow-ups in a thread', href: '/signup' },
-        { icon: 'help', title: 'Healthcare', desc: 'Reminders & patient comms', href: '/signup' },
+        { icon: 'reaction', title: 'Hospitality', desc: 'Bookings & guest comms', href: '/industries/hospitality' },
+        { icon: 'pin', title: 'Real estate', desc: 'Leads & follow-ups in a thread', href: '/industries/real-estate' },
+        { icon: 'help', title: 'Healthcare', desc: 'Reminders & patient comms', href: '/industries/healthcare' },
       ] },
     ],
     feature: { eyebrow: 'Made to fit', title: 'Tuned to your industry', desc: 'The same platform, shaped around how your team actually works.', icon: 'star', chips: ['Retail', 'Hospitality', 'SaaS'], href: '/solutions/industries', cta: 'See industries' },
