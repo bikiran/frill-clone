@@ -7,7 +7,7 @@ import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
 
-const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', TEAL = '#12b5a5', INDIGO = '#4f46e5', INK = '#0f1119'
+const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', TEAL = '#12b5a5', INDIGO = '#4f46e5', AMBER = '#d97706', INK = '#0f1119'
 
 // Why-Colvy hero feature grid (mirrors the old solutions/compare header the user liked).
 const WHY = [
@@ -30,6 +30,7 @@ const CARDS = [
   { slug: 'freshdesk', comp: 'Freshdesk', tag: 'All-in-one, no add-on fees', metric: '$0', accent: CYAN },
   { slug: 'coax', comp: 'Coax', tag: 'Comms + a built-in feedback loop', metric: 'Feedback', accent: TEAL },
   { slug: 'manychat', comp: 'ManyChat', tag: 'A real inbox, not just flows', metric: 'Inbox', accent: INDIGO },
+  { slug: 'birdeye', comp: 'Birdeye', tag: 'Reviews, calls & feedback — SMB priced', metric: 'All-in-1', accent: AMBER },
 ]
 
 function useReveal(threshold = 0.12) {

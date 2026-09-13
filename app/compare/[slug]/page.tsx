@@ -16,7 +16,7 @@ import FeatureIcon from '@/components/FeatureIcon'
 // We intentionally do NOT reproduce any competitor's real customer names, quotes
 // or results — those belong to them. Copy here is product-level and neutral.
 
-const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', TEAL = '#12b5a5', INDIGO = '#4f46e5', INK = '#0f1119'
+const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', TEAL = '#12b5a5', INDIGO = '#4f46e5', AMBER = '#d97706', INK = '#0f1119'
 
 // Standard capability row order for every table. Comms rows first, then the
 // product-feedback suite — where Colvy is unique among these tools. A competitor
@@ -161,6 +161,23 @@ const CMP: Record<string, Cmp> = {
       { t: 'Australian 🇦🇺 support', d: 'Local team, local numbers, pricing in AUD.' },
     ],
     checklist: ['A real team inbox with CRM, not just flows', 'Voice calls, voicemail and call intelligence', 'Ideas board, roadmap and changelog built in', 'Payments and recorded sales in the thread', 'AI that reads orders and takes action', 'Google Reviews automated and managed', 'Australian 🇦🇺 support and local numbers', 'No lock-in contracts — cancel anytime'],
+  },
+  birdeye: {
+    name: 'Birdeye', accent: AMBER, heroTitle: 'The Birdeye alternative built for', heroAccent: 'Australian 🇦🇺 SMBs', heroSub: 'Birdeye is a US reputation platform priced for enterprise. Colvy brings reviews, messaging, real calling and a built-in feedback suite together — with Australian support and SMB pricing.',
+    stats: [{ big: 'SMB', label: 'pricing, not enterprise' }, { big: '14', label: 'channels included' }, { big: '45 min', label: 'full migration' }],
+    // Birdeye leads on reviews/surveys (✓), but has no built-in phone system and
+    // no product-feedback board; Colvy adds those. Feedback rows auto-✗ except surveys.
+    comp: [true, true, true, true, 'Marketing', false, true, true, 'BirdAI', false, false, 'Limited', true, false, false, false, false, false, false, true],
+    tableNote: 'Birdeye leads on reviews and surveys — Colvy matches that and adds real calling, a shared inbox and a product-feedback suite, at SMB pricing.',
+    wins: [
+      { t: 'A real phone system', d: 'Colvy includes voice calls, voicemail and call intelligence. Birdeye has no built-in phone system.' },
+      { t: 'Reviews, plus everything else', d: 'Automate and reply to Google reviews like Birdeye — then handle SMS, WhatsApp, calls and email in the same thread.' },
+      { t: 'A built-in feedback suite', d: 'Ideas board, roadmap and announcements to build what customers ask for. Birdeye has none.' },
+      { t: 'SMB pricing, no enterprise contract', d: 'Fair, flat pricing and month-to-month. Birdeye is priced and sold for enterprise.' },
+      { t: 'Australian 🇦🇺 support & numbers', d: 'Local team, local numbers, pricing in AUD. Birdeye is US-centric.' },
+      { t: 'Sell and get paid in chat', d: 'Live orders, payment links and recorded sales — right in the conversation.' },
+    ],
+    checklist: ['Google Reviews automated and managed', 'SMS, WhatsApp, webchat, email and social in one inbox', 'Voice calls with AI transcription & summaries', 'Surveys plus a full ideas / roadmap feedback suite', 'Payments — send a link, get paid in the thread', 'Australian 🇦🇺 support team and local numbers', 'No enterprise contracts — cancel anytime', 'Full migration handled in 45 minutes'],
   },
 }
 
