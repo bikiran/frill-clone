@@ -85,19 +85,19 @@ const MENUS: Menu[] = [
     key: 'ai', label: 'AI Assistant', accent: PURPLE,
     columns: [
       { heading: 'Assist', items: [
-        { icon: 'ai', title: 'AI replies', desc: 'Draft answers in a blink', href: '/inbox-crm#tasks' },
-        { icon: 'book', title: 'Knowledge base', desc: 'Teach it your docs', href: '/inbox-crm#tasks' },
-        { icon: 'bolt', title: 'AI actions', desc: 'Look up orders, take action', href: '/inbox-crm#tasks' },
-        { icon: 'pen', title: 'Auto-summaries', desc: 'Every thread, TL;DR’d', href: '/inbox-crm#tasks' },
+        { icon: 'ai', title: 'AI replies', desc: 'Draft answers in a blink', href: '/ai-assistant' },
+        { icon: 'book', title: 'Knowledge base', desc: 'Teach it your docs', href: '/ai-assistant' },
+        { icon: 'bolt', title: 'AI actions', desc: 'Look up orders, take action', href: '/ai-assistant' },
+        { icon: 'pen', title: 'Auto-summaries', desc: 'Every thread, TL;DR’d', href: '/ai-assistant' },
       ] },
       { heading: 'Automate', items: [
-        { icon: 'target', title: 'Auto-routing', desc: 'Right team, every time', href: '/inbox-crm#tasks' },
-        { icon: 'bell', title: 'Follow-ups', desc: 'Nudge at the right moment', href: '/inbox-crm#tasks' },
-        { icon: 'calendar', title: 'Tasks & reminders', desc: 'Turn chats into to-dos', href: '/inbox-crm#tasks' },
-        { icon: 'link', title: 'Workflows', desc: 'Trigger actions on events', href: '/inbox-crm#tasks' },
+        { icon: 'target', title: 'Auto-routing', desc: 'Right team, every time', href: '/ai-assistant' },
+        { icon: 'bell', title: 'Follow-ups', desc: 'Nudge at the right moment', href: '/ai-assistant' },
+        { icon: 'calendar', title: 'Tasks & reminders', desc: 'Turn chats into to-dos', href: '/ai-assistant' },
+        { icon: 'link', title: 'Workflows', desc: 'Trigger actions on events', href: '/ai-assistant' },
       ] },
     ],
-    feature: { eyebrow: 'Always-on AI', title: 'Replies drafted in a blink', desc: 'An assistant that knows your docs, drafts replies and takes real actions.', icon: 'ai', chips: ['Auto-reply', 'Summarise', 'Take action'], href: '/solutions/ai-assistant', cta: 'Meet the AI' },
+    feature: { eyebrow: 'Always-on AI', title: 'Replies drafted in a blink', desc: 'An assistant that knows your docs, drafts replies and takes real actions.', icon: 'ai', chips: ['Auto-reply', 'Summarise', 'Take action'], href: '/ai-assistant', cta: 'Meet the AI' },
   },
   {
     key: 'integrations', label: 'Integrations', accent: CYAN,
@@ -191,7 +191,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   const scheduleClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setOpen(null), 130) }
   const onPanelMove = (e: React.MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPar({ x: (e.clientX - r.left) / r.width - 0.5, y: (e.clientY - r.top) / r.height - 0.5 }) }
 
-  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/channels/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'pricing' && pathname.startsWith('/pricing'))
+  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/channels/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'pricing' && pathname.startsWith('/pricing'))
 
   const handleDashboard = async () => {
     if (!user) { window.location.href = '/signup'; return }
