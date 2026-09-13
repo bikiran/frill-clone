@@ -66,7 +66,7 @@ const CMP: Record<string, Cmp> = {
       { t: 'Real phone calls, not add-ons', d: 'Calls, voicemail and call intelligence are included natively. Gorgias treats phone as a paid add-on.' },
       { t: 'Google Reviews built in', d: 'Automate review requests and respond from the inbox. Gorgias has no review management.' },
       { t: 'AI that reads your data', d: 'Colvy AI checks orders, tracking and history to draft accurate replies. Gorgias relies on macros.' },
-      { t: 'Works beyond Shopify', d: 'WooCommerce, Shopify, Xero and more. Gorgias is built for Shopify first.' },
+      { t: 'Works beyond Shopify', d: 'WooCommerce, Shopify, Stripe and more. Gorgias is built for Shopify first.' },
       { t: 'Australian 🇦🇺 support team', d: 'Real humans in Australia. Gorgias support is US/EU based.' },
     ],
     checklist: ['All support tickets become unified conversation threads', 'Phone, SMS, WhatsApp and social added automatically', 'Google Review requests automated after every order', 'AI assistant handles common questions 24/7', 'Call intelligence transcribes and summarises every call', 'Send a payment link and get paid in the thread', 'Works with any ecommerce platform, not just Shopify', 'No long-term contracts — cancel anytime'],
@@ -84,7 +84,7 @@ const CMP: Record<string, Cmp> = {
       { t: 'Payments built in', d: 'Send a secure link via SMS or email; the customer pays on their device. Freshdesk has no payments.' },
       { t: 'Australian 🇦🇺 support team', d: 'Real humans in Australia who understand your market.' },
     ],
-    checklist: ['Phone, SMS, WhatsApp, email and social all included', 'Google Reviews automated and managed in one place', 'AI assistant handles WISMO and common questions 24/7', 'Call intelligence transcribes and summarises every call', 'Secure payment links, PCI-compliant', 'POS/ERP integrations with WooCommerce, Xero and more', 'Australian 🇦🇺 support team available when you need them', 'No per-agent pricing — add your whole team'],
+    checklist: ['Phone, SMS, WhatsApp, email and social all included', 'Google Reviews automated and managed in one place', 'AI assistant handles WISMO and common questions 24/7', 'Call intelligence transcribes and summarises every call', 'Secure payment links, PCI-compliant', 'Integrations with WooCommerce, Shopify, Stripe and more', 'Australian 🇦🇺 support team available when you need them', 'No per-agent pricing — add your whole team'],
   },
   zendesk: {
     name: 'Zendesk', accent: BLUE, heroTitle: 'The Zendesk alternative built for', heroAccent: 'Australian 🇦🇺 business', heroSub: 'Threads, not tickets. Every channel included. Set up in 45 minutes, not weeks. Colvy replaces Zendesk with simplicity, speed and AI.',
@@ -114,7 +114,7 @@ const CMP: Record<string, Cmp> = {
       { t: 'Payments in the thread', d: 'Send a link and get paid without leaving the conversation.' },
       { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, local numbers, pricing in AUD.' },
     ],
-    checklist: ['Chat, calls, SMS, WhatsApp, social and email all included', 'AI assistant handles common questions and WISMO 24/7', 'Call intelligence transcribes and summarises every call', 'Google Reviews automated and managed in one place', 'Secure payment links built in', 'POS/ERP integrations with WooCommerce, Xero and more', 'No add-on tax for phone or SMS', 'Full migration in 45 minutes'],
+    checklist: ['Chat, calls, SMS, WhatsApp, social and email all included', 'AI assistant handles common questions and WISMO 24/7', 'Call intelligence transcribes and summarises every call', 'Google Reviews automated and managed in one place', 'Secure payment links built in', 'Integrations with WooCommerce, Shopify, Stripe and more', 'No add-on tax for phone or SMS', 'Full migration in 45 minutes'],
   },
   gladly: {
     name: 'Gladly', accent: PINK, heroTitle: 'The Gladly alternative —', heroAccent: 'SMB pricing, not enterprise', heroSub: 'Gladly charges enterprise prices and is US-centric. Colvy is built for Australian 🇦🇺 SMBs with local support, local numbers and no lock-in contracts.',

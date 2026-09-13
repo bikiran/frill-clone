@@ -88,7 +88,7 @@ const PAGES: Record<string, Page> = {
       { icon: 'tag', title: 'Stripe', desc: 'Send payment links and take payment in chat.' },
       { icon: 'chat', title: 'Slack', desc: 'Get alerts and reply where your team already works.' },
       { icon: 'bolt', title: 'Zapier', desc: 'Connect Colvy to 6,000+ apps, no code.' },
-      { icon: 'folder', title: 'Xero', desc: 'Invoices and accounting kept in sync.' },
+      { icon: 'link', title: 'Webhooks & API', desc: 'Build anything custom — push events out, pull data in.' },
     ],
     bands: [
       { tag: 'Sell in the chat', title: 'Commerce, right in the thread', body: 'Look up live orders, recover carts and take payment without leaving the conversation — then see the revenue each chat drove.', bullets: ['Live orders & refunds', 'Payment links & recorded sales', 'Revenue-per-conversation'] },
