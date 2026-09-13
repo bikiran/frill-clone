@@ -193,7 +193,7 @@ export default function UploadPage() {
   const full = used >= maxFiles
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f6f7f9', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#f6f7f9', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 20px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       <style>{`@keyframes uSpin { to { transform: rotate(360deg); } } @keyframes uPop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }`}</style>
       <div style={{ width: '100%', maxWidth: 480, background: '#fff', borderRadius: 22, boxShadow: '0 18px 50px rgba(0,0,0,0.10)', overflow: 'hidden' }}>
         <div style={{ padding: '22px 26px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12 }}>

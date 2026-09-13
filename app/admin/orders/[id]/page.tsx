@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
-import { statusMeta, channelMeta, orderAge, fmtMoney, isClickCollect } from '@/lib/orders'
+import { statusMeta, channelMeta, orderAge, fmtMoney, isClickCollect, variationFromMeta } from '@/lib/orders'
 import { ChannelIcon, CopyBtn, copyToClipboard, TagMenu, CreateLabelModal, TagChip, hashColor, PrintModal } from '../page'
 import OrderItemsPanel from '@/components/OrderItemsPanel'
 import { barcodeSVG } from '@/lib/barcode'
@@ -83,6 +83,33 @@ export default function OrderDetailPage() {
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Backfill picked variations from the live Woo order when synced rows lack
+  // them (older syncs didn't capture meta_data), so they show without a re-sync.
+  useEffect(() => {
+    if (!order || !companyId || order.sales_channel !== 'woocommerce' || !order.order_number) return
+    if (!items.length || !items.some((r: any) => !r?.metadata?.variation)) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/orders/details?companyId=${encodeURIComponent(companyId)}&orderId=${encodeURIComponent(order.order_number)}`)
+        const j = await res.json().catch(() => ({}))
+        const lines: any[] = j?.order?.line_items || []
+        if (cancelled || !lines.length) return
+        const byId = new Map<string, string>()
+        lines.forEach((li: any) => { if (li?.id != null) byId.set(String(li.id), variationFromMeta(li.meta_data)) })
+        setItems(prev => prev.map((r: any, i: number) => {
+          if (r?.metadata?.variation) return r
+          const wl = r?.metadata?.woo_line_id
+          let v = wl != null ? byId.get(String(wl)) : undefined
+          if (!v && lines[i]) v = variationFromMeta(lines[i].meta_data)
+          return v ? { ...r, metadata: { ...(r.metadata || {}), variation: v } } : r
+        }))
+      } catch { /* best-effort */ }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id, order?.order_number, order?.sales_channel, companyId, items.length])
 
   const ACCENT = accent
 

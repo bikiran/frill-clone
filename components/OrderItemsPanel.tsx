@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { fmtMoney, buildOrderLineKeys, gstInclFactor } from '@/lib/orders'
+import { fmtMoney, buildOrderLineKeys, gstInclFactor, variationLabel } from '@/lib/orders'
 
 /**
  * Per-line-item fulfilment + ShipStation-style split shipments.
@@ -241,7 +241,10 @@ export default function OrderItemsPanel({
         </span>
         <div onClick={rowClick} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
           <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: sent && !pickMode ? 'line-through' : 'none' }}>{it.product_name}</p>
-          <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          {variationLabel(it) && (
+            <span style={{ display: 'inline-block', margin: '2px 0 0', padding: '1px 8px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{variationLabel(it)}</span>
+          )}
+          <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {it.sku ? <span>SKU: {it.sku}</span> : null}
             {oosFlag && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 20, background: '#fee2e2', color: '#b91c1c', fontWeight: 800, fontSize: 10, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>⚠ OUT OF STOCK</span>}
             {sent && !pickMode && <span style={{ color: '#059669', fontWeight: 700 }}>✓ Sent</span>}

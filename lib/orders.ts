@@ -19,6 +19,35 @@ export const STATUS_META: Record<string, { label: string; bg: string; fg: string
 }
 export const statusMeta = (s?: string | null) => STATUS_META[String(s || '')] || { label: s || 'Unknown', bg: '#f3f4f6', fg: '#6b7280' }
 
+// WooCommerce line items carry their chosen variation in `meta_data`: an array of
+// { key, display_key, display_value }. Only the human-facing attributes describe
+// the variation (e.g. "Size: 500ML"); internal keys (leading underscore, or the
+// _reduced_stock / pa_ machinery) are skipped. Returns "" when the line has none.
+export function variationFromMeta(meta: any): string {
+  if (!Array.isArray(meta)) return ''
+  const parts: string[] = []
+  for (const m of meta) {
+    const key = String(m?.display_key ?? m?.key ?? '').trim()
+    if (!key || key.startsWith('_')) continue
+    const raw = m?.display_value ?? m?.value
+    if (raw == null || typeof raw === 'object') continue
+    const val = String(raw).replace(/<[^>]*>/g, '').trim() // strip any HTML Woo adds
+    if (!val) continue
+    parts.push(`${key}: ${val}`)
+  }
+  return parts.join(' · ')
+}
+
+// The variation label for an order line item in any shape: a synced order_items
+// row (metadata.variation), a live WooCommerce line item (meta_data), or a row
+// that stashed the raw meta. Empty string when there's no variation.
+export function variationLabel(item: any): string {
+  if (!item) return ''
+  const direct = item.variation ?? item?.metadata?.variation
+  if (typeof direct === 'string' && direct.trim()) return direct.trim()
+  return variationFromMeta(item.meta_data ?? item?.metadata?.meta_data)
+}
+
 // The status tabs, in order, with the DB status(es) each covers. "All" and
 // "Order Alerts" are computed specially by the caller.
 export const STATUS_TABS: { key: string; label: string; match?: OrderStatus[] }[] = [

@@ -1,4 +1,4 @@
-import { mapWooStatus, mapWooPayment, wooDateToISO } from '@/lib/orders'
+import { mapWooStatus, mapWooPayment, wooDateToISO, variationFromMeta } from '@/lib/orders'
 
 // The shipping method name from a woocommerce_orders row or a raw Woo order.
 function shippingMethodOf(o: any): string | null {
@@ -142,6 +142,10 @@ function itemRows(companyId: string, orderId: string, o: any) {
   return items.map((li: any) => {
     const qty = Number(li.quantity) || 1
     const img = li.image?.src || li.image || li.images?.[0]?.src || null
+    // The chosen variation (e.g. "Size: 500ML") lives in the line's meta_data.
+    // Resolve it once here so the UI doesn't have to and it survives even when
+    // the product name doesn't include the variation.
+    const variation = variationFromMeta(li.meta_data)
     return {
       order_id: orderId, company_id: companyId,
       product_id: li.product_id ? String(li.product_id) : null,
@@ -151,10 +155,9 @@ function itemRows(companyId: string, orderId: string, o: any) {
       unit_price: parseFloat(li.price ?? (li.total ? li.total / qty : 0)) || null,
       total_price: parseFloat(li.total ?? li.subtotal ?? 0) || null,
       image_url: typeof img === 'string' ? img : null,
-      // Stash the WooCommerce line id so per-line fulfilment (order_fulfillments)
-      // has a stable key that survives this order's items being deleted and
-      // re-inserted on the next webhook update.
-      metadata: { woo_line_id: li.id != null ? String(li.id) : null },
+      // woo_line_id: stable key for per-line fulfilment across delete+re-insert.
+      // variation_id + variation: the picked variant, so the panel can show it.
+      metadata: { woo_line_id: li.id != null ? String(li.id) : null, variation_id: li.variation_id ? String(li.variation_id) : null, variation: variation || null },
     }
   })
 }

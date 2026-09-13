@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
         currency: order.currency,
         billing: order.billing,
         shipping: order.shipping,
-        line_items: (order.line_items || []).map((li: any) => ({ name: li.name, quantity: li.quantity, total: li.total, sku: li.sku })),
+        line_items: (order.line_items || []).map((li: any) => ({ id: li.id, name: li.name, quantity: li.quantity, total: li.total, sku: li.sku, variation_id: li.variation_id, meta_data: li.meta_data })),
         shipping_total: order.shipping_total,
         discount_total: order.discount_total,
         // Coupon codes applied and any manual fees, so the drawer can show what
