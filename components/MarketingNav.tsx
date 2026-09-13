@@ -103,17 +103,17 @@ const MENUS: Menu[] = [
     key: 'integrations', label: 'Integrations', accent: CYAN,
     columns: [
       { heading: 'Commerce', items: [
-        { icon: 'tag', title: 'WooCommerce', desc: 'Live orders in the chat', href: '/inbox-crm#woo' },
-        { icon: 'tag', title: 'Shopify', desc: 'Orders & customers synced', href: '/inbox-crm#woo' },
-        { icon: 'tag', title: 'Stripe', desc: 'Take payments in chat', href: '/inbox-crm#woo' },
+        { icon: 'tag', title: 'WooCommerce', desc: 'Live orders in the chat', href: '/integrations/woocommerce' },
+        { icon: 'tag', title: 'Shopify', desc: 'Orders & customers synced', href: '/integrations/shopify' },
+        { icon: 'tag', title: 'Stripe', desc: 'Take payments in chat', href: '/integrations/stripe' },
       ] },
       { heading: 'Tools', items: [
-        { icon: 'chat', title: 'Slack', desc: 'Get alerts where you work', href: '/product' },
-        { icon: 'bolt', title: 'Zapier', desc: 'Connect 6,000+ apps', href: '/product' },
-        { icon: 'folder', title: 'Xero', desc: 'Invoices & accounting', href: '/product' },
+        { icon: 'chat', title: 'Slack', desc: 'Get alerts where you work', href: '/integrations/slack' },
+        { icon: 'bolt', title: 'Zapier', desc: 'Connect 5,000+ apps', href: '/integrations/zapier' },
+        { icon: 'link', title: 'Webhooks & API', desc: 'Build anything custom', href: '/integrations/api' },
       ] },
     ],
-    feature: { eyebrow: 'Plays nice', title: 'Connect your whole stack', desc: 'Commerce, payments and the tools you already run — wired into every thread.', icon: 'plug', chips: ['WooCommerce', 'Stripe', 'Shopify'], href: '/solutions/integrations', cta: 'Browse integrations' },
+    feature: { eyebrow: 'Plays nice', title: 'Connect your whole stack', desc: 'Commerce, payments and the tools you already run — wired into every thread.', icon: 'plug', chips: ['WooCommerce', 'Stripe', 'Shopify'], href: '/integrations/woocommerce', cta: 'Browse integrations' },
   },
   {
     key: 'industries', label: 'Industries', accent: PINK,
@@ -191,7 +191,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   const scheduleClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setOpen(null), 130) }
   const onPanelMove = (e: React.MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPar({ x: (e.clientX - r.left) / r.width - 0.5, y: (e.clientY - r.top) / r.height - 0.5 }) }
 
-  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/channels/phones')) || (k === 'pricing' && pathname.startsWith('/pricing'))
+  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/channels/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'pricing' && pathname.startsWith('/pricing'))
 
   const handleDashboard = async () => {
     if (!user) { window.location.href = '/signup'; return }
