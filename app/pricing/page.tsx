@@ -6,6 +6,7 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import { track } from '@/lib/analytics'
 import MarketingFooter from '@/components/MarketingFooter'
 import MarketingNav from '@/components/MarketingNav'
+import ContactSalesModal from '@/components/ContactSalesModal'
 
 const CORAL = '#ff6a4d'
 const PINK = '#ff4d8d'
@@ -56,6 +57,7 @@ export default function PricingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(0)
   const [dark, setDark] = useState(false)
   const [scrollY, setScrollY] = useState(0)
+  const [contactPlan, setContactPlan] = useState<string | null>(null)  // opens the Contact-sales modal
   useEffect(() => {
     track('pricing_viewed')
     supabase.auth.getSession().then(({ data }) => setUser(data.session?.user || null))
@@ -154,7 +156,7 @@ export default function PricingPage() {
         {/* Fair-use footnote */}
         <Reveal>
           <p style={{ maxWidth: 900, margin: '26px auto 0', fontSize: 12.5, lineHeight: 1.65, color: muted, textAlign: 'center' }}>
-            *SMS fair use policy applies. The base package includes up to 3,000 SMS per month. Usage charges apply beyond this allowance and vary based on volume — most Australian 🇦🇺 SMBs can expect approximately 5c per standard SMS. SMS marketing campaigns and international messaging are billed separately. Voice call minutes are metered — <a href="mailto:support@colvy.com" style={{ color: CORAL, textDecoration: 'none', fontWeight: 600 }}>contact us</a> for high-volume call rates.
+            *SMS fair use policy applies. The base package includes up to 3,000 SMS per month. Usage charges apply beyond this allowance and vary based on volume — most Australian 🇦🇺 SMBs can expect approximately 5c per standard SMS. SMS marketing campaigns and international messaging are billed separately. Voice call minutes are metered — <a href="mailto:support@colvy.com" onClick={(e) => { e.preventDefault(); setContactPlan('High-volume calls') }} style={{ color: CORAL, textDecoration: 'none', fontWeight: 600, cursor: 'pointer' }}>contact us</a> for high-volume call rates.
           </p>
         </Reveal>
       </section>
@@ -171,7 +173,7 @@ export default function PricingPage() {
                 </div>
                 <p style={{ fontSize: 14, color: muted, margin: '6px 0 0', maxWidth: 520, lineHeight: 1.55 }}>For teams that need compliance, control and scale beyond the plans above.</p>
               </div>
-              <a href="mailto:support@colvy.com?subject=Colvy%20Enterprise%20enquiry" className="pr-btn" style={{ padding: '11px 24px', borderRadius: 999, background: 'transparent', color: text, fontWeight: 800, fontSize: 14, textDecoration: 'none', border: `1.5px solid ${cardBorder}`, flexShrink: 0 }}>Contact sales →</a>
+              <button onClick={() => setContactPlan('Enterprise')} className="pr-btn" style={{ padding: '11px 24px', borderRadius: 999, background: 'transparent', color: text, fontWeight: 800, fontSize: 14, border: `1.5px solid ${cardBorder}`, flexShrink: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Contact sales →</button>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {['White-label branding', 'SSO / SAML', 'SLA guarantee', 'Dedicated onboarding', 'Dedicated support', 'Custom contracts', 'High-volume usage & rates'].map(f => (
@@ -212,6 +214,7 @@ export default function PricingPage() {
       </section>
 
       <MarketingFooter dark={dark} />
+      <ContactSalesModal open={contactPlan !== null} onClose={() => setContactPlan(null)} dark={dark} plan={contactPlan || undefined} source="pricing" />
     </div>
   )
 }
