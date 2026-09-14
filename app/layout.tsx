@@ -583,7 +583,7 @@ export default function RootLayout({
       <html lang="en">
         <head>
           <title>Colvy — Customer Feedback Made Beautiful</title>
-          <meta name="description" content="Colvy helps you capture, organize and announce product feedback in one place." />
+          <meta name="description" content="Colvy helps you capture, organise and announce product feedback in one place." />
           <link rel="icon" href="/favicon.png" />
           <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         </head>
@@ -725,7 +725,7 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <title>Colvy — Customer Feedback Made Beautiful</title>
-        <meta name="description" content="Colvy helps you capture, organize and announce product feedback in one place." />
+        <meta name="description" content="Colvy helps you capture, organise and announce product feedback in one place." />
         <link rel="icon" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
