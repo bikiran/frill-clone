@@ -1917,6 +1917,26 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const store = locations.find((l: any) => l.id === order.store_location_id)?.name
   const convHref = order.conversation_id ? `/admin/inbox?conversation=${order.conversation_id}` : null
   const contactHref = order.contact_id ? `/admin/customers/profile?id=${order.contact_id}` : null
+  // Can we reach this customer at all? Gate the "start a conversation" fallback.
+  const canContact = !!(order.customer_email || order.customer_phone || order.contact_id)
+  // No linked thread yet: reuse the contact's most recent conversation if one
+  // exists, otherwise open a fresh one, link it to the order, and jump to it.
+  const startConversation = async () => {
+    try {
+      let convId: string | null = order.conversation_id || null
+      if (!convId && order.contact_id) {
+        const { data: c } = await (supabase as any).from('conversations').select('id').eq('company_id', companyId).eq('contact_id', order.contact_id).order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+        if (c?.id) convId = c.id
+      }
+      if (!convId) {
+        const { data: nc } = await (supabase as any).from('conversations').insert({ company_id: companyId, contact_id: order.contact_id || null, status: 'open', channel: order.customer_phone ? 'sms' : 'email', sms_number: order.customer_phone || null, subject: `Order ${order.order_number}`, last_message_at: new Date().toISOString() }).select('id').maybeSingle()
+        convId = nc?.id || null
+      }
+      if (!convId) { onFlash('Could not start a conversation'); return }
+      if (convId !== order.conversation_id) { order.conversation_id = convId; onPatch({ conversation_id: convId }); try { await (supabase as any).from('orders').update({ conversation_id: convId }).eq('id', order.id) } catch {} }
+      window.location.href = `/admin/inbox?conversation=${convId}`
+    } catch { onFlash('Could not start a conversation') }
+  }
 
   const sect: React.CSSProperties = { padding: '16px 18px', borderBottom: '1px solid var(--border)' }
   const kick: React.CSSProperties = { margin: 0, fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }
@@ -1999,7 +2019,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
               onFlash(wasPacked ? 'Order unpacked' : 'Order marked packed')
             }, order.status === 'packed')}
             {quick(<svg {...I}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>, 'Note', () => { (document.getElementById('ord-note') as HTMLTextAreaElement)?.focus() })}
-            {quick(<svg {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>, 'Contact', () => { if (convHref) location.href = convHref; else onFlash('No linked conversation yet.') })}
+            {quick(<svg {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>, 'Contact', () => { if (convHref) location.href = convHref; else if (canContact) startConversation(); else onFlash('No email or phone for this customer') })}
             {isClickCollect(order) && quick(<svg {...I}><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></svg>, actBusy === 'notify' ? '…' : 'Notify', notifyPickup)}
             {isClickCollect(order) && quick(<svg {...I}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><path d="M3 6h18" /><path d="m9 12 2 2 4-4" /></svg>, 'Collected', markCollected, order.status === 'shipped')}
           </div>
@@ -2014,7 +2034,9 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             </div>
             {order.customer_email && <p onClick={() => copyToClipboard(order.customer_email, onFlash)} title="Click to copy email" style={{ margin: '5px 0 0', fontSize: 12.5, color: 'var(--slate)', cursor: 'copy', display: 'flex', width: 'fit-content', maxWidth: '100%', alignItems: 'center', gap: 5 }}>{order.customer_email}<CopyBtn onClick={() => copyToClipboard(order.customer_email, onFlash)} title="Copy email" /></p>}
             {order.customer_phone && <p onClick={() => copyToClipboard(order.customer_phone, onFlash)} title="Click to copy phone" style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--slate)', cursor: 'copy', display: 'flex', width: 'fit-content', maxWidth: '100%', alignItems: 'center', gap: 5 }}>{order.customer_phone}<CopyBtn onClick={() => copyToClipboard(order.customer_phone, onFlash)} title="Copy phone" /></p>}
-            {convHref && <a href={convHref} style={{ display: 'inline-block', marginTop: 8, fontSize: 12.5, fontWeight: 700, color: ACCENT, textDecoration: 'none' }}>Open conversation →</a>}
+            {convHref
+              ? <a href={convHref} style={{ display: 'inline-block', marginTop: 8, fontSize: 12.5, fontWeight: 700, color: ACCENT, textDecoration: 'none' }}>Open conversation →</a>
+              : canContact && <button onClick={startConversation} style={{ display: 'inline-block', marginTop: 8, fontSize: 12.5, fontWeight: 700, color: ACCENT, textDecoration: 'none', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Start a conversation →</button>}
           </div>
 
           {/* Shipping address */}
