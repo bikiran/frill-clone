@@ -182,6 +182,25 @@ export default function OrderDetailPage() {
   const addr = order.shipping_address || {}
   const contactHref = order.contact_id ? `/admin/customers/profile?id=${order.contact_id}` : null
   const convHref = order.conversation_id ? `/admin/inbox?conversation=${order.conversation_id}` : null
+  const canContact = !!(order.customer_email || order.customer_phone || order.contact_id)
+  // No linked thread yet: reuse the contact's most recent conversation if one
+  // exists, otherwise open a fresh one, link it to the order, and jump to it.
+  const startConversation = async () => {
+    try {
+      let convId: string | null = order.conversation_id || null
+      if (!convId && order.contact_id) {
+        const { data: c } = await (supabase as any).from('conversations').select('id').eq('company_id', companyId).eq('contact_id', order.contact_id).order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+        if (c?.id) convId = c.id
+      }
+      if (!convId) {
+        const { data: nc } = await (supabase as any).from('conversations').insert({ company_id: companyId, contact_id: order.contact_id || null, status: 'open', channel: order.customer_phone ? 'sms' : 'email', sms_number: order.customer_phone || null, subject: `Order ${order.order_number}`, last_message_at: new Date().toISOString() }).select('id').maybeSingle()
+        convId = nc?.id || null
+      }
+      if (!convId) { flash('Could not start a conversation'); return }
+      if (convId !== order.conversation_id) { setOrder((o: Order) => ({ ...o, conversation_id: convId })); try { await (supabase as any).from('orders').update({ conversation_id: convId }).eq('id', orderId) } catch {} }
+      window.location.href = `/admin/inbox?conversation=${convId}`
+    } catch { flash('Could not start a conversation') }
+  }
 
   return (
     <div style={{ padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', maxWidth: 1100, margin: '0 auto' }}>
@@ -223,7 +242,9 @@ export default function OrderDetailPage() {
             </div>
             {order.customer_email && <p onClick={() => copyToClipboard(order.customer_email, flash)} title="Click to copy email" style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--slate)', cursor: 'copy', display: 'flex', width: 'fit-content', maxWidth: '100%', alignItems: 'center', gap: 5 }}>{order.customer_email}<CopyBtn onClick={() => copyToClipboard(order.customer_email, flash)} title="Copy email" /></p>}
             {order.customer_phone && <p onClick={() => copyToClipboard(order.customer_phone, flash)} title="Click to copy phone" style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--slate)', cursor: 'copy', display: 'flex', width: 'fit-content', maxWidth: '100%', alignItems: 'center', gap: 5 }}>{order.customer_phone}<CopyBtn onClick={() => copyToClipboard(order.customer_phone, flash)} title="Copy phone" /></p>}
-            {convHref && <a href={convHref} style={{ display: 'inline-block', marginTop: 8, fontSize: 13, fontWeight: 700, color: ACCENT, textDecoration: 'none' }}>Open conversation →</a>}
+            {convHref
+              ? <a href={convHref} style={{ display: 'inline-block', marginTop: 8, fontSize: 13, fontWeight: 700, color: ACCENT, textDecoration: 'none' }}>Open conversation →</a>
+              : canContact && <button onClick={startConversation} style={{ display: 'inline-block', marginTop: 8, fontSize: 13, fontWeight: 700, color: ACCENT, textDecoration: 'none', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Start a conversation →</button>}
           </div>
 
           {/* Shipping address */}
