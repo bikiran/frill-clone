@@ -67,19 +67,19 @@ const MENUS: Menu[] = [
     key: 'phones', label: 'Phones', accent: GREEN,
     columns: [
       { heading: 'Calling', items: [
-        { icon: 'phone', title: 'Voice calls', desc: 'Call history & context', href: '/inbox-crm#calls' },
-        { icon: 'phone', title: 'Click to dial', desc: 'One-click from any tab', href: '/inbox-crm#calls' },
-        { icon: 'globe', title: 'Browser dialer', desc: 'Call without leaving Colvy', href: '/inbox-crm#calls' },
-        { icon: 'bolt', title: 'HD audio', desc: 'Crystal-clear quality', href: '/inbox-crm#calls' },
+        { icon: 'phone', title: 'Voice calls', desc: 'Call history & context', href: '/phones' },
+        { icon: 'phone', title: 'Click to dial', desc: 'One-click from any tab', href: '/phones' },
+        { icon: 'globe', title: 'Browser dialer', desc: 'Call without leaving Colvy', href: '/phones' },
+        { icon: 'bolt', title: 'HD audio', desc: 'Crystal-clear quality', href: '/phones' },
       ] },
       { heading: 'Routing & records', items: [
-        { icon: 'target', title: 'IVR & routing', desc: 'Send callers to the right team', href: '/inbox-crm#calls' },
-        { icon: 'camera', title: 'Call recording', desc: 'Record, transcribe, summarise', href: '/inbox-crm#calls' },
-        { icon: 'chat', title: 'Missed-call text-back', desc: 'Auto-SMS the caller', href: '/inbox-crm#calls' },
-        { icon: 'pin', title: 'Numbers & porting', desc: 'Bring or buy a number', href: '/inbox-crm#calls' },
+        { icon: 'camera', title: 'Call recording', desc: 'Record, transcribe, summarise', href: '/phones' },
+        { icon: 'ai', title: 'AI call summaries', desc: 'Every call written up', href: '/phones' },
+        { icon: 'chat', title: 'Missed-call text-back', desc: 'Auto-SMS the caller', href: '/phones' },
+        { icon: 'pin', title: 'Numbers & porting', desc: 'Bring or buy a number', href: '/phones' },
       ] },
     ],
-    feature: { eyebrow: 'Built-in calling', title: 'Talk, transfer, transcribe', desc: 'A full phone system inside the inbox — every call logged and summarised.', icon: 'phone', chips: ['Live call', 'AI notes', 'Transcribed'], href: '/channels/phones', cta: 'See phones' },
+    feature: { eyebrow: 'Built-in calling', title: 'Talk, transfer, transcribe', desc: 'A full phone system inside the inbox — every call logged and summarised.', icon: 'phone', chips: ['Live call', 'AI notes', 'Transcribed'], href: '/phones', cta: 'See phones' },
   },
   {
     key: 'ai', label: 'AI Assistant', accent: PURPLE,
@@ -191,7 +191,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   const scheduleClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setOpen(null), 130) }
   const onPanelMove = (e: React.MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPar({ x: (e.clientX - r.left) / r.width - 0.5, y: (e.clientY - r.top) / r.height - 0.5 }) }
 
-  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/channels/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'pricing' && pathname.startsWith('/pricing'))
+  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'pricing' && pathname.startsWith('/pricing'))
 
   const handleDashboard = async () => {
     if (!user) { window.location.href = '/signup'; return }
