@@ -135,36 +135,15 @@ export default function PhonesPage() {
           </Reveal>
         </div>
         <Reveal delay={0.1}>
-          {/* Incoming-call mock with caller context + call summary */}
-          <div style={{ position: 'relative', borderRadius: 28, minHeight: 340, overflow: 'hidden', background: `linear-gradient(150deg, ${ACCENT} 0%, ${ACCENT}cc 45%, ${dark ? '#0b0c14' : '#171a2b'} 120%)`, boxShadow: `0 30px 70px ${ACCENT}44`, padding: 22, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12 }}>
-            <div aria-hidden style={{ position: 'absolute', top: -50, right: -40, width: 240, height: 240, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', filter: 'blur(36px)' }} />
-            {/* incoming call card */}
-            <div style={{ position: 'relative', background: bg, borderRadius: 18, padding: 18, boxShadow: '0 18px 44px rgba(0,0,0,0.24)', animation: 'phFloat 7s ease-in-out infinite' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ width: 46, height: 46, borderRadius: '50%', background: ACCENT + '1a', color: ACCENT, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, animation: 'phRing 2s ease-in-out infinite' }}><FeatureIcon name="phone" color={ACCENT} size={22} /></span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, color: ACCENT, letterSpacing: '0.04em' }}>INCOMING CALL</div>
-                  <div style={{ fontSize: 15.5, fontWeight: 800, color: text }}>Priya Sharma</div>
-                  <div style={{ fontSize: 12, color: muted }}>+61 2 5550 0148 · Sydney</div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: text, background: dark ? 'rgba(255,255,255,0.06)' : '#f1f2f7', borderRadius: 999, padding: '5px 11px' }}>Order #1042</span>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: text, background: dark ? 'rgba(255,255,255,0.06)' : '#f1f2f7', borderRadius: 999, padding: '5px 11px' }}>2 past chats</span>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: text, background: dark ? 'rgba(255,255,255,0.06)' : '#f1f2f7', borderRadius: 999, padding: '5px 11px' }}>VIP</span>
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                <span style={{ flex: 1, textAlign: 'center', fontSize: 12.5, fontWeight: 800, color: '#fff', background: ACCENT, borderRadius: 999, padding: '9px 0' }}>Answer</span>
-                <span style={{ flex: 1, textAlign: 'center', fontSize: 12.5, fontWeight: 800, color: text, background: 'transparent', border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '9px 0' }}>Decline</span>
-              </div>
-            </div>
-            {/* call summary toast */}
-            <div style={{ position: 'relative', background: bg, borderRadius: 16, padding: '13px 16px', boxShadow: '0 16px 40px rgba(0,0,0,0.22)', display: 'flex', alignItems: 'center', gap: 12, animation: 'phFloat 6s ease-in-out 0.4s infinite' }}>
-              <span style={{ width: 34, height: 34, borderRadius: 10, background: PURPLE + '18', color: PURPLE, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FeatureIcon name="ai" color={PURPLE} size={17} /></span>
-              <div>
-                <div style={{ fontSize: 13.5, fontWeight: 800, color: text }}>Call summary ready</div>
-                <div style={{ fontSize: 12, color: muted }}>Recorded, transcribed · follow-up task created</div>
-              </div>
+          {/* Hero photo */}
+          <div style={{ position: 'relative', borderRadius: 28, minHeight: 340, overflow: 'hidden', background: `linear-gradient(150deg, ${ACCENT} 0%, ${ACCENT}cc 45%, ${dark ? '#0b0c14' : '#171a2b'} 120%)`, boxShadow: `0 30px 70px ${ACCENT}44` }}>
+            <img src="/feature/phones.jpg" alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+            <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${ACCENT}e6 0%, ${ACCENT}59 42%, rgba(10,12,20,0.5) 115%)` }} />
+            <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.95)', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.35))', animation: 'phFloat 6s ease-in-out infinite' }}><FeatureIcon name="phone" color="rgba(255,255,255,0.95)" size={54} /></div>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12, padding: 32 }}>
+              {['Click-to-dial', 'Call recording', 'Missed-call text-back'].map((c, i) => (
+                <span key={c} style={{ alignSelf: i % 2 ? 'flex-end' : 'flex-start', fontSize: 14, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 999, padding: '9px 16px', animation: `phFloat ${5 + i * 0.6}s ease-in-out ${i * 0.3}s infinite` }}>{c}</span>
+              ))}
             </div>
           </div>
         </Reveal>

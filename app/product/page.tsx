@@ -141,33 +141,15 @@ export default function ProductPage() {
           </Reveal>
         </div>
         <Reveal delay={0.1}>
-          {/* Feedback-loop mock: idea → status → shipped announcement */}
-          <div style={{ position: 'relative', borderRadius: 28, minHeight: 340, overflow: 'hidden', background: `linear-gradient(150deg, ${ACCENT} 0%, ${ACCENT}cc 45%, ${dark ? '#0b0c14' : '#171a2b'} 120%)`, boxShadow: `0 30px 70px ${ACCENT}44`, padding: 22, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12 }}>
-            <div aria-hidden style={{ position: 'absolute', top: -50, right: -40, width: 240, height: 240, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', filter: 'blur(36px)' }} />
-            {/* idea card */}
-            <div style={{ position: 'relative', background: bg, borderRadius: 16, padding: '14px 16px', boxShadow: '0 16px 40px rgba(0,0,0,0.22)', display: 'flex', alignItems: 'center', gap: 12, animation: 'pdFloat 7s ease-in-out infinite' }}>
-              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 44, padding: '6px 0', borderRadius: 10, background: ACCENT + '14', color: ACCENT, fontWeight: 900 }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
-                <span style={{ fontSize: 14 }}>147</span>
-              </span>
-              <div>
-                <div style={{ fontSize: 14.5, fontWeight: 800, color: text }}>Add dark mode 🌙</div>
-                <div style={{ fontSize: 12, color: muted }}>Idea · 32 comments</div>
-              </div>
-            </div>
-            {/* status pills */}
-            <div style={{ position: 'relative', display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center' }}>
-              {['Under review', 'Planned', 'In progress', 'Shipped'].map((s, i) => (
-                <span key={s} style={{ fontSize: 11.5, fontWeight: 800, borderRadius: 999, padding: '6px 12px', color: i === 3 ? '#fff' : 'rgba(255,255,255,0.85)', background: i === 3 ? GREEN : 'rgba(255,255,255,0.16)', border: `1px solid ${i === 3 ? GREEN : 'rgba(255,255,255,0.28)'}` }}>{i === 3 ? '✓ ' : ''}{s}</span>
+          {/* Hero photo */}
+          <div style={{ position: 'relative', borderRadius: 28, minHeight: 340, overflow: 'hidden', background: `linear-gradient(150deg, ${ACCENT} 0%, ${ACCENT}cc 45%, ${dark ? '#0b0c14' : '#171a2b'} 120%)`, boxShadow: `0 30px 70px ${ACCENT}44` }}>
+            <img src="/feature/product.jpg" alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+            <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${ACCENT}e6 0%, ${ACCENT}59 42%, rgba(10,12,20,0.5) 115%)` }} />
+            <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.95)', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.35))', animation: 'pdFloat 6s ease-in-out infinite' }}><FeatureIcon name="idea" color="rgba(255,255,255,0.95)" size={54} /></div>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12, padding: 32 }}>
+              {['+147 votes', 'On the roadmap', 'Shipped ✓'].map((c, i) => (
+                <span key={c} style={{ alignSelf: i % 2 ? 'flex-end' : 'flex-start', fontSize: 14, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 999, padding: '9px 16px', animation: `pdFloat ${5 + i * 0.6}s ease-in-out ${i * 0.3}s infinite` }}>{c}</span>
               ))}
-            </div>
-            {/* announcement toast */}
-            <div style={{ position: 'relative', background: bg, borderRadius: 16, padding: '14px 16px', boxShadow: '0 16px 40px rgba(0,0,0,0.22)', display: 'flex', alignItems: 'center', gap: 12, animation: 'pdFloat 6s ease-in-out 0.4s infinite' }}>
-              <span style={{ width: 36, height: 36, borderRadius: 10, background: GREEN + '18', color: GREEN, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FeatureIcon name="megaphone" color={GREEN} size={18} /></span>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: text }}>🎉 Dark mode is live</div>
-                <div style={{ fontSize: 12, color: muted }}>147 voters notified automatically</div>
-              </div>
             </div>
           </div>
         </Reveal>

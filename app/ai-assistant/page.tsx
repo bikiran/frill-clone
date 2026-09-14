@@ -11,7 +11,7 @@ import FeatureIcon from '@/components/FeatureIcon'
 // assistant actually does (see lib/ai-assistant/tools.ts): look things up,
 // draft replies, and take reversible, audited actions with a human in control.
 
-const PURPLE = '#7c5cff', PINK = '#ff4d8d', BLUE = '#2b59ff', GREEN = '#00c48c', INK = '#0f1119'
+const PURPLE = '#7c5cff', PINK = '#ff4d8d', BLUE = '#2b59ff', INK = '#0f1119'
 const ACCENT = PURPLE
 
 const FEATURES = [
@@ -114,7 +114,6 @@ export default function AiAssistantPage() {
   const gridImg = `linear-gradient(${dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.045)'} 1px,transparent 1px),linear-gradient(90deg,${dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.045)'} 1px,transparent 1px)`
   const btnPrimary: React.CSSProperties = { padding: '15px 30px', borderRadius: 999, background: ACCENT, color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer', border: 'none', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: `0 10px 30px ${ACCENT}55` }
   const btnGhost: React.CSSProperties = { padding: '15px 26px', borderRadius: 999, border: `2px solid ${dark ? 'rgba(255,255,255,0.16)' : 'rgba(15,17,25,0.12)'}`, background: 'transparent', color: text, fontWeight: 700, fontSize: 15, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }
-  const bubble = (mine: boolean): React.CSSProperties => ({ maxWidth: '82%', alignSelf: mine ? 'flex-end' : 'flex-start', padding: '10px 14px', borderRadius: mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px', background: mine ? ACCENT : (dark ? 'rgba(255,255,255,0.08)' : '#f1f2f7'), color: mine ? '#fff' : text, fontSize: 14, lineHeight: 1.5, fontWeight: 500 })
 
   return (
     <div style={{ background: bg, color: text, fontFamily: font, minHeight: '100vh', overflowX: 'hidden', transition: 'background 0.3s, color 0.3s' }}>
@@ -144,24 +143,15 @@ export default function AiAssistantPage() {
           </Reveal>
         </div>
         <Reveal delay={0.1}>
-          {/* Chat mock: customer asks, assistant looks it up and drafts a reply */}
-          <div style={{ position: 'relative', borderRadius: 28, minHeight: 340, overflow: 'hidden', background: `linear-gradient(150deg, ${ACCENT} 0%, ${ACCENT}cc 45%, ${dark ? '#0b0c14' : '#171a2b'} 120%)`, boxShadow: `0 30px 70px ${ACCENT}44`, padding: 22 }}>
-            <div aria-hidden style={{ position: 'absolute', top: -50, right: -40, width: 240, height: 240, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', filter: 'blur(36px)' }} />
-            <div style={{ position: 'relative', background: bg, borderRadius: 18, padding: 16, boxShadow: '0 20px 50px rgba(0,0,0,0.25)', animation: 'aiFloat 7s ease-in-out infinite' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 12, marginBottom: 12, borderBottom: `1px solid ${cardBorder}` }}>
-                <span style={{ width: 30, height: 30, borderRadius: '50%', background: ACCENT + '20', color: ACCENT, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><FeatureIcon name="ai" color={ACCENT} size={16} /></span>
-                <span style={{ fontSize: 13.5, fontWeight: 800, color: text }}>Colvy Assistant</span>
-                <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: GREEN, display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: GREEN }} />online</span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={bubble(false)}>Hi, where’s my order #1042? 😊</div>
-                <div style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11.5, fontWeight: 700, color: muted, background: dark ? 'rgba(255,255,255,0.05)' : '#f6f2ff', border: `1px solid ${ACCENT}33`, borderRadius: 999, padding: '5px 11px' }}><FeatureIcon name="search" color={ACCENT} size={12} />Looked up order #1042</div>
-                <div style={bubble(true)}>It shipped yesterday and is out for delivery today — tracking is on its way to your inbox. 📦</div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: ACCENT, borderRadius: 999, padding: '7px 15px' }}>Send</span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: text, background: 'transparent', border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '7px 15px' }}>Edit</span>
-                </div>
-              </div>
+          {/* Hero photo */}
+          <div style={{ position: 'relative', borderRadius: 28, minHeight: 340, overflow: 'hidden', background: `linear-gradient(150deg, ${ACCENT} 0%, ${ACCENT}cc 45%, ${dark ? '#0b0c14' : '#171a2b'} 120%)`, boxShadow: `0 30px 70px ${ACCENT}44` }}>
+            <img src="/feature/ai-assistant.jpg" alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+            <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${ACCENT}e6 0%, ${ACCENT}59 42%, rgba(10,12,20,0.5) 115%)` }} />
+            <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.95)', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.35))', animation: 'aiFloat 6s ease-in-out infinite' }}><FeatureIcon name="ai" color="rgba(255,255,255,0.95)" size={54} /></div>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12, padding: 32 }}>
+              {['Drafts replies', 'Takes real actions', 'Summarises threads'].map((c, i) => (
+                <span key={c} style={{ alignSelf: i % 2 ? 'flex-end' : 'flex-start', fontSize: 14, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 999, padding: '9px 16px', animation: `aiFloat ${5 + i * 0.6}s ease-in-out ${i * 0.3}s infinite` }}>{c}</span>
+              ))}
             </div>
           </div>
         </Reveal>
