@@ -67,19 +67,23 @@ const MENUS: Menu[] = [
     key: 'phones', label: 'Phones', accent: GREEN,
     columns: [
       { heading: 'Calling', items: [
-        { icon: 'phone', title: 'Voice calls', desc: 'Call history & context', href: '/phones' },
-        { icon: 'phone', title: 'Click to dial', desc: 'One-click from any tab', href: '/phones' },
-        { icon: 'globe', title: 'Browser dialer', desc: 'Call without leaving Colvy', href: '/phones' },
-        { icon: 'bolt', title: 'HD audio', desc: 'Crystal-clear quality', href: '/phones' },
+        { icon: 'phone', title: 'Click to Dial', desc: 'One-click from any tab', href: '/phones/click-to-dial' },
+        { icon: 'globe', title: 'Browser Dialer', desc: 'Call without leaving Colvy', href: '/phones/browser-dialer' },
+        { icon: 'bolt', title: 'HD Audio', desc: 'Crystal-clear quality', href: '/phones/hd-audio' },
+        { icon: 'phone', title: 'Mobile App', desc: 'Colvy on iOS & Android', href: '/phones/mobile-app' },
+        { icon: 'globe', title: 'International', desc: 'Call 100+ countries', href: '/phones/international' },
+        { icon: 'phone', title: 'VoIP System', desc: 'A cloud phone system', href: '/phones/voip' },
       ] },
-      { heading: 'Routing & records', items: [
-        { icon: 'camera', title: 'Call recording', desc: 'Record, transcribe, summarise', href: '/phones' },
-        { icon: 'ai', title: 'AI call summaries', desc: 'Every call written up', href: '/phones' },
-        { icon: 'chat', title: 'Missed-call text-back', desc: 'Auto-SMS the caller', href: '/phones' },
-        { icon: 'pin', title: 'Numbers & porting', desc: 'Bring or buy a number', href: '/phones' },
+      { heading: 'Routing & AI', items: [
+        { icon: 'target', title: 'IVR & Routing', desc: 'Send callers to the right team', href: '/phones/ivr' },
+        { icon: 'link', title: 'Call Forwarding', desc: 'Forward to any number', href: '/phones/call-forwarding' },
+        { icon: 'camera', title: 'Call Recording', desc: 'Record, transcribe, summarise', href: '/phones/call-recording' },
+        { icon: 'ai', title: 'AI Call Intelligence', desc: 'Caller context & summaries', href: '/phones/ai-call-intelligence' },
+        { icon: 'chat', title: 'Missed Call Text Back', desc: 'Auto-SMS the caller', href: '/phones/missed-call-text-back' },
+        { icon: 'kanban', title: 'Command Centre', desc: 'Live call dashboard', href: '/phones/command-centre' },
       ] },
     ],
-    feature: { eyebrow: 'Built-in calling', title: 'Talk, transfer, transcribe', desc: 'A full phone system inside the inbox — every call logged and summarised.', icon: 'phone', chips: ['Live call', 'AI notes', 'Transcribed'], href: '/phones', cta: 'See phones' },
+    feature: { eyebrow: 'Built-in calling', title: 'Talk, transfer, transcribe', desc: 'A full phone system inside the inbox — every call logged and summarised.', icon: 'phone', chips: ['Live call', 'AI notes', 'Transcribed'], href: '/phones', cta: 'View all phones' },
   },
   {
     key: 'ai', label: 'AI Assistant', accent: PURPLE,
