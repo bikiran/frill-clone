@@ -28,6 +28,29 @@ const BANDS = [
   { tag: 'After the call', title: 'Every call, written up for you', body: 'Calls are recorded, transcribed and summarised automatically, with follow-up tasks created so nothing slips between the call and the next step.', bullets: ['Auto recording & transcription', 'AI summary on the thread', 'Follow-up tasks created'], icon: 'pen' },
 ]
 
+// Every phone feature — each links to its own /phones/[slug] page.
+const ALL_FEATURES: { slug: string; name: string; icon: string; desc: string }[] = [
+  { slug: 'click-to-dial', name: 'Click to Dial', icon: 'phone', desc: 'One-click calling from any tab' },
+  { slug: 'browser-dialer', name: 'Browser Dialer', icon: 'globe', desc: 'Call without leaving the browser' },
+  { slug: 'hd-audio', name: 'HD Audio', icon: 'bolt', desc: 'Crystal-clear call quality' },
+  { slug: 'numbers-porting', name: 'Numbers & Porting', icon: 'pin', desc: 'Local numbers, or bring your own' },
+  { slug: 'mobile-app', name: 'Mobile App', icon: 'phone', desc: 'Colvy on iOS & Android' },
+  { slug: 'warm-transfer', name: 'Warm Transfer', icon: 'user', desc: 'Brief a colleague, then transfer' },
+  { slug: 'call-forwarding', name: 'Call Forwarding', icon: 'link', desc: 'Forward to any number or device' },
+  { slug: 'cascade-ring', name: 'Cascade Ring', icon: 'bell', desc: 'Ring devices in sequence' },
+  { slug: 'simultaneous-ring', name: 'Simultaneous Ring', icon: 'target', desc: 'Ring everyone at once' },
+  { slug: 'ivr', name: 'IVR & Auto-Attendant', icon: 'target', desc: 'Route callers to the right team' },
+  { slug: 'ai-call-intelligence', name: 'AI Call Intelligence', icon: 'ai', desc: 'Caller context before you answer' },
+  { slug: 'ai-actions', name: 'AI Actions', icon: 'bolt', desc: 'Auto-tasks & updates after calls' },
+  { slug: 'call-recording', name: 'Call Recording', icon: 'camera', desc: 'Record, transcribe & summarise' },
+  { slug: 'call-reporting', name: 'Call Reporting', icon: 'chart', desc: 'Dashboards & call insights' },
+  { slug: 'missed-call-text-back', name: 'Missed Call Text Back', icon: 'chat', desc: 'Auto-SMS a missed caller' },
+  { slug: 'voicemail', name: 'Voicemail', icon: 'inbox', desc: 'Transcribed & summarised' },
+  { slug: 'voip', name: 'VoIP Phone System', icon: 'phone', desc: 'A cloud phone system, built in' },
+  { slug: 'international', name: 'International Calling', icon: 'globe', desc: 'Call 100+ countries' },
+  { slug: 'command-centre', name: 'Command Centre', icon: 'kanban', desc: 'Live dashboard with AI agents' },
+]
+
 // Real Australian local area codes offered when buying a number.
 const NUMBERS = ['Sydney 02', 'Melbourne 03', 'Brisbane 07', 'Gold Coast 07', 'Perth 08', 'Adelaide 08', 'Canberra 02', 'Hobart 03', 'Darwin 08']
 
@@ -159,6 +182,27 @@ export default function PhonesPage() {
                 <h3 style={{ fontSize: 17.5, fontWeight: 800, margin: '0 0 6px', color: text }}>{f.title}</h3>
                 <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{f.desc}</p>
               </div>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      {/* ALL PHONE FEATURES */}
+      <section style={{ maxWidth: 1280, margin: '0 auto', padding: '20px 24px 40px' }}>
+        <Reveal>
+          <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 8px' }}>Every phone feature</h2>
+          <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 28px', lineHeight: 1.55, textAlign: 'center' }}>A complete phone system — explore each capability in depth.</p>
+        </Reveal>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+          {ALL_FEATURES.map((a, i) => (
+            <Reveal key={a.slug} delay={(i % 4) * 0.04}>
+              <a href={`/phones/${a.slug}`} className="ph-card" style={{ display: 'flex', alignItems: 'flex-start', gap: 13, height: '100%', borderRadius: 16, padding: '16px 18px', background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none' }}>
+                <span style={{ width: 40, height: 40, borderRadius: 11, background: ACCENT + '14', color: ACCENT, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FeatureIcon name={a.icon} color={ACCENT} size={20} /></span>
+                <span>
+                  <span style={{ display: 'block', fontSize: 15, fontWeight: 800, color: text }}>{a.name}</span>
+                  <span style={{ display: 'block', fontSize: 13, color: muted, marginTop: 2, lineHeight: 1.45 }}>{a.desc}</span>
+                </span>
+              </a>
             </Reveal>
           ))}
         </div>
