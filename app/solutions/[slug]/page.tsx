@@ -40,7 +40,7 @@ const PAGES: Record<string, Page> = {
       { tag: 'Unified', title: 'One thread per customer', body: 'Stop switching tabs. Every message from every channel threads into a single conversation with full history and context.', bullets: ['All channels in one inbox', 'Full profile beside every chat', 'Assign, @mention and collaborate'] },
       { tag: 'Faster replies', title: 'Templates, AI & automation', body: 'Reply in a tap with saved answers, or let AI draft it. Route each conversation to the right teammate automatically.', bullets: ['Saved replies & snippets', 'AI-drafted responses', 'Auto-routing & assignment'] },
     ],
-    stats: [{ big: '6+', label: 'channels, one inbox' }, { big: '2×', label: 'faster replies' }, { big: '4 min', label: 'to set up' }],
+    stats: [{ big: '6+', label: 'channels, one inbox' }, { big: '2×', label: 'faster replies' }, { big: '45 min', label: 'to set up' }],
     cta: { title: 'Bring every channel together', sub: 'Set up your shared inbox in minutes — no credit card.' },
   },
   phones: {
@@ -87,15 +87,15 @@ const PAGES: Record<string, Page> = {
       { icon: 'tag', title: 'Shopify', desc: 'Orders and customers synced into every thread.' },
       { icon: 'tag', title: 'Stripe', desc: 'Send payment links and take payment in chat.' },
       { icon: 'chat', title: 'Slack', desc: 'Get alerts and reply where your team already works.' },
-      { icon: 'bolt', title: 'Zapier', desc: 'Connect Colvy to 6,000+ apps, no code.' },
+      { icon: 'bolt', title: 'Zapier', desc: 'Connect Colvy to 5,000+ apps, no code.' },
       { icon: 'link', title: 'Webhooks & API', desc: 'Build anything custom — push events out, pull data in.' },
     ],
     bands: [
       { tag: 'Sell in the chat', title: 'Commerce, right in the thread', body: 'Look up live orders, recover carts and take payment without leaving the conversation — then see the revenue each chat drove.', bullets: ['Live orders & refunds', 'Payment links & recorded sales', 'Revenue-per-conversation'] },
-      { tag: 'No code', title: 'Wire up the rest in minutes', body: 'Zapier and webhooks connect Colvy to the tools you already use, so data flows both ways automatically.', bullets: ['6,000+ apps via Zapier', 'Inbound & outbound webhooks', 'Two-way sync'] },
+      { tag: 'No code', title: 'Wire up the rest in minutes', body: 'Zapier and webhooks connect Colvy to the tools you already use, so data flows both ways automatically.', bullets: ['5,000+ apps via Zapier', 'Inbound & outbound webhooks', 'Two-way sync'] },
     ],
-    stats: [{ big: '6,000+', label: 'apps via Zapier' }, { big: '2-way', label: 'data sync' }, { big: '0', label: 'lines of code' }],
-    cta: { title: 'Connect the tools you already use', sub: 'Commerce, payments and 6,000+ apps — in one place.' },
+    stats: [{ big: '5,000+', label: 'apps via Zapier' }, { big: '2-way', label: 'data sync' }, { big: '0', label: 'lines of code' }],
+    cta: { title: 'Connect the tools you already use', sub: 'Commerce, payments and 5,000+ apps — in one place.' },
   },
   industries: {
     accent: PINK, eyebrow: 'Industries', title: 'Tuned to', titleAccent: 'your industry', sub: 'The same platform, shaped around how your team actually works — from SaaS to hospitality.',
@@ -112,7 +112,7 @@ const PAGES: Record<string, Page> = {
       { tag: 'Your workflow', title: 'Set up for how you work', body: 'Colvy adapts to your team — the channels you use, the way you route work and the tools you run.', bullets: ['Channels tuned to you', 'Routing that fits your team', 'Integrations for your stack'] },
       { tag: 'Grow with it', title: 'From first hello to fifth reorder', body: 'Capture the lead, close the sale, support the customer and win the repeat — all in one lively place.', bullets: ['Lead capture to repeat sales', 'Full history per customer', 'Revenue you can see'] },
     ],
-    stats: [{ big: '1', label: 'platform for it all' }, { big: '4 min', label: 'to get going' }, { big: '∞', label: 'ways to fit' }],
+    stats: [{ big: '1', label: 'platform for it all' }, { big: '45 min', label: 'to get going' }, { big: '∞', label: 'ways to fit' }],
     cta: { title: 'Made to fit your business', sub: 'Start free and shape Colvy around your team.' },
   },
   compare: {

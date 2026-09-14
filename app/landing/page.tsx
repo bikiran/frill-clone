@@ -64,7 +64,7 @@ const TRUST: { label: string; logo?: string; star?: boolean }[] = [
 ]
 
 const STORIES = [
-  { name: 'Sam Rivera', role: 'CEO', company: 'Roxy Aquarium', color: CORAL, photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80&auto=format&fit=crop', quote: 'A WhatsApp message becomes a paid sale without leaving the thread.', metric: '4 min setup' },
+  { name: 'Sam Rivera', role: 'CEO', company: 'Roxy Aquarium', color: CORAL, photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80&auto=format&fit=crop', quote: 'A WhatsApp message becomes a paid sale without leaving the thread.', metric: '45 min setup' },
   { name: 'Aiko Tanaka', role: 'Product Lead', company: 'nePlay', color: BLUE, photo: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&q=80&auto=format&fit=crop', quote: 'One shared inbox for every channel. Our team finally moves fast.', metric: '2× replies' },
   { name: 'Jordan Mills', role: 'Founder', company: 'Prexty', color: GREEN, photo: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=200&q=80&auto=format&fit=crop', quote: 'We see the real revenue every conversation generates. Game changer.', metric: '+28 NPS' },
 ]
@@ -147,7 +147,7 @@ function StatsBand({ stats }: { stats: { teams: number; conversations: number; m
     ...(stats.callMinutes > 0 ? [{ v: fmtNum(stats.callMinutes) + ' min', l: 'Minutes on calls' }] : []),
     ...(stats.paymentsTotal > 0 ? [{ v: '$' + fmtNum(stats.paymentsTotal) + '+', l: 'Payments handled' }] : []),
     { v: '98%', l: 'Customer satisfaction' },
-    { v: '4 min', l: 'To get set up' },
+    { v: '45 min', l: 'To get set up' },
   ]
   const pages: { v: string; l: string }[][] = []
   for (let i = 0; i < pool.length; i += 4) pages.push(pool.slice(i, i + 4))
@@ -554,7 +554,7 @@ export default function LandingPage() {
           <Reveal>
             <h2 style={{ fontSize: 'clamp(34px, 6vw, 68px)', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff', lineHeight: 1.02, margin: '0 0 16px' }}>Ready to sell through the chat?</h2>
             <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.9)', margin: '0 0 8px', fontWeight: 600 }}>Free forever for small teams. Upgrade as you grow.</p>
-            <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.75)', margin: '0 0 34px' }}>No credit card · Set up in 4 minutes · Cancel anytime</p>
+            <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.75)', margin: '0 0 34px' }}>No credit card · Set up in about 45 minutes · Cancel anytime</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, justifyContent: 'center' }}>
               <button onClick={handleDashboard} className="cv-btn-primary" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>{user ? 'Go to dashboard' : 'Get started — it’s free'} <ArrowRight /></button>
               {!user && <a href="/pricing" style={{ padding: '16px 30px', borderRadius: 999, border: '2px solid rgba(255,255,255,0.6)', background: 'transparent', color: '#fff', fontWeight: 800, fontSize: 16, textDecoration: 'none' }}>See all plans</a>}

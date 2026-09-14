@@ -207,7 +207,7 @@ export default function PricingPage() {
         <div style={{ position: 'relative', maxWidth: 720, margin: '0 auto' }}>
           <Reveal>
             <h2 style={{ fontSize: 'clamp(30px, 5vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff', lineHeight: 1.04, margin: '0 0 14px' }}>Start free today</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>No credit card · set up in 4 minutes · cancel anytime</p>
+            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>No credit card · set up in about 45 minutes · cancel anytime</p>
             <button onClick={() => go()} className="pr-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>{user ? 'Go to dashboard' : 'Get started — it’s free'}</button>
           </Reveal>
         </div>

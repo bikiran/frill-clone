@@ -21,7 +21,7 @@ const PAGES: Record<string, any> = {
   ideas: {
     icon: 'idea', color: CORAL, subtitle: 'Ideas Board',
     title: 'Turn feedback into features',
-    hero: 'One beautiful place for all your customer feedback. Collect, prioritize, and act on what matters most.',
+    hero: 'One beautiful place for all your customer feedback. Collect, prioritise, and act on what matters most.',
     features: [
       { icon: 'vote', title: 'Public voting', desc: 'Let customers vote on ideas. The most wanted features rise to the top automatically.' },
       { icon: 'tag', title: 'Topics & tags', desc: 'Organize ideas by category so nothing gets lost in the noise.' },
@@ -288,7 +288,7 @@ export default function FeaturePage() {
           <Reveal>
             <div style={{ display: 'inline-flex', marginBottom: 16, padding: 16, borderRadius: 18, background: 'rgba(255,255,255,0.16)' }}><FeatureIcon name={page.icon} color="#fff" size={40} /></div>
             <h2 style={{ fontSize: 'clamp(30px, 5vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff', lineHeight: 1.04, margin: '0 0 14px' }}>Ready to try {page.subtitle}?</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Set up in 4 minutes. Free forever for small teams.</p>
+            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Set up in about 45 minutes. Free forever for small teams.</p>
             <button onClick={go} className="fp-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started free <ArrowRight /></button>
           </Reveal>
         </div>
