@@ -7,6 +7,7 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
+import ContactSalesModal from '@/components/ContactSalesModal'
 
 // Landing-styled competitor comparison pages (Colvy vs Podium / Gorgias / Gladly
 // / Intercom / Zendesk / Freshdesk). Data-driven so every comparison shares the
@@ -201,6 +202,7 @@ export default function ComparePage() {
   const c = CMP[slug] || CMP.podium
   const accent = c.accent
   const [dark, setDark] = useState(false)
+  const [contactOpen, setContactOpen] = useState(false)
   const [user, setUser] = useState<any>(null)
 
   useEffect(() => {
@@ -330,7 +332,7 @@ export default function ComparePage() {
           ))}
         </div>
         <Reveal>
-          <p style={{ textAlign: 'center', fontSize: 12.5, color: muted, margin: '18px auto 0', maxWidth: 640, lineHeight: 1.55 }}>Balance credit is offered at Colvy’s discretion on sighting valid proof of a current annual payment — <a href="mailto:support@colvy.com?subject=Switching%20to%20Colvy" style={{ color: accent, textDecoration: 'none', fontWeight: 600 }}>talk to us</a> and we’ll sort it out.</p>
+          <p style={{ textAlign: 'center', fontSize: 12.5, color: muted, margin: '18px auto 0', maxWidth: 640, lineHeight: 1.55 }}>Balance credit is offered at Colvy’s discretion on sighting valid proof of a current annual payment — <button onClick={() => setContactOpen(true)} style={{ color: accent, textDecoration: 'none', fontWeight: 600, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}>talk to us</button> and we’ll sort it out.</p>
         </Reveal>
       </section>
 
@@ -361,11 +363,13 @@ export default function ComparePage() {
             <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Our team handles the migration. Keep your number, your reviews and your customers — just lose the limitations.</p>
             <div className="cmp-hero-cta" style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
               <button onClick={go} className="cmp-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Grab a free trial</button>
-              <a href="mailto:support@colvy.com?subject=Colvy%20demo" className="cmp-btn" style={{ padding: '16px 32px', borderRadius: 999, background: 'rgba(255,255,255,0.16)', color: '#fff', fontWeight: 800, fontSize: 16, border: '1px solid rgba(255,255,255,0.4)', textDecoration: 'none' }}>Book a demo</a>
+              <button onClick={() => setContactOpen(true)} className="cmp-btn" style={{ padding: '16px 32px', borderRadius: 999, background: 'rgba(255,255,255,0.16)', color: '#fff', fontWeight: 800, fontSize: 16, border: '1px solid rgba(255,255,255,0.4)', textDecoration: 'none', cursor: 'pointer' }}>Book a demo</button>
             </div>
           </div>
         </Reveal>
       </section>
+
+      <ContactSalesModal open={contactOpen} onClose={() => setContactOpen(false)} dark={dark} source="compare" title="Talk to sales" />
 
       <MarketingFooter dark={dark} />
     </div>
