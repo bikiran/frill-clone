@@ -135,7 +135,7 @@ const MENUS: Menu[] = [
 
 const LINKS: Link[] = [
   { label: 'Pricing', href: '/pricing' },
-  { label: 'Testimonials', href: '/#stories' },
+  { label: 'Testimonials', href: '/testimonials' },
   { label: 'Compare', href: '/compare' },
 ]
 
