@@ -61,7 +61,7 @@ const MENUS: Menu[] = [
         { icon: 'megaphone', title: 'Broadcast campaigns', desc: 'Reach everyone at once', href: '/channels/sms' },
       ] },
     ],
-    feature: { eyebrow: 'One shared inbox', title: 'Every channel, one thread', desc: 'WhatsApp, Instagram, SMS, email and chat beside one customer profile.', icon: 'inbox', chips: ['WhatsApp', 'Instagram', 'SMS'], href: '/channels/meta', cta: 'Explore channels' },
+    feature: { eyebrow: 'One shared inbox', title: 'Every channel, one thread', desc: 'WhatsApp, Instagram, SMS, email and chat beside one customer profile.', icon: 'inbox', chips: ['WhatsApp', 'Instagram', 'SMS'], href: '/channels', cta: 'Explore channels' },
   },
   {
     key: 'phones', label: 'Phones', accent: GREEN,
@@ -113,7 +113,7 @@ const MENUS: Menu[] = [
         { icon: 'link', title: 'Webhooks & API', desc: 'Build anything custom', href: '/integrations/api' },
       ] },
     ],
-    feature: { eyebrow: 'Plays nice', title: 'Connect your whole stack', desc: 'Commerce, payments and the tools you already run — wired into every thread.', icon: 'plug', chips: ['WooCommerce', 'Stripe', 'Shopify'], href: '/integrations/woocommerce', cta: 'Browse integrations' },
+    feature: { eyebrow: 'Plays nice', title: 'Connect your whole stack', desc: 'Commerce, payments and the tools you already run — wired into every thread.', icon: 'plug', chips: ['WooCommerce', 'Stripe', 'Shopify'], href: '/integrations', cta: 'Browse integrations' },
   },
   {
     key: 'industries', label: 'Industries', accent: PINK,
@@ -129,7 +129,7 @@ const MENUS: Menu[] = [
         { icon: 'help', title: 'Healthcare', desc: 'Reminders & patient comms', href: '/industries/healthcare' },
       ] },
     ],
-    feature: { eyebrow: 'Made to fit', title: 'Tuned to your industry', desc: 'The same platform, shaped around how your team actually works.', icon: 'star', chips: ['Retail', 'Hospitality', 'SaaS'], href: '/solutions/industries', cta: 'See industries' },
+    feature: { eyebrow: 'Made to fit', title: 'Tuned to your industry', desc: 'The same platform, shaped around how your team actually works.', icon: 'star', chips: ['Retail', 'Hospitality', 'SaaS'], href: '/industries', cta: 'See industries' },
   },
 ]
 
