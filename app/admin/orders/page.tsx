@@ -1775,6 +1775,9 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     } catch (e: any) { onFlash(`Tracking error: ${e?.message || e}`) }
   }
 
+  // Render synced order data instantly from Supabase. The live-Woo enrichment
+  // (variations, coupons/fees) happens in the background effect below, so the
+  // drawer never blocks on an external round-trip.
   const load = useCallback(async () => {
     const [it, nt, ev, tk] = await Promise.all([
       (supabase as any).from('order_items').select('*').eq('order_id', order.id),
@@ -1782,31 +1785,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
       (supabase as any).from('order_events').select('*').eq('order_id', order.id).order('created_at', { ascending: false }),
       (supabase as any).from('conversation_tasks').select('*').eq('company_id', companyId).eq('order_id', order.id).order('created_at', { ascending: false }),
     ])
-    let itemsData = it.data || []
-    // Backfill the picked variation from the live Woo order when a synced row is
-    // missing it (older syncs didn't capture meta_data), so variations show
-    // without waiting for a re-sync. Match on the stored Woo line id, then fall
-    // back to position.
-    if (order.sales_channel === 'woocommerce' && order.order_number && itemsData.some((r: any) => !r?.metadata?.variation)) {
-      try {
-        const res = await fetch(`/api/orders/details?companyId=${encodeURIComponent(companyId)}&orderId=${encodeURIComponent(order.order_number)}`)
-        const j = await res.json().catch(() => ({}))
-        const lines: any[] = j?.order?.line_items || []
-        if (lines.length) {
-          const byId = new Map<string, string>()
-          lines.forEach((li: any) => { if (li?.id != null) byId.set(String(li.id), variationFromMeta(li.meta_data)) })
-          itemsData = itemsData.map((r: any, i: number) => {
-            if (r?.metadata?.variation) return r
-            const wl = r?.metadata?.woo_line_id
-            let v = wl != null ? byId.get(String(wl)) : undefined
-            if (!v && lines[i]) v = variationFromMeta(lines[i].meta_data)
-            return v ? { ...r, metadata: { ...(r.metadata || {}), variation: v } } : r
-          })
-        }
-      } catch { /* live enrich is best-effort — synced fields still render */ }
-    }
-    setItems(itemsData); setNotes(nt.data || []); setEvents(ev.data || []); setTasks(tk.data || [])
-  }, [order.id, order.order_number, order.sales_channel, companyId])
+    setItems(it.data || []); setNotes(nt.data || []); setEvents(ev.data || []); setTasks(tk.data || [])
+  }, [order.id, companyId])
   useEffect(() => { load() }, [load])
 
   // WooCommerce order-note history (system + staff + customer notes), fetched
@@ -1827,8 +1807,10 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     return () => { cancelled = true }
   }, [order.id, order.external_order_id, order.sales_channel, companyId])
 
-  // Coupon codes, discount and manual fees — live from WooCommerce, since the
-  // synced order row doesn't carry them.
+  // One live WooCommerce round-trip per order, in the background. It carries
+  // two things the synced row doesn't: coupons/discount/fees (financials) and,
+  // for older synced items, the picked variation. Merged into state when it
+  // returns — synced items and totals already render, so this never blocks.
   useEffect(() => {
     let cancelled = false
     setFinancials(null)
@@ -1837,13 +1819,31 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
       try {
         const res = await fetch(`/api/orders/details?companyId=${encodeURIComponent(companyId)}&orderId=${encodeURIComponent(order.order_number)}`)
         const j = await res.json().catch(() => ({}))
+        if (cancelled) return
         const o = j?.order
-        if (!cancelled && o) {
+        if (o) {
           setFinancials({
             discount: parseFloat(o.discount_total) || 0,
             coupons: (o.coupon_lines || []).map((c: any) => c.code).filter(Boolean),
             fees: (o.fee_lines || []).map((f: any) => ({ name: f.name || 'Fee', total: parseFloat(f.total) || 0 })).filter((f: any) => f.total),
           })
+        }
+        // Backfill the picked variation for synced rows that are missing it
+        // (older syncs didn't capture meta_data). Match on the stored Woo line
+        // id, then fall back to position.
+        const lines: any[] = o?.line_items || []
+        if (lines.length) {
+          const byId = new Map<string, string>()
+          lines.forEach((li: any) => { if (li?.id != null) byId.set(String(li.id), variationFromMeta(li.meta_data)) })
+          setItems(prev => prev.some((r: any) => !r?.metadata?.variation)
+            ? prev.map((r: any, i: number) => {
+                if (r?.metadata?.variation) return r
+                const wl = r?.metadata?.woo_line_id
+                let v = wl != null ? byId.get(String(wl)) : undefined
+                if (!v && lines[i]) v = variationFromMeta(lines[i].meta_data)
+                return v ? { ...r, metadata: { ...(r.metadata || {}), variation: v } } : r
+              })
+            : prev)
         }
       } catch { /* best-effort — summary still shows subtotal/total */ }
     })()
