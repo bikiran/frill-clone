@@ -111,11 +111,12 @@ export default function FeaturesPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 18 }}>
           {CAPS.map((c, i) => (
             <Reveal key={c.id} delay={(i % 3) * 0.05}>
-              <div id={c.id} className="ft-card ft-cap" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>
+              <a id={c.id} href={`/features/${c.id}`} className="ft-card ft-cap" style={{ display: 'block', height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none' }}>
                 <span style={{ width: 46, height: 46, borderRadius: 13, background: ACCENT + '16', color: ACCENT, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><FeatureIcon name={c.icon} color={ACCENT} size={23} /></span>
                 <h3 style={{ fontSize: 17.5, fontWeight: 800, margin: '0 0 6px', color: text }}>{c.title}</h3>
-                <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{c.desc}</p>
-              </div>
+                <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: '0 0 12px' }}>{c.desc}</p>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 800, color: ACCENT }}>Learn more <ArrowRight s={13} /></span>
+              </a>
             </Reveal>
           ))}
         </div>
