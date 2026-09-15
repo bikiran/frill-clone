@@ -203,6 +203,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   const [user, setUser] = useState<any>(null)
   const [par, setPar] = useState({ x: 0, y: 0 })   // mouse parallax, -0.5..0.5
   const closeTimer = useRef<any>(null)
+  const moreTimer = useRef<any>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }: any) => setUser(data?.session?.user || null))
@@ -312,15 +313,18 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
             <a key={n.label} href={n.href} className="mn-link" style={{ padding: '8px 10px', borderRadius: 10, fontSize: 14, fontWeight: isActive('pricing') && n.label === 'Pricing' ? 800 : 600, color: isActive('pricing') && n.label === 'Pricing' ? CORAL : muted, textDecoration: 'none', whiteSpace: 'nowrap' }}>{n.label}</a>
           ))}
           {/* More: compact dropdown for secondary links */}
-          <div style={{ position: 'relative' }} onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current); setOpen(null); setMoreOpen(true) }} onMouseLeave={() => setMoreOpen(false)}>
+          <div style={{ position: 'relative' }} onMouseEnter={() => { if (moreTimer.current) clearTimeout(moreTimer.current); if (closeTimer.current) clearTimeout(closeTimer.current); setOpen(null); setMoreOpen(true) }} onMouseLeave={() => { if (moreTimer.current) clearTimeout(moreTimer.current); moreTimer.current = setTimeout(() => setMoreOpen(false), 160) }}>
             <button type="button" className="mn-link" onClick={() => setMoreOpen(v => !v)}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '8px 10px', borderRadius: 10, fontSize: 14, fontWeight: moreOpen || moreActive ? 800 : 600, color: moreOpen || moreActive ? CORAL : muted, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>
               More<Chevron open={moreOpen} />
             </button>
-            <div className={moreOpen ? 'mn-sheet' : ''} style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, minWidth: 180, background: panelBg, border: `1px solid ${cardBorder}`, borderRadius: 14, boxShadow: '0 18px 40px rgba(15,17,25,0.16)', padding: 8, display: moreOpen ? 'block' : 'none' }}>
+            {/* paddingTop bridges the gap to the button so the menu doesn't vanish mid-hover */}
+            <div className={moreOpen ? 'mn-sheet' : ''} style={{ position: 'absolute', top: '100%', right: 0, paddingTop: 8, minWidth: 180, display: moreOpen ? 'block' : 'none' }}>
+            <div style={{ background: panelBg, border: `1px solid ${cardBorder}`, borderRadius: 14, boxShadow: '0 18px 40px rgba(15,17,25,0.16)', padding: 8 }}>
               {MORE_LINKS.map(n => (
                 <a key={n.label} href={n.href} className="mn-item" style={{ display: 'block', padding: '9px 12px', borderRadius: 10, fontSize: 14, fontWeight: 700, color: pathname.startsWith(n.href) ? CORAL : text, textDecoration: 'none' }}>{n.label}</a>
               ))}
+            </div>
             </div>
           </div>
         </div>
