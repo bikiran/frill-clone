@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, ReactNode } from 'react'
+import { useState, useEffect, useRef, ReactNode, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import { track } from '@/lib/analytics'
@@ -26,6 +26,38 @@ const TIERS = [
   { id: 'feedback', name: 'Feedback', tagline: 'For product & feedback teams', accent: PURPLE, monthly: 39, annual: 29, badge: null, cta: 'Start free trial', smsNote: false, features: ['Everything in Free', 'Unlimited ideas & voting', 'Unlimited polls, surveys & forms', 'Private + public roadmaps', 'Unlimited help center articles', 'Customisable widget', 'Remove Colvy branding', '5 team members', 'Email support'] },
   { id: 'omnichannel', name: 'Inbox', tagline: 'For sales & support teams', accent: BLUE, monthly: 179, annual: 149, badge: null, cta: 'Start free trial', smsNote: true, features: ['Live chat inbox', 'Contacts & CRM', 'WhatsApp, SMS & voice calls', '3,000 SMS / month included*', 'WooCommerce sync', 'Broadcast & scheduled campaigns', 'AI flow automation', 'Review dashboard', '10 team members', 'Priority support'] },
   { id: 'everything', name: 'Everything', tagline: 'The full Colvy platform', accent: CORAL, monthly: 259, annual: 209, badge: 'Best value', cta: 'Start free trial', smsNote: true, features: ['Feedback suite + Inbox', '3,000 SMS / month included*', 'White-label branding', 'Custom domain', 'Advanced analytics', 'AI writing assistant', 'Unlimited team members', 'Priority support'] },
+]
+
+// Full feature matrix. Each row's cells line up with TIERS order:
+// [Free, Feedback, Inbox, Everything]. true = included, false = not, string = value.
+const COMPARE: { group: string; rows: { label: string; cells: (boolean | string)[] }[] }[] = [
+  { group: 'Feedback suite', rows: [
+    { label: 'Ideas & feedback board', cells: [true, true, false, true] },
+    { label: 'Public roadmap', cells: [true, true, false, true] },
+    { label: 'Announcements / changelog', cells: [true, true, false, true] },
+    { label: 'Polls, surveys & forms', cells: ['1 + 1', 'Unlimited', '—', 'Unlimited'] },
+    { label: 'Help center articles', cells: ['10', 'Unlimited', '—', 'Unlimited'] },
+    { label: 'Feedback widget', cells: [true, true, false, true] },
+    { label: 'Remove Colvy branding', cells: [false, true, false, true] },
+  ] },
+  { group: 'Inbox & messaging', rows: [
+    { label: 'Live chat inbox', cells: [false, false, true, true] },
+    { label: 'Contacts & CRM', cells: [false, false, true, true] },
+    { label: 'WhatsApp, SMS & voice calls', cells: [false, false, true, true] },
+    { label: 'SMS included / month', cells: ['—', '—', '3,000*', '3,000*'] },
+    { label: 'WooCommerce & Shopify sync', cells: [false, false, true, true] },
+    { label: 'Broadcast & scheduled campaigns', cells: [false, false, true, true] },
+    { label: 'AI flow automation', cells: [false, false, true, true] },
+    { label: 'Review dashboard', cells: [false, false, true, true] },
+  ] },
+  { group: 'Platform & team', rows: [
+    { label: 'White-label branding', cells: [false, false, false, true] },
+    { label: 'Custom domain', cells: [false, false, false, true] },
+    { label: 'Advanced analytics', cells: [false, false, false, true] },
+    { label: 'AI writing assistant', cells: [false, false, false, true] },
+    { label: 'Team members', cells: ['2', '5', '10', 'Unlimited'] },
+    { label: 'Support', cells: ['Community', 'Email', 'Priority', 'Priority'] },
+  ] },
 ]
 
 const FAQS = [
@@ -159,6 +191,60 @@ export default function PricingPage() {
             *SMS fair use policy applies. The base package includes up to 3,000 SMS per month. Usage charges apply beyond this allowance and vary based on volume — most Australian 🇦🇺 SMBs can expect approximately 5c per standard SMS. SMS marketing campaigns and international messaging are billed separately. Voice call minutes are metered — <a href="mailto:support@colvy.com" onClick={(e) => { e.preventDefault(); setContactPlan('High-volume calls') }} style={{ color: CORAL, textDecoration: 'none', fontWeight: 600, cursor: 'pointer' }}>contact us</a> for high-volume call rates.
           </p>
         </Reveal>
+      </section>
+
+      {/* COMPARE — full feature matrix */}
+      <section style={{ padding: 'clamp(30px, 5vw, 60px) 24px 24px' }}>
+        <Reveal>
+          <h2 style={{ fontSize: 'clamp(26px, 3.6vw, 40px)', fontWeight: 900, letterSpacing: '-0.02em', color: text, textAlign: 'center', margin: '0 0 8px' }}>Compare every plan</h2>
+          <p style={{ fontSize: 15.5, color: muted, textAlign: 'center', maxWidth: 520, margin: '0 auto 30px', lineHeight: 1.55 }}>Everything each plan includes, side by side.</p>
+        </Reveal>
+        <div style={{ maxWidth: 1080, margin: '0 auto', overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '0 14px 14px 0', verticalAlign: 'bottom', width: '30%' }}></th>
+                {TIERS.map(t => {
+                  const hi = !!t.badge
+                  const price = annual ? t.annual : t.monthly
+                  return (
+                    <th key={t.id} style={{ textAlign: 'center', padding: '10px 10px 14px', verticalAlign: 'bottom', background: hi ? (dark ? 'rgba(255,106,77,0.08)' : '#fff7f4') : 'transparent', borderTopLeftRadius: 14, borderTopRightRadius: 14 }}>
+                      <div style={{ fontSize: 15, fontWeight: 900, color: hi ? t.accent : text }}>{t.name}</div>
+                      <div style={{ fontSize: 12.5, color: muted, marginTop: 2 }}>{price === 0 ? 'Free' : `$${price}/mo`}</div>
+                    </th>
+                  )
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {COMPARE.map(sec => (
+                <Fragment key={sec.group}>
+                  <tr>
+                    <td colSpan={5} style={{ padding: '22px 0 8px', fontSize: 12, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: muted }}>{sec.group}</td>
+                  </tr>
+                  {sec.rows.map((r, ri) => (
+                    <tr key={r.label} style={{ borderTop: `1px solid ${cardBorder}` }}>
+                      <td style={{ padding: '12px 14px 12px 0', fontSize: 14, fontWeight: 600, color: text }}>{r.label}</td>
+                      {r.cells.map((c, ci) => {
+                        const hi = !!TIERS[ci].badge
+                        const accent = TIERS[ci].accent
+                        return (
+                          <td key={ci} style={{ textAlign: 'center', padding: '12px 10px', background: hi ? (dark ? 'rgba(255,106,77,0.05)' : '#fff9f6') : 'transparent' }}>
+                            {typeof c === 'string'
+                              ? <span style={{ fontSize: 13.5, fontWeight: c === '—' ? 500 : 700, color: c === '—' ? muted : text }}>{c}</span>
+                              : c
+                                ? <span style={{ display: 'inline-flex', width: 22, height: 22, borderRadius: '50%', background: accent + '1a', color: accent, alignItems: 'center', justifyContent: 'center' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>
+                                : <span style={{ color: muted, fontSize: 16 }}>—</span>}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       {/* ENTERPRISE — quiet "contact sales" strip */}
