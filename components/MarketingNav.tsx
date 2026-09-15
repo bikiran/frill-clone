@@ -115,19 +115,19 @@ const MENUS: Menu[] = [
     key: 'ai', label: 'AI', accent: PURPLE,
     columns: [
       { heading: 'Assist', items: [
-        { icon: 'ai', title: 'AI replies', desc: 'Draft answers in a blink', href: '/ai-assistant' },
-        { icon: 'book', title: 'Knowledge base', desc: 'Teach it your docs', href: '/ai-assistant' },
-        { icon: 'pen', title: 'Auto-summaries', desc: 'Every thread, TL;DR’d', href: '/ai-assistant' },
+        { icon: 'ai', title: 'AI replies', desc: 'Draft answers in a blink', href: '/ai-assistant/ai-replies' },
+        { icon: 'book', title: 'Knowledge base', desc: 'Teach it your docs', href: '/ai-assistant/knowledge-base' },
+        { icon: 'pen', title: 'Auto-summaries', desc: 'Every thread, TL;DR’d', href: '/ai-assistant/auto-summaries' },
       ] },
       { heading: 'Act', items: [
-        { icon: 'bolt', title: 'AI actions', desc: 'Look up orders, take action', href: '/ai-assistant' },
-        { icon: 'target', title: 'Auto-routing', desc: 'Right team, every time', href: '/ai-assistant' },
-        { icon: 'bell', title: 'Follow-ups', desc: 'Nudge at the right moment', href: '/ai-assistant' },
+        { icon: 'bolt', title: 'AI actions', desc: 'Look up orders, take action', href: '/ai-assistant/ai-actions' },
+        { icon: 'target', title: 'Auto-routing', desc: 'Right team, every time', href: '/ai-assistant/auto-routing' },
+        { icon: 'bell', title: 'Follow-ups', desc: 'Nudge at the right moment', href: '/ai-assistant/follow-ups' },
       ] },
       { heading: 'Automate', items: [
-        { icon: 'calendar', title: 'Tasks & reminders', desc: 'Turn chats into to-dos', href: '/ai-assistant' },
-        { icon: 'link', title: 'Workflows', desc: 'Trigger actions on events', href: '/ai-assistant' },
-        { icon: 'lock', title: 'You stay in control', desc: 'Approve every action', href: '/ai-assistant' },
+        { icon: 'calendar', title: 'Tasks & reminders', desc: 'Turn chats into to-dos', href: '/ai-assistant/tasks-reminders' },
+        { icon: 'link', title: 'Workflows', desc: 'Trigger actions on events', href: '/ai-assistant/workflows' },
+        { icon: 'lock', title: 'You stay in control', desc: 'Approve every action', href: '/ai-assistant/human-in-control' },
       ] },
     ],
     feature: { eyebrow: 'Always-on AI', title: 'Replies drafted in a blink', desc: 'An assistant that knows your docs, drafts replies and takes real actions.', icon: 'ai', chips: ['Auto-reply', 'Summarise', 'Take action'], href: '/ai-assistant', cta: 'Meet the AI' },
