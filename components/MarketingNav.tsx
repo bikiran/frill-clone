@@ -19,7 +19,7 @@ import FeatureIcon from '@/components/FeatureIcon'
  * /inbox-crm with anchors, /pricing, /signup, or the landing #stories section).
  */
 
-const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2'
+const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', TEAL = '#0d9488'
 
 type Item = { icon: string; title: string; desc: string; href: string }
 type Feature = { eyebrow: string; title: string; desc: string; icon: string; chips: string[]; href: string; cta: string }
@@ -34,13 +34,16 @@ const MENUS: Menu[] = [
         { icon: 'idea', title: 'Ideas & feedback', desc: 'Collect and vote on ideas', href: '/product/ideas' },
         { icon: 'map', title: 'Roadmap', desc: 'Show what you’re building', href: '/product/roadmap' },
         { icon: 'megaphone', title: 'Announcements', desc: 'Release notes & changelog', href: '/product/announcements' },
-        { icon: 'book', title: 'Help center', desc: 'Self-serve knowledge base', href: '/product/knowledgebase' },
       ] },
       { heading: 'Engage', items: [
         { icon: 'vote', title: 'Polls & surveys', desc: 'Ask, measure, decide', href: '/product' },
         { icon: 'pen', title: 'Forms', desc: 'Capture structured input', href: '/product' },
         { icon: 'reaction', title: 'Feedback widget', desc: 'Embed on any page', href: '/product' },
+      ] },
+      { heading: 'Support & docs', items: [
+        { icon: 'book', title: 'Help center', desc: 'Self-serve knowledge base', href: '/product/knowledgebase' },
         { icon: 'chart', title: 'Analytics', desc: 'See what customers want', href: '/product' },
+        { icon: 'ai', title: 'AI writing', desc: 'Draft articles & replies', href: '/product' },
       ] },
     ],
     feature: { eyebrow: 'The feedback loop', title: 'Build what customers ask for', desc: 'Ideas, roadmap and announcements — connected end to end.', icon: 'idea', chips: ['+147 votes', 'Shipped ✓', 'On the roadmap'], href: '/product', cta: 'Explore the suite' },
@@ -51,14 +54,17 @@ const MENUS: Menu[] = [
       { heading: 'Inbound', items: [
         { icon: 'inbox', title: 'Shared inbox', desc: 'Every channel, one thread', href: '/inbox-crm' },
         { icon: 'chat', title: 'Live chat widget', desc: 'Capture leads on your site', href: '/channels/chat-widget' },
+        { icon: 'pen', title: 'Contact forms', desc: 'Structured enquiries', href: '/forms' },
+      ] },
+      { heading: 'Social', items: [
         { icon: 'reaction', title: 'Meta DMs', desc: 'Instagram & Messenger', href: '/channels/meta' },
+        { icon: 'chat', title: 'WhatsApp', desc: 'Business number or your own', href: '/channels/whatsapp' },
         { icon: 'star', title: 'Google reviews', desc: 'Reply from the same place', href: '/channels/google-reviews' },
       ] },
       { heading: 'Messaging', items: [
-        { icon: 'chat', title: 'SMS', desc: 'Text customers in one place', href: '/channels/sms' },
-        { icon: 'chat', title: 'WhatsApp', desc: 'Business number or your own', href: '/channels/whatsapp' },
+        { icon: 'chat', title: 'SMS & MMS', desc: 'Text customers in one place', href: '/channels/sms' },
         { icon: 'mail', title: 'Email', desc: 'In the same thread', href: '/channels/email' },
-        { icon: 'megaphone', title: 'Broadcast campaigns', desc: 'Reach everyone at once', href: '/channels/sms' },
+        { icon: 'megaphone', title: 'Broadcasts', desc: 'Reach everyone at once', href: '/channels/sms' },
       ] },
     ],
     feature: { eyebrow: 'One shared inbox', title: 'Every channel, one thread', desc: 'WhatsApp, Instagram, SMS, email and chat beside one customer profile.', icon: 'inbox', chips: ['WhatsApp', 'Instagram', 'SMS'], href: '/channels', cta: 'Explore channels' },
@@ -71,12 +77,14 @@ const MENUS: Menu[] = [
         { icon: 'globe', title: 'Browser Dialer', desc: 'Call without leaving Colvy', href: '/phones/browser-dialer' },
         { icon: 'bolt', title: 'HD Audio', desc: 'Crystal-clear quality', href: '/phones/hd-audio' },
         { icon: 'phone', title: 'Mobile App', desc: 'Colvy on iOS & Android', href: '/phones/mobile-app' },
-        { icon: 'globe', title: 'International', desc: 'Call 100+ countries', href: '/phones/international' },
-        { icon: 'phone', title: 'VoIP System', desc: 'A cloud phone system', href: '/phones/voip' },
       ] },
-      { heading: 'Routing & AI', items: [
+      { heading: 'Numbers & routing', items: [
+        { icon: 'pin', title: 'Numbers & Porting', desc: 'Local numbers or bring yours', href: '/phones/numbers-porting' },
         { icon: 'target', title: 'IVR & Routing', desc: 'Send callers to the right team', href: '/phones/ivr' },
         { icon: 'link', title: 'Call Forwarding', desc: 'Forward to any number', href: '/phones/call-forwarding' },
+        { icon: 'globe', title: 'International', desc: 'Call 100+ countries', href: '/phones/international' },
+      ] },
+      { heading: 'Records & AI', items: [
         { icon: 'camera', title: 'Call Recording', desc: 'Record, transcribe, summarise', href: '/phones/call-recording' },
         { icon: 'ai', title: 'AI Call Intelligence', desc: 'Caller context & summaries', href: '/phones/ai-call-intelligence' },
         { icon: 'chat', title: 'Missed Call Text Back', desc: 'Auto-SMS the caller', href: '/phones/missed-call-text-back' },
@@ -91,17 +99,44 @@ const MENUS: Menu[] = [
       { heading: 'Assist', items: [
         { icon: 'ai', title: 'AI replies', desc: 'Draft answers in a blink', href: '/ai-assistant' },
         { icon: 'book', title: 'Knowledge base', desc: 'Teach it your docs', href: '/ai-assistant' },
-        { icon: 'bolt', title: 'AI actions', desc: 'Look up orders, take action', href: '/ai-assistant' },
         { icon: 'pen', title: 'Auto-summaries', desc: 'Every thread, TL;DR’d', href: '/ai-assistant' },
       ] },
-      { heading: 'Automate', items: [
+      { heading: 'Act', items: [
+        { icon: 'bolt', title: 'AI actions', desc: 'Look up orders, take action', href: '/ai-assistant' },
         { icon: 'target', title: 'Auto-routing', desc: 'Right team, every time', href: '/ai-assistant' },
         { icon: 'bell', title: 'Follow-ups', desc: 'Nudge at the right moment', href: '/ai-assistant' },
+      ] },
+      { heading: 'Automate', items: [
         { icon: 'calendar', title: 'Tasks & reminders', desc: 'Turn chats into to-dos', href: '/ai-assistant' },
         { icon: 'link', title: 'Workflows', desc: 'Trigger actions on events', href: '/ai-assistant' },
+        { icon: 'lock', title: 'You stay in control', desc: 'Approve every action', href: '/ai-assistant' },
       ] },
     ],
     feature: { eyebrow: 'Always-on AI', title: 'Replies drafted in a blink', desc: 'An assistant that knows your docs, drafts replies and takes real actions.', icon: 'ai', chips: ['Auto-reply', 'Summarise', 'Take action'], href: '/ai-assistant', cta: 'Meet the AI' },
+  },
+  {
+    key: 'features', label: 'Features', accent: TEAL,
+    columns: [
+      { heading: 'Inbox & CRM', items: [
+        { icon: 'inbox', title: 'Shared inbox', desc: 'Every channel, one thread', href: '/features#inbox' },
+        { icon: 'user', title: 'Contacts & CRM', desc: 'Full profile & history', href: '/features#crm' },
+        { icon: 'folder', title: 'Media gallery', desc: 'Every photo & file', href: '/features#gallery' },
+        { icon: 'pen', title: 'Notes', desc: 'Internal notes & @mentions', href: '/features#notes' },
+      ] },
+      { heading: 'Commerce', items: [
+        { icon: 'tag', title: 'Orders', desc: 'Live orders in the chat', href: '/features#orders' },
+        { icon: 'bolt', title: 'Payments', desc: 'Get paid in the thread', href: '/features#payments' },
+        { icon: 'link', title: 'Link reports', desc: 'See who clicked what', href: '/features#links' },
+        { icon: 'chart', title: 'Insights', desc: 'Conversations & revenue', href: '/features#insights' },
+      ] },
+      { heading: 'Organise', items: [
+        { icon: 'calendar', title: 'Calendar', desc: 'Bookings & reminders', href: '/features#calendar' },
+        { icon: 'kanban', title: 'Tasks', desc: 'Turn chats into to-dos', href: '/features#tasks' },
+        { icon: 'megaphone', title: 'Broadcasts', desc: 'Reach everyone at once', href: '/features#broadcasts' },
+        { icon: 'target', title: 'Automation', desc: 'Trigger actions on events', href: '/features#automation' },
+      ] },
+    ],
+    feature: { eyebrow: 'The platform', title: 'Everything in one inbox', desc: 'Messages, contacts, orders, payments, tasks and insights — on one screen.', icon: 'inbox', chips: ['CRM', 'Orders', 'Payments'], href: '/features', cta: 'Explore features' },
   },
   {
     key: 'integrations', label: 'Integrations', accent: CYAN,
@@ -109,11 +144,13 @@ const MENUS: Menu[] = [
       { heading: 'Commerce', items: [
         { icon: 'tag', title: 'WooCommerce', desc: 'Live orders in the chat', href: '/integrations/woocommerce' },
         { icon: 'tag', title: 'Shopify', desc: 'Orders & customers synced', href: '/integrations/shopify' },
-        { icon: 'tag', title: 'Stripe', desc: 'Take payments in chat', href: '/integrations/stripe' },
       ] },
-      { heading: 'Tools', items: [
+      { heading: 'Payments & alerts', items: [
+        { icon: 'bolt', title: 'Stripe', desc: 'Take payments in chat', href: '/integrations/stripe' },
         { icon: 'chat', title: 'Slack', desc: 'Get alerts where you work', href: '/integrations/slack' },
-        { icon: 'bolt', title: 'Zapier', desc: 'Connect 5,000+ apps', href: '/integrations/zapier' },
+      ] },
+      { heading: 'Automate & build', items: [
+        { icon: 'plug', title: 'Zapier', desc: 'Connect 5,000+ apps', href: '/integrations/zapier' },
         { icon: 'link', title: 'Webhooks & API', desc: 'Build anything custom', href: '/integrations/api' },
       ] },
     ],
@@ -122,13 +159,15 @@ const MENUS: Menu[] = [
   {
     key: 'industries', label: 'Industries', accent: PINK,
     columns: [
-      { heading: 'By team', items: [
+      { heading: 'Digital', items: [
         { icon: 'bolt', title: 'SaaS & tech', desc: 'Feedback → roadmap → ship', href: '/industries/saas' },
         { icon: 'star', title: 'Agencies', desc: 'Every client in one place', href: '/industries/agencies' },
-        { icon: 'tag', title: 'E-commerce', desc: 'Sell inside the chat', href: '/industries/ecommerce' },
       ] },
-      { heading: 'Local & service', items: [
+      { heading: 'Commerce & hospitality', items: [
+        { icon: 'tag', title: 'E-commerce', desc: 'Sell inside the chat', href: '/industries/ecommerce' },
         { icon: 'reaction', title: 'Hospitality', desc: 'Bookings & guest comms', href: '/industries/hospitality' },
+      ] },
+      { heading: 'Service', items: [
         { icon: 'pin', title: 'Real estate', desc: 'Leads & follow-ups in a thread', href: '/industries/real-estate' },
         { icon: 'help', title: 'Healthcare', desc: 'Reminders & patient comms', href: '/industries/healthcare' },
       ] },
@@ -195,7 +234,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   const scheduleClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setOpen(null), 130) }
   const onPanelMove = (e: React.MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPar({ x: (e.clientX - r.left) / r.width - 0.5, y: (e.clientY - r.top) / r.height - 0.5 }) }
 
-  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'pricing' && pathname.startsWith('/pricing'))
+  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'features' && pathname.startsWith('/features')) || (k === 'pricing' && pathname.startsWith('/pricing'))
 
   const handleDashboard = async () => {
     if (!user) { window.location.href = '/signup'; return }
@@ -246,7 +285,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
         @media(prefers-reduced-motion:reduce){.mn-cta,.mn-link,.mn-item,.mn-ico,.mn-panel,.mn-float{transition:none !important}.mn-stagger,.mn-slide,.mn-feat,.mn-sheet{animation:none !important}}
       `}</style>
 
-      <div style={{ maxWidth: 1320, margin: '0 auto', padding: '0 24px', height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ maxWidth: 1440, margin: '0 auto', padding: '0 24px', height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         {/* Logo */}
         <a href="/" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', flexShrink: 0 }}>
           <img src="/icon-512.png" alt="Colvy" width={32} height={32} style={{ borderRadius: 9, display: 'block' }} />
@@ -288,7 +327,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
         <div className={`mn-desktop mn-panel ${panelOpen ? 'mn-panel-open' : 'mn-panel-closed'}`}
           onMouseEnter={() => openNow(panelMenu.key)} onMouseLeave={scheduleClose} onMouseMove={onPanelMove}
           style={{ position: 'absolute', top: 68, left: 0, right: 0, background: panelBg, borderBottom: `1px solid ${cardBorder}`, boxShadow: '0 24px 50px rgba(15,17,25,0.16)' }}>
-          <div key={lastKey || ''} className="mn-slide" style={{ maxWidth: 1320, margin: '0 auto', padding: '26px 24px 26px', display: 'flex', gap: 40, alignItems: 'stretch' }}>
+          <div key={lastKey || ''} className="mn-slide" style={{ maxWidth: 1440, margin: '0 auto', padding: '26px 24px 26px', display: 'flex', gap: 40, alignItems: 'stretch' }}>
             {/* Left: columns */}
             <div style={{ display: 'flex', gap: 40, flex: '1 1 auto', minWidth: 0 }}>
               {panelMenu.columns.map((col, ci) => (
@@ -308,7 +347,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
             </div>
 
             {/* Right: futuristic parallax feature panel */}
-            <a href={panelMenu.feature.href} className="mn-feat" style={{ position: 'relative', flex: '0 0 340px', maxWidth: 340, borderRadius: 20, overflow: 'hidden', textDecoration: 'none', minHeight: 240, background: `linear-gradient(150deg, ${ax} 0%, ${ax}cc 40%, ${dark ? '#0b0c14' : '#171a2b'} 115%)`, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 14, padding: 22 }}>
+            <a href={panelMenu.feature.href} className="mn-feat" style={{ position: 'relative', flex: '0 0 360px', maxWidth: 360, borderRadius: 20, overflow: 'hidden', textDecoration: 'none', minHeight: 240, background: `linear-gradient(150deg, ${ax} 0%, ${ax}cc 40%, ${dark ? '#0b0c14' : '#171a2b'} 115%)`, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 14, padding: 22 }}>
               {/* glow blobs (parallax) */}
               <div className="mn-float" aria-hidden style={{ position: 'absolute', top: -40, right: -30, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', filter: 'blur(30px)', transform: `translate(${par.x * 26}px, ${par.y * 26}px)` }} />
               <div className="mn-float" aria-hidden style={{ position: 'absolute', bottom: -50, left: -30, width: 170, height: 170, borderRadius: '50%', background: 'rgba(0,0,0,0.22)', filter: 'blur(34px)', transform: `translate(${par.x * -20}px, ${par.y * -20}px)` }} />
