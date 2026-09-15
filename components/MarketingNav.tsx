@@ -178,6 +178,10 @@ const MENUS: Menu[] = [
 
 const LINKS: Link[] = [
   { label: 'Pricing', href: '/pricing' },
+]
+
+// Secondary links tucked into a compact "More" dropdown.
+const MORE_LINKS: Link[] = [
   { label: 'Testimonials', href: '/testimonials' },
   { label: 'Compare', href: '/compare' },
 ]
@@ -194,6 +198,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   const [open, setOpen] = useState<string | null>(null)
   const [lastKey, setLastKey] = useState<string | null>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [mobileSection, setMobileSection] = useState<string | null>(null)
   const [user, setUser] = useState<any>(null)
   const [par, setPar] = useState({ x: 0, y: 0 })   // mouse parallax, -0.5..0.5
@@ -229,12 +234,13 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   const solid = scrolled || !!open || mobileOpen
   const navBg = solid ? (dark ? 'rgba(10,11,18,0.85)' : 'rgba(255,255,255,0.88)') : 'transparent'
 
-  const openNow = (k: string) => { if (closeTimer.current) clearTimeout(closeTimer.current); setLastKey(k); setOpen(k) }
+  const openNow = (k: string) => { if (closeTimer.current) clearTimeout(closeTimer.current); setLastKey(k); setOpen(k); setMoreOpen(false) }
   const toggle = (k: string) => { if (open === k) setOpen(null); else openNow(k) }
   const scheduleClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setOpen(null), 130) }
   const onPanelMove = (e: React.MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPar({ x: (e.clientX - r.left) / r.width - 0.5, y: (e.clientY - r.top) / r.height - 0.5 }) }
 
   const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'features' && pathname.startsWith('/features')) || (k === 'pricing' && pathname.startsWith('/pricing'))
+  const moreActive = MORE_LINKS.some(n => pathname.startsWith(n.href))
 
   const handleDashboard = async () => {
     if (!user) { window.location.href = '/signup'; return }
@@ -305,6 +311,18 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
           {LINKS.map(n => (
             <a key={n.label} href={n.href} className="mn-link" style={{ padding: '8px 10px', borderRadius: 10, fontSize: 14, fontWeight: isActive('pricing') && n.label === 'Pricing' ? 800 : 600, color: isActive('pricing') && n.label === 'Pricing' ? CORAL : muted, textDecoration: 'none', whiteSpace: 'nowrap' }}>{n.label}</a>
           ))}
+          {/* More: compact dropdown for secondary links */}
+          <div style={{ position: 'relative' }} onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current); setOpen(null); setMoreOpen(true) }} onMouseLeave={() => setMoreOpen(false)}>
+            <button type="button" className="mn-link" onClick={() => setMoreOpen(v => !v)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '8px 10px', borderRadius: 10, fontSize: 14, fontWeight: moreOpen || moreActive ? 800 : 600, color: moreOpen || moreActive ? CORAL : muted, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              More<Chevron open={moreOpen} />
+            </button>
+            <div className={moreOpen ? 'mn-sheet' : ''} style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, minWidth: 180, background: panelBg, border: `1px solid ${cardBorder}`, borderRadius: 14, boxShadow: '0 18px 40px rgba(15,17,25,0.16)', padding: 8, display: moreOpen ? 'block' : 'none' }}>
+              {MORE_LINKS.map(n => (
+                <a key={n.label} href={n.href} className="mn-item" style={{ display: 'block', padding: '9px 12px', borderRadius: 10, fontSize: 14, fontWeight: 700, color: pathname.startsWith(n.href) ? CORAL : text, textDecoration: 'none' }}>{n.label}</a>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Right actions */}
@@ -394,7 +412,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
               )}
             </div>
           ))}
-          {LINKS.map(n => (
+          {[...LINKS, ...MORE_LINKS].map(n => (
             <a key={n.label} href={n.href} onClick={() => setMobileOpen(false)} style={{ display: 'block', padding: '15px 0', fontSize: 16, fontWeight: 700, color: text, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` }}>{n.label}</a>
           ))}
           {!user && <a href="/signin" onClick={() => setMobileOpen(false)} style={{ display: 'block', padding: '15px 0', fontSize: 16, fontWeight: 600, color: muted, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` }}>Sign in</a>}
