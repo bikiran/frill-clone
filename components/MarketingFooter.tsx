@@ -18,7 +18,7 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
     { title: 'Explore', links: [{ l: 'AI Assistant', h: '/ai-assistant' }, { l: 'Phones', h: '/phones' }, { l: 'Integrations', h: '/integrations' }, { l: 'Industries', h: '/industries' }, { l: 'Compare', h: '/compare' }] },
     { title: 'Channels', links: [{ l: 'WhatsApp', h: '/channels/whatsapp' }, { l: 'Instagram & Messenger', h: '/channels/meta' }, { l: 'Email', h: '/channels/email' }, { l: 'Two-way SMS', h: '/channels/sms' }, { l: 'Live chat', h: '/channels/chat-widget' }, { l: 'Google Reviews', h: '/channels/google-reviews' }] },
     { title: 'Company', links: [{ l: 'About', h: '/about' }, { l: 'Careers', h: '/careers' }, { l: 'Blog', h: '/blog' }, { l: 'Changelog', h: '/changelog' }, { l: 'Solutions', h: '/solutions' }, { l: 'Pricing', h: '/pricing' }] },
-    { title: 'Legal', links: [{ l: 'Security', h: '/security' }, { l: 'Privacy', h: '/privacy' }, { l: 'Terms', h: '/terms' }] },
+    { title: 'Legal', links: [{ l: 'Security', h: '/security' }, { l: 'Status', h: '/status' }, { l: 'Privacy', h: '/privacy' }, { l: 'Terms', h: '/terms' }] },
   ]
 
   const social: { name: string; h: string; d: string }[] = [
