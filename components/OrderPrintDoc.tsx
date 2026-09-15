@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { fmtMoney, CARRIER_LABEL, carrierTrackUrl, isClickCollect, buildOrderLineKeys } from '@/lib/orders'
+import { fmtMoney, CARRIER_LABEL, carrierTrackUrl, isClickCollect, buildOrderLineKeys, variationLabel } from '@/lib/orders'
 import { barcodeSVG } from '@/lib/barcode'
 
 type Order = any
@@ -260,6 +260,7 @@ function PackingSlip({ order, items, notes, sentByKey, oosByKey, company, from, 
                   <span style={strike}>{it.product_name || 'Item'}</span>
                   {sent && <span style={{ marginLeft: 8, display: 'inline-block', fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', color: '#dc2626', border: '1.5px solid #dc2626', borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle' }}>✕ ALREADY SENT</span>}
                   {oos && <span style={{ marginLeft: 8, display: 'inline-block', fontSize: 9.5, fontWeight: 800, letterSpacing: '0.06em', color: '#c2410c', border: '1.5px solid #f97316', borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle' }}>⚠ OUT OF STOCK</span>}
+                  {(() => { const v = variationLabel(it); return v ? <div style={{ marginTop: 3, fontSize: 11, fontWeight: 600, color: sent ? '#94a3b8' : '#c2410c' }}>{v}</div> : null })()}
                 </td>
                 <td style={{ ...td, color: '#475569', fontFamily: 'ui-monospace, monospace', fontSize: 12, ...strike }}>{it.sku || '—'}</td>
                 <td style={{ ...td, textAlign: 'right', ...strike }}>{fmtMoney(unit, order.currency)}</td>
