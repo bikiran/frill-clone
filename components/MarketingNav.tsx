@@ -19,7 +19,7 @@ import FeatureIcon from '@/components/FeatureIcon'
  * /inbox-crm with anchors, /pricing, /signup, or the landing #stories section).
  */
 
-const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', TEAL = '#0d9488'
+const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', TEAL = '#0d9488', AMBER = '#d97706'
 
 type Item = { icon: string; title: string; desc: string; href: string }
 type Feature = { eyebrow: string; title: string; desc: string; icon: string; chips: string[]; href: string; cta: string }
@@ -47,6 +47,24 @@ const MENUS: Menu[] = [
       ] },
     ],
     feature: { eyebrow: 'The feedback loop', title: 'Build what customers ask for', desc: 'Ideas, roadmap and announcements — connected end to end.', icon: 'idea', chips: ['+147 votes', 'Shipped ✓', 'On the roadmap'], href: '/product', cta: 'Explore the suite' },
+  },
+  {
+    key: 'solutions', label: 'Solutions', accent: AMBER,
+    columns: [
+      { heading: 'Support & sales', items: [
+        { icon: 'inbox', title: 'Customer support', desc: 'Every question, one inbox', href: '/solutions/customer-support' },
+        { icon: 'tag', title: 'Sales & conversions', desc: 'Sell right in the chat', href: '/solutions/sales' },
+      ] },
+      { heading: 'Grow', items: [
+        { icon: 'megaphone', title: 'Marketing & campaigns', desc: 'Broadcasts that get replies', href: '/solutions/marketing' },
+        { icon: 'star', title: 'Reviews & reputation', desc: 'More reviews, less chasing', href: '/solutions/reviews' },
+      ] },
+      { heading: 'Build & get paid', items: [
+        { icon: 'idea', title: 'Product feedback', desc: 'Ideas, roadmap, changelog', href: '/solutions/feedback' },
+        { icon: 'link', title: 'Payments & orders', desc: 'Get paid in the thread', href: '/solutions/payments' },
+      ] },
+    ],
+    feature: { eyebrow: 'One platform', title: 'Every job, one place', desc: 'Support, sales, marketing, feedback and payments — one inbox, one customer history.', icon: 'target', chips: ['Support', 'Sales', 'Feedback'], href: '/solutions', cta: 'Explore solutions' },
   },
   {
     key: 'channels', label: 'Channels', accent: BLUE,
@@ -94,7 +112,7 @@ const MENUS: Menu[] = [
     feature: { eyebrow: 'Built-in calling', title: 'Talk, transfer, transcribe', desc: 'A full phone system inside the inbox — every call logged and summarised.', icon: 'phone', chips: ['Live call', 'AI notes', 'Transcribed'], href: '/phones', cta: 'View all phones' },
   },
   {
-    key: 'ai', label: 'AI Assistant', accent: PURPLE,
+    key: 'ai', label: 'AI', accent: PURPLE,
     columns: [
       { heading: 'Assist', items: [
         { icon: 'ai', title: 'AI replies', desc: 'Draft answers in a blink', href: '/ai-assistant' },
@@ -240,7 +258,7 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   const scheduleClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setOpen(null), 130) }
   const onPanelMove = (e: React.MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPar({ x: (e.clientX - r.left) / r.width - 0.5, y: (e.clientY - r.top) / r.height - 0.5 }) }
 
-  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'features' && pathname.startsWith('/features')) || (k === 'pricing' && pathname.startsWith('/pricing'))
+  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'solutions' && pathname.startsWith('/solutions')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'features' && pathname.startsWith('/features')) || (k === 'pricing' && pathname.startsWith('/pricing'))
   const moreActive = MORE_LINKS.some(n => pathname.startsWith(n.href))
 
   const handleDashboard = async () => {

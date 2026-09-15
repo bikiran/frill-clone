@@ -8,11 +8,13 @@ import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
 
-// Landing-styled marketing pages for the mega-menu categories (Channels, Phones,
-// AI Assistant, Integrations, Industries, Compare). Data-driven so every page
-// shares the same look and animation language as the main landing page.
+// Use-case Solutions pages — "Colvy for <the job you're trying to do>": customer
+// support, sales, marketing, reviews, product feedback and payments/orders. These
+// cross-cut the channel/feature/industry sections. Data-driven so every page
+// shares the same look and animation language as the rest of the marketing site:
+// a photographed hero, a feature grid, alternating bands and a stats strip.
 
-const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', YELLOW = '#ffcb45', INK = '#0f1119'
+const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', AMBER = '#d97706', INK = '#0f1119'
 
 type Band = { tag: string; title: string; body: string; bullets: string[] }
 type Page = {
@@ -25,113 +27,113 @@ type Page = {
 }
 
 const PAGES: Record<string, Page> = {
-  channels: {
-    accent: BLUE, eyebrow: 'Omni-channel inbox', title: 'Every channel,', titleAccent: 'one conversation', sub: 'WhatsApp, Instagram, SMS, email, live chat and reviews land in one shared inbox — each message tied to a full customer profile.',
-    heroChips: ['WhatsApp', 'Instagram', 'SMS', 'Email', 'Live chat'],
+  'customer-support': {
+    accent: BLUE, eyebrow: 'Customer support', title: 'Support that', titleAccent: 'never drops a thread', sub: 'Every question — SMS, WhatsApp, email, chat, social and calls — lands in one shared inbox, with AI drafts and the customer’s full history beside every reply.',
+    heroChips: ['Shared inbox', 'AI drafts', 'Order lookup', 'Auto-routing'],
     features: [
-      { icon: 'inbox', title: 'Shared inbox', desc: 'Every channel threads into one place your whole team can work from.' },
-      { icon: 'chat', title: 'Live chat widget', desc: 'Capture leads on your site and continue the chat over SMS.' },
-      { icon: 'chat', title: 'WhatsApp & SMS', desc: 'Text customers from a business number — or bring your own.' },
-      { icon: 'reaction', title: 'Meta DMs', desc: 'Instagram and Messenger, answered from the same thread.' },
-      { icon: 'mail', title: 'Email', desc: 'Email sits in the thread alongside every other channel.' },
-      { icon: 'star', title: 'Google reviews', desc: 'See and reply to reviews without leaving Colvy.' },
+      { icon: 'inbox', title: 'One shared inbox', desc: 'Every channel threads into one place your whole team works from.' },
+      { icon: 'ai', title: 'AI-drafted replies', desc: 'On-brand answers in a tap — send, tweak or discard. You stay in control.' },
+      { icon: 'tag', title: 'Order lookup & WISMO', desc: 'Answer “where’s my order?” automatically, with live tracking pulled into the thread.' },
+      { icon: 'target', title: 'Routing & assignment', desc: 'Send each conversation to the right teammate the moment it arrives.' },
+      { icon: 'phone', title: 'Calls in the same place', desc: 'Take calls with full context on screen and AI notes after.' },
+      { icon: 'book', title: 'Help center & saved replies', desc: 'Reuse your best answers and let customers self-serve.' },
     ],
     bands: [
       { tag: 'Unified', title: 'One thread per customer', body: 'Stop switching tabs. Every message from every channel threads into a single conversation with full history and context.', bullets: ['All channels in one inbox', 'Full profile beside every chat', 'Assign, @mention and collaborate'] },
-      { tag: 'Faster replies', title: 'Templates, AI & automation', body: 'Reply in a tap with saved answers, or let AI draft it. Route each conversation to the right teammate automatically.', bullets: ['Saved replies & snippets', 'AI-drafted responses', 'Auto-routing & assignment'] },
+      { tag: 'Less busywork', title: 'Let AI handle the routine', body: 'AI drafts replies, answers WISMO and summarises long threads, so your team spends its time on the questions that need a human.', bullets: ['AI drafts grounded in your docs', 'Automatic WISMO answers', 'One-line thread summaries'] },
     ],
-    stats: [{ big: '6+', label: 'channels, one inbox' }, { big: '2×', label: 'faster replies' }, { big: '45 min', label: 'to set up' }],
-    cta: { title: 'Bring every channel together', sub: 'Set up your shared inbox in minutes — no credit card.' },
+    stats: [{ big: '1', label: 'inbox for every channel' }, { big: '24/7', label: 'AI first response' }, { big: '45 min', label: 'to set up' }],
+    cta: { title: 'Support every customer from one place', sub: 'Set up your shared inbox in minutes — no credit card.' },
   },
-  phones: {
-    accent: GREEN, eyebrow: 'Built-in phone system', title: 'Talk, transfer,', titleAccent: 'transcribe', sub: 'A full cloud phone system inside the inbox — every call logged, recorded and summarised right next to the customer.',
-    heroChips: ['Live call', 'AI notes', 'Transcribed', 'IVR'],
+  sales: {
+    accent: GREEN, eyebrow: 'Sales & conversions', title: 'Turn conversations', titleAccent: 'into revenue', sub: 'Capture leads from every channel, follow up automatically and sell — with live orders and payment links — right inside the chat.',
+    heroChips: ['Lead capture', 'Live orders', 'Payment links', 'Follow-ups'],
     features: [
-      { icon: 'phone', title: 'Voice calls', desc: 'Make and receive calls with full history and context.' },
-      { icon: 'phone', title: 'Click to dial', desc: 'One-click calling from any browser tab.' },
-      { icon: 'target', title: 'IVR & routing', desc: 'Send callers to the right team, every time.' },
-      { icon: 'camera', title: 'Call recording', desc: 'Record, transcribe and summarise every call.' },
-      { icon: 'chat', title: 'Missed-call text-back', desc: 'Auto-SMS the caller the moment you miss a call.' },
-      { icon: 'pin', title: 'Numbers & porting', desc: 'Bring your number across or get a new one.' },
+      { icon: 'chat', title: 'Capture every lead', desc: 'A website widget and every social channel feed straight into your inbox.' },
+      { icon: 'user', title: 'CRM beside every chat', desc: 'See who you’re talking to, what they’ve bought and where they’re up to.' },
+      { icon: 'tag', title: 'Sell in the thread', desc: 'Build a live order and take payment without leaving the conversation.' },
+      { icon: 'link', title: 'Payment links', desc: 'Send a secure link by SMS or email; they pay on their device.' },
+      { icon: 'bolt', title: 'Automated follow-ups', desc: 'Nudge quotes and abandoned carts on autopilot so nothing goes cold.' },
+      { icon: 'phone', title: 'Missed-call text-back', desc: 'Auto-SMS callers you miss so the lead never slips away.' },
     ],
     bands: [
-      { tag: 'Context first', title: 'Know the caller before you answer', body: 'Every call rings with the full customer profile, past conversations and orders on screen — so you pick up ready.', bullets: ['Caller context on every ring', 'Full history beside the call', 'Notes saved to the thread'] },
-      { tag: 'After the call', title: 'AI notes, done for you', body: 'Calls are transcribed and summarised automatically, with follow-up tasks created so nothing slips.', bullets: ['Auto transcription & summary', 'Follow-up tasks created', 'Searchable call records'] },
+      { tag: 'Never miss a lead', title: 'Every enquiry, captured and followed up', body: 'Leads arrive from chat, SMS, social and calls — Colvy catches them all, assigns an owner and follows up automatically.', bullets: ['One pipeline for every channel', 'Auto-assign and remind', 'Follow-ups that run themselves'] },
+      { tag: 'Close in the chat', title: 'From “interested” to paid — in one thread', body: 'Build the order, send a payment link and get paid without bouncing the customer to another tool. Every sale is recorded against the conversation.', bullets: ['Live orders in the thread', 'Secure payment links', 'Revenue you can see per chat'] },
     ],
-    stats: [{ big: '100+', label: 'countries reachable' }, { big: 'HD', label: 'audio quality' }, { big: '0', label: 'hardware needed' }],
-    cta: { title: 'A phone system inside your inbox', sub: 'Calling, recording and AI notes — all in one place.' },
+    stats: [{ big: 'in-chat', label: 'checkout' }, { big: '1', label: 'pipeline, every channel' }, { big: 'per-chat', label: 'revenue you can see' }],
+    cta: { title: 'Sell where your customers already are', sub: 'Capture, follow up and get paid — all in the chat.' },
   },
-  'ai-assistant': {
-    accent: PURPLE, eyebrow: 'AI assistant', title: 'Replies drafted', titleAccent: 'in a blink', sub: 'An assistant trained on your docs that drafts replies, summarises threads and takes real actions — you stay in control.',
-    heroChips: ['Auto-reply', 'Summarise', 'Take action', 'Route'],
+  marketing: {
+    accent: PURPLE, eyebrow: 'Marketing & campaigns', title: 'Broadcasts that', titleAccent: 'start conversations', sub: 'Send targeted SMS, WhatsApp and email campaigns from the same place you talk to customers — and reply to every response in one inbox.',
+    heroChips: ['SMS & WhatsApp', 'Segments', 'Broadcasts', 'Replies in-inbox'],
     features: [
-      { icon: 'ai', title: 'AI replies', desc: 'Draft on-brand answers in a tap, ready to send or edit.' },
-      { icon: 'book', title: 'Knowledge base', desc: 'Teach it your docs so answers are always accurate.' },
-      { icon: 'bolt', title: 'AI actions', desc: 'Look up orders, create tasks and take action inline.' },
-      { icon: 'pen', title: 'Auto-summaries', desc: 'Every long thread, TL;DR’d in one line.' },
-      { icon: 'target', title: 'Auto-routing', desc: 'Send each conversation to the right team automatically.' },
-      { icon: 'link', title: 'Workflows', desc: 'Trigger follow-ups and actions on any event.' },
+      { icon: 'megaphone', title: 'One-off broadcasts', desc: 'Compose once and send across SMS, WhatsApp and email.' },
+      { icon: 'target', title: 'Audience segments', desc: 'Target by purchase history, tags, channel or activity.' },
+      { icon: 'pen', title: 'Templates', desc: 'Reusable, on-brand messages ready to personalise and send.' },
+      { icon: 'bolt', title: 'Automations', desc: 'Welcome series, win-backs and post-purchase flows that run themselves.' },
+      { icon: 'chat', title: 'Two-way, not blast-only', desc: 'Every reply lands in the shared inbox — a campaign becomes a conversation.' },
+      { icon: 'lock', title: 'Opt-in handling', desc: 'Consent and opt-outs managed automatically, so you stay compliant.' },
     ],
     bands: [
-      { tag: 'Trained on you', title: 'Answers from your own knowledge', body: 'Point the assistant at your help center and docs. It answers in your voice, with your facts — never generic.', bullets: ['Grounded in your content', 'On-brand tone', 'Always up to date'] },
-      { tag: 'You approve', title: 'Drafts, not surprises', body: 'AI proposes; your team decides. Every reply is a suggestion you can send, tweak or discard.', bullets: ['Human-in-the-loop by default', 'One-tap send or edit', 'Full audit of every action'] },
+      { tag: 'Reach them where they read', title: 'Campaigns on the channels people actually open', body: 'Email still has its place, but SMS and WhatsApp get read in minutes. Compose once and reach customers on the channel they prefer.', bullets: ['SMS, WhatsApp and email in one composer', 'Segment by behaviour and history', 'Schedule or send now'] },
+      { tag: 'Two-way by design', title: 'When they reply, you’re right there', body: 'A campaign isn’t a dead end. Replies flow into the same inbox as everything else, so a broadcast can turn into a sale or a support win.', bullets: ['Replies in the shared inbox', 'Full context on every responder', 'Automatic opt-out handling'] },
     ],
-    stats: [{ big: '70%', label: 'faster first reply' }, { big: '24/7', label: 'always on' }, { big: '1-tap', label: 'to send' }],
-    cta: { title: 'Put an assistant on every thread', sub: 'Draft replies, summarise and act — in your voice.' },
+    stats: [{ big: '3-in-1', label: 'SMS · WhatsApp · email' }, { big: '2-way', label: 'every campaign' }, { big: 'built-in', label: 'opt-out handling' }],
+    cta: { title: 'Turn campaigns into conversations', sub: 'Broadcast, segment and reply — all in one place.' },
   },
-  integrations: {
-    accent: CYAN, eyebrow: 'Integrations', title: 'Connect your', titleAccent: 'whole stack', sub: 'Commerce, payments and the tools you already run — wired into every conversation in Colvy.',
-    heroChips: ['WooCommerce', 'Stripe', 'Shopify', 'Slack', 'Zapier'],
+  reviews: {
+    accent: AMBER, eyebrow: 'Reviews & reputation', title: 'More reviews,', titleAccent: 'less chasing', sub: 'Automate Google review requests at the perfect moment, then read and reply to every review without leaving your inbox.',
+    heroChips: ['Google reviews', 'Auto-requests', 'Reply in-inbox', 'Alerts'],
     features: [
-      { icon: 'tag', title: 'WooCommerce', desc: 'Live orders, refunds and customer data in the chat.' },
-      { icon: 'tag', title: 'Shopify', desc: 'Orders and customers synced into every thread.' },
-      { icon: 'tag', title: 'Stripe', desc: 'Send payment links and take payment in chat.' },
-      { icon: 'chat', title: 'Slack', desc: 'Get alerts and reply where your team already works.' },
-      { icon: 'bolt', title: 'Zapier', desc: 'Connect Colvy to 5,000+ apps, no code.' },
-      { icon: 'link', title: 'Webhooks & API', desc: 'Build anything custom — push events out, pull data in.' },
+      { icon: 'star', title: 'Automated requests', desc: 'Ask for a review right after a great interaction or delivery.' },
+      { icon: 'chat', title: 'Reply from the inbox', desc: 'Respond to every Google review in the same place you work.' },
+      { icon: 'bell', title: 'Instant alerts', desc: 'Know the moment a new review lands — good or bad.' },
+      { icon: 'target', title: 'Smart timing', desc: 'Trigger requests on order completion, a resolved chat or a milestone.' },
+      { icon: 'pen', title: 'Reply templates', desc: 'Thoughtful, on-brand responses ready to personalise.' },
+      { icon: 'chart', title: 'Reputation at a glance', desc: 'Track rating and volume over time in one view.' },
     ],
     bands: [
-      { tag: 'Sell in the chat', title: 'Commerce, right in the thread', body: 'Look up live orders, recover carts and take payment without leaving the conversation — then see the revenue each chat drove.', bullets: ['Live orders & refunds', 'Payment links & recorded sales', 'Revenue-per-conversation'] },
-      { tag: 'No code', title: 'Wire up the rest in minutes', body: 'Zapier and webhooks connect Colvy to the tools you already use, so data flows both ways automatically.', bullets: ['5,000+ apps via Zapier', 'Inbound & outbound webhooks', 'Two-way sync'] },
+      { tag: 'Ask at the right moment', title: 'Requests that actually convert', body: 'The best time to ask is right after a happy moment. Colvy triggers review requests automatically on the events that signal a satisfied customer.', bullets: ['Trigger on delivery or resolution', 'One-tap for the customer', 'Follow-up reminders'] },
+      { tag: 'Respond fast', title: 'Reply to every review, in one place', body: 'Reviews shape whether people choose you. See and respond to each one from your inbox, so nothing sits unanswered.', bullets: ['All reviews in the inbox', 'Instant new-review alerts', 'Templates to reply fast'] },
     ],
-    stats: [{ big: '5,000+', label: 'apps via Zapier' }, { big: '2-way', label: 'data sync' }, { big: '0', label: 'lines of code' }],
-    cta: { title: 'Connect the tools you already use', sub: 'Commerce, payments and 5,000+ apps — in one place.' },
+    stats: [{ big: 'Google', label: 'reviews managed in-app' }, { big: 'auto', label: 'request timing' }, { big: '1', label: 'inbox for it all' }],
+    cta: { title: 'Grow your rating on autopilot', sub: 'Request, monitor and reply — without the chasing.' },
   },
-  industries: {
-    accent: PINK, eyebrow: 'Industries', title: 'Tuned to', titleAccent: 'your industry', sub: 'The same platform, shaped around how your team actually works — from SaaS to hospitality.',
-    heroChips: ['SaaS', 'E-commerce', 'Hospitality', 'Real estate', 'Agencies'],
+  feedback: {
+    accent: CORAL, eyebrow: 'Product feedback', title: 'Close the loop', titleAccent: 'with your customers', sub: 'Capture ideas, prioritise a public roadmap and announce what shipped — tied to the conversations that sparked them.',
+    heroChips: ['Ideas board', 'Roadmap', 'Changelog', 'Polls'],
     features: [
-      { icon: 'bolt', title: 'SaaS & tech', desc: 'Feedback → roadmap → ship, and support in one place.' },
-      { icon: 'star', title: 'Agencies', desc: 'Every client, channel and conversation in one workspace.' },
-      { icon: 'tag', title: 'E-commerce', desc: 'Orders, support and sell-in-chat for online stores.' },
-      { icon: 'reaction', title: 'Hospitality', desc: 'Bookings, enquiries and guest comms in one thread.' },
-      { icon: 'pin', title: 'Real estate', desc: 'Leads, inspections and follow-ups that never slip.' },
-      { icon: 'help', title: 'Healthcare', desc: 'Reminders and patient comms, handled with care.' },
+      { icon: 'idea', title: 'Ideas & voting', desc: 'Collect requests and let customers vote so priorities are clear.' },
+      { icon: 'map', title: 'Public roadmap', desc: 'Show what’s planned, in progress and shipped — build trust in the open.' },
+      { icon: 'megaphone', title: 'Announcements & changelog', desc: 'Post release notes and auto-notify the people who asked.' },
+      { icon: 'vote', title: 'Polls & surveys', desc: 'Validate a decision before you build it.' },
+      { icon: 'link', title: 'Linked to conversations', desc: 'Turn a chat into an idea, and connect who asked for what.' },
+      { icon: 'bell', title: 'Notify on ship', desc: 'When an idea ships, everyone who wanted it hears back automatically.' },
     ],
     bands: [
-      { tag: 'Your workflow', title: 'Set up for how you work', body: 'Colvy adapts to your team — the channels you use, the way you route work and the tools you run.', bullets: ['Channels tuned to you', 'Routing that fits your team', 'Integrations for your stack'] },
-      { tag: 'Grow with it', title: 'From first hello to fifth reorder', body: 'Capture the lead, close the sale, support the customer and win the repeat — all in one lively place.', bullets: ['Lead capture to repeat sales', 'Full history per customer', 'Revenue you can see'] },
+      { tag: 'Capture every idea', title: 'A home for what customers want', body: 'Requests hide in chats, emails and calls. Colvy pulls them into one board where customers vote and you see what matters most.', bullets: ['Ideas board with voting', 'Create an idea from any chat', 'See who asked for what'] },
+      { tag: 'Tell them when it ships', title: 'The loop that builds loyalty', body: 'From idea to roadmap to changelog — and back to the customer. Announce what shipped and the people who asked get notified in the thread.', bullets: ['Public roadmap', 'Announcements & changelog', 'Auto-notify requesters on ship'] },
     ],
-    stats: [{ big: '1', label: 'platform for it all' }, { big: '45 min', label: 'to get going' }, { big: '∞', label: 'ways to fit' }],
-    cta: { title: 'Made to fit your business', sub: 'Start free and shape Colvy around your team.' },
+    stats: [{ big: 'idea→ship', label: 'one connected loop' }, { big: 'public', label: 'roadmap & changelog' }, { big: 'auto', label: 'ship notifications' }],
+    cta: { title: 'Build what your customers ask for', sub: 'Capture, prioritise and announce — all in one place.' },
   },
-  compare: {
-    accent: CORAL, eyebrow: 'Why Colvy', title: 'All of it,', titleAccent: 'without the add-on fees', sub: 'Feedback, inbox, CRM and calling in one lively platform — priced for SMBs, not enterprise.',
-    heroChips: ['One platform', 'SMB pricing', 'No per-seat tricks', '45-min setup'],
+  payments: {
+    accent: CYAN, eyebrow: 'Payments & orders', title: 'Get paid', titleAccent: 'in the chat', sub: 'Send a secure payment link, take the order and track delivery — without the customer ever leaving the conversation.',
+    heroChips: ['Payment links', 'Live orders', 'WISMO', 'Refunds'],
     features: [
-      { icon: 'bolt', title: 'One platform', desc: 'Feedback, inbox, CRM and calls — not four subscriptions.' },
-      { icon: 'tag', title: 'SMB pricing', desc: 'Fair, flat pricing. Calls priced well under the pack.' },
-      { icon: 'target', title: '45-min setup', desc: 'Live the same afternoon, not next quarter.' },
-      { icon: 'user', title: 'No per-seat tricks', desc: 'Add your team without watching the bill explode.' },
-      { icon: 'star', title: 'Real support', desc: 'Talk to humans who actually help.' },
-      { icon: 'lock', title: 'Own your data', desc: 'Export anytime. Encrypted in transit and at rest.' },
+      { icon: 'link', title: 'Secure payment links', desc: 'Send by SMS or email; the customer pays on their device.' },
+      { icon: 'tag', title: 'Live orders in-thread', desc: 'Build and confirm an order without switching tools.' },
+      { icon: 'target', title: 'WISMO automation', desc: 'Auto-answer “where’s my order?” with live tracking.' },
+      { icon: 'bolt', title: 'Refunds in the thread', desc: 'Process a refund right where the conversation happened.' },
+      { icon: 'plug', title: 'WooCommerce, Shopify & Stripe', desc: 'Orders, customers and payments synced both ways.' },
+      { icon: 'chart', title: 'Recorded sales', desc: 'Every sale tied to the chat that drove it.' },
     ],
     bands: [
-      { tag: 'One bill', title: 'Stop stitching five tools together', body: 'Most teams pay for a helpdesk, a CRM, a calling app, a survey tool and a changelog. Colvy is all of it, in one thread.', bullets: ['Feedback + inbox + CRM + calls', 'One login, one bill', 'Everything shares context'] },
-      { tag: 'Honest pricing', title: 'Priced for growing businesses', body: 'Software is predictable; usage is billed separately and fairly. No surprise per-seat or add-on fees.', bullets: ['Flat, published pricing', 'Usage billed transparently', 'Cancel anytime'] },
+      { tag: 'Sell without leaving', title: 'Checkout, right in the conversation', body: 'Bouncing customers to a separate checkout loses sales. Build the order and send a secure payment link inside the thread instead.', bullets: ['PCI-compliant payment links', 'Live orders in the chat', 'Sale recorded against the conversation'] },
+      { tag: 'After the sale', title: 'Answer “where’s my order?” for you', body: 'Order and tracking data flow into the thread, so WISMO questions are answered automatically and refunds happen in a click.', bullets: ['Automatic order tracking', 'Refunds in the thread', 'Two-way sync with your store'] },
     ],
-    stats: [{ big: '5→1', label: 'tools replaced' }, { big: '45 min', label: 'to go live' }, { big: '$0', label: 'to start' }],
-    cta: { title: 'See the whole platform', sub: 'Everything in one place — start free today.' },
+    stats: [{ big: 'secure', label: 'PCI-compliant links' }, { big: 'in-chat', label: 'checkout' }, { big: 'auto', label: 'order tracking' }],
+    cta: { title: 'Take payment where you talk', sub: 'Links, live orders and tracking — all in the chat.' },
   },
 }
 
@@ -148,8 +150,8 @@ function Reveal({ children, delay = 0, y = 30 }: { children: ReactNode; delay?: 
 
 export default function SolutionPage() {
   const params = useParams()
-  const slug = (params?.slug as string) || 'channels'
-  const page = PAGES[slug] || PAGES.channels
+  const slug = (params?.slug as string) || 'customer-support'
+  const page = PAGES[slug] || PAGES['customer-support']
   const accent = page.accent
   const [dark, setDark] = useState(false)
   const [user, setUser] = useState<any>(null)
@@ -210,15 +212,15 @@ export default function SolutionPage() {
             </div>
           </Reveal>
         </div>
-        {/* Hero visual — futuristic gradient card with floating chips */}
+        {/* Hero visual — real photography behind the accent overlay + floating chips */}
         <Reveal delay={0.1}>
-          <div style={{ position: 'relative', borderRadius: 28, minHeight: 340, overflow: 'hidden', background: `linear-gradient(150deg, ${accent} 0%, ${accent}cc 45%, ${dark ? '#0b0c14' : '#171a2b'} 120%)`, boxShadow: `0 30px 70px ${accent}44` }}>
-            <div aria-hidden style={{ position: 'absolute', top: -50, right: -40, width: 240, height: 240, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', filter: 'blur(36px)' }} />
-            <div aria-hidden style={{ position: 'absolute', bottom: -60, left: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(0,0,0,0.2)', filter: 'blur(40px)' }} />
-            <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.92)', animation: 'solFloat 6s ease-in-out infinite' }}><FeatureIcon name={page.features[0].icon} color="rgba(255,255,255,0.92)" size={54} /></div>
+          <div style={{ position: 'relative', borderRadius: 28, minHeight: 340, overflow: 'hidden', boxShadow: `0 30px 70px ${accent}44` }}>
+            <img src={`/solutions/${slug}.jpg`} alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+            <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${accent}e6 0%, ${accent}73 42%, rgba(10,12,20,0.55) 118%)` }} />
+            <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.95)', animation: 'solFloat 6s ease-in-out infinite' }}><FeatureIcon name={page.features[0].icon} color="rgba(255,255,255,0.95)" size={54} /></div>
             <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12, padding: 32 }}>
               {page.heroChips.map((c, i) => (
-                <span key={c} style={{ alignSelf: i % 2 ? 'flex-end' : 'flex-start', fontSize: 14, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 999, padding: '9px 16px', animation: `solFloat ${5 + i * 0.6}s ease-in-out ${i * 0.3}s infinite` }}>{c}</span>
+                <span key={c} style={{ alignSelf: i % 2 ? 'flex-end' : 'flex-start', fontSize: 14, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.34)', borderRadius: 999, padding: '9px 16px', animation: `solFloat ${5 + i * 0.6}s ease-in-out ${i * 0.3}s infinite` }}>{c}</span>
               ))}
             </div>
           </div>
