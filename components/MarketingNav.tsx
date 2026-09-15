@@ -201,6 +201,7 @@ const LINKS: Link[] = [
 // Secondary links tucked into a compact "More" dropdown.
 const MORE_LINKS: Link[] = [
   { label: 'Blog', href: '/blog' },
+  { label: 'Changelog', href: '/changelog' },
   { label: 'Testimonials', href: '/testimonials' },
   { label: 'Compare', href: '/compare' },
 ]
