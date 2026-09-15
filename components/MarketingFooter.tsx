@@ -17,7 +17,7 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
     { title: 'Product', links: [{ l: 'Overview', h: '/product' }, { l: 'Ideas', h: '/product/ideas' }, { l: 'Roadmap', h: '/product/roadmap' }, { l: 'Announcements', h: '/product/announcements' }, { l: 'Knowledgebase', h: '/product/knowledgebase' }] },
     { title: 'Explore', links: [{ l: 'AI Assistant', h: '/ai-assistant' }, { l: 'Phones', h: '/phones' }, { l: 'Integrations', h: '/integrations' }, { l: 'Industries', h: '/industries' }, { l: 'Compare', h: '/compare' }] },
     { title: 'Channels', links: [{ l: 'WhatsApp', h: '/channels/whatsapp' }, { l: 'Instagram & Messenger', h: '/channels/meta' }, { l: 'Email', h: '/channels/email' }, { l: 'Two-way SMS', h: '/channels/sms' }, { l: 'Live chat', h: '/channels/chat-widget' }, { l: 'Google Reviews', h: '/channels/google-reviews' }] },
-    { title: 'Company', links: [{ l: 'About', h: '/about' }, { l: 'Solutions', h: '/solutions' }, { l: 'Pricing', h: '/pricing' }, { l: 'Sign up', h: '/signup' }, { l: 'Sign in', h: '/signin' }] },
+    { title: 'Company', links: [{ l: 'About', h: '/about' }, { l: 'Careers', h: '/careers' }, { l: 'Solutions', h: '/solutions' }, { l: 'Pricing', h: '/pricing' }, { l: 'Sign in', h: '/signin' }] },
     { title: 'Legal', links: [{ l: 'Privacy', h: '/privacy' }, { l: 'Terms', h: '/terms' }] },
   ]
 
