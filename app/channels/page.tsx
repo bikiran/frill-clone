@@ -20,6 +20,7 @@ const CARDS = [
   { icon: 'chat', title: 'Live chat widget', desc: 'Turn website visitors into conversations.', href: '/channels/chat-widget', accent: BLUE },
   { icon: 'star', title: 'Google Reviews', desc: 'Grow your rating and reply from one place.', href: '/channels/google-reviews', accent: AMBER },
   { icon: 'pen', title: 'Contact forms', desc: 'Branded enquiry forms, straight to your inbox.', href: '/channels/forms', accent: PINK },
+  { icon: 'megaphone', title: 'Broadcasts', desc: 'Reach a whole segment at once, on any channel.', href: '/channels/broadcasts', accent: '#f97316' },
   { icon: 'phone', title: 'Phone calls', desc: 'A full phone system inside your inbox.', href: '/phones', accent: GREEN },
 ]
 

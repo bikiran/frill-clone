@@ -187,6 +187,26 @@ const CH: Record<string, Ch> = {
     stats: [{ big: '1', label: 'inbox for every enquiry' }, { big: 'Embed', label: 'anywhere' }, { big: '0', label: 'tools to switch' }],
     ctaHead: 'Bring forms into your inbox',
   },
+  broadcasts: {
+    accent: '#f97316', eyebrow: 'Broadcasts', name: 'Broadcasts',
+    title: 'Reach everyone at once, on their channel',
+    sub: 'Send offers, announcements and win-backs to a whole segment in one go — by SMS, WhatsApp or email — then handle every reply as a normal thread in your shared inbox.',
+    heroChips: ['Segment & send', 'Any channel', 'Replies in the inbox'],
+    features: [
+      { icon: 'megaphone', title: 'One-to-many', desc: 'Message a whole segment in a single send.' },
+      { icon: 'target', title: 'Smart segments', desc: 'Target by tag, activity or custom fields.' },
+      { icon: 'chat', title: 'Any channel', desc: 'Broadcast over SMS, WhatsApp or email.' },
+      { icon: 'ai', title: 'AI copywriting', desc: 'Draft on-brand campaigns in a click.' },
+      { icon: 'calendar', title: 'Schedule sends', desc: 'Pick the perfect time, or send now.' },
+      { icon: 'inbox', title: 'Replies land home', desc: 'Every response opens a thread in your inbox.' },
+    ],
+    bands: [
+      { tag: 'Send once', title: 'One message, your whole list', body: 'Build a segment and send a broadcast across the channels your customers actually use — no exporting lists or juggling separate blast tools.', bullets: ['Tag & field-based segments', 'SMS, WhatsApp & email', 'Schedule or send now'] },
+      { tag: 'Two-way by design', title: 'Broadcasts that start conversations', body: 'Unlike a one-way blast, every reply comes back as a thread in your shared inbox, so a campaign turns into real conversations your team can pick up.', bullets: ['Replies become threads', 'Full customer context', 'AI-drafted follow-ups'] },
+    ],
+    stats: [{ big: '1', label: 'send, whole segment' }, { big: '3', label: 'channels to broadcast on' }, { big: '2-way', label: 'replies in the inbox' }],
+    ctaHead: 'Send your first broadcast',
+  },
 }
 
 function useReveal(threshold = 0.14) {
