@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { companyHasFeature, effectivePlan } from './plan'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -66,6 +67,7 @@ export async function guardAiRequest(
   req: NextRequest,
   companyId: string | null | undefined,
   endpoint = 'ai',
+  requireAiPlan = true,
 ): Promise<GuardResult> {
   // 1. No company, no service. These endpoints previously accepted anything.
   if (!companyId) {
@@ -95,7 +97,7 @@ export async function guardAiRequest(
     const day = new Date().toISOString().slice(0, 10)
 
     const { data: company } = await db.from('companies')
-      .select('id, ai_daily_limit').eq('id', companyId).maybeSingle()
+      .select('id, ai_daily_limit, plan, trial_ends_at').eq('id', companyId).maybeSingle()
     // An unknown company id is not a real caller.
     if (!company) {
       return {
@@ -103,6 +105,26 @@ export async function guardAiRequest(
         response: NextResponse.json({ error: 'Unknown company' }, { status: 403 }),
       }
     }
+
+    // AI is a paid feature (Inbox / Everything / trial / enterprise). Free and
+    // Feedback plans don't include it. This gates every AI endpoint at once,
+    // since they all pass through guardAiRequest.
+    if (requireAiPlan) {
+      const aiEntitled = await companyHasFeature(
+        db, companyId, 'aiAutomation',
+        effectivePlan(company.plan, company.trial_ends_at),
+      )
+      if (!aiEntitled) {
+        return {
+          ok: false,
+          response: NextResponse.json(
+            { error: 'AI features are available on the Inbox and Everything plans. Upgrade to use the assistant.', reason: 'plan' },
+            { status: 402 },
+          ),
+        }
+      }
+    }
+
     const limit = company.ai_daily_limit ?? DEFAULT_DAILY_LIMIT
 
     const { data: row } = await db.from('ai_usage')
