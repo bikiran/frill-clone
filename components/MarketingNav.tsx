@@ -72,7 +72,7 @@ const MENUS: Menu[] = [
       { heading: 'Inbound', items: [
         { icon: 'inbox', title: 'Shared inbox', desc: 'Every channel, one thread', href: '/inbox-crm' },
         { icon: 'chat', title: 'Live chat widget', desc: 'Capture leads on your site', href: '/channels/chat-widget' },
-        { icon: 'pen', title: 'Contact forms', desc: 'Structured enquiries', href: '/forms' },
+        { icon: 'pen', title: 'Contact forms', desc: 'Structured enquiries', href: '/channels/forms' },
       ] },
       { heading: 'Social', items: [
         { icon: 'reaction', title: 'Meta DMs', desc: 'Instagram & Messenger', href: '/channels/meta' },
