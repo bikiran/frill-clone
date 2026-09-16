@@ -10,6 +10,7 @@
 
 import { TelnyxService } from './telnyx-service'
 import { TwilioService } from './twilio-service'
+import { assertSmsAllowed, recordSmsSent } from './sms-quota'
 
 export type SmsProvider = 'telnyx' | 'twilio'
 
@@ -70,6 +71,22 @@ export async function getSmsProvider(db: any, companyId: string): Promise<SmsPro
   return 'telnyx'
 }
 
+// Wrap a sender so every send passes the plan/allowance gate first and a
+// successful send is counted against the month. This is the single choke point:
+// the composer, campaigns (which POST to /api/telnyx/sms/send), auto-replies and
+// media requests all obtain their sender here.
+function meteredSender(db: any, companyId: string, base: SmsSender): SmsSender {
+  return {
+    ...base,
+    async send(p: SmsSendParams): Promise<SmsSendResult> {
+      await assertSmsAllowed(db, companyId)  // throws SmsQuotaError if blocked
+      const result = await base.send(p)
+      recordSmsSent(db, companyId, 1).catch(() => {})
+      return result
+    },
+  }
+}
+
 /** Build the active SMS sender for a company, or null if none is configured. */
 export async function resolveSmsSender(db: any, companyId: string): Promise<SmsSender | null> {
   const provider = await getSmsProvider(db, companyId)
@@ -84,7 +101,7 @@ export async function resolveSmsSender(db: any, companyId: string): Promise<SmsS
     if (usable) {
       const svc = new TwilioService(t.account_sid, t.auth_token)
       const from = t.phone_number || ''
-      return {
+      return meteredSender(db, companyId, {
         provider: 'twilio',
         from,
         supportsMms: true,
@@ -103,7 +120,7 @@ export async function resolveSmsSender(db: any, companyId: string): Promise<SmsS
             throw new Error(explainSmsFailure(e))
           }
         },
-      }
+      })
     }
     // Twilio selected but not usable — fall through to Telnyx.
   }
@@ -112,7 +129,7 @@ export async function resolveSmsSender(db: any, companyId: string): Promise<SmsS
   const { data: integ } = await db.from('telnyx_integrations').select('*').eq('company_id', companyId).maybeSingle()
   if (integ?.api_key && integ.phone_number) {
     const svc = new TelnyxService(integ.api_key)
-    return {
+    return meteredSender(db, companyId, {
       provider: 'telnyx',
       from: integ.phone_number,
       supportsMms: false,
@@ -131,7 +148,7 @@ export async function resolveSmsSender(db: any, companyId: string): Promise<SmsS
           throw new Error(explainSmsFailure(e))
         }
       },
-    }
+    })
   }
 
   return null

@@ -4,6 +4,7 @@ import { toE164 } from '@/lib/telnyx-service'
 import { resolveSmsSender, isLandlineRejection } from '@/lib/sms-provider'
 import { trackLinksInText } from '@/lib/link-tracking'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
+import { SmsQuotaError } from '@/lib/sms-quota'
 
 function admin() {
   return createClient(
@@ -220,6 +221,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, id: providerMessageId })
   } catch (err: any) {
+    // Plan doesn't include SMS, or the monthly allowance is used up — answer
+    // 402 with the reason so the composer and campaign runner can surface it
+    // as an upgrade/limit message rather than a generic failure.
+    if (err instanceof SmsQuotaError) {
+      return NextResponse.json({ error: err.message, reason: err.reason, limit: err.limit, used: err.used }, { status: 402 })
+    }
     // The carrier just told us this number is not a mobile. Remember it on the
     // contact so the next send skips the doomed round trip — the lookup that
     // normally fills this in costs money per number, and a refusal is the same
