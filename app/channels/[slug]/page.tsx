@@ -167,6 +167,26 @@ const CH: Record<string, Ch> = {
     stats: [{ big: 'Two-way', label: 'SMS & MMS' }, { big: '1', label: 'shared number' }, { big: 'High', label: 'open rates' }],
     ctaHead: 'Start texting from Colvy',
   },
+  forms: {
+    accent: PINK, eyebrow: 'Contact forms', name: 'Forms',
+    title: 'Turn form submissions into conversations',
+    sub: 'Build branded contact and enquiry forms, embed them anywhere, and land every submission as a thread in the same shared inbox as your other channels — with full customer context attached.',
+    heroChips: ['Branded forms', 'Embed anywhere', 'Straight to the inbox'],
+    features: [
+      { icon: 'pen', title: 'Branded forms', desc: 'Match your colours, logo and fields in minutes.' },
+      { icon: 'inbox', title: 'Straight to the inbox', desc: 'Each submission opens a thread beside chat, SMS and email.' },
+      { icon: 'target', title: 'Structured fields', desc: 'Collect exactly what you need to reply fast.' },
+      { icon: 'bolt', title: 'Embed anywhere', desc: 'Drop a form on your site or share a link.' },
+      { icon: 'ai', title: 'AI replies', desc: 'Draft an on-brand response from your docs in a click.' },
+      { icon: 'user', title: 'Full context', desc: 'Match submissions to a customer and their history.' },
+    ],
+    bands: [
+      { tag: 'Capture cleanly', title: 'Every enquiry, one thread', body: 'Contact and enquiry forms land as threads in your shared inbox, so nothing sits in a separate tool and anyone on the team can pick it up with the full picture.', bullets: ['Branded, structured forms', 'Straight into the inbox', 'Matched to a customer'] },
+      { tag: 'Reply faster', title: 'From submission to answer', body: 'The moment a form comes in, your team can reply on the channel the customer prefers — with AI drafting where it helps and context beside every field.', bullets: ['Reply on any channel', 'AI-drafted responses', 'Assign & @mention teammates'] },
+    ],
+    stats: [{ big: '1', label: 'inbox for every enquiry' }, { big: 'Embed', label: 'anywhere' }, { big: '0', label: 'tools to switch' }],
+    ctaHead: 'Bring forms into your inbox',
+  },
 }
 
 function useReveal(threshold = 0.14) {
