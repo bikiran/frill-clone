@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 
 // Branded, animated 404. Rendered as a fixed full-screen overlay so it looks
 // clean regardless of whatever chrome the root layout wraps an unknown route in.
@@ -83,13 +83,20 @@ function bestMatch(path: string): { route: { href: string; label: string }; conf
 }
 
 export default function NotFound() {
-  const pathname = usePathname()
   const router = useRouter()
   const [query, setQuery] = useState('')
   const [countdown, setCountdown] = useState<number | null>(null)
   const [cancelled, setCancelled] = useState(false)
 
-  const match = useMemo(() => bestMatch(pathname || ''), [pathname])
+  // The global App Router not-found renders with usePathname() === '/_not-found',
+  // so we read the real mistyped URL from the browser on mount. Empty on the
+  // server / first paint; the suggestion resolves once it's set.
+  const [pathname, setPathname] = useState('')
+  useEffect(() => {
+    if (typeof window !== 'undefined') setPathname(window.location.pathname)
+  }, [])
+
+  const match = useMemo(() => (pathname ? bestMatch(pathname) : null), [pathname])
 
   // Auto-recover: when we have a confident guess, count down and redirect.
   useEffect(() => {
@@ -153,7 +160,7 @@ export default function NotFound() {
 
         <h1 className="nf-up" style={{ animationDelay: '.1s', fontSize: 'clamp(24px, 4.5vw, 34px)', fontWeight: 900, letterSpacing: '-0.03em', margin: '10px 0 8px' }}>This page went off-thread</h1>
         <p className="nf-up" style={{ animationDelay: '.15s', fontSize: 16, color: 'rgba(15,17,25,0.6)', margin: '0 auto 26px', maxWidth: 460, lineHeight: 1.55 }}>
-          We couldn’t find <code style={{ background: '#f3f4f8', padding: '2px 7px', borderRadius: 6, fontSize: 13.5, color: '#0f1119', wordBreak: 'break-all' }}>{norm(pathname || '')}</code>. Let’s get you back on track.
+          We couldn’t find {pathname ? <code style={{ background: '#f3f4f8', padding: '2px 7px', borderRadius: 6, fontSize: 13.5, color: '#0f1119', wordBreak: 'break-all' }}>{norm(pathname)}</code> : 'that page'}. Let’s get you back on track.
         </p>
 
         {/* self-recovery suggestion */}
