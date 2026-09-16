@@ -2358,7 +2358,10 @@ function WidgetContent() {
         }) })()}
       </div>
 
-      {/* "Powered by Colvy" — at the very bottom, below the menu items */}
+      {/* "Powered by Colvy" — at the very bottom, below the menu items. Hidden
+          only when the plan entitles branding removal (server-gated in
+          /api/widget-data, which sets company.hide_powered_by). */}
+      {!company?.hide_powered_by && (
       <div style={{ borderTop: '1px solid #f0f0f0', background: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '5px 8px 7px', flexShrink: 0 }}>
         <a
           href={`https://colvy.com/?utm_source=${encodeURIComponent(slug)}&utm_medium=widget&utm_campaign=powered_by&utm_content=${encodeURIComponent(company?.name || slug)}`}
@@ -2372,6 +2375,7 @@ function WidgetContent() {
           </svg>
         </a>
       </div>
+      )}
     </div>
   )
 }
