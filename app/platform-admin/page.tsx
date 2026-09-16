@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import LegalAdminPage from '../admin/legal/page'
 import PlatformBannerAdmin from '@/components/PlatformBannerAdmin'
 import { SmsPricing, DEFAULT_PRICING, calculateCost, aud, audRate, parsePricingRow } from '@/lib/sms-pricing'
-import { PLAN_FEATURES, PLAN_LIMITS, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
+import { PLAN_FEATURES, PLAN_LIMITS, PLAN_NAMES, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
 import { OPERATIONAL_FLAGS } from '@/lib/feature-flags'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
@@ -482,8 +482,8 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
           )}
 
           {tab === 'plan' && (() => {
-            const PLANS = ['free', 'trial', 'pro', 'enterprise', 'suspended']
-            const planColor: Record<string, string> = { free: '#6b7280', trial: '#6366f1', pro: '#10b981', enterprise: '#8b5cf6', suspended: '#ef4444' }
+            const PLANS = ['free', 'trial', 'feedback', 'omnichannel', 'everything', 'enterprise', 'suspended']
+            const planColor: Record<string, string> = { free: '#6b7280', trial: '#6366f1', feedback: '#7c5cff', omnichannel: '#2b59ff', everything: '#ff6a4d', pro: '#10b981', enterprise: '#8b5cf6', suspended: '#ef4444' }
             const trialLeft = sub.trial_ends_at ? Math.ceil((new Date(sub.trial_ends_at).getTime() - Date.now()) / 86400000) : null
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -509,7 +509,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {PLANS.map(pl => (
                       <button key={pl} onClick={() => applyPlan(pl)} disabled={savingSub === 'plan'}
-                        style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${sub.plan === pl ? (planColor[pl] || '#ff7a6b') : 'var(--sa-border)'}`, background: sub.plan === pl ? (planColor[pl] || '#ff7a6b') + '22' : 'transparent', color: sub.plan === pl ? (planColor[pl] || '#ff7a6b') : 'var(--sa-text)', fontSize: 12.5, fontWeight: sub.plan === pl ? 700 : 500, cursor: 'pointer', textTransform: 'capitalize' }}>{pl}</button>
+                        style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${sub.plan === pl ? (planColor[pl] || '#ff7a6b') : 'var(--sa-border)'}`, background: sub.plan === pl ? (planColor[pl] || '#ff7a6b') + '22' : 'transparent', color: sub.plan === pl ? (planColor[pl] || '#ff7a6b') : 'var(--sa-text)', fontSize: 12.5, fontWeight: sub.plan === pl ? 700 : 500, cursor: 'pointer' }}>{PLAN_NAMES[pl as Plan] || pl}</button>
                     ))}
                   </div>
                 </div>
@@ -2149,8 +2149,8 @@ function OverviewPage({ data }: { data: any }) {
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 16 }}>Plan Distribution</p>
           {(() => {
             const dist = data.planDistribution || {}
-            const order = ['enterprise', 'growth', 'pro', 'business', 'startup', 'trial', 'free', 'suspended']
-            const colors: Record<string, string> = { enterprise: '#8b5cf6', growth: '#ff7a6b', pro: '#10b981', business: '#2563eb', startup: '#0891b2', trial: '#f59e0b', free: '#d1d5db', suspended: '#ef4444' }
+            const order = ['enterprise', 'everything', 'omnichannel', 'feedback', 'growth', 'pro', 'business', 'startup', 'trial', 'free', 'suspended']
+            const colors: Record<string, string> = { enterprise: '#8b5cf6', everything: '#ff6a4d', omnichannel: '#2b59ff', feedback: '#7c5cff', growth: '#ff7a6b', pro: '#10b981', business: '#2563eb', startup: '#0891b2', trial: '#f59e0b', free: '#d1d5db', suspended: '#ef4444' }
             const total = Object.values(dist).reduce((a: number, b: any) => a + b, 0) as number
             const keys = Object.keys(dist).sort((a, b) => (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b)))
             if (total === 0) return <p style={{ fontSize: 12, color: 'var(--sa-muted)' }}>No companies yet.</p>
