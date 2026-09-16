@@ -51,6 +51,14 @@ const WORKSPACES = [
     industry: 'Café & Hospitality',
     accent: '#ff6a4d',
   },
+  {
+    name: 'Test — Feedback Plan',
+    slug: 'test-feedback',
+    email: 'test-feedback@colvy-test.com',
+    plan: 'feedback',
+    industry: 'SaaS & Software',
+    accent: '#7c5cff',
+  },
 ]
 
 const db = createClient(URL, KEY, { auth: { autoRefreshToken: false, persistSession: false } })
