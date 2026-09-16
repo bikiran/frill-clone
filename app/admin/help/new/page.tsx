@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { useEntitlements } from '@/lib/entitlements-client'
 
 const DEFAULT_CATEGORIES = ['Getting Started', 'Features', 'Billing', 'Integrations', 'Troubleshooting', 'API', 'Other']
 
@@ -21,6 +22,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 type MediaItem = { type: 'image' | 'video' | 'youtube' | 'gif'; src: string; caption?: string }
 
 export default function NewHelpArticlePage() {
+  const { limitOf } = useEntitlements()
   const router = useRouter()
   const searchParams = useSearchParams()
   const editId = searchParams?.get('edit')
@@ -178,6 +180,19 @@ export default function NewHelpArticlePage() {
         console.log('[HELP PUBLISH] Update result:', { data, error })
         if (error) throw error
       } else {
+        // Plan cap on help articles (Free = 10, Feedback/Everything = unlimited,
+        // Inbox = none). Only new articles are capped, not edits.
+        const limit = limitOf('helpArticles')
+        if (typeof limit === 'number' && isFinite(limit)) {
+          const { count } = await (supabase as any).from('help_articles').select('id', { count: 'exact', head: true }).eq('company_id', company.id)
+          if ((count || 0) >= limit) {
+            setSaving(false)
+            alert(limit === 0
+              ? 'Help center articles aren’t included in your plan. Upgrade to the Feedback or Everything plan.'
+              : `You’ve reached your plan’s limit of ${limit} help article${limit === 1 ? '' : 's'}. Upgrade to add more.`)
+            return
+          }
+        }
         console.log('[HELP PUBLISH] Inserting new help article')
         const { data, error } = await (supabase as any).from('help_articles').insert({ ...payload, views: 0, likes: 0 })
         console.log('[HELP PUBLISH] Insert result:', { data, error })
