@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
+import { useEntitlements } from '@/lib/entitlements-client'
+import ProGate from '@/components/ProGate'
 
 function StatCard({ label, value, sub, color }: any) {
   return (
@@ -37,6 +39,7 @@ export default function AnalyticsPage() {
   }
 
   const router = useRouter()
+  const ent = useEntitlements()
   const seededCu = peekCompanyUser()
   // The last snapshot we rendered for the default (30d) view, if any — lets a
   // revisit paint the stat cards instantly instead of flashing zeros.
@@ -311,6 +314,17 @@ export default function AnalyticsPage() {
   }
 
   if (!user || loading) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
+
+  // Advanced analytics is an Everything-plan feature. Once entitlements resolve,
+  // lower plans see an upgrade wall instead of the dashboard.
+  if (ent.ready && ('advancedAnalytics' in ent.features) && !ent.hasFeature('advancedAnalytics')) {
+    return (
+      <div className="p-8 max-w-lg mx-auto">
+        <h1 className="text-3xl font-bold mb-6" style={{ color: 'var(--ink)' }}>Analytics</h1>
+        <ProGate feature="advancedAnalytics"><div /></ProGate>
+      </div>
+    )
+  }
 
   return (
     <div className="p-8 max-w-7xl mx-auto">

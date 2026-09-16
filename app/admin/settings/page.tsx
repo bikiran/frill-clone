@@ -54,6 +54,9 @@ export default function SettingsPage() {
   // resolve returns so we never briefly lock a paying customer's control.
   const { hasFeature, ready: entReady } = useEntitlements()
   const brandingEntitled = !entReady || hasFeature('removeBranding')
+  // Custom domains are an Everything-plan feature. Assume allowed until the
+  // async resolve returns, so a paying customer's controls never flash locked.
+  const customDomainEntitled = !entReady || hasFeature('customDomain')
   const [user, setUser] = useState<any>(null)
   const [company, setCompany] = useState<any>(null)
   const [loadedCompany, setLoadedCompany] = useState(false)
@@ -1092,9 +1095,10 @@ export default function SettingsPage() {
                   </label>
                   <div className="flex gap-2">
                     <input type="text" value={boardDomain} onChange={e => setBoardDomain(e.target.value.toLowerCase())}
-                      placeholder="feedback.yourcompany.com"
-                      className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm"
+                      placeholder="feedback.yourcompany.com" disabled={!customDomainEntitled}
+                      className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm disabled:opacity-60"
                       style={{ borderColor: domainStatus['board'] === 'verified' ? '#10b981' : domainStatus['board'] === 'error' ? '#ef4444' : 'var(--border)', fontSize: '16px' }} />
+                    {customDomainEntitled ? (
                     <button onClick={async () => {
                         if (!boardDomain) return
                         setDomainStatus(p => ({ ...p, board: 'verifying' }))
@@ -1122,6 +1126,9 @@ export default function SettingsPage() {
                       style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                       {domainStatus['board'] === 'verifying' ? '⏳ Adding...' : domainStatus['board'] === 'verified' ? '✓ Active' : domainStatus['board'] === 'pending' ? '⏱ Pending' : 'Add Domain'}
                     </button>
+                    ) : (
+                    <Link href="/admin/billing" className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white shrink-0" style={{ background: 'var(--coral)', textDecoration: 'none', whiteSpace: 'nowrap' }}>🔒 Upgrade</Link>
+                    )}
                   </div>
                   <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Your feedback board will be accessible at this domain.</p>
                 </div>
@@ -1134,9 +1141,10 @@ export default function SettingsPage() {
                   </label>
                   <div className="flex gap-2">
                     <input type="text" value={helpDomain} onChange={e => setHelpDomain(e.target.value.toLowerCase())}
-                      placeholder="help.yourcompany.com"
-                      className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm"
+                      placeholder="help.yourcompany.com" disabled={!customDomainEntitled}
+                      className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm disabled:opacity-60"
                       style={{ borderColor: domainStatus['help'] === 'verified' ? '#10b981' : domainStatus['help'] === 'error' ? '#ef4444' : 'var(--border)', fontSize: '16px' }} />
+                    {customDomainEntitled ? (
                     <button onClick={async () => {
                         if (!helpDomain) return
                         setDomainStatus(p => ({ ...p, help: 'verifying' }))
@@ -1163,6 +1171,9 @@ export default function SettingsPage() {
                       style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                       {domainStatus['help'] === 'verifying' ? '⏳ Adding...' : domainStatus['help'] === 'verified' ? '✓ Active' : domainStatus['help'] === 'pending' ? '⏱ Pending' : 'Add Domain'}
                     </button>
+                    ) : (
+                    <Link href="/admin/billing" className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white shrink-0" style={{ background: 'var(--coral)', textDecoration: 'none', whiteSpace: 'nowrap' }}>🔒 Upgrade</Link>
+                    )}
                   </div>
                   <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Your help centre will be accessible at this domain.</p>
                 </div>

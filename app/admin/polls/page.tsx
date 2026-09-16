@@ -6,9 +6,11 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon, PollIcon } from '@/components/Icons'
+import { useEntitlements } from '@/lib/entitlements-client'
 
 
 export default function PollsAdmin() {
+  const { limitOf } = useEntitlements()
   // Get company_id from hostname slug (most reliable approach)
   const getMyCompanyId = async () => {
     if (typeof window !== 'undefined') {
@@ -68,6 +70,14 @@ export default function PollsAdmin() {
   const createPoll = async () => {
     if (!question.trim() || options.filter(o => o.text.trim()).length < 2) {
       alert('Please add a question and at least 2 options')
+      return
+    }
+    // Plan cap on polls (Free = 1, Feedback/Everything = unlimited, Inbox = none).
+    const limit = limitOf('polls')
+    if (typeof limit === 'number' && isFinite(limit) && polls.length >= limit) {
+      alert(limit === 0
+        ? 'Polls aren’t included in your plan. Upgrade to the Feedback or Everything plan to create polls.'
+        : `You’ve reached your plan’s limit of ${limit} poll${limit === 1 ? '' : 's'}. Upgrade to add more.`)
       return
     }
     // Attach the poll to THIS company — without company_id polls leak across boards

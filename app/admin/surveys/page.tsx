@@ -7,6 +7,7 @@ import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon, SurveyIcon } from '@/components/Icons'
 import { SkeletonList } from '@/components/Skeleton'
+import { useEntitlements } from '@/lib/entitlements-client'
 
 
 const SURVEY_TYPES = [
@@ -18,6 +19,7 @@ const SURVEY_TYPES = [
 ]
 
 export default function SurveysAdmin() {
+  const { limitOf } = useEntitlements()
   // Get company_id from hostname slug (most reliable approach)
   const getMyCompanyId = async () => {
     if (typeof window !== 'undefined') {
@@ -74,6 +76,14 @@ export default function SurveysAdmin() {
 
   const createSurvey = async () => {
     if (!newTitle.trim()) return
+    // Plan cap on surveys (Free = 1, Feedback/Everything = unlimited, Inbox = none).
+    const limit = limitOf('surveys')
+    if (typeof limit === 'number' && isFinite(limit) && surveys.length >= limit) {
+      alert(limit === 0
+        ? 'Surveys aren’t included in your plan. Upgrade to the Feedback or Everything plan to create surveys.'
+        : `You’ve reached your plan’s limit of ${limit} survey${limit === 1 ? '' : 's'}. Upgrade to add more.`)
+      return
+    }
     const defaultQuestion = selectedType === 'nps' ? 'How likely are you to recommend us?' : 'How would you rate your experience?'
     // Attach the survey to THIS company — without company_id surveys leak across boards
     const companyId = await getMyCompanyId()
