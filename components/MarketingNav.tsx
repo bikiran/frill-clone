@@ -82,7 +82,7 @@ const MENUS: Menu[] = [
       { heading: 'Messaging', items: [
         { icon: 'chat', title: 'SMS & MMS', desc: 'Text customers in one place', href: '/channels/sms' },
         { icon: 'mail', title: 'Email', desc: 'In the same thread', href: '/channels/email' },
-        { icon: 'megaphone', title: 'Broadcasts', desc: 'Reach everyone at once', href: '/channels/sms' },
+        { icon: 'megaphone', title: 'Broadcasts', desc: 'Reach everyone at once', href: '/channels/broadcasts' },
       ] },
     ],
     feature: { eyebrow: 'One shared inbox', title: 'Every channel, one thread', desc: 'WhatsApp, Instagram, SMS, email and chat beside one customer profile.', icon: 'inbox', chips: ['WhatsApp', 'Instagram', 'SMS'], href: '/channels', cta: 'Explore channels' },
