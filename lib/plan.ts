@@ -1,67 +1,120 @@
 import { supabase } from './supabase'
 import { getCompanyByOwner } from './board'
 
-export type Plan = 'free' | 'trial' | 'pro' | 'enterprise'
+// ─────────────────────────────────────────────────────────────────────────────
+// Single source of truth for plan entitlements.
+//
+// Plan values mirror what the customer buys on the pricing page (`app/pricing`):
+//   free · feedback · omnichannel (Inbox) · everything · enterprise
+// plus two lifecycle states — `trial` (a full-access preview) and `suspended` —
+// and the legacy value `pro` still stored on some rows / settable in the
+// platform-admin console. Everything is normalised through `normalizePlan()`,
+// so callers can pass whatever is stored on `companies.plan` and get correct
+// entitlements. The feature keys and numeric caps below are kept in lockstep
+// with the pricing page's TIERS / COMPARE tables.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type Plan =
+  | 'free' | 'trial' | 'feedback' | 'omnichannel' | 'everything'
+  | 'pro' | 'enterprise' | 'suspended'
+
+// The full paid feature surface (Everything / legacy Pro / trial preview).
+const EVERYTHING_FEATURES = [
+  'feedbackSuite', 'polls', 'surveys', 'removeBranding',
+  'inbox', 'channels', 'campaigns', 'reviewDashboard', 'ecommerceSync',
+  'aiAutomation', 'aiWriting', 'whiteLabel', 'customDomain',
+  'advancedAnalytics', 'prioritySupport',
+]
 
 export const PLAN_FEATURES: Record<Plan, string[]> = {
-  free: [
-    'ideas', 'roadmap', 'announcements', 'help',
-    'basicAnalytics', 'guestVoting', '5teamMembers',
-  ],
-  trial: [
-    'ideas', 'roadmap', 'announcements', 'help',
-    'basicAnalytics', 'guestVoting', 'polls', 'surveys',
-    'whiteListing', 'apiAccess', 'advancedAnalytics',
-    'unlimitedTeam', 'customFields', 'segments', 'boostAnnouncements',
-  ],
-  pro: [
-    'ideas', 'roadmap', 'announcements', 'help',
-    'basicAnalytics', 'guestVoting', 'polls', 'surveys',
-    'whiteListing', 'apiAccess', 'advancedAnalytics',
-    'unlimitedTeam', 'customFields', 'segments', 'boostAnnouncements',
-    'webhooks', 'removesBranding', 'customDomain', 'prioritySupport',
-  ],
+  free: ['feedbackSuite'],
+  feedback: ['feedbackSuite', 'polls', 'surveys', 'removeBranding'],
+  omnichannel: ['inbox', 'channels', 'campaigns', 'reviewDashboard', 'ecommerceSync', 'aiAutomation', 'prioritySupport'],
+  everything: EVERYTHING_FEATURES,
+  trial: EVERYTHING_FEATURES,
+  pro: EVERYTHING_FEATURES,        // legacy full-paid alias
   enterprise: ['*'],
+  suspended: [],
 }
 
+// Numeric caps. Infinity = unlimited. `smsPerMonth` is the included SMS
+// allowance (metered beyond it); 0 means the plan cannot send SMS at all.
 export const PLAN_LIMITS: Record<Plan, Record<string, any>> = {
-  free:       { teamMembers: 5,        ideas: 50,       surveys: 0,   apiCalls: 0 },
-  trial:      { teamMembers: Infinity, ideas: Infinity, surveys: Infinity, apiCalls: 100 },
-  pro:        { teamMembers: Infinity, ideas: Infinity, surveys: Infinity, apiCalls: 1000 },
-  enterprise: { teamMembers: Infinity, ideas: Infinity, surveys: Infinity, apiCalls: 10000 },
+  free:        { teamMembers: 2,        smsPerMonth: 0,        polls: 1,        surveys: 1,        helpArticles: 10 },
+  feedback:    { teamMembers: 5,        smsPerMonth: 0,        polls: Infinity, surveys: Infinity, helpArticles: Infinity },
+  omnichannel: { teamMembers: 10,       smsPerMonth: 3000,     polls: 0,        surveys: 0,        helpArticles: 0 },
+  everything:  { teamMembers: Infinity, smsPerMonth: 3000,     polls: Infinity, surveys: Infinity, helpArticles: Infinity },
+  trial:       { teamMembers: Infinity, smsPerMonth: 3000,     polls: Infinity, surveys: Infinity, helpArticles: Infinity },
+  pro:         { teamMembers: Infinity, smsPerMonth: 3000,     polls: Infinity, surveys: Infinity, helpArticles: Infinity },
+  enterprise:  { teamMembers: Infinity, smsPerMonth: Infinity, polls: Infinity, surveys: Infinity, helpArticles: Infinity },
+  suspended:   { teamMembers: 0,        smsPerMonth: 0,        polls: 0,        surveys: 0,        helpArticles: 0 },
 }
 
 export const PLAN_NAMES: Record<Plan, string> = {
-  free: 'Free', trial: '14-Day Trial', pro: 'Pro', enterprise: 'Enterprise',
+  free: 'Free', trial: '14-Day Trial', feedback: 'Feedback', omnichannel: 'Inbox',
+  everything: 'Everything', pro: 'Pro', enterprise: 'Enterprise', suspended: 'Suspended',
 }
 
+// Monthly list price (USD), for display only. null = contact sales.
 export const PLAN_PRICES: Record<Plan, number | null> = {
-  free: 0, trial: 0, pro: 99, enterprise: null,
+  free: 0, trial: 0, feedback: 39, omnichannel: 179, everything: 259,
+  pro: 259, enterprise: null, suspended: 0,
 }
 
-// Features/limits the super admin can override per-company (a curated subset of
-// the plan matrix — the base features every plan has are always on). Keys match
-// PLAN_FEATURES / PLAN_LIMITS above.
+// Features/limits a super admin can override per-company (company_entitlements).
 export const OVERRIDABLE_FEATURES: { key: string; label: string }[] = [
+  { key: 'removeBranding', label: 'Remove Colvy branding' },
+  { key: 'whiteLabel', label: 'White-label branding' },
+  { key: 'customDomain', label: 'Custom domain' },
+  { key: 'inbox', label: 'Live chat inbox & CRM' },
+  { key: 'channels', label: 'Channels (SMS / WhatsApp / voice)' },
+  { key: 'campaigns', label: 'Broadcast & scheduled campaigns' },
+  { key: 'reviewDashboard', label: 'Review dashboard' },
+  { key: 'ecommerceSync', label: 'WooCommerce / Shopify sync' },
+  { key: 'aiAutomation', label: 'AI flow automation' },
+  { key: 'aiWriting', label: 'AI writing assistant' },
+  { key: 'advancedAnalytics', label: 'Advanced analytics' },
   { key: 'polls', label: 'Polls' },
   { key: 'surveys', label: 'Surveys' },
-  { key: 'apiAccess', label: 'API access' },
-  { key: 'webhooks', label: 'Webhooks' },
-  { key: 'advancedAnalytics', label: 'Advanced analytics' },
-  { key: 'customFields', label: 'Custom fields' },
-  { key: 'segments', label: 'Segments' },
-  { key: 'boostAnnouncements', label: 'Boosted announcements' },
-  { key: 'whiteListing', label: 'White-labelling' },
-  { key: 'removesBranding', label: 'Remove Colvy branding' },
-  { key: 'customDomain', label: 'Custom domain' },
   { key: 'prioritySupport', label: 'Priority support' },
 ]
 export const OVERRIDABLE_LIMITS: { key: string; label: string }[] = [
   { key: 'teamMembers', label: 'Team members' },
-  { key: 'ideas', label: 'Ideas' },
+  { key: 'smsPerMonth', label: 'SMS included / month' },
+  { key: 'polls', label: 'Polls' },
   { key: 'surveys', label: 'Surveys' },
-  { key: 'apiCalls', label: 'API calls / period' },
+  { key: 'helpArticles', label: 'Help center articles' },
 ]
+
+// Map any stored/marketing value onto a canonical Plan. Legacy paid ids collapse
+// onto their closest current tier so an existing customer never loses access.
+export function normalizePlan(raw: string | null | undefined): Plan {
+  switch ((raw || '').toLowerCase()) {
+    case 'free': return 'free'
+    case 'trial': return 'trial'
+    case 'suspended': return 'suspended'
+    case 'feedback': return 'feedback'
+    case 'omnichannel': return 'omnichannel'
+    case 'everything': return 'everything'
+    case 'enterprise': return 'enterprise'
+    case 'pro':
+    case 'business':
+    case 'growth': return 'pro'          // legacy full-paid → Everything-equivalent
+    case 'startup': return 'omnichannel' // legacy entry paid → Inbox
+    default: return 'free'
+  }
+}
+
+// The plan that actually applies right now. A trial whose window has passed is
+// automatically treated as Free (the chosen downgrade-on-expiry behaviour).
+export function effectivePlan(raw: string | null | undefined, trialEndsAt?: string | null): Plan {
+  const p = normalizePlan(raw)
+  if (p === 'trial' && trialEndsAt) {
+    const ends = Date.parse(trialEndsAt)
+    if (!Number.isNaN(ends) && ends < Date.now()) return 'free'
+  }
+  return p
+}
 
 export interface EffectiveEntitlements {
   features: Record<string, boolean>
@@ -71,16 +124,17 @@ export interface EffectiveEntitlements {
 
 /**
  * The effective features and limits for a company: the plan defaults, with any
- * per-company overrides from company_entitlements applied on top. A feature/limit
- * key absent from the overrides means "use the plan default". Accepts any
- * supabase-like client (browser or service).
+ * per-company overrides from company_entitlements applied on top. Accepts any
+ * supabase-like client (browser or service). `plan` should already be the
+ * effective plan (see `effectivePlan`); it is normalised defensively here.
  */
 export async function resolveEntitlements(db: any, companyId: string, plan: Plan): Promise<EffectiveEntitlements> {
-  const planFeatures = PLAN_FEATURES[plan] || []
-  const featureOn = (k: string) => plan === 'enterprise' || planFeatures.includes('*') || planFeatures.includes(k)
+  const p = normalizePlan(plan)
+  const planFeatures = PLAN_FEATURES[p] || []
+  const featureOn = (k: string) => p === 'enterprise' || planFeatures.includes('*') || planFeatures.includes(k)
   const baseFeatures: Record<string, boolean> = {}
   OVERRIDABLE_FEATURES.forEach(f => { baseFeatures[f.key] = featureOn(f.key) })
-  const baseLimits: Record<string, any> = { ...(PLAN_LIMITS[plan] || {}) }
+  const baseLimits: Record<string, any> = { ...(PLAN_LIMITS[p] || {}) }
   let overrides: any = null
   try {
     const { data } = await db.from('company_entitlements').select('*').eq('company_id', companyId).maybeSingle()
@@ -93,15 +147,22 @@ export async function resolveEntitlements(db: any, companyId: string, plan: Plan
   }
 }
 
+// Read a company's effective plan (honouring trial expiry) from the DB.
+async function readEffectivePlan(db: any, companyId: string): Promise<Plan> {
+  try {
+    const { data } = await db.from('companies').select('plan, trial_ends_at').eq('id', companyId).maybeSingle()
+    return effectivePlan(data?.plan, data?.trial_ends_at)
+  } catch { return 'free' }
+}
+
 /**
  * Server-side one-liners for API routes: does this company have a feature /
- * what's its effective limit, honouring per-company overrides. Pass a
- * service-role supabase client. The company's plan is read if not supplied.
+ * what's its effective limit, honouring per-company overrides AND trial expiry.
+ * Pass a service-role supabase client. The plan is read if not supplied.
  */
 export async function companyHasFeature(db: any, companyId: string, feature: string, plan?: Plan): Promise<boolean> {
   try {
-    let p = plan
-    if (!p) { const { data } = await db.from('companies').select('plan').eq('id', companyId).maybeSingle(); p = (data?.plan || 'free') as Plan }
+    const p = plan ? normalizePlan(plan) : await readEffectivePlan(db, companyId)
     const eff = await resolveEntitlements(db, companyId, p)
     if (feature in eff.features) return !!eff.features[feature]
     return canAccess(p, feature)
@@ -109,8 +170,7 @@ export async function companyHasFeature(db: any, companyId: string, feature: str
 }
 export async function companyLimit(db: any, companyId: string, key: string, plan?: Plan): Promise<any> {
   try {
-    let p = plan
-    if (!p) { const { data } = await db.from('companies').select('plan').eq('id', companyId).maybeSingle(); p = (data?.plan || 'free') as Plan }
+    const p = plan ? normalizePlan(plan) : await readEffectivePlan(db, companyId)
     const eff = await resolveEntitlements(db, companyId, p)
     return eff.limits[key]
   } catch { return undefined }
@@ -126,7 +186,7 @@ export async function getUserPlan(userId?: string): Promise<Plan> {
   try {
     const company = await getCompanyByOwner(userId)
     if (company?.plan) {
-      _cachedPlan = company.plan as Plan
+      _cachedPlan = effectivePlan(company.plan, (company as any).trial_ends_at)
       _cacheTime = Date.now()
       return _cachedPlan
     }
@@ -134,37 +194,23 @@ export async function getUserPlan(userId?: string): Promise<Plan> {
   return 'free'
 }
 
-// Marketing / pricing plan ids — what the customer actually buys, what the
-// pricing page and Stripe checkout metadata carry (free, feedback, omnichannel,
-// everything, plus legacy startup/growth/business/pro) — mapped onto the internal
-// entitlement plan that governs feature access. The matrix above is defined for
-// free/pro/enterprise, and dozens of call sites switch on `plan === 'pro' |
-// 'enterprise'`, so persisting a raw marketing id to companies.plan would strip a
-// paying customer of access. Persist the mapped plan; keep the marketing id on the
-// subscription row for billing/analytics.
+// Marketing tier id (pricing page + Stripe checkout metadata) → the plan value
+// persisted on companies.plan. We now persist the tier itself (normalised), so
+// entitlements line up exactly with what was purchased.
 export function internalPlanForTier(tier: string | null | undefined): Plan {
-  switch ((tier || '').toLowerCase()) {
-    case 'everything':
-    case 'enterprise': return 'enterprise'
-    case 'feedback':
-    case 'omnichannel':
-    case 'startup':
-    case 'growth':
-    case 'business':
-    case 'pro': return 'pro'
-    case 'trial': return 'trial'
-    default: return 'free'
-  }
+  return normalizePlan(tier)
 }
 
 export function canAccess(plan: Plan, feature: string): boolean {
-  if (plan === 'enterprise') return true
-  const features = PLAN_FEATURES[plan] || []
+  const p = normalizePlan(plan)
+  if (p === 'enterprise') return true
+  const features = PLAN_FEATURES[p] || []
   return features.includes('*') || features.includes(feature)
 }
 
 export function isPro(plan: Plan): boolean {
-  return plan === 'pro' || plan === 'enterprise' || plan === 'trial'
+  const p = normalizePlan(plan)
+  return p === 'feedback' || p === 'omnichannel' || p === 'everything' || p === 'pro' || p === 'enterprise' || p === 'trial'
 }
 
 export function clearPlanCache() {

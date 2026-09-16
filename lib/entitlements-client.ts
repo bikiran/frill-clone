@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
 import { getCompanyByOwner } from './board'
-import { resolveEntitlements, Plan } from './plan'
+import { resolveEntitlements, effectivePlan, Plan } from './plan'
 
 // Runtime resolution of the CURRENT user's effective entitlements — the plan
 // defaults with any per-company overrides (company_entitlements) applied on top.
@@ -54,7 +54,7 @@ export async function getEffectiveEntitlements(): Promise<EffectiveState> {
   try {
     const co = await resolveCompany()
     if (!co) return EMPTY
-    const plan = (co.plan || 'free') as Plan
+    const plan = effectivePlan(co.plan, co.trial_ends_at)
     const eff = await resolveEntitlements(supabase, co.id, plan)
     const data: EffectiveState = {
       ready: true, companyId: co.id, plan, isComplimentary: !!co.is_complimentary,
