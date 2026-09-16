@@ -59,6 +59,14 @@ const WORKSPACES = [
     industry: 'SaaS & Software',
     accent: '#7c5cff',
   },
+  {
+    name: 'Test — Free Plan',
+    slug: 'test-free',
+    email: 'test-free@colvy-test.com',
+    plan: 'free',
+    industry: 'SaaS & Software',
+    accent: '#6b7280',
+  },
 ]
 
 const db = createClient(URL, KEY, { auth: { autoRefreshToken: false, persistSession: false } })
