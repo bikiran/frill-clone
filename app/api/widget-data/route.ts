@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/log'
 import { createClient } from '@supabase/supabase-js'
+import { effectivePlan, companyHasFeature } from '@/lib/plan'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
     log.info('[WIDGET API] Fetching data for slug:', slug)
     
     const { data: company, error: companyError } = await (supabase as any)
-      .from('companies').select('id,name,slug,logo_url,accent_color,is_private,widget_config')
+      .from('companies').select('id,name,slug,logo_url,accent_color,is_private,widget_config,plan,trial_ends_at')
       .eq('slug', slug).single()
 
     if (companyError || !company) {
@@ -94,6 +95,7 @@ export async function GET(req: NextRequest) {
 
     // Widget tab visibility + order (saved in site_settings 'general').
     let widgetTabs: any = null
+    let hidePoweredBySetting = false
     try {
       const { data: ss } = await (supabase as any).from('site_settings').select('value').eq('key', 'general').eq('company_id', company.id).order('updated_at', { ascending: false }).limit(1)
       const v = ss?.[0]?.value || {}
@@ -105,7 +107,20 @@ export async function GET(req: NextRequest) {
         chat: v.widgetChat !== false,
         order: v.widgetOrder || null,
       }
+      hidePoweredBySetting = v.hidePoweredBy === true
     } catch {}
+
+    // "Remove Colvy branding" is only honoured if the plan actually includes it
+    // (removeBranding entitlement), so a Free workspace can't hide the badge by
+    // flipping the toggle. This is the authoritative check — the widget just
+    // renders what we return here.
+    const brandingEntitled = await companyHasFeature(
+      supabase, company.id, 'removeBranding',
+      effectivePlan(company.plan, company.trial_ends_at),
+    )
+    // Don't leak the raw plan to the public widget payload.
+    const { plan: _plan, trial_ends_at: _trialEndsAt, ...companyPublic } = company as any
+    const companyOut = { ...companyPublic, hide_powered_by: hidePoweredBySetting && brandingEntitled }
 
     // Location-aware content: if the widget is loaded for a specific outlet
     // (?location=<id>), show company-wide items (no location_ids) PLUS items
@@ -120,7 +135,7 @@ export async function GET(req: NextRequest) {
     }
 
     const responseData = {
-      company,
+      company: companyOut,
       widgetTabs,
       ideas: (ideasRes.data || []).filter(visibleAt),
       announcements: (annRes.data || []).filter(visibleAt),

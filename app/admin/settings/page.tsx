@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useToast, ToastContainer } from '@/lib/toast'
+import { useEntitlements } from '@/lib/entitlements-client'
 
 
 const SIDEBAR_ITEMS = [
@@ -49,6 +50,10 @@ const SIDEBAR_ITEMS = [
 export default function SettingsPage() {
   const router = useRouter()
   const { toasts, showToast, removeToast } = useToast()
+  // Branding removal is a paid entitlement. Assume allowed until the async
+  // resolve returns so we never briefly lock a paying customer's control.
+  const { hasFeature, ready: entReady } = useEntitlements()
+  const brandingEntitled = !entReady || hasFeature('removeBranding')
   const [user, setUser] = useState<any>(null)
   const [company, setCompany] = useState<any>(null)
   const [loadedCompany, setLoadedCompany] = useState(false)
@@ -982,12 +987,16 @@ export default function SettingsPage() {
                   <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Hide "Powered by Colvy"</p>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Remove the Colvy branding from your board footer</p>
                 </div>
-                <button onClick={() => setHidePoweredBy(!hidePoweredBy)}
-                  className="relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer shrink-0 ml-4"
-                  style={{ background: hidePoweredBy ? 'var(--coral)' : '#d1d5db' }}>
-                  <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow"
-                    style={{ transform: hidePoweredBy ? 'translateX(24px)' : 'translateX(4px)' }} />
-                </button>
+                {brandingEntitled ? (
+                  <button onClick={() => setHidePoweredBy(!hidePoweredBy)}
+                    className="relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer shrink-0 ml-4"
+                    style={{ background: hidePoweredBy ? 'var(--coral)' : '#d1d5db' }}>
+                    <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow"
+                      style={{ transform: hidePoweredBy ? 'translateX(24px)' : 'translateX(4px)' }} />
+                  </button>
+                ) : (
+                  <Link href="/admin/billing" className="shrink-0 ml-4 text-xs font-semibold px-3 py-1.5 rounded-full" style={{ background: '#fff1ec', color: 'var(--coral)', textDecoration: 'none', whiteSpace: 'nowrap' }}>🔒 Upgrade to remove</Link>
+                )}
               </div>
             </div>
 
@@ -2276,13 +2285,17 @@ export default function SettingsPage() {
                   <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Hide "Powered by" branding</p>
                   <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Remove the footer attribution badge.</p>
                 </div>
-                <button
-                  onClick={() => setHidePoweredBy(!hidePoweredBy)}
-                  className="relative w-11 h-6 rounded-full transition-smooth cursor-pointer shrink-0 ml-3"
-                  style={{ background: hidePoweredBy ? accentColor : '#d1d5db' }}>
-                  <div className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-transform" 
-                    style={{ transform: hidePoweredBy ? 'translateX(22px)' : 'translateX(2px)' }} />
-                </button>
+                {brandingEntitled ? (
+                  <button
+                    onClick={() => setHidePoweredBy(!hidePoweredBy)}
+                    className="relative w-11 h-6 rounded-full transition-smooth cursor-pointer shrink-0 ml-3"
+                    style={{ background: hidePoweredBy ? accentColor : '#d1d5db' }}>
+                    <div className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-transform"
+                      style={{ transform: hidePoweredBy ? 'translateX(22px)' : 'translateX(2px)' }} />
+                  </button>
+                ) : (
+                  <Link href="/admin/billing" className="shrink-0 ml-3 text-xs font-semibold px-3 py-1.5 rounded-full" style={{ background: '#fff1ec', color: 'var(--coral)', textDecoration: 'none', whiteSpace: 'nowrap' }}>🔒 Upgrade to remove</Link>
+                )}
               </div>
 
               {/* Colvy subdomain — always available */}
