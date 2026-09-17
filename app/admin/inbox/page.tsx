@@ -22,7 +22,6 @@ import { getEffectiveEntitlements } from '@/lib/entitlements-client'
 import { flagEnabled } from '@/lib/feature-flags'
 import RecordSaleModal from '@/components/RecordSaleModal'
 import Link from 'next/link'
-import CallBar from '@/components/CallBar'
 import CallCard from '@/components/CallCard'
 import LiveCallBanner from '@/components/LiveCallBanner'
 import DraftTasks from '@/components/DraftTasks'
@@ -7325,16 +7324,21 @@ export default function InboxPage() {
                 )
               })()}
 
-              {/* Browser calling (Telnyx WebRTC) */}
+              {/* Browser calling — opens the draggable floating call panel
+                  (GlobalCallBar) so the call survives navigating away or
+                  switching conversations. */}
               {(contact?.phone || (selected as any).sms_number) && (
-                <CallBar
-                  companyId={companyId}
-                  toNumber={contact?.phone || (selected as any).sms_number}
-                  contactName={contact?.name}
-                  contactId={contact?.id}
-                  conversationId={selected.id}
-                  agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]}
-                />
+                <button type="button" title="Call" data-callbar-btn
+                  onClick={() => window.dispatchEvent(new CustomEvent('colvy:call', { detail: {
+                    number: contact?.phone || (selected as any).sms_number,
+                    name: contact?.name,
+                    contactId: contact?.id,
+                    conversationId: selected.id,
+                  } }))}
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 10, border: '1px solid #059669', background: '#dcfce7', color: '#059669', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                  Call
+                </button>
               )}
 
               {/* Mobile: open contact panel */}
