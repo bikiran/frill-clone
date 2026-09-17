@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
 import MarketingFooter from '@/components/MarketingFooter'
 import MarketingNav from '@/components/MarketingNav'
+import FeatureMockup, { MockKind } from '@/components/FeatureMockups'
 import FeatureIcon from '@/components/FeatureIcon'
 
 // Feature deep-dive page (ideas / roadmap / announcements / knowledgebase),
@@ -139,43 +140,13 @@ const ArrowRight = ({ s = 16 }: { s?: number }) => (<svg width={s} height={s} vi
 const SunIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>)
 const MoonIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>)
 
-// ── themed mockups (kept from before) ────────────────────────────────────────
-function IdeasMockup({ data, color, dark, border, ink, sub }: any) {
-  return (<div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{data.map((i: any, idx: number) => (
-    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${border}` }}>
-      <div style={{ width: 40, height: 40, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: color + '22', border: `1px solid ${color}40`, color, fontSize: 11, fontWeight: 800 }}><span>▲</span><span>{i.votes}</span></div>
-      <div style={{ flex: 1, minWidth: 0 }}><p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.title}</p><p style={{ margin: 0, fontSize: 11.5, color: sub }}>#{i.tag}</p></div>
-      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 999, flexShrink: 0, background: color + '20', color }}>{i.status}</span>
-    </div>))}</div>)
-}
-function RoadmapMockup({ data, color, dark, border, ink, sub }: any) {
-  return (<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>{data.map((col: any) => (
-    <div key={col.col} style={{ borderRadius: 12, padding: 10, background: dark ? 'rgba(255,255,255,0.03)' : '#fff', border: `1px solid ${border}` }}>
-      <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 800, color }}>{col.col}</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{col.items.map((item: string) => (<div key={item} style={{ padding: 8, borderRadius: 8, fontSize: 11.5, background: dark ? 'rgba(255,255,255,0.05)' : color + '10', color: dark ? 'rgba(255,255,255,0.8)' : ink }}>{item}</div>))}</div>
-    </div>))}</div>)
-}
-function AnnouncementMockup({ data, color, dark, border, ink, sub }: any) {
-  return (<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{data.map((a: any, i: number) => (
-    <div key={i} style={{ padding: 14, borderRadius: 12, background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${border}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, background: color + '20', color }}>{a.tag}</span><span style={{ fontSize: 11, color: sub }}>{a.date}</span></div>
-      <p style={{ margin: '0 0 8px', fontSize: 13.5, fontWeight: 700, color: ink }}>{a.title}</p>
-      <div style={{ display: 'flex', gap: 12, fontSize: 11.5, color: sub }}><span>{a.reactions}</span><span>👁 {a.views} views</span></div>
-    </div>))}</div>)
-}
-function KbMockup({ data, color, dark, border, ink, sub }: any) {
-  return (<div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{data.map((cat: any, i: number) => (
-    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 12, background: dark ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${border}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><span style={{ fontSize: 20 }}>{cat.category}</span><div><p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: ink }}>{cat.title}</p><p style={{ margin: 0, fontSize: 11.5, color: sub }}>{cat.articles} articles · {cat.views} views</p></div></div>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
-    </div>))}</div>)
-}
-
 export default function FeaturePage() {
   const params = useParams()
   const feature = (params?.feature as string) || 'ideas'
   const page = PAGES[feature] || PAGES.ideas
   const color: string = page.color
+  const MOCK: Record<string, MockKind> = { ideas: 'ideas', roadmap: 'roadmap', announcements: 'announcements', knowledgebase: 'kb' }
+  const mockKind: MockKind = MOCK[feature] || 'ideas'
   const [dark, setDark] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [scrollY, setScrollY] = useState(0)
@@ -242,17 +213,8 @@ export default function FeaturePage() {
             </div>
             <div style={{ position: 'relative', transform: `translateY(${scrollY * -0.04}px)` }}>
               <div aria-hidden style={{ position: 'absolute', inset: -20, borderRadius: 34, background: `linear-gradient(135deg, ${color}, ${color}88)`, opacity: dark ? 0.4 : 0.22, filter: 'blur(28px)' }} />
-              <div style={{ position: 'relative', borderRadius: 22, overflow: 'hidden', border: `1px solid ${cardBorder}`, background: dark ? '#0e0f18' : '#fafbff', boxShadow: '0 40px 100px rgba(15,17,25,0.22)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 15px', borderBottom: `1px solid ${cardBorder}`, background: cardBg }}>
-                  <span style={{ display: 'flex', gap: 6 }}>{['#ff5f57', '#febc2e', '#28c840'].map(c => <span key={c} style={{ width: 11, height: 11, borderRadius: '50%', background: c }} />)}</span>
-                  <span style={{ flex: 1, textAlign: 'center', fontSize: 11.5, color: muted }}>yourcompany.colvy.com/{feature === 'knowledgebase' ? 'help' : feature}</span>
-                </div>
-                <div style={{ padding: 16 }}>
-                  {feature === 'ideas' && <IdeasMockup data={page.mockup} color={color} dark={dark} border={cardBorder} ink={text} sub={muted} />}
-                  {feature === 'roadmap' && <RoadmapMockup data={page.mockup} color={color} dark={dark} border={cardBorder} ink={text} sub={muted} />}
-                  {feature === 'announcements' && <AnnouncementMockup data={page.mockup} color={color} dark={dark} border={cardBorder} ink={text} sub={muted} />}
-                  {feature === 'knowledgebase' && <KbMockup data={page.mockup} color={color} dark={dark} border={cardBorder} ink={text} sub={muted} />}
-                </div>
+              <div style={{ position: 'relative' }}>
+                <FeatureMockup kind={mockKind} accent={color} dark={dark} />
               </div>
             </div>
           </div>
