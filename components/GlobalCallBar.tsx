@@ -4,12 +4,17 @@ import { useEffect, useRef, useState } from 'react'
 import CallBar from './CallBar'
 import { getVoiceProvider } from '@/lib/voice-provider-client'
 
-// When on, Telnyx outbound calls are placed SERVER-SIDE (via /api/telnyx/
-// outbound-start) so they gain controllable legs — hold / warm-transfer / ring-
-// team — handled by the rich panel in IncomingCallListener, exactly like inbound.
-// Off (default), or for Twilio, outbound keeps using the direct WebRTC dial in
-// this draggable panel. Flip NEXT_PUBLIC_TELNYX_OUTBOUND_BRIDGE=1 to enable.
-const OUTBOUND_BRIDGE = process.env.NEXT_PUBLIC_TELNYX_OUTBOUND_BRIDGE === '1'
+// When on, outbound calls are placed so they gain controllable legs — hold /
+// warm-transfer / ring-team — handled by the rich panel in IncomingCallListener,
+// exactly like inbound (Telnyx: server-dialled; Twilio: device.connect into a
+// conference-capable bridge). Off (default), outbound uses the direct WebRTC
+// dial in this draggable panel.
+//   NEXT_PUBLIC_OUTBOUND_BRIDGE=1         → both providers
+//   NEXT_PUBLIC_TELNYX_OUTBOUND_BRIDGE=1  → Telnyx only
+//   NEXT_PUBLIC_TWILIO_OUTBOUND_BRIDGE=1  → Twilio only
+const BRIDGE_ALL = process.env.NEXT_PUBLIC_OUTBOUND_BRIDGE === '1'
+const BRIDGE_TELNYX = BRIDGE_ALL || process.env.NEXT_PUBLIC_TELNYX_OUTBOUND_BRIDGE === '1'
+const BRIDGE_TWILIO = BRIDGE_ALL || process.env.NEXT_PUBLIC_TWILIO_OUTBOUND_BRIDGE === '1'
 
 // A persistent, DRAGGABLE floating panel that hosts an outbound call, mounted
 // once in the admin shell. Every "Call" button dispatches a `colvy:call` event;
@@ -42,16 +47,16 @@ export default function GlobalCallBar({ companyId, agentName }: { companyId: str
       // the live call up).
       if (sessionRef.current) return
 
-      // Server-bridge path (Telnyx only). `_noBridge` marks a fallback re-dispatch
-      // from IncomingCallListener when the bridge couldn't start — take the direct
+      // Server-bridge path. `_noBridge` marks a fallback re-dispatch from
+      // IncomingCallListener when the bridge couldn't start — take the direct
       // WebRTC dial then instead of looping.
-      if (OUTBOUND_BRIDGE && !d._noBridge && companyId) {
+      if (!d._noBridge && companyId && (BRIDGE_TELNYX || BRIDGE_TWILIO)) {
         try {
           const prov = await getVoiceProvider(companyId)
-          if (prov === 'telnyx') {
-            // Hand off to IncomingCallListener, which owns the registered WebRTC
+          if ((prov === 'telnyx' && BRIDGE_TELNYX) || (prov === 'twilio' && BRIDGE_TWILIO)) {
+            // Hand off to IncomingCallListener, which owns the registered voice
             // client and the hold/transfer/ring-team panel.
-            window.dispatchEvent(new CustomEvent('colvy:outbound-bridge', { detail: { number, name: d.name, contactId: d.contactId, conversationId: d.conversationId } }))
+            window.dispatchEvent(new CustomEvent('colvy:outbound-bridge', { detail: { number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, provider: prov } }))
             return
           }
         } catch { /* fall through to the direct dial */ }

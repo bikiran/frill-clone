@@ -403,12 +403,57 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       const d = (e as CustomEvent).detail || {}
       const number = d.number
       if (!number || !companyId) return
+      if (liveRef.current.inCall) return   // already on a call — don't clobber it
       const fallback = () => window.dispatchEvent(new CustomEvent('colvy:call', {
         detail: { number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, _noBridge: true },
       }))
+      const prov = d.provider || provider
       try {
         const { data: sess } = await supabase.auth.getSession()
         const userId = sess?.session?.user?.id || null
+
+        // ── Twilio: place the call on the already-registered Voice device ────────
+        // device.connect runs the outbound TwiML (bridge=1), which stamps both leg
+        // SIDs onto the row so hold/transfer/ring-team work. We show the same rich
+        // panel, keyed to the row id.
+        if (prov === 'twilio') {
+          const device = clientRef.current
+          if (!device) { fallback(); return }
+          const tRes = await fetch('/api/twilio/token', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, userId }),
+          })
+          const tData = await tRes.json().catch(() => ({}))
+          if (!tRes.ok) { fallback(); return }
+          const fromNo = tData.from || ''
+          const { data: row } = await (supabase as any).from('calls').insert({
+            company_id: companyId, direction: 'outbound', provider: 'twilio',
+            from_number: fromNo, to_number: number,
+            conversation_id: d.conversationId || null, contact_id: d.contactId || null,
+            contact_name: d.name || null, agent_name: agentName || 'Agent',
+            answered_by_user_id: userId, status: 'initiated',
+          }).select('id').maybeSingle()
+          const callRowId = row?.id
+          if (!callRowId) { fallback(); return }
+          try {
+            const call = await device.connect({ params: { To: number, From: fromNo, callRowId, companyId, conversationId: d.conversationId || '', bridge: '1' } })
+            callRef.current = call
+            setOutboundCallId(callRowId)
+            setIncoming({ id: callRowId, callRowId, outbound: true, from: number })
+            setCaller({ number, name: d.name, contactId: d.contactId })
+            setInCall(true)   // go straight to in-call controls; no Answer/Decline for outbound
+            call.on('accept', () => { startTimer() })
+            call.on('disconnect', () => { twilioServerHangup(callRowId); reset() })
+            call.on('cancel', () => reset())
+            call.on('error', (err: any) => { setTransferMsg(twErr(err)); reset() })
+          } catch {
+            try { await (supabase as any).from('calls').update({ status: 'failed', ended_at: new Date().toISOString() }).eq('id', callRowId) } catch {}
+            fallback()
+          }
+          return
+        }
+
+        // ── Telnyx: ask the server to place the call and ring us back ────────────
         const res = await fetch('/api/telnyx/outbound-start', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -561,7 +606,28 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     } catch {}
     reset()
   }
-  const hangup = () => { stopRing(); try { provider === 'twilio' ? callRef.current?.disconnect?.() : callRef.current?.hangup?.() } catch {}; reset() }
+  // Twilio: end the customer (and any consult) leg SERVER-SIDE. Disconnecting our
+  // own browser leg alone can leave the customer's phone connected — Twilio's
+  // <Dial> teardown races with answerOnBridge, and a call moved into a conference
+  // (hold/transfer) stays up when only the browser drops. So hang up every leg by
+  // SID. Fire-and-forget: the local UI resets immediately either way.
+  const twilioServerHangup = (rowId?: string | null) => {
+    if (!companyId) return
+    const callId = rowId || incoming?.callRowId || (incoming?.outbound ? incoming?.id : undefined)
+    const callSid = incoming?.outbound ? undefined : incoming?.id
+    if (!callId && !callSid) return
+    fetch('/api/twilio/call-transfer', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId, action: 'hangup', callId: callId || undefined, callSid }),
+    }).catch(() => {})
+  }
+
+  const hangup = () => {
+    stopRing()
+    if (provider === 'twilio') twilioServerHangup()
+    try { provider === 'twilio' ? callRef.current?.disconnect?.() : callRef.current?.hangup?.() } catch {}
+    reset()
+  }
 
   // ── Hold and warm transfer ───────────────────────────────────────────────
   // These run server-side through Telnyx rather than in the browser: the

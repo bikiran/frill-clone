@@ -87,6 +87,14 @@ export async function POST(req: NextRequest) {
   const companyId = get('companyId')
   const conversationId = get('conversationId')
   const callSid = get('CallSid')
+  // Server-bridge outbound: the call must gain controllable legs so hold /
+  // transfer / ring-team work (parity with inbound). The transfer route expects
+  // twilio_call_sid = CUSTOMER leg and twilio_child_call_sid = the agent's
+  // browser leg. So in bridge mode we stamp the browser (parent) CallSid as the
+  // AGENT leg here, and capture the dialed CUSTOMER (child) leg SID via a
+  // <Number statusCallback> → outbound-child-status. In the normal (non-bridge)
+  // path we keep the original behaviour: stamp the parent as twilio_call_sid.
+  const bridge = get('bridge') === '1'
 
   if (!to) return twiml('<Response><Say>No number was provided.</Say><Hangup/></Response>')
 
@@ -102,14 +110,22 @@ export async function POST(req: NextRequest) {
         process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         { auth: { autoRefreshToken: false, persistSession: false } }
       )
-      await db.from('calls').update({ twilio_call_sid: callSid, status: 'in_progress' }).eq('id', callRowId)
+      await db.from('calls').update(
+        bridge
+          ? { twilio_child_call_sid: callSid, status: 'in_progress' }   // browser = agent leg
+          : { twilio_call_sid: callSid, status: 'in_progress' },
+      ).eq('id', callRowId)
     } catch { /* never block the call on this */ }
   }
 
   const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
   const cbQuery = `callRowId=${encodeURIComponent(callRowId)}&companyId=${encodeURIComponent(companyId)}&conversationId=${encodeURIComponent(conversationId)}`
   const recordingCb = `${base}/api/twilio/voice/recording?${cbQuery}`
-  const actionCb = `${base}/api/twilio/voice/status?${cbQuery}`
+  // In bridge mode, tell the dial-end action not to overwrite twilio_call_sid
+  // (which now holds the customer leg) with the parent SID.
+  const actionCb = `${base}/api/twilio/voice/status?${cbQuery}${bridge ? '&bridge=1' : ''}`
+  // Captures the dialed CUSTOMER (child) leg SID for the bridge path.
+  const childCb = `${base}/api/twilio/voice/outbound-child-status?callRowId=${encodeURIComponent(callRowId)}`
 
   // record-from-answer-dual keeps agent and caller on separate tracks (a proper
   // dialogue transcript). answerOnBridge means the caller hears real ringback
@@ -130,8 +146,14 @@ export async function POST(req: NextRequest) {
   else if (/^0\d{7,}$/.test(cleaned)) dialNumber = '+' + cc + cleaned.slice(1)
   else if (/^\d{8,}$/.test(cleaned)) dialNumber = '+' + cleaned
 
+  // In bridge mode, attach a statusCallback to the dialed leg so we capture the
+  // CUSTOMER child SID (needed for hold/transfer). Only meaningful for a real
+  // <Number>; a <Client> dial isn't the customer-facing PSTN leg.
+  const numberAttrs = bridge
+    ? ` statusCallback="${xmlEscape(childCb)}" statusCallbackEvent="initiated answered" statusCallbackMethod="POST"`
+    : ''
   const dialTarget = dialNumber
-    ? `<Number>${xmlEscape(dialNumber)}</Number>`
+    ? `<Number${numberAttrs}>${xmlEscape(dialNumber)}</Number>`
     : `<Client><Identity>${xmlEscape(to)}</Identity></Client>`
 
   return twiml(
