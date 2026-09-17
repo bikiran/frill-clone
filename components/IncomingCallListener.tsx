@@ -67,6 +67,17 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
   const [transferState, setTransferState] = useState<'none' | 'ringing' | 'consulting'>('none')
   const [transferBusy, setTransferBusy] = useState(false)
   const [transferMsg, setTransferMsg] = useState('')
+  // ── Server-bridged OUTBOUND call ────────────────────────────────────────────
+  // When Colvy places an outbound call server-side (see /api/telnyx/outbound-
+  // start), the server rings THIS browser back with a SIP leg. We auto-answer
+  // that leg and show the same rich panel used for inbound — so hold / transfer /
+  // ring-team work on outbound too. outboundCallId is the calls-row id the
+  // transfer route acts on; expectingOutbound.current holds the pending request
+  // until its callback invite arrives.
+  const [outboundCallId, setOutboundCallId] = useState<string | null>(null)
+  const outboundCallIdRef = useRef<string | null>(null)
+  outboundCallIdRef.current = outboundCallId
+  const expectingOutbound = useRef<{ callId: string; number: string; name?: string; contactId?: string; conversationId?: string; at: number } | null>(null)
   // ── Switch device (move this live call to another of my devices) ────────────
   const [switchOpen, setSwitchOpen] = useState(false)
   const [switchDevices, setSwitchDevices] = useState<Array<{ deviceId: string; deviceName: string; platform: string }>>([])
@@ -274,6 +285,37 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           const st = call.state
           const dir = call.direction
           if ((st === 'ringing' || st === 'new' || st === 'early') && (dir === 'inbound' || dir === 'incoming')) {
+            // Is this the callback leg for an outbound call WE placed? If so,
+            // auto-answer it and show the in-call panel straight away — no
+            // "incoming call" popup, no ringtone. Match on the X-Colvy-Outbound
+            // header when the SDK surfaces it, otherwise on the caller number
+            // (the server sets the leg's caller id to the customer we dialled),
+            // within a 30s window of the request.
+            const exp = expectingOutbound.current
+            if (exp) {
+              const fresh = Date.now() - exp.at < 30000
+              if (!fresh) { expectingOutbound.current = null }
+              else {
+                const hdrs = call.options?.customHeaders || (call as any).customHeaders || []
+                const hdr = Array.isArray(hdrs) ? hdrs.find((h: any) => String(h?.name || '').toLowerCase() === 'x-colvy-outbound') : null
+                const remote = call.options?.remoteCallerNumber || call.remoteCallerNumber || ''
+                const tail = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
+                const isOurs = (hdr?.value && hdr.value === exp.callId) || (remote && tail(remote) === tail(exp.number))
+                if (isOurs) {
+                  expectingOutbound.current = null
+                  callRef.current = call
+                  callIdRef.current = call.id || null
+                  setOutboundCallId(exp.callId)
+                  // Synthetic "incoming" so the panel renders; id/callRowId are the
+                  // calls-row id the transfer + handoff routes act on.
+                  setIncoming({ id: exp.callId, callRowId: exp.callId, outbound: true, from: exp.number })
+                  setCaller({ number: exp.number, name: exp.name, contactId: exp.contactId })
+                  setInCall(true)   // go straight to in-call controls (hold/transfer)
+                  try { call.answer?.() } catch (err) { console.error('[telnyx outbound] auto-answer failed', err) }
+                  return
+                }
+              }
+            }
             // Already declined this call? The server is re-offering the same leg.
             // Reject it again silently — don't reopen the popup or ring.
             if (call.id && declinedIds.current.has(call.id)) {
@@ -349,6 +391,40 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
       clearInterval(iv)
     }
   }, [companyId])
+
+  // ── Start a server-bridged outbound call ────────────────────────────────────
+  // GlobalCallBar dispatches this (Telnyx + flag on). We ask the server to place
+  // the call; it rings this browser back with a SIP leg that the telnyx
+  // notification handler below auto-answers. On any failure we re-dispatch
+  // colvy:call with _noBridge so GlobalCallBar falls back to the direct WebRTC
+  // dial — outbound calling must never break because the bridge is unavailable.
+  useEffect(() => {
+    const onBridge = async (e: Event) => {
+      const d = (e as CustomEvent).detail || {}
+      const number = d.number
+      if (!number || !companyId) return
+      const fallback = () => window.dispatchEvent(new CustomEvent('colvy:call', {
+        detail: { number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, _noBridge: true },
+      }))
+      try {
+        const { data: sess } = await supabase.auth.getSession()
+        const userId = sess?.session?.user?.id || null
+        const res = await fetch('/api/telnyx/outbound-start', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId, to: number, name: d.name, contactName: d.name,
+            contactId: d.contactId, conversationId: d.conversationId,
+            agentName, userId,
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.callId) { fallback(); return }
+        expectingOutbound.current = { callId: data.callId, number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, at: Date.now() }
+      } catch { fallback() }
+    }
+    window.addEventListener('colvy:outbound-bridge', onBridge as EventListener)
+    return () => window.removeEventListener('colvy:outbound-bridge', onBridge as EventListener)
+  }, [companyId, agentName])
 
   const resolveCaller = async (fromNumber: string) => {
     setCaller({ number: fromNumber, loading: true })
@@ -581,6 +657,7 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
     setIncoming(null); setCaller(null); setInCall(false); setSeconds(0)
     setOnHold(false); setTransferState('none'); setTransferMsg('')
     setSwitchOpen(false); setSwitchDevices([]); setSwitchBusy(false); setMovedTo(null)
+    setOutboundCallId(null)
     callRef.current = null
   }
 
@@ -639,7 +716,9 @@ export default function IncomingCallListener({ companyId, agentName }: Props) {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
           </svg>
-          {inCall ? (movedTo ? `Moving to ${movedTo}…` : `In call · ${fmtDur(seconds)}`) : 'Incoming call'}
+          {inCall
+            ? (movedTo ? `Moving to ${movedTo}…` : `${incoming?.outbound ? 'Outbound' : 'In call'} · ${fmtDur(seconds)}`)
+            : (incoming?.outbound ? 'Calling…' : 'Incoming call')}
           {companyInitials && <span style={{ opacity: 0.85 }}>· {companyInitials}</span>}
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
