@@ -14,7 +14,6 @@ interface CallBarProps {
   conversationId?: string | null
   agentName?: string
   autoStart?: boolean                // place the call immediately on mount
-  onEnded?: () => void               // fired once the call is fully over (for a host wrapper to dismiss)
 }
 
 type CallState = 'idle' | 'connecting' | 'ringing' | 'active' | 'ended' | 'error'
@@ -45,7 +44,7 @@ function toE164(raw: string): string | null {
   return '+' + s
 }
 
-export default function CallBar({ companyId, toNumber, contactName, contactId, conversationId, agentName, autoStart, onEnded }: CallBarProps) {
+export default function CallBar({ companyId, toNumber, contactName, contactId, conversationId, agentName, autoStart }: CallBarProps) {
   const [state, setState] = useState<CallState>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const autoStartedRef = useRef(false)
@@ -54,9 +53,8 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
   // doesn't sit there permanently.
   useEffect(() => {
     if (state !== 'error' && state !== 'ended') return
-    const t = setTimeout(() => { setState('idle'); setErrorMsg(''); onEnded?.() }, state === 'error' ? 5000 : 2500)
+    const t = setTimeout(() => { setState('idle'); setErrorMsg('') }, state === 'error' ? 5000 : 2500)
     return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
   const [seconds, setSeconds] = useState(0)
   const [muted, setMuted] = useState(false)
