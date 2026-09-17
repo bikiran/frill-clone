@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 import IncomingCallListener from '@/components/IncomingCallListener'
 import CallHandoff from '@/components/CallHandoff'
 import GlobalDialer from '@/components/GlobalDialer'
+import GlobalCallBar from '@/components/GlobalCallBar'
 import { getActiveCall, subscribeActiveCall } from '@/lib/active-call'
 import AdminBanner from '@/components/AdminBanner'
 import TrialBanner from '@/components/TrialBanner'
@@ -580,6 +581,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           placed inside Colvy instead of the browser handing off to a `tel:`
           link and asking the OS to pick a phone app. */}
       <GlobalDialer companyId={company?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
+      {/* Persistent floating call bar — active calls run here so they survive
+          navigating between pages and switching conversations. */}
+      <GlobalCallBar companyId={company?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
       <style>{`
         @media (max-width: 860px) {
           .admin-sidebar { transform: translateX(-100%); transition: transform 0.25s ease; box-shadow: 0 0 0 transparent; }
