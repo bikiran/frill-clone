@@ -16,11 +16,16 @@ const CORAL = '#ff6a4d'
 const BLUE = '#2b59ff'
 const YELLOW = '#ffcb45'
 const GREEN = '#00c48c'
+const PURPLE = '#7c5cff'
+const PINK = '#ff4d8d'
+const CYAN = '#0891b2'
+const TEAL = '#0d9488'
+const INDIGO = '#4f46e5'
 const INK = '#0f1119'
 
 const PAGES: Record<string, any> = {
   ideas: {
-    icon: 'idea', color: CORAL, subtitle: 'Ideas Board',
+    icon: 'idea', color: CORAL, mock: 'ideas', subtitle: 'Ideas Board',
     title: 'Turn feedback into features',
     hero: 'One beautiful place for all your customer feedback. Collect, prioritise, and act on what matters most.',
     features: [
@@ -40,7 +45,7 @@ const PAGES: Record<string, any> = {
     cta: 'Start collecting feedback',
   },
   roadmap: {
-    icon: 'map', color: BLUE, subtitle: 'Public Roadmap',
+    icon: 'map', color: BLUE, mock: 'roadmap', subtitle: 'Public Roadmap',
     title: 'Show users what’s coming',
     hero: 'Build trust by being transparent. A beautiful, public roadmap that your customers will actually check.',
     features: [
@@ -59,7 +64,7 @@ const PAGES: Record<string, any> = {
     cta: 'Build your roadmap',
   },
   announcements: {
-    icon: 'megaphone', color: GREEN, subtitle: 'Announcements',
+    icon: 'megaphone', color: GREEN, mock: 'announcements', subtitle: 'Announcements',
     title: 'Keep users in the loop',
     hero: 'A beautiful changelog that celebrates every ship. Tell your story, build loyalty, and reduce support tickets.',
     features: [
@@ -78,7 +83,7 @@ const PAGES: Record<string, any> = {
     cta: 'Start your changelog',
   },
   knowledgebase: {
-    icon: 'book', color: YELLOW, subtitle: 'Knowledgebase',
+    icon: 'book', color: YELLOW, mock: 'kb', subtitle: 'Knowledgebase',
     title: 'Answer questions before they’re asked',
     hero: 'A beautiful, searchable help centre that reduces support tickets by 40% on average.',
     features: [
@@ -97,12 +102,168 @@ const PAGES: Record<string, any> = {
     ],
     cta: 'Build your help centre',
   },
+  inbox: {
+    icon: 'inbox', color: TEAL, mock: 'inbox', subtitle: 'Shared inbox',
+    title: 'Every channel, one shared inbox',
+    hero: 'SMS, WhatsApp, email, chat, social and calls thread into one place your whole team works from — each message beside the full customer story.',
+    features: [
+      { icon: 'inbox', title: 'One thread per customer', desc: 'Every channel in a single conversation.' },
+      { icon: 'user', title: 'Full context', desc: 'History and profile beside each chat.' },
+      { icon: 'target', title: 'Assign & @mention', desc: 'Route work and loop in teammates.' },
+      { icon: 'bolt', title: 'Saved replies', desc: 'Answer common questions in a tap.' },
+    ],
+    cta: 'Bring every channel together',
+  },
+  crm: {
+    icon: 'user', color: BLUE, mock: 'crm', subtitle: 'Contacts & CRM',
+    title: 'A CRM beside every chat',
+    hero: 'A full profile, history and lifetime value next to every conversation — so you always know exactly who you’re talking to.',
+    features: [
+      { icon: 'user', title: 'Rich profiles', desc: 'Contact details, tags and notes in one place.' },
+      { icon: 'inbox', title: 'Full history', desc: 'Every past conversation, on the profile.' },
+      { icon: 'tag', title: 'Orders & spend', desc: 'What they’ve bought and their value.' },
+      { icon: 'pen', title: 'Custom fields & tags', desc: 'Model your customers your way.' },
+    ],
+    cta: 'Know every customer',
+  },
+  gallery: {
+    icon: 'folder', color: PURPLE, mock: 'gallery', subtitle: 'Media gallery',
+    title: 'Every photo and file, organised',
+    hero: 'All the images and documents customers send, collected per contact and searchable — so you never dig through a thread again.',
+    features: [
+      { icon: 'folder', title: 'Auto-collected', desc: 'Every attachment gathered for you.' },
+      { icon: 'search', title: 'Searchable', desc: 'Find the file you need in seconds.' },
+      { icon: 'camera', title: 'Photos & files', desc: 'Images, PDFs and documents together.' },
+      { icon: 'user', title: 'Per contact', desc: 'Organised by the customer who sent it.' },
+    ],
+    cta: 'Keep every file in reach',
+  },
+  notes: {
+    icon: 'pen', color: PINK, mock: 'notes', subtitle: 'Notes',
+    title: 'Team notes on any thread',
+    hero: 'Leave internal notes and @mention teammates on any conversation — visible to your team, never to the customer.',
+    features: [
+      { icon: 'pen', title: 'Internal notes', desc: 'Add context only your team can see.' },
+      { icon: 'user', title: '@mention teammates', desc: 'Pull the right person into a thread.' },
+      { icon: 'lock', title: 'Never customer-visible', desc: 'Notes stay strictly internal.' },
+      { icon: 'bell', title: 'Notify the right person', desc: 'Mentions send an instant nudge.' },
+    ],
+    cta: 'Collaborate in context',
+  },
+  orders: {
+    icon: 'tag', color: CORAL, mock: 'orders', subtitle: 'Orders',
+    title: 'Live orders, right in the chat',
+    hero: 'See WooCommerce and Shopify orders, status and tracking beside the conversation — and answer “where’s my order?” without leaving the thread.',
+    features: [
+      { icon: 'tag', title: 'Live orders', desc: 'Order details and status in the thread.' },
+      { icon: 'target', title: 'WISMO answers', desc: 'Tracking pulled in automatically.' },
+      { icon: 'plug', title: 'Woo & Shopify', desc: 'Two-way sync with your store.' },
+      { icon: 'chart', title: 'Order history', desc: 'Everything they’ve bought, in view.' },
+    ],
+    cta: 'Put orders in the inbox',
+  },
+  payments: {
+    icon: 'bolt', color: GREEN, mock: 'payments', subtitle: 'Payments',
+    title: 'Get paid in the thread',
+    hero: 'Send a secure payment link or invoice and record the sale on the conversation — no detour to a separate checkout.',
+    features: [
+      { icon: 'link', title: 'Secure links', desc: 'Send by SMS or email; they pay on their device.' },
+      { icon: 'tag', title: 'Invoices', desc: 'Bill and get paid in a few taps.' },
+      { icon: 'bolt', title: 'In the thread', desc: 'No bouncing to another tool.' },
+      { icon: 'chart', title: 'Recorded sales', desc: 'Every sale tied to the conversation.' },
+    ],
+    cta: 'Take payment where you talk',
+  },
+  links: {
+    icon: 'link', color: CYAN, mock: 'links', subtitle: 'Link reports',
+    title: 'See who clicked what',
+    hero: 'Track opens and clicks on the links you send, per conversation — so you know who’s engaged and who to follow up with.',
+    features: [
+      { icon: 'link', title: 'Tracked links', desc: 'Every link you send, measured.' },
+      { icon: 'chart', title: 'Opens & clicks', desc: 'See exactly what got engagement.' },
+      { icon: 'user', title: 'Per contact', desc: 'Know which customer clicked.' },
+      { icon: 'bell', title: 'Follow-up signals', desc: 'Reach out while interest is warm.' },
+    ],
+    cta: 'Measure every link',
+  },
+  insights: {
+    icon: 'chart', color: INDIGO, mock: 'insights', subtitle: 'Insights',
+    title: 'See what your conversations do',
+    hero: 'Analytics on volume, response times, resolution and the revenue conversations drive — so you can staff and improve with data, not hunches.',
+    features: [
+      { icon: 'chart', title: 'Conversation analytics', desc: 'Volume and trends over time.' },
+      { icon: 'bolt', title: 'Response times', desc: 'See how fast you really reply.' },
+      { icon: 'tag', title: 'Revenue per chat', desc: 'Tie conversations to sales.' },
+      { icon: 'user', title: 'By team & person', desc: 'Understand who handles what.' },
+    ],
+    cta: 'Measure what matters',
+  },
+  calendar: {
+    icon: 'calendar', color: BLUE, mock: 'calendar', subtitle: 'Calendar',
+    title: 'Bookings and reminders, connected',
+    hero: 'Schedule bookings, events and reminders tied to your conversations — so nothing is double-booked or forgotten.',
+    features: [
+      { icon: 'calendar', title: 'Bookings & events', desc: 'Schedule right from a conversation.' },
+      { icon: 'bell', title: 'Reminders', desc: 'Nudges so nothing is missed.' },
+      { icon: 'inbox', title: 'Tied to chats', desc: 'Every booking linked to its customer.' },
+      { icon: 'user', title: 'Shared team view', desc: 'Everyone sees what’s on.' },
+    ],
+    cta: 'Keep the schedule in sync',
+  },
+  tasks: {
+    icon: 'kanban', color: PURPLE, mock: 'tasks', subtitle: 'Tasks',
+    title: 'Turn any chat into a to-do',
+    hero: 'Create a task from any conversation, assign it and set a due date — so what you agreed to actually happens.',
+    features: [
+      { icon: 'kanban', title: 'Tasks from chats', desc: 'One click from message to to-do.' },
+      { icon: 'user', title: 'Assign owners', desc: 'Give every task a clear owner.' },
+      { icon: 'calendar', title: 'Due dates', desc: 'Keep work on schedule.' },
+      { icon: 'bell', title: 'Reminders', desc: 'Nudges so nothing slips.' },
+    ],
+    cta: 'Turn talk into action',
+  },
+  broadcasts: {
+    icon: 'megaphone', color: CORAL, mock: 'broadcasts', subtitle: 'Broadcasts',
+    title: 'Reach everyone at once',
+    hero: 'Send SMS, email and WhatsApp broadcasts to opted-in customers — and every reply lands back in the shared inbox.',
+    features: [
+      { icon: 'megaphone', title: 'One composer', desc: 'Compose once, send across channels.' },
+      { icon: 'target', title: 'Segments', desc: 'Target by history, tags or activity.' },
+      { icon: 'chat', title: 'Two-way replies', desc: 'Responses land in the inbox.' },
+      { icon: 'lock', title: 'Opt-out handling', desc: 'Consent managed automatically.' },
+    ],
+    cta: 'Broadcast, and stay in one inbox',
+  },
+  automation: {
+    icon: 'target', color: TEAL, mock: 'automation', subtitle: 'Automation',
+    title: 'Let the routine run itself',
+    hero: 'Auto-route conversations, send follow-ups, request reviews and trigger actions on the events that matter — set it once, it runs always.',
+    features: [
+      { icon: 'target', title: 'Auto-routing', desc: 'Send each chat to the right team.' },
+      { icon: 'bell', title: 'Follow-ups', desc: 'Nudge quotes and check-ins on autopilot.' },
+      { icon: 'link', title: 'Event triggers', desc: 'When this happens, do that.' },
+      { icon: 'lock', title: 'You stay in control', desc: 'Test, pause or tweak anytime.' },
+    ],
+    cta: 'Automate the busywork',
+  },
 }
 const ALL = [
   { label: 'Ideas Board', href: '/product/ideas', icon: 'idea', color: CORAL },
   { label: 'Roadmap', href: '/product/roadmap', icon: 'map', color: BLUE },
   { label: 'Announcements', href: '/product/announcements', icon: 'megaphone', color: GREEN },
   { label: 'Knowledgebase', href: '/product/knowledgebase', icon: 'book', color: YELLOW },
+  { label: 'Shared Inbox', href: '/product/inbox', icon: 'inbox', color: TEAL },
+  { label: 'Contacts & CRM', href: '/product/crm', icon: 'user', color: BLUE },
+  { label: 'Media Gallery', href: '/product/gallery', icon: 'folder', color: PURPLE },
+  { label: 'Notes', href: '/product/notes', icon: 'pen', color: PINK },
+  { label: 'Orders', href: '/product/orders', icon: 'tag', color: CORAL },
+  { label: 'Payments', href: '/product/payments', icon: 'bolt', color: GREEN },
+  { label: 'Link Reports', href: '/product/links', icon: 'link', color: CYAN },
+  { label: 'Insights', href: '/product/insights', icon: 'chart', color: INDIGO },
+  { label: 'Calendar', href: '/product/calendar', icon: 'calendar', color: BLUE },
+  { label: 'Tasks', href: '/product/tasks', icon: 'kanban', color: PURPLE },
+  { label: 'Broadcasts', href: '/product/broadcasts', icon: 'megaphone', color: CORAL },
+  { label: 'Automation', href: '/product/automation', icon: 'target', color: TEAL },
 ]
 
 // ── helpers (shared look with the main landing) ──────────────────────────────
@@ -145,8 +306,7 @@ export default function FeaturePage() {
   const feature = (params?.feature as string) || 'ideas'
   const page = PAGES[feature] || PAGES.ideas
   const color: string = page.color
-  const MOCK: Record<string, MockKind> = { ideas: 'ideas', roadmap: 'roadmap', announcements: 'announcements', knowledgebase: 'kb' }
-  const mockKind: MockKind = MOCK[feature] || 'ideas'
+  const mockKind: MockKind = (page.mock as MockKind) || 'ideas'
   const [dark, setDark] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [scrollY, setScrollY] = useState(0)
