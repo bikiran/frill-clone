@@ -86,13 +86,6 @@ export default function Dialer({ companyId, agentName, onClose, initialTarget, a
   const press = (k: string) => { tone(k); setDigits(d => (d + k).slice(0, 15)) }
   const backspace = () => setDigits(d => d.slice(0, -1))
 
-  // Start the call in the persistent floating call bar (so it survives closing
-  // this dialer and navigating away), then close the keypad.
-  const launch = (number: string, name?: string, contactId?: string) => {
-    window.dispatchEvent(new CustomEvent('colvy:call', { detail: { number, name, contactId } }))
-    onClose()
-  }
-
   // Local AU number → E.164 for display; CallBar normalises again on dial.
   const dialTarget = digits.startsWith('+') ? digits : `+61${digits.replace(/^0/, '')}`
 
@@ -141,7 +134,7 @@ export default function Dialer({ companyId, agentName, onClose, initialTarget, a
               <div style={{ marginBottom: 12, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
                 {contacts.map(c => (
                   <button key={c.id} type="button"
-                    onClick={() => launch(c.phone, c.name, c.id)}
+                    onClick={() => { setDigits(''); setSearch(''); setDialing({ number: c.phone, name: c.name, contactId: c.id }) }}
                     style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 11px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
                     <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
                       {(c.name || '?')[0].toUpperCase()}
@@ -190,12 +183,17 @@ export default function Dialer({ companyId, agentName, onClose, initialTarget, a
             {/* Call / backspace */}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <div style={{ flex: 1 }}>
-                <button type="button" disabled={digits.length < 6}
-                  onClick={() => launch(dialTarget)}
-                  style={{ width: '100%', padding: '13px 0', borderRadius: 12, border: 'none', background: digits.length >= 6 ? '#dcfce7' : 'var(--canvas)', color: digits.length >= 6 ? '#059669' : '#c0c4cc', fontSize: 14, fontWeight: 700, cursor: digits.length >= 6 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                  Call
-                </button>
+                {dialing ? (
+                  <CallBar companyId={companyId} toNumber={dialing.number} contactName={dialing.name}
+                    contactId={dialing.contactId} conversationId={null} agentName={agentName} />
+                ) : (
+                  <button type="button" disabled={digits.length < 6}
+                    onClick={() => setDialing({ number: dialTarget })}
+                    style={{ width: '100%', padding: '13px 0', borderRadius: 12, border: 'none', background: digits.length >= 6 ? '#dcfce7' : 'var(--canvas)', color: digits.length >= 6 ? '#059669' : '#c0c4cc', fontSize: 14, fontWeight: 700, cursor: digits.length >= 6 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                    Call
+                  </button>
+                )}
               </div>
               <button type="button" onClick={backspace} title="Delete"
                 style={{ width: 48, height: 46, borderRadius: 12, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -228,7 +226,7 @@ export default function Dialer({ companyId, agentName, onClose, initialTarget, a
                     </p>
                   </div>
                   <button type="button" title="Call back"
-                    onClick={() => launch(c.direction === 'inbound' ? c.from_number : c.to_number, undefined, c.contact_id)}
+                    onClick={() => { setTab('dialer'); setDialing({ number: c.direction === 'inbound' ? c.from_number : c.to_number, contactId: c.contact_id }) }}
                     style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: '#059669', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                   </button>

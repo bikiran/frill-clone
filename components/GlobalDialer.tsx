@@ -22,13 +22,7 @@ export default function GlobalDialer({ companyId, agentName }: { companyId: stri
       const detail = (e as CustomEvent).detail || {}
       const number = detail.number || detail.phone
       if (!number) return
-      // A direct "Call" (autoStart) runs in the persistent floating call bar so
-      // it survives navigation; only the keypad launcher opens this modal.
-      if (detail.autoStart) {
-        window.dispatchEvent(new CustomEvent('colvy:call', { detail: { number, name: detail.name, contactId: detail.contactId, conversationId: detail.conversationId } }))
-        return
-      }
-      setTarget({ number, name: detail.name, contactId: detail.contactId, autoStart: false })
+      setTarget({ number, name: detail.name, contactId: detail.contactId, autoStart: !!detail.autoStart })
     }
     window.addEventListener('colvy:dial', open as EventListener)
     return () => window.removeEventListener('colvy:dial', open as EventListener)
