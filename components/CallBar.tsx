@@ -59,6 +59,12 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
   const [seconds, setSeconds] = useState(0)
+  // Live mirror of `seconds`. The Telnyx/Twilio hangup handlers and endCall are
+  // closures captured at dial time, so reading the `seconds` STATE from them
+  // always sees 0 — which made a REMOTE hangup (customer hangs up) record the
+  // call as "failed" and skip the call card, even for a long connected call.
+  // Reading the ref gives the true duration no matter who ended the call.
+  const secondsRef = useRef(0)
   const [muted, setMuted] = useState(false)
   const providerRef = useRef<'telnyx' | 'twilio'>('telnyx')
   const clientRef = useRef<any>(null)
@@ -412,7 +418,12 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
           updateCallRow({ status: 'answered' })
           startRecording(call)
         }
-        if (s === 'hangup' || s === 'destroy') {
+        // Any terminal state tears down the panel — this covers the CUSTOMER
+        // hanging up (remote hangup), not just our own. The outbound bar used to
+        // watch only 'hangup'/'destroy'; the inbound listener has long matched
+        // the wider set below, and a remote hangup that arrived as 'purge'/'done'
+        // left the web panel stuck showing "in call". Match inbound exactly.
+        if (['hangup', 'destroy', 'purge', 'done', 'bye'].includes(String(s))) {
           toneEnded()
           stopRecording()
           // Capture WHY the call ended — Telnyx puts a cause on the call object
@@ -421,7 +432,7 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
           // "ringing then cancelled with no audio".
           const cause = call.cause || call.causeCode || call.hangupCause || null
           hangupCause.current = cause
-          if (seconds === 0 && cause && cause !== 'NORMAL_CLEARING') {
+          if (secondsRef.current === 0 && cause && cause !== 'NORMAL_CLEARING') {
             setErrorMsg(explainCause(cause))
           }
           endCall(false)
@@ -443,7 +454,8 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
 
   const startTimer = () => {
     setSeconds(0)
-    timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000)
+    secondsRef.current = 0
+    timerRef.current = setInterval(() => setSeconds(s => { secondsRef.current = s + 1; return s + 1 }), 1000)
   }
 
   // Auto-place the call on mount when asked (e.g. the "Call" button on a contact
@@ -528,8 +540,11 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
     if (userInitiated) { try { providerRef.current === 'twilio' ? callRef.current?.disconnect?.() : callRef.current?.hangup?.() } catch {} }
     stopRecording()   // triggers upload → transcription → AI summary (Telnyx path)
     const cause = hangupCause.current
-    const connected = seconds > 0
-    updateCallRow({ status: connected ? 'completed' : 'failed', cause: cause || null, ended_at: new Date().toISOString(), duration_seconds: seconds })
+    // Read the ref, not the state — on a remote hangup this runs from a closure
+    // captured at dial time, where the `seconds` state is frozen at 0.
+    const dur = secondsRef.current
+    const connected = dur > 0
+    updateCallRow({ status: connected ? 'completed' : 'failed', cause: cause || null, ended_at: new Date().toISOString(), duration_seconds: dur })
 
     // Post into the thread ONLY when the call actually connected.
     //
@@ -543,12 +558,12 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
       try {
         await (supabase as any).from('messages').insert({
           conversation_id: callConvIdRef.current, company_id: companyId, sender_type: 'system',
-          content: `Call — ${fmtDuration(seconds)}`,
+          content: `Call — ${fmtDuration(dur)}`,
           metadata: {
             call_event: true,
             call_id: callRowId.current,
             direction: 'outbound',
-            duration_seconds: seconds,
+            duration_seconds: dur,
             agent_name: agentName || 'Agent',
           },
         })
