@@ -102,6 +102,29 @@ export async function POST(req: NextRequest) {
     if (!integ?.account_sid || !integ.auth_token) return NextResponse.json({ error: 'Twilio is not configured' }, { status: 400 })
     const svc = new TwilioService(integ.account_sid, integ.auth_token)
 
+    // ── hangup: end the WHOLE call from the server ─────────────────────────────
+    // The browser disconnecting its own leg should tear down the customer, but
+    // Twilio's <Dial> teardown has edge cases — answerOnBridge races, or a
+    // conference/hold in flight (the customer leg re-joins its conference in
+    // inbound-status and stays up). So end every known leg by SID explicitly.
+    // This is what fixes "I ended the call on the web but it stayed live on the
+    // customer's phone", and it tears down a server-bridged outbound call too.
+    if (action === 'hangup') {
+      const legs = Array.from(new Set([
+        customerLeg,                      // customer (inbound) / customer child (outbound)
+        call.twilio_child_call_sid,       // the agent's browser leg
+        call.consult_call_control_id,     // any colleague dialled in for a transfer
+      ].filter(Boolean)))
+      for (const sid of legs) { try { await svc.hangupCall(sid) } catch {} }
+      try {
+        await db.from('calls').update({
+          status: 'completed', customer_on_hold: false,
+          ended_at: new Date().toISOString(),
+        }).eq('id', call.id)
+      } catch {}
+      return NextResponse.json({ ok: true })
+    }
+
     // The agent (browser <Client>) leg SID is normally captured by the
     // child-status webhook at answer. If that callback didn't land, the column
     // is null and transfer would be permanently blocked on a call that's plainly

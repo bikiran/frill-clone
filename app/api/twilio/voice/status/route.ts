@@ -27,6 +27,10 @@ export async function POST(req: NextRequest) {
     const durSecs = parseInt(get('DialCallDuration') || '0', 10) || 0
     const answered = dialStatus === 'completed' || dialStatus === 'answered'
     const callSid = get('CallSid')
+    // In bridge mode twilio_call_sid holds the CUSTOMER leg (stamped by
+    // outbound-child-status); the parent CallSid here is the agent leg, so don't
+    // clobber it.
+    const bridge = req.nextUrl.searchParams.get('bridge') === '1'
 
     if (callRowId) {
       const db = admin()
@@ -38,8 +42,8 @@ export async function POST(req: NextRequest) {
           status,
           ended_at: new Date().toISOString(),
           // Backfill the SID here too, so the row is always linkable even if the
-          // dial-time stamp was missed.
-          ...(callSid ? { twilio_call_sid: callSid } : {}),
+          // dial-time stamp was missed — but never in bridge mode (see above).
+          ...(callSid && !bridge ? { twilio_call_sid: callSid } : {}),
           ...(durSecs ? { duration_seconds: durSecs } : {}),
         }).eq('id', callRowId)
       } catch {}
