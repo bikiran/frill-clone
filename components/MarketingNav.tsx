@@ -136,25 +136,25 @@ const MENUS: Menu[] = [
     key: 'features', label: 'Features', accent: TEAL,
     columns: [
       { heading: 'Inbox & CRM', items: [
-        { icon: 'inbox', title: 'Shared inbox', desc: 'Every channel, one thread', href: '/features/inbox' },
-        { icon: 'user', title: 'Contacts & CRM', desc: 'Full profile & history', href: '/features/crm' },
-        { icon: 'folder', title: 'Media gallery', desc: 'Every photo & file', href: '/features/gallery' },
-        { icon: 'pen', title: 'Notes', desc: 'Internal notes & @mentions', href: '/features/notes' },
+        { icon: 'inbox', title: 'Shared inbox', desc: 'Every channel, one thread', href: '/product/inbox' },
+        { icon: 'user', title: 'Contacts & CRM', desc: 'Full profile & history', href: '/product/crm' },
+        { icon: 'folder', title: 'Media gallery', desc: 'Every photo & file', href: '/product/gallery' },
+        { icon: 'pen', title: 'Notes', desc: 'Internal notes & @mentions', href: '/product/notes' },
       ] },
       { heading: 'Commerce', items: [
-        { icon: 'tag', title: 'Orders', desc: 'Live orders in the chat', href: '/features/orders' },
-        { icon: 'bolt', title: 'Payments', desc: 'Get paid in the thread', href: '/features/payments' },
-        { icon: 'link', title: 'Link reports', desc: 'See who clicked what', href: '/features/links' },
-        { icon: 'chart', title: 'Insights', desc: 'Conversations & revenue', href: '/features/insights' },
+        { icon: 'tag', title: 'Orders', desc: 'Live orders in the chat', href: '/product/orders' },
+        { icon: 'bolt', title: 'Payments', desc: 'Get paid in the thread', href: '/product/payments' },
+        { icon: 'link', title: 'Link reports', desc: 'See who clicked what', href: '/product/links' },
+        { icon: 'chart', title: 'Insights', desc: 'Conversations & revenue', href: '/product/insights' },
       ] },
       { heading: 'Organise', items: [
-        { icon: 'calendar', title: 'Calendar', desc: 'Bookings & reminders', href: '/features/calendar' },
-        { icon: 'kanban', title: 'Tasks', desc: 'Turn chats into to-dos', href: '/features/tasks' },
-        { icon: 'megaphone', title: 'Broadcasts', desc: 'Reach everyone at once', href: '/features/broadcasts' },
-        { icon: 'target', title: 'Automation', desc: 'Trigger actions on events', href: '/features/automation' },
+        { icon: 'calendar', title: 'Calendar', desc: 'Bookings & reminders', href: '/product/calendar' },
+        { icon: 'kanban', title: 'Tasks', desc: 'Turn chats into to-dos', href: '/product/tasks' },
+        { icon: 'megaphone', title: 'Broadcasts', desc: 'Reach everyone at once', href: '/product/broadcasts' },
+        { icon: 'target', title: 'Automation', desc: 'Trigger actions on events', href: '/product/automation' },
       ] },
     ],
-    feature: { eyebrow: 'The platform', title: 'Everything in one inbox', desc: 'Messages, contacts, orders, payments, tasks and insights — on one screen.', icon: 'inbox', chips: ['CRM', 'Orders', 'Payments'], href: '/features', cta: 'Explore features' },
+    feature: { eyebrow: 'The platform', title: 'Everything in one inbox', desc: 'Messages, contacts, orders, payments, tasks and insights — on one screen.', icon: 'inbox', chips: ['CRM', 'Orders', 'Payments'], href: '/product', cta: 'Explore features' },
   },
   {
     key: 'integrations', label: 'Integrations', accent: CYAN,
@@ -260,7 +260,12 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   const scheduleClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setOpen(null), 130) }
   const onPanelMove = (e: React.MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPar({ x: (e.clientX - r.left) / r.width - 0.5, y: (e.clientY - r.top) / r.height - 0.5 }) }
 
-  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'solutions' && pathname.startsWith('/solutions')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'features' && pathname.startsWith('/features')) || (k === 'pricing' && pathname.startsWith('/pricing'))
+  // Product and Features items both live under /product/*, so tell them apart by
+  // slug: the inbox-suite slugs belong to the Features menu, everything else
+  // under /product (the feedback suite + hub) belongs to Product.
+  const FEATURE_SLUGS = ['inbox', 'crm', 'gallery', 'notes', 'orders', 'payments', 'links', 'insights', 'calendar', 'tasks', 'broadcasts', 'automation']
+  const onFeaturePage = FEATURE_SLUGS.some(s => pathname === `/product/${s}` || pathname.startsWith(`/product/${s}/`)) || pathname.startsWith('/features')
+  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product') && !onFeaturePage) || (k === 'solutions' && pathname.startsWith('/solutions')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'features' && onFeaturePage) || (k === 'pricing' && pathname.startsWith('/pricing'))
   const moreActive = MORE_LINKS.some(n => pathname.startsWith(n.href))
 
   const handleDashboard = async () => {
