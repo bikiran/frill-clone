@@ -270,14 +270,32 @@ export class TelnyxService {
   }
 
 
-  // Outbound call via Call Control (used for mobile-app / server-dialed calls later)
-  async dial(params: { connection_id: string; to: string; from: string; webhook_url?: string }) {
+  // Outbound call via Call Control. Used by the server-bridged outbound flow so
+  // the leg is CONTROLLABLE (hold / transfer / conference) — a browser WebRTC
+  // newCall() has no server-side call_control_id and can't be.
+  //   client_state  — an arbitrary string Telnyx echoes back on every webhook
+  //                    event for this leg (base64 on the wire). We stash a small
+  //                    JSON tag so the webhook knows this is an outbound leg and
+  //                    which call/role it belongs to.
+  //   sip_headers    — custom X- headers delivered to a WebRTC/SIP endpoint on
+  //                    the invite, so the browser can tell an auto-answer
+  //                    outbound leg apart from a real incoming call.
+  async dial(params: { connection_id: string; to: string; from: string; webhook_url?: string; client_state?: string; sip_headers?: { name: string; value: string }[]; timeout_secs?: number }) {
     return this.req('/calls', 'POST', {
       connection_id: params.connection_id,
       to: params.to,
       from: params.from,
+      ...(params.timeout_secs ? { timeout_secs: params.timeout_secs } : {}),
+      ...(params.client_state ? { client_state: Buffer.from(params.client_state).toString('base64') } : {}),
+      ...(params.sip_headers ? { sip_headers: params.sip_headers } : {}),
       ...(params.webhook_url ? { webhook_url: params.webhook_url } : {}),
     })
+  }
+
+  // Decode a client_state string Telnyx echoes back on a webhook payload.
+  static decodeClientState(raw?: string | null): any {
+    if (!raw) return null
+    try { return JSON.parse(Buffer.from(String(raw), 'base64').toString('utf8')) } catch { return null }
   }
 
   // ── Call Control commands (for inbound ring-all → voicemail) ────────────────

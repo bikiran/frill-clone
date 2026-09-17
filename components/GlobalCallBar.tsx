@@ -2,6 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import CallBar from './CallBar'
+import { getVoiceProvider } from '@/lib/voice-provider-client'
+
+// When on, Telnyx outbound calls are placed SERVER-SIDE (via /api/telnyx/
+// outbound-start) so they gain controllable legs — hold / warm-transfer / ring-
+// team — handled by the rich panel in IncomingCallListener, exactly like inbound.
+// Off (default), or for Twilio, outbound keeps using the direct WebRTC dial in
+// this draggable panel. Flip NEXT_PUBLIC_TELNYX_OUTBOUND_BRIDGE=1 to enable.
+const OUTBOUND_BRIDGE = process.env.NEXT_PUBLIC_TELNYX_OUTBOUND_BRIDGE === '1'
 
 // A persistent, DRAGGABLE floating panel that hosts an outbound call, mounted
 // once in the admin shell. Every "Call" button dispatches a `colvy:call` event;
@@ -9,32 +17,51 @@ import CallBar from './CallBar'
 // so the call survives navigating between pages and switching conversations, and
 // the agent can drag it out of the way (same feel as the incoming-call panel).
 //
-// Hold / warm-transfer / ring-team for OUTBOUND need provider call-control that
-// isn't wired yet; those remain a follow-up. This delivers the draggable panel
-// with the controls CallBar already supports (mute, switch device, hang up,
-// recording + AI summary). A full page reload still ends the call — the browser
-// tears down the WebRTC session with the page.
+// This draggable panel handles the DIRECT WebRTC dial (Twilio, and Telnyx when
+// the server-bridge flag is off): mute, switch device, hang up, recording + AI
+// summary. When NEXT_PUBLIC_TELNYX_OUTBOUND_BRIDGE is on, Telnyx outbound is
+// instead handed to IncomingCallListener's server-bridged panel, which adds
+// hold / warm-transfer / ring-team at parity with inbound.
 
 interface Session { number: string; name?: string | null; contactId?: string | null; conversationId?: string | null; key: number }
 
 export default function GlobalCallBar({ companyId, agentName }: { companyId: string | null; agentName?: string }) {
   const [session, setSession] = useState<Session | null>(null)
+  const sessionRef = useRef<Session | null>(null)
+  sessionRef.current = session
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
   const ref = useRef<HTMLDivElement | null>(null)
   const dragOffset = useRef<{ dx: number; dy: number } | null>(null)
 
   useEffect(() => {
-    const onCall = (e: Event) => {
+    const onCall = async (e: Event) => {
       const d = (e as CustomEvent).detail || {}
       const number = d.number || d.phone
       if (!number) return
       // Ignore a new request while a call is up (remounting CallBar would hang
       // the live call up).
-      setSession(prev => prev || { number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, key: Date.now() })
+      if (sessionRef.current) return
+
+      // Server-bridge path (Telnyx only). `_noBridge` marks a fallback re-dispatch
+      // from IncomingCallListener when the bridge couldn't start — take the direct
+      // WebRTC dial then instead of looping.
+      if (OUTBOUND_BRIDGE && !d._noBridge && companyId) {
+        try {
+          const prov = await getVoiceProvider(companyId)
+          if (prov === 'telnyx') {
+            // Hand off to IncomingCallListener, which owns the registered WebRTC
+            // client and the hold/transfer/ring-team panel.
+            window.dispatchEvent(new CustomEvent('colvy:outbound-bridge', { detail: { number, name: d.name, contactId: d.contactId, conversationId: d.conversationId } }))
+            return
+          }
+        } catch { /* fall through to the direct dial */ }
+      }
+
+      setSession({ number, name: d.name, contactId: d.contactId, conversationId: d.conversationId, key: Date.now() })
     }
     window.addEventListener('colvy:call', onCall as EventListener)
     return () => window.removeEventListener('colvy:call', onCall as EventListener)
-  }, [])
+  }, [companyId])
 
   // ── draggable ──────────────────────────────────────────────────────────────
   const onMove = (e: PointerEvent) => {

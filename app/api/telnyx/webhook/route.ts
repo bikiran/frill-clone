@@ -394,6 +394,111 @@ export async function POST(req: NextRequest) {
 
       log.info('[telnyx call event]', { eventType, direction, from: fromNum, to: toNum, hasCC: !!callControlId })
 
+      // ── Server-bridged OUTBOUND calls ────────────────────────────────────────
+      // These legs are tagged with client_state {t:'ob'} by /api/telnyx/outbound-
+      // start. Handled here, before the inbound logic, so an outbound leg never
+      // trips the inbound ring/bridge/voicemail paths. See outbound-start for the
+      // full flow; in short: agent answers → dial customer → customer answers →
+      // bridge + record. Everything downstream (hold/transfer) then works because
+      // the row ends up in the same shape an inbound call produces.
+      const obState = TelnyxService.decodeClientState(payload?.client_state)
+      if (obState?.t === 'ob' && obState.callId) {
+        try {
+          const { data: obRow } = await db.from('calls').select('*').eq('id', obState.callId).maybeSingle()
+          const { data: obInteg } = obRow?.company_id
+            ? await db.from('telnyx_integrations').select('api_key').eq('company_id', obRow.company_id).maybeSingle()
+            : { data: null as any }
+          const svc = obInteg?.api_key ? new TelnyxService(obInteg.api_key) : null
+          const webhookUrl = `${new URL(req.url).origin}/api/telnyx/webhook`
+
+          // Agent's browser answered — now dial the customer.
+          if (eventType === 'call.answered' && obState.role === 'agent' && svc && obRow) {
+            // Guard against a duplicate answer event placing two customer legs.
+            if (!obRow.telnyx_call_control_id && obRow.status === 'dialing_agent') {
+              const dialConnectionId = (payload as any)?.connection_id || null
+              // Prefer the connection the agent leg came through; fall back to the
+              // integration's Voice API app.
+              let connId = dialConnectionId
+              if (!connId) {
+                const { data: ci } = await db.from('telnyx_integrations').select('voice_api_application_id, connection_id').eq('company_id', obRow.company_id).maybeSingle()
+                connId = (ci as any)?.voice_api_application_id || (ci as any)?.connection_id
+              }
+              try {
+                const custLeg: any = await svc.dial({
+                  connection_id: connId,
+                  to: obRow.to_number,
+                  from: obRow.from_number,
+                  webhook_url: webhookUrl,
+                  client_state: JSON.stringify({ t: 'ob', callId: obRow.id, role: 'customer' }),
+                })
+                const custLegId = custLeg?.data?.call_control_id || custLeg?.call_control_id || null
+                await db.from('calls').update({
+                  telnyx_call_control_id: custLegId,
+                  status: 'dialing_customer',
+                }).eq('id', obRow.id)
+                log.info('[telnyx outbound] agent answered, dialing customer', { callId: obRow.id, custLegId })
+              } catch (e: any) {
+                // Couldn't reach the customer — hang up the agent leg so their
+                // browser doesn't sit connected to silence.
+                console.error('[telnyx outbound] customer dial failed', e?.message || e)
+                try { await svc.hangupCall(callControlId) } catch {}
+                await db.from('calls').update({ status: 'failed', cause: 'customer_dial_failed', ended_at: new Date().toISOString() }).eq('id', obRow.id)
+              }
+            }
+            return NextResponse.json({ ok: true })
+          }
+
+          // Customer answered — bridge them to the agent and start recording.
+          if (eventType === 'call.answered' && obState.role === 'customer' && svc && obRow?.agent_call_control_id) {
+            try {
+              await svc.bridgeCalls(callControlId, obRow.agent_call_control_id)
+              await db.from('calls').update({
+                status: 'in_progress',
+                answered_at: new Date().toISOString(),
+                telnyx_call_control_id: callControlId,
+              }).eq('id', obRow.id)
+              try { await svc.recordStart(callControlId) } catch (e: any) { console.error('[telnyx outbound] record start failed', e?.message || e) }
+              log.info('[telnyx outbound] bridged customer to agent', { callId: obRow.id })
+            } catch (e: any) {
+              console.error('[telnyx outbound] bridge failed', e?.message || e)
+            }
+            return NextResponse.json({ ok: true })
+          }
+
+          // Either leg hung up — tear down its partner so nothing is left live.
+          if (eventType === 'call.hangup' && svc && obRow) {
+            const partner = callControlId === obRow.telnyx_call_control_id
+              ? obRow.agent_call_control_id
+              : (callControlId === obRow.agent_call_control_id ? obRow.telnyx_call_control_id : null)
+            if (partner) { try { await svc.hangupCall(partner) } catch {} }
+            const dur = payload?.call_duration_secs || payload?.duration_secs || 0
+            // Only stamp the final status once (on the first leg's hangup).
+            if (!['completed', 'failed', 'missed'].includes(String(obRow.status || ''))) {
+              await db.from('calls').update({
+                status: dur > 0 || obRow.status === 'in_progress' ? 'completed' : 'failed',
+                ended_at: new Date().toISOString(),
+                ...(dur ? { duration_seconds: dur } : {}),
+              }).eq('id', obRow.id)
+            }
+            log.info('[telnyx outbound] leg hung up, tore down partner', { callId: obRow.id })
+            return NextResponse.json({ ok: true })
+          }
+
+          // Recording events must reach the shared recording handler below (it
+          // saves the URL, posts the call card, and kicks off transcription + AI
+          // summary — matching by call_control_id, provider-agnostic). Let those
+          // fall through. Every OTHER event on an outbound leg (ringing,
+          // initiated, …) is fully handled here — acknowledge and stop so it can
+          // never trip the inbound ring/bridge/voicemail logic.
+          if (!eventType.startsWith('call.recording')) {
+            return NextResponse.json({ ok: true })
+          }
+        } catch (e) {
+          console.error('[telnyx outbound] handler failed', e)
+          return NextResponse.json({ ok: true })
+        }
+      }
+
       // Inbound call just started — answer it and ring the online agents.
       if (eventType === 'call.initiated' && isInbound) {
         // Authoritative owner of the dialled number (phone_numbers), then load
