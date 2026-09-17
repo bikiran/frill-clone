@@ -260,7 +260,12 @@ export default function MarketingNav({ dark, onToggleDark }: { dark: boolean; on
   const scheduleClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setOpen(null), 130) }
   const onPanelMove = (e: React.MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPar({ x: (e.clientX - r.left) / r.width - 0.5, y: (e.clientY - r.top) / r.height - 0.5 }) }
 
-  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product')) || (k === 'solutions' && pathname.startsWith('/solutions')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'features' && pathname.startsWith('/features')) || (k === 'pricing' && pathname.startsWith('/pricing'))
+  // Product and Features items both live under /product/*, so tell them apart by
+  // slug: the inbox-suite slugs belong to the Features menu, everything else
+  // under /product (the feedback suite + hub) belongs to Product.
+  const FEATURE_SLUGS = ['inbox', 'crm', 'gallery', 'notes', 'orders', 'payments', 'links', 'insights', 'calendar', 'tasks', 'broadcasts', 'automation']
+  const onFeaturePage = FEATURE_SLUGS.some(s => pathname === `/product/${s}` || pathname.startsWith(`/product/${s}/`)) || pathname.startsWith('/features')
+  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product') && !onFeaturePage) || (k === 'solutions' && pathname.startsWith('/solutions')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'features' && onFeaturePage) || (k === 'pricing' && pathname.startsWith('/pricing'))
   const moreActive = MORE_LINKS.some(n => pathname.startsWith(n.href))
 
   const handleDashboard = async () => {
