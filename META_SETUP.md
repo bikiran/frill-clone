@@ -83,7 +83,7 @@ Meta will require **Business Verification** (business documents) before some per
 ## Notes / limits
 
 - **24-hour window:** Meta only allows a free-form reply within 24 hours of the customer's last message. Colvy blocks a later reply with a clear message rather than a raw API error. Replying outside 24h needs an approved message tag (not yet built).
-- **Token refresh:** Page tokens are long-lived (~60 days). Reconnecting an outlet refreshes them. A scheduled refresh can be added later if needed.
+- **Token refresh:** A daily cron (`/api/cron/refresh-meta-tokens`) keeps connections alive. **Instagram-Login** tokens (~60 days) are auto-extended in place. **Facebook / page-linked** Page tokens can't be self-refreshed, so the cron probes them: a still-valid token has its expiry stamp pushed out, and a genuinely lapsed one flags the account (`last_error` + a one-time in-app alert) to reconnect under Settings → Channels. Reconnecting always mints fresh tokens. The cron honours `CRON_SECRET` like the others.
 
 ---
 
