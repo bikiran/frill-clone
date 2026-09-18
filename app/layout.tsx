@@ -736,6 +736,18 @@ export default function RootLayout({
           <nav className="h-14 px-6 flex items-center justify-between">
             {/* Left: logo */}
             <div className="flex items-center gap-2">
+              {/* On admin pages the sidebar drawer slides in from the LEFT, so the
+                  hamburger belongs on the left too (next to the menu it opens).
+                  Marketing pages keep their hamburger on the right (their drawer
+                  opens from the right). */}
+              {pathname?.startsWith('/admin') && (
+                <button
+                  className="md:hidden p-2 -ml-2 mr-0.5 rounded-lg hover:bg-gray-100 transition-smooth cursor-pointer"
+                  onClick={() => window.dispatchEvent(new CustomEvent('colvy:toggle-admin-sidebar'))}
+                  aria-label="Menu">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+              )}
               {/* Logo */}
               <Link href={isSubdomain ? homePath : '/'} className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
               {/* On subdomains show company branding; on colvy.com show Colvy */}
@@ -1007,19 +1019,16 @@ export default function RootLayout({
                 </>
               )}
 
-              {/* Mobile hamburger — on the right, matching the marketing pages */}
-              <button
-                className="md:hidden p-2 -mr-1 rounded-lg hover:bg-gray-100 transition-smooth cursor-pointer"
-                onClick={() => {
-                  if (pathname?.startsWith('/admin')) {
-                    window.dispatchEvent(new CustomEvent('colvy:toggle-admin-sidebar'))
-                  } else {
-                    setShowDrawer(!showDrawer)
-                  }
-                }}
-                aria-label="Menu">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-              </button>
+              {/* Mobile hamburger — marketing pages only (their drawer opens from
+                  the right). On admin pages it's rendered on the LEFT instead. */}
+              {!pathname?.startsWith('/admin') && (
+                <button
+                  className="md:hidden p-2 -mr-1 rounded-lg hover:bg-gray-100 transition-smooth cursor-pointer"
+                  onClick={() => setShowDrawer(!showDrawer)}
+                  aria-label="Menu">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+              )}
             </div>
           </nav>
         </header>
