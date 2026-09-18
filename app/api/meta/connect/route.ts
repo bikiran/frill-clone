@@ -56,5 +56,13 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  return NextResponse.redirect(loginUrl)
+  // Remember the origin subdomain in a short-lived cookie too. If Facebook
+  // bounces back WITHOUT our state (e.g. the user taps OK on an error dialog),
+  // the callback can still return them to their own subdomain instead of the
+  // bare root domain.
+  const res = NextResponse.redirect(loginUrl)
+  if (origin && /^https?:\/\//.test(origin)) {
+    res.cookies.set('colvy_meta_origin', origin, { httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 900 })
+  }
+  return res
 }

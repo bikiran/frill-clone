@@ -31,10 +31,14 @@ export async function GET(req: NextRequest) {
     origin = parsed.origin || ''
   } catch {}
 
-  // Where to send the user when we're done. Their own subdomain if we know it,
-  // otherwise back here on root.
+  // Where to send the user when we're done. Their own subdomain if we know it —
+  // from the state, or (when Facebook bounced back without state) from the
+  // cookie the connect route set — otherwise back here on root.
+  const cookieOrigin = req.cookies.get('colvy_meta_origin')?.value || ''
   const home = (params: string) => {
-    const base = origin && /^https?:\/\//.test(origin) ? origin : new URL(req.url).origin
+    const base = origin && /^https?:\/\//.test(origin) ? origin
+      : cookieOrigin && /^https?:\/\//.test(cookieOrigin) ? cookieOrigin
+      : new URL(req.url).origin
     return `${base}${settingsPath}?${params}`
   }
 
