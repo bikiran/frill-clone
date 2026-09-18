@@ -118,13 +118,14 @@ export async function listManagedPages(userToken: string): Promise<{ pages?: any
   return { pages: data.data || [] }
 }
 
-// Subscribe a Page to messaging webhooks (so its DMs reach our webhook).
+// Subscribe a Page to webhooks: DMs (messages) AND its feed, so both Messenger
+// messages and comments on the Page's posts reach our webhook in real time.
 export async function subscribePageWebhooks(pageId: string, pageToken: string): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(`${GRAPH}/${pageId}/subscribed_apps`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      subscribed_fields: ['messages', 'messaging_postbacks', 'message_reactions'],
+      subscribed_fields: ['messages', 'messaging_postbacks', 'message_reactions', 'feed'],
       access_token: pageToken,
     }),
   })
