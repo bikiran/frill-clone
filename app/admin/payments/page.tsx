@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import CreatePaymentLinkModal from '@/components/CreatePaymentLinkModal'
+import PageHeader from '@/components/PageHeader'
 
 // Payments — transactions taken through Colvy payment links (Stripe). Refund
 // (full or partial), resend receipts, remind on pending, and create new links.
@@ -426,19 +427,20 @@ export default function PaymentsPage() {
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: 'var(--ink)' }}>Payments</h1>
-          <p style={{ margin: '3px 0 18px', fontSize: 13, color: 'var(--slate)' }}>Track payments, refunds, and payment links across Colvy.</p>
-        </div>
-        {/* Revive pending payment links sent before durable links — repoints the
-            short link a customer already has at the /pay resolver. Owner/admin
-            only (enforced server-side); safe to run more than once. */}
-        <button type="button" onClick={repairLinks} disabled={repairing} title="Fix older pending payment links that expired on Stripe"
-          style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: repairing ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
-          {repairing ? 'Repairing…' : 'Repair old links'}
-        </button>
-      </div>
+      <PageHeader
+        title="Payments"
+        subtitle="Track payments, refunds, and payment links across Colvy."
+        bleed={24}
+        action={
+          /* Revive pending payment links sent before durable links — repoints the
+             short link a customer already has at the /pay resolver. Owner/admin
+             only (enforced server-side); safe to run more than once. */
+          <button type="button" onClick={repairLinks} disabled={repairing} title="Fix older pending payment links that expired on Stripe"
+            style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: repairing ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+            {repairing ? 'Repairing…' : 'Repair old links'}
+          </button>
+        }
+      />
 
       {/* KPIs */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
