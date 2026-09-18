@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ConfirmModal from '@/components/ConfirmModal'
 import { SkeletonList } from '@/components/Skeleton'
+import PageHeader from '@/components/PageHeader'
 
 
 export default function TeamPage() {
@@ -272,12 +273,13 @@ export default function TeamPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Team Members</h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>Manage who can access your feedback board</p>
-        </div>
-        <div className="flex gap-2">
+      <PageHeader
+        title="Team Members"
+        subtitle="Manage who can access your workspace"
+        bleed={24}
+        bleedTop={32}
+        action={
+          <>
           <button onClick={() => setShowCreate(true)}
             className="px-4 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
             style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
@@ -288,8 +290,9 @@ export default function TeamPage() {
             style={{ background: 'var(--coral)' }}>
             + Invite Member
           </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {msg && (
         <div className="mb-4 p-3 rounded-lg text-sm font-medium" style={{ background: '#d1fae5', color: '#059669' }}>

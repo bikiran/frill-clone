@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
+import PageHeader from '@/components/PageHeader'
 
 type Call = {
   id: string
@@ -314,7 +315,7 @@ export default function CallsPage() {
   return (
     <div style={{ padding: '20px 24px', height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column' }}>
       <style>{`.calls-tabs::-webkit-scrollbar{display:none}`}</style>
-      <h1 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 14px' }}>Call Logs</h1>
+      <PageHeader title="Call Logs" subtitle="Every inbound and outbound call, with recordings and summaries." bleed={24} bleedTop={20} sticky={false} />
       <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
         {/* ── List ── */}
         {showList && (

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
+import PageHeader from '@/components/PageHeader'
 
 type Review = {
   id: string
@@ -298,12 +299,17 @@ export default function ReviewsPage() {
         .rv-input:focus { border-color: var(--coral); }
       `}</style>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, gap: 12, flexWrap: 'wrap' }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Review Dashboard</h1>
-        <button onClick={sync} disabled={syncing} className="rv-btn rv-btn-primary">
-          {syncing ? 'Syncing…' : 'Sync Google reviews'}
-        </button>
-      </div>
+      <PageHeader
+        title="Review Dashboard"
+        subtitle="Google reviews, ratings and replies in one place."
+        bleed={32}
+        bleedTop={28}
+        action={
+          <button onClick={sync} disabled={syncing} className="rv-btn rv-btn-primary">
+            {syncing ? 'Syncing…' : 'Sync Google reviews'}
+          </button>
+        }
+      />
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 320px', gap: 20, alignItems: 'start' }}>
         <div>
