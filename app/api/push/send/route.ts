@@ -129,19 +129,41 @@ export async function POST(req: NextRequest) {
     })
     const result = await res.json().catch(() => ({}))
 
-    // Prune tokens Expo reports as unregistered
+    // What Expo actually said. This used to report success as soon as the
+    // request was accepted, counting messages SUBMITTED, and threw away every
+    // per-message error except DeviceNotRegistered.
+    //
+    // That hides the failure that looks exactly like "notifications stopped
+    // working": if the push credentials on the Expo project lapse, every
+    // message comes back InvalidCredentials or MismatchSenderId while calls,
+    // which go straight to Firebase with their own credentials, keep arriving.
+    // From the outside the app looks half-broken and nothing anywhere says why.
+    const failures: Record<string, number> = {}
     try {
       const data = result?.data
       if (Array.isArray(data)) {
         const dead: string[] = []
         data.forEach((r: any, i: number) => {
-          if (r?.status === 'error' && r?.details?.error === 'DeviceNotRegistered') dead.push(messages[i].to)
+          if (r?.status !== 'error') return
+          const code = String(r?.details?.error || r?.message || 'unknown')
+          failures[code] = (failures[code] || 0) + 1
+          if (code === 'DeviceNotRegistered') dead.push(messages[i].to)
         })
         if (dead.length) await db.from('push_tokens').delete().in('expo_token', dead)
+      } else if (result?.errors || !res.ok) {
+        failures[`http ${res.status}`] = messages.length
       }
     } catch {}
 
-    return NextResponse.json({ ok: true, sent: messages.length })
+    const failed = Object.values(failures).reduce((a, b) => a + b, 0)
+    if (failed) console.error('[push] Expo rejected messages', { companyId, failed, failures })
+
+    return NextResponse.json({
+      ok: true,
+      sent: messages.length - failed,
+      submitted: messages.length,
+      ...(failed ? { failed, failures } : {}),
+    })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
