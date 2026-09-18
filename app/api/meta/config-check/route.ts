@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
   } else if (permissions) {
     hint = 'Configuration read OK. If the dialog still errors, check the Valid OAuth Redirect URIs and app mode/roles.'
   } else if (appTokenOk && configNotFound) {
-    hint = 'The app token WORKS but Meta cannot load this config_id under this app. Most likely META_LOGIN_CONFIG_ID is stale (the configuration was deleted/recreated, which changes its ID) or belongs to a different app. Open Facebook Login for Business → Configurations in THIS app, confirm a configuration exists, and set META_LOGIN_CONFIG_ID to its current ID.'
+    hint = 'Expected: Login-for-Business configurations are NOT readable via the Graph API (subcode 33), so a "does not exist" here does not mean the config is broken. First confirm in the dashboard (Facebook Login for Business → Configurations) that a config with this ID exists — if it does, the config_id is fine. A "Sorry, something went wrong" on the live dialog is then almost always: (1) the app is not yet App-Review-approved for the config\'s permissions, so ONLY app-role accounts (admin/dev/tester) can complete login — test by connecting as an app admin; (2) https://colvy.com/api/meta/callback is missing from Facebook Login for Business → Settings → Valid OAuth Redirect URIs; or (3) the config lists a deprecated permission (pages_read_user_content) — remove it via Edit configuration.'
   } else if (!appTokenOk) {
     hint = 'The app token could not even read the app node — check META_APP_ID / META_APP_SECRET.'
   } else {
