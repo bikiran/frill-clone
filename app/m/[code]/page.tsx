@@ -136,9 +136,11 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
       {mediaOrigin && <link rel="preconnect" href={mediaOrigin} crossOrigin="anonymous" />}
       <style>{`
         * { box-sizing: border-box; }
-        /* margin:auto (not justify-content) centres the block vertically when it
-           fits, but still lets a tall gallery scroll instead of clipping. */
-        .mv-inner { max-width: 640px; width: 100%; margin: auto; }
+        /* Top-align the block (margin: 0 auto centres horizontally only). Full
+           vertical centring (margin: auto) left a large empty gap above a single
+           short item on a tall phone screen — and top-aligning also avoids the
+           flexbox quirk where a tall, overflowing centred item clips at the top. */
+        .mv-inner { max-width: 640px; width: 100%; margin: 0 auto; }
         .mv-grid { display: grid; gap: 12px; }
         .mv-grid.multi { grid-template-columns: repeat(2, 1fr); }
         .mv-card { background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 18px rgba(0,0,0,0.06); display: flex; flex-direction: column; }
