@@ -111,3 +111,38 @@ This is the actual **blocker** on the Facebook login screen. With a clean reques
 ### Sync fails with error `#10`
 
 `(#10)` means the read was made without the right permission or token. Colvy already reads the Page feed/comments with the stored **Page token**, so the usual cause is a token minted **before** `pages_read_engagement` was granted. **Reconnect the Page** to get a fresh token (the callback overwrites the old one — it's never reused), then re-run the sync. Confirm with `/api/meta/diagnostics` that `tokenType` is `PAGE`, `grantedScopes` includes `pages_read_engagement`, and `probes.readFeed.ok` is `true`.
+
+---
+
+## Instagram API with Instagram Login (no Facebook Page)
+
+Separate from the Facebook-Login flow above: a business signs in with Instagram
+directly (instagram.com) — no Facebook Page required — and Colvy stores an
+Instagram **user** token scoped to the `instagram_business_*` permissions.
+
+It uses its **own** app credentials (App → Instagram → *API setup with Instagram
+login* → Instagram app ID / secret — NOT the Facebook app id/secret):
+
+```
+INSTAGRAM_APP_ID=...
+INSTAGRAM_APP_SECRET=...
+INSTAGRAM_REDIRECT_URI=https://colvy.com/api/instagram/callback
+```
+
+Register that exact redirect URI under the Instagram product's OAuth settings.
+Permissions Colvy requests (App Review these — **not** the `instagram_*` Facebook-
+Login variants, and **not** publishing/insights): `instagram_business_basic`,
+`instagram_business_manage_messages`, `instagram_business_manage_comments`.
+
+Flow: `/api/instagram/connect` → instagram.com authorize → `/api/instagram/callback`
+(exchanges the code for a long-lived token, reads the profile, stores an
+`instagram` `meta_channels` row keyed `page_id = iglogin:<igUserId>`).
+
+- `GET /api/instagram/connect?companyId=<id>&debug=1` — returns the exact
+  authorize URL + scopes without redirecting.
+- The connect button ("Connect Instagram directly") appears on Settings →
+  Channels → Instagram & Messenger once the three env vars are set.
+
+> Message/comment **ingestion** for Instagram-Login accounts uses the Instagram
+> product webhooks (separate from the Page webhook) and is a follow-up phase;
+> this ships the connect + token + account storage.
