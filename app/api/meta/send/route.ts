@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendMetaMessage, sendMetaAttachment } from '@/lib/meta'
+import { isIgLoginChannel, sendInstagramMessage, sendInstagramAttachment } from '@/lib/instagram-login'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 
 export const dynamic = 'force-dynamic'
@@ -46,9 +47,15 @@ export async function POST(req: NextRequest) {
       }, { status: 400 })
     }
 
-    const out = attachmentUrl
-      ? await sendMetaAttachment(channel.page_id, channel.page_access_token, recipientId, attachmentUrl, attachmentKind || 'file')
-      : await sendMetaMessage(channel.page_id, channel.page_access_token, recipientId, content)
+    // Instagram-Login accounts send through graph.instagram.com with their own
+    // token (me/messages); Page-linked channels use the Page Send API.
+    const out = isIgLoginChannel(channel)
+      ? (attachmentUrl
+          ? await sendInstagramAttachment(channel.page_access_token, recipientId, attachmentUrl, attachmentKind || 'file')
+          : await sendInstagramMessage(channel.page_access_token, recipientId, content))
+      : (attachmentUrl
+          ? await sendMetaAttachment(channel.page_id, channel.page_access_token, recipientId, attachmentUrl, attachmentKind || 'file')
+          : await sendMetaMessage(channel.page_id, channel.page_access_token, recipientId, content))
     if (out.error) {
       await db.from('meta_channels').update({ last_error: out.error }).eq('id', channel.id)
       return NextResponse.json({ error: out.error }, { status: 502 })
