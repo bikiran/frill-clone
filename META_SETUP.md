@@ -93,6 +93,7 @@ Two temporary/diagnostic endpoints help here (both hide the token value):
 
 - `GET /api/meta/connect?companyId=<id>&debug=1` — returns the **exact** dialog URL and `scope` string we send to Facebook, **without** redirecting. Use it to prove our request is clean.
 - `GET /api/meta/diagnostics?companyId=<id>` — after a Page is connected, reports `tokenType` (PAGE/USER), `grantedScopes`, `selectedPageId`, whether a Page token exists, and a live **feed-read probe** so a `#10` shows up with its real Graph message.
+- `GET /api/meta/config-check` (or `?configId=<id>`) — reads back what Meta has stored for the **Facebook Login for Business configuration** (`META_LOGIN_CONFIG_ID`) using an app token. Surfaces the configuration's **permission list** and flags a deprecated `pages_read_user_content` if it's still there — the usual cause of a "Sorry, something went wrong" on a config-based dialog. The app token is never returned.
 
 ### "Invalid Scopes: pages_read_user_content"
 
