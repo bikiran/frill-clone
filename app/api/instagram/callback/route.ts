@@ -31,8 +31,11 @@ export async function GET(req: NextRequest) {
     origin = parsed.origin || ''
   } catch {}
 
+  const cookieOrigin = req.cookies.get('colvy_meta_origin')?.value || ''
   const home = (params: string) => {
-    const base = origin && /^https?:\/\//.test(origin) ? origin : new URL(req.url).origin
+    const base = origin && /^https?:\/\//.test(origin) ? origin
+      : cookieOrigin && /^https?:\/\//.test(cookieOrigin) ? cookieOrigin
+      : new URL(req.url).origin
     return `${base}${settingsPath}?${params}`
   }
 

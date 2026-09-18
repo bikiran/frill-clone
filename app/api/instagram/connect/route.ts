@@ -28,5 +28,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ scopes: IG_LOGIN_SCOPES, redirectUri: INSTAGRAM_REDIRECT_URI, loginUrl })
   }
 
-  return NextResponse.redirect(loginUrl)
+  // Short-lived cookie fallback for the origin subdomain, in case Instagram
+  // returns without our state (e.g. the user dismisses an error dialog).
+  const res = NextResponse.redirect(loginUrl)
+  if (origin && /^https?:\/\//.test(origin)) {
+    res.cookies.set('colvy_meta_origin', origin, { httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 900 })
+  }
+  return res
 }
