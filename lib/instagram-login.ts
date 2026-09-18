@@ -165,6 +165,36 @@ export async function replyInstagramComment(token: string, commentId: string, me
   }
 }
 
+// Privately reply to a commenter via DM (Instagram Send API keyed by comment_id).
+export async function sendInstagramCommentPrivateReply(token: string, commentId: string, text: string): Promise<{ id?: string; error?: string }> {
+  try {
+    const res = await fetch(`${IG_GRAPH_V}/me/messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient: { comment_id: commentId }, message: { text }, access_token: token }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { error: data?.error?.message || 'Could not send the DM' }
+    return { id: data.message_id }
+  } catch (e: any) {
+    return { error: e?.message || 'Could not send the DM' }
+  }
+}
+
+// Hide/unhide a comment on an Instagram-Login account's media (IG uses `hide`).
+export async function hideInstagramComment(token: string, commentId: string, hidden: boolean): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${IG_GRAPH_V}/${commentId}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hide: hidden, access_token: token }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { ok: false, error: data?.error?.message || 'Could not update the comment' }
+    return { ok: true }
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'Could not update the comment' }
+  }
+}
+
 // Look up a DM sender's profile (name, avatar) on an Instagram-Login account.
 export async function fetchInstagramUserProfile(igsid: string, token: string): Promise<{ name?: string; avatar?: string }> {
   try {

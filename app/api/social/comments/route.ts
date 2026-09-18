@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { admin, getFacebookChannel, replyToComment, setCommentHidden, privateReply } from '@/lib/social-sync'
+import { admin, getFacebookChannel, replyToComment, setCommentHidden, privateReply, replyToIgComment, setIgCommentHidden } from '@/lib/social-sync'
+import { isIgLoginChannel, replyInstagramComment, hideInstagramComment, sendInstagramCommentPrivateReply } from '@/lib/instagram-login'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,16 +16,28 @@ export async function POST(req: NextRequest) {
     const { data: comment } = await db.from('social_comments').select('*').eq('id', commentId).eq('company_id', companyId).maybeSingle()
     if (!comment) return NextResponse.json({ error: 'Comment not found' }, { status: 404 })
 
-    // Archive doesn't touch Facebook — it's a local "dealt with" state.
+    // Archive doesn't touch Facebook/Instagram — it's a local "dealt with" state.
     if (action === 'archive' || action === 'unarchive') {
       await db.from('social_comments').update({ is_archived: action === 'archive' }).eq('id', commentId)
       return NextResponse.json({ ok: true })
     }
 
-    // Everything else needs the page token.
-    const channel = await getFacebookChannel(db, companyId)
-    if (!channel?.page_access_token) return NextResponse.json({ error: 'Facebook page not connected' }, { status: 400 })
+    // Everything else needs the channel that owns this comment. Resolve it by the
+    // comment's own meta_channel_id (a comment may be Facebook, page-linked
+    // Instagram, or Instagram-Login), falling back to the company's Facebook page
+    // for older comments that predate the column.
+    let channel: any = null
+    if (comment.meta_channel_id) {
+      const { data } = await db.from('meta_channels').select('*').eq('id', comment.meta_channel_id).maybeSingle()
+      channel = data
+    }
+    if (!channel) channel = await getFacebookChannel(db, companyId)
+    if (!channel?.page_access_token) return NextResponse.json({ error: 'The channel for this comment is no longer connected — reconnect it under Channels.' }, { status: 400 })
     const token = channel.page_access_token
+
+    // Which flavour of comment are we acting on?
+    const isIg = comment.platform === 'instagram'
+    const igLogin = isIgLoginChannel(channel)
 
     if (action === 'ai_reply') {
       // Draft a reply with the category's guidelines — the agent edits before posting.
@@ -36,7 +49,8 @@ export async function POST(req: NextRequest) {
         const { data: cat } = await db.from('social_comment_categories').select('reply_guidelines').eq('company_id', companyId).eq('name', comment.category).maybeSingle()
         guidelines = cat?.reply_guidelines || ''
       }
-      const prompt = `You are replying, as ${company?.name || 'the business'}, to a comment on our Facebook post.
+      const network = isIg ? 'Instagram' : 'Facebook'
+      const prompt = `You are replying, as ${company?.name || 'the business'}, to a comment on our ${network} post.
 
 Commenter: ${comment.author_name || 'A customer'}
 Category: ${comment.category || 'general'}
@@ -58,21 +72,44 @@ Write a short, warm, human reply (1-2 sentences). Don't invent facts or offers. 
     if (action === 'reply') {
       const { message, byAi } = body
       if (!message?.trim()) return NextResponse.json({ error: 'message required' }, { status: 400 })
-      await replyToComment(comment.external_comment_id, token, message.trim())
-      await db.from('social_comments').update({ is_replied: true, replied_by_ai: !!byAi, reply_text: message.trim() }).eq('id', commentId)
+      const msg = message.trim()
+      if (isIg && igLogin) {
+        const r = await replyInstagramComment(token, comment.external_comment_id, msg)
+        if (r.error) throw new Error(r.error)
+      } else if (isIg) {
+        await replyToIgComment(comment.external_comment_id, token, msg)
+      } else {
+        await replyToComment(comment.external_comment_id, token, msg)
+      }
+      await db.from('social_comments').update({ is_replied: true, replied_by_ai: !!byAi, reply_text: msg }).eq('id', commentId)
       return NextResponse.json({ ok: true })
     }
 
     if (action === 'hide' || action === 'unhide') {
-      await setCommentHidden(comment.external_comment_id, token, action === 'hide')
-      await db.from('social_comments').update({ is_hidden: action === 'hide' }).eq('id', commentId)
+      const hidden = action === 'hide'
+      if (isIg && igLogin) {
+        const r = await hideInstagramComment(token, comment.external_comment_id, hidden)
+        if (r.error) throw new Error(r.error)
+      } else if (isIg) {
+        await setIgCommentHidden(comment.external_comment_id, token, hidden)
+      } else {
+        await setCommentHidden(comment.external_comment_id, token, hidden)
+      }
+      await db.from('social_comments').update({ is_hidden: hidden }).eq('id', commentId)
       return NextResponse.json({ ok: true })
     }
 
     if (action === 'dm') {
       const { message } = body
       if (!message?.trim()) return NextResponse.json({ error: 'message required' }, { status: 400 })
-      await privateReply(comment.external_comment_id, token, message.trim())
+      const msg = message.trim()
+      if (isIg && igLogin) {
+        const r = await sendInstagramCommentPrivateReply(token, comment.external_comment_id, msg)
+        if (r.error) throw new Error(r.error)
+      } else {
+        // Facebook and page-linked Instagram both use the Graph private-reply edge.
+        await privateReply(comment.external_comment_id, token, msg)
+      }
       return NextResponse.json({ ok: true })
     }
 

@@ -156,6 +156,18 @@ detects an Instagram-Login channel and uses the Instagram Send API
 (`graph.instagram.com/me/messages`) with the account's own token. The webhook
 signature check accepts either the Meta or the Instagram app secret.
 
-> **Comment** ingestion (real-time comment threads + reply UI) is the remaining
-> follow-up; the reply helper and webhook subscription are in place, but wiring
-> comment events into conversations isn't built yet.
+### Comments (Social Engagement)
+
+Real-time comment threads are ingested by the same `/api/meta/webhook` endpoint.
+Instagram sends the **`comments`** field; a Facebook Page sends the **`feed`**
+field (subscribe to it in the Page webhook config if you want live FB comments —
+otherwise FB comments still arrive on the next manual sync). Each new comment is
+stored in `social_comments`, classified (risk / category / sentiment), and shown
+in the **Social Engagement** manager, where an agent can reply, hide, DM, or
+archive it. Replies route by channel type automatically:
+
+- **Instagram-Login** account → `graph.instagram.com` (`/{comment}/replies`,
+  `hide`, and comment-scoped private replies via the Send API).
+- **Page-linked Instagram** → `graph.facebook.com/{comment}/replies` + `hide`.
+- **Facebook Page** → `graph.facebook.com/{comment}/comments` + `is_hidden` +
+  `/private_replies`.
