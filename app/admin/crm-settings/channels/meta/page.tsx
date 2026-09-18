@@ -81,37 +81,61 @@ export default function MetaChannelsPage() {
         </div>
       )}
 
-      {/* Connect */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 26, flexWrap: 'wrap' }}>
-        <a href={configured && companyId ? `${metaRootOrigin}/api/meta/connect?companyId=${companyId}&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}` : undefined}
-          onClick={e => { if (!configured) { e.preventDefault(); setMsg('Configure the Meta app first (see above).') } }}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 18px', borderRadius: 10, background: '#1877F2', color: '#fff', fontSize: 14, fontWeight: 700, textDecoration: 'none', opacity: configured ? 1 : 0.6 }}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.25h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z"/></svg>
-          Connect Facebook &amp; Instagram
-        </a>
-        <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)', maxWidth: 340, lineHeight: 1.5, alignSelf: 'center' }}>
-          Connecting a Page also connects its linked Instagram business account, if it has one.
-        </p>
+      {/* Connect — one card per way to connect. Side by side on desktop, stacked
+          on mobile; the button sits at the foot of each card so they align. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14, marginBottom: 28 }}>
+        {/* Facebook Page (+ linked Instagram) */}
+        <div style={{ display: 'flex', flexDirection: 'column', padding: 18, borderRadius: 16, border: '1px solid var(--border)', background: '#fff' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>
+            <span style={{ width: 40, height: 40, borderRadius: 11, background: '#1877F2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="#fff"><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.25h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z"/></svg>
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>Facebook &amp; Instagram</p>
+              <p style={{ margin: '1px 0 0', fontSize: 12, color: 'var(--slate)' }}>via a Facebook Page</p>
+            </div>
+          </div>
+          <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5, flex: 1 }}>
+            Connect a Facebook Page — its linked Instagram business account comes along automatically.
+          </p>
+          <a href={configured && companyId ? `${metaRootOrigin}/api/meta/connect?companyId=${companyId}&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}` : undefined}
+            onClick={e => { if (!configured) { e.preventDefault(); setMsg('Configure the Meta app first (see above).') } }}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 16px', borderRadius: 10, background: '#1877F2', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none', opacity: configured ? 1 : 0.6 }}>
+            Connect Facebook &amp; Instagram
+          </a>
+        </div>
+
+        {/* Instagram Login — direct sign-in, no Page (only when configured) */}
+        {igLoginConfigured && (
+          <div style={{ display: 'flex', flexDirection: 'column', padding: 18, borderRadius: 16, border: '1px solid var(--border)', background: '#fff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>
+              <span style={{ width: 40, height: 40, borderRadius: 11, background: 'linear-gradient(45deg,#feda75,#d62976,#4f5bd5)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="#fff"><path d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41a3.72 3.72 0 0 1-1.38-.9 3.72 3.72 0 0 1-.9-1.38c-.16-.42-.36-1.06-.41-2.23C2.17 15.58 2.16 15.2 2.16 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16zm0 3.68a6.16 6.16 0 1 0 0 12.32 6.16 6.16 0 0 0 0-12.32zm0 10.16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.41-10.4a1.44 1.44 0 1 1-2.88 0 1.44 1.44 0 0 1 2.88 0z"/></svg>
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>Instagram</p>
+                <p style={{ margin: '1px 0 0', fontSize: 12, color: 'var(--slate)' }}>direct sign-in</p>
+              </div>
+            </div>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5, flex: 1 }}>
+              Sign in with Instagram — no Facebook Page needed. Best for Instagram-only businesses.
+            </p>
+            <a href={companyId ? `${igRootOrigin}/api/instagram/connect?companyId=${companyId}&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}` : undefined}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 16px', borderRadius: 10, background: 'linear-gradient(45deg,#feda75,#d62976,#4f5bd5)', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>
+              Connect Instagram directly
+            </a>
+          </div>
+        )}
       </div>
 
-      {/* Instagram Login — connect an Instagram professional account directly,
-          without a Facebook Page (Instagram API with Instagram Login). */}
-      {igLoginConfigured && (
-        <div style={{ display: 'flex', gap: 10, marginBottom: 26, flexWrap: 'wrap' }}>
-          <a href={companyId ? `${igRootOrigin}/api/instagram/connect?companyId=${companyId}&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}` : undefined}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 18px', borderRadius: 10, background: 'linear-gradient(45deg,#feda75,#d62976,#4f5bd5)', color: '#fff', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41a3.72 3.72 0 0 1-1.38-.9 3.72 3.72 0 0 1-.9-1.38c-.16-.42-.36-1.06-.41-2.23C2.17 15.58 2.16 15.2 2.16 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16zm0 3.68a6.16 6.16 0 1 0 0 12.32 6.16 6.16 0 0 0 0-12.32zm0 10.16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.41-10.4a1.44 1.44 0 1 1-2.88 0 1.44 1.44 0 0 1 2.88 0z"/></svg>
-            Connect Instagram directly
-          </a>
-          <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)', maxWidth: 340, lineHeight: 1.5, alignSelf: 'center' }}>
-            Sign in with Instagram — no Facebook Page needed. Best for Instagram-only businesses.
-          </p>
-        </div>
-      )}
-
+      <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--slate)' }}>Connected accounts</p>
       {channels.length === 0 ? (
-        <div style={{ padding: 28, borderRadius: 12, border: '1px dashed var(--border)', textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>
-          No connected accounts yet.
+        <div style={{ padding: '34px 28px', borderRadius: 14, border: '1px dashed var(--border)', textAlign: 'center', background: 'var(--canvas, #fafafa)' }}>
+          <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#fff', border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>No accounts connected yet</p>
+          <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Connect a Facebook Page or an Instagram account above to start receiving DMs in your inbox.</p>
         </div>
       ) : (
         <>
