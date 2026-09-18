@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile } from '@/lib/meta'
+import { isIgLoginChannel, fetchInstagramUserProfile, INSTAGRAM_APP_SECRET } from '@/lib/instagram-login'
 import { linkContactIdentity } from '@/lib/identity'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
@@ -30,10 +31,17 @@ export async function GET(req: NextRequest) {
 }
 
 // Verify the payload really came from Meta (signed with the app secret).
+// Instagram-Login (`object: 'instagram'`) events are signed with the INSTAGRAM
+// app secret, while Facebook/Page events use the Meta app secret — accept
+// either, since this one endpoint serves both products.
 function validSignature(raw: string, sig: string | null): boolean {
-  if (!sig || !META_APP_SECRET) return false
-  const expected = 'sha256=' + crypto.createHmac('sha256', META_APP_SECRET).update(raw).digest('hex')
-  try { return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)) } catch { return false }
+  if (!sig) return false
+  for (const secret of [META_APP_SECRET, INSTAGRAM_APP_SECRET]) {
+    if (!secret) continue
+    const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex')
+    try { if (crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return true } catch {}
+  }
+  return false
 }
 
 // ── POST: inbound messages ──────────────────────────────────────────────────
@@ -129,7 +137,9 @@ export async function POST(req: NextRequest) {
           .eq('company_id', companyId).eq('meta_user_id', senderId).maybeSingle()
         contact = existing
         if (!contact) {
-          const prof = await fetchMetaProfile(senderId, channel.page_access_token, platform)
+          const prof = isIgLoginChannel(channel)
+            ? await fetchInstagramUserProfile(senderId, channel.page_access_token)
+            : await fetchMetaProfile(senderId, channel.page_access_token, platform)
           const { data: created } = await db.from('contacts').insert({
             company_id: companyId,
             name: prof.name || (platform === 'instagram' ? 'Instagram user' : 'Messenger user'),
@@ -140,7 +150,9 @@ export async function POST(req: NextRequest) {
           contact = created
         } else if (!contact.avatar_url) {
           // Backfill the photo for an existing contact that doesn't have one.
-          const prof = await fetchMetaProfile(senderId, channel.page_access_token, platform)
+          const prof = isIgLoginChannel(channel)
+            ? await fetchInstagramUserProfile(senderId, channel.page_access_token)
+            : await fetchMetaProfile(senderId, channel.page_access_token, platform)
           if (prof.avatar) {
             await db.from('contacts').update({ avatar_url: prof.avatar }).eq('id', contact.id)
             contact.avatar_url = prof.avatar

@@ -96,6 +96,86 @@ export async function getInstagramProfile(token: string): Promise<{ id?: string;
   }
 }
 
+const IG_GRAPH_V = 'https://graph.instagram.com/v23.0'
+
+// Is this meta_channels row an Instagram-Login connection (vs a Page-linked one)?
+// Identified by the synthetic page_id the callback writes.
+export function isIgLoginChannel(channel: { page_id?: string | null } | null | undefined): boolean {
+  return typeof channel?.page_id === 'string' && channel.page_id.startsWith('iglogin:')
+}
+
+// Subscribe this Instagram account to the app's webhooks (messages + comments)
+// so inbound DMs/comments are delivered. Called once at connect time.
+export async function subscribeInstagramWebhooks(igId: string, token: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const p = new URLSearchParams({ subscribed_fields: 'messages,comments', access_token: token })
+    const res = await fetch(`${IG_GRAPH_V}/${igId}/subscribed_apps?${p.toString()}`, { method: 'POST' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { ok: false, error: data?.error?.message || 'subscription failed' }
+    return { ok: true }
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'subscription failed' }
+  }
+}
+
+// Send a DM reply from an Instagram-Login account (Instagram Send API on
+// graph.instagram.com, keyed by the account's own token — `me/messages`).
+export async function sendInstagramMessage(token: string, recipientId: string, text: string): Promise<{ id?: string; error?: string }> {
+  try {
+    const res = await fetch(`${IG_GRAPH_V}/me/messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient: { id: recipientId }, message: { text }, access_token: token }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { error: data?.error?.message || 'Send failed' }
+    return { id: data.message_id }
+  } catch (e: any) {
+    return { error: e?.message || 'Send failed' }
+  }
+}
+
+// Send a media attachment from an Instagram-Login account.
+export async function sendInstagramAttachment(token: string, recipientId: string, url: string, kind: string): Promise<{ id?: string; error?: string }> {
+  const type = kind === 'image' ? 'image' : kind === 'video' ? 'video' : kind === 'audio' ? 'audio' : 'file'
+  try {
+    const res = await fetch(`${IG_GRAPH_V}/me/messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient: { id: recipientId }, message: { attachment: { type, payload: { url } } }, access_token: token }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { error: data?.error?.message || 'Attachment send failed' }
+    return { id: data.message_id }
+  } catch (e: any) {
+    return { error: e?.message || 'Attachment send failed' }
+  }
+}
+
+// Reply to a comment on an Instagram-Login account's media.
+export async function replyInstagramComment(token: string, commentId: string, message: string): Promise<{ id?: string; error?: string }> {
+  try {
+    const res = await fetch(`${IG_GRAPH_V}/${commentId}/replies`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, access_token: token }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { error: data?.error?.message || 'Comment reply failed' }
+    return { id: data.id }
+  } catch (e: any) {
+    return { error: e?.message || 'Comment reply failed' }
+  }
+}
+
+// Look up a DM sender's profile (name, avatar) on an Instagram-Login account.
+export async function fetchInstagramUserProfile(igsid: string, token: string): Promise<{ name?: string; avatar?: string }> {
+  try {
+    const p = new URLSearchParams({ fields: 'name,username,profile_pic', access_token: token })
+    const res = await fetch(`${IG_GRAPH_V}/${igsid}?${p.toString()}`)
+    if (!res.ok) return {}
+    const d = await res.json().catch(() => ({}))
+    return { name: d.name || d.username || undefined, avatar: d.profile_pic || undefined }
+  } catch { return {} }
+}
+
 // Refresh a long-lived token before it expires (extends another ~60 days).
 export async function refreshInstagramToken(longToken: string): Promise<{ token?: string; expiresIn?: number; error?: string }> {
   try {

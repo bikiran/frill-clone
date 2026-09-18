@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { exchangeInstagramCode, instagramLongLivedToken, getInstagramProfile } from '@/lib/instagram-login'
+import { exchangeInstagramCode, instagramLongLivedToken, getInstagramProfile, subscribeInstagramWebhooks } from '@/lib/instagram-login'
 
 export const dynamic = 'force-dynamic'
 
@@ -79,6 +79,10 @@ export async function GET(req: NextRequest) {
       last_error: null,
     }, { onConflict: 'company_id,platform,page_id' })
     if (upErr) throw new Error(upErr.message)
+
+    // Subscribe this account to the app's webhooks so inbound DMs/comments are
+    // delivered. Best-effort — the connection is already stored either way.
+    subscribeInstagramWebhooks(igId, token).catch(() => {})
 
     return NextResponse.redirect(home('connected=1'))
   } catch (e: any) {

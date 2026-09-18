@@ -143,6 +143,19 @@ Flow: `/api/instagram/connect` → instagram.com authorize → `/api/instagram/c
 - The connect button ("Connect Instagram directly") appears on Settings →
   Channels → Instagram & Messenger once the three env vars are set.
 
-> Message/comment **ingestion** for Instagram-Login accounts uses the Instagram
-> product webhooks (separate from the Page webhook) and is a follow-up phase;
-> this ships the connect + token + account storage.
+### Webhooks (DMs)
+
+Point the **Instagram** product's webhook at the same endpoint as the Page
+webhook — `https://colvy.com/api/meta/webhook` — with the same verify token
+(`META_VERIFY_TOKEN`), and subscribe the **`messages`** (and `comments`) fields.
+On connect, Colvy also calls `subscribed_apps` for the account automatically.
+
+Inbound Instagram-Login **DMs** are ingested by `/api/meta/webhook` (routed by
+`ig_account_id`) and agent replies go back out through `/api/meta/send`, which
+detects an Instagram-Login channel and uses the Instagram Send API
+(`graph.instagram.com/me/messages`) with the account's own token. The webhook
+signature check accepts either the Meta or the Instagram app secret.
+
+> **Comment** ingestion (real-time comment threads + reply UI) is the remaining
+> follow-up; the reply helper and webhook subscription are in place, but wiring
+> comment events into conversations isn't built yet.
