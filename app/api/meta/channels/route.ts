@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isMetaConfigured } from '@/lib/meta'
+import { isInstagramLoginConfigured, INSTAGRAM_REDIRECT_URI } from '@/lib/instagram-login'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,8 +30,19 @@ export async function GET(req: NextRequest) {
   // company subdomain the agent is on.
   let rootOrigin = ''
   try { rootOrigin = new URL(process.env.META_REDIRECT_URI || '').origin } catch {}
+  // The Instagram-Login connect flow starts on the domain its redirect URI is
+  // registered under (usually the same root domain).
+  let igRootOrigin = ''
+  try { igRootOrigin = new URL(INSTAGRAM_REDIRECT_URI || '').origin } catch {}
 
-  return NextResponse.json({ configured: isMetaConfigured(), rootOrigin, channels: channels || [], locations: locations || [] })
+  return NextResponse.json({
+    configured: isMetaConfigured(),
+    rootOrigin,
+    igLoginConfigured: isInstagramLoginConfigured(),
+    igRootOrigin: igRootOrigin || rootOrigin,
+    channels: channels || [],
+    locations: locations || [],
+  })
 }
 
 // POST: map a channel to a location, toggle it, or disconnect it.

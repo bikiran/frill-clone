@@ -8,6 +8,8 @@ export default function MetaChannelsPage() {
   const [loading, setLoading] = useState(true)
   const [configured, setConfigured] = useState(true)
   const [metaRootOrigin, setMetaRootOrigin] = useState('')
+  const [igLoginConfigured, setIgLoginConfigured] = useState(false)
+  const [igRootOrigin, setIgRootOrigin] = useState('')
   const [channels, setChannels] = useState<any[]>([])
   const [locations, setLocations] = useState<any[]>([])
   const [msg, setMsg] = useState('')
@@ -38,6 +40,8 @@ export default function MetaChannelsPage() {
     const d = await res.json()
     setConfigured(d.configured !== false)
     setMetaRootOrigin(d.rootOrigin || '')
+    setIgLoginConfigured(!!d.igLoginConfigured)
+    setIgRootOrigin(d.igRootOrigin || d.rootOrigin || '')
     setChannels(d.channels || [])
     setLocations(d.locations || [])
   }
@@ -90,6 +94,21 @@ export default function MetaChannelsPage() {
         </p>
       </div>
 
+      {/* Instagram Login — connect an Instagram professional account directly,
+          without a Facebook Page (Instagram API with Instagram Login). */}
+      {igLoginConfigured && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 26, flexWrap: 'wrap' }}>
+          <a href={companyId ? `${igRootOrigin}/api/instagram/connect?companyId=${companyId}&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}` : undefined}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 18px', borderRadius: 10, background: 'linear-gradient(45deg,#feda75,#d62976,#4f5bd5)', color: '#fff', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41a3.72 3.72 0 0 1-1.38-.9 3.72 3.72 0 0 1-.9-1.38c-.16-.42-.36-1.06-.41-2.23C2.17 15.58 2.16 15.2 2.16 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16zm0 3.68a6.16 6.16 0 1 0 0 12.32 6.16 6.16 0 0 0 0-12.32zm0 10.16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.41-10.4a1.44 1.44 0 1 1-2.88 0 1.44 1.44 0 0 1 2.88 0z"/></svg>
+            Connect Instagram directly
+          </a>
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)', maxWidth: 340, lineHeight: 1.5, alignSelf: 'center' }}>
+            Sign in with Instagram — no Facebook Page needed. Best for Instagram-only businesses.
+          </p>
+        </div>
+      )}
+
       {channels.length === 0 ? (
         <div style={{ padding: 28, borderRadius: 12, border: '1px dashed var(--border)', textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>
           No connected accounts yet.
@@ -106,7 +125,9 @@ export default function MetaChannelsPage() {
                       {c.platform === 'instagram' ? (c.ig_username ? `@${c.ig_username}` : 'Instagram account') : c.page_name}
                     </p>
                     <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
-                      {c.platform === 'instagram' ? `via Page ${c.page_name}` : `Page ID ${c.page_id}`}
+                      {c.platform === 'instagram'
+                        ? (String(c.page_id || '').startsWith('iglogin:') ? 'via Instagram Login' : `via Page ${c.page_name}`)
+                        : `Page ID ${c.page_id}`}
                     </p>
                     {c.last_error && <p style={{ margin: '3px 0 0', fontSize: 11.5, color: '#dc2626' }}>{c.last_error}</p>}
                   </div>
