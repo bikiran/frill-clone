@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { useEntitlements } from '@/lib/entitlements-client'
 import ProGate from '@/components/ProGate'
+import PageHeader from '@/components/PageHeader'
 
 function StatCard({ label, value, sub, color }: any) {
   return (
@@ -328,10 +329,8 @@ export default function AnalyticsPage() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Analytics</h1>
-        <p style={{ color: 'var(--slate)' }}>Platform performance and engagement metrics</p>
-      </div>
+      <PageHeader title="Analytics" subtitle="Platform performance and engagement metrics" bleed={32} />
+
 
       {/* Date Range Filter */}
       <div style={{

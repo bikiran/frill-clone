@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser } from '../crm-settings/_shared'
+import PageHeader from '@/components/PageHeader'
 
 type Comment = {
   id: string
@@ -155,14 +156,19 @@ export default function SocialEngagementPage() {
         .se-fchip.on { background:var(--peach); border-color:var(--coral); color:var(--coral); }
       `}</style>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Social Engagement Manager</h1>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          {syncMsg && <span style={{ fontSize: 12, color: 'var(--slate)' }}>{syncMsg}</span>}
-          <Link href="/admin/social/categories" className="se-btn se-btn-ghost" style={{ textDecoration: 'none' }}>Categories</Link>
-          {connected && <button onClick={sync} disabled={syncing} className="se-btn se-btn-primary">{syncing ? 'Syncing…' : 'Sync comments'}</button>}
-        </div>
-      </div>
+      <PageHeader
+        title="Social Engagement Manager"
+        subtitle="Reply to Instagram and Facebook comments from one place."
+        bleed={32}
+        bleedTop={28}
+        action={
+          <>
+            {syncMsg && <span style={{ fontSize: 12, color: 'var(--slate)' }}>{syncMsg}</span>}
+            <Link href="/admin/social/categories" className="se-btn se-btn-ghost" style={{ textDecoration: 'none' }}>Categories</Link>
+            {connected && <button onClick={sync} disabled={syncing} className="se-btn se-btn-primary">{syncing ? 'Syncing…' : 'Sync comments'}</button>}
+          </>
+        }
+      />
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 18 }}>
         <Chip label="Total Posts" value={stats.posts} tone="var(--ink)" />

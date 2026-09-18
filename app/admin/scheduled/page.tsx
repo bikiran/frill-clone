@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
+import PageHeader from '@/components/PageHeader'
 
 export default function ScheduledPage() {
   const seededCid = peekCompanyUser()?.companyId ?? null
@@ -78,16 +79,17 @@ export default function ScheduledPage() {
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ margin: '0 0 4px', fontSize: 26, fontWeight: 700, color: 'var(--ink)' }}>Scheduled Messages</h1>
-          <p style={{ margin: 0, fontSize: 14, color: 'var(--slate)' }}>Plan messages and review requests to send at a specific time</p>
-        </div>
-        <button type="button" onClick={() => setShowCreate(true)}
-          style={{ padding: '9px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-          + Schedule Message
-        </button>
-      </div>
+      <PageHeader
+        title="Scheduled Messages"
+        subtitle="Plan messages and review requests to send at a specific time"
+        bleed={28}
+        action={
+          <button type="button" onClick={() => setShowCreate(true)}
+            style={{ padding: '9px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            + Schedule Message
+          </button>
+        }
+      />
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 2, borderBottom: '2px solid var(--border)', marginBottom: 20 }}>

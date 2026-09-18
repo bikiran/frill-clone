@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import PageHeader from '@/components/PageHeader'
 
 const AU_STATES = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA']
 
@@ -117,26 +118,24 @@ export default function LocationsPage() {
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '28px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
-        <div style={{ minWidth: 200 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>Locations</h1>
-          <p style={{ fontSize: 14, color: 'var(--slate)', margin: 0 }}>Manage your business addresses (Australian format).</p>
-        </div>
-        <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
-          {!editing && (
+      <PageHeader
+        title="Locations"
+        subtitle="Manage your business addresses (Australian format)."
+        bleed={24}
+        bleedTop={28}
+        action={!editing ? (
+          <>
             <button onClick={geocodeOutlets} disabled={geocoding}
               style={{ padding: '10px 16px', borderRadius: 10, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
               {geocoding ? 'Geocoding…' : 'Geocode for auto-assign'}
             </button>
-          )}
-          {!editing && (
             <button onClick={() => setEditing({ ...blank })}
               style={{ padding: '10px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
               + Add location
             </button>
-          )}
-        </div>
-      </div>
+          </>
+        ) : undefined}
+      />
 
       {editing ? (
         <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 20, background: '#fff' }}>

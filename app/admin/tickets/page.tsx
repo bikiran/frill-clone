@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
+import PageHeader from '@/components/PageHeader'
 
 const STATUS_COLORS: Record<string, { bg: string; c: string }> = {
   open: { bg: '#dbeafe', c: '#2563eb' },
@@ -41,8 +42,7 @@ export default function TicketsList() {
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '28px 24px' }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' }}>Support Tickets</h1>
-      <p style={{ fontSize: 14, color: 'var(--slate)', margin: '0 0 20px' }}>Tickets raised from conversations.</p>
+      <PageHeader title="Support Tickets" subtitle="Tickets raised from conversations." bleed={24} bleedTop={28} />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
         {['all', 'open', 'in_progress', 'resolved', 'closed'].map(s => (

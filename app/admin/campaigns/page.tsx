@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
+import PageHeader from '@/components/PageHeader'
 
 type Campaign = {
   id: string; name: string; channel: string; campaign_type: string | null
@@ -227,19 +228,14 @@ export default function CampaignsPage() {
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto', padding: 24 }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Campaigns</h1>
-          <p style={{ color: 'var(--slate)', fontSize: 13.5, margin: '6px 0 0' }}>
-            Send SMS and email campaigns to targeted groups of customers.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={() => router.push('/admin/campaigns/templates')} style={topBtn()}>Templates</button>
-          <button onClick={() => router.push('/admin/contacts?import=1')} style={topBtn()}>Import contacts</button>
-          <button onClick={() => setShowNew(v => !v)} style={topBtn(true)}>+ Create campaign</button>
-        </div>
-      </div>
+      <PageHeader
+        title="Campaigns"
+        subtitle="Send SMS and email campaigns to targeted groups of customers."
+        bleed={24}
+        action={<button onClick={() => setShowNew(v => !v)} style={topBtn(true)}>+ Create campaign</button>}>
+        <button onClick={() => router.push('/admin/campaigns/templates')} style={topBtn()}>Templates</button>
+        <button onClick={() => router.push('/admin/contacts?import=1')} style={topBtn()}>Import contacts</button>
+      </PageHeader>
 
       {tableMissing && (
         <div style={{ ...card, borderColor: '#fecaca', background: '#fef2f2', marginBottom: 18 }}>
