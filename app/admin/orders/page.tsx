@@ -624,10 +624,25 @@ export default function OrdersPage() {
         {kpi('Alerts', counts.alerts || 0, '#dc2626')}
       </PageHeader>
 
+      {/* On a phone, the labelled chip rows and control buttons scroll sideways
+          on one line instead of wrapping into a ragged multi-line stack. */}
+      <style>{`
+        .ord-scroll { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        @media (max-width: 640px) {
+          /* Each row takes a full line and scrolls its own overflow, rather than
+             growing to content width and pushing the layout ragged. */
+          .ord-scroll { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; flex: 1 1 100%; min-width: 0; }
+          .ord-scroll::-webkit-scrollbar { display: none; }
+          .ord-scroll > * { flex-shrink: 0; }
+          .ord-search { flex: 1 1 100%; }
+          .ord-search input { width: 100% !important; min-width: 0 !important; }
+          .ord-sidebar-toggle { margin-left: 0 !important; }
+        }
+      `}</style>
       {/* Location filters (left) + status filter (right) share one row. */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
       {locations.length > 0 ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className="ord-scroll" style={{ gap: 8 }}>
           <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', marginRight: 2 }}>Location</span>
           <button type="button" onClick={() => setFStore('unassigned')} title="Orders not assigned to any outlet"
             style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1px solid ${fStore === 'unassigned' ? '#d97706' : 'var(--border)'}`, background: fStore === 'unassigned' ? 'color-mix(in srgb, #d97706 12%, transparent)' : 'var(--card,#fff)', color: fStore === 'unassigned' ? '#b45309' : 'var(--slate)' }}>Unassigned</button>
@@ -695,7 +710,7 @@ export default function OrdersPage() {
       </div>
 
       {/* Saved views — a named combination of filters (ShipStation-style) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div className="ord-scroll" style={{ gap: 8, marginBottom: 14 }}>
         <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', marginRight: 2 }}>Views</span>
         {savedViews.length === 0 && <span style={{ fontSize: 12, color: 'var(--slate)' }}>No saved views yet</span>}
         {savedViews.map(v => {
@@ -763,10 +778,11 @@ export default function OrdersPage() {
         </div>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+          <div className="ord-search" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
             <input value={search} onFocus={ensureItemIndex} onChange={e => { ensureItemIndex(); setSearch(e.target.value) }} placeholder="Order #, name, phone, email, address, SKU, product…" style={{ ...ctrl, minWidth: 280, paddingRight: search ? 28 : 10, cursor: 'text', fontWeight: 500 }} />
             {search && <button type="button" onClick={() => setSearch('')} title="Clear search" style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', fontSize: 15, lineHeight: 1, padding: 2 }}>×</button>}
           </div>
+          <div className="ord-scroll" style={{ gap: 8 }}>
           <button type="button" onClick={() => setShowOOS(true)} title="Items flagged out of stock across all orders"
             style={{ ...ctrl, display: 'inline-flex', alignItems: 'center', gap: 6, borderColor: '#f0a5a5', color: '#dc2626', fontWeight: 700 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
@@ -800,7 +816,8 @@ export default function OrdersPage() {
           </div>
           <select value={fDate} onChange={e => setFDate(e.target.value)} style={ctrl}><option value="all">All time</option><option value="today">Today</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option></select>
           <button type="button" onClick={() => runSync(companyId!, true)} disabled={syncing} title="Backfill every order from the store" style={{ ...ctrl, color: ACCENT }}>{syncing ? 'Syncing…' : 'Sync'}</button>
-          <label title="On: rows open the side drawer. Off: rows open the full order page." style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', cursor: 'pointer' }}>
+          </div>
+          <label className="ord-sidebar-toggle" title="On: rows open the side drawer. Off: rows open the full order page." style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', cursor: 'pointer' }}>
             <input type="checkbox" checked={showSidebar} onChange={e => setSidebarPref(e.target.checked)} style={{ accentColor: ACCENT }} />
             Show Sidebar
           </label>
