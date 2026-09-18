@@ -31,8 +31,46 @@ export async function POST(req: NextRequest) {
     const recipientId = conv.meta_user_id
     if (!recipientId) return NextResponse.json({ error: 'No recipient id on this conversation' }, { status: 400 })
 
-    const { data: channel } = await db.from('meta_channels').select('*').eq('id', conv.meta_channel_id).maybeSingle()
-    if (!channel) return NextResponse.json({ error: 'This conversation\'s Meta channel is no longer connected.' }, { status: 400 })
+    // Resolve the channel this conversation replies through. The direct link
+    // (conv.meta_channel_id) breaks when an account is disconnected and
+    // reconnected: disconnect DELETES the meta_channels row, and reconnect
+    // inserts a fresh one with a new id, orphaning every existing conversation.
+    // So if the stored id no longer resolves, recover the live channel for this
+    // company + platform and heal the conversation's link.
+    let channel: any = null
+    let healed = false
+    if (conv.meta_channel_id) {
+      const { data } = await db.from('meta_channels').select('*').eq('id', conv.meta_channel_id).maybeSingle()
+      if (data) {
+        if (data.is_active === false) {
+          return NextResponse.json({ error: 'This channel is turned off. Re-enable it under Settings → Channels to reply.' }, { status: 400 })
+        }
+        channel = data
+      }
+    }
+    if (!channel) {
+      const { data: candidates } = await db.from('meta_channels').select('*')
+        .eq('company_id', conv.company_id).eq('platform', conv.channel).eq('is_active', true)
+        .order('created_at', { ascending: false })
+      const list = candidates || []
+      // Prefer the account mapped to this conversation's outlet; otherwise, if
+      // there's exactly one live account for the platform, it's unambiguous.
+      let picked: any = null
+      if (conv.assigned_location_id) picked = list.find((c: any) => c.location_id === conv.assigned_location_id) || null
+      if (!picked && list.length === 1) picked = list[0]
+      if (!picked) {
+        return NextResponse.json({
+          error: list.length > 1
+            ? 'This conversation isn\'t linked to a connected account, and several are available. Open it in the inbox and reassign its channel.'
+            : 'This conversation\'s Meta channel is no longer connected. Reconnect the account under Settings → Channels.',
+        }, { status: 400 })
+      }
+      channel = picked
+      healed = true
+    }
+    if (healed) {
+      await db.from('conversations').update({ meta_channel_id: channel.id }).eq('id', conversationId)
+    }
 
     // Meta's 24-hour rule: outside 24h since the customer's last message, a
     // standard message is REJECTED (you'd need an approved message tag). Check
