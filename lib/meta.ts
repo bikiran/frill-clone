@@ -7,7 +7,7 @@
 // NOTE: nothing here works with real customers until the Meta app passes App
 // Review. Before that, only accounts added as testers in the dev app work.
 
-const GRAPH = 'https://graph.facebook.com/v21.0'
+const GRAPH = 'https://graph.facebook.com/v25.0'
 
 export const META_APP_ID = process.env.META_APP_ID || ''
 export const META_APP_SECRET = process.env.META_APP_SECRET || ''
@@ -76,7 +76,7 @@ export function metaLoginUrl(state: string, scope: string = META_SCOPES, configI
   })
   if (configId) p.set('config_id', configId)     // Facebook Login for Business
   else p.set('scope', scope)                      // classic scope-based login
-  return `https://www.facebook.com/v21.0/dialog/oauth?${p.toString()}`
+  return `https://www.facebook.com/v25.0/dialog/oauth?${p.toString()}`
 }
 
 // Step 2: exchange the code for a short-lived user token.

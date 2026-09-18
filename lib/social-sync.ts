@@ -4,7 +4,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { DEFAULT_SOCIAL_CATEGORIES } from '@/lib/social'
 
-const GRAPH = 'https://graph.facebook.com/v21.0'
+const GRAPH = 'https://graph.facebook.com/v25.0'
 
 export function admin() {
   return createClient(

@@ -4,7 +4,7 @@ import { META_APP_ID, META_APP_SECRET } from '@/lib/meta'
 
 export const dynamic = 'force-dynamic'
 
-const GRAPH = 'https://graph.facebook.com/v21.0'
+const GRAPH = 'https://graph.facebook.com/v25.0'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
