@@ -33,7 +33,14 @@ export async function GET(req: NextRequest) {
     ? [...META_PAGE_SCOPES, ...META_MESSAGING_SCOPES].join(',')
     : META_SCOPES  // the env-driven default (four Page scopes unless messaging is enabled)
 
-  const loginUrl = metaLoginUrl(state, scope)
+  // ?noconfig=1 — force a classic scope-based login, ignoring the Login-for-
+  // Business config_id. Diagnostic only: if the normal (config_id) login shows
+  // Facebook's generic "Sorry, something went wrong" but this one surfaces a
+  // specific error (e.g. "Invalid Scopes"), the problem is the configuration in
+  // the Meta dashboard, not our request. Do NOT use for the real connect flow —
+  // requesting not-yet-approved scopes directly will be rejected.
+  const noConfig = url.searchParams.get('noconfig') === '1'
+  const loginUrl = metaLoginUrl(state, scope, noConfig ? '' : META_LOGIN_CONFIG_ID)
 
   // ?debug=1 — return exactly what we send to Facebook (scope string, config id,
   // full dialog URL) WITHOUT redirecting, so you can prove our side is clean.
@@ -41,8 +48,9 @@ export async function GET(req: NextRequest) {
   // Facebook still complains about it, it's configured on the Meta app itself.
   if (url.searchParams.get('debug') === '1') {
     return NextResponse.json({
-      requestedScope: META_LOGIN_CONFIG_ID ? '(ignored — using config_id)' : scope,
-      configId: META_LOGIN_CONFIG_ID || null,
+      mode: noConfig ? 'scope (config_id bypassed)' : (META_LOGIN_CONFIG_ID ? 'config_id' : 'scope'),
+      requestedScope: (META_LOGIN_CONFIG_ID && !noConfig) ? '(ignored — using config_id)' : scope,
+      configId: noConfig ? '(bypassed)' : (META_LOGIN_CONFIG_ID || null),
       redirectUri: process.env.META_REDIRECT_URI || null,
       loginUrl,
     })
