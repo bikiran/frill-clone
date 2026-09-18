@@ -179,11 +179,11 @@ export default function SocialEngagementPage() {
 
       {checked && !connected ? (
         <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 18, padding: '40px 28px', textAlign: 'center' }}>
-          <p style={{ fontSize: 17, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' }}>Connect your Facebook page to access this feature</p>
+          <p style={{ fontSize: 17, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' }}>Connect Facebook or Instagram to access this feature</p>
           <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '0 0 20px', lineHeight: 1.55, maxWidth: 560, marginInline: 'auto' }}>
             Colvy unifies comments from Facebook and Instagram into one dashboard so you can reply to everything in one place.
           </p>
-          <Link href="/admin/integrations" style={{ display: 'inline-block', padding: '11px 22px', borderRadius: 12, background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>Connect Facebook</Link>
+          <Link href="/admin/crm-settings/channels/meta" style={{ display: 'inline-block', padding: '11px 22px', borderRadius: 12, background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>Connect Facebook &amp; Instagram</Link>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,1fr) 260px', gap: 18, alignItems: 'start' }}>
