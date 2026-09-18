@@ -7,6 +7,7 @@ import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import AddContactModal from '@/components/AddContactModal'
 import MatchingContactsModal from '@/components/MatchingContactsModal'
+import PageHeader from '@/components/PageHeader'
 import { findMatchingContacts, applyRelationship } from '@/lib/contact-matching'
 import { SegmentationService } from '@/lib/segmentation-service'
 
@@ -346,12 +347,16 @@ export default function ContactsPage() {
     <div style={{ display: 'flex', height: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       {/* List */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', background: '#fff', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ flex: 1 }}>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--ink)' }}>Contacts</h1>
-            <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--slate)' }}>{totalCount.toLocaleString()} contacts</p>
-          </div>
-          <div style={{ position: 'relative', maxWidth: 280, flex: '1 1 220px' }}>
+        <PageHeader
+          title="Contacts"
+          subtitle={`${totalCount.toLocaleString()} contacts`}
+          action={
+            <button type="button" className="press" onClick={() => setShowAddContact(true)}
+              style={{ padding: '9px 15px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              + New contact
+            </button>
+          }>
+          <div style={{ position: 'relative', width: 220, maxWidth: '60vw' }}>
             <input placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)}
               style={{ ...inp, width: '100%', background: 'var(--canvas)', paddingRight: search ? 32 : undefined }} />
             {search && (
@@ -361,37 +366,30 @@ export default function ContactsPage() {
               </button>
             )}
           </div>
-          <button type="button" className="press" onClick={() => setShowAddContact(true)}
-            style={{ padding: '9px 15px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
-            + New contact
-          </button>
           {outlets.length > 1 && (
             <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
               title="Filter by location"
-              style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', background: locationFilter !== 'all' ? 'var(--peach)' : '#fff', fontSize: 13, fontWeight: 700, color: locationFilter !== 'all' ? 'var(--coral)' : 'var(--ink)', cursor: 'pointer', flexShrink: 0 }}>
+              style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', background: locationFilter !== 'all' ? 'var(--peach)' : '#fff', fontSize: 13, fontWeight: 700, color: locationFilter !== 'all' ? 'var(--coral)' : 'var(--ink)', cursor: 'pointer' }}>
               <option value="all">📍 All locations</option>
               {outlets.map(o => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
             </select>
           )}
+          <button type="button" onClick={() => setShowFilters(v => !v)}
+            style={{ padding: '9px 15px', borderRadius: 10, background: filtersActive ? 'var(--peach)' : '#fff', color: filtersActive ? 'var(--coral)' : 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Filters{filtersActive ? ' •' : ''}
+          </button>
           <button type="button" onClick={findDuplicates} disabled={dupBusy}
             title="Find contacts that are the same person"
-            style={{ padding: '9px 15px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+            style={{ padding: '9px 15px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             {dupBusy ? 'Checking…' : 'Find duplicates'}
           </button>
           <button type="button" onClick={linkChannels} disabled={linkBusy}
             title="Link the same person across live chat, SMS, Messenger, Instagram and WooCommerce by shared email/phone"
-            style={{ padding: '9px 15px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+            style={{ padding: '9px 15px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             {linkBusy ? 'Linking…' : 'Link channels'}
           </button>
-          <button type="button" onClick={() => setShowFilters(v => !v)}
-            style={{ padding: '9px 15px', borderRadius: 10, background: filtersActive ? 'var(--peach)' : '#fff', color: filtersActive ? 'var(--coral)' : 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            Filters{filtersActive ? ' •' : ''}
-          </button>
-          <button type="button" onClick={() => { setSelected(null); setEditData({}); setEditMode(true) }}            style={{ padding: '9px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
-            + New Contact
-          </button>
-        </div>
+        </PageHeader>
 
         {showFilters && (
           <div style={{ marginTop: 14, padding: 16, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas)' }}>

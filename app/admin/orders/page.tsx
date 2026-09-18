@@ -14,6 +14,7 @@ import OrderItemsPanel from '@/components/OrderItemsPanel'
 import CreateOrderPanel from '@/components/CreateOrderPanel'
 import OutOfStockModal from '@/components/OutOfStockModal'
 import RefundOrderModal from '@/components/RefundOrderModal'
+import PageHeader from '@/components/PageHeader'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 import { barcodeSVG } from '@/lib/barcode'
 
@@ -604,27 +605,24 @@ export default function OrdersPage() {
         .ord-create-btn:hover .ord-plus{transform:rotate(90deg)}`}</style>
 
       {/* Header + KPIs */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.02em' }}>Orders</h1>
-            <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--slate)' }}>Manage and fulfil customer orders{syncing ? ' · syncing…' : ''}</p>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button type="button" onClick={() => setShowCreateOrder(true)} className="ord-create-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 11, border: 'none', background: ACCENT, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '-0.01em' }}>
+      <PageHeader
+        title="Orders"
+        subtitle={`Manage and fulfil customer orders${syncing ? ' · syncing…' : ''}`}
+        bleed={24}
+        action={
+          <button type="button" onClick={() => setShowCreateOrder(true)} className="ord-create-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 11, border: 'none', background: ACCENT, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
             <span className="ord-plus" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18 }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             </span>
             Create Order
           </button>
-          {kpi('All Orders', counts.all, 'var(--ink)')}
-          {kpi('Awaiting', (counts.awaiting_shipment || 0) + (counts.packed || 0) + (counts.click_and_collect || 0), ACCENT)}
-          {kpi('On Hold', counts.on_hold || 0, '#d97706')}
-          {kpi('Shipped', counts.shipped || 0, '#16a34a')}
-          {kpi('Alerts', counts.alerts || 0, '#dc2626')}
-        </div>
-      </div>
+        }>
+        {kpi('All Orders', counts.all, 'var(--ink)')}
+        {kpi('Awaiting', (counts.awaiting_shipment || 0) + (counts.packed || 0) + (counts.click_and_collect || 0), ACCENT)}
+        {kpi('On Hold', counts.on_hold || 0, '#d97706')}
+        {kpi('Shipped', counts.shipped || 0, '#16a34a')}
+        {kpi('Alerts', counts.alerts || 0, '#dc2626')}
+      </PageHeader>
 
       {/* Location filters (left) + status filter (right) share one row. */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
