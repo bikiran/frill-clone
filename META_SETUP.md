@@ -38,7 +38,7 @@ Redeploy after adding them.
 - **Messenger → Settings → Webhooks** (and **Instagram → Webhooks**): 
   - Callback URL: `https://colvy.com/api/meta/webhook` (root domain, shared by all companies)
   - Verify token: the same string you put in `META_VERIFY_TOKEN`
-  - Subscribe to fields: **messages**, **messaging_postbacks**, **message_reactions**
+  - Subscribe to fields: **messages**, **messaging_postbacks**, **message_reactions**, and **feed** (feed = comments on the Page's posts). Colvy also calls `subscribed_apps` with these fields automatically when a Page connects.
 
 ## 5. Request these permissions in App Review
 
