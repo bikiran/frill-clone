@@ -29,6 +29,9 @@ const DEFAULT_MESSAGES: Record<string, string> = {
 const NEGATIVE_RACE_STATUSES = ['cancelled', 'failed']
 // A live/paid order should never receive a cancellation/failure message.
 const LIVE_STATUSES = ['processing', 'completed', 'on-hold', 'pending']
+// Orders that actually went through. 'pending' is deliberately absent: an
+// abandoned pending order is not a reason to stay quiet about a real one.
+const PAID_STATUSES = ['processing', 'completed', 'on-hold']
 
 // Does the order payload itself show it was paid? A cancelled/failed order that
 // carries a payment date or transaction id is really a paid order mislabelled
@@ -453,6 +456,41 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     console.log('[Order automation] suppressed negative message — order is live/paid', { order: order.number || order.id, status })
   }
 
+  // Nor when the customer has a DIFFERENT order that went through.
+  //
+  // The check above only asks whether THIS order is really cancelled. It often
+  // is: a payment retry, Afterpay especially, leaves a trail of genuinely
+  // cancelled orders beside the one that succeeded. Telling someone "your
+  // recent order was cancelled" while they are holding a live order reads as
+  // though the good one died, and produced exactly the "Why was this
+  // cancelled?" reply that prompted this.
+  //
+  // A failed lookup never blocks the message — it falls through and sends, the
+  // way it always did.
+  if (shouldSend && NEGATIVE_RACE_STATUSES.includes(status)) {
+    try {
+      const tail = String(phone || contact?.phone || '').replace(/\D/g, '').slice(-9)
+      const mail = String(email || contact?.email || '').trim().toLowerCase()
+      const since = new Date(Date.now() - 24 * 60 * 60000).toISOString()
+      const liveOrder = async (column: string, value: string) => {
+        const { data } = await db.from('woocommerce_orders')
+          .select('woo_order_id, status')
+          .eq('company_id', companyId).eq(column, value)
+          .in('status', PAID_STATUSES).gte('order_date', since)
+          .neq('woo_order_id', order.id).limit(1)
+        return (data || [])[0] || null
+      }
+      const live = (tail ? await liveOrder('billing_phone_norm', tail) : null)
+        || (mail ? await liveOrder('customer_email', mail) : null)
+      if (live) {
+        shouldSend = false
+        console.log('[Order automation] suppressed negative message — the customer has a live order', {
+          cancelled: order.number || order.id, live: live.woo_order_id, liveStatus: live.status,
+        })
+      }
+    } catch { /* never let this lookup decide anything by failing */ }
+  }
+
   if (shouldSend) {
   const refundedAmount = order.refunds?.length ? `$${Math.abs(order.refunds.reduce((s: number, r: any) => s + (parseFloat(r.total) || 0), 0)).toFixed(2)}` : `$${order.total}`
   const body = template
@@ -593,6 +631,10 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       order_date: wooDateToISO(order) || null,
       line_items: order.line_items || [],
       billing: order.billing || {},
+      // The column exists and only the bulk sync was filling it, so an order
+      // this webhook created could not be matched back to its customer by phone
+      // until the next sync ran. customer_email is already set above.
+      billing_phone_norm: String(order.billing?.phone || '').replace(/\D/g, '').slice(-9) || null,
       conversation_id: conv?.id || null,
       attribution,
       attributed_at: attribution ? new Date().toISOString() : null,
