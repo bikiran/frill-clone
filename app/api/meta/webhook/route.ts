@@ -7,6 +7,7 @@ import { linkContactIdentity } from '@/lib/identity'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
+import { classifyOne } from '@/lib/social-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -246,6 +247,93 @@ export async function POST(req: NextRequest) {
         } catch {}
       } catch (e) {
         console.error('[meta webhook] event failed', e)
+      }
+    }
+
+    // ── Comments (Social Engagement) ──────────────────────────────────────────
+    // Real-time comment threads arrive as `changes`, not `messaging`: Instagram
+    // (`object: 'instagram'`) sends field `comments`; a Facebook Page
+    // (`object: 'page'`) sends field `feed` with `item: 'comment'`. Both land in
+    // social_comments so the Engagement inbox shows and can reply to them live,
+    // instead of only when someone runs a manual sync.
+    for (const change of entry.changes || []) {
+      try {
+        const field = change.field
+        if (field !== 'comments' && field !== 'feed') continue
+        const v = change.value || {}
+        // Facebook's `feed` carries every page-object change; keep added comments.
+        if (field === 'feed') {
+          if (v.item !== 'comment') continue
+          if (v.verb && v.verb !== 'add') continue
+        }
+
+        // Which connected channel owns this? IG keys on ig_account_id, a Page on page_id.
+        let channel: any = null
+        if (platform === 'instagram') {
+          const { data } = await db.from('meta_channels').select('*')
+            .eq('platform', 'instagram').eq('ig_account_id', recipientId).eq('is_active', true).maybeSingle()
+          channel = data
+        } else {
+          const { data } = await db.from('meta_channels').select('*')
+            .eq('platform', 'facebook').eq('page_id', recipientId).eq('is_active', true).maybeSingle()
+          channel = data
+        }
+        if (!channel) continue
+
+        const companyId = channel.company_id
+        const commentId = field === 'comments' ? v.id : (v.comment_id || v.id)
+        if (!commentId) continue
+        const fromId = v.from?.id ? String(v.from.id) : null
+        const fromName = v.from?.username || v.from?.name || null
+        const text: string = v.text || v.message || ''
+        const mediaId = field === 'comments' ? (v.media?.id || null) : (v.post_id || null)
+
+        // Skip the business's own comments/replies (they echo back as webhooks).
+        if (fromId && (fromId === recipientId || fromId === String(channel.ig_account_id || '') || fromId === String(channel.page_id || ''))) continue
+
+        // Idempotency: Meta redelivers events; don't double-insert the same comment.
+        const { data: dupe } = await db.from('social_comments').select('id')
+          .eq('company_id', companyId).eq('external_comment_id', commentId).maybeSingle()
+        if (dupe) continue
+
+        // Link to the post/media if we already have it locally.
+        let postDbId: string | null = null
+        if (mediaId) {
+          const { data: post } = await db.from('social_posts').select('id')
+            .eq('company_id', companyId).eq('external_post_id', mediaId).maybeSingle()
+          postDbId = post?.id || null
+        }
+
+        const commentedAt = v.created_time
+          ? new Date(typeof v.created_time === 'number' ? v.created_time * 1000 : v.created_time).toISOString()
+          : new Date().toISOString()
+
+        const { data: ins } = await db.from('social_comments').insert({
+          company_id: companyId, post_id: postDbId, meta_channel_id: channel.id, platform,
+          external_comment_id: commentId, external_post_id: mediaId,
+          author_name: fromName || (platform === 'instagram' ? 'Instagram user' : 'Facebook user'),
+          author_id: fromId, message: text || null,
+          commented_at: commentedAt, raw: change,
+        }).select('id').maybeSingle()
+
+        // Classify (risk / category / sentiment) so the Engagement filters work.
+        if (ins?.id && text.trim()) {
+          try { await classifyOne(db, companyId, ins.id, text) } catch {}
+        }
+
+        // Alert the team (in-app bell). No conversationId — comments live in the
+        // Social Engagement manager, not the DM inbox.
+        try {
+          const who = fromName || 'someone'
+          const channelName = platform === 'instagram' ? 'Instagram' : 'Facebook'
+          await notifyCompany({
+            db, companyId, type: platform,
+            message: `New ${channelName} comment from ${who}: ${String(text).slice(0, 80)}`,
+            actorName: who,
+          })
+        } catch {}
+      } catch (e) {
+        console.error('[meta webhook] comment failed', e)
       }
     }
   }

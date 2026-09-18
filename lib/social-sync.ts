@@ -32,6 +32,30 @@ export async function replyToComment(commentId: string, pageToken: string, messa
   return d
 }
 
+// Reply to an Instagram comment on a PAGE-LINKED IG account (Instagram Graph
+// API via Facebook — IG replies live under /{comment-id}/replies).
+export async function replyToIgComment(commentId: string, pageToken: string, message: string) {
+  const res = await fetch(`${GRAPH}/${commentId}/replies`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, access_token: pageToken }),
+  })
+  const d = await res.json()
+  if (!res.ok) throw new Error(d?.error?.message || 'Could not post the reply')
+  return d
+}
+
+// Hide/unhide an Instagram comment on a page-linked IG account (IG uses `hide`,
+// not the Facebook `is_hidden`).
+export async function setIgCommentHidden(commentId: string, pageToken: string, hidden: boolean) {
+  const res = await fetch(`${GRAPH}/${commentId}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hide: hidden, access_token: pageToken }),
+  })
+  const d = await res.json()
+  if (!res.ok) throw new Error(d?.error?.message || 'Could not update the comment')
+  return d
+}
+
 export async function setCommentHidden(commentId: string, pageToken: string, hidden: boolean) {
   const res = await fetch(`${GRAPH}/${commentId}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -99,6 +123,17 @@ No prose, no code fences.`
     }
     return out
   } catch { return {} }
+}
+
+// Classify a single freshly-ingested comment (used by the real-time webhook,
+// where comments arrive one at a time rather than in a sync batch).
+export async function classifyOne(db: any, companyId: string, commentDbId: string, message: string) {
+  if (!message?.trim()) return
+  const { data: catRows } = await db.from('social_comment_categories').select('name').eq('company_id', companyId)
+  const categories = (catRows && catRows.length ? catRows.map((c: any) => c.name) : DEFAULT_SOCIAL_CATEGORIES)
+  const results = await classifyBatch([{ id: commentDbId, message }], categories)
+  const cls = results[commentDbId]
+  if (cls) await db.from('social_comments').update(cls).eq('id', commentDbId)
 }
 
 // ── Sync ────────────────────────────────────────────────────────────────────
