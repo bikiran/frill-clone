@@ -38,8 +38,23 @@ export async function GET(req: NextRequest) {
     return `${base}${settingsPath}?${params}`
   }
 
-  if (err) return NextResponse.redirect(home(`error=${encodeURIComponent(err)}`))
-  if (!code || !state) return NextResponse.redirect(home('error=missing_code'))
+  // Log the full callback query server-side (Vercel logs) so a "no code" case
+  // can be inspected precisely — Facebook occasionally returns nothing useful.
+  console.log('[meta callback]', Object.fromEntries(url.searchParams.entries()))
+
+  if (err) {
+    const reason = url.searchParams.get('error_reason')
+    return NextResponse.redirect(home(`error=${encodeURIComponent(reason && reason !== err ? `${err} (${reason})` : err)}`))
+  }
+  if (!state) return NextResponse.redirect(home('error=missing_state'))
+  if (!code) {
+    // No code and no error → the authorization didn't finish: the dialog was
+    // closed, no Page/Instagram asset was selected on the permissions screen, or
+    // the account can't grant this configuration yet. Surface whatever else
+    // Facebook did send (state excluded) so the cause is visible on-screen.
+    const seen = Array.from(url.searchParams.keys()).filter(k => k !== 'state').join(', ') || 'none'
+    return NextResponse.redirect(home(`error=${encodeURIComponent(`no_code — authorization didn't complete. Select a Page + Instagram account and press Continue. (returned: ${seen})`)}`))
+  }
   if (!companyId) return NextResponse.redirect(home('error=bad_state'))
 
   try {
