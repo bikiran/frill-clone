@@ -338,65 +338,64 @@ export default function FormResults() {
             <h1 className="text-2xl font-bold mt-2" style={{ color: 'var(--ink)' }}>{form.title}</h1>
             <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>{filteredResponses.length} of {responses.length} response{responses.length !== 1 ? 's' : ''}{Object.keys(filters).length > 0 ? ' (filtered)' : ''}</p>
           </div>
-          <Link href={`/admin/forms/${formId}`} className="px-4 py-2 rounded-xl text-sm font-semibold border cursor-pointer hover:bg-gray-50" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-            ✎ Edit form
+          <Link href={`/admin/forms/${formId}`} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border cursor-pointer hover:bg-gray-50" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+            Edit form
           </Link>
         </div>
 
-        {/* View toggle + actions */}
-        <div className="flex gap-2 mb-6 flex-wrap items-center">
-          {/* Segmented control */}
-          <div className="inline-flex p-1 rounded-xl" style={{ background: 'var(--canvas, #f3f4f6)', border: '1px solid var(--border)' }}>
-            {([['summary', 'Summary'], ['individual', 'Individual']] as const).map(([key, label]) => (
-              <button key={key} onClick={() => setView(key)}
-                className="px-4 py-1.5 rounded-lg text-sm font-semibold cursor-pointer transition-all"
-                style={{ background: view === key ? '#fff' : 'transparent', color: view === key ? 'var(--ink)' : 'var(--slate)', boxShadow: view === key ? '0 1px 3px rgba(0,0,0,0.10)' : 'none' }}>
-                {label}
-              </button>
-            ))}
+        {/* Toolbar */}
+        <div className="mb-6 space-y-2">
+          {/* Row 1: view segmented control + filter */}
+          <div className="flex items-center gap-2">
+            <div className="inline-flex p-1 rounded-xl" style={{ background: 'var(--canvas, #f3f4f6)', border: '1px solid var(--border)' }}>
+              {([['summary', 'Summary'], ['individual', 'Individual']] as const).map(([key, label]) => (
+                <button key={key} onClick={() => setView(key)}
+                  className="px-4 py-1.5 rounded-lg text-sm font-semibold cursor-pointer transition-all"
+                  style={{ background: view === key ? '#fff' : 'transparent', color: view === key ? 'var(--ink)' : 'var(--slate)', boxShadow: view === key ? '0 1px 3px rgba(0,0,0,0.10)' : 'none' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setShowFilterPanel(!showFilterPanel)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold cursor-pointer border"
+              style={{ marginLeft: 'auto', borderColor: Object.keys(filters).length > 0 ? themeColor : 'var(--border)', color: Object.keys(filters).length > 0 ? themeColor : 'var(--slate)', background: showFilterPanel ? 'var(--canvas)' : '#fff' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              Filter{Object.keys(filters).length > 0 ? ` (${Object.keys(filters).length})` : ''}
+            </button>
           </div>
 
-          <button onClick={() => setShowFilterPanel(!showFilterPanel)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold cursor-pointer border"
-            style={{ borderColor: Object.keys(filters).length > 0 ? themeColor : 'var(--border)', color: Object.keys(filters).length > 0 ? themeColor : 'var(--slate)', background: showFilterPanel ? 'var(--canvas)' : '#fff' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            Filter{Object.keys(filters).length > 0 ? ` (${Object.keys(filters).length})` : ''}
-          </button>
+          {/* Row 2 (individual only): select-all + delete */}
+          {view === 'individual' && responses.length > 0 && (
+            <div className="flex items-center gap-3">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' }}>
+                <input type="checkbox" checked={selectedResponses.size === responses.length && responses.length > 0} onChange={toggleSelectAll} style={{ cursor: 'pointer', width: 16, height: 16 }} />
+                <span style={{ color: 'var(--slate)' }}>{selectedResponses.size > 0 ? `${selectedResponses.size} selected` : 'Select all'}</span>
+              </label>
+              {selectedResponses.size > 0 && (
+                <button onClick={bulkDeleteResponses} disabled={bulkDeleting}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
+                  style={{ marginLeft: 'auto', borderColor: '#dc2626', color: '#dc2626', background: bulkDeleting ? 'var(--canvas)' : '#fff' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  {bulkDeleting ? 'Deleting…' : 'Delete selected'}
+                </button>
+              )}
+            </div>
+          )}
 
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            {view === 'individual' && responses.length > 0 && (
-              <>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedResponses.size === responses.length && responses.length > 0}
-                    onChange={toggleSelectAll}
-                    style={{ cursor: 'pointer' }}
-                  />
-                  <span style={{ color: 'var(--slate)' }}>
-                    {selectedResponses.size > 0 ? `${selectedResponses.size} selected` : 'Select all'}
-                  </span>
-                </label>
-                {selectedResponses.size > 0 && (
-                  <button
-                    onClick={bulkDeleteResponses}
-                    disabled={bulkDeleting}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
-                    style={{ borderColor: '#dc2626', color: '#dc2626', background: bulkDeleting ? 'var(--canvas)' : '#fff' }}>
-                    {bulkDeleting ? '🗑️ Deleting...' : '🗑️ Delete selected'}
-                  </button>
-                )}
-              </>
-            )}
+          {/* Row 3: exports — equal-width on mobile, right-aligned on desktop */}
+          <div className="flex gap-2 sm:justify-end">
             <button onClick={exportToExcel} disabled={responses.length === 0 || exporting !== null}
-              className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
               style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: exporting === 'excel' ? 'var(--canvas)' : '#fff', opacity: responses.length === 0 ? 0.5 : 1 }}>
-              {exporting === 'excel' ? '↓ Exporting...' : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline', marginRight: 5 }}><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>Export to Excel</>}
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+              {exporting === 'excel' ? 'Exporting…' : 'Export to Excel'}
             </button>
             <button onClick={exportToPDF} disabled={responses.length === 0 || exporting !== null}
-              className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer border transition-all"
               style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: exporting === 'pdf' ? 'var(--canvas)' : '#fff', opacity: responses.length === 0 ? 0.5 : 1 }}>
-              {exporting === 'pdf' ? '↓ Exporting...' : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline', marginRight: 5 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Export to PDF</>}
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              {exporting === 'pdf' ? 'Exporting…' : 'Export to PDF'}
             </button>
           </div>
         </div>
