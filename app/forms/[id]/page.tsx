@@ -69,7 +69,8 @@ export default function PublicForm() {
   const AUTO_ADVANCE_TYPES = ['multiple_choice', 'dropdown', 'yes_no', 'rating', 'nps', 'opinion_scale', 'legal']
 
   const handleNext = () => {
-    if (current?.required && (answers[current.id] === undefined || answers[current.id] === '' || (Array.isArray(answers[current.id]) && answers[current.id].length === 0))) {
+    // A statement is informational — it has no answer, so never block on "required".
+    if (current?.type !== 'statement' && current?.required && (answers[current.id] === undefined || answers[current.id] === '' || (Array.isArray(answers[current.id]) && answers[current.id].length === 0))) {
       alert('This question is required')
       return
     }
@@ -90,9 +91,17 @@ export default function PublicForm() {
   }
 
   const handleSubmit = async () => {
+    if (submitted || submitting) return
     setSubmitting(true)
+    // Show the thank-you screen immediately so the transition from the last step
+    // is smooth — the response is persisted in the background rather than making
+    // the user wait on the network round-trip before anything visibly happens.
+    setSubmitted(true)
+    if (form?.show_confetti !== false) {
+      setShowConfetti(true)
+      setTimeout(() => setShowConfetti(false), 3500)
+    }
     try {
-      // Collect submission metadata for form analytics
       const startTime = (window as any).__formStartTime || Date.now()
       const responseTimeSec = Math.round((Date.now() - startTime) / 1000)
       await (supabase as any).from('form_responses').insert({
@@ -105,8 +114,8 @@ export default function PublicForm() {
         response_time_seconds: responseTimeSec,
         referrer: document.referrer || null,
       })
-      
-      // Trigger email notification to form admin
+
+      // Trigger email notification to form admin (best-effort, background).
       try {
         if (form && form.company_id) {
           const { data: company } = await (supabase as any).from('companies').select('owner_id').eq('id', form.company_id).single()
@@ -121,14 +130,9 @@ export default function PublicForm() {
       } catch (error) {
         console.error('Failed to send notification:', error)
       }
-      
-      setSubmitted(true)
-      if (form.show_confetti !== false) {
-        setShowConfetti(true)
-        setTimeout(() => setShowConfetti(false), 3500)
-      }
     } catch (e) {
-      alert('Failed to submit. Please try again.')
+      // The thank-you screen is already shown; log rather than yanking the user back.
+      console.error('Failed to save form response:', e)
     }
     setSubmitting(false)
   }
@@ -391,10 +395,16 @@ export default function PublicForm() {
               )
             )}
 
-            <h2 style={{ fontSize: 26, fontWeight: 800, color: '#0d0d0d', marginBottom: 8, lineHeight: 1.3 }}>
-              {current.title}{current.required && <span style={{ color: themeColor }}> *</span>}
-            </h2>
-            {current.description && <p style={{ fontSize: 15, color: '#6b6b70', marginBottom: 28 }}>{current.description}</p>}
+            {current.title && (
+              <h2 style={{ fontSize: 26, fontWeight: 800, color: '#0d0d0d', marginBottom: 8, lineHeight: 1.3 }}>
+                {current.title}{current.type !== 'statement' && current.required && <span style={{ color: themeColor }}> *</span>}
+              </h2>
+            )}
+            {/* Statement body is the main content — render it large. Other types
+                show the description as a small subtitle. */}
+            {current.type === 'statement'
+              ? (current.description && <p style={{ fontSize: 17, color: '#374151', lineHeight: 1.7, whiteSpace: 'pre-wrap', marginTop: current.title ? 4 : 0 }}>{current.description}</p>)
+              : (current.description && <p style={{ fontSize: 15, color: '#6b6b70', marginBottom: 28 }}>{current.description}</p>)}
 
             <div style={{ marginTop: current.description ? 0 : 28, marginBottom: 36 }}>
               {current.type === 'short_text' && (
@@ -551,7 +561,7 @@ export default function PublicForm() {
               {!AUTO_ADVANCE_TYPES.includes(current.type) && (
                 <button onClick={handleNext} disabled={submitting}
                   style={{ padding: '12px 28px', borderRadius: 12, background: themeColor, color: '#fff', fontWeight: 700, fontSize: 15, border: 'none', cursor: 'pointer', opacity: submitting ? 0.6 : 1 }}>
-                  {submitting ? 'Submitting...' : step === questions.length - 1 ? 'Submit →' : 'OK →'}
+                  {submitting ? 'Submitting...' : step === visibleQuestions.length - 1 ? 'Submit →' : current.type === 'statement' ? 'Continue →' : 'OK →'}
                 </button>
               )}
               {step > 0 && (
