@@ -19,6 +19,15 @@ type Question = {
   matrixCols?: string[]          // matrix: column labels
   amountCents?: number           // payment: amount to charge, in cents
   currency?: string              // payment: ISO currency (default aud)
+  schedule?: {                   // scheduler: availability config
+    days?: number[]              // 0=Sun … 6=Sat
+    start?: string               // 'HH:MM'
+    end?: string                 // 'HH:MM'
+    slotMins?: number            // gap between slot start times
+    durationMins?: number        // length of each booking
+    daysAhead?: number           // how far ahead people can book
+    locationId?: string | null
+  }
   mediaUrl?: string
   mediaType?: 'image' | 'video'
   fileAccept?: string
@@ -709,6 +718,48 @@ export default function FormBuilder() {
                   </p>
                 </div>
               )}
+
+              {selected.type === 'scheduler' && (() => {
+                const sc = selected.schedule || {}
+                const setSc = (patch: any) => updateQuestion(selected.id, { schedule: { ...sc, ...patch } })
+                const days = sc.days || [1, 2, 3, 4, 5]
+                const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                return (
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Available days</label>
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
+                      {DOW.map((d, di) => {
+                        const on = days.includes(di)
+                        return (
+                          <button key={di} onClick={() => setSc({ days: on ? days.filter((x: number) => x !== di) : [...days, di].sort() })}
+                            style={{ padding: '5px 9px', borderRadius: 8, border: `1.5px solid ${on ? themeColor : 'var(--border)'}`, background: on ? themeColor : '#fff', color: on ? '#fff' : 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{d}</button>
+                        )
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 4 }}>From</label>
+                        <input type="time" value={sc.start || '09:00'} onChange={e => setSc({ start: e.target.value })} style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 4 }}>To</label>
+                        <input type="time" value={sc.end || '17:00'} onChange={e => setSc({ end: e.target.value })} style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 4 }}>Slot length (min)</label>
+                        <input type="number" min="5" step="5" value={sc.durationMins || 30} onChange={e => setSc({ durationMins: Math.max(5, parseInt(e.target.value) || 30), slotMins: Math.max(5, parseInt(e.target.value) || 30) })} style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 4 }}>Days ahead</label>
+                        <input type="number" min="1" max="90" value={sc.daysAhead || 14} onChange={e => setSc({ daysAhead: Math.max(1, parseInt(e.target.value) || 14) })} style={{ width: '100%', padding: '7px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }} />
+                      </div>
+                    </div>
+                    <p style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 8, lineHeight: 1.5 }}>Bookings appear on your Calendar. Times use the visitor's local time.</p>
+                  </div>
+                )
+              })()}
 
               {selected.type === 'matrix' && (
                 <div style={{ marginBottom: 16 }}>

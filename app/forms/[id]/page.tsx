@@ -253,6 +253,81 @@ export default function PublicForm() {
     setAnswers(p => ({ ...p, [q.id]: arr }))
   }
 
+  // ── Scheduler ────────────────────────────────────────────────────────────────
+  const [schedDate, setSchedDate] = useState<string>('')          // 'YYYY-MM-DD'
+  const [schedBooked, setSchedBooked] = useState<{ starts_at: string; ends_at: string }[]>([])
+  const [schedBusy, setSchedBusy] = useState(false)
+  const [schedMsg, setSchedMsg] = useState('')
+  const schedCfg = (q: any) => {
+    const c = q.schedule || {}
+    return {
+      days: (c.days && c.days.length ? c.days : [1, 2, 3, 4, 5]) as number[],
+      start: c.start || '09:00', end: c.end || '17:00',
+      slotMins: Math.max(5, Number(c.slotMins) || Number(c.durationMins) || 30),
+      durationMins: Math.max(5, Number(c.durationMins) || Number(c.slotMins) || 30),
+      daysAhead: Math.max(1, Number(c.daysAhead) || 14),
+    }
+  }
+  const schedDates = (q: any): Date[] => {
+    const { days, daysAhead } = schedCfg(q)
+    const out: Date[] = []
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    for (let i = 0; i < daysAhead; i++) {
+      const d = new Date(today); d.setDate(today.getDate() + i)
+      if (days.includes(d.getDay())) out.push(d)
+    }
+    return out
+  }
+  const schedSlots = (q: any, dateStr: string): Date[] => {
+    if (!dateStr) return []
+    const { start, end, slotMins, durationMins } = schedCfg(q)
+    const [sh, sm] = start.split(':').map(Number)
+    const [eh, em] = end.split(':').map(Number)
+    const base = new Date(dateStr + 'T00:00:00')
+    const startMin = sh * 60 + sm, endMin = eh * 60 + em
+    const out: Date[] = []
+    for (let m = startMin; m + durationMins <= endMin; m += slotMins) {
+      const d = new Date(base); d.setHours(0, m, 0, 0)
+      if (d.getTime() > Date.now()) out.push(d)
+    }
+    return out
+  }
+  const slotTaken = (q: any, slot: Date): boolean => {
+    const { durationMins } = schedCfg(q)
+    const s = slot.getTime(), e = s + durationMins * 60000
+    return schedBooked.some(b => {
+      const bs = new Date(b.starts_at).getTime(), be = new Date(b.ends_at).getTime()
+      return bs < e && be > s
+    })
+  }
+  const loadSchedBooked = async (q: any, dateStr: string) => {
+    setSchedDate(dateStr); setSchedMsg('')
+    try {
+      const from = new Date(dateStr + 'T00:00:00').toISOString()
+      const to = new Date(dateStr + 'T23:59:59').toISOString()
+      const r = await fetch('/api/forms/schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'slots', formId, questionId: q.id, from, to }) })
+      const d = await r.json()
+      setSchedBooked(Array.isArray(d.booked) ? d.booked : [])
+    } catch { setSchedBooked([]) }
+  }
+  const pickSlot = async (q: any, slot: Date) => {
+    setSchedBusy(true); setSchedMsg('')
+    try {
+      const r = await fetch('/api/forms/schedule', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'book', formId, questionId: q.id, startsAt: slot.toISOString(), releaseEventId: answers[q.id]?.calendar_event_id }),
+      })
+      const d = await r.json()
+      if (!r.ok) {
+        setSchedMsg(d.error || 'Could not book that time.')
+        if (r.status === 409) loadSchedBooked(q, schedDate)   // refresh availability
+        setSchedBusy(false); return
+      }
+      setAnswers(p => ({ ...p, [q.id]: { starts_at: d.startsAt, ends_at: d.endsAt, calendar_event_id: d.eventId } }))
+    } catch { setSchedMsg('Could not book that time.') }
+    setSchedBusy(false)
+  }
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey && step >= -1 && step < questions.length && !submitted) {
@@ -778,8 +853,52 @@ export default function PublicForm() {
                 </div>
               )}
               {current.type === 'scheduler' && (
-                <div style={{ padding: '20px', borderRadius: 12, border: '2px dashed #e5e5e5', textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>
-                  This question type isn't fillable yet — coming soon.
+                <div>
+                  {answers[current.id]?.starts_at && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12, border: `2px solid ${themeColor}`, background: `${themeColor}10`, marginBottom: 16 }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={themeColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: '#0d0d0d' }}>{new Date(answers[current.id].starts_at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span>
+                    </div>
+                  )}
+                  {/* Date chips */}
+                  <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, marginBottom: 14 }}>
+                    {schedDates(current).map(d => {
+                      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                      const on = schedDate === ds
+                      return (
+                        <button key={ds} onClick={() => loadSchedBooked(current, ds)}
+                          style={{ flexShrink: 0, minWidth: 62, padding: '8px 10px', borderRadius: 12, border: `2px solid ${on ? themeColor : '#e5e5e5'}`, background: on ? `${themeColor}10` : '#fff', cursor: 'pointer', textAlign: 'center' }}>
+                          <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 700 }}>{d.toLocaleDateString([], { weekday: 'short' })}</div>
+                          <div style={{ fontSize: 17, fontWeight: 800, color: on ? themeColor : '#0d0d0d' }}>{d.getDate()}</div>
+                          <div style={{ fontSize: 10.5, color: '#9ca3af' }}>{d.toLocaleDateString([], { month: 'short' })}</div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {/* Time slots */}
+                  {schedDate ? (
+                    (() => {
+                      const slots = schedSlots(current, schedDate)
+                      if (slots.length === 0) return <p style={{ fontSize: 13, color: '#9ca3af' }}>No times available on this day.</p>
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))', gap: 8 }}>
+                          {slots.map(slot => {
+                            const taken = slotTaken(current, slot)
+                            const chosen = answers[current.id]?.starts_at === slot.toISOString()
+                            return (
+                              <button key={slot.toISOString()} disabled={taken || schedBusy} onClick={() => pickSlot(current, slot)}
+                                style={{ padding: '10px 6px', borderRadius: 10, border: `2px solid ${chosen ? themeColor : '#e5e5e5'}`, background: chosen ? themeColor : taken ? '#f3f4f6' : '#fff', color: chosen ? '#fff' : taken ? '#c0c4cc' : '#0d0d0d', fontSize: 13.5, fontWeight: 600, cursor: taken ? 'not-allowed' : 'pointer', textDecoration: taken ? 'line-through' : 'none' }}>
+                                {slot.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()
+                  ) : (
+                    <p style={{ fontSize: 13, color: '#9ca3af' }}>Pick a day to see available times.</p>
+                  )}
+                  {schedMsg && <p style={{ fontSize: 13, color: '#b45309', marginTop: 10, fontWeight: 600 }}>{schedMsg}</p>}
                 </div>
               )}
             </div>

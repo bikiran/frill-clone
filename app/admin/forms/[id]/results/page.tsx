@@ -273,6 +273,12 @@ export default function FormResults() {
     if (typeof answer === 'object' && answer.status === 'paid' && answer.amount_cents != null) {
       return <p className="text-sm font-semibold" style={{ color: '#047857' }}>✓ Paid — {fmtMoney(answer.amount_cents, answer.currency)}</p>
     }
+    // Scheduler booking
+    if (typeof answer === 'object' && answer.starts_at) {
+      const s = new Date(answer.starts_at)
+      const e = answer.ends_at ? new Date(answer.ends_at) : null
+      return <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>📅 {s.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}{e ? ` – ${e.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}</p>
+    }
     // Matrix (or any plain object without a url)
     if (typeof answer === 'object' && !Array.isArray(answer) && !answer.url) {
       const entries = Object.entries(answer)
