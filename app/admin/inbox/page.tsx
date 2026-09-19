@@ -5594,11 +5594,16 @@ export default function InboxPage() {
           .inbox-root button { min-height: 36px; }
           .inbox-composer button { min-height: 40px; }
 
-          /* The reply box grows with content instead of scrolling in a 2-line
-             window, which is how native keyboards behave. */
+          /* Slimmer composer on a phone: the reply box was a fixed 3 rows, which
+             ate a big chunk of the screen even when empty. Start at ~2 rows and
+             let it grow up to 40dvh as they type; tighten the surrounding gaps. */
+          .inbox-composer { padding: 8px 12px !important; }
           .inbox-composer textarea {
+            min-height: 52px !important;
+            height: 52px !important;
             max-height: 40dvh;
-            line-height: 1.4;
+            line-height: 1.35;
+            margin-bottom: 6px !important;
           }
 
           /* Conversation rows: full-width tap target with a pressed state. */
@@ -7265,8 +7270,9 @@ export default function InboxPage() {
             <div className="inbox-thread-header" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {/* Mobile: back to conversation list */}
               <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('list')} title="Back to chats" aria-label="Back to chats"
-                style={{ display: 'none', width: 36, height: 36, flexShrink: 0, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--canvas, #f3f4f6)', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--ink)', order: -2 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                style={{ display: 'none', height: 36, flexShrink: 0, borderRadius: 10, border: 'none', background: 'color-mix(in srgb, var(--coral) 12%, #fff)', cursor: 'pointer', alignItems: 'center', gap: 3, padding: '0 10px 0 6px', color: 'var(--coral)', fontSize: 13.5, fontWeight: 700, order: -2 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                Chats
               </button>
               {/* Contact avatar — real profile photo (from Messenger/Instagram)
                   when we have it, initials otherwise. */}
