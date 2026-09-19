@@ -185,6 +185,26 @@ export async function sendMetaAttachment(
   return { id: data.message_id }
 }
 
+// Fetch a single comment's author (name + photo) and text via the Page token.
+// The real-time `feed`/`comments` webhook payload frequently omits the
+// commenter's name and never carries their photo, so we hydrate from the Graph
+// API here. Covers both a Facebook Page comment and a page-linked Instagram
+// comment (IG exposes `username` rather than `name`, and usually no picture).
+export async function fetchPageComment(
+  commentId: string, pageToken: string
+): Promise<{ name?: string; photo?: string; message?: string } | null> {
+  try {
+    const res = await fetch(`${GRAPH}/${commentId}?fields=from{id,name,username,picture},message&access_token=${encodeURIComponent(pageToken)}`)
+    if (!res.ok) return null
+    const d = await res.json()
+    return {
+      name: d.from?.name || d.from?.username || undefined,
+      photo: d.from?.picture?.data?.url || undefined,
+      message: d.message || undefined,
+    }
+  } catch { return null }
+}
+
 // Fetch a sender's profile (name, avatar) so the contact isn't just an opaque id.
 export async function fetchMetaProfile(
   userId: string, pageToken: string, platform: 'facebook' | 'instagram'

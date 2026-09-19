@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
-import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile } from '@/lib/meta'
-import { isIgLoginChannel, fetchInstagramUserProfile, INSTAGRAM_APP_SECRET } from '@/lib/instagram-login'
+import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile, fetchPageComment } from '@/lib/meta'
+import { isIgLoginChannel, fetchInstagramUserProfile, fetchInstagramComment, INSTAGRAM_APP_SECRET } from '@/lib/instagram-login'
 import { linkContactIdentity } from '@/lib/identity'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
@@ -284,8 +284,9 @@ export async function POST(req: NextRequest) {
         const commentId = field === 'comments' ? v.id : (v.comment_id || v.id)
         if (!commentId) continue
         const fromId = v.from?.id ? String(v.from.id) : null
-        const fromName = v.from?.username || v.from?.name || null
-        const text: string = v.text || v.message || ''
+        let fromName = v.from?.username || v.from?.name || null
+        let fromPhoto: string | null = v.from?.picture?.data?.url || null
+        let text: string = v.text || v.message || ''
         const mediaId = field === 'comments' ? (v.media?.id || null) : (v.post_id || null)
 
         // Skip the business's own comments/replies (they echo back as webhooks).
@@ -308,11 +309,26 @@ export async function POST(req: NextRequest) {
           ? new Date(typeof v.created_time === 'number' ? v.created_time * 1000 : v.created_time).toISOString()
           : new Date().toISOString()
 
+        // The webhook payload usually omits the commenter's name (and never
+        // carries their photo), so a live comment would show as "Facebook user"
+        // until the next manual sync. Hydrate the author (name + photo) and text
+        // from the Graph API with the channel's own token, like DMs do.
+        if (!fromName || !fromPhoto || !text) {
+          const hydrated = isIgLoginChannel(channel)
+            ? await fetchInstagramComment(commentId, channel.page_access_token)
+            : await fetchPageComment(commentId, channel.page_access_token)
+          if (hydrated) {
+            fromName = fromName || hydrated.name || null
+            fromPhoto = fromPhoto || (hydrated as any).photo || null
+            text = text || hydrated.message || ''
+          }
+        }
+
         const { data: ins } = await db.from('social_comments').insert({
           company_id: companyId, post_id: postDbId, meta_channel_id: channel.id, platform,
           external_comment_id: commentId, external_post_id: mediaId,
           author_name: fromName || (platform === 'instagram' ? 'Instagram user' : 'Facebook user'),
-          author_id: fromId, message: text || null,
+          author_id: fromId, author_photo: fromPhoto, message: text || null,
           commented_at: commentedAt, raw: change,
         }).select('id').maybeSingle()
 
