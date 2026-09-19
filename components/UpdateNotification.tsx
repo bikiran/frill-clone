@@ -71,7 +71,7 @@ export default function UpdateNotification({ accentColor }: { accentColor?: stri
 
   return (
     <div
-      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2.5 rounded-2xl shadow-2xl border"
+      className="update-toast fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2.5 rounded-2xl shadow-2xl border"
       style={{
         background: 'white',
         borderColor: 'var(--border)',
@@ -88,6 +88,11 @@ export default function UpdateNotification({ accentColor }: { accentColor?: stri
         @keyframes slideUp {
           from { transform: translate(-50%, 20px); opacity: 0; }
           to { transform: translate(-50%, 0); opacity: 1; }
+        }
+        /* On phones the fixed bottom nav + chat composer sit at the bottom and
+           cover a bottom toast, so pin it just under the top header instead. */
+        @media (max-width: 767px) {
+          .update-toast { bottom: auto !important; top: calc(env(safe-area-inset-top, 0px) + 66px) !important; }
         }
       `}</style>
 

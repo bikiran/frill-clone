@@ -90,7 +90,9 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
   }
   function onOrbPointerMove(e: React.PointerEvent) {
     const d = dragRef.current; if (!d) return
-    if (Math.abs(e.clientX - d.sx) > 4 || Math.abs(e.clientY - d.sy) > 4) d.moved = true
+    // 10px, not 4 — a finger tap wobbles a few px, which the old threshold read
+    // as a drag, so the orb never opened on mobile (it just nudged and saved).
+    if (Math.abs(e.clientX - d.sx) > 10 || Math.abs(e.clientY - d.sy) > 10) d.moved = true
     if (!d.moved) return
     d.x = Math.min(Math.max(8, e.clientX - d.ox), window.innerWidth - ORB - 8)
     d.y = Math.min(Math.max(8, e.clientY - d.oy), window.innerHeight - ORB - 8)
