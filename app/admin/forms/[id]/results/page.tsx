@@ -168,11 +168,19 @@ export default function FormResults() {
     setBulkDeleting(true)
     try {
       const ids = Array.from(selectedResponses)
-      await (supabase as any).from('form_responses').delete().in('id', ids)
+      // Delete server-side (service role) — a client-side delete is blocked by
+      // RLS and silently removes nothing, so they'd reappear on reload.
+      const res = await fetch('/api/forms/responses', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', formId, companyId: form?.company_id, ids }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Delete failed')
       setResponses(prev => prev.filter(r => !selectedResponses.has(r.id)))
       setSelectedResponses(new Set())
-    } catch (error) {
+    } catch (error: any) {
       console.error('Bulk delete failed:', error)
+      alert(`Could not delete: ${error.message}`)
     } finally {
       setBulkDeleting(false)
     }
