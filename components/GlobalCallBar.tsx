@@ -4,17 +4,22 @@ import { useEffect, useRef, useState } from 'react'
 import CallBar from './CallBar'
 import { getVoiceProvider } from '@/lib/voice-provider-client'
 
-// When on, outbound calls are placed so they gain controllable legs — hold /
-// warm-transfer / ring-team — handled by the rich panel in IncomingCallListener,
-// exactly like inbound (Telnyx: server-dialled; Twilio: device.connect into a
-// conference-capable bridge). Off (default), outbound uses the direct WebRTC
-// dial in this draggable panel.
-//   NEXT_PUBLIC_OUTBOUND_BRIDGE=1         → both providers
-//   NEXT_PUBLIC_TELNYX_OUTBOUND_BRIDGE=1  → Telnyx only
-//   NEXT_PUBLIC_TWILIO_OUTBOUND_BRIDGE=1  → Twilio only
-const BRIDGE_ALL = process.env.NEXT_PUBLIC_OUTBOUND_BRIDGE === '1'
-const BRIDGE_TELNYX = BRIDGE_ALL || process.env.NEXT_PUBLIC_TELNYX_OUTBOUND_BRIDGE === '1'
-const BRIDGE_TWILIO = BRIDGE_ALL || process.env.NEXT_PUBLIC_TWILIO_OUTBOUND_BRIDGE === '1'
+// Outbound calls are placed so they gain controllable legs — hold / warm-
+// transfer / ring-team / switch-device — handled by the rich panel in
+// IncomingCallListener, exactly like inbound (Telnyx: server-dialled; Twilio:
+// device.connect into a conference-capable bridge). This is ON by default so
+// outbound looks and behaves like the incoming-call panel. If the bridge can't
+// start, we auto-fall back to the direct WebRTC dial in this draggable panel, so
+// outbound calling never breaks.
+//
+// Opt OUT (revert to the direct dialer) with:
+//   NEXT_PUBLIC_OUTBOUND_BRIDGE=0         → both providers
+//   NEXT_PUBLIC_TELNYX_OUTBOUND_BRIDGE=0  → Telnyx only
+//   NEXT_PUBLIC_TWILIO_OUTBOUND_BRIDGE=0  → Twilio only
+const off = (v?: string) => v === '0' || v === 'false'
+const BRIDGE_OFF_ALL = off(process.env.NEXT_PUBLIC_OUTBOUND_BRIDGE)
+const BRIDGE_TELNYX = !BRIDGE_OFF_ALL && !off(process.env.NEXT_PUBLIC_TELNYX_OUTBOUND_BRIDGE)
+const BRIDGE_TWILIO = !BRIDGE_OFF_ALL && !off(process.env.NEXT_PUBLIC_TWILIO_OUTBOUND_BRIDGE)
 
 // A persistent, DRAGGABLE floating panel that hosts an outbound call, mounted
 // once in the admin shell. Every "Call" button dispatches a `colvy:call` event;
@@ -22,11 +27,11 @@ const BRIDGE_TWILIO = BRIDGE_ALL || process.env.NEXT_PUBLIC_TWILIO_OUTBOUND_BRID
 // so the call survives navigating between pages and switching conversations, and
 // the agent can drag it out of the way (same feel as the incoming-call panel).
 //
-// This draggable panel handles the DIRECT WebRTC dial (Twilio, and Telnyx when
-// the server-bridge flag is off): mute, switch device, hang up, recording + AI
-// summary. When NEXT_PUBLIC_TELNYX_OUTBOUND_BRIDGE is on, Telnyx outbound is
-// instead handed to IncomingCallListener's server-bridged panel, which adds
-// hold / warm-transfer / ring-team at parity with inbound.
+// This draggable panel is now the FALLBACK direct WebRTC dial (mute, hang up,
+// recording + AI summary), used only when the server-bridge is disabled or
+// fails to start. By default outbound is handed to IncomingCallListener's
+// server-bridged panel, which shows the full rich card at parity with inbound
+// (hold / warm-transfer / ring-team / switch-device).
 
 interface Session { number: string; name?: string | null; contactId?: string | null; conversationId?: string | null; key: number }
 
