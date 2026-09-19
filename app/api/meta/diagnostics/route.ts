@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { META_APP_ID, META_APP_SECRET } from '@/lib/meta'
+import { isIgLoginChannel } from '@/lib/instagram-login'
+
+const IG_GRAPH = 'https://graph.instagram.com/v23.0'
 
 export const dynamic = 'force-dynamic'
 
@@ -122,6 +125,46 @@ export async function GET(req: NextRequest) {
     }
   } catch (e: any) {
     result.probes.commentAuthor = { ok: false, message: e?.message }
+  }
+
+  // 4) Instagram: does the API return a COMMENTER'S username? IG usernames are
+  // usually public (unlike Facebook names), so if these come back empty for
+  // external commenters it points to the app not being Live / approved for the
+  // comment permission rather than a code issue. Probes the first connected IG
+  // account's first media's first comment.
+  try {
+    const { data: igRows } = await db.from('meta_channels').select('*')
+      .eq('company_id', companyId).eq('platform', 'instagram').eq('is_active', true).limit(1)
+    const ig = igRows?.[0]
+    if (ig?.page_access_token) {
+      const igLogin = isIgLoginChannel(ig)
+      const base = igLogin ? IG_GRAPH : GRAPH
+      const node = igLogin ? 'me' : (ig.ig_account_id || '')
+      const igInfo: any = { channel: igLogin ? 'instagram-login' : 'page-linked', node: node || null }
+      const mRes = await fetch(`${base}/${node}/media?fields=id&limit=1&access_token=${encodeURIComponent(ig.page_access_token)}`)
+      const mData = await mRes.json()
+      if (!mRes.ok) {
+        igInfo.ok = false; igInfo.code = mData?.error?.code; igInfo.message = mData?.error?.message
+      } else {
+        const mediaId = mData?.data?.[0]?.id || null
+        if (!mediaId) { igInfo.ok = true; igInfo.hasMedia = false }
+        else {
+          const fields = igLogin ? 'id,text,username' : 'id,text,username,from'
+          const cRes = await fetch(`${base}/${mediaId}/comments?fields=${fields}&limit=1&access_token=${encodeURIComponent(ig.page_access_token)}`)
+          const cData = await cRes.json()
+          if (!cRes.ok) { igInfo.ok = false; igInfo.code = cData?.error?.code; igInfo.message = cData?.error?.message }
+          else {
+            const c = cData?.data?.[0]
+            igInfo.ok = true; igInfo.hasMedia = true; igInfo.hasComment = !!c
+            igInfo.hasUsername = !!(c?.username || c?.from?.username)
+            igInfo.sampleUsername = c?.username || c?.from?.username || null
+          }
+        }
+      }
+      result.probes.instagramCommentAuthor = igInfo
+    }
+  } catch (e: any) {
+    result.probes.instagramCommentAuthor = { ok: false, message: e?.message }
   }
 
   return NextResponse.json(result)

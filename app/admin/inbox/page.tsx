@@ -7943,17 +7943,32 @@ export default function InboxPage() {
                         {(msg as any).metadata?.story_reply && (() => {
                           const sr = (msg as any).metadata.story_reply
                           const url: string | null = sr.story_url || null
-                          const isVideo = sr.story_type === 'video' || (!!url && /\.(mp4|mov|webm)(\?|$)/i.test(url))
+                          // Newer story replies carry story_type (rehosted at
+                          // ingestion). Older ones stored the raw Instagram
+                          // messaging-CDN URL, which has NO file extension, so we
+                          // can't tell image from video — render it as an image
+                          // and, if that fails to load, fall back to a clean
+                          // "View story" card (which also covers expired links).
+                          const knownVideo = sr.story_type === 'video' || (!!url && /\.(mp4|mov|webm)(\?|$)/i.test(url))
+                          const box = { width: 150, maxWidth: '60%', borderRadius: 10, display: 'block', aspectRatio: '9 / 16' } as React.CSSProperties
+                          const openStory = () => url && window.open(url, '_blank', 'noopener')
                           return (
                             <div style={{ marginBottom: 6 }}>
                               <span style={{ display: 'block', fontSize: 11, opacity: 0.85, fontStyle: 'italic', marginBottom: 4 }}>Replied to your story</span>
                               {url ? (
-                                isVideo ? (
+                                knownVideo ? (
                                   <video src={url} controls playsInline preload="metadata"
-                                    style={{ width: 150, maxWidth: '60%', borderRadius: 10, display: 'block', background: '#000', aspectRatio: '9 / 16', objectFit: 'cover' }} />
+                                    style={{ ...box, background: '#000', objectFit: 'cover' }} />
                                 ) : (
-                                  <img src={url} alt="story" onClick={() => window.open(url, '_blank', 'noopener')}
-                                    style={{ width: 150, maxWidth: '60%', borderRadius: 10, display: 'block', objectFit: 'cover', aspectRatio: '9 / 16', cursor: 'zoom-in' }} />
+                                  <div style={{ position: 'relative' }}>
+                                    <img src={url} alt="story" onClick={openStory}
+                                      onError={(e) => { const img = e.currentTarget; img.style.display = 'none'; const fb = img.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = 'flex' }}
+                                      style={{ ...box, objectFit: 'cover', cursor: 'zoom-in' }} />
+                                    <span onClick={openStory}
+                                      style={{ display: 'none', width: 150, maxWidth: '60%', aspectRatio: '9 / 16', borderRadius: 10, cursor: 'pointer', color: '#fff', fontSize: 12, fontWeight: 700, alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 8, background: 'linear-gradient(135deg,#F47133,#BC3081)' }}>
+                                      ▶ View story
+                                    </span>
+                                  </div>
                                 )
                               ) : (
                                 <span style={{ display: 'block', width: 120, aspectRatio: '9 / 16', borderRadius: 10, background: 'linear-gradient(135deg,#F47133,#BC3081)' }} />
