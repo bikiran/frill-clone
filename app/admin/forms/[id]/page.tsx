@@ -65,6 +65,7 @@ const QUESTION_CATEGORIES = [
     types: [
       { type: 'long_text', label: 'Long Text', icon: 'paragraph' },
       { type: 'short_text', label: 'Short Text', icon: 'text' },
+      { type: 'statement', label: 'Statement / Info', icon: 'info' },
       { type: 'video_audio', label: 'Video and Audio', icon: 'video' },
     ],
   },
@@ -111,6 +112,7 @@ function TypeIcon({ type, size = 16 }: { type: string; size?: number }) {
     case 'card': return <svg {...p}><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
     case 'upload': return <svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
     case 'clock': return <svg {...p}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    case 'info': return <svg {...p}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
     default: return <svg {...p}><circle cx="12" cy="12" r="10"/></svg>
   }
 }
@@ -456,11 +458,18 @@ export default function FormBuilder() {
                   )
                 )}
                 <input value={questions[previewStep].title} onChange={e => updateQuestion(questions[previewStep].id, { title: e.target.value })}
-                  placeholder="Type your question..."
+                  placeholder={questions[previewStep].type === 'statement' ? 'Heading (optional)…' : 'Type your question...'}
                   style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', border: 'none', outline: 'none', width: '100%', marginBottom: 8, background: 'transparent' }} />
-                <input value={questions[previewStep].description} onChange={e => updateQuestion(questions[previewStep].id, { description: e.target.value })}
-                  placeholder="Add a description (optional)"
-                  style={{ fontSize: 14, color: '#6b6b70', border: 'none', outline: 'none', width: '100%', marginBottom: 24, background: 'transparent' }} />
+                {questions[previewStep].type === 'statement' ? (
+                  <textarea value={questions[previewStep].description} onChange={e => updateQuestion(questions[previewStep].id, { description: e.target.value })}
+                    placeholder="Write your information text here — this is shown to the person (add an image above too)."
+                    rows={5}
+                    style={{ fontSize: 15, lineHeight: 1.6, color: '#374151', border: '1px solid var(--border)', borderRadius: 10, outline: 'none', width: '100%', marginBottom: 24, background: '#fff', padding: '10px 12px', resize: 'vertical', boxSizing: 'border-box' }} />
+                ) : (
+                  <input value={questions[previewStep].description} onChange={e => updateQuestion(questions[previewStep].id, { description: e.target.value })}
+                    placeholder="Add a description (optional)"
+                    style={{ fontSize: 14, color: '#6b6b70', border: 'none', outline: 'none', width: '100%', marginBottom: 24, background: 'transparent' }} />
+                )}
 
                 {/* Render input type preview */}
                 {questions[previewStep].type === 'short_text' && (
@@ -560,13 +569,15 @@ export default function FormBuilder() {
                   ))}
                 </select>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>Required</label>
-                <button onClick={() => updateQuestion(selected.id, { required: !selected.required })}
-                  style={{ width: 38, height: 21, borderRadius: 999, background: selected.required ? themeColor : '#d1d5db', border: 'none', cursor: 'pointer', position: 'relative' }}>
-                  <span style={{ width: 15, height: 15, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: selected.required ? 20 : 3, transition: 'left 0.15s' }} />
-                </button>
-              </div>
+              {selected.type !== 'statement' && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>Required</label>
+                  <button onClick={() => updateQuestion(selected.id, { required: !selected.required })}
+                    style={{ width: 38, height: 21, borderRadius: 999, background: selected.required ? themeColor : '#d1d5db', border: 'none', cursor: 'pointer', position: 'relative' }}>
+                    <span style={{ width: 15, height: 15, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: selected.required ? 20 : 3, transition: 'left 0.15s' }} />
+                  </button>
+                </div>
+              )}
 
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 8 }}>Image or video</label>
