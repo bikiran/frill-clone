@@ -502,6 +502,7 @@ export default function InboxPage() {
   }
   const [showMergePicker, setShowMergePicker] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
+  const [storyView, setStoryView] = useState<MediaItem | null>(null)
   const [showDoa, setShowDoa] = useState(false)
   const [doaMatch, setDoaMatch] = useState(false)
   const [convActions, setConvActions] = useState<Record<string, any>>({})
@@ -6750,6 +6751,11 @@ export default function InboxPage() {
         return <MediaGallery items={media} index={galleryIndex} onClose={() => setGalleryIndex(null)} onIndex={setGalleryIndex} />
       })()}
 
+      {/* Story-reply viewer (opens the story the customer replied to, in-app). */}
+      {storyView && (
+        <MediaGallery items={[storyView]} index={0} onClose={() => setStoryView(null)} onIndex={() => {}} />
+      )}
+
 
       {/* Merge picker */}
       {showMergePicker && selected && (
@@ -7889,6 +7895,10 @@ export default function InboxPage() {
                 }
 
                 const repliedMsg = (msg as any).reply_to ? messages.find(m => m.id === (msg as any).reply_to) : null
+                // Instagram theme: when enabled (Settings → Channels), agent
+                // replies on an Instagram thread get the Instagram gradient +
+                // rounder bubbles so the thread reads like the Instagram app.
+                const igThemed = isAgent && selected?.channel === 'instagram' && !!(companyInfo as any)?.inbox_settings?.instagram_theme
                 // Group reactions by emoji
                 const reactionCounts: Record<string, number> = {}
                 reactions.forEach((r: any) => { reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1 })
@@ -7925,8 +7935,8 @@ export default function InboxPage() {
                           if (hasMedia) return 4
                           return isMobile ? '7px 11px' : '10px 14px'
                         })(),
-                        borderRadius: isAgent ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                        background: isAgent ? 'var(--coral)' : '#fff',
+                        borderRadius: igThemed ? '18px 18px 5px 18px' : (isAgent ? '14px 14px 4px 14px' : '14px 14px 14px 4px'),
+                        background: igThemed ? 'linear-gradient(135deg,#5B51D8 0%,#A033C4 55%,#E1306C 100%)' : (isAgent ? 'var(--coral)' : '#fff'),
                         color: isAgent ? '#fff' : 'var(--ink)',
                         fontSize: 13, lineHeight: 1.5,
                         boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
@@ -7951,7 +7961,8 @@ export default function InboxPage() {
                           // "View story" card (which also covers expired links).
                           const knownVideo = sr.story_type === 'video' || (!!url && /\.(mp4|mov|webm)(\?|$)/i.test(url))
                           const box = { width: 150, maxWidth: '60%', borderRadius: 10, display: 'block', aspectRatio: '9 / 16' } as React.CSSProperties
-                          const openStory = () => url && window.open(url, '_blank', 'noopener')
+                          // Open in an in-app viewer rather than a new browser tab.
+                          const view = (kind: 'image' | 'video') => url && setStoryView({ url, kind, name: 'Story' })
                           return (
                             <div style={{ marginBottom: 6 }}>
                               <span style={{ display: 'block', fontSize: 11, opacity: 0.85, fontStyle: 'italic', marginBottom: 4 }}>Replied to your story</span>
@@ -7961,10 +7972,11 @@ export default function InboxPage() {
                                     style={{ ...box, background: '#000', objectFit: 'cover' }} />
                                 ) : (
                                   <div style={{ position: 'relative' }}>
-                                    <img src={url} alt="story" onClick={openStory}
+                                    <img src={url} alt="story" onClick={() => view('image')}
                                       onError={(e) => { const img = e.currentTarget; img.style.display = 'none'; const fb = img.nextElementSibling as HTMLElement | null; if (fb) fb.style.display = 'flex' }}
                                       style={{ ...box, objectFit: 'cover', cursor: 'zoom-in' }} />
-                                    <span onClick={openStory}
+                                    {/* Image failed → it's almost certainly a video; open it as one in the viewer. */}
+                                    <span onClick={() => view('video')}
                                       style={{ display: 'none', width: 150, maxWidth: '60%', aspectRatio: '9 / 16', borderRadius: 10, cursor: 'pointer', color: '#fff', fontSize: 12, fontWeight: 700, alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 8, background: 'linear-gradient(135deg,#F47133,#BC3081)' }}>
                                       ▶ View story
                                     </span>
