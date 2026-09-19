@@ -361,17 +361,19 @@ export default function FormResults() {
         ) : view === 'summary' ? (
           <div className="space-y-4">
             {/* Top stats */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-                <p className="text-2xl font-black" style={{ color: 'var(--ink)' }}>{responses.length}</p>
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
+              <div className="bg-white rounded-2xl border p-3 sm:p-5 min-w-0" style={{ borderColor: 'var(--border)' }}>
+                <p className="text-xl sm:text-2xl font-black leading-tight" style={{ color: 'var(--ink)' }}>{responses.length}</p>
                 <p className="text-xs" style={{ color: 'var(--slate)' }}>Total responses</p>
               </div>
-              <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-                <p className="text-2xl font-black" style={{ color: 'var(--ink)' }}>{questions.length}</p>
+              <div className="bg-white rounded-2xl border p-3 sm:p-5 min-w-0" style={{ borderColor: 'var(--border)' }}>
+                <p className="text-xl sm:text-2xl font-black leading-tight" style={{ color: 'var(--ink)' }}>{questions.length}</p>
                 <p className="text-xs" style={{ color: 'var(--slate)' }}>Questions</p>
               </div>
-              <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-                <p className="text-2xl font-black" style={{ color: 'var(--ink)' }}>
+              <div className="bg-white rounded-2xl border p-3 sm:p-5 min-w-0" style={{ borderColor: 'var(--border)' }}>
+                {/* The date is wider than the count values — keep it smaller so it
+                    never overflows/clips the card on a narrow phone. */}
+                <p className="text-sm sm:text-xl font-black leading-tight whitespace-nowrap" style={{ color: 'var(--ink)' }}>
                   {responses[0] ? new Date(responses[0].created_at).toLocaleDateString() : '—'}
                 </p>
                 <p className="text-xs" style={{ color: 'var(--slate)' }}>Last response</p>
