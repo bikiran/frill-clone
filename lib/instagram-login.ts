@@ -120,11 +120,11 @@ export async function subscribeInstagramWebhooks(igId: string, token: string): P
 
 // Send a DM reply from an Instagram-Login account (Instagram Send API on
 // graph.instagram.com, keyed by the account's own token — `me/messages`).
-export async function sendInstagramMessage(token: string, recipientId: string, text: string): Promise<{ id?: string; error?: string }> {
+export async function sendInstagramMessage(token: string, recipientId: string, text: string, tag?: string): Promise<{ id?: string; error?: string }> {
   try {
     const res = await fetch(`${IG_GRAPH_V}/me/messages`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipient: { id: recipientId }, message: { text }, access_token: token }),
+      body: JSON.stringify({ recipient: { id: recipientId }, message: { text }, ...(tag ? { messaging_type: 'MESSAGE_TAG', tag } : {}), access_token: token }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) return { error: data?.error?.message || 'Send failed' }
@@ -135,12 +135,12 @@ export async function sendInstagramMessage(token: string, recipientId: string, t
 }
 
 // Send a media attachment from an Instagram-Login account.
-export async function sendInstagramAttachment(token: string, recipientId: string, url: string, kind: string): Promise<{ id?: string; error?: string }> {
+export async function sendInstagramAttachment(token: string, recipientId: string, url: string, kind: string, tag?: string): Promise<{ id?: string; error?: string }> {
   const type = kind === 'image' ? 'image' : kind === 'video' ? 'video' : kind === 'audio' ? 'audio' : 'file'
   try {
     const res = await fetch(`${IG_GRAPH_V}/me/messages`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipient: { id: recipientId }, message: { attachment: { type, payload: { url } } }, access_token: token }),
+      body: JSON.stringify({ recipient: { id: recipientId }, message: { attachment: { type, payload: { url } } }, ...(tag ? { messaging_type: 'MESSAGE_TAG', tag } : {}), access_token: token }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) return { error: data?.error?.message || 'Attachment send failed' }
