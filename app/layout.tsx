@@ -852,7 +852,7 @@ export default function RootLayout({
                   {showNotifications && (
                     <>
                       <div className="fixed inset-0 z-30" onClick={() => setShowNotifications(false)} />
-                      <div className="absolute top-full right-0 mt-2 w-96 max-h-[600px] bg-white rounded-xl shadow-2xl border z-40 flex flex-col overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                      <div className="absolute top-full right-0 mt-2 max-h-[600px] bg-white rounded-xl shadow-2xl border z-40 flex flex-col overflow-hidden" style={{ borderColor: 'var(--border)', width: 'min(384px, calc(100vw - 24px))' }}>
                         {/* Header with filters */}
                         <div className="p-4 border-b flex items-center justify-between shrink-0" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
                           <h3 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Notifications</h3>
