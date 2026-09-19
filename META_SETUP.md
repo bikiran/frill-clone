@@ -161,8 +161,12 @@ signature check accepts either the Meta or the Instagram app secret.
 
 Real-time comment threads are ingested by the same `/api/meta/webhook` endpoint.
 Instagram sends the **`comments`** field; a Facebook Page sends the **`feed`**
-field (subscribe to it in the Page webhook config if you want live FB comments —
-otherwise FB comments still arrive on the next manual sync). Each new comment is
+field (subscribe to it in the Page webhook config if you want live FB comments).
+The **Sync comments** button backfills history for **both** platforms — the
+Facebook Page's posts + comments AND every connected Instagram account's media +
+comments (page-linked via the Graph API, Instagram-Login via
+`graph.instagram.com`) — so comments that predate the webhook (or arrived while
+it was down) still appear. Each new comment is
 stored in `social_comments`, classified (risk / category / sentiment), and shown
 in the **Social Engagement** manager, where an agent can reply, hide, DM, or
 archive it. Replies route by channel type automatically:

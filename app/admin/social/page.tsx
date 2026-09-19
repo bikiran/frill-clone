@@ -52,7 +52,7 @@ export default function SocialEngagementPage() {
   const load = useCallback(async () => {
     if (!companyId) return
     const [{ data: chans }, cmts, posts] = await Promise.all([
-      (supabase as any).from('meta_channels').select('page_name').eq('company_id', companyId).eq('platform', 'facebook').eq('is_active', true).limit(1),
+      (supabase as any).from('meta_channels').select('page_name').eq('company_id', companyId).in('platform', ['facebook', 'instagram']).eq('is_active', true).limit(1),
       (supabase as any).from('social_comments').select('*').eq('company_id', companyId).order('commented_at', { ascending: false }).limit(2000),
       (supabase as any).from('social_posts').select('*', { count: 'exact', head: true }).eq('company_id', companyId),
     ])
