@@ -69,11 +69,15 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
   const [orbPos, setOrbPos] = useState<{ x: number; y: number } | null>(null)
   const [orbHover, setOrbHover] = useState(false)
   const [dismissed, setDismissed] = useState(false)
+  // Touch devices have no hover, so the hover-to-reveal close tab was
+  // unreachable there — keep it visible on coarse-pointer / no-hover devices.
+  const [isTouch, setIsTouch] = useState(false)
   const dragRef = useRef<{ ox: number; oy: number; sx: number; sy: number; moved: boolean; x: number; y: number } | null>(null)
 
   useEffect(() => {
     try { const p = localStorage.getItem('colvy-ai-orb-pos'); if (p) setOrbPos(JSON.parse(p)) } catch {}
     try { if (sessionStorage.getItem('colvy-ai-dismissed') === '1') setDismissed(true) } catch {}
+    try { setIsTouch(window.matchMedia('(hover: none), (pointer: coarse)').matches) } catch {}
   }, [])
   // Keep the orb on-screen if the window is resized smaller.
   useEffect(() => {
@@ -300,11 +304,12 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
             aria-label="Hide Colvy AI for now"
             title="Hide for now"
             style={{
-              position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%',
+              position: 'absolute', top: -6, right: -6, width: isTouch ? 24 : 20, height: isTouch ? 24 : 20, borderRadius: '50%',
               border: '1.5px solid var(--card, #fff)', background: '#111827', color: '#fff', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, zIndex: 2,
-              opacity: orbHover ? 1 : 0, transform: orbHover ? 'scale(1)' : 'scale(0.6)',
-              transition: 'opacity .14s ease, transform .14s ease', pointerEvents: orbHover ? 'auto' : 'none',
+              opacity: (orbHover || isTouch) ? 1 : 0, transform: (orbHover || isTouch) ? 'scale(1)' : 'scale(0.6)',
+              transition: 'opacity .14s ease, transform .14s ease', pointerEvents: (orbHover || isTouch) ? 'auto' : 'none',
+              boxShadow: isTouch ? '0 2px 6px rgba(0,0,0,0.3)' : 'none',
             }}
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
