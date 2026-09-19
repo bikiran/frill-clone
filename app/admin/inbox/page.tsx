@@ -7940,18 +7940,27 @@ export default function InboxPage() {
                       }}>
                         {/* Instagram story reply — show the story they replied
                             to (thumbnail) above their message, like Coax. */}
-                        {(msg as any).metadata?.story_reply && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, padding: 6, borderRadius: 8, background: isAgent ? 'rgba(255,255,255,0.15)' : 'var(--canvas)', border: isAgent ? 'none' : '1px solid var(--border)' }}>
-                            {(msg as any).metadata.story_reply.story_url ? (
-                              /\.(mp4|mov|webm)(\?|$)/i.test((msg as any).metadata.story_reply.story_url)
-                                ? <video src={(msg as any).metadata.story_reply.story_url} style={{ width: 34, height: 48, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
-                                : <img src={(msg as any).metadata.story_reply.story_url} alt="story" style={{ width: 34, height: 48, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
-                            ) : (
-                              <span style={{ width: 34, height: 48, borderRadius: 6, background: 'linear-gradient(135deg,#F47133,#BC3081)', flexShrink: 0 }} />
-                            )}
-                            <span style={{ fontSize: 11, opacity: 0.85, fontStyle: 'italic' }}>Replied to your story</span>
-                          </div>
-                        )}
+                        {(msg as any).metadata?.story_reply && (() => {
+                          const sr = (msg as any).metadata.story_reply
+                          const url: string | null = sr.story_url || null
+                          const isVideo = sr.story_type === 'video' || (!!url && /\.(mp4|mov|webm)(\?|$)/i.test(url))
+                          return (
+                            <div style={{ marginBottom: 6 }}>
+                              <span style={{ display: 'block', fontSize: 11, opacity: 0.85, fontStyle: 'italic', marginBottom: 4 }}>Replied to your story</span>
+                              {url ? (
+                                isVideo ? (
+                                  <video src={url} controls playsInline preload="metadata"
+                                    style={{ width: 150, maxWidth: '60%', borderRadius: 10, display: 'block', background: '#000', aspectRatio: '9 / 16', objectFit: 'cover' }} />
+                                ) : (
+                                  <img src={url} alt="story" onClick={() => window.open(url, '_blank', 'noopener')}
+                                    style={{ width: 150, maxWidth: '60%', borderRadius: 10, display: 'block', objectFit: 'cover', aspectRatio: '9 / 16', cursor: 'zoom-in' }} />
+                                )
+                              ) : (
+                                <span style={{ display: 'block', width: 120, aspectRatio: '9 / 16', borderRadius: 10, background: 'linear-gradient(135deg,#F47133,#BC3081)' }} />
+                              )}
+                            </div>
+                          )
+                        })()}
 
                         {/* Attachments.
                             Facebook-style mosaic: every tile is edge-to-edge

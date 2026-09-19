@@ -4,6 +4,7 @@ import crypto from 'crypto'
 import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile, fetchPageComment } from '@/lib/meta'
 import { isIgLoginChannel, fetchInstagramUserProfile, fetchInstagramComment, INSTAGRAM_APP_SECRET } from '@/lib/instagram-login'
 import { linkContactIdentity } from '@/lib/identity'
+import { rehostRemoteMedia } from '@/lib/media-rehost'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
@@ -102,6 +103,16 @@ export async function POST(req: NextRequest) {
             kind: 'story_reply',
             story_url: replyTo.story.url || null,
             story_id: replyTo.story.id || null,
+            story_type: null as string | null,
+          }
+          // The story's media URL is a short-lived Instagram CDN link that 403s
+          // within hours, so it renders as a broken thumbnail by the time an
+          // agent opens the thread. Rehost a durable copy now, while it's fresh,
+          // and record whether it's an image or a video so the inbox can show it
+          // full-size and play it (like Coax does).
+          if (storyReply.story_url) {
+            const rehosted = await rehostRemoteMedia(db, storyReply.story_url, 'ig-story')
+            if (rehosted) { storyReply.story_url = rehosted.url; storyReply.story_type = rehosted.kind }
           }
         }
 
