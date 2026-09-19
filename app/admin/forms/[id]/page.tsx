@@ -17,6 +17,8 @@ type Question = {
   optionImages?: string[]        // picture_choice: image per option (parallel to options)
   matrixRows?: string[]          // matrix: row labels
   matrixCols?: string[]          // matrix: column labels
+  amountCents?: number           // payment: amount to charge, in cents
+  currency?: string              // payment: ISO currency (default aud)
   mediaUrl?: string
   mediaType?: 'image' | 'video'
   fileAccept?: string
@@ -685,6 +687,26 @@ export default function FormBuilder() {
                     <option value=".pdf,.doc,.docx">Documents (PDF, Word)</option>
                     <option value="video/*">Videos only</option>
                   </select>
+                </div>
+              )}
+
+              {selected.type === 'payment' && (
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Amount to charge</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input type="number" min="0.50" step="0.01"
+                      value={selected.amountCents != null ? (selected.amountCents / 100).toString() : ''}
+                      onChange={e => updateQuestion(selected.id, { amountCents: Math.round((parseFloat(e.target.value) || 0) * 100) })}
+                      placeholder="0.00"
+                      style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }} />
+                    <select value={selected.currency || 'aud'} onChange={e => updateQuestion(selected.id, { currency: e.target.value })}
+                      style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer' }}>
+                      {['aud', 'usd', 'nzd', 'gbp', 'eur', 'cad'].map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+                    </select>
+                  </div>
+                  <p style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 8, lineHeight: 1.5 }}>
+                    The person pays this before they can finish the form. Requires your Stripe to be connected under Integrations → Stripe.
+                  </p>
                 </div>
               )}
 

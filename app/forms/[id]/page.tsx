@@ -69,6 +69,11 @@ export default function PublicForm() {
   const AUTO_ADVANCE_TYPES = ['multiple_choice', 'dropdown', 'yes_no', 'rating', 'nps', 'opinion_scale', 'legal', 'picture_choice']
 
   const handleNext = () => {
+    // A payment step can't be skipped until it's actually paid.
+    if (current?.type === 'payment' && Number(current?.amountCents) > 0 && answers[current.id]?.status !== 'paid') {
+      alert('Please complete the payment to continue.')
+      return
+    }
     // A statement is informational — it has no answer, so never block on "required".
     if (current?.type !== 'statement' && current?.required && (answers[current.id] === undefined || answers[current.id] === '' || (Array.isArray(answers[current.id]) && answers[current.id].length === 0))) {
       alert('This question is required')
@@ -151,6 +156,58 @@ export default function PublicForm() {
     }
     setUploadingFile(false)
   }
+
+  // ── Payment (Stripe hosted checkout, then back to the form) ──────────────────
+  const [paying, setPaying] = useState(false)
+  const [payMsg, setPayMsg] = useState('')
+  const startPayment = async (q: any) => {
+    setPaying(true); setPayMsg('')
+    try {
+      const r = await fetch('/api/forms/payment', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', formId, questionId: q.id, origin: window.location.origin }),
+      })
+      const d = await r.json()
+      if (!r.ok || !d.checkoutUrl) { setPayMsg(d.error || 'Could not start the payment.'); setPaying(false); return }
+      // Persist answers + place so returning from Stripe restores the form.
+      try { localStorage.setItem(`colvy_form_progress_${formId}`, JSON.stringify({ answers, step, payQuestionId: q.id })) } catch {}
+      window.location.href = d.checkoutUrl
+    } catch { setPayMsg('Could not start the payment.'); setPaying(false) }
+  }
+  const fmtMoney = (cents: number, currency?: string) => `${new Intl.NumberFormat(undefined, { style: 'currency', currency: (currency || 'aud').toUpperCase() }).format((cents || 0) / 100)}`
+
+  // On returning from Stripe (?form_paid=<id>): restore saved progress, verify the
+  // payment, and mark the payment question paid so the person can finish.
+  useEffect(() => {
+    if (!form) return
+    const url = new URL(window.location.href)
+    const paidId = url.searchParams.get('form_paid')
+    const cancelled = url.searchParams.get('form_pay_cancelled')
+    if (!paidId && !cancelled) return
+    let saved: any = null
+    try { saved = JSON.parse(localStorage.getItem(`colvy_form_progress_${formId}`) || 'null') } catch {}
+    if (saved) { setAnswers(saved.answers || {}); if (typeof saved.step === 'number') setStep(saved.step) }
+    const clean = () => { url.searchParams.delete('form_paid'); url.searchParams.delete('form_pay_cancelled'); url.searchParams.delete('session_id'); window.history.replaceState({}, '', url.toString()) }
+    if (cancelled) { setPayMsg('Payment was cancelled — you can try again.'); clean(); return }
+    ;(async () => {
+      setPaying(true); setPayMsg('Confirming your payment…')
+      try {
+        const r = await fetch('/api/forms/payment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'verify', paymentId: paidId }) })
+        const d = await r.json()
+        if (d.status === 'paid') {
+          const payQ = saved?.payQuestionId
+          if (payQ) setAnswers(prev => ({ ...prev, [payQ]: { status: 'paid', amount_cents: d.amountCents, currency: d.currency, payment_id: paidId } }))
+          setPayMsg('')
+          try { localStorage.removeItem(`colvy_form_progress_${formId}`) } catch {}
+        } else {
+          setPayMsg('We couldn’t confirm the payment yet. If you completed it, wait a moment and press OK.')
+        }
+      } catch { setPayMsg('We couldn’t confirm the payment. Please try again.') }
+      setPaying(false)
+      clean()
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form])
 
   // ── Signature pad ───────────────────────────────────────────────────────────
   const sigRef = useRef<HTMLCanvasElement | null>(null)
@@ -694,7 +751,33 @@ export default function PublicForm() {
                   )}
                 </div>
               )}
-              {['payment', 'scheduler'].includes(current.type) && (
+              {current.type === 'payment' && (
+                <div>
+                  {answers[current.id]?.status === 'paid' ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderRadius: 12, border: `2px solid ${themeColor}`, background: `${themeColor}10` }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={themeColor} strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: '#0d0d0d' }}>
+                        Payment received{answers[current.id].amount_cents ? ` — ${fmtMoney(answers[current.id].amount_cents, answers[current.id].currency)}` : ''}
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 16 }}>
+                        <span style={{ fontSize: 34, fontWeight: 800, color: '#0d0d0d' }}>{Number(current.amountCents) > 0 ? fmtMoney(current.amountCents, current.currency) : '—'}</span>
+                        <span style={{ fontSize: 13, color: '#9ca3af', textTransform: 'uppercase' }}>{(current.currency || 'aud')}</span>
+                      </div>
+                      <button onClick={() => startPayment(current)} disabled={paying || !(Number(current.amountCents) > 0)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '13px 26px', borderRadius: 12, background: themeColor, color: '#fff', fontWeight: 700, fontSize: 15, border: 'none', cursor: paying ? 'wait' : 'pointer', opacity: paying ? 0.7 : 1 }}>
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                        {paying ? 'Please wait…' : `Pay securely`}
+                      </button>
+                      <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 10 }}>You'll be taken to a secure Stripe checkout, then back here.</p>
+                    </>
+                  )}
+                  {payMsg && <p style={{ fontSize: 13, color: payMsg.includes('received') ? '#047857' : '#b45309', marginTop: 10, fontWeight: 600 }}>{payMsg}</p>}
+                </div>
+              )}
+              {current.type === 'scheduler' && (
                 <div style={{ padding: '20px', borderRadius: 12, border: '2px dashed #e5e5e5', textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>
                   This question type isn't fillable yet — coming soon.
                 </div>
@@ -702,7 +785,7 @@ export default function PublicForm() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              {!AUTO_ADVANCE_TYPES.includes(current.type) && (
+              {!AUTO_ADVANCE_TYPES.includes(current.type) && !(current.type === 'payment' && answers[current.id]?.status !== 'paid') && (
                 <button onClick={handleNext} disabled={submitting}
                   style={{ padding: '12px 28px', borderRadius: 12, background: themeColor, color: '#fff', fontWeight: 700, fontSize: 15, border: 'none', cursor: 'pointer', opacity: submitting ? 0.6 : 1 }}>
                   {submitting ? 'Submitting...' : step === visibleQuestions.length - 1 ? 'Submit →' : current.type === 'statement' ? 'Continue →' : 'OK →'}
