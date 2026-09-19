@@ -14,6 +14,7 @@ type Question = {
   description: string
   required: boolean
   options?: string[]
+  multiSelect?: boolean           // multiple_choice: allow selecting more than one
   optionImages?: string[]        // picture_choice: image per option (parallel to options)
   matrixRows?: string[]          // matrix: row labels
   matrixCols?: string[]          // matrix: column labels
@@ -654,6 +655,18 @@ export default function FormBuilder() {
                   <button onClick={() => updateQuestion(selected.id, { required: !selected.required })}
                     style={{ width: 38, height: 21, borderRadius: 999, background: selected.required ? themeColor : '#d1d5db', border: 'none', cursor: 'pointer', position: 'relative' }}>
                     <span style={{ width: 15, height: 15, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: selected.required ? 20 : 3, transition: 'left 0.15s' }} />
+                  </button>
+                </div>
+              )}
+              {selected.type === 'multiple_choice' && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, display: 'block' }}>Multiple selection</label>
+                    <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>Let people pick more than one option</span>
+                  </div>
+                  <button onClick={() => updateQuestion(selected.id, { multiSelect: !selected.multiSelect })}
+                    style={{ width: 38, height: 21, borderRadius: 999, background: selected.multiSelect ? themeColor : '#d1d5db', border: 'none', cursor: 'pointer', position: 'relative', flexShrink: 0 }}>
+                    <span style={{ width: 15, height: 15, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: selected.multiSelect ? 20 : 3, transition: 'left 0.15s' }} />
                   </button>
                 </div>
               )}
