@@ -144,8 +144,10 @@ export async function subscribePageWebhooks(pageId: string, pageToken: string): 
 
 // Send a message via the Send API. Works for both Messenger (PSID) and
 // Instagram (IGSID) — same endpoint, keyed by the Page.
+// `tag` (e.g. 'HUMAN_AGENT') sends outside the standard 24h window — the Human
+// Agent tag extends it to 7 days for a human agent's reply.
 export async function sendMetaMessage(
-  pageId: string, pageToken: string, recipientId: string, text: string
+  pageId: string, pageToken: string, recipientId: string, text: string, tag?: string
 ): Promise<{ id?: string; error?: string }> {
   const res = await fetch(`${GRAPH}/${pageId}/messages`, {
     method: 'POST',
@@ -153,7 +155,7 @@ export async function sendMetaMessage(
     body: JSON.stringify({
       recipient: { id: recipientId },
       message: { text },
-      messaging_type: 'RESPONSE',   // a reply within the 24h window
+      ...(tag ? { messaging_type: 'MESSAGE_TAG', tag } : { messaging_type: 'RESPONSE' }),
       access_token: pageToken,
     }),
   })
@@ -165,7 +167,7 @@ export async function sendMetaMessage(
 // Send a media attachment (image / video / audio / file) by URL. Meta fetches
 // the URL and delivers it to the customer.
 export async function sendMetaAttachment(
-  pageId: string, pageToken: string, recipientId: string, url: string, kind: string
+  pageId: string, pageToken: string, recipientId: string, url: string, kind: string, tag?: string
 ): Promise<{ id?: string; error?: string }> {
   const type = kind === 'image' ? 'image' : kind === 'video' ? 'video' : kind === 'audio' ? 'audio' : 'file'
   const res = await fetch(`${GRAPH}/${pageId}/messages`, {
@@ -174,7 +176,7 @@ export async function sendMetaAttachment(
     body: JSON.stringify({
       recipient: { id: recipientId },
       message: { attachment: { type, payload: { url, is_reusable: true } } },
-      messaging_type: 'RESPONSE',
+      ...(tag ? { messaging_type: 'MESSAGE_TAG', tag } : { messaging_type: 'RESPONSE' }),
       access_token: pageToken,
     }),
   })

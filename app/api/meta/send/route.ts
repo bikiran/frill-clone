@@ -72,28 +72,33 @@ export async function POST(req: NextRequest) {
       await db.from('conversations').update({ meta_channel_id: channel.id }).eq('id', conversationId)
     }
 
-    // Meta's 24-hour rule: outside 24h since the customer's last message, a
-    // standard message is REJECTED (you'd need an approved message tag). Check
-    // and give a clear reason rather than a raw Graph API error.
+    // Meta's messaging windows, keyed off the customer's last message:
+    //   ≤ 24h            → a normal RESPONSE reply.
+    //   24h – 7 days     → allowed only with the HUMAN_AGENT tag (a human agent
+    //                      answering a customer). We send with that tag.
+    //   > 7 days         → not allowed by Meta at all; block with a clear reason.
     const { data: lastInbound } = await db.from('messages')
       .select('created_at').eq('conversation_id', conversationId).eq('sender_type', 'visitor')
       .order('created_at', { ascending: false }).limit(1)
     const lastAt = lastInbound?.[0]?.created_at ? new Date(lastInbound[0].created_at).getTime() : 0
-    if (lastAt && (Date.now() - lastAt) > 24 * 3600 * 1000) {
+    const sinceMs = lastAt ? Date.now() - lastAt : 0
+    if (lastAt && sinceMs > 7 * 24 * 3600 * 1000) {
       return NextResponse.json({
-        error: 'Meta only allows a free-form reply within 24 hours of the customer\'s last message. This conversation is outside that window.',
+        error: 'Meta doesn\'t allow a reply more than 7 days after the customer\'s last message. Reach them on another channel (SMS or email) instead.',
       }, { status: 400 })
     }
+    // Outside 24h (but within 7 days) → use the Human Agent tag.
+    const tag = lastAt && sinceMs > 24 * 3600 * 1000 ? 'HUMAN_AGENT' : undefined
 
     // Instagram-Login accounts send through graph.instagram.com with their own
     // token (me/messages); Page-linked channels use the Page Send API.
     const out = isIgLoginChannel(channel)
       ? (attachmentUrl
-          ? await sendInstagramAttachment(channel.page_access_token, recipientId, attachmentUrl, attachmentKind || 'file')
-          : await sendInstagramMessage(channel.page_access_token, recipientId, content))
+          ? await sendInstagramAttachment(channel.page_access_token, recipientId, attachmentUrl, attachmentKind || 'file', tag)
+          : await sendInstagramMessage(channel.page_access_token, recipientId, content, tag))
       : (attachmentUrl
-          ? await sendMetaAttachment(channel.page_id, channel.page_access_token, recipientId, attachmentUrl, attachmentKind || 'file')
-          : await sendMetaMessage(channel.page_id, channel.page_access_token, recipientId, content))
+          ? await sendMetaAttachment(channel.page_id, channel.page_access_token, recipientId, attachmentUrl, attachmentKind || 'file', tag)
+          : await sendMetaMessage(channel.page_id, channel.page_access_token, recipientId, content, tag))
     if (out.error) {
       await db.from('meta_channels').update({ last_error: out.error }).eq('id', channel.id)
       return NextResponse.json({ error: out.error }, { status: 502 })
