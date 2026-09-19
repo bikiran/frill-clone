@@ -5405,6 +5405,14 @@ export default function InboxPage() {
       <style>{`
         /* ── Inbox mobile responsiveness ─────────────────────────────── */
         @media (max-width: 767px) {
+          /* Fit the inbox between the top header AND the fixed bottom nav — the
+             old height only subtracted the 56px header, so the composer / Send
+             row (and the mobile back button's pane) sat behind the bottom nav.
+             dvh tracks the mobile browser chrome so the top isn't pushed off. */
+          .inbox-root {
+            height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+            max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px)) !important;
+          }
           /* One pane at a time on phones */
           .inbox-root .inbox-col-list,
           .inbox-root .inbox-col-thread,
@@ -7256,9 +7264,9 @@ export default function InboxPage() {
             {/* Thread header */}
             <div className="inbox-thread-header" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {/* Mobile: back to conversation list */}
-              <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('list')} title="Back"
-                style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', order: -2 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('list')} title="Back to chats" aria-label="Back to chats"
+                style={{ display: 'none', width: 36, height: 36, flexShrink: 0, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--canvas, #f3f4f6)', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--ink)', order: -2 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
               </button>
               {/* Contact avatar — real profile photo (from Messenger/Instagram)
                   when we have it, initials otherwise. */}
