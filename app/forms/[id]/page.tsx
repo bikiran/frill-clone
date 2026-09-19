@@ -299,7 +299,7 @@ export default function PublicForm() {
                   // An action with no URL (e.g. the seeded "Visit our board")
                   // must not render a dead href="#" — that just reloads the form.
                   // Fall back to the public board at the subdomain root.
-                  const href = a.url && a.url !== '#' ? a.url : '/'
+                  const href = a.type === 'board' ? '/' : (a.url && a.url !== '#' ? a.url : '/')
                   const external = /^https?:\/\//i.test(href)
                   return (
                   <a key={i} href={href} target={external ? '_blank' : undefined} rel={external ? 'noopener' : undefined}
@@ -310,6 +310,7 @@ export default function PublicForm() {
                       color: i === 0 ? '#fff' : themeColor,
                       border: i === 0 ? 'none' : `1.5px solid ${themeColor}`,
                     }}>
+                    {a.type === 'board' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>}
                     {a.type === 'video' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>}
                     {a.type === 'social' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>}
                     {(a.type === 'website' || a.type === 'custom') && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>}

@@ -717,14 +717,18 @@ export default function FormBuilder() {
                 <div key={i} style={{ padding: 12, borderRadius: 10, border: '1px solid var(--border)', marginBottom: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                     <select value={a.type} onChange={e => {
+                        const t = e.target.value
                         const next = [...endActions]
-                        next[i] = { ...next[i], type: e.target.value }
+                        // "board" links to the public feedback board — fill the
+                        // URL automatically and clear a previously auto-filled "/".
+                        next[i] = { ...next[i], type: t, url: t === 'board' ? '/' : (next[i].url === '/' ? '' : next[i].url) }
                         setEndActions(next)
                       }}
                       style={{ fontSize: 12, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer' }}>
                       <option value="website">Visit website</option>
                       <option value="video">Watch video</option>
                       <option value="social">Social media</option>
+                      <option value="board">Visit feedback board</option>
                       <option value="custom">Custom link</option>
                     </select>
                     <button onClick={() => setEndActions(endActions.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
@@ -738,13 +742,20 @@ export default function FormBuilder() {
                     }}
                     placeholder="Button label (e.g. Visit our site)"
                     style={{ width: '100%', fontSize: 12, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', marginBottom: 6, boxSizing: 'border-box' }} />
-                  <input value={a.url} onChange={e => {
-                      const next = [...endActions]
-                      next[i] = { ...next[i], url: e.target.value }
-                      setEndActions(next)
-                    }}
-                    placeholder="https://..."
-                    style={{ width: '100%', fontSize: 12, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', boxSizing: 'border-box' }} />
+                  {a.type === 'board' ? (
+                    <p style={{ fontSize: 11.5, color: 'var(--slate)', margin: '2px 0 0', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+                      Links to your public feedback board.
+                    </p>
+                  ) : (
+                    <input value={a.url} onChange={e => {
+                        const next = [...endActions]
+                        next[i] = { ...next[i], url: e.target.value }
+                        setEndActions(next)
+                      }}
+                      placeholder="https://..."
+                      style={{ width: '100%', fontSize: 12, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', boxSizing: 'border-box' }} />
+                  )}
                 </div>
               ))}
               <button onClick={() => setEndActions([...endActions, { type: 'website', label: 'Visit our website', url: '' }])}
