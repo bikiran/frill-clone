@@ -626,7 +626,7 @@ export default function PublicForm() {
                   ))}
                 </div>
               )}
-              {current.type === 'multiple_choice' && (
+              {current.type === 'multiple_choice' && !(current as any).multiSelect && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {(current.options || []).map((opt: string, oi: number) => (
                     <button key={oi} onClick={() => selectAndAdvance(current.id, opt)}
@@ -637,6 +637,29 @@ export default function PublicForm() {
                       <span style={{ fontSize: 16, color: '#0d0d0d' }}>{opt}</span>
                     </button>
                   ))}
+                </div>
+              )}
+              {/* Multiple Choice with "multiple selection" on behaves like a
+                  checkbox group: pick several, then press OK (no auto-advance). */}
+              {current.type === 'multiple_choice' && (current as any).multiSelect && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {(current.options || []).map((opt: string, oi: number) => {
+                    const selectedArr: string[] = answers[current.id] || []
+                    const isChecked = selectedArr.includes(opt)
+                    return (
+                      <button key={oi} onClick={() => {
+                          const next = isChecked ? selectedArr.filter(o => o !== opt) : [...selectedArr, opt]
+                          setAnswers(p => ({ ...p, [current.id]: next }))
+                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderRadius: 12, border: `2.5px solid ${isChecked ? themeColor : '#e5e5e5'}`, background: isChecked ? `${themeColor}10` : '#fff', cursor: 'pointer', textAlign: 'left' }}>
+                        <span style={{ width: 26, height: 26, borderRadius: 7, border: `2px solid ${isChecked ? themeColor : '#d1d5db'}`, background: isChecked ? themeColor : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                          {isChecked ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg> : <span style={{ color: '#9ca3af' }}>{String.fromCharCode(65 + oi)}</span>}
+                        </span>
+                        <span style={{ fontSize: 16, color: '#0d0d0d' }}>{opt}</span>
+                      </button>
+                    )
+                  })}
+                  <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>Select all that apply, then press OK</p>
                 </div>
               )}
               {current.type === 'dropdown' && (
@@ -904,7 +927,7 @@ export default function PublicForm() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              {!AUTO_ADVANCE_TYPES.includes(current.type) && !(current.type === 'payment' && answers[current.id]?.status !== 'paid') && (
+              {(!AUTO_ADVANCE_TYPES.includes(current.type) || (current.type === 'multiple_choice' && (current as any).multiSelect)) && !(current.type === 'payment' && answers[current.id]?.status !== 'paid') && (
                 <button onClick={handleNext} disabled={submitting}
                   style={{ padding: '12px 28px', borderRadius: 12, background: themeColor, color: '#fff', fontWeight: 700, fontSize: 15, border: 'none', cursor: 'pointer', opacity: submitting ? 0.6 : 1 }}>
                   {submitting ? 'Submitting...' : step === visibleQuestions.length - 1 ? 'Submit →' : current.type === 'statement' ? 'Continue →' : 'OK →'}

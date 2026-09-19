@@ -226,9 +226,14 @@ export default function FormResults() {
   // Aggregate stats per question
   const getQuestionStats = (q: any) => {
     const answers = responses.map(r => r.answers?.[q.id]).filter(a => a !== undefined && a !== '' && !(Array.isArray(a) && a.length === 0))
-    if (['multiple_choice', 'yes_no', 'dropdown', 'picture_choice'].includes(q.type)) {
+    if (['multiple_choice', 'yes_no', 'dropdown', 'picture_choice', 'checkbox'].includes(q.type)) {
       const counts: Record<string, number> = {}
-      answers.forEach(a => { counts[a] = (counts[a] || 0) + 1 })
+      // Multi-select (checkbox, or multiple_choice with multiSelect on) stores an
+      // array — count each chosen option, not the array as a whole.
+      answers.forEach(a => {
+        if (Array.isArray(a)) a.forEach((v: any) => { counts[v] = (counts[v] || 0) + 1 })
+        else counts[a] = (counts[a] || 0) + 1
+      })
       return { type: 'distribution', counts, total: answers.length }
     }
     if (q.type === 'rating') {
