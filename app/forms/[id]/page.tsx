@@ -66,7 +66,7 @@ export default function PublicForm() {
   const current = visibleQuestions[step]
 
   // Question types where a single tap/click is an unambiguous answer — auto-advance
-  const AUTO_ADVANCE_TYPES = ['multiple_choice', 'dropdown', 'yes_no', 'rating', 'nps', 'opinion_scale', 'legal']
+  const AUTO_ADVANCE_TYPES = ['multiple_choice', 'dropdown', 'yes_no', 'rating', 'nps', 'opinion_scale', 'legal', 'picture_choice']
 
   const handleNext = () => {
     // A statement is informational — it has no answer, so never block on "required".
@@ -150,6 +150,50 @@ export default function PublicForm() {
       alert('File upload failed: ' + e.message)
     }
     setUploadingFile(false)
+  }
+
+  // ── Signature pad ───────────────────────────────────────────────────────────
+  const sigRef = useRef<HTMLCanvasElement | null>(null)
+  const sigDrawing = useRef(false)
+  const sigLast = useRef<{ x: number; y: number } | null>(null)
+  const sigPos = (e: React.PointerEvent) => {
+    const c = sigRef.current!; const r = c.getBoundingClientRect()
+    return { x: (e.clientX - r.left) * (c.width / r.width), y: (e.clientY - r.top) * (c.height / r.height) }
+  }
+  const sigStart = (e: React.PointerEvent) => {
+    sigDrawing.current = true; sigLast.current = sigPos(e)
+    try { (e.target as Element).setPointerCapture?.(e.pointerId) } catch {}
+  }
+  const sigMove = (e: React.PointerEvent) => {
+    if (!sigDrawing.current || !sigRef.current) return
+    const ctx = sigRef.current.getContext('2d'); if (!ctx) return
+    const p = sigPos(e)
+    ctx.strokeStyle = '#0d0d0d'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+    ctx.beginPath(); ctx.moveTo(sigLast.current!.x, sigLast.current!.y); ctx.lineTo(p.x, p.y); ctx.stroke()
+    sigLast.current = p
+  }
+  const sigEnd = (qid: string) => {
+    if (!sigDrawing.current) return
+    sigDrawing.current = false
+    const c = sigRef.current
+    if (c) setAnswers(p => ({ ...p, [qid]: c.toDataURL('image/png') }))
+  }
+  const sigClear = (qid: string) => {
+    const c = sigRef.current
+    if (c) { const ctx = c.getContext('2d'); ctx?.clearRect(0, 0, c.width, c.height) }
+    setAnswers(p => ({ ...p, [qid]: undefined }))
+  }
+
+  // ── Ranking helpers ──────────────────────────────────────────────────────────
+  // Ranking works on an ordered copy of the options; seed it from the options on
+  // first interaction so a submitted-but-untouched ranking still records an order.
+  const rankOrder = (q: any): string[] => (Array.isArray(answers[q.id]) ? answers[q.id] : (q.options || []))
+  const rankMove = (q: any, from: number, dir: -1 | 1) => {
+    const arr = [...rankOrder(q)]
+    const to = from + dir
+    if (to < 0 || to >= arr.length) return
+    ;[arr[from], arr[to]] = [arr[to], arr[from]]
+    setAnswers(p => ({ ...p, [q.id]: arr }))
   }
 
   useEffect(() => {
@@ -550,7 +594,107 @@ export default function PublicForm() {
                   )}
                 </div>
               )}
-              {['video_audio', 'signature', 'payment', 'scheduler', 'ranking', 'matrix', 'picture_choice'].includes(current.type) && (
+              {current.type === 'picture_choice' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 }}>
+                  {(current.options || []).map((opt: string, oi: number) => {
+                    const img = (current.optionImages || [])[oi]
+                    const selected = answers[current.id] === opt
+                    return (
+                      <button key={oi} onClick={() => selectAndAdvance(current.id, opt)}
+                        style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 14, border: `2.5px solid ${selected ? themeColor : '#e5e5e5'}`, background: selected ? `${themeColor}10` : '#fff', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+                        {img
+                          ? <img src={img} alt="" style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover' }} />
+                          : <div style={{ width: '100%', aspectRatio: '4/3', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', color: '#c0c4cc' }}>
+                              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                            </div>}
+                        <span style={{ padding: '10px 12px', fontSize: 14, fontWeight: 600, color: '#0d0d0d' }}>{opt}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {current.type === 'ranking' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {rankOrder(current).map((opt: string, oi: number) => (
+                    <div key={opt} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, border: '2px solid #e5e5e5', background: '#fff' }}>
+                      <span style={{ width: 24, height: 24, borderRadius: 7, background: themeColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{oi + 1}</span>
+                      <span style={{ flex: 1, fontSize: 16, color: '#0d0d0d' }}>{opt}</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <button onClick={() => rankMove(current, oi, -1)} disabled={oi === 0} aria-label="Move up"
+                          style={{ background: 'none', border: 'none', cursor: oi === 0 ? 'default' : 'pointer', opacity: oi === 0 ? 0.25 : 0.7, padding: 0 }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                        </button>
+                        <button onClick={() => rankMove(current, oi, 1)} disabled={oi === rankOrder(current).length - 1} aria-label="Move down"
+                          style={{ background: 'none', border: 'none', cursor: oi === rankOrder(current).length - 1 ? 'default' : 'pointer', opacity: oi === rankOrder(current).length - 1 ? 0.25 : 0.7, padding: 0 }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>Order them from most to least important, then press OK.</p>
+                </div>
+              )}
+              {current.type === 'matrix' && (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                    <thead>
+                      <tr>
+                        <th />
+                        {(current.matrixCols || []).map((col: string) => (
+                          <th key={col} style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: '#6b6b70', textAlign: 'center' }}>{col}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(current.matrixRows || []).map((row: string) => (
+                        <tr key={row} style={{ borderTop: '1px solid #eee' }}>
+                          <td style={{ padding: '10px 8px', fontWeight: 600, color: '#0d0d0d' }}>{row}</td>
+                          {(current.matrixCols || []).map((col: string) => {
+                            const val = (answers[current.id] || {})[row]
+                            return (
+                              <td key={col} style={{ textAlign: 'center', padding: '10px 8px' }}>
+                                <button onClick={() => setAnswers(p => ({ ...p, [current.id]: { ...(p[current.id] || {}), [row]: col } }))}
+                                  aria-label={`${row}: ${col}`}
+                                  style={{ width: 22, height: 22, borderRadius: '50%', border: `2px solid ${val === col ? themeColor : '#d1d5db'}`, background: val === col ? themeColor : '#fff', cursor: 'pointer', padding: 0 }} />
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {current.type === 'signature' && (
+                <div>
+                  <canvas ref={sigRef} width={600} height={200}
+                    onPointerDown={sigStart} onPointerMove={sigMove} onPointerUp={() => sigEnd(current.id)} onPointerLeave={() => sigEnd(current.id)}
+                    style={{ width: '100%', height: 200, borderRadius: 12, border: '2px solid #e5e5e5', background: '#fff', touchAction: 'none', cursor: 'crosshair' }} />
+                  <button onClick={() => sigClear(current.id)} type="button"
+                    style={{ marginTop: 8, background: 'none', border: 'none', color: '#9ca3af', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Clear</button>
+                </div>
+              )}
+              {current.type === 'video_audio' && (
+                <div>
+                  {answers[current.id]?.url ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 12, border: `2px solid ${themeColor}`, background: `${themeColor}10` }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={themeColor} strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                      <span style={{ fontSize: 14, color: '#0d0d0d', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{answers[current.id].name}</span>
+                      <button onClick={() => setAnswers(p => ({ ...p, [current.id]: undefined }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '32px', borderRadius: 14, border: `2px dashed ${themeColor}`, cursor: uploadingFile ? 'wait' : 'pointer', color: themeColor }}>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                      <span style={{ fontSize: 14, fontWeight: 600 }}>{uploadingFile ? 'Uploading...' : 'Upload a video or audio file'}</span>
+                      <input type="file" accept="video/*,audio/*" className="hidden" disabled={uploadingFile}
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f, current.id) }} />
+                    </label>
+                  )}
+                </div>
+              )}
+              {['payment', 'scheduler'].includes(current.type) && (
                 <div style={{ padding: '20px', borderRadius: 12, border: '2px dashed #e5e5e5', textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>
                   This question type isn't fillable yet — coming soon.
                 </div>
