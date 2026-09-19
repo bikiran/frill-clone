@@ -498,7 +498,7 @@ export default function PublicForm() {
               {['contact_info', 'phone', 'address', 'website'].includes(current.type) && (
                 <input autoFocus value={answers[current.id] || ''} onChange={e => setAnswers(p => ({ ...p, [current.id]: e.target.value }))}
                   className="ff-input" style={{ ['--ff-color' as any]: themeColor, width: '100%', fontSize: 20, padding: '8px 0', border: 'none', borderBottom: '2.5px solid #e5e5e5', outline: 'none' }}
-                  placeholder={current.type === 'phone' ? '+1 (555) 000-0000' : current.type === 'website' ? 'https://...' : current.type === 'address' ? 'Street, city, country' : 'Your name'} />
+                  placeholder={current.type === 'phone' ? '+61 4XX XXX XXX' : current.type === 'website' ? 'https://...' : current.type === 'address' ? 'Street, suburb, state, postcode' : 'Your name'} />
               )}
               {current.type === 'legal' && (
                 <button onClick={() => selectAndAdvance(current.id, true)}
